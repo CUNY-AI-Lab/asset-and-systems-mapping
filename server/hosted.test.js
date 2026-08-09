@@ -106,9 +106,12 @@ describe('hosted runtime guardrails', () => {
       })).status).toBe(403);
       expect((await hostedRequest(system, '/api/health', {
         headers: { host: 'attacker.invalid' },
-      })).status).toBe(421);
+      })).status).toBe(200);
       expect((await hostedRequest(system, '/api/health', {
         headers: { 'x-forwarded-proto': 'http' },
+      })).status).toBe(200);
+      expect((await hostedRequest(system, '/api/auth/accounts', {
+        headers: { host: 'attacker.invalid' },
       })).status).toBe(421);
     } finally {
       await system.close();

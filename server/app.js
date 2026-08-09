@@ -1367,6 +1367,10 @@ export function createSystemsMappingApp(options = {}) {
       context.header('Pragma', 'no-cache');
     }
     await ready;
+    if (hostedMode && context.req.path === '/api/health' && ['GET', 'HEAD'].includes(context.req.method.toUpperCase())) {
+      await next();
+      return;
+    }
     const origin = trustedOrigin(context, { publicOrigin, trustedProxyHops });
     assertMutationOrigin(context, origin);
     context.set('requestOrigin', origin);
