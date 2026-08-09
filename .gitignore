@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+artifacts/
+.DS_Store
+*.log
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.env.*
+!.env.example
+.railway/

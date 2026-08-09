@@ -1,0 +1,132 @@
+// @vitest-environment node
+
+import { describe, expect, it, vi } from 'vitest';
+import { compilePostgresSql, PostgresDatabase, validatePostgresUrl } from './postgres.js';
+
+function fakePool() {
+  const calls = [];
+  const client = {
+    async query(text, values = []) {
+      calls.push({ target: 'client', text, values });
+      if (/SELECT .* AS "displayName"/i.test(text)) {
+        return { rows: [{ id: 'teacher', displayName: 'Teacher', changedAt: new Date('2026-01-01T00:00:00Z') }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: /UPDATE/i.test(text) ? 1 : 0 };
+    },
+    release: vi.fn(),
+  };
+  const pool = {
+    on: vi.fn(),
+    async query(text, values = []) {
+      calls.push({ target: 'pool', text, values });
+      return { rows: [{ ok: 1 }], rowCount: 1 };
+    },
+    async connect() {
+      calls.push({ target: 'pool', text: 'CONNECT', values: [] });
+      return client;
+    },
+    end: vi.fn(async () => {}),
+  };
+  return { pool, client, calls };
+}
+
+describe('PostgreSQL persistence adapter', () => {
+  it('validates PostgreSQL URLs without exposing their contents', () => {
+    expect(validatePostgresUrl('postgresql://app@db.internal/systems_mapping').protocol).toBe('postgresql:');
+    expect(() => validatePostgresUrl('https://db.invalid/systems_mapping')).toThrow('postgres:// or postgresql://');
+    expect(() => validatePostgresUrl('not a url')).toThrow('valid PostgreSQL connection URL');
+  });
+
+  it('parameterizes placeholders and preserves camel-case result aliases', () => {
+    expect(compilePostgresSql(`
+      SELECT display_name AS displayName FROM accounts
+      WHERE id = ? AND claimed_at > ? LIMIT -1 OFFSET ?
+    `)).toContain('AS "displayName"');
+    expect(compilePostgresSql('SELECT * FROM accounts WHERE id = ? AND display_name = ?'))
+      .toContain('id = $1 AND display_name = $2');
+    expect(compilePostgresSql('SELECT id FROM sessions LIMIT -1 OFFSET ?')).toContain('OFFSET $1');
+  });
+
+  it('installs the constrained review queue, indexes, append-only triggers, and migration marker', async () => {
+    const fake = fakePool();
+    const database = new PostgresDatabase('postgres://app@db.internal/systems_mapping', {
+      pool: fake.pool,
+      initialize: true,
+    });
+    await database.ready;
+    const migration = fake.calls.find(({ text }) => text.includes('CREATE TABLE IF NOT EXISTS schema_migrations'))?.text;
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_evaluations');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_submissions');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_review_events');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_retention_purges');
+    expect(migration).toContain('preflight_evaluations_expiry_idx');
+    expect(migration).toContain('preflight_evaluations_session_idx');
+    expect(migration).toContain('preflight_submissions_queue_idx');
+    expect(migration).toContain('preflight_review_events_submission_idx');
+    expect(migration).toContain('preflight_retention_purges_time_idx');
+    expect(migration).toContain('preflight_review_events_no_update');
+    expect(migration).toContain('preflight_review_events_no_delete');
+    expect(migration).toContain('preflight_retention_purges_no_delete');
+    expect(migration).toContain("status IN ('pending', 'approved', 'rejected')");
+    expect(migration).toContain("decision = 'revise_and_approve' AND revised_suggestion IS NOT NULL");
+    expect(migration).toContain('pg_column_size(project_metadata_json) <= 8192');
+    expect(migration).toContain('pg_column_size(source_record_json) <= 32768');
+    expect(migration).toContain('pg_column_size(config_snapshot_json) <= 131072');
+    expect(migration).toContain('pg_column_size(runtime_metadata_json) <= 8192');
+    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(4\)/.test(text))).toBe(true);
+    expect(fake.calls.at(-1)?.text).toBe('COMMIT');
+    await database.close();
+  });
+
+  it('uses a bounded pool and one client for short nested transactions', async () => {
+    const fake = fakePool();
+    const database = new PostgresDatabase('postgres://app@db.internal/systems_mapping', {
+      pool: fake.pool,
+      initialize: false,
+      statementTimeoutMs: 2000,
+      transactionIdleTimeoutMs: 1000,
+    });
+
+    const result = await database.transaction(async () => {
+      const row = await database.prepare('SELECT id, display_name AS displayName FROM accounts WHERE id = ?').get('teacher');
+      await database.transaction(async () => {
+        await database.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run('Teacher', 'teacher');
+      });
+      return row;
+    });
+
+    expect(result).toEqual({ id: 'teacher', displayName: 'Teacher', changedAt: '2026-01-01T00:00:00.000Z' });
+    expect(fake.calls.map(({ target, text }) => `${target}:${text.split(/\s+/).filter(Boolean).slice(0, 2).join(' ')}`)).toEqual([
+      'pool:CONNECT',
+      'client:BEGIN',
+      'client:SET LOCAL',
+      'client:SET LOCAL',
+      'client:SELECT id,',
+      'client:SAVEPOINT systems_mapping_1',
+      'client:UPDATE accounts',
+      'client:RELEASE SAVEPOINT',
+      'client:COMMIT',
+    ]);
+    expect(fake.client.release).toHaveBeenCalledOnce();
+    await database.close();
+    expect(fake.pool.end).toHaveBeenCalledOnce();
+  });
+
+  it('rolls back both a nested savepoint and its outer transaction on failure', async () => {
+    const fake = fakePool();
+    const database = new PostgresDatabase('postgres://app@db.internal/systems_mapping', {
+      pool: fake.pool,
+      initialize: false,
+    });
+    await expect(database.transaction(async () => {
+      await database.transaction(async () => {
+        throw new Error('injected failure');
+      });
+    })).rejects.toThrow('injected failure');
+    const sql = fake.calls.map(({ text }) => text);
+    expect(sql.some((text) => text.startsWith('ROLLBACK TO SAVEPOINT'))).toBe(true);
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+    await database.close();
+  });
+});

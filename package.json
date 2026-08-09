@@ -1,0 +1,38 @@
+{
+  "name": "systems-mapping-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "packageManager": "pnpm@11.16.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "server:dev": "node --watch server/index.js",
+    "db:migrate": "node server/migrate.js",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:server": "vitest run server",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.0",
+    "@vitejs/plugin-react": "6.0.5",
+    "hono": "4.13.1",
+    "mammoth": "1.12.0",
+    "pg": "^8.22.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "vite": "8.2.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "jsdom": "30.0.1",
+    "vitest": "4.1.10"
+  }
+}
