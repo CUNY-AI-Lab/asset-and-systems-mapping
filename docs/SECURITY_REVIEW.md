@@ -6,7 +6,7 @@ Updated: 2026-08-09
 
 This review covers the current React application, Node/Hono server, SQLite and PostgreSQL adapters, student class access, teacher authentication, authoritative evaluation, instructor review, import/export, prototype telemetry, and optional Ollama Cloud adapter.
 
-It does not claim that the final bundle, real SQLite database, GitHub repository, Railway deployment, public domain, or live Ollama provider has been accepted. Current automated evidence is 129 passing tests plus 3 PostgreSQL-gated skips, a separate fresh PostgreSQL 17 integration run of 3/3, and a successful production build. Current rendered-browser evidence is absent.
+It does not claim that the full rendered journey, real SQLite handoff database, or live Ollama provider has been accepted. Current evidence includes 129 passing tests plus 3 PostgreSQL-gated skips, a separate fresh PostgreSQL 17 integration run of 3/3, a successful production build, green dependency/leak scans, a private GitHub publication, and a successful Railway/PostgreSQL deployment with public health readback. Rendered evidence is limited to the 390 px access screen.
 
 Status terms:
 
@@ -74,17 +74,17 @@ No current result demonstrates a live Ollama request.
 
 The code is ready for a Railway-style service backed by PostgreSQL: startup requires paired `DATABASE_URL`/`PUBLIC_ORIGIN`, explicit public binding and proxy depth, a strong class code, and bounded pool/timeouts. Hosted tests and a fresh local PostgreSQL integration pass.
 
-Railway itself remains unverified. Required closure includes project/service/database creation, variables, migration, terminal deployment success, public health readback, Secure cookies, exact origin/proxy behavior, teacher/student isolation, retention, and a value-free database audit. If Ollama is enabled, the rotated key and live egress test are separate gates.
+Railway project/service/database creation, variables, migration, terminal deployment success, and public database-backed health readback are verified. Deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` is live at `https://web-production-08455.up.railway.app`. The health endpoint intentionally accepts Railway's internal hosted readiness Host while all other hosted routes retain exact public Host/origin enforcement. Secure-cookie, teacher/student review, retention, and value-free database acceptance remain operational gates. If Ollama is enabled, the rotated key and live egress test remain separate gates.
 
 ## Final verification checklist
 
-- [ ] Run `pnpm audit` and `pnpm audit --prod` on the final lockfile.
+- [x] Run `pnpm audit` and `pnpm audit --prod` on the final lockfile.
 - [ ] Scan source and `dist/` for `101`, configured class codes, credential values/field leakage, passphrase fixtures outside tests, session/capability material, prompt bodies, teacher roster/history, `dangerouslySetInnerHTML`, and source maps.
 - [ ] Run the complete current student/teacher review journey in the in-app browser using a disposable database.
 - [ ] Verify desktop and 320/390/430 px layout, focus, touch targets, map interaction, persistence, exports, and console state.
 - [ ] Restart/read back the loopback production server and audit the real SQLite database without printing sensitive values.
-- [ ] Create/read back the private GitHub repository and confirm tested-tree equality.
-- [ ] Deploy/read back Railway PostgreSQL to terminal success.
+- [x] Create/read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and publish `main`.
+- [x] Deploy/read back Railway PostgreSQL to terminal success and verify `{"status":"ok"}`.
 - [ ] Revoke the exposed Ollama key; configure a rotated key only if authorized; run a separate live-provider acceptance.
 
 Until those boxes are complete, the correct status is **implemented and automated-test green, with operational security verification pending**.

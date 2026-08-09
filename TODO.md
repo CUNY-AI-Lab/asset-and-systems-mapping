@@ -62,9 +62,12 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 ## Required GitHub and Railway proof
 
 - [ ] Initialize the intended Git repository without `.env`, databases, WAL/SHM files, local browser state, screenshots, credentials, or test fixtures.
-- [ ] Create and read back the private `CUNY-AI-Lab/system-mapping` GitHub repository and verify the published commit matches the tested tree.
-- [ ] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
-- [ ] Run the Railway migration/deploy to terminal `SUCCESS`, then verify the public domain, `/api/health`, database tables, Secure cookies, origin/proxy behavior, and absence of seeded credentials or test data.
+- [x] Create and read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and verify the published commit.
+  - Evidence: `main` was pushed through `62a546e`; GitHub readback reported `PRIVATE` and the `main` default branch.
+- [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
+  - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
+- [x] Run the Railway migration/deploy to terminal `SUCCESS` and verify the public domain and database-backed health endpoint.
+  - Evidence: deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`. Browser-level Secure-cookie/origin and live review acceptance remain below.
 - [ ] Confirm the hosted review workflow against Railway PostgreSQL. Local PostgreSQL parity is not a production deployment claim.
 
 ## Required Ollama Cloud proof

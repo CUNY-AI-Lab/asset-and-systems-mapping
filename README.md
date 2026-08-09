@@ -78,7 +78,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 ## Hosted and Railway contract
 
-The code supports a Railway-style Node service plus PostgreSQL, but a live Railway deployment is not yet verified. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` reached `SUCCESS`; the migration completed and `/api/health` returned `{"status":"ok"}`. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>

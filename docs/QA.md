@@ -4,9 +4,9 @@ Updated: 2026-08-09
 
 ## Current status
 
-The evaluation/review overhaul is automated-test green and production-build green. It is **not yet rendered-browser accepted, GitHub-published, Railway-deployed, or live-Ollama verified**.
+The evaluation/review overhaul is automated-test green, production-build green, GitHub-published, and Railway-deployed. It is **not yet fully rendered-browser accepted or live-Ollama verified**.
 
-The required in-app browser smoke attempt returned no connected browser instances (`[]`). Consequently, this report does not convert source inspection, unit tests, earlier screenshots, or a successful build into a current visual or end-to-end claim.
+A current 390 CSS-pixel in-app-browser smoke verified the access screen at 390 px document width, a 44 px primary button, 16 px input text, no horizontal overflow, and rejected-code messaging. The full student/teacher/map journey and 320/430 px passes remain pending, so this report does not promote the smoke into complete rendered acceptance.
 
 ## Completed automated runs
 
@@ -20,7 +20,14 @@ The required in-app browser smoke attempt returned no connected browser instance
 
 The PostgreSQL skips in the ordinary suites are environment gates, not hidden failures; the same integration group passed separately against a fresh disposable PostgreSQL 17 database.
 
-Final dependency audits and built-bundle leakage scans have not yet been rerun against this final tree. Earlier pre-overhaul audit results are not used as current proof.
+Final `pnpm audit` and `pnpm audit --prod` both reported no known vulnerabilities. A redacted full-tree Gitleaks scan examined about 3.97 MB and reported no leaks; the pasted Ollama credential fragments were also absent from the tree.
+
+## Published release evidence
+
+- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`, `main` through commit `62a546e`.
+- Railway project: `systems-mapping` (`ed729bd9-403b-46a6-a97c-99ad9a0294c8`) with web and PostgreSQL services.
+- Railway deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` reached `SUCCESS` after a hosted-readiness regression was fixed and covered by 23 focused server tests.
+- Public health readback: `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`.
 
 ## Automated behavior verified
 
@@ -107,9 +114,9 @@ Use a disposable database and temporary teacher claim values, never the real han
 ## Remaining acceptance risks
 
 - No current rendered proof exists for the new student/teacher review loop, phone geometry, focus behavior, or console cleanliness.
-- No final dependency audit or production-bundle leakage scan exists after the overhaul.
+- Full rendered review/map acceptance and a dedicated final `dist/` string inventory remain pending; dependency and repository leak scans are green.
 - The real SQLite handoff database and final loopback listener have not been audited/restarted against this tree.
-- Railway project, PostgreSQL service, variables, migration, deployment, domain, and live readback remain unverified.
+- Railway creation, PostgreSQL migration, deployment, domain, and health readback are verified. Live browser review, cookie, and retention acceptance against Railway remain pending.
 - Local `.env` contains no Ollama key. The previously pasted key is exposed and must be revoked; no live provider run has occurred.
 - Deterministic STEM Splitter does not interpret teacher prompt or project-instruction text. Its configuration snapshots are provenance only; prompt customization affects actual generation only when an accepted provider adapter is enabled.
 - Hosted review stores memo/source material for the disclosed retention period. Institutional approval and operating policy remain separate from code correctness.
