@@ -1,3 +1,5 @@
+> **Active beta.** Systems Mapping is under active classroom development.
+
 # Systems Mapping
 
 Systems Mapping is a phone-primary concept and resource mapping application for source-backed student memos. It combines a seven-stage student workflow, an instructor review gate, a persistent graph workspace, and a progressively disclosed teacher dashboard. The default suggestion configuration is **STEM Splitter**.
