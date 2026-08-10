@@ -200,7 +200,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     expect((await request(system, '/api/config/public', { headers: { cookie: studentCookie } })).status).toBe(200);
     const hostedActivity = await jsonMutation(system, 'POST', '/api/prototype/events', {
       event: 'stage_viewed',
-      stage: 'Suggestion review',
+      stage: 'Review suggestions',
       metadata: { stageIndex: 2 },
     }, studentCookie);
     expect(hostedActivity.status).toBe(202);
@@ -219,8 +219,10 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     const hostedCapability = (await hostedEvaluation.json()).evaluation;
     expect(hostedCapability).toMatchObject({
       runtime: { provider: 'deterministic', model: 'STEM Splitter' },
-      suggestion: { threshold: 6 },
+      redirects: expect.any(Array),
     });
+    expect(hostedCapability.redirects.length).toBeLessThanOrEqual(3);
+    expect(hostedCapability).not.toHaveProperty('suggestion');
     expect(hostedCapability.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
     expect(Buffer.byteLength(JSON.stringify(nearLimitSourceRecord(hostedProjectId)), 'utf8')).toBe(16_300);
     const hostedSubmission = await jsonMutation(system, 'POST', '/api/preflight/submissions', {
@@ -231,18 +233,51 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     const hostedRecord = (await hostedSubmission.json()).submission;
     expect(hostedRecord).toMatchObject({ status: 'pending', revision: 1 });
     expect(hostedRecord).not.toHaveProperty('sourceMaterial');
+    const focusedQuestion = 'Which source passage most directly supports the relationship you mapped?';
     const hostedDecision = await jsonMutation(
       system,
       'POST',
       `/api/teacher/preflight-submissions/${hostedRecord.id}/decision`,
-      { decision: 'approve', instructorAnnotation: 'Approved in hosted PostgreSQL.', expectedRevision: 1 },
+      {
+        decision: 'revise_and_approve',
+        instructorAnnotation: 'Approved after one focused source check in hosted PostgreSQL.',
+        focusedQuestion,
+        expectedRevision: 1,
+      },
       cookie,
     );
     expect(hostedDecision.status).toBe(200);
+    const hostedDecisionBody = await hostedDecision.json();
+    expect(hostedDecisionBody.submission).toMatchObject({
+      status: 'approved',
+      decision: 'revise_and_approve',
+      focusedQuestion,
+      revision: 2,
+    });
+    expect(hostedDecisionBody.submission).not.toHaveProperty('revisedSuggestion');
+    expect(hostedDecisionBody.reviewEvents.at(-1)).toMatchObject({
+      decision: 'revise_and_approve',
+      focusedQuestion,
+      fromRevision: 1,
+      toRevision: 2,
+    });
+    expect(hostedDecisionBody.reviewEvents.at(-1)).not.toHaveProperty('revisedSuggestion');
     const studentStatus = await request(system, `/api/preflight/submissions/${hostedRecord.id}`, {
       headers: { cookie: studentCookie },
     });
-    expect((await studentStatus.json()).submission).toMatchObject({ status: 'approved', decision: 'approve', revision: 2 });
+    const studentStatusRecord = (await studentStatus.json()).submission;
+    expect(studentStatusRecord).toMatchObject({
+      status: 'approved',
+      decision: 'revise_and_approve',
+      focusedQuestion,
+      revision: 2,
+    });
+    expect(studentStatusRecord).not.toHaveProperty('revisedSuggestion');
+    expect(await system.db.prepare(`
+      SELECT revised_suggestion AS focusedQuestion
+      FROM preflight_submissions
+      WHERE id = ?
+    `).get(hostedRecord.id)).toEqual({ focusedQuestion });
     await expect(system.db.prepare('DELETE FROM preflight_review_events WHERE submission_id = ?').run(hostedRecord.id))
       .rejects.toThrow(/append-only/);
 
@@ -265,7 +300,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     `).get(createHash('sha256').update(hostedRecord.id).digest('hex'))).toEqual({
       submissionRefHash: createHash('sha256').update(hostedRecord.id).digest('hex'),
       status: 'approved',
-      decision: 'approve',
+      decision: 'revise_and_approve',
       purgedBy: 'retention',
     });
   });
@@ -284,7 +319,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       const cookie = access.headers.get('set-cookie').split(';')[0];
       const event = await localMutation(localSystem, '/api/prototype/events', {
         event: 'node_moved',
-        stage: 'Map studio',
+        stage: 'Build the map',
         metadata: { stageIndex: 5, nodeCount: 4, keyboard: true },
       }, cookie);
       expect(event.status).toBe(202);

@@ -66,6 +66,9 @@ export const PROJECT_LIMITS = Object.freeze({
   relationVocabulary: 100,
   annotationText: 4_000,
   reviewText: 20_000,
+  focusedQuestion: 1_000,
+  redirectAction: 500,
+  redirectEvidence: 280,
   noteText: 4_000,
   rationaleText: 8_000,
   eventText: 8_000,
@@ -862,7 +865,7 @@ function validateCriterion(criterion, path) {
   validateEvidence(criterion, path);
 }
 
-function validateSuggestionResult(suggestion, path, { allowWorkflow = false } = {}) {
+function validateSuggestionResult(suggestion, path, { allowWorkflow = false, legacyReview = false } = {}) {
   assertObject(suggestion, path);
   assertKnownKeys(suggestion, ['hard', 'scored', 'hardPass', 'score', 'threshold', 'outcome', 'evaluatedAt', 'configurationSnapshot', ...(allowWorkflow ? ['evaluation', 'review'] : [])], path);
   if (!Array.isArray(suggestion.hard) || suggestion.hard.length !== HARD_CRITERIA.length) invalidProject(`${path}.hard`, `must contain ${HARD_CRITERIA.length} criteria`);
@@ -883,7 +886,7 @@ function validateSuggestionResult(suggestion, path, { allowWorkflow = false } = 
     if (suggestion.evaluatedAt !== suggestion.evaluation.createdAt) invalidProject(`${path}.evaluatedAt`, 'must match the authoritative evaluation timestamp');
     if (suggestion.configurationSnapshot.capturedAt !== suggestion.evaluation.createdAt) invalidProject(`${path}.configurationSnapshot.capturedAt`, 'must match the authoritative evaluation timestamp');
   }
-  if (allowWorkflow && suggestion.review !== undefined && suggestion.review !== null) validatePreflightReview(suggestion.review, `${path}.review`);
+  if (allowWorkflow && suggestion.review !== undefined && suggestion.review !== null) validatePreflightReview(suggestion.review, `${path}.review`, { legacy: legacyReview });
 }
 
 function validatePreflightEvaluation(evaluation, path) {
@@ -916,29 +919,62 @@ function validatePreflightEvaluation(evaluation, path) {
   });
 }
 
-function validatePreflightReview(review, path) {
+function validatePreflightReview(review, path, { legacy = false } = {}) {
+  const questionField = legacy ? 'revisedSuggestion' : 'focusedQuestion';
   assertObject(review, path);
-  assertKnownKeys(review, ['submissionId', 'status', 'revision', 'submittedAt', 'decision', 'instructorAnnotation', 'revisedSuggestion'], path);
+  assertKnownKeys(review, ['submissionId', 'status', 'revision', 'submittedAt', 'decision', 'instructorAnnotation', questionField], path);
   assertString(review.submissionId, `${path}.submissionId`, false, 200);
   assertEnum(review.status, PREFLIGHT_REVIEW_STATUSES, `${path}.status`);
   assertInteger(review.revision, `${path}.revision`, 1, Number.MAX_SAFE_INTEGER);
   assertTimestamp(review.submittedAt, `${path}.submittedAt`);
   if (review.decision !== undefined) assertEnum(review.decision, PREFLIGHT_REVIEW_DECISIONS, `${path}.decision`);
   if (review.instructorAnnotation !== undefined) assertString(review.instructorAnnotation, `${path}.instructorAnnotation`, false, PROJECT_LIMITS.reviewText);
-  if (review.revisedSuggestion !== undefined) assertString(review.revisedSuggestion, `${path}.revisedSuggestion`, false, PROJECT_LIMITS.reviewText);
+  if (review[questionField] !== undefined) assertString(review[questionField], `${path}.${questionField}`, false, legacy ? PROJECT_LIMITS.reviewText : PROJECT_LIMITS.focusedQuestion);
 
   if (review.status === 'pending') {
     if (review.decision !== undefined) invalidProject(`${path}.decision`, 'must be omitted while review is pending');
     if (review.instructorAnnotation !== undefined) invalidProject(`${path}.instructorAnnotation`, 'must be omitted while review is pending');
-    if (review.revisedSuggestion !== undefined) invalidProject(`${path}.revisedSuggestion`, 'must be omitted while review is pending');
+    if (review[questionField] !== undefined) invalidProject(`${path}.${questionField}`, 'must be omitted while review is pending');
     return;
   }
   const expectedDecision = review.status === 'rejected' ? 'reject' : null;
   if (expectedDecision && review.decision !== expectedDecision) invalidProject(`${path}.decision`, `must be ${expectedDecision} when review is ${review.status}`);
   if (review.status === 'approved' && !['approve', 'revise_and_approve'].includes(review.decision)) invalidProject(`${path}.decision`, 'must be approve or revise_and_approve when review is approved');
   if (review.instructorAnnotation === undefined) invalidProject(`${path}.instructorAnnotation`, 'is required after instructor review');
-  if (review.decision === 'revise_and_approve' && review.revisedSuggestion === undefined) invalidProject(`${path}.revisedSuggestion`, 'is required for revise_and_approve');
-  if (review.decision !== 'revise_and_approve' && review.revisedSuggestion !== undefined) invalidProject(`${path}.revisedSuggestion`, 'is allowed only for revise_and_approve');
+  if (review.decision === 'revise_and_approve' && review[questionField] === undefined) invalidProject(`${path}.${questionField}`, 'is required for revise_and_approve');
+  if (review.decision !== 'revise_and_approve' && review[questionField] !== undefined) invalidProject(`${path}.${questionField}`, 'is allowed only for revise_and_approve');
+}
+
+function validateRedirect(redirect, path) {
+  assertObject(redirect, path);
+  assertKnownKeys(redirect, ['action', 'evidenceExcerpt'], path);
+  assertString(redirect.action, `${path}.action`, false, PROJECT_LIMITS.redirectAction);
+  if (normalizeWhitespace(redirect.action) !== redirect.action) invalidProject(`${path}.action`, 'must use collapsed whitespace');
+  if (redirect.evidenceExcerpt !== undefined) {
+    assertString(redirect.evidenceExcerpt, `${path}.evidenceExcerpt`, false, PROJECT_LIMITS.redirectEvidence);
+    if (normalizeWhitespace(redirect.evidenceExcerpt) !== redirect.evidenceExcerpt) invalidProject(`${path}.evidenceExcerpt`, 'must use collapsed whitespace');
+  }
+}
+
+function validateStudentPreflight(preflight, path) {
+  assertObject(preflight, path);
+  assertKnownKeys(preflight, ['redirects', 'configurationSnapshot', 'evaluation', 'review'], path);
+  ['redirects', 'configurationSnapshot', 'evaluation', 'review'].forEach((field) => {
+    if (!Object.hasOwn(preflight, field)) invalidProject(`${path}.${field}`, 'is required');
+  });
+  if (!Array.isArray(preflight.redirects)) invalidProject(`${path}.redirects`, 'must be an array');
+  if (preflight.redirects.length > 3) invalidProject(`${path}.redirects`, 'must contain no more than 3 redirects');
+  preflight.redirects.forEach((redirect, index) => validateRedirect(redirect, `${path}.redirects[${index}]`));
+  if (preflight.configurationSnapshot !== null) {
+    validateConfigurationSnapshot(preflight.configurationSnapshot, `${path}.configurationSnapshot`);
+    if (preflight.configurationSnapshot.kind !== 'preflight') invalidProject(`${path}.configurationSnapshot.kind`, 'must be preflight');
+  }
+  if (preflight.evaluation !== null) validatePreflightEvaluation(preflight.evaluation, `${path}.evaluation`);
+  if (preflight.evaluation && preflight.configurationSnapshot === null) invalidProject(`${path}.configurationSnapshot`, 'is required for an authoritative evaluation');
+  if (preflight.evaluation && preflight.configurationSnapshot.capturedAt !== preflight.evaluation.createdAt) {
+    invalidProject(`${path}.configurationSnapshot.capturedAt`, 'must match the authoritative evaluation timestamp');
+  }
+  if (preflight.review !== null) validatePreflightReview(preflight.review, `${path}.review`);
 }
 
 function validateModuleVersions(moduleVersions, path) {
@@ -1089,7 +1125,7 @@ export function validateProject(project) {
   if (project.teacherGovernance !== undefined) validateTeacherGovernance(project.teacherGovernance, 'project.teacherGovernance');
 
   if (project.preflight !== null) {
-    validateSuggestionResult(project.preflight, 'project.preflight', { allowWorkflow: true });
+    validateStudentPreflight(project.preflight, 'project.preflight');
   }
 
   const annotationOwners = { byId: new Map(), byOwner: new Map() };
@@ -1155,11 +1191,72 @@ function migrateNodeCollection(nodes, sharedPositions) {
   });
 }
 
+function truncateCollapsedText(value, maximum) {
+  const collapsed = normalizeWhitespace(value);
+  if (collapsed.length <= maximum) return collapsed;
+  const prefix = collapsed.slice(0, maximum + 1);
+  const boundary = prefix.lastIndexOf(' ');
+  return (boundary > 0 ? prefix.slice(0, boundary) : collapsed.slice(0, maximum)).trim();
+}
+
+function legacyRedirectAction(criterion) {
+  return truncateCollapsedText(criterion.nextAction, PROJECT_LIMITS.redirectAction);
+}
+
+function redirectsFromLegacySuggestion(suggestion) {
+  const redirects = [];
+  const seenActions = new Set();
+  [...suggestion.hard, ...suggestion.scored].filter((criterion) => criterion.status === 'unmet').some((criterion) => {
+    const action = legacyRedirectAction(criterion);
+    if (!action) return false;
+    const key = action.toLocaleLowerCase('en-US');
+    if (!seenActions.has(key)) {
+      const evidenceSource = typeof criterion.evidenceExcerpt === 'string'
+        ? criterion.evidenceExcerpt
+        : typeof criterion.evidence === 'string' ? criterion.evidence : '';
+      const evidenceExcerpt = truncateCollapsedText(evidenceSource, PROJECT_LIMITS.redirectEvidence);
+      redirects.push({ action, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) });
+      seenActions.add(key);
+    }
+    return redirects.length === 3;
+  });
+  return redirects;
+}
+
+function migrateLegacyReview(review) {
+  if (review === null || review === undefined) return null;
+  const focusedQuestion = review.revisedSuggestion === undefined
+    ? undefined
+    : truncateCollapsedText(review.revisedSuggestion, PROJECT_LIMITS.focusedQuestion);
+  return {
+    submissionId: review.submissionId,
+    status: review.status,
+    revision: review.revision,
+    submittedAt: review.submittedAt,
+    ...(review.decision !== undefined ? { decision: review.decision } : {}),
+    ...(review.instructorAnnotation !== undefined ? { instructorAnnotation: review.instructorAnnotation } : {}),
+    ...(focusedQuestion !== undefined ? { focusedQuestion } : {}),
+  };
+}
+
+function studentSafePreflightFromLegacy(preflight, path = 'project.preflight') {
+  validateSuggestionResult(preflight, path, { allowWorkflow: true, legacyReview: true });
+  return {
+    redirects: redirectsFromLegacySuggestion(preflight),
+    configurationSnapshot: preflight.configurationSnapshot === undefined ? null : preflight.configurationSnapshot,
+    evaluation: preflight.evaluation ?? null,
+    review: migrateLegacyReview(preflight.review),
+  };
+}
+
 function migrateLegacyProject(project) {
   if (project?.schemaVersion !== 1) {
-    if (project?.schemaVersion === PROJECT_SCHEMA_VERSION && project.preflight && !Object.hasOwn(project.preflight, 'evaluation')) {
+    if (project?.schemaVersion === PROJECT_SCHEMA_VERSION
+      && project.preflight
+      && Array.isArray(project.preflight.hard)
+      && Array.isArray(project.preflight.scored)) {
       const migrated = cloneProject(project);
-      migrated.preflight.evaluation = null;
+      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
       return migrated;
     }
     return project;
@@ -1203,13 +1300,37 @@ function migrateLegacyProject(project) {
     });
   }
   if (migrated.portableExport && typeof migrated.portableExport === 'object' && !Array.isArray(migrated.portableExport)) migrated.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
-  if (migrated.preflight && typeof migrated.preflight === 'object' && !Array.isArray(migrated.preflight) && !Object.hasOwn(migrated.preflight, 'evaluation')) migrated.preflight.evaluation = null;
+  if (migrated.preflight
+    && typeof migrated.preflight === 'object'
+    && !Array.isArray(migrated.preflight)
+    && Array.isArray(migrated.preflight.hard)
+    && Array.isArray(migrated.preflight.scored)) {
+    migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
+  }
   migrated.schemaVersion = PROJECT_SCHEMA_VERSION;
   return migrated;
 }
 
 function addRedaction(redactions, path, reason) {
   if (!redactions.some((entry) => entry.path === path)) redactions.push({ path, reason });
+}
+
+function removeLegacyCriterionTaxonomy(value, path, redactions) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => removeLegacyCriterionTaxonomy(item, `${path}[${index}]`, redactions));
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const taxonomyKeys = new Set(['hard', 'scored', 'hardPass', 'score', 'threshold', 'outcome', 'criterion', 'criteria']);
+  Object.keys(value).forEach((key) => {
+    const itemPath = `${path}.${key}`;
+    if (taxonomyKeys.has(key)) {
+      delete value[key];
+      addRedaction(redactions, itemPath, 'Legacy preflight criterion taxonomy excluded from portable export');
+    } else {
+      removeLegacyCriterionTaxonomy(value[key], itemPath, redactions);
+    }
+  });
 }
 
 function redactEvidenceExcerpts(records, path, redactions, reason) {
@@ -1269,16 +1390,6 @@ function pseudonymizeSensitiveLabels(portable, redactions, reason) {
       }
     });
   });
-  if (portable.preflight) {
-    [...portable.preflight.hard, ...portable.preflight.scored].forEach((criterion, index) => {
-      ['sourceLabel', 'targetLabel'].forEach((field) => {
-        if (labels.has(criterion[field])) {
-          criterion[field] = labels.get(criterion[field]);
-          addRedaction(redactions, `preflight.criteria[${index}].${field}`, reason);
-        }
-      });
-    });
-  }
   return labels;
 }
 
@@ -1383,18 +1494,14 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
     addRedaction(redactions, 'mapAnnotation.text', reason);
   }
   if (portable.preflight) {
-    [['preflight.hard', portable.preflight.hard], ['preflight.scored', portable.preflight.scored]].forEach(([path, criteria]) => {
-      criteria.forEach((criterion, index) => {
-        ['rationale', 'missingVariable', 'nextAction'].forEach((field) => {
-          if (criterion[field]) {
-            criterion[field] = '[redacted]';
-            addRedaction(redactions, `${path}[${index}].${field}`, reason);
-          }
-        });
-      });
+    portable.preflight.redirects.forEach((redirect, index) => {
+      if (redirect.action) {
+        redirect.action = '[redacted]';
+        addRedaction(redactions, `preflight.redirects[${index}].action`, reason);
+      }
     });
     if (portable.preflight.review) {
-      ['instructorAnnotation', 'revisedSuggestion'].forEach((field) => {
+      ['instructorAnnotation', 'focusedQuestion'].forEach((field) => {
         if (portable.preflight.review[field]) {
           portable.preflight.review[field] = '[redacted]';
           addRedaction(redactions, `preflight.review.${field}`, reason);
@@ -1439,6 +1546,11 @@ export function createPortableProject(project, sharingTier = project.sharingTier
   const redactSource = (sharingTier !== 'private' && sensitive)
     || (sharingTier === 'public' && restrictedRights);
   portable.sharingTier = sharingTier;
+  portable.events.forEach((event, index) => {
+    Object.keys(event).filter((key) => !['id', 'action', 'detail', 'actor', 'at'].includes(key)).forEach((key) => {
+      removeLegacyCriterionTaxonomy(event[key], `events[${index}].${key}`, redactions);
+    });
+  });
   if (portable.preflight?.evaluation?.evaluationId) {
     portable.preflight.evaluation.evaluationId = '[redacted]';
     addRedaction(redactions, 'preflight.evaluation.evaluationId', 'Preflight evaluation capability excluded from portable export');
@@ -1466,8 +1578,7 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     redactEvidenceExcerpts(portable.graph.nodes, 'graph.nodes', redactions, reason);
     redactEvidenceExcerpts(portable.graph.edges, 'graph.edges', redactions, reason);
     if (portable.preflight) {
-      redactEvidenceExcerpts(portable.preflight.hard, 'preflight.hard', redactions, reason);
-      redactEvidenceExcerpts(portable.preflight.scored, 'preflight.scored', redactions, reason);
+      redactEvidenceExcerpts(portable.preflight.redirects, 'preflight.redirects', redactions, reason);
     }
     const labels = sensitive && sharingTier !== 'private'
       ? pseudonymizeSensitiveLabels(portable, redactions, reason)

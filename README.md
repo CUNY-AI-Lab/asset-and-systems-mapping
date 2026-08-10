@@ -6,15 +6,15 @@ The implementation is local-first. Student project state stays in the browser; a
 
 ## Student workflow
 
-1. **Select scale** — choose the current micro, meso, macro, or integration release.
-2. **Source intake** — import or paste a memo and complete its source record.
-3. **Suggestion review** — generate server-authoritative, evidence-linked suggestions; inspect what the memo establishes, what the model suggests, and what remains uncertain; add an optional note for the instructor.
-4. **Instructor response** — wait for and explicitly refresh the instructor decision.
-5. **Candidate review** — after approval, accept, edit, defer, or reject proposed nodes and relationships.
-6. **Map studio** — move and annotate nodes and relationships, pan or zoom the canvas, and inspect the legend.
-7. **Revision and export** — record a reflection and export JSON, CSV, or Markdown with provenance.
+1. **Choose a scale** — choose the current micro, meso, macro, or integration release.
+2. **Add a source** — import or paste a memo and complete its source record.
+3. **Review suggestions** — read at most three short prompts that return you to source evidence, then add a note for the instructor.
+4. **Check your instructor's response** — wait for and explicitly refresh the instructor decision.
+5. **Choose what to map** — after approval, accept, edit, defer, or reject proposed nodes and relationships.
+6. **Build the map** — move and annotate nodes and relationships, pan or zoom the canvas, and inspect the legend.
+7. **Revise and export** — record a reflection and export JSON, CSV, or Markdown with provenance.
 
-Generating suggestions does not edit the memo or graph. Sending for review consumes a one-time server evaluation and creates a pending snapshot. Candidate generation stays locked until a teacher chooses **Approve** or **Revise and approve**. **Reject** returns the student to Source intake without silently changing local work.
+Generating suggestions does not edit the memo or graph. The pedagogical guidance exposed to the student contains only the short source prompts—never criterion IDs, scores, outcomes, or the full model review. Sending for review consumes a one-time server evaluation and creates a pending snapshot. The student cannot choose what to map until a teacher selects **Approve** or **Approve with a question**. **Reject** returns the student to **Add a source** without silently changing local work.
 
 ## Run locally
 
@@ -47,13 +47,13 @@ pnpm build
 
 Fresh databases seed unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer, never default passphrases. To claim one account, start the server with a temporary, server-only `SYSTEMS_MAPPING_TEACHER_BOOTSTRAP_TOKEN` of 16–256 characters. A token authorizes one claim for that server process; claim the second account with a fresh token on a later restart. Passphrases are scrypt-derived, and teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
 
-The teacher dashboard opens on **Review submissions**. Its queue loads before any prompt configuration. Selecting one submission reveals the memo, student note, suggestion annotations, and exactly three decisions. Every decision requires an instructor annotation; revised suggestion text appears only for **Revise and approve**. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
+The teacher dashboard opens on **Review submissions**. Its queue loads before any prompt configuration. Selecting one submission reveals the memo and student note. Full criteria and scores remain teacher-only and closed by default behind **Model review details**. The instructor writes one focus for the student, then chooses **Approve**, **Approve with a question**, or **Reject**; the middle choice also requires one question. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
 
 **Model guidance** is a secondary, lazy-loaded section. It exposes one module editor at a time across preflight/builder, global/micro/meso/macro/integration, and six modules: purpose, evidence, privacy, scale rubric, interaction, and output. That is 60 versioned modules in storage without presenting a 60-control wall. Fixed grounding, privacy, schema, and student-confirmation guardrails remain read-only.
 
 ## Suggestion runtime
 
-With Ollama disabled, the classroom server runs the deterministic **STEM Splitter** evaluator. It applies fixed H1–H4 and C1–C8 rules with a six-of-eight threshold. Teacher prompt edits and project instructions are recorded as configuration provenance but do not change deterministic scoring. This mode is reproducible and has no model-provider egress; it is not proof that a language model ran.
+With Ollama disabled, the classroom server runs the deterministic **STEM Splitter** evaluator. It applies fixed H1–H4 and C1–C8 rules with a six-of-eight threshold. Those criteria and scores are available only to the teacher inside the collapsed model-review details. The server projects no more than three short, source-directed prompts to the student. Teacher prompt edits and project instructions are recorded as configuration provenance but do not change deterministic scoring. This mode is reproducible and has no model-provider egress; it is not proof that a language model ran.
 
 Ollama Cloud is explicit opt-in:
 
@@ -78,7 +78,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 ## Hosted and Railway contract
 
-The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` reached `SUCCESS`; the migration completed and `/api/health` returned `{"status":"ok"}`. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` reached `SUCCESS`; the migration completed and `/api/health` returned `{"status":"ok"}`. That receipt applies to the published release; the frozen source-prompt/teacher-focus changes are newer local work until a new deployment is read back. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>

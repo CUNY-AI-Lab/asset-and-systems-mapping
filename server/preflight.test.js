@@ -65,6 +65,41 @@ function suggestion() {
   };
 }
 
+function suggestionWithRedirects() {
+  const output = suggestion();
+  const repeatedAction = `  Return   to the source fields and name what is missing. ${'x'.repeat(1100)}  `;
+  output.hard[0] = {
+    ...criterion('H1', true, 'unmet'),
+    nextAction: repeatedAction,
+    evidenceExcerpt: `  Memo   sentence one. ${'y'.repeat(4100)}  `,
+  };
+  output.hard[1] = { ...criterion('H2', true, 'unmet'), nextAction: repeatedAction.toLowerCase() };
+  output.scored[0] = {
+    ...criterion('C1', false, 'unmet'),
+    nextAction: 'Frame one source-grounded question.',
+  };
+  output.scored[6].nextAction = 'Identify one resource already named in the source.';
+  output.scored[7].nextAction = 'Mark one uncertainty that the source cannot resolve.';
+  output.hardPass = false;
+  output.score = 5;
+  output.outcome = 'hold';
+  return output;
+}
+
+function suggestionWithoutRedirects() {
+  const output = suggestion();
+  output.scored = output.scored.map((entry) => ({
+    ...entry,
+    status: 'met',
+    evidence: 'Memo sentence 1',
+    evidenceLocator: 'Memo sentence 1',
+    missingVariable: null,
+    confidence: 0.92,
+  }));
+  output.score = 8;
+  return output;
+}
+
 function submissionBody(overrides = {}) {
   return {
     projectMetadata: {
@@ -258,23 +293,48 @@ describe('persistent preflight suggestion review queue', () => {
       createdAt: '2027-01-15T08:00:00.000Z',
       expiresAt: '2027-01-15T08:00:01.000Z',
     });
+    expect(Object.keys(evaluation).sort()).toEqual([
+      'configSnapshot', 'createdAt', 'expiresAt', 'id', 'redirects', 'runtime',
+    ]);
+    expect(evaluation.redirects).toEqual([
+      {
+        action: 'Complete the missing memo or source fields.',
+        evidenceExcerpt: 'Memo text and metadata panel',
+      },
+      {
+        action: 'Add two statements naming who acts on whom and how.',
+        evidenceExcerpt: 'A school refers a family to an agency.',
+      },
+      {
+        action: 'State one bounded question the map will help answer.',
+      },
+    ]);
+    expect(evaluation.redirects).toHaveLength(3);
+    for (const redirect of evaluation.redirects) {
+      expect(Object.keys(redirect).sort()).toEqual(
+        redirect.evidenceExcerpt === undefined ? ['action'] : ['action', 'evidenceExcerpt'],
+      );
+    }
+    expect(evaluation).not.toHaveProperty('suggestion');
+    expect(JSON.stringify(evaluation)).not.toMatch(/"(?:hard|scored|status|score|outcome)"/);
+    expect(JSON.stringify(evaluation.redirects)).not.toMatch(/\b[HC][1-8]\b/);
     const expected = evaluateSubmission({ ...body.sourceRecord, text: body.sourceMaterial }, body.activeScale, 6);
     expected.evaluatedAt = evaluation.createdAt;
     expected.configurationSnapshot = evaluation.configSnapshot;
-    expect(evaluation.suggestion).toEqual(expected);
     expect(evaluation.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
     expect(JSON.stringify(evaluation)).not.toContain(body.projectOverlay.customInstructions);
 
     const stored = system.db.prepare(`
       SELECT source_material AS sourceMaterial, source_record_json AS sourceRecord,
         project_overlay_json AS projectOverlay, runtime_metadata_json AS runtimeMetadata,
-        consumed_at AS consumedAt
+        suggestion_json AS suggestion, consumed_at AS consumedAt
       FROM preflight_evaluations WHERE id = ?
     `).get(evaluation.id);
     expect(stored.sourceMaterial).toBe(body.sourceMaterial);
     expect(JSON.parse(stored.sourceRecord)).toEqual(body.sourceRecord);
     expect(JSON.parse(stored.projectOverlay)).toEqual(evaluation.configSnapshot.projectOverlay);
     expect(JSON.parse(stored.runtimeMetadata)).toEqual(evaluation.runtime);
+    expect(JSON.parse(stored.suggestion)).toEqual(expected);
     expect(stored.consumedAt).toBeNull();
     expect(JSON.stringify(stored)).not.toContain(body.projectOverlay.customInstructions);
 
@@ -304,7 +364,7 @@ describe('persistent preflight suggestion review queue', () => {
   it('passes current teacher modules and transient project instructions to Ollama without persisting either prompt', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
-      suggestion: suggestion(),
+      suggestion: suggestionWithRedirects(),
       metadata: {
         provider: 'ollama-cloud',
         model: 'server-model',
@@ -332,7 +392,7 @@ describe('persistent preflight suggestion review queue', () => {
     const first = await evaluate(studentCookie, firstBody);
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
-    expect(firstInput.systemPrompt).toContain('Assess whether a submitted memo is ready');
+    expect(firstInput.systemPrompt).toContain('Prepare a teacher-facing evidence review');
     expect(firstInput.systemPrompt).toContain(firstBody.projectOverlay.customInstructions);
     expect(firstInput.systemPrompt).toContain('AUTHORITATIVE SUGGESTION JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: hard, scored, hardPass, score, threshold, outcome, evaluatedAt, configurationSnapshot');
@@ -349,6 +409,19 @@ describe('persistent preflight suggestion review queue', () => {
       requestedModel: 'server-model',
       evalCount: 42,
     });
+    expect(first.redirects).toHaveLength(3);
+    expect(first.redirects[0].action).toHaveLength(500);
+    expect(first.redirects[0].action).not.toMatch(/\s{2,}/);
+    expect(first.redirects[0].evidenceExcerpt).toHaveLength(280);
+    expect(first.redirects[0].evidenceExcerpt).not.toMatch(/\s{2,}/);
+    expect(first.redirects[1]).toEqual({
+      action: 'Frame one source-grounded question.',
+    });
+    expect(first.redirects[2]).toEqual({
+      action: 'Identify one resource already named in the source.',
+    });
+    expect(JSON.stringify(first.redirects)).not.toContain('No supporting passage located');
+    expect(first).not.toHaveProperty('suggestion');
 
     const changedContent = 'Apply the revised teacher-authored CALI scale rubric marker OLLAMA_PROMPT_REVISION_TWO.';
     system.db.prepare(`
@@ -365,6 +438,16 @@ describe('persistent preflight suggestion review queue', () => {
     expect(second.configSnapshot.shared.fingerprint).not.toBe(first.configSnapshot.shared.fingerprint);
 
     ollamaRequest.mockResolvedValueOnce({
+      suggestion: suggestionWithoutRedirects(),
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    });
+    const noRedirects = await evaluate(studentCookie, submissionBody({
+      projectMetadata: { projectId: 'no_redirects', title: 'No student redirect required' },
+    }));
+    expect(noRedirects.redirects).toEqual([]);
+    expect(noRedirects).not.toHaveProperty('suggestion');
+
+    ollamaRequest.mockResolvedValueOnce({
       suggestion: { ...suggestion(), fabricatedProviderField: 'must fail closed' },
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
     });
@@ -374,7 +457,7 @@ describe('persistent preflight suggestion review queue', () => {
     const malformed = await postJson(system.app, '/api/preflight/evaluations', thirdBody, { cookie: studentCookie });
     expect(malformed.status).toBe(502);
     expect(await malformed.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
-    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(2);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(3);
 
     const oversizedSource = 'é'.repeat(70_000);
     expect(Buffer.byteLength(oversizedSource, 'utf8')).toBeGreaterThan(131_072);
@@ -387,7 +470,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(await oversized.json()).toEqual({
       error: 'sourceMaterial must contain no more than 131072 UTF-8 bytes for this suggestion runtime.',
     });
-    expect(ollamaRequest).toHaveBeenCalledTimes(3);
+    expect(ollamaRequest).toHaveBeenCalledTimes(4);
 
     const serializedDatabase = JSON.stringify([
       ...system.db.prepare('SELECT * FROM preflight_evaluations').all(),
@@ -562,10 +645,10 @@ describe('persistent preflight suggestion review queue', () => {
       submittedAt: '2027-01-15T08:00:00.000Z',
       reviewedAt: null,
       instructorAnnotation: null,
-      revisedSuggestion: null,
+      focusedQuestion: null,
     });
     expect(Object.keys(created).sort()).toEqual([
-      'decision', 'id', 'instructorAnnotation', 'projectId', 'reviewedAt', 'revisedSuggestion',
+      'decision', 'focusedQuestion', 'id', 'instructorAnnotation', 'projectId', 'reviewedAt',
       'revision', 'status', 'submittedAt', 'updatedAt',
     ]);
     expect(created).not.toHaveProperty('sourceMaterial');
@@ -760,6 +843,12 @@ describe('persistent preflight suggestion review queue', () => {
       submission: expect.objectContaining({
         id: first.id,
         sourceMaterial: submissionBody().sourceMaterial,
+        suggestion: expect.objectContaining({
+          hard: expect.arrayContaining([expect.objectContaining({ id: 'H1', status: expect.any(String) })]),
+          scored: expect.arrayContaining([expect.objectContaining({ id: 'C1', status: expect.any(String) })]),
+          score: expect.any(Number),
+          outcome: expect.any(String),
+        }),
         reviewingTeacher: null,
       }),
       reviewEvents: [],
@@ -769,16 +858,16 @@ describe('persistent preflight suggestion review queue', () => {
     })).status).toBe(400);
   });
 
-  it('records a revise-and-approve decision transactionally and reveals feedback without teacher identity to its student', async () => {
+  it('records a bounded focused question transactionally and reveals feedback without teacher identity to its student', async () => {
     const studentCookie = await grantStudent();
     const teacherCookie = await claimTeacher();
     const created = await submit(studentCookie);
-    const revisedSuggestion = 'Clarify H3 by tying the interpretation to the second memo sentence.';
+    const focusedQuestion = 'Which memo sentence best supports the referral interpretation?';
     currentTime += 5000;
     const response = await postJson(system.app, `/api/teacher/preflight-submissions/${created.id}/decision`, {
       decision: 'revise_and_approve',
-      instructorAnnotation: 'Clarify H3, then use the revised evidence note.',
-      revisedSuggestion,
+      instructorAnnotation: 'Return to the referral evidence before choosing candidates.',
+      focusedQuestion,
       expectedRevision: 1,
     }, { cookie: teacherCookie });
     expect(response.status).toBe(200);
@@ -787,17 +876,19 @@ describe('persistent preflight suggestion review queue', () => {
       status: 'approved',
       decision: 'revise_and_approve',
       revision: 2,
-      instructorAnnotation: 'Clarify H3, then use the revised evidence note.',
-      revisedSuggestion,
+      instructorAnnotation: 'Return to the referral evidence before choosing candidates.',
+      focusedQuestion,
       reviewingTeacher: { id: 'maria-mavrides-calderon', displayName: 'Maria Mavrides Calderon' },
     });
+    expect(detail.submission).not.toHaveProperty('revisedSuggestion');
     expect(detail.reviewEvents).toEqual([expect.objectContaining({
       decision: 'revise_and_approve',
       fromRevision: 1,
       toRevision: 2,
-      revisedSuggestion,
+      focusedQuestion,
       reviewingTeacher: { id: 'maria-mavrides-calderon', displayName: 'Maria Mavrides Calderon' },
     })]);
+    expect(detail.reviewEvents[0]).not.toHaveProperty('revisedSuggestion');
 
     const studentResponse = await request(system.app, `/api/preflight/submissions/${created.id}`, {
       headers: { cookie: studentCookie },
@@ -807,13 +898,19 @@ describe('persistent preflight suggestion review queue', () => {
       status: 'approved',
       decision: 'revise_and_approve',
       revision: 2,
-      revisedSuggestion,
+      focusedQuestion,
     });
+    expect(studentRecord).not.toHaveProperty('revisedSuggestion');
     expect(studentRecord).not.toHaveProperty('reviewingTeacher');
     expect(JSON.stringify(studentRecord)).not.toContain('Maria Mavrides Calderon');
     expect(JSON.stringify(studentRecord)).not.toContain('maria-mavrides-calderon');
-    expect(system.db.prepare('SELECT source_material AS sourceMaterial FROM preflight_submissions WHERE id = ?').get(created.id).sourceMaterial)
-      .toBe(submissionBody().sourceMaterial);
+    expect(system.db.prepare(`
+      SELECT source_material AS sourceMaterial, revised_suggestion AS storedFocusedQuestion
+      FROM preflight_submissions WHERE id = ?
+    `).get(created.id)).toEqual({
+      sourceMaterial: submissionBody().sourceMaterial,
+      storedFocusedQuestion: focusedQuestion,
+    });
   });
 
   it('enforces decision fields and resolves optimistic races with one append-only winner', async () => {
@@ -824,9 +921,11 @@ describe('persistent preflight suggestion review queue', () => {
       { decision: 'approve', instructorAnnotation: '', expectedRevision: 1 },
       { decision: 'approve', instructorAnnotation: 'Looks good.', revisedSuggestion: 'Not allowed for approve.', expectedRevision: 1 },
       { decision: 'reject', instructorAnnotation: 'Needs another source.', revisedSuggestion: 'Not allowed for reject.', expectedRevision: 1 },
-      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', revisedSuggestion: suggestion(), expectedRevision: 1 },
-      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', revisedSuggestion: '   ', expectedRevision: 1 },
-      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', revisedSuggestion: 'x'.repeat(20_001), expectedRevision: 1 },
+      { decision: 'approve', instructorAnnotation: 'Looks good.', focusedQuestion: 'Not allowed for approve.', expectedRevision: 1 },
+      { decision: 'reject', instructorAnnotation: 'Needs another source.', focusedQuestion: 'Not allowed for reject.', expectedRevision: 1 },
+      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: suggestion(), expectedRevision: 1 },
+      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: '   ', expectedRevision: 1 },
+      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: 'x'.repeat(1001), expectedRevision: 1 },
       { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', expectedRevision: 1 },
       { decision: 'not-a-decision', instructorAnnotation: 'Invalid.', expectedRevision: 1 },
       { decision: 'approve', instructorAnnotation: 'Stale.', expectedRevision: 2 },

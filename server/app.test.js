@@ -502,6 +502,14 @@ describe('hardened Systems Mapping server', () => {
     expect(modulesResponse.status).toBe(200);
     const modules = (await json(modulesResponse)).modules;
     expect(modules).toHaveLength(60);
+    expect(modules.find((module) => module.id === 'preflight.global.purpose')?.content)
+      .toContain('teacher-facing evidence review');
+    expect(modules.find((module) => module.id === 'preflight.global.purpose')?.content)
+      .toContain('do not grade or classify the student');
+    expect(modules.find((module) => module.id === 'preflight.global.interaction')?.content)
+      .toContain('at most three concrete redirective actions');
+    expect(modules.find((module) => module.id === 'preflight.global.interaction')?.content)
+      .toContain('without criterion labels, statuses, scores, outcomes, or taxonomy');
     const target = modules.find((module) => module.id === 'builder.meso.interaction');
 
     const content = `${target.content} Keep each confirmation discrete.`;
@@ -537,32 +545,32 @@ describe('hardened Systems Mapping server', () => {
   it('accepts only student-granted, allowlisted, value-minimized prototype events', async () => {
     const teacherCookie = await claimTeacher();
     expect((await postJson(system.app, '/api/prototype/events', {
-      event: 'stage_viewed', stage: 'Map studio', metadata: { stageIndex: 5 },
+      event: 'stage_viewed', stage: 'Build the map', metadata: { stageIndex: 5 },
     }, { cookie: teacherCookie })).status).toBe(401);
 
     const studentCookie = await grantStudent();
     const accepted = await postJson(system.app, '/api/prototype/events', {
       event: 'node_moved',
-      stage: 'Map studio',
+      stage: 'Build the map',
       metadata: { stageIndex: 5, nodeCount: 4, edgeCount: 3, keyboard: true },
     }, { cookie: studentCookie });
     expect(accepted.status).toBe(202);
     expect(await json(accepted)).toEqual({ accepted: true });
 
-    for (const [stage, stageIndex] of [['Suggestion review', 2], ['Instructor response', 3]]) {
+    for (const [stage, stageIndex] of [['Review suggestions', 2], ["Check your instructor's response", 3]]) {
       expect((await postJson(system.app, '/api/prototype/events', {
         event: 'stage_viewed', stage, metadata: { stageIndex },
       }, { cookie: studentCookie })).status).toBe(202);
     }
 
     const invalidPayloads = [
-      { event: 'arbitrary_event', stage: 'Map studio' },
+      { event: 'arbitrary_event', stage: 'Build the map' },
       { event: 'annotation_saved', stage: 'Invented stage' },
       { event: 'stage_viewed', stage: 'Preflight checklist', metadata: { stageIndex: 2 } },
       { event: 'stage_viewed', stage: 'Repair gate', metadata: { stageIndex: 3 } },
-      { event: 'annotation_saved', stage: 'Map studio', metadata: { annotation: 'private note' } },
-      { event: 'node_moved', stage: 'Map studio', metadata: { nodeCount: 'four' } },
-      { event: 'node_moved', stage: 'Map studio', metadata: { nodeCount: 4 }, sourceText: 'private source' },
+      { event: 'annotation_saved', stage: 'Build the map', metadata: { annotation: 'private note' } },
+      { event: 'node_moved', stage: 'Build the map', metadata: { nodeCount: 'four' } },
+      { event: 'node_moved', stage: 'Build the map', metadata: { nodeCount: 4 }, sourceText: 'private source' },
     ];
     for (const payload of invalidPayloads) {
       expect((await postJson(system.app, '/api/prototype/events', payload, { cookie: studentCookie })).status).toBe(400);
@@ -630,11 +638,11 @@ describe('hardened Systems Mapping server', () => {
     const studentCookie = await grantStudent();
     for (let index = 0; index < 3; index += 1) {
       expect((await postJson(system.app, '/api/prototype/events', {
-        event: 'stage_viewed', stage: 'Select scale', metadata: { stageIndex: 0, nodeCount: index },
+        event: 'stage_viewed', stage: 'Choose a scale', metadata: { stageIndex: 0, nodeCount: index },
       }, { cookie: studentCookie })).status).toBe(202);
     }
     const limited = await postJson(system.app, '/api/prototype/events', {
-      event: 'stage_viewed', stage: 'Select scale', metadata: { stageIndex: 0 },
+      event: 'stage_viewed', stage: 'Choose a scale', metadata: { stageIndex: 0 },
     }, { cookie: studentCookie });
     expect(limited.status).toBe(429);
     expect(limited.headers.get('retry-after')).toBe('10');
@@ -642,7 +650,7 @@ describe('hardened Systems Mapping server', () => {
 
     currentTime += 10_001;
     expect((await postJson(system.app, '/api/prototype/events', {
-      event: 'project_resumed', stage: 'Source intake', metadata: { stageIndex: 1 },
+      event: 'project_resumed', stage: 'Add a source', metadata: { stageIndex: 1 },
     }, { cookie: studentCookie })).status).toBe(202);
     const events = system.db.prepare('SELECT event_name AS event FROM prototype_events ORDER BY id').all();
     expect(events).toEqual([{ event: 'project_resumed' }]);

@@ -26,11 +26,11 @@ const MODULE_META = {
 
 const GLOBAL_CONTENT = {
   preflight: {
-    purpose: 'Assess whether a submitted memo is ready for candidate graph extraction. Evaluate readiness; do not grade the quality of the student’s writing and do not complete the analysis for the student.',
+    purpose: 'Prepare a teacher-facing evidence review of whether a submitted memo is ready for candidate graph extraction. Preserve the internal readiness criteria for instructor judgment; do not grade or classify the student, expose the criteria taxonomy to the student, or complete the analysis for the student.',
     evidence: 'For every criterion, cite a locatable passage or state that no supporting passage was found. Keep source claims, student interpretations, inferences, contested claims, and research leads distinct.',
     privacy: 'Require a documented permission or a privacy-safe treatment for sensitive or interview-derived material. Do not disclose names or identifying details that are not necessary to the analysis.',
     scale_rubric: 'Apply hard gates H1 source integrity, H2 sensitivity and consent, H3 evidence ownership, and H4 minimum relational content. Then assess C1 bounded inquiry, C2 actor specificity, C3 relational statements, C4 scale fit, C5 interpretive warrant, C6 tension, C7 assets, and C8 uncertainty. Passing requires all hard gates and six of eight scored criteria; a near-threshold result is conditional.',
-    interaction: 'Report the smallest actionable repair first. Ask one source-grounded repair question at a time and re-evaluate only after the student changes the memo or its source record.',
+    interaction: 'Prepare source-grounded possible redirects for the teacher. The student projection may contain at most three concrete redirective actions, without criterion labels, statuses, scores, outcomes, or taxonomy. Ask questions that return the student to the source, and re-evaluate only after the student changes the memo or its source record.',
     output: 'Return each criterion identifier, status, evidence locator, rationale, missing variable, next action, confidence, and hard-block state. Return the overall score, threshold, and outcome as pass, conditional, or hold.',
   },
   builder: {

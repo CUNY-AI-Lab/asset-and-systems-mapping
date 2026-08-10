@@ -12,7 +12,7 @@ const DASHBOARD_SECTIONS = [
 ];
 const REVIEW_DECISIONS = [
   { id: 'approve', label: 'Approve' },
-  { id: 'revise_and_approve', label: 'Revise and approve' },
+  { id: 'revise_and_approve', label: 'Approve with a question' },
   { id: 'reject', label: 'Reject' },
 ];
 
@@ -69,7 +69,7 @@ function DecisionHistory({ events, title = 'Decision history' }) {
       return <li key={event.id || `${event.toRevision}:${event.decidedAt}`}>
         <strong>{decision}</strong>
         <p>{event.instructorAnnotation}</p>
-        {event.revisedSuggestion && <p><span>Revised suggestion</span><br />{event.revisedSuggestion}</p>}
+        {event.focusedQuestion && <p><span>Question for the student</span><br />{event.focusedQuestion}</p>}
         <small>{formatHistoryTime(event.decidedAt)}{event.reviewingTeacher?.displayName ? ` · ${event.reviewingTeacher.displayName}` : ''}</small>
       </li>;
     })}</ol>
@@ -89,27 +89,34 @@ function SuggestionReview({ suggestion }) {
     const unresolved = criterion.hardBlock || criterion.missingVariable || /(?:fail|hold|missing|open|uncertain|blocked|not met)/.test(status);
     return unresolved ? [criterion.missingVariable, criterion.nextAction, criterion.rationale] : [];
   }));
+  const hardGateSummary = suggestion.hardPass ? 'all hard gates met' : 'one or more hard gates unmet';
 
   const annotation = (label, values, emptyText) => <section className="suggestion-annotation">
     <h4>{label}</h4>
     {values.length ? <ul>{values.map((value, index) => <li key={`${label}:${index}`}>{value}</li>)}</ul> : <p>{emptyText}</p>}
   </section>;
 
-  return <div className="suggestion-review">
-    <p className="suggestion-review__summary"><strong>{suggestion.outcome}</strong> · {suggestion.score}/{suggestion.threshold} readiness checks</p>
-    {annotation('What the memo establishes', evidence, 'No supporting evidence was recorded.')}
-    {annotation('What the model suggests', modelSuggestions, 'No model rationale or next action was recorded.')}
-    {annotation('What remains uncertain', uncertainties, 'No unresolved criterion was recorded.')}
-    <details className="suggestion-criteria">
-      <summary>Checklist evidence · {criteria.length} criteria</summary>
-      <ol>{criteria.map((criterion, index) => <li key={criterion.id || `criterion:${index}`}>
-        <strong>{criterion.id || `Criterion ${index + 1}`} · {criterion.status}</strong>
-        {readableValue(criterion.evidence) && <p><span>Evidence</span><br />{readableValue(criterion.evidence)}</p>}
-        {readableValue(criterion.rationale) && <p><span>Rationale</span><br />{readableValue(criterion.rationale)}</p>}
-        {readableValue(criterion.nextAction) && <p><span>Next action</span><br />{readableValue(criterion.nextAction)}</p>}
-      </li>)}</ol>
-    </details>
-  </div>;
+  return <details className="teacher-model-review">
+    <summary>Model review details</summary>
+    <div className="teacher-model-review__body">
+      <p className="teacher-model-review__note">Use these details as reference. You decide what the student should revisit.</p>
+      <div className="suggestion-review">
+        <p className="suggestion-review__summary"><strong>{suggestion.outcome}</strong> · {suggestion.score} of {scored.length} scored criteria met · threshold {suggestion.threshold} · {hardGateSummary}</p>
+        {annotation('Evidence excerpts', evidence, 'No supporting evidence was recorded.')}
+        {annotation('Possible redirects', modelSuggestions, 'No redirect was generated.')}
+        {annotation('Open questions', uncertainties, 'No unresolved question was recorded.')}
+        <details className="suggestion-criteria">
+          <summary>Criterion details · {criteria.length}</summary>
+          <ol>{criteria.map((criterion, index) => <li key={criterion.id || `criterion:${index}`}>
+            <strong>{criterion.id || `Criterion ${index + 1}`} · {criterion.status}</strong>
+            {readableValue(criterion.evidence) && <p><span>Evidence</span><br />{readableValue(criterion.evidence)}</p>}
+            {readableValue(criterion.rationale) && <p><span>Rationale</span><br />{readableValue(criterion.rationale)}</p>}
+            {readableValue(criterion.nextAction) && <p><span>Next action</span><br />{readableValue(criterion.nextAction)}</p>}
+          </li>)}</ol>
+        </details>
+      </div>
+    </div>
+  </details>;
 }
 
 function AccountAccess({ teacherAccess, onAuthenticated }) {
@@ -245,7 +252,7 @@ function ReviewSubmissions() {
   const [lastDecision, setLastDecision] = useState(null);
   const [decision, setDecision] = useState('');
   const [instructorAnnotation, setInstructorAnnotation] = useState('');
-  const [revisedSuggestion, setRevisedSuggestion] = useState('');
+  const [focusedQuestion, setFocusedQuestion] = useState('');
   const [message, setMessage] = useState(null);
   const [queueError, setQueueError] = useState(null);
   const [detailError, setDetailError] = useState(null);
@@ -292,7 +299,7 @@ function ReviewSubmissions() {
       setReviewHistory(Array.isArray(result.reviewEvents) ? result.reviewEvents : []);
       setDecision('');
       setInstructorAnnotation('');
-      setRevisedSuggestion('');
+      setFocusedQuestion('');
       setConflict(null);
       setMessage(null);
     }).catch((error) => {
@@ -306,10 +313,10 @@ function ReviewSubmissions() {
   const submitDecision = async (event) => {
     event.preventDefault();
     const annotation = instructorAnnotation.trim();
-    const revisionText = revisedSuggestion.trim();
+    const question = focusedQuestion.trim();
     if (!decision) return setMessage({ type: 'error', text: 'Choose a decision.' });
-    if (!annotation) return setMessage({ type: 'error', text: 'Add an instructor annotation before recording a decision.' });
-    if (decision === 'revise_and_approve' && !revisionText) return setMessage({ type: 'error', text: 'Add the revised suggestion before recording this decision.' });
+    if (!annotation) return setMessage({ type: 'error', text: 'Add a focus for the student before recording a decision.' });
+    if (decision === 'revise_and_approve' && !question) return setMessage({ type: 'error', text: 'Add a question for the student before recording this decision.' });
     setBusy(true);
     setMessage(null);
     setConflict(null);
@@ -319,7 +326,7 @@ function ReviewSubmissions() {
         body: {
           decision,
           instructorAnnotation: annotation,
-          ...(decision === 'revise_and_approve' ? { revisedSuggestion: revisionText } : {}),
+          ...(decision === 'revise_and_approve' ? { focusedQuestion: question } : {}),
           expectedRevision: detail.revision,
         },
       });
@@ -328,7 +335,7 @@ function ReviewSubmissions() {
       setMessage({ type: 'success', text: 'Decision recorded. The pending queue has been refreshed.' });
       setDecision('');
       setInstructorAnnotation('');
-      setRevisedSuggestion('');
+      setFocusedQuestion('');
       await loadQueue(null);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
@@ -372,7 +379,7 @@ function ReviewSubmissions() {
         {submissions.length ? <ol className="submission-queue__list">{submissions.map((submission, index) => <li key={submission.id}>
           <button type="button" className={selectedId === submission.id ? 'is-selected' : ''} aria-current={selectedId === submission.id ? 'true' : undefined} onClick={() => selectSubmission(submission.id)}>
             <strong>{submissionLabel(submission, index)}</strong>
-            <span>Suggestion review · {submission.activeScale}</span>
+            <span>Review suggestions · {submission.activeScale}</span>
             <small>{formatHistoryTime(submission.submittedAt)}</small>
           </button>
         </li>)}</ol> : null}
@@ -391,11 +398,12 @@ function ReviewSubmissions() {
       </section>
 
       <aside className="instructor-response" aria-labelledby="instructor-response-heading">
-        <h2 id="instructor-response-heading">Instructor response</h2>
+        <h2 id="instructor-response-heading">Guide the next revision</h2>
         {detail ? <form onSubmit={submitDecision}>
-          <label className="field"><span className="field__label">Instructor annotation</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
+          <p className="instructor-response__prompt">Name one focus. If the student should carry a question into mapping, choose “Approve with a question.” Leave the interpretation and rewrite to the student.</p>
+          <label className="field instructor-response__guidance"><span className="field__label">Focus for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
           <fieldset className="review-decision"><legend>Decision</legend><div className="review-decision__actions" role="group" aria-label="Submission decision">{REVIEW_DECISIONS.map((item) => <button key={item.id} type="button" aria-pressed={decision === item.id} className={decision === item.id ? 'is-selected' : ''} onClick={() => { setDecision(item.id); setMessage(null); }}>{item.label}</button>)}</div></fieldset>
-          {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Revised suggestion</span><textarea rows="8" maxLength="20000" value={revisedSuggestion} onChange={(event) => setRevisedSuggestion(event.target.value)} /></label>}
+          {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Question for the student</span><textarea rows="5" maxLength="1000" value={focusedQuestion} onChange={(event) => setFocusedQuestion(event.target.value)} /></label>}
           <Message message={message} />
           {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Submission conflict actions"><p>The server has a newer revision. Reload it before submitting the preserved draft again.</p><button type="button" className="button button--ghost" onClick={reloadConflict}>Reload current submission</button></div>}
           <button type="submit" className="button" disabled={busy}>{busy ? 'Recording…' : 'Record decision'}</button>

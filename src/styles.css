@@ -317,6 +317,7 @@ h3 { font-size: 17px; font-weight: 600; letter-spacing: -.012em; }
 .criterion-row p { margin: 4px 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .criterion-row small { color: var(--muted); font-size: 10px; }
 .criterion-row__title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.criterion-row__title h3 { margin: 0; font-family: var(--body); font-size: 13px; font-weight: 750; line-height: 1.45; }
 .criterion-row blockquote { margin: 10px 0 8px; padding: 10px 12px; border-left: 2px solid var(--line); background: #fafafa; font-family: var(--display); font-size: 14px; line-height: 1.55; }
 .next-action { display: block; margin-top: 8px; color: var(--ink); font-size: 11px; font-weight: 650; line-height: 1.45; }
 .tag { padding: 3px 6px; color: var(--bad); background: var(--bad-pale); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -756,6 +757,11 @@ h3 { font-size: 17px; font-weight: 600; letter-spacing: -.012em; }
   white-space: pre-wrap;
 }
 .suggestion-review { display: grid; gap: 0; margin-top: 18px; }
+.teacher-model-review { margin-top: 18px; border: 1px solid var(--line); background: #fff; }
+.teacher-model-review > summary { min-height: 52px; display: flex; align-items: center; padding: 0 14px; cursor: pointer; font-size: 11px; font-weight: 750; }
+.teacher-model-review__body { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+.teacher-model-review__note { margin: 14px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.teacher-model-review .suggestion-review { margin-top: 14px; }
 .suggestion-review__summary {
   margin: 0;
   padding: 11px 12px;
@@ -782,6 +788,7 @@ h3 { font-size: 17px; font-weight: 600; letter-spacing: -.012em; }
 .suggestion-criteria li span { color: var(--ink); font-size: 8px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .instructor-response { padding: 24px 20px; border-left: 1px solid var(--line); background: #fafafa; }
 .instructor-response form { display: grid; gap: 18px; }
+.instructor-response__prompt { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .review-decision { min-width: 0; margin: 0; padding: 0; border: 0; }
 .review-decision legend { margin-bottom: 7px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .review-decision__actions { display: grid; grid-template-columns: 1fr; border: 1px solid var(--line); }
@@ -1065,9 +1072,10 @@ label.button:focus-within {
   .teacher-review-grid { grid-template-columns: minmax(210px, .62fr) minmax(0, 1.38fr); }
   .instructor-response { grid-column: 1 / -1; border-top: 1px solid var(--ink); border-left: 0; }
   .instructor-response form { grid-template-columns: minmax(0, 1fr) minmax(220px, .8fr); align-items: start; }
-  .instructor-response form > .field:first-child { grid-column: 1; }
-  .instructor-response .review-decision { grid-column: 2; grid-row: 1; }
-  .instructor-response form > .field:nth-of-type(2),
+  .instructor-response__prompt { grid-column: 1 / -1; }
+  .instructor-response__guidance { grid-column: 1; }
+  .instructor-response .review-decision { grid-column: 2; grid-row: 2; }
+  .instructor-response form > .field:not(.instructor-response__guidance),
   .instructor-response form > .teacher-message,
   .instructor-response form > .button { grid-column: 1 / -1; }
   .instructor-response form > .button { justify-self: start; }
@@ -1186,9 +1194,10 @@ label.button:focus-within {
   .student-work__memo { max-height: 230px; font-size: 16px !important; }
   .instructor-response { padding: 24px 16px; }
   .instructor-response form { display: grid; grid-template-columns: 1fr; }
-  .instructor-response form > .field:first-child,
+  .instructor-response__prompt,
+  .instructor-response__guidance,
   .instructor-response .review-decision,
-  .instructor-response form > .field:nth-of-type(2),
+  .instructor-response form > .field:not(.instructor-response__guidance),
   .instructor-response form > .teacher-message,
   .instructor-response form > .button { grid-column: 1; grid-row: auto; }
   .review-decision__actions { grid-template-columns: 1fr; }

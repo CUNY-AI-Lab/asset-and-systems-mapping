@@ -53,17 +53,21 @@ function addAuthoritativePreflight(project, overrides = {}) {
     },
     effectiveFingerprint: 'effective-server-fingerprint',
   };
-  project.preflight = evaluateSubmission(project.submission, project.activeScale, project.instructor.readinessThreshold);
-  project.preflight.evaluatedAt = capturedAt;
-  project.preflight.configurationSnapshot = configurationSnapshot;
-  project.preflight.evaluation = {
-    evaluationId: '0123456789abcdefghijklmnopqrstuv',
-    runtime: { provider: 'deterministic', model: 'STEM Splitter', createdAt: capturedAt },
-    createdAt: capturedAt,
-    expiresAt: '2026-08-10T12:00:00.000Z',
-    ...overrides,
+  project.preflight = {
+    redirects: [{
+      action: 'Clarify which actor performs the referral.',
+      evidenceExcerpt: 'The school refers the student to the committee.',
+    }],
+    configurationSnapshot,
+    evaluation: {
+      evaluationId: '0123456789abcdefghijklmnopqrstuv',
+      runtime: { provider: 'deterministic', model: 'STEM Splitter', createdAt: capturedAt },
+      createdAt: capturedAt,
+      expiresAt: '2026-08-10T12:00:00.000Z',
+      ...overrides,
+    },
+    review: null,
   };
-  project.preflight.review = null;
   return project.preflight;
 }
 
@@ -212,14 +216,68 @@ describe('mapping domain', () => {
     invalidCapability.preflight.evaluation.evaluationId = 'not-a-server-capability';
     expect(() => validateProject(invalidCapability)).toThrow(/server-issued capability/);
 
+    const tooManyRedirects = structuredClone(project);
+    tooManyRedirects.preflight.redirects = Array.from({ length: 4 }, (_, index) => ({ action: `Action ${index + 1}` }));
+    expect(() => validateProject(tooManyRedirects)).toThrow(/no more than 3 redirects/);
+
+    const oversizedAction = structuredClone(project);
+    oversizedAction.preflight.redirects[0].action = 'x'.repeat(PROJECT_LIMITS.redirectAction + 1);
+    expect(() => validateProject(oversizedAction)).toThrow(/action must contain no more/);
+
+    const oversizedEvidence = structuredClone(project);
+    oversizedEvidence.preflight.redirects[0].evidenceExcerpt = 'x'.repeat(PROJECT_LIMITS.redirectEvidence + 1);
+    expect(() => validateProject(oversizedEvidence)).toThrow(/evidenceExcerpt must contain no more/);
+
+    const privateRedirectField = structuredClone(project);
+    privateRedirectField.preflight.redirects[0].criterionId = 'H2';
+    expect(() => validateProject(privateRedirectField)).toThrow(/criterionId is not an allowed schema field/);
+
     const priorV2 = createDefaultProject();
     priorV2.preflight = evaluateSubmission(priorV2.submission, priorV2.activeScale, 6);
-    expect(parseProject(JSON.stringify(priorV2)).preflight.evaluation).toBeNull();
+    priorV2.preflight.hard[0].status = 'unmet';
+    priorV2.preflight.hard[0].nextAction = '  Complete   the source record.  ';
+    priorV2.preflight.hard[0].evidence = '  Source   record  ';
+    priorV2.preflight.hard[1].status = 'unmet';
+    priorV2.preflight.hard[1].nextAction = 'Complete the source record.';
+    priorV2.preflight.hard[2].status = 'unmet';
+    priorV2.preflight.hard[2].nextAction = 'Separate the claim from your interpretation.';
+    priorV2.preflight.hard[3].status = 'unmet';
+    priorV2.preflight.hard[3].nextAction = 'Name a second relationship.';
+    priorV2.preflight.hardPass = false;
+    priorV2.preflight.outcome = 'hold';
+    const migratedPreflight = parseProject(JSON.stringify(priorV2)).preflight;
+    expect(migratedPreflight).toEqual({
+      redirects: [
+        { action: 'Complete the source record.', evidenceExcerpt: 'Source record' },
+        { action: 'Separate the claim from your interpretation.', evidenceExcerpt: priorV2.preflight.hard[2].evidenceExcerpt || priorV2.preflight.hard[2].evidence },
+        { action: 'Name a second relationship.', evidenceExcerpt: priorV2.preflight.hard[3].evidenceExcerpt || priorV2.preflight.hard[3].evidence },
+      ],
+      configurationSnapshot: null,
+      evaluation: null,
+      review: null,
+    });
+    expect(migratedPreflight).not.toHaveProperty('hard');
+    expect(migratedPreflight).not.toHaveProperty('scored');
   });
 
-  it('strictly validates persisted instructor-review state and bounded revised guidance', () => {
+  it('strictly validates persisted instructor-review state and a bounded focused question', () => {
+    const legacy = createDefaultProject();
+    legacy.preflight = evaluateSubmission(legacy.submission, legacy.activeScale, 6);
+    legacy.preflight.review = {
+      submissionId: 'review_0123456789abcdefghijklmnop',
+      status: 'approved',
+      revision: 2,
+      submittedAt: '2026-08-09T12:00:00.000Z',
+      decision: 'revise_and_approve',
+      instructorAnnotation: 'Keep the evidence boundary explicit.',
+      revisedSuggestion: '  What changes if the referral handoff is treated as contested?  ',
+    };
+    const migratedReview = parseProject(JSON.stringify(legacy)).preflight.review;
+    expect(migratedReview.focusedQuestion).toBe('What changes if the referral handoff is treated as contested?');
+    expect(migratedReview).not.toHaveProperty('revisedSuggestion');
+
     const project = createDefaultProject();
-    project.preflight = evaluateSubmission(project.submission, project.activeScale, 6);
+    addAuthoritativePreflight(project);
     project.preflight.review = {
       submissionId: 'review_0123456789abcdefghijklmnop',
       status: 'approved',
@@ -227,7 +285,7 @@ describe('mapping domain', () => {
       submittedAt: '2026-08-09T12:00:00.000Z',
       decision: 'revise_and_approve',
       instructorAnnotation: 'Keep the evidence boundary explicit.',
-      revisedSuggestion: 'Treat the referral handoff as contested, then confirm each candidate.',
+      focusedQuestion: 'What changes if the referral handoff is treated as contested?',
     };
     expect(parseProject(serializeProject(project)).preflight.review).toEqual(project.preflight.review);
 
@@ -240,12 +298,12 @@ describe('mapping domain', () => {
     expect(() => validateProject(inconsistentPending)).toThrow(/decision must be omitted while review is pending/);
 
     const missingRevisionText = structuredClone(project);
-    delete missingRevisionText.preflight.review.revisedSuggestion;
-    expect(() => validateProject(missingRevisionText)).toThrow(/revisedSuggestion is required for revise_and_approve/);
+    delete missingRevisionText.preflight.review.focusedQuestion;
+    expect(() => validateProject(missingRevisionText)).toThrow(/focusedQuestion is required for revise_and_approve/);
 
     const oversizedRevisionText = structuredClone(project);
-    oversizedRevisionText.preflight.review.revisedSuggestion = 'x'.repeat(PROJECT_LIMITS.reviewText + 1);
-    expect(() => validateProject(oversizedRevisionText)).toThrow(/revisedSuggestion must contain no more/);
+    oversizedRevisionText.preflight.review.focusedQuestion = 'x'.repeat(PROJECT_LIMITS.focusedQuestion + 1);
+    expect(() => validateProject(oversizedRevisionText)).toThrow(/focusedQuestion must contain no more/);
   });
 
   it('removes the review capability from every portable tier and redacts sensitive review prose while preserving provenance', () => {
@@ -261,10 +319,19 @@ describe('mapping domain', () => {
       submittedAt: '2026-08-09T12:00:00.000Z',
       decision: 'revise_and_approve',
       instructorAnnotation: 'Private instructor guidance naming a participant.',
-      revisedSuggestion: 'Private revised guidance naming a participant.',
+      focusedQuestion: 'Private focused question naming a participant?',
     };
+    project.events.push(createEvent('preflight.completed', 'Legacy event fixture', 'student', {
+      result: { hard: [{ id: 'H1', status: 'unmet' }], scored: [], score: 7, threshold: 6, outcome: 'hold', retainedReference: 'safe' },
+    }));
 
     const privatePortable = createPortableProject(project, 'private');
+    expect(Object.keys(privatePortable.preflight).sort()).toEqual(['configurationSnapshot', 'evaluation', 'redirects', 'review']);
+    expect(privatePortable.preflight).not.toHaveProperty('hard');
+    expect(privatePortable.preflight).not.toHaveProperty('scored');
+    const portableLegacyResult = privatePortable.events.find((event) => event.detail === 'Legacy event fixture').result;
+    expect(portableLegacyResult).toEqual({ retainedReference: 'safe' });
+    expect(privatePortable.portableExport.redactions).toContainEqual(expect.objectContaining({ path: expect.stringMatching(/\.result\.hard$/) }));
     expect(privatePortable.preflight.review).toMatchObject({
       submissionId: '[redacted]',
       status: 'approved',
@@ -280,6 +347,7 @@ describe('mapping domain', () => {
     expect(privatePortable.portableExport.redactions).toContainEqual(expect.objectContaining({ path: 'preflight.evaluation.evaluationId' }));
 
     const coursePortable = createPortableProject(project, 'course');
+    expect(coursePortable.preflight.redirects).toEqual([{ action: '[redacted]' }]);
     expect(coursePortable.preflight.review).toEqual({
       submissionId: '[redacted]',
       status: 'approved',
@@ -287,13 +355,15 @@ describe('mapping domain', () => {
       submittedAt: '2026-08-09T12:00:00.000Z',
       decision: 'revise_and_approve',
       instructorAnnotation: '[redacted]',
-      revisedSuggestion: '[redacted]',
+      focusedQuestion: '[redacted]',
     });
     expect(coursePortable.portableExport.redactions.map((entry) => entry.path)).toEqual(expect.arrayContaining([
       'preflight.review.submissionId',
       'preflight.evaluation.evaluationId',
       'preflight.review.instructorAnnotation',
-      'preflight.review.revisedSuggestion',
+      'preflight.review.focusedQuestion',
+      'preflight.redirects[0].action',
+      'preflight.redirects[0].evidenceExcerpt',
     ]));
     expect(parseProject(JSON.stringify(coursePortable)).preflight.review.status).toBe('approved');
   });
@@ -476,8 +546,8 @@ describe('mapping domain', () => {
       ['edge annotation', (project) => { project.graph.edges[0].annotation.privateInterviewTranscript = 'must not travel'; }],
       ['viewport', (project) => { project.viewport.privateInterviewTranscript = 'must not travel'; }],
       ['map annotation', (project) => { project.mapAnnotation.privateInterviewTranscript = 'must not travel'; }],
-      ['preflight', (project) => { project.preflight = evaluateSubmission(project.submission, project.activeScale, 6); project.preflight.privateInterviewTranscript = 'must not travel'; }],
-      ['criterion', (project) => { project.preflight = evaluateSubmission(project.submission, project.activeScale, 6); project.preflight.hard[0].privateInterviewTranscript = 'must not travel'; }],
+      ['preflight', (project) => { addAuthoritativePreflight(project); project.preflight.privateInterviewTranscript = 'must not travel'; }],
+      ['redirect', (project) => { addAuthoritativePreflight(project); project.preflight.redirects[0].privateInterviewTranscript = 'must not travel'; }],
       ['teacher governance', (project) => {
         const snapshot = (configKind) => ({ configKind, scale: 'micro', fingerprint: `${configKind}_fingerprint`, revision: 1, moduleVersions: [] });
         project.teacherGovernance = { preflight: snapshot('preflight'), builder: snapshot('builder'), refreshedAt: project.updatedAt, privateInterviewTranscript: 'must not travel' };

@@ -146,7 +146,7 @@ describe('hosted runtime guardrails', () => {
       expect(publicConfig.status).toBe(200);
       expect(await publicConfig.json()).toMatchObject({ configKind: 'preflight', scale: 'micro' });
       const activity = await postJson(system, '/api/prototype/events', {
-        event: 'stage_viewed', stage: 'Suggestion review', metadata: { stageIndex: 2 },
+        event: 'stage_viewed', stage: 'Review suggestions', metadata: { stageIndex: 2 },
       }, { headers: { cookie } });
       expect(activity.status).toBe(202);
       expect(await activity.json()).toEqual({ accepted: true });
@@ -158,8 +158,10 @@ describe('hosted runtime guardrails', () => {
       const evaluation = (await evaluated.json()).evaluation;
       expect(evaluation).toMatchObject({
         runtime: { provider: 'deterministic', model: 'STEM Splitter' },
-        suggestion: { threshold: 6, configurationSnapshot: evaluation.configSnapshot },
+        redirects: expect.any(Array),
       });
+      expect(evaluation.redirects.length).toBeLessThanOrEqual(3);
+      expect(evaluation).not.toHaveProperty('suggestion');
       expect(evaluation.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
       const submitted = await postJson(system, '/api/preflight/submissions', {
         evaluationId: evaluation.id,

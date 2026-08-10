@@ -80,7 +80,7 @@ const submissionDetail = {
   configSnapshot: { fingerprint: 'cfg-one', revision: 1 },
   reviewedAt: null,
   instructorAnnotation: null,
-  revisedSuggestion: null,
+  focusedQuestion: null,
   reviewingTeacher: null,
 };
 
@@ -142,16 +142,60 @@ describe('TeacherDashboard', () => {
     const decisionGroup = await waitForSubmission();
     expect(within(decisionGroup).getAllByRole('button')).toHaveLength(3);
     expect(within(decisionGroup).getByRole('button', { name: 'Approve' })).toBeVisible();
-    expect(within(decisionGroup).getByRole('button', { name: 'Revise and approve' })).toBeVisible();
+    expect(within(decisionGroup).getByRole('button', { name: 'Approve with a question' })).toBeVisible();
     expect(within(decisionGroup).getByRole('button', { name: 'Reject' })).toBeVisible();
     expect(screen.getByText(submissionDetail.inquiry)).toBeVisible();
     expect(screen.getByText(submissionDetail.studentAnnotation)).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'What the memo establishes' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'What the model suggests' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'What remains uncertain' })).toBeVisible();
+    const modelReview = screen.getByText('Model review details').closest('details');
+    expect(modelReview).not.toHaveAttribute('open');
+    expect(screen.getByText('Use these details as reference. You decide what the student should revisit.')).not.toBeVisible();
+    fireEvent.click(screen.getByText('Model review details'));
+    expect(modelReview).toHaveAttribute('open');
+    expect(screen.getByRole('heading', { name: 'Evidence excerpts' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Possible redirects' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Open questions' })).toBeVisible();
     expect(screen.getAllByText('Prior access to college-prep resources is named but not traced.')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Guide the next revision' })).toBeVisible();
+    expect(screen.getByLabelText('Focus for the student')).toBeVisible();
+    expect(screen.getByText(/Name one focus/)).toBeVisible();
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/history?limit=60');
+  });
+
+  it('distinguishes the scored-criteria total and threshold when a hard gate holds review', async () => {
+    const holdSuggestion = {
+      ...suggestion,
+      hardPass: false,
+      score: 7,
+      threshold: 6,
+      outcome: 'hold',
+      hard: Array.from({ length: 4 }, (_, index) => ({
+        id: `H${index + 1}`,
+        status: index === 3 ? 'unmet' : 'met',
+        evidence: index === 3 ? '' : `Hard-gate evidence ${index + 1}`,
+        rationale: index === 3 ? 'The memo names only one actor-to-actor relationship.' : 'The gate is supported.',
+        nextAction: index === 3 ? 'Add a second actor-to-actor relationship.' : '',
+        hardBlock: true,
+      })),
+      scored: Array.from({ length: 8 }, (_, index) => ({
+        id: `C${index + 1}`,
+        status: index === 7 ? 'unmet' : 'met',
+        evidence: index === 7 ? '' : `Scored evidence ${index + 1}`,
+        rationale: index === 7 ? 'Uncertainty is not yet marked.' : 'The criterion is supported.',
+        nextAction: index === 7 ? 'Mark what remains uncertain.' : '',
+        hardBlock: false,
+      })),
+    };
+
+    await renderAuthenticated(authenticatedFetch({
+      detail: { ...submissionDetail, suggestion: holdSuggestion },
+    }));
+    await waitForSubmission();
+
+    fireEvent.click(screen.getByText('Model review details'));
+    const summary = screen.getByText('hold').closest('.suggestion-review__summary');
+    expect(summary).toHaveTextContent(/hold · 7 of 8 scored criteria met · threshold 6 · one or more hard gates unmet/i);
+    expect(screen.queryByText(/7\/6 readiness checks/i)).not.toBeInTheDocument();
   });
 
   it('keeps manual sign-in private and loads only the queue after authentication', async () => {
@@ -211,24 +255,24 @@ describe('TeacherDashboard', () => {
     expect(claimBody).toEqual({ userId: 'local-teacher-id', passphrase: 'another local phrase', bootstrapToken: 'operator-only-bootstrap-token' });
   });
 
-  it('requires an instructor annotation before any decision is recorded', async () => {
+  it('requires a focus for the student before any decision is recorded', async () => {
     const fetchMock = await renderAuthenticated();
     const decisionGroup = await waitForSubmission();
     fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Approve' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record decision' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Add an instructor annotation before recording a decision.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Add a focus for the student before recording a decision.');
     expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/decision'))).toBe(false);
   });
 
-  it('discloses one revised-suggestion field only for revise and approve', async () => {
+  it('discloses one focused-question field only for approve with a question', async () => {
     await renderAuthenticated();
     const decisionGroup = await waitForSubmission();
-    expect(screen.queryByLabelText('Revised suggestion')).not.toBeInTheDocument();
-    fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Revise and approve' }));
-    expect(screen.getByLabelText('Revised suggestion')).toBeVisible();
-    expect(screen.getAllByLabelText('Revised suggestion')).toHaveLength(1);
+    expect(screen.queryByLabelText('Question for the student')).not.toBeInTheDocument();
+    fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Approve with a question' }));
+    expect(screen.getByLabelText('Question for the student')).toBeVisible();
+    expect(screen.getAllByLabelText('Question for the student')).toHaveLength(1);
     fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Reject' }));
-    expect(screen.queryByLabelText('Revised suggestion')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Question for the student')).not.toBeInTheDocument();
   });
 
   it('records a decision, removes the submission after queue refresh, and shows returned append-only history', async () => {
@@ -238,7 +282,7 @@ describe('TeacherDashboard', () => {
       fromRevision: 2,
       toRevision: 3,
       instructorAnnotation: 'The evidence is sufficient for candidate review.',
-      revisedSuggestion: null,
+      focusedQuestion: null,
       decidedAt: '2026-08-08T14:00:00.000Z',
       reviewingTeacher: teacher,
     };
@@ -252,7 +296,7 @@ describe('TeacherDashboard', () => {
     });
     await renderAuthenticated(fetchMock);
     const decisionGroup = await waitForSubmission();
-    fireEvent.change(screen.getByLabelText('Instructor annotation'), { target: { value: `  ${event.instructorAnnotation}  ` } });
+    fireEvent.change(screen.getByLabelText('Focus for the student'), { target: { value: `  ${event.instructorAnnotation}  ` } });
     fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Approve' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record decision' }));
 
@@ -279,25 +323,25 @@ describe('TeacherDashboard', () => {
     });
     await renderAuthenticated(fetchMock);
     const decisionGroup = await waitForSubmission();
-    fireEvent.change(screen.getByLabelText('Instructor annotation'), { target: { value: 'Keep the distinction between source and interpretation.' } });
-    fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Revise and approve' }));
-    fireEvent.change(screen.getByLabelText('Revised suggestion'), { target: { value: 'Connect this claim to the advising examples in the memo.' } });
+    fireEvent.change(screen.getByLabelText('Focus for the student'), { target: { value: 'Keep the distinction between source and interpretation.' } });
+    fireEvent.click(within(decisionGroup).getByRole('button', { name: 'Approve with a question' }));
+    fireEvent.change(screen.getByLabelText('Question for the student'), { target: { value: 'Which advising example best supports this connection?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Record decision' }));
 
     expect(await screen.findByText('This submission changed in another session. Your decision draft remains available.')).toBeVisible();
-    expect(screen.getByLabelText('Instructor annotation')).toHaveValue('Keep the distinction between source and interpretation.');
-    expect(screen.getByLabelText('Revised suggestion')).toHaveValue('Connect this claim to the advising examples in the memo.');
+    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between source and interpretation.');
+    expect(screen.getByLabelText('Question for the student')).toHaveValue('Which advising example best supports this connection?');
     fireEvent.click(screen.getByRole('button', { name: 'Reload current submission' }));
     expect(screen.getByText('Loaded submission revision 3. Your decision draft remains available.')).toBeVisible();
-    expect(screen.getByLabelText('Instructor annotation')).toHaveValue('Keep the distinction between source and interpretation.');
-    expect(screen.getByLabelText('Revised suggestion')).toHaveValue('Connect this claim to the advising examples in the memo.');
+    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between source and interpretation.');
+    expect(screen.getByLabelText('Question for the student')).toHaveValue('Which advising example best supports this connection?');
 
     fireEvent.click(screen.getByRole('button', { name: 'Record decision' }));
     await waitFor(() => expect(postBodies).toHaveLength(2));
     expect(postBodies[0]).toEqual({
       decision: 'revise_and_approve',
       instructorAnnotation: 'Keep the distinction between source and interpretation.',
-      revisedSuggestion: 'Connect this claim to the advising examples in the memo.',
+      focusedQuestion: 'Which advising example best supports this connection?',
       expectedRevision: 2,
     });
     expect(postBodies[1]).toMatchObject({ expectedRevision: 3, decision: 'revise_and_approve' });

@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CLAIM_STATES,
-  HARD_CRITERIA,
   NODE_TYPES,
   PROJECT_LIMITS,
   SCALE_ORDER,
   SCALES,
-  SCORED_CRITERIA,
   configFingerprint,
   createPortableProject,
   createDefaultProject,
@@ -51,13 +49,13 @@ const RELATION_VOCABULARY_TEXT_LIMIT = PROJECT_LIMITS.relationVocabulary * (RELA
 const VIEWPORT_LIMITS = { minZoom: 0.5, maxZoom: 2, minPan: -840, maxPan: 840 };
 
 const STAGES = [
-  { label: 'Select scale', short: 'Scale' },
-  { label: 'Source intake', short: 'Source' },
-  { label: 'Suggestion review', short: 'Suggestions' },
-  { label: 'Instructor response', short: 'Response' },
-  { label: 'Candidate review', short: 'Candidates' },
-  { label: 'Map studio', short: 'Map' },
-  { label: 'Revision and export', short: 'Revision' },
+  { label: 'Choose a scale', short: 'Scale' },
+  { label: 'Add a source', short: 'Source' },
+  { label: 'Review suggestions', short: 'Suggestions' },
+  { label: "Check your instructor's response", short: 'Response' },
+  { label: 'Choose what to map', short: 'Candidates' },
+  { label: 'Build the map', short: 'Map' },
+  { label: 'Revise and export', short: 'Revision' },
 ];
 
 const REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
@@ -253,46 +251,54 @@ function hasUsableEvaluation(preflight, now = Date.now()) {
 
 function normalizePreflightEvaluation(evaluation, project) {
   if (!evaluation || typeof evaluation !== 'object' || Array.isArray(evaluation)) throw new Error('The classroom server returned an invalid suggestion evaluation.');
-  if (typeof evaluation.id !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(evaluation.id)) throw new Error('The classroom server returned an invalid evaluation identifier.');
-  if (!evaluation.suggestion || !evaluation.configSnapshot || !evaluation.runtime) throw new Error('The classroom server returned an incomplete suggestion evaluation.');
-  const suggestion = structuredClone(evaluation.suggestion);
-  if (suggestion.configurationSnapshot !== undefined
-    && JSON.stringify(suggestion.configurationSnapshot) !== JSON.stringify(evaluation.configSnapshot)) {
-    throw new Error('The classroom server returned inconsistent suggestion provenance.');
+  const expectedKeys = ['id', 'redirects', 'configSnapshot', 'runtime', 'createdAt', 'expiresAt'];
+  if (Object.keys(evaluation).length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(evaluation, key))) {
+    throw new Error('The classroom server returned an invalid suggestion-evaluation shape.');
   }
-  suggestion.configurationSnapshot = structuredClone(evaluation.configSnapshot);
-  suggestion.evaluation = {
+  if (typeof evaluation.id !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(evaluation.id)) throw new Error('The classroom server returned an invalid evaluation identifier.');
+  if (!Array.isArray(evaluation.redirects) || !evaluation.configSnapshot || !evaluation.runtime) throw new Error('The classroom server returned an incomplete suggestion evaluation.');
+  const preflight = {
+    redirects: structuredClone(evaluation.redirects),
+    configurationSnapshot: structuredClone(evaluation.configSnapshot),
+    evaluation: {
     evaluationId: evaluation.id,
     runtime: structuredClone(evaluation.runtime),
     createdAt: evaluation.createdAt,
     expiresAt: evaluation.expiresAt,
+    },
+    review: null,
   };
-  suggestion.review = null;
   const candidate = structuredClone(project);
-  candidate.preflight = suggestion;
+  candidate.preflight = preflight;
   validateProject(candidate);
-  return suggestion;
+  return preflight;
 }
 
 function normalizeReviewSubmission(submission, projectId) {
   if (!submission || typeof submission !== 'object' || Array.isArray(submission)) throw new Error('The classroom server returned an invalid instructor-review record.');
+  const expectedKeys = ['id', 'projectId', 'status', 'decision', 'revision', 'submittedAt', 'updatedAt', 'reviewedAt', 'instructorAnnotation', 'focusedQuestion'];
+  if (Object.keys(submission).length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(submission, key))) {
+    throw new Error('The classroom server returned an invalid instructor-review shape.');
+  }
   if (typeof submission.id !== 'string' || !submission.id || submission.id.length > 200) throw new Error('The classroom server returned an invalid review identifier.');
   if (submission.projectId !== projectId) throw new Error('The instructor-review record does not belong to this project.');
   if (!REVIEW_STATUSES.includes(submission.status)) throw new Error('The classroom server returned an invalid review status.');
   if (!Number.isInteger(submission.revision) || submission.revision < 1) throw new Error('The classroom server returned an invalid review revision.');
   if (typeof submission.submittedAt !== 'string' || !submission.submittedAt) throw new Error('The classroom server returned an invalid review timestamp.');
+  if (typeof submission.updatedAt !== 'string' || Number.isNaN(Date.parse(submission.updatedAt))) throw new Error('The classroom server returned an invalid review-update timestamp.');
+  if (submission.reviewedAt !== null && (typeof submission.reviewedAt !== 'string' || Number.isNaN(Date.parse(submission.reviewedAt)))) throw new Error('The classroom server returned an invalid reviewed timestamp.');
   const decision = submission.decision ?? undefined;
   const instructorAnnotation = submission.instructorAnnotation ?? undefined;
-  const revisedSuggestion = submission.revisedSuggestion ?? undefined;
+  const focusedQuestion = submission.focusedQuestion ?? undefined;
   if (decision !== undefined && !REVIEW_DECISIONS.includes(decision)) throw new Error('The classroom server returned an invalid instructor decision.');
   if (instructorAnnotation !== undefined && (typeof instructorAnnotation !== 'string' || !instructorAnnotation.trim() || instructorAnnotation.length > PROJECT_LIMITS.reviewText)) throw new Error('The classroom server returned an invalid instructor annotation.');
-  if (revisedSuggestion !== undefined && (typeof revisedSuggestion !== 'string' || !revisedSuggestion.trim() || revisedSuggestion.length > PROJECT_LIMITS.reviewText)) throw new Error('The classroom server returned an invalid revised suggestion.');
-  if (submission.status === 'pending' && (decision !== undefined || instructorAnnotation !== undefined || revisedSuggestion !== undefined)) throw new Error('The classroom server returned an inconsistent pending review.');
+  if (focusedQuestion !== undefined && (typeof focusedQuestion !== 'string' || !focusedQuestion.trim() || focusedQuestion.length > PROJECT_LIMITS.focusedQuestion)) throw new Error('The classroom server returned an invalid focused question.');
+  if (submission.status === 'pending' && (decision !== undefined || instructorAnnotation !== undefined || focusedQuestion !== undefined)) throw new Error('The classroom server returned an inconsistent pending review.');
   if (submission.status === 'approved' && !['approve', 'revise_and_approve'].includes(decision)) throw new Error('The classroom server returned an inconsistent approval.');
   if (submission.status === 'rejected' && decision !== 'reject') throw new Error('The classroom server returned an inconsistent rejection.');
   if (submission.status !== 'pending' && instructorAnnotation === undefined) throw new Error('The classroom server returned a decision without instructor guidance.');
-  if (decision === 'revise_and_approve' && revisedSuggestion === undefined) throw new Error('The classroom server returned a revision decision without revised guidance.');
-  if (decision !== 'revise_and_approve' && revisedSuggestion !== undefined) throw new Error('The classroom server returned revised guidance for an incompatible decision.');
+  if (decision === 'revise_and_approve' && focusedQuestion === undefined) throw new Error('The classroom server returned a revision decision without a focused question.');
+  if (decision !== 'revise_and_approve' && focusedQuestion !== undefined) throw new Error('The classroom server returned a focused question for an incompatible decision.');
   return {
     submissionId: submission.id,
     status: submission.status,
@@ -300,7 +306,7 @@ function normalizeReviewSubmission(submission, projectId) {
     submittedAt: submission.submittedAt,
     ...(decision !== undefined ? { decision } : {}),
     ...(instructorAnnotation !== undefined ? { instructorAnnotation } : {}),
-    ...(revisedSuggestion !== undefined ? { revisedSuggestion } : {}),
+    ...(focusedQuestion !== undefined ? { focusedQuestion } : {}),
   };
 }
 
@@ -456,7 +462,7 @@ function ResumeScreen({ project, hasSavedProject, access, saveState, prototypeLo
   return <AccessFrame onTeacher={onTeacher}>
     <main className="resume-main" id="workspace">
       <p className="eyebrow">Class workspace open</p>
-      <h1>{hasSavedProject ? 'Resume your map.' : 'Start a systems map.'}</h1>
+      <h1>{hasSavedProject ? 'Keep working on your map.' : 'Start a systems map.'}</h1>
       <h2>{hasSavedProject ? project.title : 'A new local project'}</h2>
       <div className="resume-meta" aria-label="Saved project summary">
         <span><i className="resume-stage-mark" />Stage {project.stage + 1} of {STAGES.length} · <strong>{STAGES[project.stage].label}</strong></span>
@@ -469,7 +475,7 @@ function ResumeScreen({ project, hasSavedProject, access, saveState, prototypeLo
       </> : <p className="resume-description">Begin with scale selection. This browser will keep a versioned local project record as you work.</p>}
       <aside className={`logging-disclosure ${prototypeLogState.status === 'degraded' ? 'logging-disclosure--degraded' : ''}`} role="status"><Icon name="history" /><div><strong>{prototypeLogState.status === 'degraded' ? `Prototype logging unavailable · ${prototypeLogState.dropped} ${prototypeLogState.dropped === 1 ? 'event' : 'events'} not recorded` : 'Prototype logging is best effort · no student identity'}</strong><p>Canonical stage changes and bounded interaction events are sent to the {prototypeServer} when it is available. Source text and annotations are never included.</p></div></aside>
       <div className="resume-actions">
-        <button type="button" className="button access-primary" onClick={hasSavedProject ? onResume : onStart}>{hasSavedProject ? `Resume ${STAGES[project.stage].label}` : 'Start a project'}</button>
+        <button type="button" className="button access-primary" onClick={hasSavedProject ? onResume : onStart}>{hasSavedProject ? `Continue to ${STAGES[project.stage].label.toLowerCase()}` : 'Start a project'}</button>
         {hasSavedProject && <button type="button" className="resume-secondary" onClick={onStart}>Start another project</button>}
       </div>
       <div className="access-session-line"><span>Class access expires at {expiryLabel}.</span><button type="button" onClick={onEndAccess}>End class access</button></div>
@@ -517,8 +523,8 @@ function ScaleStage({ project, update }) {
   const selectScale = (scale) => update((draft) => { draft.activeScale = scale; invalidatePreflight(draft); }, 'scale.selected', SCALES[scale].label);
   return (
     <div className="narrow stage-enter">
-      <p className="eyebrow">Scale selection · release 01</p>
-      <h1>Select the current scale.</h1>
+      <p className="eyebrow">Choose a scale · release 01</p>
+      <h1>Choose the current scale.</h1>
       <p className="lede">Choose the evidence layer for this release. Only scales released by the instructor are available.</p>
       <div className="scale-list" role="radiogroup" aria-label="Mapping scale">
         {SCALE_ORDER.map((scale, index) => {
@@ -604,10 +610,10 @@ function IntakeStage({ project, update, toast }) {
   };
   return (
     <div className="wide stage-enter">
-      <p className="eyebrow">Source intake · {SCALES[project.activeScale].label}</p>
+      <p className="eyebrow">Add a source · {SCALES[project.activeScale].label}</p>
       <h1>Add a memo and source record.</h1>
       <p className="lede">Import or paste memo text, then record its title, creator, date, location, rights, and sensitivity. The original stays on this machine.</p>
-      {project.preflight?.review?.decision === 'reject' && <section className="teacher-message" aria-label="Instructor response"><strong>Instructor response</strong><p>{project.preflight.review.instructorAnnotation}</p>{project.preflight.review.revisedSuggestion && <p>{project.preflight.review.revisedSuggestion}</p>}<small>Revise only what you choose. The instructor response did not change the memo or map.</small></section>}
+      {project.preflight?.review?.decision === 'reject' && <section className="teacher-message" aria-label="What your instructor wrote"><strong>Your instructor asked for changes.</strong><p>{project.preflight.review.instructorAnnotation}</p>{project.preflight.review.focusedQuestion && <><h2>Question from your instructor</h2><p>{project.preflight.review.focusedQuestion}</p></>}<small>Revise only what you choose. Your instructor did not change the memo or map.</small></section>}
       <div className="field-pair project-context-fields">
         <Field label="Project title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
         <Field label="Guiding inquiry"><input maxLength={MAX_EVALUATION_INQUIRY_CHARACTERS} value={project.inquiry} onChange={(event) => setProjectField('inquiry', event.target.value)} /></Field>
@@ -647,19 +653,17 @@ function IntakeStage({ project, update, toast }) {
   );
 }
 
-function SuggestionGuidance({ evaluation }) {
-  const labels = new Map([...HARD_CRITERIA, ...SCORED_CRITERIA].map((criterion) => [criterion.id, criterion.label]));
-  const groups = [
-    { heading: 'What the memo establishes', items: evaluation.hard.filter((item) => item.status === 'met') },
-    { heading: 'What the model suggests', items: evaluation.scored.filter((item) => item.status === 'met') },
-    { heading: 'What remains uncertain', items: [...evaluation.hard, ...evaluation.scored].filter((item) => item.status !== 'met') },
-  ];
-  return <div className="criteria-list">{groups.map((group) => <section key={group.heading} aria-labelledby={stableId('suggestion-group', group.heading)}>
-    <h2 id={stableId('suggestion-group', group.heading)}>{group.heading}</h2>
-    {group.items.length ? group.items.map((item) => <article className="criterion-row" key={item.id}>
-      <div><div className="criterion-row__title"><strong>{labels.get(item.id)}</strong></div><blockquote>{item.evidenceExcerpt || item.evidence}</blockquote><p>{item.rationale}</p><span className="next-action">Consider: {item.nextAction}</span></div>
-    </article>) : <p className="empty-message">No guidance falls in this margin yet.</p>}
-  </section>)}</div>;
+function SuggestionGuidance({ redirects }) {
+  const headingId = stableId('suggestion-region', 'return-to-source');
+  return <div className="criteria-list"><section aria-labelledby={headingId}>
+    <h2 id={headingId}>Return to the source</h2>
+    {redirects.length ? redirects.map((redirect, index) => {
+      const promptId = stableId('redirective-prompt', `${index}:${redirect.action}`);
+      return <article className="criterion-row" key={promptId} aria-labelledby={promptId}>
+        <div><div className="criterion-row__title"><h3 id={promptId}>{redirect.action}</h3></div>{redirect.evidenceExcerpt && <blockquote><span className="sr-only">Source passage: </span>{redirect.evidenceExcerpt}</blockquote>}</div>
+      </article>;
+    }) : <p className="empty-message">Use your note to tell the instructor where you want feedback.</p>}
+  </section></div>;
 }
 
 function suggestionRuntimeDescription(runtime, persistence) {
@@ -669,7 +673,7 @@ function suggestionRuntimeDescription(runtime, persistence) {
     return `Generating suggestions sends the memo, inquiry, source metadata, active teacher prompt, and project overlay from the ${serverLabel} to Ollama Cloud.${model}`;
   }
   if (runtime?.provider === 'deterministic') {
-    return `Generating suggestions applies fixed STEM Splitter rules on the ${serverLabel}. The source does not leave that server for a model provider; teacher prompt and project-instruction edits are provenance only and do not change deterministic scoring.`;
+    return `Generating suggestions applies fixed STEM Splitter rules on the ${serverLabel}. The source does not leave that server for a model provider; teacher prompt and project-instruction edits are provenance only and do not change the deterministic rule set.`;
   }
   return `The ${serverLabel} has not reported the suggestion runtime yet. Check class access before generating suggestions.`;
 }
@@ -798,7 +802,11 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
         <p className="eyebrow">Shared teacher base · read only here</p>
         <pre>{shared ? 'The authenticated classroom server supplied this configuration fingerprint. Teacher-authored prompt text remains inside the teacher boundary.' : config.fixedPrompt}</pre>
         <dl className="config-meta"><div><dt>Project revision</dt><dd>{config.revision}</dd></div><div><dt>Project fingerprint</dt><dd>{config.fingerprint}</dd></div><div><dt>Shared revision</dt><dd>{shared?.revision || 'Local fallback'}</dd></div><div><dt>Shared fingerprint</dt><dd>{shared?.fingerprint || 'Server unavailable'}</dd></div><div><dt>Provider seam</dt><dd>{config.provider}</dd></div></dl>
-        {preview && <div className="effective-prompt"><strong>Project overlay preview</strong><p>{config.fixedPrompt}</p><hr /><p>PROJECT OVERLAY</p><p>{draft.customInstructions}</p><p className="privacy-note">The shared teacher base is applied by revision and fingerprint without copying private prompt text into this browser workspace.</p></div>}
+        {preview && <div className="effective-prompt"><strong>Project overlay preview</strong><p>{config.fixedPrompt}</p><hr /><p>PROJECT OVERLAY</p><p>{draft.customInstructions}</p><p className="privacy-note">{suggestionRuntime?.provider === 'ollama-cloud'
+          ? 'The shared teacher base and project overlay govern Ollama Cloud suggestion generation by server-supplied revision and fingerprint; private prompt text stays outside this browser workspace.'
+          : suggestionRuntime?.provider === 'deterministic'
+            ? 'In deterministic mode, shared teacher and project prompt edits are recorded as provenance only; they do not change the fixed rule set.'
+            : 'The classroom server has not reported whether prompt edits govern suggestion generation.'}</p></div>}
         {config.history?.length > 0 && <details><summary>Revision history ({config.history.length})</summary><ol className="history-list">{[...config.history].reverse().map((entry) => <li key={`${entry.revision}-${entry.at}`}><strong>v{entry.revision}</strong> {entry.changeNote}<small>{entry.fingerprint}</small></li>)}</ol></details>}
       </aside>
     </div>
@@ -819,13 +827,13 @@ function SuggestionReviewStage({ project, update, toast, studentAnnotation, setS
     ? `An unsubmitted evaluation expires after ${retentionDays.evaluation} day${retentionDays.evaluation === 1 ? '' : 's'}.`
     : 'Unsubmitted evaluations expire on the classroom server.';
   return <div className="wide stage-enter">
-    <p className="eyebrow">Suggestion review · {SCALES[project.activeScale].label}</p>
+    <p className="eyebrow">Review suggestions · {SCALES[project.activeScale].label}</p>
     <h1>Review suggestions beside the memo.</h1>
-    <p className="lede">STEM Splitter points to evidence, explains its reasoning, and names a possible next action. It does not edit the memo or map.</p>
-    <div className="subnav" role="tablist" aria-label="Suggestion review panels"><button id="suggestion-tab-suggestions" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'suggestions'} tabIndex={panel === 'suggestions' ? 0 : -1} data-composite-value="suggestions" className={panel === 'suggestions' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('suggestions')}>Suggestions</button><button id="suggestion-tab-model" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'model'} tabIndex={panel === 'model' ? 0 : -1} data-composite-value="model" className={panel === 'model' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('model')}>Model setup</button></div>
+    <p className="lede">Return to the source with up to three focused prompts, then tell your instructor what kind of feedback you want.</p>
+    <div className="subnav" role="tablist" aria-label="Suggestions and model setup"><button id="suggestion-tab-suggestions" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'suggestions'} tabIndex={panel === 'suggestions' ? 0 : -1} data-composite-value="suggestions" className={panel === 'suggestions' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('suggestions')}>Suggestions</button><button id="suggestion-tab-model" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'model'} tabIndex={panel === 'model' ? 0 : -1} data-composite-value="model" className={panel === 'model' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('model')}>Model setup</button></div>
     <div id="suggestion-panel" role="tabpanel" aria-labelledby={`suggestion-tab-${panel}`}>{panel === 'suggestions' ? <div className="preflight-grid">
-      <section>{hasSuggestions ? <SuggestionGuidance evaluation={project.preflight} /> : <p className="empty-message">Generate suggestions to open evidence-linked annotations for this memo.</p>}</section>
-      <aside className="dry-run-panel"><p className="eyebrow">Instructor handoff</p><h2>Keep your interpretation visible.</h2><p className="privacy-note">{suggestionRuntimeDescription(actualRuntime, persistence)}</p>{hasSuggestions && <Field label="Note for instructor" hint={`${studentAnnotation.length.toLocaleString()} of ${PROJECT_LIMITS.annotationText.toLocaleString()} characters`}><textarea rows="8" maxLength={PROJECT_LIMITS.annotationText} value={studentAnnotation} onChange={(event) => setStudentAnnotation(event.target.value)} /></Field>}{hasSuggestions && !evaluationReady && <p className="teacher-message teacher-message--error" role="alert">These suggestions do not have a current server evaluation. Generate fresh suggestions before sending them for instructor review.</p>}<p className="privacy-note">{hasSuggestions ? `Before you send: your note submits the already generated memo, suggestion, and configuration snapshot on the ${storageLabel} for instructor review.` : `Before you generate: the ${storageLabel} temporarily stores the memo, source record, returned suggestion, and configuration provenance.`} {hasSuggestions ? retentionDisclosure : evaluationRetention} It does not create cross-device identity or silently alter your local work.</p></aside>
+      <section>{hasSuggestions ? <SuggestionGuidance redirects={project.preflight.redirects} /> : <p className="empty-message">Generate suggestions to open focused source prompts for this memo.</p>}</section>
+      <aside className="dry-run-panel"><p className="eyebrow">Send to your instructor</p><h2>Add a note.</h2><p className="privacy-note">{suggestionRuntimeDescription(actualRuntime, persistence)}</p>{hasSuggestions && <Field label="Note for instructor" hint={`${studentAnnotation.length.toLocaleString()} of ${PROJECT_LIMITS.annotationText.toLocaleString()} characters`}><textarea rows="8" maxLength={PROJECT_LIMITS.annotationText} value={studentAnnotation} onChange={(event) => setStudentAnnotation(event.target.value)} /></Field>}{hasSuggestions && !evaluationReady && <p className="teacher-message teacher-message--error" role="alert">These suggestions do not have a current server evaluation. Generate fresh suggestions before sending them for instructor review.</p>}<p className="privacy-note">{hasSuggestions ? `Sending stores the memo and your note on the ${storageLabel} for instructor review.` : `Generating temporarily stores the memo and source record on the ${storageLabel}.`} {hasSuggestions ? retentionDisclosure : evaluationRetention}</p></aside>
     </div> : <ModelSetup project={project} update={update} toast={toast} suggestionRuntime={actualRuntime} persistence={persistence} />}</div>
   </div>;
 }
@@ -833,9 +841,9 @@ function SuggestionReviewStage({ project, update, toast, studentAnnotation, setS
 function InstructorResponseStage({ project }) {
   const review = project.preflight?.review;
   return <div className="narrow stage-enter">
-    <p className="eyebrow">Instructor response</p>
+    <p className="eyebrow">Check your instructor's response</p>
     <h1>{review?.status === 'approved' ? 'Your instructor responded.' : 'Your suggestions are awaiting review.'}</h1>
-    {review?.status === 'pending' ? <><p className="lede">Your local memo and map remain unchanged while the instructor reads the submitted snapshot.</p><section className="teacher-message" aria-live="polite"><strong>Pending instructor review</strong><p>Use “Check instructor response” when you are ready to request the current status.</p></section></> : <><p className="lede">Read the instructor guidance before deciding whether to generate candidates.</p><section className="teacher-message" aria-label="Instructor guidance"><strong>Instructor guidance</strong><p>{review?.instructorAnnotation}</p>{review?.revisedSuggestion && <><h2>Revised suggestion</h2><p>{review.revisedSuggestion}</p></>}<small>This guidance did not change the memo, graph, or structured model suggestions.</small></section></>}
+    {review?.status === 'pending' ? <><p className="lede">Your local memo and map remain unchanged while the instructor reads the submitted snapshot.</p><section className="teacher-message" aria-live="polite"><strong>Pending instructor review</strong><p>Use “Check instructor response” when you are ready to request the current status.</p></section></> : <><p className="lede">Read the instructor guidance before deciding whether to generate candidates.</p><section className="teacher-message" aria-label="Instructor guidance"><strong>Instructor guidance</strong><p>{review?.instructorAnnotation}</p>{review?.focusedQuestion && <><h2>Question from your instructor</h2><p>{review.focusedQuestion}</p></>}<small>This guidance did not change your memo or map.</small></section></>}
   </div>;
 }
 
@@ -881,7 +889,7 @@ function CandidateStage({ project, update, toast }) {
   const decided = [...project.candidates.nodes, ...project.candidates.edges].filter((item) => item.status !== 'pending').length;
   const total = project.candidates.nodes.length + project.candidates.edges.length;
   return <div className="wide stage-enter">
-    <p className="eyebrow">Candidate review · {decided} of {total} decided</p>
+    <p className="eyebrow">Choose what to map · {decided} of {total} decided</p>
     <div className="stage-title-row"><div><h1>Review graph candidates.</h1><p className="lede">Accept, edit, mark as a research lead, or reject each proposed node and relationship before it enters the graph.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Confirm grounded set</button></div>
     <div className="subnav" role="tablist" aria-label="Candidate types"><button id="candidate-tab-nodes" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'nodes'} tabIndex={kind === 'nodes' ? 0 : -1} data-composite-value="nodes" className={kind === 'nodes' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('nodes')}>Nodes · {project.candidates.nodes.length}</button><button id="candidate-tab-edges" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'edges'} tabIndex={kind === 'edges' ? 0 : -1} data-composite-value="edges" className={kind === 'edges' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('edges')}>Relationships · {project.candidates.edges.length}</button></div>
     <div id="candidate-panel" className="candidate-list" role="tabpanel" aria-labelledby={`candidate-tab-${kind}`}>
@@ -1387,7 +1395,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     savedRevision: saveState.savedRevision || 0,
   };
   return <div className="map-stage stage-enter">
-    <div className="map-toolbar"><h1>Map studio</h1><div className="map-toolbar__controls"><label><span>Scale</span><select value={scaleFilter} onChange={(event) => setScaleFilter(event.target.value)}><option value="all">All released</option>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}</select></label><label><span>State</span><select value={claimFilter} onChange={(event) => setClaimFilter(event.target.value)}><option value="active">Active claims</option><option value="all">All states</option>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></label></div></div>
+    <div className="map-toolbar"><h1>Build the map</h1><div className="map-toolbar__controls"><label><span>Scale</span><select value={scaleFilter} onChange={(event) => setScaleFilter(event.target.value)}><option value="all">All released</option>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}</select></label><label><span>State</span><select value={claimFilter} onChange={(event) => setClaimFilter(event.target.value)}><option value="active">Active claims</option><option value="all">All states</option>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></label></div></div>
     <div className="map-layout">
       <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={visibleNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} panMode={panMode} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
@@ -1444,7 +1452,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
     }
   };
   return <div className="wide stage-enter">
-    <p className="eyebrow">Release reflection · append-only history</p>
+    <p className="eyebrow">Revise and export · append-only history</p>
     <h1>Record the revision and export.</h1>
     <p className="lede">Describe what changed in the analysis, review the event history and sharing tier, then export the graph with its provenance.</p>
     <div className="revision-grid">
@@ -1456,7 +1464,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
       </section>
       <aside className="history-panel"><div className="history-panel__head"><div><p className="eyebrow">Revision history</p><h2>{project.events.length} events</h2></div><Icon name="history" /></div><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => <li key={event.id}><span className="timeline__dot" /><div><strong>{event.action.replaceAll('.', ' ')}</strong><p>{event.detail}</p><small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>)}</ol></aside>
     </div>
-    <section className="export-strip"><div><p className="eyebrow">Portable release</p><h2>Export with provenance.</h2><p>JSON carries the source record, graph, gate result, configuration snapshots, revision history, and a sharing-tier redaction manifest. CSV and Markdown use the same projected data.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
+    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export with provenance.</h2><p>JSON carries the source record, graph, gate result, configuration snapshots, revision history, and a sharing-tier redaction manifest. CSV and Markdown use the same projected data.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
 
@@ -1475,7 +1483,7 @@ function InstructorPanel({ project, update, toast, onNewProject }) {
     <div className="settings-section"><p className="eyebrow">Readiness and evidence</p><Field label="Readiness threshold"><input type="number" min="1" max="8" step="1" value={project.instructor.readinessThreshold} onChange={(event) => setReadinessThreshold(event.target.value)} /></Field><div className="config-line"><span>Hard gates</span><strong>H1–H4 required</strong></div><label className="check-row"><input type="checkbox" checked={project.instructor.evidenceRequired} onChange={(event) => set('evidenceRequired', event.target.checked)} /><span><strong>Require evidence locators</strong><small>Claims cannot advance on confidence alone.</small></span></label><label className="check-row"><input type="checkbox" checked={project.instructor.requireStudentConfirmation} onChange={(event) => set('requireStudentConfirmation', event.target.checked)} /><span><strong>Require student confirmation</strong><small>Model operations remain proposals.</small></span></label></div>
     <div className="settings-section"><p className="eyebrow">Privacy and publication</p><Field label="Maximum sharing tier"><select value={project.instructor.maxSharingTier} onChange={(event) => set('maxSharingTier', event.target.value)}><option>private</option><option>course</option><option>CUNY</option><option>public</option></select></Field><label className="check-row"><input type="checkbox" checked={project.instructor.allowResearchLeads} onChange={(event) => set('allowResearchLeads', event.target.checked)} /><span><strong>Allow unsupported research leads</strong><small>Leads remain visually and semantically distinct.</small></span></label></div>
     <div className="settings-section"><p className="eyebrow">Sequential releases</p><div className="release-controls">{SCALE_ORDER.map((scale, index) => { const open = project.releasedScales.includes(scale); const previousOpen = index === 0 || project.releasedScales.includes(SCALE_ORDER[index - 1]); return <button key={scale} className={open ? 'is-open' : ''} disabled={open || !previousOpen} onClick={() => release(scale)}>{open ? <Icon name="check" size={15} /> : <Icon name="lock" size={15} />}{SCALES[scale].label}</button>; })}</div></div>
-    <div className="settings-section"><p className="eyebrow">Model contracts</p><dl className="config-summary"><div><dt>Evaluator</dt><dd>{project.configs.preflight.label} · v{project.configs.preflight.revision}</dd></div><div><dt>Builder</dt><dd>{project.configs.builder.label} · v{project.configs.builder.revision}</dd></div><div><dt>Runtime</dt><dd>{suggestionRuntimeLabel(project.preflight?.evaluation?.runtime)}</dd></div></dl><button type="button" className="button button--secondary" onClick={() => toast('Open Suggestion review → Model setup to revise either contract.')}>Where to edit</button></div>
+    <div className="settings-section"><p className="eyebrow">Model contracts</p><dl className="config-summary"><div><dt>Evaluator</dt><dd>{project.configs.preflight.label} · v{project.configs.preflight.revision}</dd></div><div><dt>Builder</dt><dd>{project.configs.builder.label} · v{project.configs.builder.revision}</dd></div><div><dt>Runtime</dt><dd>{suggestionRuntimeLabel(project.preflight?.evaluation?.runtime)}</dd></div></dl><button type="button" className="button button--secondary" onClick={() => toast('Open “Review suggestions,” then “Model setup,” to revise either contract.')}>Where to edit</button></div>
     <div className="settings-section"><p className="eyebrow">Project data</p><p className="privacy-note">Create a separate local project without changing the model presets. Export the current project first if you need to retain it.</p><button type="button" className="button button--secondary" onClick={onNewProject}>New project…</button></div>
   </div>;
 }
@@ -1818,13 +1826,13 @@ function App() {
         return;
       }
       const result = normalizePreflightEvaluation(response.evaluation, projectRef.current);
-      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Authoritative evidence-linked suggestions generated', 'student', {
+      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Source prompts generated', 'student', {
         configurationSnapshot: result.configurationSnapshot,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
       });
       setStudentAnnotation('');
-      toast('Evidence-linked suggestions are ready for your review.');
+      toast('Prompts are ready for your review.');
     } catch (error) {
       await handleReviewApiError(error, accessGeneration, 'suggestion request');
     } finally {

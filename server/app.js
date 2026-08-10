@@ -54,6 +54,9 @@ const STUDENT_SESSION_ISSUE_BUCKET = 'student-session-issuance';
 const PREFLIGHT_SCALES = new Set(['micro', 'meso', 'macro', 'integration']);
 const PREFLIGHT_STATUSES = new Set(['pending', 'approved', 'rejected']);
 const PREFLIGHT_DECISIONS = new Set(['approve', 'revise_and_approve', 'reject']);
+const STUDENT_REDIRECT_LIMIT = 3;
+const STUDENT_REDIRECT_ACTION_MAX_CHARS = 500;
+const STUDENT_REDIRECT_EVIDENCE_MAX_CHARS = 280;
 const PROJECT_METADATA_RULES = Object.freeze({
   id: { type: 'string', max: 200 },
   projectId: { type: 'string', max: 200 },
@@ -114,13 +117,13 @@ const PROTOTYPE_EVENTS = new Set([
   'recovery_exported',
 ]);
 const PROTOTYPE_STAGES = new Map([
-  ['Select scale', 0],
-  ['Source intake', 1],
-  ['Suggestion review', 2],
-  ['Instructor response', 3],
-  ['Candidate review', 4],
-  ['Map studio', 5],
-  ['Revision and export', 6],
+  ['Choose a scale', 0],
+  ['Add a source', 1],
+  ['Review suggestions', 2],
+  ["Check your instructor's response", 3],
+  ['Choose what to map', 4],
+  ['Build the map', 5],
+  ['Revise and export', 6],
 ]);
 const PROTOTYPE_METADATA_RULES = Object.freeze({
   stageIndex: { type: 'integer', min: 0, max: 6 },
@@ -536,11 +539,52 @@ function evaluationConfigSnapshot(effective, projectOverlay, customInstructions,
   };
 }
 
+function collapsedRedirectText(value, maxLength) {
+  if (typeof value !== 'string') return null;
+  const collapsed = value.replace(/\s+/gu, ' ').trim();
+  if (!collapsed) return null;
+  if (collapsed.length <= maxLength) return collapsed;
+  const candidate = collapsed.slice(0, maxLength + 1);
+  const wordBoundary = candidate.lastIndexOf(' ');
+  return wordBoundary >= Math.floor(maxLength / 2)
+    ? candidate.slice(0, wordBoundary)
+    : collapsed.slice(0, maxLength);
+}
+
+function sourcePassageForRedirect(criterion) {
+  const evidenceExcerpt = collapsedRedirectText(criterion.evidenceExcerpt, STUDENT_REDIRECT_EVIDENCE_MAX_CHARS);
+  const evidence = evidenceExcerpt
+    ?? collapsedRedirectText(criterion.evidence, STUDENT_REDIRECT_EVIDENCE_MAX_CHARS);
+  if (!evidence || /^(?:no supporting passage located|no evidence (?:located|found)|not found)$/iu.test(evidence)) return null;
+  return evidence;
+}
+
+function studentRedirects(value) {
+  const suggestion = storedJson(value);
+  const criteria = [
+    ...suggestion.hard.filter(({ status }) => status === 'unmet'),
+    ...suggestion.scored.filter(({ status }) => status === 'unmet'),
+  ];
+  const seen = new Set();
+  const redirects = [];
+  for (const criterion of criteria) {
+    const action = collapsedRedirectText(criterion.nextAction, STUDENT_REDIRECT_ACTION_MAX_CHARS);
+    if (!action) continue;
+    const dedupeKey = action.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    const evidenceExcerpt = sourcePassageForRedirect(criterion);
+    redirects.push({ action, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) });
+    if (redirects.length === STUDENT_REDIRECT_LIMIT) break;
+  }
+  return redirects;
+}
+
 function preflightEvaluationResponse(row) {
   if (!row) return null;
   return {
     id: row.id,
-    suggestion: storedJson(row.suggestion),
+    redirects: studentRedirects(row.suggestion),
     configSnapshot: storedJson(row.configSnapshot),
     runtime: storedJson(row.runtimeMetadata),
     createdAt: responseTimestamp(row.createdAt),
@@ -580,7 +624,7 @@ function preflightSubmissionRow(row, { includeTeacher = false } = {}) {
     updatedAt: responseTimestamp(row.updatedAt),
     reviewedAt: responseTimestamp(row.reviewedAt),
     instructorAnnotation: row.instructorAnnotation ?? null,
-    revisedSuggestion: row.revisedSuggestion ?? null,
+    focusedQuestion: row.focusedQuestion ?? null,
     ...(includeTeacher ? {
       reviewingTeacher: row.reviewerId
         ? { id: row.reviewerId, displayName: row.reviewerDisplayName }
@@ -602,7 +646,7 @@ function studentPreflightStatusRow(row) {
     updatedAt: responseTimestamp(row.updatedAt),
     reviewedAt: responseTimestamp(row.reviewedAt),
     instructorAnnotation: row.instructorAnnotation ?? null,
-    revisedSuggestion: row.revisedSuggestion ?? null,
+    focusedQuestion: row.focusedQuestion ?? null,
   };
 }
 
@@ -613,7 +657,7 @@ function preflightReviewEventRow(row) {
     fromRevision: row.fromRevision,
     toRevision: row.toRevision,
     instructorAnnotation: row.instructorAnnotation,
-    revisedSuggestion: row.revisedSuggestion ?? null,
+    focusedQuestion: row.focusedQuestion ?? null,
     decidedAt: responseTimestamp(row.decidedAt),
     reviewingTeacher: { id: row.reviewerId, displayName: row.reviewerDisplayName },
   };
@@ -635,7 +679,7 @@ const PREFLIGHT_SUBMISSION_SELECT = `
   ps.runtime_metadata_json AS runtimeMetadata,
   ps.status, ps.decision, ps.revision, ps.created_at AS createdAt, ps.updated_at AS updatedAt,
   ps.reviewed_at AS reviewedAt, ps.instructor_annotation AS instructorAnnotation,
-  ps.revised_suggestion AS revisedSuggestion
+  ps.revised_suggestion AS focusedQuestion
 `;
 
 async function preflightEvaluationById(db, evaluationId) {
@@ -652,7 +696,7 @@ async function studentPreflightSubmission(db, submissionId) {
     SELECT ps.id, ps.project_metadata_json AS projectMetadata, ps.status, ps.decision,
       ps.revision, ps.created_at AS createdAt, ps.updated_at AS updatedAt,
       ps.reviewed_at AS reviewedAt, ps.instructor_annotation AS instructorAnnotation,
-      ps.revised_suggestion AS revisedSuggestion
+      ps.revised_suggestion AS focusedQuestion
     FROM preflight_submissions ps
     WHERE ps.id = ?
   `).get(submissionId);
@@ -674,7 +718,7 @@ async function teacherPreflightReviewEvents(db, submissionId) {
   return (await db.prepare(`
     SELECT e.id, e.decision, e.from_revision AS fromRevision, e.to_revision AS toRevision,
       e.instructor_annotation AS instructorAnnotation,
-      e.revised_suggestion AS revisedSuggestion, e.decided_at AS decidedAt,
+      e.revised_suggestion AS focusedQuestion, e.decided_at AS decidedAt,
       e.reviewing_teacher_id AS reviewerId, a.display_name AS reviewerDisplayName
     FROM preflight_review_events e
     JOIN accounts a ON a.id = e.reviewing_teacher_id
@@ -1851,21 +1895,21 @@ export function createSystemsMappingApp(options = {}) {
     const submissionId = context.req.param('id');
     if (!validSubmissionId(submissionId)) throw new HttpError(404, 'Preflight submission not found.');
     const body = await parseJsonBody(context, PREFLIGHT_DECISION_BODY_LIMIT_BYTES);
-    assertOnlyKeys(body, ['decision', 'instructorAnnotation', 'revisedSuggestion', 'expectedRevision']);
+    assertOnlyKeys(body, ['decision', 'instructorAnnotation', 'focusedQuestion', 'expectedRevision']);
     if (!PREFLIGHT_DECISIONS.has(body.decision)) {
       throw new HttpError(400, 'decision must be approve, revise_and_approve, or reject.');
     }
     const instructorAnnotation = requireString(body.instructorAnnotation, 'instructorAnnotation', { min: 1, max: 8000 });
     const expectedRevision = requireInteger(body.expectedRevision, 'expectedRevision', 1, Number.MAX_SAFE_INTEGER);
-    const hasRevisedSuggestion = Object.hasOwn(body, 'revisedSuggestion');
-    if (body.decision !== 'revise_and_approve' && hasRevisedSuggestion) {
-      throw new HttpError(400, 'revisedSuggestion is supported only for revise_and_approve.');
+    const hasFocusedQuestion = Object.hasOwn(body, 'focusedQuestion');
+    if (body.decision !== 'revise_and_approve' && hasFocusedQuestion) {
+      throw new HttpError(400, 'focusedQuestion is supported only for revise_and_approve.');
     }
-    if (body.decision === 'revise_and_approve' && !hasRevisedSuggestion) {
-      throw new HttpError(400, 'revisedSuggestion is required for revise_and_approve.');
+    if (body.decision === 'revise_and_approve' && !hasFocusedQuestion) {
+      throw new HttpError(400, 'focusedQuestion is required for revise_and_approve.');
     }
-    const revisedSuggestion = hasRevisedSuggestion
-      ? requireString(body.revisedSuggestion, 'revisedSuggestion', { min: 1, max: 20_000 })
+    const focusedQuestion = hasFocusedQuestion
+      ? requireString(body.focusedQuestion, 'focusedQuestion', { min: 1, max: 1000 })
       : null;
     const actor = context.get('teacher');
     const decidedAt = clockValue(now);
@@ -1897,7 +1941,7 @@ export function createSystemsMappingApp(options = {}) {
         decidedAt,
         actor.id,
         instructorAnnotation,
-        revisedSuggestion,
+        focusedQuestion,
         submissionId,
         expectedRevision,
       );
@@ -1909,7 +1953,7 @@ export function createSystemsMappingApp(options = {}) {
           expectedRevision,
           nextRevision,
           instructorAnnotation,
-          revisedSuggestion,
+          focusedQuestion,
           decidedAt,
           actor.id,
         );
