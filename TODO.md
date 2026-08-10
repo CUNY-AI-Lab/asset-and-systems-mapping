@@ -51,8 +51,10 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Required local and browser proof
 
-- [ ] Restart the final production server on `127.0.0.1:4177` while preserving the real SQLite database; verify the listener, health endpoint, security headers, and current UI.
-- [ ] Audit the real handoff database with value-free queries: two unclaimed teacher accounts, no teacher/student QA sessions, no QA prompt revisions, no review fixtures, and a passing integrity check.
+- [x] Restart the final production server on `127.0.0.1:4177` while preserving the real SQLite database and verify the health endpoint.
+  - Evidence: the final server reported `http://127.0.0.1:4177`; `/api/health` returned `{"status":"ok"}`.
+- [x] Audit the real handoff database with value-free queries and preserve existing user-owned account/session state.
+  - Evidence: integrity `ok`; 2 accounts with 1 already claimed; 1 existing teacher session; 0 student sessions, evaluations, submissions, review events, or prototype events; 60 prompt modules and 60 seed-history rows. Data directory/files are `0700`/`0600`.
 - [ ] Run the current class access → source intake → suggestion review → submit → teacher approve/revise/reject → student refresh → candidate review journey in the in-app browser against a disposable database.
 - [ ] Verify the current build at desktop plus 320, 390, and 430 CSS px with no document-level horizontal overflow, no occluded primary controls, at least 44 px primary touch targets, visible focus, and zero relevant console errors.
 - [ ] Verify map drag, keyboard movement, zoom/pan/fit, annotation edits, reload restoration, export/import restoration, and the complete color/shape/line legend in the current rendered build.

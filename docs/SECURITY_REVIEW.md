@@ -6,7 +6,7 @@ Updated: 2026-08-09
 
 This review covers the current React application, Node/Hono server, SQLite and PostgreSQL adapters, student class access, teacher authentication, authoritative evaluation, instructor review, import/export, prototype telemetry, and optional Ollama Cloud adapter.
 
-It does not claim that the full rendered journey, real SQLite handoff database, or live Ollama provider has been accepted. Current evidence includes 129 passing tests plus 3 PostgreSQL-gated skips, a separate fresh PostgreSQL 17 integration run of 3/3, a successful production build, green dependency/leak scans, a private GitHub publication, and a successful Railway/PostgreSQL deployment with public health readback. Rendered evidence is limited to the 390 px access screen.
+It does not claim that the full rendered journey or live Ollama provider has been accepted. Current evidence includes 129 passing tests plus 3 PostgreSQL-gated skips, a separate fresh PostgreSQL 17 integration run of 3/3, a successful production build, green dependency/leak scans, a healthy preserved SQLite handoff store, a private GitHub publication, and a successful Railway/PostgreSQL deployment with public health readback. Rendered evidence is limited to the 390 px access screen.
 
 Status terms:
 
@@ -82,7 +82,7 @@ Railway project/service/database creation, variables, migration, terminal deploy
 - [ ] Scan source and `dist/` for `101`, configured class codes, credential values/field leakage, passphrase fixtures outside tests, session/capability material, prompt bodies, teacher roster/history, `dangerouslySetInnerHTML`, and source maps.
 - [ ] Run the complete current student/teacher review journey in the in-app browser using a disposable database.
 - [ ] Verify desktop and 320/390/430 px layout, focus, touch targets, map interaction, persistence, exports, and console state.
-- [ ] Restart/read back the loopback production server and audit the real SQLite database without printing sensitive values.
+- [x] Restart/read back the loopback production server and audit the real SQLite database without printing sensitive values.
 - [x] Create/read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and publish `main`.
 - [x] Deploy/read back Railway PostgreSQL to terminal success and verify `{"status":"ok"}`.
 - [ ] Revoke the exposed Ollama key; configure a rotated key only if authorized; run a separate live-provider acceptance.

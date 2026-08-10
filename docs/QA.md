@@ -28,6 +28,7 @@ Final `pnpm audit` and `pnpm audit --prod` both reported no known vulnerabilitie
 - Railway project: `systems-mapping` (`ed729bd9-403b-46a6-a97c-99ad9a0294c8`) with web and PostgreSQL services.
 - Railway deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` reached `SUCCESS` after a hosted-readiness regression was fixed and covered by 23 focused server tests.
 - Public health readback: `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`.
+- The preserved local SQLite handoff store passed `PRAGMA integrity_check`; it contains no student sessions, evaluations, review submissions/events, or prototype events. One previously claimed teacher account and its existing session were retained as user-owned state.
 
 ## Automated behavior verified
 
@@ -115,7 +116,7 @@ Use a disposable database and temporary teacher claim values, never the real han
 
 - No current rendered proof exists for the new student/teacher review loop, phone geometry, focus behavior, or console cleanliness.
 - Full rendered review/map acceptance and a dedicated final `dist/` string inventory remain pending; dependency and repository leak scans are green.
-- The real SQLite handoff database and final loopback listener have not been audited/restarted against this tree.
+- The final loopback listener and real SQLite handoff database are healthy; the one pre-existing claimed teacher account/session was intentionally preserved rather than treated as QA residue.
 - Railway creation, PostgreSQL migration, deployment, domain, and health readback are verified. Live browser review, cookie, and retention acceptance against Railway remain pending.
 - Local `.env` contains no Ollama key. The previously pasted key is exposed and must be revoked; no live provider run has occurred.
 - Deterministic STEM Splitter does not interpret teacher prompt or project-instruction text. Its configuration snapshots are provenance only; prompt customization affects actual generation only when an accepted provider adapter is enabled.
