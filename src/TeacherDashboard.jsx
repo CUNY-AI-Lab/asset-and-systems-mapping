@@ -8,7 +8,7 @@ const CONFIG_KINDS = [
 const SCOPES = ['global', 'micro', 'meso', 'macro', 'integration'];
 const DASHBOARD_SECTIONS = [
   { id: 'reviews', label: 'Review submissions' },
-  { id: 'guidance', label: 'Model guidance' },
+  { id: 'guidance', label: 'Edit model prompts' },
 ];
 const REVIEW_DECISIONS = [
   { id: 'approve', label: 'Approve' },
@@ -398,9 +398,9 @@ function ReviewSubmissions() {
       </section>
 
       <aside className="instructor-response" aria-labelledby="instructor-response-heading">
-        <h2 id="instructor-response-heading">Guide the next revision</h2>
+        <h2 id="instructor-response-heading">Write to the student.</h2>
         {detail ? <form onSubmit={submitDecision}>
-          <p className="instructor-response__prompt">Name one focus. If the student should carry a question into mapping, choose “Approve with a question.” Leave the interpretation and rewrite to the student.</p>
+          <p className="instructor-response__prompt">Name one focus for the student. Choose “Approve with a question” only when you want them to carry a question into the map. The student decides how to revise.</p>
           <label className="field instructor-response__guidance"><span className="field__label">Focus for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
           <fieldset className="review-decision"><legend>Decision</legend><div className="review-decision__actions" role="group" aria-label="Submission decision">{REVIEW_DECISIONS.map((item) => <button key={item.id} type="button" aria-pressed={decision === item.id} className={decision === item.id ? 'is-selected' : ''} onClick={() => { setDecision(item.id); setMessage(null); }}>{item.label}</button>)}</div></fieldset>
           {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Question for the student</span><textarea rows="5" maxLength="1000" value={focusedQuestion} onChange={(event) => setFocusedQuestion(event.target.value)} /></label>}
@@ -475,15 +475,15 @@ function ModelGuidance({ user, onConfigurationChanged }) {
     setKind(next.id);
     kindTabRefs.current.get(next.id)?.focus();
   };
-  if (loading) return <p className="empty-message">Loading model guidance…</p>;
+  if (loading) return <p className="empty-message">Loading model prompts…</p>;
   return <section className="model-guidance" aria-labelledby="model-guidance-heading">
-    <div className="section-heading"><div><p className="eyebrow">Model guidance</p><h2 id="model-guidance-heading">Prompt modules</h2></div></div>
+    <div className="section-heading"><div><p className="eyebrow">Edit model prompts</p><h2 id="model-guidance-heading">Choose a prompt to edit.</h2></div></div>
     <Message message={message} />
     <div className="teacher-controls">
       <div className="model-switch" role="tablist" aria-label="Configuration system">{CONFIG_KINDS.map((config, index) => <button ref={(node) => node ? kindTabRefs.current.set(config.id, node) : kindTabRefs.current.delete(config.id)} key={config.id} id={`teacher-config-tab-${config.id}`} type="button" role="tab" aria-selected={kind === config.id} aria-controls="teacher-config-panel" tabIndex={kind === config.id ? 0 : -1} className={kind === config.id ? 'is-active' : ''} onKeyDown={(event) => moveKind(event, index)} onClick={() => setKind(config.id)}>{config.label}</button>)}</div>
-      <label><span>Editing scope</span><select value={scope} onChange={(event) => setScope(event.target.value)}>{SCOPES.map((scale) => <option key={scale} value={scale}>{scale === 'global' ? 'Global base' : `${scale[0].toUpperCase()}${scale.slice(1)} scale`}</option>)}</select></label>
+      <label><span>Applies to</span><select value={scope} onChange={(event) => setScope(event.target.value)}>{SCOPES.map((scale) => <option key={scale} value={scale}>{scale === 'global' ? 'All scales' : `${scale[0].toUpperCase()}${scale.slice(1)} scale`}</option>)}</select></label>
       <label><span>Module</span><select aria-label="Module" value={selected?.id || ''} onChange={(event) => { setSelectedId(event.target.value); setEffective(null); }}>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.label} · v{module.revision}</option>)}</select></label>
-      <button type="button" className="button button--secondary" onClick={preview}>Preview effective prompt</button>
+      <button type="button" className="button button--secondary" onClick={preview}>Preview prompt in use</button>
     </div>
     <div className="teacher-workbench" id="teacher-config-panel" role="tabpanel" aria-labelledby={`teacher-config-tab-${kind}`}>
       <ModuleEditor module={selected} onSaved={saved} onConflictReloaded={conflictReloaded} />
@@ -493,7 +493,7 @@ function ModelGuidance({ user, onConfigurationChanged }) {
         return <li key={entry.id || `${entry.moduleId}:${entry.revision}:${changedAt || 'unknown'}`}><strong>{entry.label || entry.moduleLabel || 'Prompt module'}</strong><p>{entry.changeNote || 'Revision recorded'}</p><small>{changedBy} · v{entry.revision}<br />{formatHistoryTime(changedAt)}</small></li>;
       })}</ol> : <p className="empty-message">No revision history is available.</p>}</details>
     </div>
-    {effective && <section className="effective-preview"><div><p className="eyebrow">Effective prompt preview · {effective.configKind} · {effective.scale}</p><h2>Composed configuration</h2><dl><div><dt>Fingerprint</dt><dd>{effective.fingerprint}</dd></div><div><dt>Revision</dt><dd>{effective.revision}</dd></div></dl></div><pre>{effective.effectivePrompt}</pre></section>}
+    {effective && <section className="effective-preview"><div><p className="eyebrow">Prompt in use · {effective.configKind} · {effective.scale}</p><h2>Prompt in use</h2><dl><div><dt>Fingerprint</dt><dd>{effective.fingerprint}</dd></div><div><dt>Revision</dt><dd>{effective.revision}</dd></div></dl></div><pre>{effective.effectivePrompt}</pre></section>}
   </section>;
 }
 

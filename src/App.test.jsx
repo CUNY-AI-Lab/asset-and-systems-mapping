@@ -257,7 +257,7 @@ function selectAnnotationTarget(target) {
     return screen.getByRole('textbox', { name: /^Relationship annotation/ });
   }
   fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
-  return screen.getByRole('textbox', { name: /^Evolving-map annotation/ });
+  return screen.getByRole('textbox', { name: /^Map note/ });
 }
 
 function storedAnnotation(target, project) {
@@ -357,7 +357,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
     expect(screen.getByText(/Stage 2 of 7/)).toHaveTextContent('Add a source');
     fireEvent.click(screen.getByRole('button', { name: 'Continue to add a source' }));
-    expect(await screen.findByRole('heading', { name: 'Add a memo and source record.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Add a memo. Record the source.' })).toBeVisible();
 
     const attempts = fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/access');
     expect(attempts.map(([, options]) => JSON.parse(options.body))).toEqual([{ code: '999' }, { code: '101' }]);
@@ -438,14 +438,14 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject();
     expect(screen.getByRole('heading', { name: 'Choose the current scale.' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('heading', { name: 'Add a memo and source record.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Add a memo. Record the source.' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('NYC systems and assets map');
     fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Family service access map' } });
     expect(screen.getByText('Family service access map', { selector: '.brand small' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Guiding inquiry' })).toHaveValue('How do systems shape access to special-education services in NYC?');
     expect(screen.getByRole('textbox', { name: 'Guiding inquiry' })).toHaveAttribute('maxlength', '8000');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('heading', { name: 'Review suggestions beside the memo.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Read the prompts with the memo.' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
     const stageMenu = screen.getByRole('dialog', { name: 'Stages' });
     ['Choose a scale', 'Add a source', 'Review suggestions', "Check your instructor's response", 'Choose what to map', 'Build the map', 'Revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
@@ -537,7 +537,7 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.change(screen.getByRole('textbox', { name: /Note for instructor/ }), { target: { value: 'Please review the uncertainty around referrals.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send for instructor review' }));
-    expect(await screen.findByRole('heading', { name: 'Your suggestions are awaiting review.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Your instructor has not responded yet.' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Check instructor response' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Generate candidates' })).not.toBeInTheDocument();
 
@@ -555,7 +555,7 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     expect(screen.getByText(/Stage 4 of 7/)).toHaveTextContent("Check your instructor's response");
     fireEvent.click(screen.getByRole('button', { name: "Continue to check your instructor's response" }));
-    expect(await screen.findByRole('heading', { name: 'Your suggestions are awaiting review.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Your instructor has not responded yet.' })).toBeVisible();
   });
 
   it('blocks an oversized evaluation request without truncating the local memo', async () => {
@@ -726,7 +726,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().preflight.redirects).toEqual(originalRedirects);
 
     fireEvent.click(screen.getByRole('button', { name: 'Generate candidates' }));
-    expect(await screen.findByRole('heading', { name: 'Review graph candidates.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose nodes and relationships for the map.' })).toBeVisible();
   });
 
   it('returns a rejected review to source intake with instructor annotation and no silent memo or graph edits', async () => {
@@ -743,7 +743,7 @@ describe('Systems Mapping workflow', () => {
 
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Check instructor response' }));
-    expect(await screen.findByRole('heading', { name: 'Add a memo and source record.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Add a memo. Record the source.' })).toBeVisible();
     expect(screen.getByText('Clarify which actor performs the second handoff, then submit again.')).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ stage: 1, preflight: { review: { status: 'rejected', decision: 'reject', revision: 2 } } }));
     expect(storedProject().submission.text).toBe(originalMemo);
@@ -1228,7 +1228,7 @@ describe('Systems Mapping workflow', () => {
       fireEvent.click(within(within(relationshipPanel).getByLabelText('Relationship list')).getAllByRole('button')[0]);
       expect(screen.getByRole('textbox', { name: /^Relationship annotation/ })).toHaveValue('Restored relationship annotation');
       fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
-      expect(screen.getByRole('textbox', { name: /^Evolving-map annotation/ })).toHaveValue('Restored whole-map annotation');
+      expect(screen.getByRole('textbox', { name: /^Map note/ })).toHaveValue('Restored whole-map annotation');
     };
 
     await assertRestored();

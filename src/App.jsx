@@ -470,9 +470,9 @@ function ResumeScreen({ project, hasSavedProject, access, saveState, prototypeLo
       </div>
       {saveState.status === 'error' && <button type="button" className="recovery-notice" onClick={onRecovery}><strong>Local recovery needs attention</strong><span>{saveState.message}</span></button>}
       {hasSavedProject ? <>
-        <p className="resume-description">Your current stage, project, source record, graph, annotations, viewport, and rearranged node locations are ready.</p>
+        <p className="resume-description">Your map, notes, and node positions are saved in this browser.</p>
         <section className="current-work" aria-label="Current work"><strong>Current work</strong><span>{STAGES[project.stage].label}</span><p>Earlier completed stages remain available to revisit.</p></section>
-      </> : <p className="resume-description">Begin with scale selection. This browser will keep a versioned local project record as you work.</p>}
+      </> : <p className="resume-description">Choose a scale to begin. This browser saves your project as you work.</p>}
       <aside className={`logging-disclosure ${prototypeLogState.status === 'degraded' ? 'logging-disclosure--degraded' : ''}`} role="status"><Icon name="history" /><div><strong>{prototypeLogState.status === 'degraded' ? `Prototype logging unavailable · ${prototypeLogState.dropped} ${prototypeLogState.dropped === 1 ? 'event' : 'events'} not recorded` : 'Prototype logging is best effort · no student identity'}</strong><p>Canonical stage changes and bounded interaction events are sent to the {prototypeServer} when it is available. Source text and annotations are never included.</p></div></aside>
       <div className="resume-actions">
         <button type="button" className="button access-primary" onClick={hasSavedProject ? onResume : onStart}>{hasSavedProject ? `Continue to ${STAGES[project.stage].label.toLowerCase()}` : 'Start a project'}</button>
@@ -523,9 +523,9 @@ function ScaleStage({ project, update }) {
   const selectScale = (scale) => update((draft) => { draft.activeScale = scale; invalidatePreflight(draft); }, 'scale.selected', SCALES[scale].label);
   return (
     <div className="narrow stage-enter">
-      <p className="eyebrow">Choose a scale · release 01</p>
+      <p className="eyebrow">Choose a scale</p>
       <h1>Choose the current scale.</h1>
-      <p className="lede">Choose the evidence layer for this release. Only scales released by the instructor are available.</p>
+      <p className="lede">Choose the scale for this map. Your instructor opens each scale in order.</p>
       <div className="scale-list" role="radiogroup" aria-label="Mapping scale">
         {SCALE_ORDER.map((scale, index) => {
           const unlocked = canSelect(scale);
@@ -550,7 +550,7 @@ function ScaleStage({ project, update }) {
           );
         })}
       </div>
-      <aside className="withheld-note"><strong>Withheld for now</strong><span>Cross-scale comparison, timeline, geography, and theory of change appear only when their releases are supported.</span></aside>
+      <aside className="withheld-note"><strong>Available later</strong><span>Your instructor may open comparison, timeline, geography, and theory of change later.</span></aside>
     </div>
   );
 }
@@ -611,8 +611,8 @@ function IntakeStage({ project, update, toast }) {
   return (
     <div className="wide stage-enter">
       <p className="eyebrow">Add a source · {SCALES[project.activeScale].label}</p>
-      <h1>Add a memo and source record.</h1>
-      <p className="lede">Import or paste memo text, then record its title, creator, date, location, rights, and sensitivity. The original stays on this machine.</p>
+      <h1>Add a memo. Record the source.</h1>
+      <p className="lede">Import or paste the memo, then record its title, creator, date, location, rights, and sensitivity. Your source file stays on this machine.</p>
       {project.preflight?.review?.decision === 'reject' && <section className="teacher-message" aria-label="What your instructor wrote"><strong>Your instructor asked for changes.</strong><p>{project.preflight.review.instructorAnnotation}</p>{project.preflight.review.focusedQuestion && <><h2>Question from your instructor</h2><p>{project.preflight.review.focusedQuestion}</p></>}<small>Revise only what you choose. Your instructor did not change the memo or map.</small></section>}
       <div className="field-pair project-context-fields">
         <Field label="Project title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
@@ -828,8 +828,8 @@ function SuggestionReviewStage({ project, update, toast, studentAnnotation, setS
     : 'Unsubmitted evaluations expire on the classroom server.';
   return <div className="wide stage-enter">
     <p className="eyebrow">Review suggestions · {SCALES[project.activeScale].label}</p>
-    <h1>Review suggestions beside the memo.</h1>
-    <p className="lede">Return to the source with up to three focused prompts, then tell your instructor what kind of feedback you want.</p>
+    <h1>Read the prompts with the memo.</h1>
+    <p className="lede">Read the prompts with your memo. Tell your instructor where you want feedback.</p>
     <div className="subnav" role="tablist" aria-label="Suggestions and model setup"><button id="suggestion-tab-suggestions" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'suggestions'} tabIndex={panel === 'suggestions' ? 0 : -1} data-composite-value="suggestions" className={panel === 'suggestions' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('suggestions')}>Suggestions</button><button id="suggestion-tab-model" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'model'} tabIndex={panel === 'model' ? 0 : -1} data-composite-value="model" className={panel === 'model' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('model')}>Model setup</button></div>
     <div id="suggestion-panel" role="tabpanel" aria-labelledby={`suggestion-tab-${panel}`}>{panel === 'suggestions' ? <div className="preflight-grid">
       <section>{hasSuggestions ? <SuggestionGuidance redirects={project.preflight.redirects} /> : <p className="empty-message">Generate suggestions to open focused source prompts for this memo.</p>}</section>
@@ -842,8 +842,8 @@ function InstructorResponseStage({ project }) {
   const review = project.preflight?.review;
   return <div className="narrow stage-enter">
     <p className="eyebrow">Check your instructor's response</p>
-    <h1>{review?.status === 'approved' ? 'Your instructor responded.' : 'Your suggestions are awaiting review.'}</h1>
-    {review?.status === 'pending' ? <><p className="lede">Your local memo and map remain unchanged while the instructor reads the submitted snapshot.</p><section className="teacher-message" aria-live="polite"><strong>Pending instructor review</strong><p>Use “Check instructor response” when you are ready to request the current status.</p></section></> : <><p className="lede">Read the instructor guidance before deciding whether to generate candidates.</p><section className="teacher-message" aria-label="Instructor guidance"><strong>Instructor guidance</strong><p>{review?.instructorAnnotation}</p>{review?.focusedQuestion && <><h2>Question from your instructor</h2><p>{review.focusedQuestion}</p></>}<small>This guidance did not change your memo or map.</small></section></>}
+    <h1>{review?.status === 'approved' ? 'Your instructor responded.' : 'Your instructor has not responded yet.'}</h1>
+    {review?.status === 'pending' ? <><p className="lede">Your instructor is reviewing the submitted snapshot. Your memo and map stay unchanged.</p><section className="teacher-message" aria-live="polite"><strong>Waiting for your instructor</strong><p>Use “Check instructor response” to look for an update.</p></section></> : <><p className="lede">Read guidance before next steps.</p><section className="teacher-message" aria-label="Instructor guidance"><strong>Instructor guidance</strong><p>{review?.instructorAnnotation}</p>{review?.focusedQuestion && <><h2>Question from your instructor</h2><p>{review.focusedQuestion}</p></>}<small>This guidance did not change your memo or map.</small></section></>}
   </div>;
 }
 
@@ -890,7 +890,7 @@ function CandidateStage({ project, update, toast }) {
   const total = project.candidates.nodes.length + project.candidates.edges.length;
   return <div className="wide stage-enter">
     <p className="eyebrow">Choose what to map · {decided} of {total} decided</p>
-    <div className="stage-title-row"><div><h1>Review graph candidates.</h1><p className="lede">Accept, edit, mark as a research lead, or reject each proposed node and relationship before it enters the graph.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Confirm grounded set</button></div>
+    <div className="stage-title-row"><div><h1>Choose nodes and relationships for the map.</h1><p className="lede">Review each proposed node and relationship. Accept, edit, reject, or mark it as a research lead.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Accept all grounded items</button></div>
     <div className="subnav" role="tablist" aria-label="Candidate types"><button id="candidate-tab-nodes" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'nodes'} tabIndex={kind === 'nodes' ? 0 : -1} data-composite-value="nodes" className={kind === 'nodes' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('nodes')}>Nodes · {project.candidates.nodes.length}</button><button id="candidate-tab-edges" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'edges'} tabIndex={kind === 'edges' ? 0 : -1} data-composite-value="edges" className={kind === 'edges' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('edges')}>Relationships · {project.candidates.edges.length}</button></div>
     <div id="candidate-panel" className="candidate-list" role="tabpanel" aria-labelledby={`candidate-tab-${kind}`}>
       {candidates.map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
@@ -908,7 +908,7 @@ function CandidateStage({ project, update, toast }) {
       </article>)}
       {!candidates.length && <p className="empty-message">No {kind} were proposed. Return to the memo and add explicit actors and relationships.</p>}
     </div>
-    <p className="privacy-note">Candidate generation is deterministic in this local concept. The stored configuration snapshot is ready for a provider adapter, but no external model is called.</p>
+    <p className="privacy-note">The graph builder uses fixed rules. It does not call an external model.</p>
   </div>;
 }
 
@@ -1414,7 +1414,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence annotation</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
         </> : <p className="empty-message">Choose a node on the map to inspect and annotate it.</p>}</div>}
         {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span><small>{edge.claimState}</small></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.claimState}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence locator</span><p>{selectedEdge.evidence || 'No evidence locator yet.'}</p></div><Field label="Relationship claim state"><select value={selectedEdge.claimState} onChange={(event) => update((draft) => { const edge = draft.graph.edges.find((item) => item.id === selectedEdge.id); if (edge) edge.claimState = event.target.value; })}>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></Field></div></details><AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Relationship annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
-        {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary"><strong>{project.graph.nodes.length}</strong><span>nodes</span><strong>{project.graph.edges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Evolving-map annotation" value={project.mapAnnotation.text} hint="Describe the pattern, boundary, contradiction, or question that belongs to the map as a whole." placeholder="Across this map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
+        {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary"><strong>{project.graph.nodes.length}</strong><span>nodes</span><strong>{project.graph.edges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
       </aside>
     </div>
   </div>;
@@ -1452,9 +1452,9 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
     }
   };
   return <div className="wide stage-enter">
-    <p className="eyebrow">Revise and export · append-only history</p>
-    <h1>Record the revision and export.</h1>
-    <p className="lede">Describe what changed in the analysis, review the event history and sharing tier, then export the graph with its provenance.</p>
+    <p className="eyebrow">Revise and export</p>
+    <h1>Describe your revision. Export a copy.</h1>
+    <p className="lede">Describe what changed. Check the sharing tier. Then export a copy.</p>
     <div className="revision-grid">
       <section>
         <div className="before-after"><div><span>Before mapping</span><p>{project.submission.text.split(/[.!?]/).filter((sentence) => sentence.trim()).length} memo statements were available for review.</p></div><Icon name="arrow" size={24} /><div><span>Current graph</span><p>{project.graph.nodes.length} nodes and {project.graph.edges.length} relationships are recorded.</p></div></div>
@@ -1464,7 +1464,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
       </section>
       <aside className="history-panel"><div className="history-panel__head"><div><p className="eyebrow">Revision history</p><h2>{project.events.length} events</h2></div><Icon name="history" /></div><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => <li key={event.id}><span className="timeline__dot" /><div><strong>{event.action.replaceAll('.', ' ')}</strong><p>{event.detail}</p><small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>)}</ol></aside>
     </div>
-    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export with provenance.</h2><p>JSON carries the source record, graph, gate result, configuration snapshots, revision history, and a sharing-tier redaction manifest. CSV and Markdown use the same projected data.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
+    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export a copy.</h2><p>Choose JSON, CSV, or Markdown for a copy of the map.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
 

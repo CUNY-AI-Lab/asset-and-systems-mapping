@@ -132,7 +132,7 @@ describe('TeacherDashboard', () => {
   it('defaults to the pending review queue and renders one restrained submission detail with exactly three decisions', async () => {
     const fetchMock = await renderAuthenticated();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
-    const guidanceTab = screen.getByRole('tab', { name: 'Model guidance' });
+    const guidanceTab = screen.getByRole('tab', { name: 'Edit model prompts' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     expect(reviewTab).toHaveAttribute('tabindex', '0');
     expect(guidanceTab).toHaveAttribute('tabindex', '-1');
@@ -155,7 +155,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByRole('heading', { name: 'Possible redirects' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Open questions' })).toBeVisible();
     expect(screen.getAllByText('Prior access to college-prep resources is named but not traced.')).toHaveLength(2);
-    expect(screen.getByRole('heading', { name: 'Guide the next revision' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Write to the student.' })).toBeVisible();
     expect(screen.getByLabelText('Focus for the student')).toBeVisible();
     expect(screen.getByText(/Name one focus/)).toBeVisible();
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
@@ -360,14 +360,14 @@ describe('TeacherDashboard', () => {
     const fetchMock = await renderAuthenticated(authenticatedFetch({ history }));
     await waitForSubmission();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
-    const guidanceTab = screen.getByRole('tab', { name: 'Model guidance' });
+    const guidanceTab = screen.getByRole('tab', { name: 'Edit model prompts' });
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
 
     reviewTab.focus();
     fireEvent.keyDown(reviewTab, { key: 'ArrowRight' });
     expect(guidanceTab).toHaveFocus();
     expect(guidanceTab).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByRole('heading', { name: 'Prompt modules' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose a prompt to edit.' })).toBeVisible();
     expect(screen.getAllByRole('textbox', { name: 'Module instructions' })).toHaveLength(1);
     expect(screen.getByRole('combobox', { name: 'Module' })).toHaveValue(baseModule.id);
     expect(screen.getByText('Shared revision history · 1').parentElement).not.toHaveAttribute('open');
@@ -378,7 +378,7 @@ describe('TeacherDashboard', () => {
     expect(reviewTab).toHaveFocus();
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(guidanceTab);
-    expect(await screen.findByRole('heading', { name: 'Prompt modules' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose a prompt to edit.' })).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/modules')).toHaveLength(1);
   });
 
@@ -401,7 +401,7 @@ describe('TeacherDashboard', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard onConfigurationChanged={onConfigurationChanged} />);
     expect(await screen.findByRole('heading', { name: 'Teacher dashboard' })).toBeVisible();
-    fireEvent.click(screen.getByRole('tab', { name: 'Model guidance' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Edit model prompts' }));
     const editor = await screen.findByRole('textbox', { name: 'Module instructions' });
     const changeNote = screen.getByRole('textbox', { name: 'Change note' });
     fireEvent.change(editor, { target: { value: 'Edited source-grounded readiness instructions.' } });
