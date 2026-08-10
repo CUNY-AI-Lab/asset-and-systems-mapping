@@ -1,6 +1,6 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-09
+Updated: 2026-08-10
 
 This ledger separates implemented and automated behavior from rendered-browser, local-handoff, GitHub, Railway, and live-provider proof. A checked item has current evidence. A source file or earlier screenshot alone is not enough to close an external gate.
 
@@ -41,7 +41,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Neutralize CSV formula cells and reject unknown or credential-shaped project fields.
   - Evidence: byte-level CSV tests cover formula/control/leading-whitespace prefixes; schema and portable-export canaries fail closed.
 - [x] Reconcile README, requirements, QA, and security documentation to the current implementation while preserving the source authority note.
-  - Evidence: documentation updated 2026-08-09; `docs/SOURCE_LEDGER.md` was not modified.
+  - Evidence: documentation updated 2026-08-10; `docs/SOURCE_LEDGER.md` was not modified.
 
 ## Current automated run
 
@@ -51,40 +51,47 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Current integrated client/domain/server suite: 132 passed; 3 PostgreSQL-gated tests skipped.
 - [x] Rebuild the production bundle after the frozen pedagogy changes.
 
-## Required local and browser proof
+## Current local and browser proof
 
 - [x] Restart the final production server on `127.0.0.1:4177` while preserving the real SQLite database and verify the health endpoint.
   - Evidence: the final server reported `http://127.0.0.1:4177`; `/api/health` returned `{"status":"ok"}`.
 - [x] Audit the real handoff database with value-free queries and preserve existing user-owned account/session state.
   - Evidence: integrity `ok`; 2 accounts with 1 already claimed; 1 existing teacher session; 0 student sessions, evaluations, submissions, review events, or prototype events; 60 prompt modules and 60 seed-history rows. Data directory/files are `0700`/`0600`.
-- [ ] Re-run all three teacher-decision branches in the in-app browser against a disposable database. The earlier approve-path proof predates the frozen source-prompt projection; verify **Approve**, **Approve with a question**, and **Reject** from student submission through refresh.
-- [ ] Verify the current build at desktop plus 320, 390, and 430 CSS px with no document-level horizontal overflow, no occluded primary controls, at least 44 px primary touch targets, visible focus, and zero relevant console errors.
-- [ ] Verify map drag, keyboard movement, zoom/pan/fit, annotation edits, reload restoration, export/import restoration, and the complete color/shape/line legend in the current rendered build.
-- [ ] Recapture and inspect the changed **Review suggestions**, teacher **Model review details**, focus/question decision form, and instructor-response states at 320, 390, 430, and 1440 px.
-  - Prior evidence retained: 44 PNGs across 11 pre-pedagogy app states in `systems-mapping-final`; the companion ZIP passes `unzip -t`, but those images do not prove the frozen projection.
-- [ ] Re-run `pnpm audit` and `pnpm audit --prod` against the final lockfile, then scan source and `dist/` for the local class code, credentials, secrets, prompt bodies, teacher identity/history, review capabilities, dangerous HTML sinks, and source maps.
+- [x] Complete the current disposable browser journey through **Approve with a question**.
+  - Evidence: the journey verified source-return prompts, collapsed **Model review details**, one instructor focus and question, the student response, candidate choice, map entry, and revision stage.
+- [x] Capture the current class entry and changed student/teacher views at 320, 390, 430, and 1440 px with no document-level horizontal overflow.
+  - Evidence: 44 PNGs in `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-final/`; `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views.zip` passes `unzip -t`.
+- [x] Verify the deployed class-entry page with zero console warnings and confirm that hosted mode rejects `101`.
+- [x] Run the production dependency audit and final source/application-bundle scans.
+  - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.
 
-## Required GitHub and Railway proof
+## Active-beta browser follow-up
 
-- [ ] Reconfirm that the changed publication set excludes `.env`, databases, WAL/SHM files, local browser state, screenshots, credentials, and test fixtures.
-- [x] Create and read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and verify the published commit.
-  - Evidence: `main` was pushed through `62a546e`; GitHub readback reported `PRIVATE` and the `main` default branch.
-- [ ] Commit and push the frozen pedagogy changes, then read back the resulting private GitHub commit.
+- [ ] Exercise simple **Approve** and **Reject** in separate current browser fixtures. These branches are automated but were not part of the disposable rendered journey above.
+- [ ] Verify current reload restoration and JSON export/import restoration in the rendered application.
+- [ ] Extend rendered interaction receipts for map drag, keyboard movement, zoom/pan/fit, and every annotation surface. Automated persistence coverage and the verified candidate → map → revision journey remain release evidence.
+
+## Current GitHub and Railway proof
+
+- [x] Confirm that the tracked publication excludes `.env`, databases, WAL/SHM files, local browser state, screenshots, credentials, and test fixtures.
+- [x] Read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and published commit lineage.
+  - Evidence: application-contract commit `cb2a959`; commit `23aa134` adds the README **Active beta** notice.
 - [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
   - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
 - [x] Run the Railway migration/deploy to terminal `SUCCESS` and verify the public domain and database-backed health endpoint.
-  - Evidence: deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`. Browser-level Secure-cookie/origin and live review acceptance remain below.
-- [ ] Deploy and read back the frozen pedagogy commit, then confirm the changed review workflow against Railway PostgreSQL. Local PostgreSQL parity and the earlier deployment are not proof of the changed production tree.
+  - Evidence: deployment `68e0a3af-33d7-4cc9-9c4e-f95393d83963` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, and expected hardening headers were present.
+- [x] Verify the deployed browser entry with zero console warnings and rejection of the local-only class code `101`.
+- [ ] Run the full teacher-review journey against the deployed Railway/PostgreSQL service as an active-beta follow-up. Current deployment, health, headers, entry behavior, and local disposable review evidence remain independently verified.
 
 ## Required Ollama Cloud proof
 
 - [ ] Revoke the credential previously exposed in chat and create a fresh key.
 - [ ] Configure only the rotated key as server-side `OLLAMA_API_KEY`; leave it out of source, browser storage, build output, logs, and exports.
 - [ ] Enable Ollama Cloud explicitly and run one authorized source-egress acceptance test that verifies the provider/model disclosure, valid schema receipt, stored runtime provenance, size rejection, generic failure handling, and no deterministic fallback.
-- [ ] Configure and verify the rotated key separately in Railway. The current blank local key and unmodified Railway state do not satisfy this gate.
+- [ ] Configure and verify the rotated key separately in Railway. The current blank local key and disabled Railway Ollama state do not satisfy this gate.
 
-## Completion rule
+## Release boundary
 
-Do not call the release complete until every unchecked gate above has evidence. The prior GitHub/Railway release remains published, but it does not prove the changed pedagogy bundle, browser behavior, or a live Ollama Cloud run.
+The deterministic active-beta release is automated, scanned, published, deployed, and verified through its primary disposable browser journey. Unchecked items above extend branch and restoration coverage; they do not invalidate that deterministic release. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.

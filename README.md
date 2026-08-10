@@ -80,7 +80,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 ## Hosted and Railway contract
 
-The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Deployment `f23a2cf0-6f4b-462f-b1e2-8a1c5e2bc7de` reached `SUCCESS`; the migration completed and `/api/health` returned `{"status":"ok"}`. That receipt applies to the published release; the frozen source-prompt/teacher-focus changes are newer local work until a new deployment is read back. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Deployment `68e0a3af-33d7-4cc9-9c4e-f95393d83963` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, and the deployed service returned the expected hardening headers. The hosted class-entry page loaded without console warnings and correctly rejected the local-only code `101`. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>
@@ -97,6 +97,14 @@ The hosted class code must contain at least six distinct characters and cannot b
 Black, white, and gray remain dominant. Restrained teal, amber, and plum accents identify micro, meso, and macro scales and a few selected states; shape, label, outline, and line pattern repeat every distinction. The UI uses modest editorial typography rather than oversized display copy. Map layout, viewport, and annotations persist locally, round-trip through canonical JSON, and support pointer and keyboard movement.
 
 ## Evidence and authority
+
+The deterministic active-beta release passed 132 tests with 3 PostgreSQL-gated skips and produced a successful production build. The production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
+
+GitHub readback confirmed `cb2a959` for the application contract and `23aa134` for the **Active beta** notice. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
+
+The current disposable browser journey verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, and the candidate → map → revision flow. Current class-entry and changed-view captures at 320, 390, 430, and 1440 px showed no horizontal overflow. The 44 PNGs are in `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-final/`; `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views.zip` passes `unzip -t`.
+
+Simple **Approve**, **Reject**, reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
 
 - [Source ledger](./docs/SOURCE_LEDGER.md)
 - [Requirements](./docs/REQUIREMENTS.md)
