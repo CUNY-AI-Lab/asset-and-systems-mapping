@@ -4,20 +4,20 @@ Updated: 2026-08-11
 
 ## Current status
 
-The deterministic active-beta release is automated-test green, production-build green, security-scanned, published to private GitHub, and deployed to Railway. The current student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. A disposable current browser journey verified **Approve with a question** through candidate choice, map entry, and the revision stage. Live Ollama remains disabled and unverified.
+The current active-beta tree is automated-test green, production-build green, and security-scanned. The last published Railway release predates the seven-stage Course settings change. The student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. Disposable browser journeys verified **Approve with a question** through candidate choice, map entry, and the revision stage, plus Course settings create → save → preview → publish. Live Ollama remains disabled and unverified.
 
-The current image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the changed source-prompt and teacher-review views. Inspection found no document-level horizontal overflow. The deployed class-entry page produced zero console warnings and rejected the local-only class code `101`. Simple **Approve**, **Reject**, reload restoration, and export/import restoration were not part of this rendered journey and remain active-beta follow-up.
+The existing image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. Its Course settings images predate the progression editor. A fresh local browser pass inspected the new editor at 320, 390, 430, and the default 1280 px viewport: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. The deployed class-entry page previously produced zero console warnings and rejected the local-only class code `101`. Simple **Approve**, **Reject**, reload restoration, export/import restoration, progression-editor recapture, and changed-tree deployment remain active-beta follow-up.
 
 ## Completed automated runs
 
 | Gate | Current result | Scope |
 | --- | --- | --- |
 | Published release baseline | 130 passed; 3 PostgreSQL-gated skipped | Pre-pedagogy GitHub/Railway tree; retained as historical release evidence, not the new total. |
-| Current `pnpm test:server` | 57 passed; 3 PostgreSQL-gated skipped | Course-profile trials, source-prompt projection, teacher-only full detail, focus/question decisions, SQLite API/auth/config/evaluation/review/retention, hosted mode, and Ollama adapter. |
+| Current `pnpm test:server` | 59 passed; 3 PostgreSQL-gated skipped | Stage-specific course settings, source-prompt projection, teacher-only full detail, focus/question decisions, SQLite API/auth/config/evaluation/review/retention, hosted mode, and Ollama adapter. |
 | Current fresh PostgreSQL 17 integration | 3/3 passed | Teacher-only full result, minimized student projection/status, decision persistence, and database parity. |
 | Current focused App/domain contract | Green; no separate subtotal recorded | Covered by the integrated frozen-tree run without inventing a focused-test count. |
-| Current full `pnpm test` | 142 passed; 3 PostgreSQL-gated skipped | Integrated client, domain, server, shared contract, adapters, and persistence tree. |
-| Current `pnpm build` | Passed | Production Vite bundle rebuilt after the frozen pedagogy changes. |
+| Current full `pnpm test` | 145 passed; 3 PostgreSQL-gated skipped | Integrated client, domain, server, shared contract, adapters, and persistence tree. |
+| Current `pnpm build` | Passed | Production Vite bundle rebuilt after the progression-editor changes. |
 | Current production dependency audit | No known vulnerabilities | Production dependency set only. |
 | Current source/application-bundle scans | Clean | No credential values; no application-bundle class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. |
 
@@ -64,8 +64,9 @@ The current production audit reported no known vulnerabilities. Source and appli
 - Exactly three decisions are available. Every decision requires one **Focus for the student**. **Approve with a question** alone reveals and requires one **Question for the student**; no revised-model-suggestion field is accepted.
 - A recorded decision leaves the pending queue and displays returned append-only history.
 - Expected-revision conflicts preserve the unsent teacher draft and require an explicit reload before retry.
-- Course settings exposes one course profile with Focus, Evidence, Questions, Privacy, and collapsed Scale adjustments.
-- A teacher creates a trial from a published or earlier profile. Unsaved text blocks preview and publication. A saved draft can be previewed by application step and scale, then published with a second change note.
+- Course settings follows the seven student stages and opens one stage at a time.
+- Every stage provides one field for model guidance and one field for pasted course material. Unsaved text blocks preview and publication. A saved draft can be previewed by stage and scale, then published with a second change note.
+- Prompt tests prove that the current stage and completed stages appear in order, later stages are excluded, and supporting material is labeled as reference content.
 - Publishing retires the previous profile, records append-only history, and changes the runtime fingerprint. Deterministic scoring remains fixed while Ollama prompt composition changes.
 - Legacy module, module-history, and direct-effective-prompt endpoints return `410` after teacher authentication.
 - Manual teacher claim requires account ID, passphrase confirmation, and a server bootstrap token; the unauthenticated surface does not enumerate Maria or Zach.
@@ -97,7 +98,7 @@ The current production audit reported no known vulnerabilities. Source and appli
 | Direct stage names | Seven verb-led labels are used throughout. | Automated DOM and current rendered-browser verified. |
 | Return to source evidence | At most three short prompts plus the student's note; no student-facing model codification or synthesized groups. | Integrated automation and current rendered journey verified. |
 | Teacher review details | Full criteria/scores are teacher-only and collapsed; the instructor writes one focus and optionally one question. | Integrated automation and current rendered **Approve with a question** journey verified. |
-| Teacher Console | Review queue first; Course settings secondary and lazy; one profile with five sections. | Automated DOM verified; current Course settings browser captures are recorded with this release. |
+| Teacher Console | Review queue first; Course settings secondary and lazy; one sequential editor across seven stages. | Automated DOM verified; rendered verification for this revision is pending. |
 | Editorial typography | Modest serif headings, humanist controls, monospace provenance; no oversized display copy. | Source and rendered-browser verified. |
 | Monochrome-dominant palette | White/black/gray surfaces with restrained teal, amber, and plum accents. | Source and rendered-browser verified; dedicated contrast audit remains separate. |
 | Redundant legend | Micro/teal/circle; meso/amber/square; macro/plum/diamond; integration/black/double-circle; claim states repeated through text and line pattern. | DOM/source and rendered-browser verified. |

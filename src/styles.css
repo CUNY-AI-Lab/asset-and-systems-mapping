@@ -712,6 +712,19 @@ h3 { font-size: 17px; font-weight: 600; letter-spacing: -.012em; }
 .teaching-profile-editor textarea { min-height: 112px; font-size: 14px; line-height: 1.55; }
 .teaching-profile-editor input[readonly],
 .teaching-profile-editor textarea[readonly] { background: #f7f7f7; color: var(--muted); }
+.course-stage-nav { margin: 2px 0 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.course-stage-nav ol { display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); margin: 0; padding: 0; list-style: none; }
+.course-stage-nav li + li { border-left: 1px solid var(--line); }
+.course-stage-nav button { width: 100%; min-height: 78px; padding: 11px 10px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.course-stage-nav button span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.course-stage-nav button strong { display: block; font-family: var(--display); font-size: 12px; font-weight: 500; line-height: 1.25; }
+.course-stage-nav button:hover,
+.course-stage-nav button:focus-visible { background: #f1f1f1; }
+.course-stage-nav button.is-active { background: var(--ink); color: #fff; }
+.course-stage-nav button.is-active span { color: #d7d7d7; }
+.course-stage-editor { display: grid; gap: 18px; padding: 20px 0 4px; }
+.course-stage-editor h4 { margin: 0; font-family: var(--display); font-size: clamp(22px, 2.2vw, 30px); font-weight: 500; line-height: 1.12; }
+.course-stage-editor > div > p:last-child { max-width: 68ch; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .teaching-profile-scales { display: grid; gap: 18px; padding-top: 18px; }
 .teaching-profile-editor > .teacher-history { padding: 0; border: 0; background: transparent; }
 .teaching-profile-editor > .teacher-history > summary { min-height: 44px; display: flex; align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -1214,6 +1227,9 @@ label.button:focus-within {
   .teaching-profile-create > .button { grid-column: 1; width: 100%; }
   .teaching-profile-editor, .teaching-profile-preview { padding: 22px 16px; }
   .teaching-profile-editor textarea { min-height: 132px; font-size: 16px; }
+  .course-stage-nav { max-width: 100%; overflow-x: auto; scroll-snap-type: x proximity; }
+  .course-stage-nav ol { grid-template-columns: repeat(7, minmax(164px, 1fr)); }
+  .course-stage-nav li { scroll-snap-align: start; }
   .module-list { grid-template-columns: 1fr; padding: 14px; }
   .module-list button:nth-of-type(even) { border-left: 1px solid var(--line); }
   .module-list button + button { border-top: 0; }

@@ -49,6 +49,7 @@ function hostedSubmission() {
   return {
     projectMetadata: { projectId: 'hosted-project', title: 'Hosted review snapshot' },
     activeScale: 'micro',
+    stageId: 'review-suggestions',
     inquiry: 'How does the hosted course review preserve feedback?',
     sourceRecord: {
       id: 'hosted-source',

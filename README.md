@@ -51,9 +51,11 @@ Fresh databases seed unclaimed identities for Maria Mavrides Calderon and Zach M
 
 The Teacher Console opens on **Review submissions**. Its queue loads before course settings. Selecting one submission reveals the memo and student note. Full criteria and scores remain teacher-only and closed by default behind **Model review details**. The instructor writes one focus for the student, then chooses **Approve**, **Approve with a question**, or **Reject**. The middle choice also requires one question. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
 
-**Course settings** loads only when selected. One published course profile governs new runs. A teacher creates a trial from any published or earlier profile, changes **Focus**, **Evidence**, **Questions**, **Privacy**, and optional **Scale adjustments**, saves the draft, previews the saved revision, and publishes it. Publishing retires the previous profile without erasing its history. Cloning an earlier profile provides rollback without editing a published record in place.
+**Course settings** follows the same seven stages students see. A teacher opens one stage at a time and writes how the model should guide that stage, then may paste course material the model can draw on. The prompt includes the current stage and the stages already completed in their original order. Later stages stay out of the request. Course material enters the prompt as reference content rather than a competing instruction source.
 
-Fixed grounding, privacy, schema, and student-confirmation rules remain code-owned. The server still composes those rules from smaller internal parts, but it exposes no internal configuration matrix to the Teacher Console or its retired module endpoints. Deterministic STEM Splitter records the published profile as provenance without changing its fixed score. Ollama Cloud applies the published text to the provider request and validated response.
+One published version governs new model requests. A teacher creates a draft from the published or an earlier version, saves changes with a note, previews the saved prompt by stage and scale, and publishes it. Publishing retires the earlier version without erasing its history. Cloning an earlier version provides rollback without editing a published record in place.
+
+Fixed grounding, privacy, schema, and student-confirmation rules remain code-owned. The server still composes those rules from smaller internal parts, but it exposes no internal configuration matrix to the Teacher Console or its retired module endpoints. Deterministic STEM Splitter records the published version and active stage as provenance without changing its fixed score. Ollama Cloud receives the published guidance and course material for the relevant stretch of the progression.
 
 ## Suggestion runtime
 
@@ -68,7 +70,7 @@ OLLAMA_CLOUD_URL=https://ollama.com
 OLLAMA_MODEL=gpt-oss:20b
 ```
 
-When enabled, the server sends the active teacher prompt, bounded project instructions, inquiry, scale, source metadata, and memo text to Ollama Cloud. Source text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the exact H1–H4/C1–C8 JSON schema; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic scoring.
+When enabled, the server sends the published guidance and course material through the student's current stage, bounded project instructions, inquiry, scale, source metadata, and memo text to Ollama Cloud. Source text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the exact H1–H4/C1–C8 JSON schema; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic scoring.
 
 The credential previously pasted into chat must be treated as exposed. It has deliberately not been placed in the local `.env` or Railway. Revoke it and configure a newly rotated key before enabling Ollama Cloud. Never prefix `OLLAMA_API_KEY` with `VITE_` or otherwise expose it to client code.
 
@@ -100,11 +102,11 @@ Black, white, and gray remain dominant. Restrained teal, amber, and plum accents
 
 ## Evidence and authority
 
-The current active-beta release passed 142 tests with 3 PostgreSQL-gated skips and produced a successful production build. The production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
+The current active-beta tree passed 145 tests with 3 PostgreSQL-gated skips; the server group passed 59 tests with the same 3 integration gates. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
 
 GitHub readback confirmed `cb2a959` for the application contract and `23aa134` for the **Active beta** notice. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 
-The current disposable browser journeys verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, the candidate → map → revision flow, and the Course settings create → save → preview → publish path. Current captures at 320, 390, 430, and 1440 px showed no horizontal overflow. The 50-PNG archive at `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip` passes `unzip -t`.
+The disposable browser journeys verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, and the candidate → map → revision flow. A fresh progression-editor journey verified create → save → preview → publish, the current/completed-stage prompt boundary, all seven stage controls, and no document overflow at 320, 390, 430, or the default 1280 px viewport; the browser console reported no warnings or errors. The existing 50-PNG archive at `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip` passes `unzip -t`, but its Course settings images predate the progression editor and need recapture.
 
 Simple **Approve**, **Reject**, reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
 

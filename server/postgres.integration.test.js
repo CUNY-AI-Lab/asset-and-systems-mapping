@@ -60,6 +60,7 @@ function preflightEvaluation(projectId, overrides = {}) {
   return {
     projectMetadata: { projectId, title: 'PostgreSQL review snapshot' },
     activeScale: 'micro',
+    stageId: 'review-suggestions',
     inquiry: 'How does PostgreSQL preserve course review feedback?',
     sourceRecord: {
       id: `${projectId}_source`,
@@ -176,17 +177,26 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     expect(Buffer.isBuffer(account.passphraseSalt)).toBe(true);
 
     const catalog = await (await request(system, '/api/teacher/profiles', { headers: { cookie } })).json();
-    expect(catalog.resource.modules).toHaveLength(5);
+    expect(catalog.resource.modules).toHaveLength(7);
     const created = await jsonMutation(system, 'POST', '/api/teacher/profiles', {
-      name: 'Concurrent profile trial',
+      name: 'Concurrent course draft',
       note: 'Exercise concurrent profile updates',
       sourceProfileId: catalog.activeProfileId,
     }, cookie);
     expect(created.status).toBe(201);
     const draft = await created.json();
     const bodies = ['First concurrent revision.', 'Second concurrent revision.'].map((suffix) => ({
-      name: 'Concurrent profile trial',
-      profile: { ...draft.profile.profile, questions: suffix },
+      name: 'Concurrent course draft',
+      profile: {
+        ...draft.profile.profile,
+        stages: {
+          ...draft.profile.profile.stages,
+          'review-suggestions': {
+            ...draft.profile.profile.stages['review-suggestions'],
+            guidance: suffix,
+          },
+        },
+      },
       note: suffix,
       expectedRevision: draft.profile.revision,
     }));

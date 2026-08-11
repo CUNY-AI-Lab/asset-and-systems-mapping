@@ -18,6 +18,7 @@ import {
   withDefaultNodeLayout,
 } from './domain.js';
 import TeacherDashboard from './TeacherDashboard.jsx';
+import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   ApiError,
   createPreflightEvaluation,
@@ -48,15 +49,7 @@ const FILE_NAME_LIMIT = 255;
 const RELATION_VOCABULARY_TEXT_LIMIT = PROJECT_LIMITS.relationVocabulary * (RELATIONSHIP_VERB_LIMIT + 2);
 const VIEWPORT_LIMITS = { minZoom: 0.5, maxZoom: 2, minPan: -840, maxPan: 840 };
 
-const STAGES = [
-  { label: 'Choose a scale', short: 'Scale' },
-  { label: 'Add a source', short: 'Source' },
-  { label: 'Review suggestions', short: 'Suggestions' },
-  { label: "Check your instructor's response", short: 'Response' },
-  { label: 'Choose what to map', short: 'Candidates' },
-  { label: 'Build the map', short: 'Map' },
-  { label: 'Revise and export', short: 'Revision' },
-];
+const STAGES = SYSTEMS_MAPPING_STAGES;
 
 const REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
 const REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
@@ -228,6 +221,7 @@ function preflightEvaluationPayload(project) {
   return {
     projectMetadata: projectMetadataForReview(project),
     activeScale: project.activeScale,
+    stageId: STAGES[project.stage]?.id || 'review-suggestions',
     inquiry: project.inquiry,
     sourceRecord: sourceRecordForEvaluation(project.submission),
     sourceMaterial: project.submission.text,
@@ -1675,10 +1669,11 @@ function App() {
 
   const refreshPublicConfigurations = useCallback(async () => {
     const scale = project.activeScale;
+    const stageId = STAGES[project.stage]?.id || 'choose-scale';
     try {
       const [preflight, builder] = await Promise.all([
-        getPublicConfiguration('preflight', scale),
-        getPublicConfiguration('builder', scale),
+        getPublicConfiguration('preflight', scale, stageId),
+        getPublicConfiguration('builder', scale, stageId),
       ]);
       setProject((current) => {
         if (current.activeScale !== scale) return current;
@@ -1692,7 +1687,7 @@ function App() {
     } catch {
       return false;
     }
-  }, [project.activeScale]);
+  }, [project.activeScale, project.stage]);
   useEffect(() => {
     if (workspaceStarted && accessState.status === 'granted') refreshPublicConfigurations();
   }, [workspaceStarted, accessState.status, refreshPublicConfigurations]);

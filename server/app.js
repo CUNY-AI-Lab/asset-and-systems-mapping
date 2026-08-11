@@ -4,6 +4,11 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import { evaluateSubmission } from '../src/domain.js';
 import {
+  SYSTEMS_MAPPING_STAGE_IDS,
+  SYSTEMS_MAPPING_STAGES,
+  systemsMappingStage,
+} from '../shared/systems-mapping-stages.js';
+import {
   clearSession,
   clearStudentSession,
   constantTimeSecretEqual,
@@ -119,15 +124,7 @@ const PROTOTYPE_EVENTS = new Set([
   'project_imported',
   'recovery_exported',
 ]);
-const PROTOTYPE_STAGES = new Map([
-  ['Choose a scale', 0],
-  ['Add a source', 1],
-  ['Review suggestions', 2],
-  ["Check your instructor's response", 3],
-  ['Choose what to map', 4],
-  ['Build the map', 5],
-  ['Revise and export', 6],
-]);
+const PROTOTYPE_STAGES = new Map(SYSTEMS_MAPPING_STAGES.map(({ label }, index) => [label, index]));
 const PROTOTYPE_METADATA_RULES = Object.freeze({
   stageIndex: { type: 'integer', min: 0, max: 6 },
   sourceCount: { type: 'integer', min: 0, max: 1000 },
@@ -478,10 +475,11 @@ function validateSuggestion(value, name = 'suggestion') {
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay',
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
+  if (!SYSTEMS_MAPPING_STAGE_IDS.includes(value.stageId)) throw new HttpError(400, 'stageId is not supported.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { max: 8000 });
   const sourceRecord = validateSourceRecord(value.sourceRecord);
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
@@ -489,6 +487,7 @@ function validatePreflightEvaluationRequest(value) {
   return {
     projectMetadata,
     activeScale: value.activeScale,
+    stageId: value.stageId,
     inquiry,
     sourceRecord,
     sourceMaterial,
@@ -526,11 +525,12 @@ function authoritativeRuntimeMetadata(value, { provider, model, createdAt }) {
   return metadata;
 }
 
-function evaluationConfigSnapshot(effective, projectOverlay, customInstructions, activeScale, createdAt) {
+function evaluationConfigSnapshot(effective, projectOverlay, customInstructions, activeScale, stageId, createdAt) {
   const shared = publicSnapshotMetadata(effective);
   return {
     kind: 'preflight',
     activeScale,
+    stageId,
     capturedAt: new Date(createdAt).toISOString(),
     shared: {
       fingerprint: shared.fingerprint,
@@ -883,16 +883,25 @@ async function listModules(db, where = '', parameters = []) {
   `).all(...parameters)).map(moduleRow);
 }
 
-async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null) {
+async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null) {
   if (!CONFIG_KINDS.includes(configKind)) throw new HttpError(400, 'configKind must be preflight or builder.');
   if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, macro, or integration.');
+  const effectiveStageId = stageId || (configKind === 'builder' ? 'build-map' : 'review-suggestions');
+  if (!systemsMappingStage(effectiveStageId)) throw new HttpError(400, 'stageId is not supported.');
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
   const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
-  if (!teachingProfile) throw new HttpError(503, 'The published teaching profile is unavailable.');
-  const effectivePrompt = composeEffectivePrompt({ configKind, scale, modules, teachingProfile: teachingProfile.profile });
+  if (!teachingProfile) throw new HttpError(503, 'The published course settings are unavailable.');
+  const effectivePrompt = composeEffectivePrompt({
+    configKind,
+    scale,
+    modules,
+    teachingProfile: teachingProfile.profile,
+    stageId: effectiveStageId,
+  });
   const snapshot = {
     configKind,
     scale,
+    stageId: effectiveStageId,
     effectivePrompt,
     fixedGuardrails: FIXED_GUARDRAILS.join('\n'),
     fingerprint: fingerprint(effectivePrompt),
@@ -913,6 +922,7 @@ function publicSnapshotMetadata(snapshot) {
   return {
     configKind: snapshot.configKind,
     scale: snapshot.scale,
+    stageId: snapshot.stageId,
     fingerprint: snapshot.fingerprint,
     revision: snapshot.revision,
     moduleVersions: snapshot.moduleVersions,
@@ -1749,12 +1759,13 @@ export function createSystemsMappingApp(options = {}) {
     let configSnapshot;
     let runtimeMetadata;
     try {
-      const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true);
+      const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true, null, input.stageId);
       configSnapshot = evaluationConfigSnapshot(
         effective,
         input.projectOverlay,
         input.customInstructions,
         input.activeScale,
+        input.stageId,
         createdAt,
       );
       if (ollamaConfig) {
@@ -2094,7 +2105,7 @@ export function createSystemsMappingApp(options = {}) {
     const sourceProfile = body.sourceProfileId === undefined
       ? await activeTeachingProfile(db)
       : await teachingProfileById(db, requireTeachingProfileId(body.sourceProfileId, 'sourceProfileId'));
-    if (!sourceProfile) throw new HttpError(404, 'Source teaching profile not found.');
+    if (!sourceProfile) throw new HttpError(404, 'Source course settings not found.');
     const profileId = randomBytes(24).toString('base64url');
     const occurredAt = new Date(clockValue(now)).toISOString();
     await inTransaction(db, async () => {
@@ -2131,7 +2142,7 @@ export function createSystemsMappingApp(options = {}) {
   app.get('/api/teacher/profiles/:id', async (context) => {
     const profileId = requireTeachingProfileId(context.req.param('id'));
     const profile = await teachingProfileById(db, profileId);
-    if (!profile) throw new HttpError(404, 'Teaching profile not found.');
+    if (!profile) throw new HttpError(404, 'Course settings version not found.');
     return context.json({ profile, events: await teachingProfileEvents(db, profileId) });
   });
 
@@ -2165,10 +2176,10 @@ export function createSystemsMappingApp(options = {}) {
     });
     if (!changed) {
       const current = await teachingProfileById(db, profileId);
-      if (!current) throw new HttpError(404, 'Teaching profile not found.');
+      if (!current) throw new HttpError(404, 'Course settings version not found.');
       throw new HttpError(409, current.status === 'draft'
-        ? 'This teaching profile changed after it was loaded.'
-        : 'Only a draft teaching profile can be edited.', { current });
+        ? 'This draft changed after it was loaded.'
+        : 'Only a draft can be edited.', { current });
     }
     return context.json({ profile: await teachingProfileById(db, profileId), events: await teachingProfileEvents(db, profileId) });
   });
@@ -2184,11 +2195,11 @@ export function createSystemsMappingApp(options = {}) {
     await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('teaching-profiles');
       const target = await teachingProfileById(db, profileId);
-      if (!target) throw new HttpError(404, 'Teaching profile not found.');
+      if (!target) throw new HttpError(404, 'Course settings version not found.');
       if (target.status !== 'draft' || target.revision !== expectedRevision) {
         throw new HttpError(409, target.status === 'draft'
-          ? 'This teaching profile changed after it was loaded.'
-          : 'Only a draft teaching profile can be published.', { current: target });
+          ? 'This draft changed after it was loaded.'
+          : 'Only a draft can be published.', { current: target });
       }
       const active = await activeTeachingProfile(db);
       if (active && active.id !== target.id) {
@@ -2207,7 +2218,7 @@ export function createSystemsMappingApp(options = {}) {
         SET status = 'active', updated_at = ?, updated_by = ?, published_at = ?, published_by = ?
         WHERE id = ? AND status = 'draft' AND revision = ?
       `).run(occurredAt, actor.id, occurredAt, actor.id, profileId, expectedRevision);
-      if (published.changes !== 1) throw new HttpError(409, 'This teaching profile changed while it was being published.');
+      if (published.changes !== 1) throw new HttpError(409, 'This draft changed while it was being published.');
       await db.prepare(`
         INSERT INTO teaching_profile_events
           (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
@@ -2220,13 +2231,15 @@ export function createSystemsMappingApp(options = {}) {
   app.get('/api/teacher/profiles/:id/preview', async (context) => {
     const profileId = requireTeachingProfileId(context.req.param('id'));
     const profile = await teachingProfileById(db, profileId);
-    if (!profile) throw new HttpError(404, 'Teaching profile not found.');
+    if (!profile) throw new HttpError(404, 'Course settings version not found.');
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
-    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile);
+    const stageId = context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions');
+    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId);
     return context.json({
       configKind: snapshot.configKind,
       scale: snapshot.scale,
+      stageId: snapshot.stageId,
       effectivePrompt: snapshot.effectivePrompt,
       fingerprint: snapshot.fingerprint,
       revision: snapshot.revision,
@@ -2234,19 +2247,19 @@ export function createSystemsMappingApp(options = {}) {
   });
 
   app.get('/api/teacher/modules', () => {
-    throw new HttpError(410, 'Teacher configuration now uses one teaching profile with five sections.');
+    throw new HttpError(410, 'Teacher configuration now follows the seven stages in Course settings.');
   });
 
   app.put('/api/teacher/modules/:id', () => {
-    throw new HttpError(410, 'Direct module editing has been replaced by teaching-profile trials.');
+    throw new HttpError(410, 'Edit stage guidance from Course settings.');
   });
 
   app.get('/api/teacher/history', () => {
-    throw new HttpError(410, 'Teaching profile history is available with each teaching profile.');
+    throw new HttpError(410, 'Version history is available in Course settings.');
   });
 
   app.get('/api/teacher/effective', () => {
-    throw new HttpError(410, 'Preview a saved teaching profile from the Teacher Console.');
+    throw new HttpError(410, 'Preview a saved stage from Course settings.');
   });
 
   app.get('/api/teacher/prototype-audit', async (context) => context.json({ prototypeEvents: await prototypeEventAudit(db) }));
@@ -2257,7 +2270,8 @@ export function createSystemsMappingApp(options = {}) {
     if (!student && !teacher) throw new HttpError(401, 'Student class access or teacher authentication is required.');
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
-    return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false)));
+    const stageId = context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions');
+    return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false, null, stageId)));
   });
 
   app.all('/api/*', (context) => context.json({ error: 'API route not found.' }, 404));

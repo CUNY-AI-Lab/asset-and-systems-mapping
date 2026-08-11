@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
+import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   configFingerprint,
   createDefaultProject,
@@ -72,6 +73,7 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
       clientUpdatedAt: project.updatedAt,
     },
     activeScale: project.activeScale,
+    stageId: SYSTEMS_MAPPING_STAGES[project.stage]?.id || 'choose-scale',
     inquiry: project.inquiry,
     sourceRecord: Object.fromEntries(['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership'].map((key) => [key, project.submission[key]])),
     sourceMaterial: project.submission.text,
@@ -98,6 +100,7 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
   const configSnapshot = overrides.configSnapshot || {
     kind: 'preflight',
     activeScale: payload.activeScale,
+    stageId: payload.stageId,
     capturedAt: createdAt,
     shared: {
       fingerprint: 'preflight-shared-fingerprint',
@@ -516,10 +519,10 @@ describe('Systems Mapping workflow', () => {
 
     const evaluationRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     const evaluationBody = JSON.parse(evaluationRequest[1].body);
-    expect(Object.keys(evaluationBody).sort()).toEqual(['activeScale', 'inquiry', 'projectMetadata', 'projectOverlay', 'sourceMaterial', 'sourceRecord'].sort());
+    expect(Object.keys(evaluationBody).sort()).toEqual(['activeScale', 'stageId', 'inquiry', 'projectMetadata', 'projectOverlay', 'sourceMaterial', 'sourceRecord'].sort());
     expect(Object.keys(evaluationBody.projectMetadata).sort()).toEqual(['author', 'clientUpdatedAt', 'date', 'furthestStage', 'id', 'projectId', 'schemaVersion', 'sharingTier', 'sourceTitle', 'sourceType', 'stage', 'submissionId', 'title'].sort());
     expect(Object.keys(evaluationBody.sourceRecord)).toEqual(['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership']);
-    expect(evaluationBody).toMatchObject({ activeScale: 'micro', sourceMaterial: createDefaultProject().submission.text });
+    expect(evaluationBody).toMatchObject({ activeScale: 'micro', stageId: 'review-suggestions', sourceMaterial: createDefaultProject().submission.text });
     expect(evaluationBody.projectOverlay).toMatchObject({ baseModel: 'STEM Splitter', customInstructions: createDefaultProject().configs.preflight.customInstructions, revision: 1 });
     expect(evaluationBody.projectOverlay).not.toHaveProperty('fixedPrompt');
     await waitFor(() => expect(storedProject().preflight?.evaluation?.evaluationId).toBe(EVALUATION_ID));

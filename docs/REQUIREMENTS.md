@@ -100,17 +100,16 @@ No decision may modify the student's memo, source prompts, candidates, or graph.
 
 The Teacher Console must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the memo, source context, and student note. Full criteria, scores, outcome, evidence, possible redirects, open questions, and criterion-by-criterion records are teacher-only and collapsed by default behind **Model review details**. The instructor form exposes one **Focus for the student**, three decisions, and one **Question for the student** only after **Approve with a question** is selected. Decision history records the same focus and optional question.
 
-**Course settings** must not load until selected. The teacher works with one course profile made of five sections.
+**Course settings** must not load until selected. It must present the same seven stages as the student workflow and let the teacher open one stage at a time.
 
-- **Focus** names what students should attend to.
-- **Evidence** describes how guidance returns students to source material.
-- **Questions** constrains redirective questions without completing student analysis.
-- **Privacy** describes how identifying or sensitive material should be handled.
-- **Scale adjustments** holds optional micro, meso, macro, and integration emphasis in one collapsed section.
+- **How should the model guide this stage?** accepts up to 2,500 characters of instructor guidance.
+- **What course material should the model draw on?** accepts up to 4,000 characters of pasted course material. The prompt must mark this field as reference content and must state that it cannot override fixed rules.
 
-One published profile governs new evaluations. A teacher may clone the published profile or an earlier profile into a trial, edit the trial, save a revision with a change note, preview the saved revision by application step and scale, and publish it. Published and retired profiles are read-only. Publishing retires the former profile and records append-only events for both records. Cloning an earlier profile and publishing the clone provides rollback. Expected revisions prevent stale writes and preserve the local draft until the teacher explicitly loads the server revision.
+The effective prompt must include the current stage and every completed stage in progression order. It must exclude later stages. The student evaluation request must name the canonical stage ID, and the server must reject unknown IDs.
 
-The internal preflight and graph-builder rules remain code-owned. The Teacher Console and its API must not expose the internal configuration matrix as instructor-editable records. Deterministic STEM Splitter records the published profile fingerprint and revision but does not interpret its prose or change its fixed scoring. Ollama Cloud composes the published profile into the provider prompt. The Console must state the active runtime effect before a teacher edits or publishes a trial.
+One published version governs new evaluations. A teacher may clone the published or an earlier version into a draft, edit stages, save a revision with a change note, preview the saved prompt by stage and scale, and publish it. Published and earlier versions are read-only. Publishing retires the former version and records append-only events for both records. Expected revisions prevent stale writes and preserve unsaved text until the teacher explicitly loads the server revision.
+
+The internal preflight and graph-builder rules remain code-owned. The Teacher Console and its API must not expose the internal configuration matrix as instructor-editable records. Deterministic STEM Splitter records the published fingerprint, revision, and stage but does not interpret instructor prose or change its fixed scoring. Ollama Cloud composes the applicable stage guidance and course material into the provider prompt. The Console must state the active runtime effect before a teacher edits or publishes a draft.
 
 Fresh databases seed separate unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer without credentials. Claiming requires an operator-controlled, one-time bootstrap token and an explicit account ID. Each server-process token may claim exactly one account. Passphrases must be salted and scrypt-derived; teacher sessions must be random, expiring, `HttpOnly`, and `SameSite=Strict`.
 

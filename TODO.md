@@ -20,8 +20,8 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: pending reviews send the student to **Check your instructor's response**. **Approve** and **Approve with a question** let the student choose what to map. **Reject** returns the student to **Add a source** while preserving the memo and graph.
 - [x] Implement the teacher review queue and three decision paths.
   - Evidence: the authenticated Teacher Console defaults to Review submissions, loads one selected detail, keeps full criteria and scores collapsed behind **Model review details**, requires one instructor focus, shows one question only for **Approve with a question**, detects stale revisions, and records append-only decision events.
-- [x] Bound teacher control to one course profile with five sections.
-  - Evidence: Course settings loads only when selected and exposes Focus, Evidence, Questions, Privacy, and collapsed Scale adjustments. Teachers create a trial, save and preview its revision, and publish it. Published records remain read-only, retired records can be cloned for rollback, and legacy module routes return `410`.
+- [x] Align teacher control with the seven student stages.
+  - Evidence: Course settings loads only when selected and opens one stage at a time. Each stage contains bounded guidance and course-material fields. Saved previews include the current and completed stages in order, exclude later stages, and label instructor material as reference content. Published records remain read-only, earlier records can be cloned for rollback, and legacy module routes return `410`.
 - [x] Persist the new evaluation and review workflow in both SQLite and PostgreSQL.
   - Evidence: matching schemas, transactions, constraints, migrations, retention locks, append-only triggers, and fresh PostgreSQL 17 integration tests.
 - [x] Implement bounded retention.
@@ -48,8 +48,9 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Preserve the published pre-pedagogy release baseline: 130 passing tests, 3 PostgreSQL-gated skips, and a successful production Vite build.
 - [x] Current server and course-profile contract: 57 passed; 3 PostgreSQL-gated tests skipped in the ordinary SQLite run.
 - [x] Current fresh disposable PostgreSQL 17 integration: 3/3 passed.
-- [x] Current integrated client/domain/server suite: 142 passed; 3 PostgreSQL-gated tests skipped.
+- [x] Current integrated client/domain/server suite: 145 passed; 3 PostgreSQL-gated tests skipped. Current server group: 59 passed; the same 3 PostgreSQL tests were gated.
 - [x] Rebuild the production bundle after the frozen pedagogy changes.
+- [ ] Recapture Course settings at 320, 390, 430, and 1440 px after the seven-stage progression editor replaced the earlier settings view.
 
 ## Current local and browser proof
 
@@ -92,6 +93,6 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Release boundary
 
-The deterministic active-beta release is automated, scanned, published, deployed, and verified through its primary disposable browser journey. Unchecked items above extend branch and restoration coverage; they do not invalidate that deterministic release. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
+The prior deterministic active-beta release remains published and deployed. The current seven-stage Course settings tree is automated, built, scanned, and locally browser-verified; it still requires screenshot recapture, publication, and Railway readback. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.
