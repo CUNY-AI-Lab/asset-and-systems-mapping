@@ -24,6 +24,9 @@ import {
   EFFECTIVE_SCALES,
   fingerprint,
   FIXED_GUARDRAILS,
+  normalizeSystemsMappingTeachingProfile,
+  SYSTEMS_MAPPING_EDUCATOR_RESOURCE,
+  teachingProfileFingerprint,
 } from './config.js';
 import { inTransaction, openDataStore, prototypeEventAudit } from './database.js';
 import { OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
@@ -602,6 +605,14 @@ function responseTimestamp(value) {
   return new Date(Number(value)).toISOString();
 }
 
+function databaseTimestamp(value) {
+  if (value === null || value === undefined) return null;
+  const date = typeof value === 'number' || /^\d+$/.test(String(value))
+    ? new Date(Number(value))
+    : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function preflightSubmissionRow(row, { includeTeacher = false } = {}) {
   if (!row) return null;
   const projectMetadata = storedJson(row.projectMetadata);
@@ -775,6 +786,89 @@ function moduleRow(row) {
   };
 }
 
+function teachingProfileRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    revision: row.revision,
+    profile: storedJson(row.profile),
+    fingerprint: row.fingerprint,
+    parentId: row.parentId ?? null,
+    createdAt: databaseTimestamp(row.createdAt),
+    createdByName: row.createdByName ?? null,
+    updatedAt: databaseTimestamp(row.updatedAt),
+    updatedByName: row.updatedByName ?? null,
+    publishedAt: databaseTimestamp(row.publishedAt),
+    publishedByName: row.publishedByName ?? null,
+  };
+}
+
+const TEACHING_PROFILE_SELECT = `
+  SELECT tp.id, tp.name, tp.status, tp.revision, tp.profile_json AS profile,
+    tp.fingerprint, tp.parent_id AS parentId, tp.created_at AS createdAt,
+    creator.display_name AS createdByName, tp.updated_at AS updatedAt,
+    updater.display_name AS updatedByName, tp.published_at AS publishedAt,
+    publisher.display_name AS publishedByName
+  FROM teaching_profiles tp
+  LEFT JOIN accounts creator ON creator.id = tp.created_by
+  LEFT JOIN accounts updater ON updater.id = tp.updated_by
+  LEFT JOIN accounts publisher ON publisher.id = tp.published_by
+`;
+
+async function listTeachingProfiles(db) {
+  const rows = await db.prepare(`${TEACHING_PROFILE_SELECT}
+    ORDER BY CASE tp.status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END,
+      tp.updated_at DESC
+  `).all();
+  return rows.map(teachingProfileRow);
+}
+
+async function teachingProfileById(db, profileId) {
+  return teachingProfileRow(await db.prepare(`${TEACHING_PROFILE_SELECT} WHERE tp.id = ?`).get(profileId));
+}
+
+async function activeTeachingProfile(db) {
+  return teachingProfileRow(await db.prepare(`${TEACHING_PROFILE_SELECT} WHERE tp.status = 'active'`).get());
+}
+
+function teachingProfileSummary(profile) {
+  const { profile: _profile, ...summary } = profile;
+  return summary;
+}
+
+async function teachingProfileEvents(db, profileId) {
+  const rows = await db.prepare(`
+    SELECT e.id, e.action, e.revision, e.fingerprint, e.note,
+      e.occurred_at AS occurredAt, a.display_name AS actorName
+    FROM teaching_profile_events e
+    LEFT JOIN accounts a ON a.id = e.actor_id
+    WHERE e.profile_id = ?
+    ORDER BY e.id DESC LIMIT 100
+  `).all(profileId);
+  return rows.map((event) => ({
+    ...event,
+    occurredAt: databaseTimestamp(event.occurredAt),
+    actorName: event.actorName ?? null,
+  }));
+}
+
+function requireTeachingProfile(value) {
+  try {
+    return normalizeSystemsMappingTeachingProfile(value);
+  } catch (error) {
+    throw new HttpError(400, error.message);
+  }
+}
+
+function requireTeachingProfileId(value, name = 'profileId') {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{20,64}$/.test(value)) {
+    throw new HttpError(400, `${name} is invalid.`);
+  }
+  return value;
+}
+
 async function listModules(db, where = '', parameters = []) {
   return (await db.prepare(`
     SELECT pm.id, pm.config_kind AS configKind, pm.scale, pm.module_key AS moduleKey,
@@ -789,21 +883,29 @@ async function listModules(db, where = '', parameters = []) {
   `).all(...parameters)).map(moduleRow);
 }
 
-async function effectiveSnapshot(db, configKind, scale, includeModules = false) {
+async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null) {
   if (!CONFIG_KINDS.includes(configKind)) throw new HttpError(400, 'configKind must be preflight or builder.');
   if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, macro, or integration.');
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
-  const effectivePrompt = composeEffectivePrompt({ configKind, scale, modules });
+  const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
+  if (!teachingProfile) throw new HttpError(503, 'The published teaching profile is unavailable.');
+  const effectivePrompt = composeEffectivePrompt({ configKind, scale, modules, teachingProfile: teachingProfile.profile });
   const snapshot = {
     configKind,
     scale,
     effectivePrompt,
     fixedGuardrails: FIXED_GUARDRAILS.join('\n'),
     fingerprint: fingerprint(effectivePrompt),
-    revision: Math.max(...modules.map((module) => module.revision)),
-    moduleVersions: modules.map(({ id, revision, fingerprint: moduleFingerprint }) => ({ id, revision, fingerprint: moduleFingerprint })),
+    revision: Math.max(teachingProfile.revision, ...modules.map((module) => module.revision)),
+    moduleVersions: [
+      ...modules.map(({ id, revision, fingerprint: moduleFingerprint }) => ({ id, revision, fingerprint: moduleFingerprint })),
+      { id: `teaching-profile.${teachingProfile.id}`, revision: teachingProfile.revision, fingerprint: teachingProfile.fingerprint },
+    ],
   };
-  if (includeModules) snapshot.modules = modules;
+  if (includeModules) {
+    snapshot.modules = modules;
+    snapshot.teachingProfile = teachingProfile;
+  }
   return snapshot;
 }
 
@@ -1973,65 +2075,178 @@ export function createSystemsMappingApp(options = {}) {
     return context.json(await teacherPreflightDetail(db, submissionId));
   });
 
-  app.get('/api/teacher/modules', async (context) => context.json({ modules: await listModules(db) }));
+  app.get('/api/teacher/profiles', async (context) => {
+    const profiles = await listTeachingProfiles(db);
+    return context.json({
+      resource: SYSTEMS_MAPPING_EDUCATOR_RESOURCE,
+      runtime: suggestionRuntime,
+      activeProfileId: profiles.find((profile) => profile.status === 'active')?.id ?? null,
+      profiles: profiles.map(teachingProfileSummary),
+    });
+  });
 
-  app.put('/api/teacher/modules/:id', async (context) => {
+  app.post('/api/teacher/profiles', async (context) => {
     const body = await parseJsonBody(context);
-    assertOnlyKeys(body, ['content', 'changeNote', 'expectedRevision']);
-    const moduleId = context.req.param('id');
-    const content = requireString(body.content, 'content');
-    const changeNote = requireString(body.changeNote, 'changeNote', { min: 3, max: 500 });
-    if (!Number.isInteger(body.expectedRevision) || body.expectedRevision < 1) throw new HttpError(400, 'expectedRevision must be a positive integer.');
+    assertOnlyKeys(body, ['name', 'note', 'sourceProfileId']);
+    const name = requireString(body.name, 'name', { min: 1, max: 120 });
+    const note = requireString(body.note, 'note', { min: 3, max: 500 });
     const actor = context.get('teacher');
-    const existing = await db.prepare('SELECT id, revision FROM prompt_modules WHERE id = ?').get(moduleId);
-    if (!existing) throw new HttpError(404, 'Prompt module not found.');
-    if (existing.revision !== body.expectedRevision) {
-      const current = (await listModules(db, 'WHERE pm.id = ?', [moduleId]))[0];
-      throw new HttpError(409, 'This module changed after it was loaded.', { current });
-    }
-    const changedAt = new Date(clockValue(now)).toISOString();
-    const nextRevision = existing.revision + 1;
-    const nextFingerprint = fingerprint(content);
-    const changes = await inTransaction(db, async () => {
+    const sourceProfile = body.sourceProfileId === undefined
+      ? await activeTeachingProfile(db)
+      : await teachingProfileById(db, requireTeachingProfileId(body.sourceProfileId, 'sourceProfileId'));
+    if (!sourceProfile) throw new HttpError(404, 'Source teaching profile not found.');
+    const profileId = randomBytes(24).toString('base64url');
+    const occurredAt = new Date(clockValue(now)).toISOString();
+    await inTransaction(db, async () => {
+      await db.advisoryTransactionLock?.('teaching-profiles');
+      const draftCount = (await db.prepare("SELECT COUNT(*) AS count FROM teaching_profiles WHERE status = 'draft'").get()).count;
+      if (Number(draftCount) >= 20) throw new HttpError(409, 'Retire or publish an existing draft before creating another.');
+      const profileJson = JSON.stringify(sourceProfile.profile);
+      await db.prepare(`
+        INSERT INTO teaching_profiles
+          (id, name, status, revision, profile_json, fingerprint, parent_id,
+            created_at, created_by, updated_at, updated_by, published_at, published_by)
+        VALUES (?, ?, 'draft', 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+      `).run(
+        profileId,
+        name,
+        profileJson,
+        sourceProfile.fingerprint,
+        sourceProfile.id,
+        occurredAt,
+        actor.id,
+        occurredAt,
+        actor.id,
+      );
+      await db.prepare(`
+        INSERT INTO teaching_profile_events
+          (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+        VALUES (?, 'created', 1, ?, ?, ?, ?, ?)
+      `).run(profileId, profileJson, sourceProfile.fingerprint, note, actor.id, occurredAt);
+    });
+    const profile = await teachingProfileById(db, profileId);
+    return context.json({ profile, events: await teachingProfileEvents(db, profileId) }, 201);
+  });
+
+  app.get('/api/teacher/profiles/:id', async (context) => {
+    const profileId = requireTeachingProfileId(context.req.param('id'));
+    const profile = await teachingProfileById(db, profileId);
+    if (!profile) throw new HttpError(404, 'Teaching profile not found.');
+    return context.json({ profile, events: await teachingProfileEvents(db, profileId) });
+  });
+
+  app.put('/api/teacher/profiles/:id', async (context) => {
+    const profileId = requireTeachingProfileId(context.req.param('id'));
+    const body = await parseJsonBody(context);
+    assertOnlyKeys(body, ['name', 'profile', 'note', 'expectedRevision']);
+    const name = requireString(body.name, 'name', { min: 1, max: 120 });
+    const note = requireString(body.note, 'note', { min: 3, max: 500 });
+    const expectedRevision = requireInteger(body.expectedRevision, 'expectedRevision', 1, Number.MAX_SAFE_INTEGER);
+    const profileValue = requireTeachingProfile(body.profile);
+    const profileJson = JSON.stringify(profileValue);
+    const nextFingerprint = teachingProfileFingerprint(profileValue);
+    const actor = context.get('teacher');
+    const occurredAt = new Date(clockValue(now)).toISOString();
+    const nextRevision = expectedRevision + 1;
+    const changed = await inTransaction(db, async () => {
       const result = await db.prepare(`
-        UPDATE prompt_modules
-        SET content = ?, revision = ?, fingerprint = ?, updated_at = ?, updated_by = ?
-        WHERE id = ? AND revision = ?
-      `).run(content, nextRevision, nextFingerprint, changedAt, actor.id, moduleId, body.expectedRevision);
+        UPDATE teaching_profiles
+        SET name = ?, revision = ?, profile_json = ?, fingerprint = ?,
+          updated_at = ?, updated_by = ?
+        WHERE id = ? AND status = 'draft' AND revision = ?
+      `).run(name, nextRevision, profileJson, nextFingerprint, occurredAt, actor.id, profileId, expectedRevision);
       if (result.changes !== 1) return false;
       await db.prepare(`
-        INSERT INTO prompt_module_history
-          (module_id, revision, content, fingerprint, change_note, changed_at, changed_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(moduleId, nextRevision, content, nextFingerprint, changeNote, changedAt, actor.id);
+        INSERT INTO teaching_profile_events
+          (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+        VALUES (?, 'updated', ?, ?, ?, ?, ?, ?)
+      `).run(profileId, nextRevision, profileJson, nextFingerprint, note, actor.id, occurredAt);
       return true;
     });
-    if (!changes) {
-      const current = (await listModules(db, 'WHERE pm.id = ?', [moduleId]))[0];
-      throw new HttpError(409, 'This module changed after it was loaded.', { current });
+    if (!changed) {
+      const current = await teachingProfileById(db, profileId);
+      if (!current) throw new HttpError(404, 'Teaching profile not found.');
+      throw new HttpError(409, current.status === 'draft'
+        ? 'This teaching profile changed after it was loaded.'
+        : 'Only a draft teaching profile can be edited.', { current });
     }
-    return context.json({ module: (await listModules(db, 'WHERE pm.id = ?', [moduleId]))[0] });
+    return context.json({ profile: await teachingProfileById(db, profileId), events: await teachingProfileEvents(db, profileId) });
   });
 
-  app.get('/api/teacher/history', async (context) => {
-    const requestedLimit = Number.parseInt(context.req.query('limit') || '50', 10);
-    const limit = Number.isFinite(requestedLimit) ? Math.min(200, Math.max(1, requestedLimit)) : 50;
-    const history = (await db.prepare(`
-      SELECT h.id, h.module_id AS moduleId, pm.config_kind AS configKind, pm.scale,
-        pm.module_key AS moduleKey, pm.label, h.revision, h.content, h.fingerprint,
-        h.change_note AS changeNote, h.changed_at AS changedAt, a.display_name AS changedByName
-      FROM prompt_module_history h
-      JOIN prompt_modules pm ON pm.id = h.module_id
-      LEFT JOIN accounts a ON a.id = h.changed_by
-      ORDER BY h.id DESC LIMIT ?
-    `).all(limit)).map((entry) => ({ ...entry, changedByName: entry.changedByName ?? null }));
-    return context.json({ history });
+  app.post('/api/teacher/profiles/:id/publish', async (context) => {
+    const profileId = requireTeachingProfileId(context.req.param('id'));
+    const body = await parseJsonBody(context);
+    assertOnlyKeys(body, ['note', 'expectedRevision']);
+    const note = requireString(body.note, 'note', { min: 3, max: 500 });
+    const expectedRevision = requireInteger(body.expectedRevision, 'expectedRevision', 1, Number.MAX_SAFE_INTEGER);
+    const actor = context.get('teacher');
+    const occurredAt = new Date(clockValue(now)).toISOString();
+    await inTransaction(db, async () => {
+      await db.advisoryTransactionLock?.('teaching-profiles');
+      const target = await teachingProfileById(db, profileId);
+      if (!target) throw new HttpError(404, 'Teaching profile not found.');
+      if (target.status !== 'draft' || target.revision !== expectedRevision) {
+        throw new HttpError(409, target.status === 'draft'
+          ? 'This teaching profile changed after it was loaded.'
+          : 'Only a draft teaching profile can be published.', { current: target });
+      }
+      const active = await activeTeachingProfile(db);
+      if (active && active.id !== target.id) {
+        await db.prepare(`
+          UPDATE teaching_profiles SET status = 'retired', updated_at = ?, updated_by = ?
+          WHERE id = ? AND status = 'active'
+        `).run(occurredAt, actor.id, active.id);
+        await db.prepare(`
+          INSERT INTO teaching_profile_events
+            (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+          VALUES (?, 'retired', ?, ?, ?, ?, ?, ?)
+        `).run(active.id, active.revision, JSON.stringify(active.profile), active.fingerprint, note, actor.id, occurredAt);
+      }
+      const published = await db.prepare(`
+        UPDATE teaching_profiles
+        SET status = 'active', updated_at = ?, updated_by = ?, published_at = ?, published_by = ?
+        WHERE id = ? AND status = 'draft' AND revision = ?
+      `).run(occurredAt, actor.id, occurredAt, actor.id, profileId, expectedRevision);
+      if (published.changes !== 1) throw new HttpError(409, 'This teaching profile changed while it was being published.');
+      await db.prepare(`
+        INSERT INTO teaching_profile_events
+          (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+        VALUES (?, 'published', ?, ?, ?, ?, ?, ?)
+      `).run(profileId, target.revision, JSON.stringify(target.profile), target.fingerprint, note, actor.id, occurredAt);
+    });
+    return context.json({ profile: await teachingProfileById(db, profileId), events: await teachingProfileEvents(db, profileId) });
   });
 
-  app.get('/api/teacher/effective', async (context) => {
+  app.get('/api/teacher/profiles/:id/preview', async (context) => {
+    const profileId = requireTeachingProfileId(context.req.param('id'));
+    const profile = await teachingProfileById(db, profileId);
+    if (!profile) throw new HttpError(404, 'Teaching profile not found.');
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
-    return context.json(await effectiveSnapshot(db, configKind, scale, true));
+    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile);
+    return context.json({
+      configKind: snapshot.configKind,
+      scale: snapshot.scale,
+      effectivePrompt: snapshot.effectivePrompt,
+      fingerprint: snapshot.fingerprint,
+      revision: snapshot.revision,
+    });
+  });
+
+  app.get('/api/teacher/modules', () => {
+    throw new HttpError(410, 'Teacher configuration now uses one teaching profile with five sections.');
+  });
+
+  app.put('/api/teacher/modules/:id', () => {
+    throw new HttpError(410, 'Direct module editing has been replaced by teaching-profile trials.');
+  });
+
+  app.get('/api/teacher/history', () => {
+    throw new HttpError(410, 'Teaching profile history is available with each teaching profile.');
+  });
+
+  app.get('/api/teacher/effective', () => {
+    throw new HttpError(410, 'Preview a saved teaching profile from the Teacher Console.');
   });
 
   app.get('/api/teacher/prototype-audit', async (context) => context.json({ prototypeEvents: await prototypeEventAudit(db) }));

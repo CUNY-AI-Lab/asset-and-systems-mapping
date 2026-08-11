@@ -1,6 +1,6 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 This ledger separates implemented and automated behavior from rendered-browser, local-handoff, GitHub, Railway, and live-provider proof. A checked item has current evidence. A source file or earlier screenshot alone is not enough to close an external gate.
 
@@ -19,9 +19,9 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Gate candidate generation on instructor response.
   - Evidence: pending reviews send the student to **Check your instructor's response**. **Approve** and **Approve with a question** let the student choose what to map. **Reject** returns the student to **Add a source** while preserving the memo and graph.
 - [x] Implement the teacher review queue and three decision paths.
-  - Evidence: the authenticated dashboard defaults to Review submissions, loads one selected detail, keeps full criteria/scores collapsed behind **Model review details**, requires one instructor focus, shows one question only for **Approve with a question**, detects stale revisions, and records append-only decision events.
-- [x] Simplify teacher customization through progressive disclosure.
-  - Evidence: Model guidance is secondary and lazy-loaded; it shows one selected module editor at a time while retaining 60 independently versioned preflight/builder × scope × module records.
+  - Evidence: the authenticated Teacher Console defaults to Review submissions, loads one selected detail, keeps full criteria and scores collapsed behind **Model review details**, requires one instructor focus, shows one question only for **Approve with a question**, detects stale revisions, and records append-only decision events.
+- [x] Bound teacher control to one course profile with five sections.
+  - Evidence: Course settings loads only when selected and exposes Focus, Evidence, Questions, Privacy, and collapsed Scale adjustments. Teachers create a trial, save and preview its revision, and publish it. Published records remain read-only, retired records can be cloned for rollback, and legacy module routes return `410`.
 - [x] Persist the new evaluation and review workflow in both SQLite and PostgreSQL.
   - Evidence: matching schemas, transactions, constraints, migrations, retention locks, append-only triggers, and fresh PostgreSQL 17 integration tests.
 - [x] Implement bounded retention.
@@ -41,14 +41,14 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Neutralize CSV formula cells and reject unknown or credential-shaped project fields.
   - Evidence: byte-level CSV tests cover formula/control/leading-whitespace prefixes; schema and portable-export canaries fail closed.
 - [x] Reconcile README, requirements, QA, and security documentation to the current implementation while preserving the source authority note.
-  - Evidence: documentation updated 2026-08-10; `docs/SOURCE_LEDGER.md` was not modified.
+  - Evidence: documentation updated 2026-08-11; `docs/SOURCE_LEDGER.md` was not modified.
 
 ## Current automated run
 
 - [x] Preserve the published pre-pedagogy release baseline: 130 passing tests, 3 PostgreSQL-gated skips, and a successful production Vite build.
-- [x] Current server pedagogy contract: 53 passed; 3 PostgreSQL-gated tests skipped in the ordinary SQLite run.
+- [x] Current server and course-profile contract: 57 passed; 3 PostgreSQL-gated tests skipped in the ordinary SQLite run.
 - [x] Current fresh disposable PostgreSQL 17 integration: 3/3 passed.
-- [x] Current integrated client/domain/server suite: 132 passed; 3 PostgreSQL-gated tests skipped.
+- [x] Current integrated client/domain/server suite: 142 passed; 3 PostgreSQL-gated tests skipped.
 - [x] Rebuild the production bundle after the frozen pedagogy changes.
 
 ## Current local and browser proof
@@ -56,11 +56,11 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Restart the final production server on `127.0.0.1:4177` while preserving the real SQLite database and verify the health endpoint.
   - Evidence: the final server reported `http://127.0.0.1:4177`; `/api/health` returned `{"status":"ok"}`.
 - [x] Audit the real handoff database with value-free queries and preserve existing user-owned account/session state.
-  - Evidence: integrity `ok`; 2 accounts with 1 already claimed; 1 existing teacher session; 0 student sessions, evaluations, submissions, review events, or prototype events; 60 prompt modules and 60 seed-history rows. Data directory/files are `0700`/`0600`.
+  - Evidence: integrity `ok`; 2 accounts with 1 already claimed; 1 existing teacher session; 0 student sessions, evaluations, submissions, review events, or prototype events. The existing code-owned prompt base remains internal. Data directory/files are `0700`/`0600`.
 - [x] Complete the current disposable browser journey through **Approve with a question**.
   - Evidence: the journey verified source-return prompts, collapsed **Model review details**, one instructor focus and question, the student response, candidate choice, map entry, and revision stage.
-- [x] Capture the current class entry and changed student/teacher views at 320, 390, 430, and 1440 px with no document-level horizontal overflow.
-  - Evidence: 44 PNGs in `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-final/`; `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views.zip` passes `unzip -t`.
+- [x] Capture the current class entry and changed student and teacher views at 320, 390, 430, and 1440 px with no document-level horizontal overflow.
+  - Evidence: the current ZIP contains 50 PNGs, including six Course settings captures. `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip` passes `unzip -t`.
 - [x] Verify the deployed class-entry page with zero console warnings and confirm that hosted mode rejects `101`.
 - [x] Run the production dependency audit and final source/application-bundle scans.
   - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.

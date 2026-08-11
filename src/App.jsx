@@ -2158,7 +2158,7 @@ function App() {
 
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
-      <a href="#workspace" className="brand" aria-label="Systems Mapping teacher home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>Teacher customization</small></span></a>
+      <a href="#workspace" className="brand" aria-label="Systems Mapping Teacher Console home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>Teacher customization</small></span></a>
       <button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher"><TeacherDashboard onConfigurationChanged={refreshAfterTeacherChange} /></main>

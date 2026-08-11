@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { moduleSeeds } from './config.js';
+import { DEFAULT_TEACHING_PROFILE, moduleSeeds, teachingProfileFingerprint } from './config.js';
 import { openPostgresDatabase } from './postgres.js';
 
 const require = createRequire(import.meta.url);
@@ -205,6 +205,59 @@ function migrate(db) {
     );
 
     CREATE INDEX IF NOT EXISTS prompt_history_changed_idx ON prompt_module_history(changed_at DESC);
+
+    CREATE TABLE IF NOT EXISTS teaching_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
+      status TEXT NOT NULL CHECK(status IN ('draft', 'active', 'retired')),
+      revision INTEGER NOT NULL CHECK(revision >= 1),
+      profile_json TEXT NOT NULL CHECK(
+        length(profile_json) BETWEEN 2 AND 65536
+        AND json_valid(profile_json) AND json_type(profile_json) = 'object'
+      ),
+      fingerprint TEXT NOT NULL CHECK(length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
+      parent_id TEXT REFERENCES teaching_profiles(id),
+      created_at TEXT NOT NULL,
+      created_by TEXT REFERENCES accounts(id),
+      updated_at TEXT NOT NULL,
+      updated_by TEXT REFERENCES accounts(id),
+      published_at TEXT,
+      published_by TEXT REFERENCES accounts(id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS teaching_profiles_one_active_idx
+      ON teaching_profiles(status) WHERE status = 'active';
+    CREATE INDEX IF NOT EXISTS teaching_profiles_updated_idx ON teaching_profiles(updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS teaching_profile_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id TEXT NOT NULL REFERENCES teaching_profiles(id) ON DELETE CASCADE,
+      action TEXT NOT NULL CHECK(action IN ('created', 'updated', 'published', 'retired')),
+      revision INTEGER NOT NULL CHECK(revision >= 1),
+      profile_json TEXT NOT NULL CHECK(
+        length(profile_json) BETWEEN 2 AND 65536
+        AND json_valid(profile_json) AND json_type(profile_json) = 'object'
+      ),
+      fingerprint TEXT NOT NULL CHECK(length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
+      note TEXT NOT NULL CHECK(length(trim(note)) BETWEEN 3 AND 500),
+      actor_id TEXT REFERENCES accounts(id),
+      occurred_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS teaching_profile_events_profile_idx
+      ON teaching_profile_events(profile_id, id DESC);
+
+    CREATE TRIGGER IF NOT EXISTS teaching_profile_events_no_update
+    BEFORE UPDATE ON teaching_profile_events
+    BEGIN
+      SELECT RAISE(ABORT, 'teaching_profile_events are append-only');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS teaching_profile_events_no_delete
+    BEFORE DELETE ON teaching_profile_events
+    BEGIN
+      SELECT RAISE(ABORT, 'teaching_profile_events are append-only');
+    END;
 
     CREATE TABLE IF NOT EXISTS prototype_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -458,6 +511,28 @@ function seed(db) {
       );
       insertHistory.run(module.id, module.revision, module.content, module.fingerprint, 'Source-grounded starting configuration', now);
     }
+
+    const profileJson = JSON.stringify(DEFAULT_TEACHING_PROFILE);
+    const profileFingerprint = teachingProfileFingerprint(DEFAULT_TEACHING_PROFILE);
+    db.prepare(`
+      INSERT OR IGNORE INTO teaching_profiles
+        (id, name, status, revision, profile_json, fingerprint, parent_id,
+          created_at, created_by, updated_at, updated_by, published_at, published_by)
+      VALUES (?, ?, 'active', 1, ?, ?, NULL, ?, NULL, ?, NULL, ?, NULL)
+    `).run('systems-mapping-default', 'Course profile', profileJson, profileFingerprint, now, now, now);
+    db.prepare(`
+      INSERT INTO teaching_profile_events
+        (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+      SELECT ?, 'published', 1, ?, ?, ?, NULL, ?
+      WHERE NOT EXISTS (SELECT 1 FROM teaching_profile_events WHERE profile_id = ?)
+    `).run(
+      'systems-mapping-default',
+      profileJson,
+      profileFingerprint,
+      'Source-grounded starting profile',
+      now,
+      'systems-mapping-default',
+    );
   });
 }
 

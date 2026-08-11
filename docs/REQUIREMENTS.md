@@ -35,7 +35,7 @@ The suggestion evaluator returns four hard criteria and eight scored criteria:
 - C7 assets and capacity
 - C8 uncertainty
 
-The machine contract requires every criterion to include its ID, `met`/`unmet` status, evidence, rationale, missing variable or `null`, next action, confidence, and hard-block state. All four hard criteria must be met. The scored threshold is six of eight. These fields support server validation, provenance, and teacher inspection only. In the teacher dashboard they remain closed by default behind **Model review details**.
+The machine contract requires every criterion to include its ID, `met`/`unmet` status, evidence, rationale, missing variable or `null`, next action, confidence, and hard-block state. All four hard criteria must be met. The scored threshold is six of eight. These fields support server validation, provenance, and teacher inspection only. In the Teacher Console they remain closed by default behind **Model review details**.
 
 The server derives the student projection from the authoritative result. It contains zero to three records with exactly:
 
@@ -96,17 +96,21 @@ Pending review blocks candidate generation. Teacher decisions are:
 
 No decision may modify the student's memo, source prompts, candidates, or graph. The instructor writes one focus; a question is present only for **Approve with a question**. Decisions require an expected revision; stale or duplicate writes return a conflict. Each accepted decision appends an immutable event with teacher attribution and from/to revision.
 
-## Teacher dashboard and configuration
+## Teacher Console and course settings
 
-The dashboard must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the memo, source context, and student note. Full criteria, scores, outcome, evidence, possible redirects, open questions, and criterion-by-criterion records are teacher-only and collapsed by default behind **Model review details**. The instructor form exposes one **Focus for the student**, three decisions, and one **Question for the student** only after **Approve with a question** is selected. Decision history records the same focus and optional question.
+The Teacher Console must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the memo, source context, and student note. Full criteria, scores, outcome, evidence, possible redirects, open questions, and criterion-by-criterion records are teacher-only and collapsed by default behind **Model review details**. The instructor form exposes one **Focus for the student**, three decisions, and one **Question for the student** only after **Approve with a question** is selected. Decision history records the same focus and optional question.
 
-**Model guidance** is a secondary tab and must not load until selected. It exposes one module editor at a time over:
+**Course settings** must not load until selected. The teacher works with one course profile made of five sections.
 
-- preflight evaluator and graph builder;
-- global, micro, meso, macro, and integration scopes;
-- purpose, evidence, privacy, scale/readiness rubric, interaction, and output modules.
+- **Focus** names what students should attend to.
+- **Evidence** describes how guidance returns students to source material.
+- **Questions** constrains redirective questions without completing student analysis.
+- **Privacy** describes how identifying or sensitive material should be handled.
+- **Scale adjustments** holds optional micro, meso, macro, and integration emphasis in one collapsed section.
 
-The database therefore retains 60 independently revisioned modules, but the interface must not present them simultaneously. An effective prompt composes immutable fixed guardrails, global modules, and active-scale modules. Every save requires a change note and expected revision; stale saves preserve the teacher's local draft until the current server revision is explicitly loaded.
+One published profile governs new evaluations. A teacher may clone the published profile or an earlier profile into a trial, edit the trial, save a revision with a change note, preview the saved revision by application step and scale, and publish it. Published and retired profiles are read-only. Publishing retires the former profile and records append-only events for both records. Cloning an earlier profile and publishing the clone provides rollback. Expected revisions prevent stale writes and preserve the local draft until the teacher explicitly loads the server revision.
+
+The internal preflight and graph-builder rules remain code-owned. The Teacher Console and its API must not expose the internal configuration matrix as instructor-editable records. Deterministic STEM Splitter records the published profile fingerprint and revision but does not interpret its prose or change its fixed scoring. Ollama Cloud composes the published profile into the provider prompt. The Console must state the active runtime effect before a teacher edits or publishes a trial.
 
 Fresh databases seed separate unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer without credentials. Claiming requires an operator-controlled, one-time bootstrap token and an explicit account ID. Each server-process token may claim exactly one account. Passphrases must be salted and scrypt-derived; teacher sessions must be random, expiring, `HttpOnly`, and `SameSite=Strict`.
 
@@ -140,7 +144,7 @@ Pointer movement may use transient state, but only completed moves are committed
 
 ### Classroom database
 
-SQLite is the local persistence adapter; PostgreSQL is the hosted adapter. Both must implement the same accounts, sessions, prompt modules/history, bounded prototype events, preflight evaluations, review submissions, append-only review events, and retention-purge receipts.
+SQLite is the local persistence adapter; PostgreSQL is the hosted adapter. Both must implement the same accounts, sessions, course profiles, append-only profile events, bounded prototype events, preflight evaluations, review submissions, append-only review events, and retention-purge receipts. Code-owned base configuration may remain internally normalized for prompt composition, but it is not an instructor customization surface.
 
 - unsubmitted evaluation: 1 day;
 - pending review snapshot: 30 days;

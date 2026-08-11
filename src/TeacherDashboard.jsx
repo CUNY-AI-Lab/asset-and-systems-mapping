@@ -1,15 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ApiError, apiRequest } from './api.js';
 
-const CONFIG_KINDS = [
-  { id: 'preflight', label: 'Preflight evaluator' },
-  { id: 'builder', label: 'Graph builder' },
-];
-const SCOPES = ['global', 'micro', 'meso', 'macro', 'integration'];
 const DASHBOARD_SECTIONS = [
   { id: 'reviews', label: 'Review submissions' },
-  { id: 'guidance', label: 'Edit model prompts' },
+  { id: 'guidance', label: 'Course settings' },
 ];
+const PROFILE_FIELDS = [
+  { id: 'focus', label: 'Focus', rows: 5 },
+  { id: 'evidence', label: 'Evidence', rows: 5 },
+  { id: 'questions', label: 'Questions', rows: 5 },
+  { id: 'privacy', label: 'Privacy', rows: 5 },
+];
+const PROFILE_SCALES = ['micro', 'meso', 'macro', 'integration'];
 const REVIEW_DECISIONS = [
   { id: 'approve', label: 'Approve' },
   { id: 'revise_and_approve', label: 'Approve with a question' },
@@ -34,6 +36,12 @@ function formatHistoryTime(value) {
   if (!value) return '';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+}
+
+function profileStatusLabel(status) {
+  if (status === 'active') return 'published';
+  if (status === 'retired') return 'earlier';
+  return status;
 }
 
 function readableValue(value) {
@@ -186,62 +194,6 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
       <button type="submit" className="button" disabled={busy}>{busy ? 'Working…' : mode === 'login' ? 'Sign in' : 'Claim account'}</button>
     </form>
   </div>;
-}
-
-function ModuleEditor({ module, onSaved, onConflictReloaded }) {
-  const [content, setContent] = useState(module?.content || '');
-  const [changeNote, setChangeNote] = useState('');
-  const [message, setMessage] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [conflict, setConflict] = useState(null);
-  useEffect(() => {
-    setContent(module?.content || '');
-    setChangeNote('');
-    setMessage(null);
-    setConflict(null);
-  }, [module?.id]);
-  if (!module) return <p className="empty-message">Choose a module to edit.</p>;
-  const dirty = content !== module.content;
-  const save = async () => {
-    if (!dirty) return setMessage({ type: 'error', text: 'Change the module content before saving a revision.' });
-    if (!changeNote.trim()) return setMessage({ type: 'error', text: 'Add a change note before saving.' });
-    setBusy(true);
-    setConflict(null);
-    try {
-      const note = changeNote.trim();
-      const result = await apiRequest(`/api/teacher/modules/${encodeURIComponent(module.id)}`, { method: 'PUT', body: { content, changeNote: note, expectedRevision: module.revision } });
-      setContent(result.module.content);
-      setMessage({ type: 'success', text: `Revision ${result.module.revision} saved.` });
-      setChangeNote('');
-      onSaved(result.module, note);
-    } catch (error) {
-      const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
-      if (current) {
-        setConflict(current);
-        setMessage({ type: 'error', text: `Revision ${current.revision} is now on the server. Your unsaved draft remains in the editor.` });
-      } else {
-        setMessage({ type: 'error', text: error instanceof ApiError && error.status === 409 ? 'This module changed in another session. Reload the dashboard before saving again.' : error.message });
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-  const loadConflict = () => {
-    setContent(conflict.content);
-    setChangeNote('');
-    onConflictReloaded(conflict);
-    setConflict(null);
-    setMessage({ type: 'success', text: `Loaded server revision ${conflict.revision}. The previous local draft was replaced.` });
-  };
-  return <section className="module-editor">
-    <header className="module-editor__head"><div><p className="eyebrow">{module.configKind} · {module.scale}</p><h2>{module.label}</h2><p>{module.description}</p></div><dl><div><dt>Revision</dt><dd>{module.revision}</dd></div><div><dt>Fingerprint</dt><dd>{module.fingerprint}</dd></div></dl></header>
-    <label className="field"><span className="field__label">Module instructions</span><textarea className="prompt-editor" maxLength="20000" rows="15" value={content} onChange={(event) => setContent(event.target.value)} /></label>
-    <p className="field__hint">This editable module is composed beneath fixed privacy, grounding, and schema guardrails.</p>
-    <label className="field"><span className="field__label">Change note</span><input maxLength="500" value={changeNote} onChange={(event) => setChangeNote(event.target.value)} placeholder="What changed, and why?" /></label>
-    <Message message={message} />
-    {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Revision conflict actions"><strong>Server revision {conflict.revision}</strong><p>Loading it will replace the unsaved text currently visible above.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
-    <div className="button-row"><button type="button" className="button button--ghost" disabled={!dirty || busy} onClick={() => { setContent(module.content); setMessage(null); }}>Discard draft</button><button type="button" className="button" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save revision'}</button></div>
-  </section>;
 }
 
 function ReviewSubmissions() {
@@ -415,85 +367,203 @@ function ReviewSubmissions() {
   </section>;
 }
 
-function ModelGuidance({ user, onConfigurationChanged }) {
-  const [modules, setModules] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [kind, setKind] = useState('preflight');
-  const [scope, setScope] = useState('global');
+function TeachingProfiles({ onConfigurationChanged }) {
+  const [catalog, setCatalog] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  const [effective, setEffective] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [draft, setDraft] = useState(null);
+  const [note, setNote] = useState('');
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
-  const kindTabRefs = useRef(new Map());
-  const load = async () => {
+  const [busy, setBusy] = useState(false);
+  const [conflict, setConflict] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newNote, setNewNote] = useState('');
+  const [previewKind, setPreviewKind] = useState('preflight');
+  const [previewScale, setPreviewScale] = useState('micro');
+  const [preview, setPreview] = useState(null);
+
+  const loadCatalog = async (preferredId = null) => {
+    const result = await apiRequest('/api/teacher/profiles');
+    setCatalog(result);
+    const available = Array.isArray(result.profiles) ? result.profiles : [];
+    const nextId = preferredId && available.some(({ id }) => id === preferredId)
+      ? preferredId
+      : result.activeProfileId || available[0]?.id || null;
+    setSelectedId(nextId);
+    return nextId;
+  };
+
+  useEffect(() => {
     setLoading(true);
-    const [moduleResult, historyResult] = await Promise.allSettled([
-      apiRequest('/api/teacher/modules'),
-      apiRequest('/api/teacher/history?limit=60'),
-    ]);
-    if (moduleResult.status === 'fulfilled') {
-      setModules(Array.isArray(moduleResult.value.modules) ? moduleResult.value.modules : []);
-      if (historyResult.status === 'fulfilled') {
-        setHistory(Array.isArray(historyResult.value.history) ? historyResult.value.history : []);
-        setMessage(null);
-      } else {
-        setHistory([]);
-        setMessage({ type: 'error', text: `Modules loaded, but revision history is unavailable: ${historyResult.reason.message}` });
-      }
-    } else {
-      setModules([]);
-      setHistory([]);
-      setMessage({ type: 'error', text: moduleResult.reason.message });
+    loadCatalog().catch((error) => setMessage({ type: 'error', text: error.message })).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      setDraft(null);
+      setEvents([]);
+      return;
     }
-    setLoading(false);
+    setLoading(true);
+    setPreview(null);
+    apiRequest(`/api/teacher/profiles/${encodeURIComponent(selectedId)}`).then((result) => {
+      setDetail(result.profile);
+      setDraft({ name: result.profile.name, profile: structuredClone(result.profile.profile) });
+      setEvents(Array.isArray(result.events) ? result.events : []);
+      setConflict(null);
+      setMessage(null);
+    }).catch((error) => setMessage({ type: 'error', text: error.message })).finally(() => setLoading(false));
+  }, [selectedId]);
+
+  const changeSection = (field, value) => {
+    setDraft((current) => ({ ...current, profile: { ...current.profile, [field]: value } }));
+    setPreview(null);
   };
-  useEffect(() => { load(); }, []);
-  const visibleModules = useMemo(() => modules.filter((module) => module.configKind === kind && module.scale === scope), [modules, kind, scope]);
-  const selected = visibleModules.find((module) => module.id === selectedId) || visibleModules[0];
-  useEffect(() => { setSelectedId(visibleModules[0]?.id || null); setEffective(null); }, [kind, scope, visibleModules[0]?.id]);
-  const preview = async () => {
-    try {
-      const result = await apiRequest(`/api/teacher/effective?${new URLSearchParams({ configKind: kind, scale: scope === 'global' ? 'micro' : scope })}`);
-      setEffective(result);
-    } catch (error) { setMessage({ type: 'error', text: error.message }); }
+
+  const changeScale = (scale, value) => {
+    setDraft((current) => ({
+      ...current,
+      profile: {
+        ...current.profile,
+        contextAdjustments: { ...current.profile.contextAdjustments, [scale]: value },
+      },
+    }));
+    setPreview(null);
   };
-  const saved = (next, changeNote) => {
-    setModules((current) => current.map((module) => module.id === next.id ? next : module));
-    setHistory((current) => [{ id: `${next.id}:${next.revision}`, moduleId: next.id, label: next.label, configKind: next.configKind, scale: next.scale, revision: next.revision, changeNote, changedByName: user.displayName, changedAt: next.updatedAt }, ...current]);
-    setEffective(null);
-    onConfigurationChanged();
-  };
-  const conflictReloaded = (next) => {
-    setModules((current) => current.map((module) => module.id === next.id ? next : module));
-    setEffective(null);
-  };
-  const moveKind = (event, index) => {
-    const nextIndex = rovingIndex(event, index, CONFIG_KINDS.length);
-    if (nextIndex === null) return;
+
+  const createTrial = async (event) => {
     event.preventDefault();
-    const next = CONFIG_KINDS[nextIndex];
-    setKind(next.id);
-    kindTabRefs.current.get(next.id)?.focus();
+    if (!newName.trim()) return setMessage({ type: 'error', text: 'Name the trial before creating it.' });
+    if (newNote.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short note about what this trial will test.' });
+    setBusy(true);
+    try {
+      const result = await apiRequest('/api/teacher/profiles', {
+        method: 'POST',
+        body: { name: newName.trim(), note: newNote.trim(), ...(selectedId ? { sourceProfileId: selectedId } : {}) },
+      });
+      setCreating(false);
+      setNewName('');
+      setNewNote('');
+      await loadCatalog(result.profile.id);
+      setMessage({ type: 'success', text: 'Trial created. The published profile is unchanged.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    } finally { setBusy(false); }
   };
-  if (loading) return <p className="empty-message">Loading model prompts…</p>;
-  return <section className="model-guidance" aria-labelledby="model-guidance-heading">
-    <div className="section-heading"><div><p className="eyebrow">Edit model prompts</p><h2 id="model-guidance-heading">Choose a prompt to edit.</h2></div></div>
+
+  const saveDraft = async () => {
+    if (!draft?.name.trim()) return setMessage({ type: 'error', text: 'Name the trial before saving it.' });
+    if (note.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short change note before saving.' });
+    setBusy(true);
+    try {
+      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}`, {
+        method: 'PUT',
+        body: { name: draft.name.trim(), profile: draft.profile, note: note.trim(), expectedRevision: detail.revision },
+      });
+      setDetail(result.profile);
+      setDraft({ name: result.profile.name, profile: structuredClone(result.profile.profile) });
+      setEvents(result.events || []);
+      setNote('');
+      setConflict(null);
+      setMessage({ type: 'success', text: `Draft revision ${result.profile.revision} saved.` });
+      await loadCatalog(result.profile.id);
+    } catch (error) {
+      const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
+      if (current) {
+        setConflict(current);
+        setMessage({ type: 'error', text: 'This trial changed in another session. Your draft remains in the editor.' });
+      } else setMessage({ type: 'error', text: error.message });
+    } finally { setBusy(false); }
+  };
+
+  const loadConflict = () => {
+    setDetail(conflict);
+    setDraft({ name: conflict.name, profile: structuredClone(conflict.profile) });
+    setConflict(null);
+    setPreview(null);
+    setMessage({ type: 'success', text: `Loaded trial revision ${conflict.revision}.` });
+  };
+
+  const publish = async () => {
+    if (note.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short publication note.' });
+    setBusy(true);
+    try {
+      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/publish`, {
+        method: 'POST',
+        body: { note: note.trim(), expectedRevision: detail.revision },
+      });
+      setDetail(result.profile);
+      setDraft({ name: result.profile.name, profile: structuredClone(result.profile.profile) });
+      setEvents(result.events || []);
+      setNote('');
+      setPreview(null);
+      setMessage({ type: 'success', text: 'Trial published. New student runs now use this profile.' });
+      await loadCatalog(result.profile.id);
+      onConfigurationChanged();
+    } catch (error) {
+      const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
+      if (current) setConflict(current);
+      setMessage({ type: 'error', text: current ? 'This trial changed before publication. Your draft remains in the editor.' : error.message });
+    } finally { setBusy(false); }
+  };
+
+  const loadPreview = async () => {
+    setBusy(true);
+    try {
+      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/preview?${new URLSearchParams({ configKind: previewKind, scale: previewScale })}`);
+      setPreview(result);
+      setMessage(null);
+    } catch (error) { setMessage({ type: 'error', text: error.message }); }
+    finally { setBusy(false); }
+  };
+
+  if (loading && !catalog) return <p className="empty-message">Loading course settings…</p>;
+  const profiles = catalog?.profiles || [];
+  const editable = detail?.status === 'draft';
+  const dirty = Boolean(editable && draft && (
+    draft.name !== detail.name || JSON.stringify(draft.profile) !== JSON.stringify(detail.profile)
+  ));
+  const runtime = catalog?.resource?.runtimes?.find(({ id }) => id === catalog?.runtime?.provider);
+  return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
+    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Change five sections. Save a draft before publishing it.</p></div></div>
     <Message message={message} />
-    <div className="teacher-controls">
-      <div className="model-switch" role="tablist" aria-label="Configuration system">{CONFIG_KINDS.map((config, index) => <button ref={(node) => node ? kindTabRefs.current.set(config.id, node) : kindTabRefs.current.delete(config.id)} key={config.id} id={`teacher-config-tab-${config.id}`} type="button" role="tab" aria-selected={kind === config.id} aria-controls="teacher-config-panel" tabIndex={kind === config.id ? 0 : -1} className={kind === config.id ? 'is-active' : ''} onKeyDown={(event) => moveKind(event, index)} onClick={() => setKind(config.id)}>{config.label}</button>)}</div>
-      <label><span>Applies to</span><select value={scope} onChange={(event) => setScope(event.target.value)}>{SCOPES.map((scale) => <option key={scale} value={scale}>{scale === 'global' ? 'All scales' : `${scale[0].toUpperCase()}${scale.slice(1)} scale`}</option>)}</select></label>
-      <label><span>Module</span><select aria-label="Module" value={selected?.id || ''} onChange={(event) => { setSelectedId(event.target.value); setEffective(null); }}>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.label} · v{module.revision}</option>)}</select></label>
-      <button type="button" className="button button--secondary" onClick={preview}>Preview prompt in use</button>
+    {runtime && <p className="privacy-note"><strong>{runtime.label}.</strong> {runtime.disclosure}</p>}
+    <div className="teacher-controls teaching-profile-controls">
+      <label><span>Profile</span><select aria-label="Profile" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
+      <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a trial'}</button>
     </div>
-    <div className="teacher-workbench" id="teacher-config-panel" role="tabpanel" aria-labelledby={`teacher-config-tab-${kind}`}>
-      <ModuleEditor module={selected} onSaved={saved} onConflictReloaded={conflictReloaded} />
-      <details className="teacher-history"><summary>Shared revision history · {history.length}</summary>{history.length ? <ol>{history.slice(0, 18).map((entry) => {
-        const changedAt = entry.changedAt || entry.updatedAt;
-        const changedBy = entry.changedByName || entry.updatedByName || 'Source baseline';
-        return <li key={entry.id || `${entry.moduleId}:${entry.revision}:${changedAt || 'unknown'}`}><strong>{entry.label || entry.moduleLabel || 'Prompt module'}</strong><p>{entry.changeNote || 'Revision recorded'}</p><small>{changedBy} · v{entry.revision}<br />{formatHistoryTime(changedAt)}</small></li>;
-      })}</ol> : <p className="empty-message">No revision history is available.</p>}</details>
-    </div>
-    {effective && <section className="effective-preview"><div><p className="eyebrow">Prompt in use · {effective.configKind} · {effective.scale}</p><h2>Prompt in use</h2><dl><div><dt>Fingerprint</dt><dd>{effective.fingerprint}</dd></div><div><dt>Revision</dt><dd>{effective.revision}</dd></div></dl></div><pre>{effective.effectivePrompt}</pre></section>}
+    {creating && <form className="teaching-profile-create" onSubmit={createTrial}>
+      <label className="field"><span className="field__label">Trial name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
+      <label className="field"><span className="field__label">What will this trial test?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
+      <button type="submit" className="button" disabled={busy}>Create trial</button>
+    </form>}
+    {detail && draft && <div className="teacher-workbench teaching-profile-workbench">
+      <div className="teaching-profile-editor">
+        <div className="section-heading"><div><h3>{detail.name}</h3><p>{profileStatusLabel(detail.status)} · revision {detail.revision}</p></div></div>
+        <label className="field"><span className="field__label">Name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+        {PROFILE_FIELDS.map((field) => <label className="field" key={field.id}><span className="field__label">{field.label}</span><textarea rows={field.rows} maxLength="8000" readOnly={!editable} value={draft.profile[field.id]} onChange={(event) => changeSection(field.id, event.target.value)} /></label>)}
+        <details className="teacher-history"><summary>Scale adjustments</summary><div className="teaching-profile-scales">{PROFILE_SCALES.map((scale) => <label className="field" key={scale}><span className="field__label">{scale[0].toUpperCase() + scale.slice(1)}</span><textarea rows="4" maxLength="4000" readOnly={!editable} value={draft.profile.contextAdjustments[scale]} onChange={(event) => changeScale(scale, event.target.value)} /></label>)}</div></details>
+        {editable && <label className="field"><span className="field__label">Change note</span><input maxLength="500" value={note} onChange={(event) => setNote(event.target.value)} /></label>}
+        {dirty && <p className="field__hint">Save this draft before previewing or publishing it.</p>}
+        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Trial conflict actions"><p>Loading the server revision will replace the draft currently visible above.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
+        <div className="teacher-actions">
+          {editable && <button type="button" className="button button--secondary" disabled={busy || !dirty} onClick={saveDraft}>Save draft</button>}
+          {editable && <button type="button" className="button" disabled={busy || dirty} onClick={publish}>Publish trial</button>}
+        </div>
+      </div>
+      <aside className="teaching-profile-preview">
+        <h3>Preview</h3>
+        <label><span>Application step</span><select value={previewKind} onChange={(event) => { setPreviewKind(event.target.value); setPreview(null); }}><option value="preflight">Review source work</option><option value="builder">Build the map</option></select></label>
+        <label><span>Scale</span><select value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{PROFILE_SCALES.map((scale) => <option key={scale} value={scale}>{scale[0].toUpperCase() + scale.slice(1)}</option>)}</select></label>
+        <button type="button" className="button button--secondary" disabled={busy || dirty} onClick={loadPreview}>Preview saved draft</button>
+        {preview && <details className="effective-preview" open><summary>Prompt in use</summary><dl><div><dt>Fingerprint</dt><dd>{preview.fingerprint}</dd></div><div><dt>Revision</dt><dd>{preview.revision}</dd></div></dl><pre>{preview.effectivePrompt}</pre></details>}
+        <details className="teacher-history"><summary>Profile history · {events.length}</summary>{events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{event.action}</strong><p>{event.note}</p><small>{event.actorName || 'Source baseline'} · revision {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No profile history is available.</p>}</details>
+      </aside>
+    </div>}
   </section>;
 }
 
@@ -514,10 +584,10 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged }) {
     sectionTabRefs.current.get(next.id)?.focus();
   };
   return <div className="teacher-dashboard">
-    <div className="teacher-dashboard__title"><div><p className="eyebrow">Teacher customization</p><h1>Teacher dashboard</h1></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
-    <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher dashboard sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
+    <div className="teacher-dashboard__title"><div><p className="eyebrow">Teacher customization</p><h1>Teacher Console</h1></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
+    <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
-    {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><ModelGuidance user={user} onConfigurationChanged={onConfigurationChanged} /></div>}
+    {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
   </div>;
 }
 
@@ -541,6 +611,6 @@ export default function TeacherDashboard({ onConfigurationChanged }) {
     await refreshAccess();
   };
   if (loading) return <div className="teacher-access"><p className="empty-message">Connecting to teacher configuration…</p></div>;
-  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Teacher configuration is unavailable.</h1><p className="lede">{fatal}. Check the authenticated classroom server, then reopen this dashboard.</p></div>;
+  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Teacher configuration is unavailable.</h1><p className="lede">{fatal}. Check the authenticated classroom server, then reopen this console.</p></div>;
   return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
 }

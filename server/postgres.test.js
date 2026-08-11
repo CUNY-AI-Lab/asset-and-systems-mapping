@@ -59,6 +59,10 @@ describe('PostgreSQL persistence adapter', () => {
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_submissions');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_review_events');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS preflight_retention_purges');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS teaching_profiles');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS teaching_profile_events');
+    expect(migration).toContain('teaching_profile_events_no_update');
+    expect(migration).toContain('teaching_profile_events_no_delete');
     expect(migration).toContain('preflight_evaluations_expiry_idx');
     expect(migration).toContain('preflight_evaluations_session_idx');
     expect(migration).toContain('preflight_submissions_queue_idx');
@@ -73,7 +77,7 @@ describe('PostgreSQL persistence adapter', () => {
     expect(migration).toContain('pg_column_size(source_record_json) <= 32768');
     expect(migration).toContain('pg_column_size(config_snapshot_json) <= 131072');
     expect(migration).toContain('pg_column_size(runtime_metadata_json) <= 8192');
-    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(4\)/.test(text))).toBe(true);
+    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(5\)/.test(text))).toBe(true);
     expect(fake.calls.at(-1)?.text).toBe('COMMIT');
     await database.close();
   });

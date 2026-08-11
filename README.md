@@ -2,7 +2,7 @@
 
 # Systems Mapping
 
-Systems Mapping is a phone-primary concept and resource mapping application for source-backed student memos. It combines a seven-stage student workflow, an instructor review gate, a persistent graph workspace, and a progressively disclosed teacher dashboard. The default suggestion configuration is **STEM Splitter**.
+Systems Mapping is a phone-primary concept and resource mapping application for source-backed student memos. It combines a seven-stage student workflow, an instructor review gate, a persistent graph workspace, and a Teacher Console. The default suggestion configuration is **STEM Splitter**.
 
 The implementation is local-first. Student project state stays in the browser; authenticated evaluation, instructor-review records, teacher accounts, and shared prompt configuration live on the classroom server in SQLite locally or PostgreSQL when hosted.
 
@@ -49,9 +49,11 @@ pnpm build
 
 Fresh databases seed unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer, never default passphrases. To claim one account, start the server with a temporary, server-only `SYSTEMS_MAPPING_TEACHER_BOOTSTRAP_TOKEN` of 16–256 characters. A token authorizes one claim for that server process; claim the second account with a fresh token on a later restart. Passphrases are scrypt-derived, and teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
 
-The teacher dashboard opens on **Review submissions**. Its queue loads before any prompt configuration. Selecting one submission reveals the memo and student note. Full criteria and scores remain teacher-only and closed by default behind **Model review details**. The instructor writes one focus for the student, then chooses **Approve**, **Approve with a question**, or **Reject**; the middle choice also requires one question. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
+The Teacher Console opens on **Review submissions**. Its queue loads before course settings. Selecting one submission reveals the memo and student note. Full criteria and scores remain teacher-only and closed by default behind **Model review details**. The instructor writes one focus for the student, then chooses **Approve**, **Approve with a question**, or **Reject**. The middle choice also requires one question. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
 
-**Model guidance** is a secondary, lazy-loaded section. It exposes one module editor at a time across preflight/builder, global/micro/meso/macro/integration, and six modules: purpose, evidence, privacy, scale rubric, interaction, and output. That is 60 versioned modules in storage without presenting a 60-control wall. Fixed grounding, privacy, schema, and student-confirmation guardrails remain read-only.
+**Course settings** loads only when selected. One published course profile governs new runs. A teacher creates a trial from any published or earlier profile, changes **Focus**, **Evidence**, **Questions**, **Privacy**, and optional **Scale adjustments**, saves the draft, previews the saved revision, and publishes it. Publishing retires the previous profile without erasing its history. Cloning an earlier profile provides rollback without editing a published record in place.
+
+Fixed grounding, privacy, schema, and student-confirmation rules remain code-owned. The server still composes those rules from smaller internal parts, but it exposes no internal configuration matrix to the Teacher Console or its retired module endpoints. Deterministic STEM Splitter records the published profile as provenance without changing its fixed score. Ollama Cloud applies the published text to the provider request and validated response.
 
 ## Suggestion runtime
 
@@ -73,7 +75,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 ## Persistence and retention
 
 - Browser `localStorage` holds the current student project, stage, graph records, node positions, viewport, node/relationship/map annotations, and the private capability needed to refresh an instructor response. Save failures preserve the in-memory project and offer recovery export.
-- The classroom database holds teacher identities and sessions, prompt modules and history, bounded prototype events, authoritative evaluations, review snapshots, and append-only decision events.
+- The classroom database holds teacher identities and sessions, course profiles and append-only profile events, code-owned base configuration, bounded prototype events, authoritative evaluations, review snapshots, and append-only decision events.
 - Unsubmitted evaluations expire after 1 day. Pending review snapshots are retained for 30 days; decided snapshots for 180 days. Retention deletes source-bearing snapshots and decision rows, then keeps only a hashed, append-only purge receipt.
 - Review and evaluation IDs are random bearer capabilities. Every portable export redacts both IDs. Student status responses are deliberately minimal and never return source text, prompt content, configuration, or teacher identity.
 - Canonical JSON preserves stable graph IDs, layout, viewport, annotations, and redaction manifests. CSV cells are neutralized against spreadsheet formulas.
@@ -98,11 +100,11 @@ Black, white, and gray remain dominant. Restrained teal, amber, and plum accents
 
 ## Evidence and authority
 
-The deterministic active-beta release passed 132 tests with 3 PostgreSQL-gated skips and produced a successful production build. The production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
+The current active-beta release passed 142 tests with 3 PostgreSQL-gated skips and produced a successful production build. The production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
 
 GitHub readback confirmed `cb2a959` for the application contract and `23aa134` for the **Active beta** notice. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 
-The current disposable browser journey verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, and the candidate → map → revision flow. Current class-entry and changed-view captures at 320, 390, 430, and 1440 px showed no horizontal overflow. The 44 PNGs are in `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-final/`; `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views.zip` passes `unzip -t`.
+The current disposable browser journeys verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, the candidate → map → revision flow, and the Course settings create → save → preview → publish path. Current captures at 320, 390, 430, and 1440 px showed no horizontal overflow. The 50-PNG archive at `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip` passes `unzip -t`.
 
 Simple **Approve**, **Reject**, reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
 
@@ -110,6 +112,7 @@ Simple **Approve**, **Reject**, reload/export restoration, and live Ollama execu
 - [Requirements](./docs/REQUIREMENTS.md)
 - [QA report](./docs/QA.md)
 - [Security review](./docs/SECURITY_REVIEW.md)
+- [Teacher control across both applications](./docs/EDUCATOR_RESOURCE_FRAMEWORK.md)
 - [Release evidence ledger](./TODO.md)
 
 The source ledger remains authoritative about provenance: the fuller Drive specification governs behavior; the supplied HTML/DOCX guide interaction; CALI materials provide context; Zach's August 5 notes remain unconfirmed minutes; and STEM Splitter is an architecture precedent. No Maria-specific Zoom summary was found, so none is represented as a confirmed design decision.

@@ -134,7 +134,8 @@ describe('hardened Systems Mapping server', () => {
       'configKind', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale',
     ]);
     expect(snapshot).toMatchObject({ configKind: 'preflight', scale: 'micro', revision: 1 });
-    expect(snapshot.moduleVersions).toHaveLength(12);
+    expect(snapshot.moduleVersions).toHaveLength(13);
+    expect(snapshot.moduleVersions.at(-1).id).toBe('teaching-profile.systems-mapping-default');
     expect(snapshot).not.toHaveProperty('effectivePrompt');
     expect(snapshot).not.toHaveProperty('fixedGuardrails');
     expect(snapshot).not.toHaveProperty('modules');
@@ -496,49 +497,46 @@ describe('hardened Systems Mapping server', () => {
     }
   });
 
-  it('keeps teacher revisions authenticated, transactional, and concurrency-safe', async () => {
+  it('keeps teaching-profile trials authenticated, transactional, and concurrency-safe', async () => {
     const teacherCookie = await claimTeacher('maria-mavrides-calderon');
-    const modulesResponse = await request(system.app, '/api/teacher/modules', { headers: { cookie: teacherCookie } });
-    expect(modulesResponse.status).toBe(200);
-    const modules = (await json(modulesResponse)).modules;
-    expect(modules).toHaveLength(60);
-    expect(modules.find((module) => module.id === 'preflight.global.purpose')?.content)
-      .toContain('teacher-facing evidence review');
-    expect(modules.find((module) => module.id === 'preflight.global.purpose')?.content)
-      .toContain('do not grade or classify the student');
-    expect(modules.find((module) => module.id === 'preflight.global.interaction')?.content)
-      .toContain('at most three concrete redirective actions');
-    expect(modules.find((module) => module.id === 'preflight.global.interaction')?.content)
-      .toContain('without criterion labels, statuses, scores, outcomes, or taxonomy');
-    const target = modules.find((module) => module.id === 'builder.meso.interaction');
-
-    const content = `${target.content} Keep each confirmation discrete.`;
-    const first = await putJson(system.app, `/api/teacher/modules/${target.id}`, {
-      content,
-      changeNote: 'Clarify confirmation cadence',
+    const catalog = await json(await request(system.app, '/api/teacher/profiles', { headers: { cookie: teacherCookie } }));
+    expect(catalog.resource.modules).toHaveLength(5);
+    expect(catalog.resource.modules.map(({ id }) => id)).toEqual(['focus', 'evidence', 'questions', 'privacy', 'scale-adjustments']);
+    const active = await json(await request(system.app, `/api/teacher/profiles/${catalog.activeProfileId}`, { headers: { cookie: teacherCookie } }));
+    const created = await json(await postJson(system.app, '/api/teacher/profiles', {
+      name: 'Confirmation trial',
+      note: 'Clarify confirmation cadence',
+      sourceProfileId: active.profile.id,
+    }, { cookie: teacherCookie }));
+    const nextProfile = { ...created.profile.profile, questions: 'Ask one question and wait for the student response.' };
+    const first = await putJson(system.app, `/api/teacher/profiles/${created.profile.id}`, {
+      name: 'Confirmation trial',
+      profile: nextProfile,
+      note: 'Clarify confirmation cadence',
       expectedRevision: 1,
     }, { cookie: teacherCookie });
     expect(first.status).toBe(200);
-    expect((await json(first)).module).toMatchObject({ revision: 2, content, updatedByName: 'Maria Mavrides Calderon' });
+    expect((await json(first)).profile).toMatchObject({ revision: 2, profile: nextProfile, updatedByName: 'Maria Mavrides Calderon' });
 
-    const stale = await putJson(system.app, `/api/teacher/modules/${target.id}`, {
-      content: 'A stale replacement that must not win.',
-      changeNote: 'Stale overwrite attempt',
+    const stale = await putJson(system.app, `/api/teacher/profiles/${created.profile.id}`, {
+      name: 'Stale trial',
+      profile: { ...nextProfile, questions: 'A stale replacement that must not win.' },
+      note: 'Stale overwrite attempt',
       expectedRevision: 1,
     }, { cookie: teacherCookie });
     expect(stale.status).toBe(409);
     const staleBody = await json(stale);
     expect(staleBody.details.current.revision).toBe(2);
-    expect(staleBody.details.current.content).toBe(content);
+    expect(staleBody.details.current.profile).toEqual(nextProfile);
 
-    const history = (await json(await request(system.app, '/api/teacher/history?limit=100', {
-      headers: { cookie: teacherCookie },
-    }))).history;
-    expect(history.find((entry) => entry.moduleId === target.id && entry.revision === 2)).toMatchObject({
-      content,
-      changeNote: 'Clarify confirmation cadence',
-      changedByName: 'Maria Mavrides Calderon',
-    });
+    const history = await json(await request(system.app, `/api/teacher/profiles/${created.profile.id}`, { headers: { cookie: teacherCookie } }));
+    expect(history.events[0]).toMatchObject({ action: 'updated', revision: 2, note: 'Clarify confirmation cadence', actorName: 'Maria Mavrides Calderon' });
+    expect((await putJson(system.app, '/api/teacher/modules/builder.meso.interaction', {
+      content: 'Legacy direct edit', changeNote: 'Must be retired', expectedRevision: 1,
+    }, { cookie: teacherCookie })).status).toBe(410);
+    expect((await request(system.app, '/api/teacher/modules', { headers: { cookie: teacherCookie } })).status).toBe(410);
+    expect((await request(system.app, '/api/teacher/history', { headers: { cookie: teacherCookie } })).status).toBe(410);
+    expect((await request(system.app, '/api/teacher/effective', { headers: { cookie: teacherCookie } })).status).toBe(410);
     expect(assertDatabaseIntegrity(system.db)).toBe(true);
   });
 

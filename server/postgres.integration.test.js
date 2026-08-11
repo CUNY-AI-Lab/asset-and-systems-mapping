@@ -138,10 +138,12 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     });
     try {
       await second.ready;
-      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(4);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(5);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count).toBe(2);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_modules').get()).count).toBe(60);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_module_history').get()).count).toBe(60);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM teaching_profiles').get()).count).toBe(1);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM teaching_profile_events').get()).count).toBe(1);
       expect((await second.db.prepare(`
         SELECT COUNT(*) AS count FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name IN (
@@ -173,24 +175,33 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     expect(Buffer.isBuffer(account.passphraseHash)).toBe(true);
     expect(Buffer.isBuffer(account.passphraseSalt)).toBe(true);
 
-    const modules = (await (await request(system, '/api/teacher/modules', { headers: { cookie } })).json()).modules;
-    const target = modules.find((module) => module.id === 'builder.meso.interaction');
+    const catalog = await (await request(system, '/api/teacher/profiles', { headers: { cookie } })).json();
+    expect(catalog.resource.modules).toHaveLength(5);
+    const created = await jsonMutation(system, 'POST', '/api/teacher/profiles', {
+      name: 'Concurrent profile trial',
+      note: 'Exercise concurrent profile updates',
+      sourceProfileId: catalog.activeProfileId,
+    }, cookie);
+    expect(created.status).toBe(201);
+    const draft = await created.json();
     const bodies = ['First concurrent revision.', 'Second concurrent revision.'].map((suffix) => ({
-      content: `${target.content} ${suffix}`,
-      changeNote: suffix,
-      expectedRevision: target.revision,
+      name: 'Concurrent profile trial',
+      profile: { ...draft.profile.profile, questions: suffix },
+      note: suffix,
+      expectedRevision: draft.profile.revision,
     }));
     const responses = await Promise.all(bodies.map((body) => jsonMutation(
       system,
       'PUT',
-      `/api/teacher/modules/${target.id}`,
+      `/api/teacher/profiles/${draft.profile.id}`,
       body,
       cookie,
     )));
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
     expect((await system.db.prepare(`
-      SELECT COUNT(*) AS count FROM prompt_module_history WHERE module_id = ? AND revision = ?
-    `).get(target.id, target.revision + 1)).count).toBe(1);
+      SELECT COUNT(*) AS count FROM teaching_profile_events
+      WHERE profile_id = ? AND action = 'updated' AND revision = ?
+    `).get(draft.profile.id, draft.profile.revision + 1)).count).toBe(1);
     expect((await request(system, '/api/config/public', { headers: { cookie } })).status).toBe(200);
 
     const studentAccess = await jsonMutation(system, 'POST', '/api/student/access', { code: HOSTED_CLASS_CODE });

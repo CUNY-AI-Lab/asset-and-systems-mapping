@@ -13,6 +13,40 @@ function jsonResponse(payload, status = 200) {
 const teacherAccess = { mode: 'manual', claimEnabled: true };
 const teacher = { id: 'local-teacher-id', displayName: 'Server Returned Teacher' };
 
+const profileValue = {
+  schemaVersion: 'cuny.teaching-profile.v1',
+  focus: 'Attend to actors and relationships represented in the source.',
+  evidence: 'Return to locatable source passages.',
+  questions: 'Ask one focused question without completing the analysis.',
+  privacy: 'Remove identifying detail that is not needed.',
+  contextAdjustments: {
+    micro: 'Attend to people and families.',
+    meso: 'Attend to organizations and procedures.',
+    macro: 'Attend to policy and infrastructure.',
+    integration: 'Connect confirmed relationships across scales.',
+  },
+};
+
+const activeProfile = {
+  id: 'systems-mapping-default',
+  name: 'Course profile',
+  status: 'active',
+  revision: 1,
+  profile: profileValue,
+  fingerprint: 'a'.repeat(64),
+  parentId: null,
+  createdAt: '2026-08-08T12:00:00.000Z',
+  createdByName: null,
+  updatedAt: '2026-08-08T12:00:00.000Z',
+  updatedByName: null,
+  publishedAt: '2026-08-08T12:00:00.000Z',
+  publishedByName: null,
+};
+
+const resource = {
+  runtimes: [{ id: 'deterministic', label: 'STEM Splitter rules', teacherModulesAffectOutput: false, disclosure: 'Teacher edits are recorded with the run but do not change deterministic scoring.' }],
+};
+
 const baseModule = {
   id: 'preflight.global.purpose',
   configKind: 'preflight',
@@ -84,7 +118,7 @@ const submissionDetail = {
   reviewingTeacher: null,
 };
 
-function authenticatedFetch({ queue, detail = submissionDetail, decision, modules = [baseModule, builderModule], history = [] } = {}) {
+function authenticatedFetch({ queue, detail = submissionDetail, decision, profiles = [activeProfile] } = {}) {
   let queueCalls = 0;
   const fetchMock = vi.fn(async (path, options = {}) => {
     if (path === '/api/auth/accounts') return jsonResponse({ teacherAccess });
@@ -99,8 +133,9 @@ function authenticatedFetch({ queue, detail = submissionDetail, decision, module
       if (!decision) throw new Error('Unexpected decision request');
       return decision(path, options);
     }
-    if (path === '/api/teacher/modules') return jsonResponse({ modules });
-    if (path === '/api/teacher/history?limit=60') return jsonResponse({ history });
+    if (path === '/api/teacher/profiles') return jsonResponse({ resource, runtime: { provider: 'deterministic', model: 'STEM Splitter' }, activeProfileId: activeProfile.id, profiles: profiles.map(({ profile: _profile, ...summary }) => summary) });
+    const selectedProfile = profiles.find(({ id }) => path === `/api/teacher/profiles/${id}`);
+    if (selectedProfile) return jsonResponse({ profile: selectedProfile, events: [] });
     throw new Error(`Unexpected fetch: ${path}`);
   });
   fetchMock.queueCallCount = () => queueCalls;
@@ -110,7 +145,7 @@ function authenticatedFetch({ queue, detail = submissionDetail, decision, module
 async function renderAuthenticated(fetchMock = authenticatedFetch()) {
   vi.stubGlobal('fetch', fetchMock);
   render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
-  expect(await screen.findByRole('heading', { name: 'Teacher dashboard' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
   return fetchMock;
 }
 
@@ -132,7 +167,7 @@ describe('TeacherDashboard', () => {
   it('defaults to the pending review queue and renders one restrained submission detail with exactly three decisions', async () => {
     const fetchMock = await renderAuthenticated();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
-    const guidanceTab = screen.getByRole('tab', { name: 'Edit model prompts' });
+    const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     expect(reviewTab).toHaveAttribute('tabindex', '0');
     expect(guidanceTab).toHaveAttribute('tabindex', '-1');
@@ -219,7 +254,7 @@ describe('TeacherDashboard', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'a locally chosen phrase' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('heading', { name: 'Teacher dashboard' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     expect(loginBody).toEqual({ userId: 'local-teacher-id', passphrase: 'a locally chosen phrase' });
     expect(fetchMock.mock.calls.map(([path]) => path)).toContain('/api/teacher/preflight-submissions?status=pending');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
@@ -251,7 +286,7 @@ describe('TeacherDashboard', () => {
 
     fireEvent.change(screen.getByLabelText('Server bootstrap token'), { target: { value: 'operator-only-bootstrap-token' } });
     fireEvent.click(screen.getByRole('button', { name: 'Claim account' }));
-    expect(await screen.findByRole('heading', { name: 'Teacher dashboard' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     expect(claimBody).toEqual({ userId: 'local-teacher-id', passphrase: 'another local phrase', bootstrapToken: 'operator-only-bootstrap-token' });
   });
 
@@ -347,76 +382,128 @@ describe('TeacherDashboard', () => {
     expect(postBodies[1]).toMatchObject({ expectedRevision: 3, decision: 'revise_and_approve' });
   });
 
-  it('lazy-loads model guidance on first selection, keeps one module editor visible, and roves section tabs', async () => {
-    const history = [{
-      id: 'history-01',
-      moduleId: baseModule.id,
-      label: baseModule.label,
-      revision: 1,
-      changeNote: 'Source-grounded starting configuration',
-      changedAt: '2026-08-08T12:00:00.000Z',
-      changedByName: 'Configured teacher',
-    }];
-    const fetchMock = await renderAuthenticated(authenticatedFetch({ history }));
+  it('lazy-loads one five-section teaching profile and roves section tabs', async () => {
+    const fetchMock = await renderAuthenticated();
     await waitForSubmission();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
-    const guidanceTab = screen.getByRole('tab', { name: 'Edit model prompts' });
-    expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
+    const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
+    expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/profiles');
 
     reviewTab.focus();
     fireEvent.keyDown(reviewTab, { key: 'ArrowRight' });
     expect(guidanceTab).toHaveFocus();
     expect(guidanceTab).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByRole('heading', { name: 'Choose a prompt to edit.' })).toBeVisible();
-    expect(screen.getAllByRole('textbox', { name: 'Module instructions' })).toHaveLength(1);
-    expect(screen.getByRole('combobox', { name: 'Module' })).toHaveValue(baseModule.id);
-    expect(screen.getByText('Shared revision history · 1').parentElement).not.toHaveAttribute('open');
-    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/modules')).toHaveLength(1);
-    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/history?limit=60')).toHaveLength(1);
+    expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
+    expect(await screen.findByLabelText('Focus')).toHaveValue(profileValue.focus);
+    expect(screen.getByLabelText('Evidence')).toHaveValue(profileValue.evidence);
+    expect(screen.getByLabelText('Questions')).toHaveValue(profileValue.questions);
+    expect(screen.getByLabelText('Privacy')).toHaveValue(profileValue.privacy);
+    expect(screen.getByText('Scale adjustments').closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByLabelText('Module')).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
+    expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
 
     fireEvent.keyDown(guidanceTab, { key: 'Home' });
     expect(reviewTab).toHaveFocus();
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(guidanceTab);
-    expect(await screen.findByRole('heading', { name: 'Choose a prompt to edit.' })).toBeVisible();
-    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/modules')).toHaveLength(1);
+    expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
   });
 
-  it('preserves modular prompt revision conflict behavior inside Model guidance', async () => {
-    const putBodies = [];
-    let putCount = 0;
-    const fetchMock = authenticatedFetch();
-    const baseImplementation = fetchMock.getMockImplementation();
-    fetchMock.mockImplementation(async (path, options = {}) => {
-      if (String(path).startsWith('/api/teacher/modules/')) {
-        putCount += 1;
-        const body = JSON.parse(options.body);
-        putBodies.push(body);
-        if (putCount === 1) return jsonResponse({ module: { ...baseModule, content: body.content, revision: 2, fingerprint: 'fingerprint-two', updatedAt: '2026-08-08T13:00:00.000Z' } });
-        return jsonResponse({ error: 'This module changed after it was loaded.', details: { current: { ...baseModule, content: 'Server revision written in another session.', revision: 3, fingerprint: 'fingerprint-three' } } }, 409);
+  it('creates, saves, and publishes a trial without editing the active profile in place', async () => {
+    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000001', name: 'Evidence trial', status: 'draft', parentId: activeProfile.id };
+    let profiles = [activeProfile];
+    const requests = [];
+    const fetchMock = vi.fn(async (path, options = {}) => {
+      requests.push([path, options.method || 'GET', options.body ? JSON.parse(options.body) : null]);
+      if (path === '/api/auth/accounts') return jsonResponse({ teacherAccess });
+      if (path === '/api/auth/me') return jsonResponse({ user: teacher });
+      if (path === '/api/teacher/preflight-submissions?status=pending') return jsonResponse({ submissions: [] });
+      if (path === '/api/teacher/profiles' && options.method === 'POST') {
+        profiles = [...profiles, draftProfile];
+        return jsonResponse({ profile: draftProfile, events: [] }, 201);
       }
-      return baseImplementation(path, options);
+      if (path === '/api/teacher/profiles') return jsonResponse({ resource, runtime: { provider: 'deterministic', model: 'STEM Splitter' }, activeProfileId: profiles.find(({ status }) => status === 'active')?.id, profiles: profiles.map(({ profile: _profile, ...summary }) => summary) });
+      if (path === `/api/teacher/profiles/${draftProfile.id}` && options.method === 'PUT') {
+        const body = JSON.parse(options.body);
+        const saved = { ...draftProfile, name: body.name, profile: body.profile, revision: 2, fingerprint: 'b'.repeat(64) };
+        profiles = profiles.map((profile) => profile.id === saved.id ? saved : profile);
+        return jsonResponse({ profile: saved, events: [{ id: 1, action: 'updated', revision: 2, note: body.note, occurredAt: '2026-08-08T13:00:00.000Z', actorName: teacher.displayName }] });
+      }
+      if (path === `/api/teacher/profiles/${draftProfile.id}/publish`) {
+        const current = profiles.find(({ id }) => id === draftProfile.id);
+        const published = { ...current, status: 'active', publishedAt: '2026-08-08T14:00:00.000Z' };
+        profiles = profiles.map((profile) => profile.id === activeProfile.id ? { ...profile, status: 'retired' } : profile.id === published.id ? published : profile);
+        return jsonResponse({ profile: published, events: [{ id: 2, action: 'published', revision: 2, note: JSON.parse(options.body).note, occurredAt: '2026-08-08T14:00:00.000Z', actorName: teacher.displayName }] });
+      }
+      const selected = profiles.find(({ id }) => path === `/api/teacher/profiles/${id}`);
+      if (selected) return jsonResponse({ profile: selected, events: [] });
+      throw new Error(`Unexpected fetch: ${path}`);
     });
     const onConfigurationChanged = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard onConfigurationChanged={onConfigurationChanged} />);
-    expect(await screen.findByRole('heading', { name: 'Teacher dashboard' })).toBeVisible();
-    fireEvent.click(screen.getByRole('tab', { name: 'Edit model prompts' }));
-    const editor = await screen.findByRole('textbox', { name: 'Module instructions' });
-    const changeNote = screen.getByRole('textbox', { name: 'Change note' });
-    fireEvent.change(editor, { target: { value: 'Edited source-grounded readiness instructions.' } });
-    fireEvent.change(changeNote, { target: { value: 'Clarify readiness purpose' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save revision' }));
-    expect(await screen.findByText('Revision 2 saved.')).toBeVisible();
-    expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Create a trial' }));
+    fireEvent.change(screen.getByLabelText('Trial name'), { target: { value: 'Evidence trial' } });
+    fireEvent.change(screen.getByLabelText('What will this trial test?'), { target: { value: 'Test shorter evidence prompts' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create trial' }));
 
-    fireEvent.change(editor, { target: { value: 'My preserved local prompt draft.' } });
-    fireEvent.change(changeNote, { target: { value: 'Second change' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save revision' }));
-    expect(await screen.findByText('Revision 3 is now on the server. Your unsaved draft remains in the editor.')).toBeVisible();
-    expect(editor).toHaveValue('My preserved local prompt draft.');
-    expect(putBodies[1]).toMatchObject({ expectedRevision: 2, changeNote: 'Second change' });
-    fireEvent.click(screen.getByRole('button', { name: 'Load server revision 3' }));
-    expect(editor).toHaveValue('Server revision written in another session.');
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Evidence trial'));
+    fireEvent.change(screen.getByLabelText('Focus'), { target: { value: 'Return first to evidence that names a relationship.' } });
+    expect(screen.getByRole('button', { name: 'Publish trial' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preview saved draft' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Focus the evidence prompt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByText('Draft revision 2 saved.')).toBeVisible();
+    expect(onConfigurationChanged).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Publish trial' })).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Publish the evidence trial' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish trial' }));
+    expect(await screen.findByText('Trial published. New student runs now use this profile.')).toBeVisible();
+    expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
+    expect(requests.some(([path, method]) => path === '/api/teacher/modules' && method === 'PUT')).toBe(false);
+  });
+
+  it('preserves an unsaved trial when the server reports a newer revision', async () => {
+    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000002', name: 'Question trial', status: 'draft', parentId: activeProfile.id };
+    const currentProfile = {
+      ...draftProfile,
+      revision: 2,
+      profile: { ...profileValue, questions: 'Ask the student to name the missing relation.' },
+      fingerprint: 'c'.repeat(64),
+    };
+    const profiles = [activeProfile, draftProfile];
+    const fetchMock = vi.fn(async (path, options = {}) => {
+      if (path === '/api/auth/accounts') return jsonResponse({ teacherAccess });
+      if (path === '/api/auth/me') return jsonResponse({ user: teacher });
+      if (path === '/api/teacher/preflight-submissions?status=pending') return jsonResponse({ submissions: [] });
+      if (path === '/api/teacher/profiles') return jsonResponse({ resource, runtime: { provider: 'deterministic', model: 'STEM Splitter' }, activeProfileId: activeProfile.id, profiles: profiles.map(({ profile: _profile, ...summary }) => summary) });
+      if (path === `/api/teacher/profiles/${draftProfile.id}` && options.method === 'PUT') {
+        return jsonResponse({ error: 'This teaching profile changed after it was loaded.', details: { current: currentProfile } }, 409);
+      }
+      const selected = profiles.find(({ id }) => path === `/api/teacher/profiles/${id}`);
+      if (selected) return jsonResponse({ profile: selected, events: [] });
+      throw new Error(`Unexpected fetch: ${path}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    await screen.findByRole('heading', { name: 'Course settings' });
+    fireEvent.change(screen.getByLabelText('Profile', { exact: true }), { target: { value: draftProfile.id } });
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Question trial'));
+    fireEvent.change(screen.getByLabelText('Questions'), { target: { value: 'My unsaved question remains here.' } });
+    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Try another question' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(await screen.findByText('This trial changed in another session. Your draft remains in the editor.')).toBeVisible();
+    expect(screen.getByLabelText('Questions')).toHaveValue('My unsaved question remains here.');
+    fireEvent.click(screen.getByRole('button', { name: 'Load server revision 2' }));
+    expect(screen.getByLabelText('Questions')).toHaveValue('Ask the student to name the missing relation.');
   });
 });
