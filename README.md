@@ -84,7 +84,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 ## Hosted and Railway contract
 
-The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Seven-stage Course settings deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, and the deployed service returned the expected hardening headers. HTTP bundle readback found both stage fields and none of the retired terminology. The hosted class-entry page previously loaded without console warnings and correctly rejected the local-only code `101`. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, the expected hardening headers and Secure cookie attributes passed readback, and class code `101` created a course-server session that was then closed. Maria's teacher login also passed and its verification session was closed. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>
@@ -94,7 +94,14 @@ TRUST_PROXY_HOPS=1
 SYSTEMS_MAPPING_CLASS_CODE=<10-32-character-server-only-code>
 ```
 
-Private hosted courses require a class code with at least six distinct characters; `101` remains rejected by default. A public teaching demo may opt in explicitly with both `SYSTEMS_MAPPING_PUBLIC_DEMO=true` and `SYSTEMS_MAPPING_CLASS_CODE=101`. The shared demo code is low-assurance access, not student identity. Hosted cookies remain `Secure`; exact public origin, host, proxy depth, rate limits, retention, and bounded evaluation/submission capacity remain enforced. `DATABASE_SSL`, pool, connection, idle, statement, and transaction timeout variables are available for the target PostgreSQL environment.
+Private hosted courses require a class code with at least six distinct characters; `101` remains rejected by default. A public teaching demo instead uses this exact pair:
+
+```dotenv
+SYSTEMS_MAPPING_PUBLIC_DEMO=true
+SYSTEMS_MAPPING_CLASS_CODE=101
+```
+
+The shared demo code is low-assurance access, not student identity. Hosted cookies remain `Secure`; exact public origin, host, proxy depth, rate limits, retention, and bounded evaluation/submission capacity remain enforced. `DATABASE_SSL`, pool, connection, idle, statement, and transaction timeout variables are available for the target PostgreSQL environment.
 
 ## Design and map behavior
 

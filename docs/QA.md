@@ -6,7 +6,7 @@ Updated: 2026-08-11
 
 The current active-beta tree is automated-test green, production-build green, security-scanned, merged into GitHub `main`, and deployed to Railway. The student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. Disposable browser journeys verified **Approve with a question** through candidate choice, map entry, and the revision stage, plus Course settings create → save → preview → publish. Live Ollama remains disabled and unverified.
 
-The original image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. A fresh four-viewport recapture covers the current progression editor at 320, 390, 430, and 1440 px: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. Deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; health and hardening headers passed, and HTTP bundle readback contained the two stage fields with none of the retired terminology. Simple **Approve**, **Reject**, reload restoration, export/import restoration, and a full deployed teacher journey remain active-beta follow-up.
+The original image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. A fresh four-viewport recapture covers the current progression editor at 320, 390, 430, and 1440 px: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. Public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS`; health, hardening headers, Secure cookie attributes, class-code access, session readback, and logout passed. Simple **Approve**, **Reject**, reload restoration, export/import restoration, and a full deployed teacher journey remain active-beta follow-up.
 
 ## Completed automated runs
 
@@ -30,9 +30,9 @@ The current production audit reported no known vulnerabilities. Source and appli
 - Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. GitHub readback confirmed that PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) merged into `main` at commit `95c01f4`.
 - The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 - Railway project: `systems-mapping` (`ed729bd9-403b-46a6-a97c-99ad9a0294c8`) with web and PostgreSQL services.
-- Railway deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS` for the seven-stage Course settings tree; database-backed health, hardening headers, and bundle copy passed readback.
+- Railway deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS` for the public-demo tree; database-backed health, hardening headers, Secure cookie attributes, class access, session readback, and logout passed.
 - Public health readback: `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`.
-- The deployed service returned the expected hardening headers. Its browser entry loaded with zero console warnings and correctly rejected `101`.
+- The current deployed service returned the expected hardening headers and accepted `101` only under the explicit public-demo configuration. The earlier browser entry loaded with zero console warnings; current public-demo acceptance is HTTP/API evidence.
 - The preserved local SQLite handoff store passed `PRAGMA integrity_check`; it contains no student sessions, evaluations, review submissions/events, or prototype events. One previously claimed teacher account and its existing session were retained as user-owned state.
 
 ## Automated behavior verified
@@ -123,7 +123,7 @@ Use a disposable database and temporary teacher claim values, never the real han
 7. Generate and decide candidates, enter the map, and continue to the revision stage.
 8. Capture class entry and changed views at 320, 390, 430, and 1440 px and inspect for horizontal overflow.
 
-This disposable journey passed. The deployed class-entry check separately passed with zero console warnings and correct rejection of `101`.
+This disposable journey passed. The current deployed class-entry API separately accepted `101`, returned an active course-server session, and closed it; the earlier browser entry supplies the zero-console-warning evidence.
 
 ## Active-beta follow-up
 
@@ -131,7 +131,7 @@ This disposable journey passed. The deployed class-entry check separately passed
 - Verify current reload restoration and export/import restoration in the rendered application.
 - Extend current rendered receipts for map drag, keyboard movement, zoom/pan/fit, every annotation surface, and full focus traversal. Automated coverage remains green.
 - The final loopback listener and real SQLite handoff database are healthy; the one pre-existing claimed teacher account/session was intentionally preserved rather than treated as QA residue.
-- The current Railway release, health response, hardening headers, browser entry, and hosted `101` rejection are verified. A full teacher-review journey against deployed Railway/PostgreSQL remains useful beta coverage, not a blocker to the deterministic release.
+- The current Railway release, health response, hardening headers, Secure session attributes, hosted `101` access, session readback/logout, and Maria teacher login/logout are verified. A full teacher-review journey against deployed Railway/PostgreSQL remains useful beta coverage, not a blocker to the deterministic release.
 - Local `.env` contains no Ollama key. The previously pasted key is exposed and must be revoked; no live provider run has occurred.
 - Deterministic STEM Splitter does not interpret teacher prompt or project-instruction text. Its configuration snapshots are provenance only; prompt customization affects actual generation only when an accepted provider adapter is enabled.
 - Hosted review stores memo/source material for the disclosed retention period. Institutional approval and operating policy remain separate from code correctness.

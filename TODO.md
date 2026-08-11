@@ -31,7 +31,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Keep capability identifiers out of portable releases.
   - Evidence: private, course, CUNY, and public projections redact both evaluation and instructor-review capabilities; imported redacted copies cannot poll the original review.
 - [x] Harden local and hosted access boundaries in code.
-  - Evidence: local default code `101` remains server-side; hosted mode rejects `101` and requires a 10–32 character code with at least six distinct characters, HTTPS origin, explicit host/proxy configuration, Secure cookies, and bounded issuance/evaluation/submission rates.
+  - Evidence: local default code `101` remains server-side. Hosted private-course mode rejects it and requires a 10–32 character code with at least six distinct characters; hosted public-demo mode accepts it only with the exact server-side opt-in flag. Both retain HTTPS origin, explicit host/proxy configuration, Secure cookies, and bounded issuance/evaluation/submission rates.
 - [x] Preserve teacher isolation and account ownership.
   - Evidence: fresh databases seed Maria and Zach as unclaimed identities; a temporary operator token authorizes one claim; passphrases use salted scrypt derivations; teacher and student cookies/routes remain separate.
 - [x] Preserve phone-primary map state and annotation behavior.
@@ -63,7 +63,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: the journey verified source-return prompts, collapsed **Model review details**, one instructor focus and question, the student response, candidate choice, map entry, and revision stage.
 - [x] Capture the current class entry and changed student and teacher views at 320, 390, 430, and 1440 px with no document-level horizontal overflow.
   - Evidence: the original 50-PNG archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the four current Course settings captures are in `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
-- [x] Verify the deployed class-entry page with zero console warnings and confirm that hosted mode rejects `101`.
+- [x] Verify the deployed public-demo class access with `101`, read back the course-server session, and close the test session. Earlier browser-entry evidence retains the zero-console-warning check.
 - [x] Run the production dependency audit and final source/application-bundle scans.
   - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.
 
@@ -81,8 +81,8 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
   - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
 - [x] Run the Railway migration/deploy to terminal `SUCCESS` and verify the public domain and database-backed health endpoint.
-  - Evidence: seven-stage Course settings deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, expected hardening headers were present, and HTTP bundle readback found both stage fields with none of the retired terminology.
-- [x] Verify the deployed browser entry with zero console warnings and rejection of the local-only class code `101`.
+  - Evidence: public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, and expected hardening headers and Secure cookie attributes passed readback.
+- [x] Verify deployed `101` access, session readback, and logout; retain the earlier zero-console-warning browser entry as historical evidence.
 - [ ] Run the full teacher-review journey against the deployed Railway/PostgreSQL service as an active-beta follow-up. Current deployment, health, headers, entry behavior, and local disposable review evidence remain independently verified.
 
 ## Required Ollama Cloud proof

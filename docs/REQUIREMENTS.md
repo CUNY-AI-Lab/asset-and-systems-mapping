@@ -175,7 +175,7 @@ Hosted mode requires all of the following:
 
 Public-demo mode changes only the shared student entry code. It does not grant teacher access, identify students, relax origin/cookie controls, remove rate and queue limits, or change retention.
 
-Railway project/service/database creation, required variables, PostgreSQL migration, terminal deployment success, and public health readback are verified for the published release at `https://web-production-08455.up.railway.app`. The frozen source-prompt projection still requires a new deployment and live student/teacher readback before it can be attributed to Railway.
+Railway project/service/database creation, required variables, PostgreSQL migration, terminal deployment success, public health, hardening headers, explicit public-demo access, session cleanup, and Maria's teacher login are verified at `https://web-production-08455.up.railway.app`.
 
 ## Privacy and security boundaries
 
