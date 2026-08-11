@@ -47,7 +47,19 @@ function takeBootstrapToken() {
   return token;
 }
 
-function takeClassCode(isHosted) {
+function takePublicDemo(isHosted) {
+  const value = process.env.SYSTEMS_MAPPING_PUBLIC_DEMO;
+  if (value !== undefined && !['true', 'false'].includes(value)) {
+    throw new Error('SYSTEMS_MAPPING_PUBLIC_DEMO must be true or false.');
+  }
+  const enabled = value === 'true';
+  if (enabled && !isHosted) {
+    throw new Error('SYSTEMS_MAPPING_PUBLIC_DEMO may be enabled only in hosted mode.');
+  }
+  return enabled;
+}
+
+function takeClassCode(isHosted, publicDemo) {
   const code = process.env.SYSTEMS_MAPPING_CLASS_CODE;
   delete process.env.SYSTEMS_MAPPING_CLASS_CODE;
   if (code === undefined) {
@@ -55,7 +67,10 @@ function takeClassCode(isHosted) {
     return undefined;
   }
   if (isHosted) {
-    if (code.length < 10 || code.length > 32 || code === '101' || new Set(code).size < 6) {
+    if (publicDemo && code !== '101') {
+      throw new Error('Hosted public-demo mode requires SYSTEMS_MAPPING_CLASS_CODE=101.');
+    }
+    if (!publicDemo && (code.length < 10 || code.length > 32 || code === '101' || new Set(code).size < 6)) {
       throw new Error('Hosted SYSTEMS_MAPPING_CLASS_CODE must contain 10 to 32 characters with at least 6 distinct characters.');
     }
   } else if (code.length < 1 || code.length > 32) {
@@ -110,7 +125,8 @@ const databaseSsl = process.env.DATABASE_SSL === 'true';
 if (process.env.DATABASE_SSL !== undefined && !['true', 'false'].includes(process.env.DATABASE_SSL)) {
   throw new Error('DATABASE_SSL must be true or false.');
 }
-const runtimeClassCode = takeClassCode(hostedMode);
+const publicDemo = takePublicDemo(hostedMode);
+const runtimeClassCode = takeClassCode(hostedMode, publicDemo);
 const ollamaConfig = takeOllamaConfig();
 
 const { app, close, ready } = createSystemsMappingApp({
@@ -129,6 +145,7 @@ const { app, close, ready } = createSystemsMappingApp({
   },
   teacherBootstrapToken: takeBootstrapToken(),
   classCode: runtimeClassCode,
+  publicDemo,
   ollamaConfig,
   studentSessionTtlMs: optionalDuration('STUDENT_SESSION_TTL_MS', { min: 1000, max: 7 * 24 * 60 * 60 * 1000 }),
   sessionTtlMs: optionalDuration('TEACHER_SESSION_TTL_MS', { min: 60_000, max: 30 * 24 * 60 * 60 * 1000 }),

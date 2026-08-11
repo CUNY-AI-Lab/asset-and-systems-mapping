@@ -13,10 +13,10 @@ The original image set covers 11 student and teacher states at configured 320, 3
 | Gate | Current result | Scope |
 | --- | --- | --- |
 | Published release baseline | 130 passed; 3 PostgreSQL-gated skipped | Pre-pedagogy GitHub/Railway tree; retained as historical release evidence, not the new total. |
-| Current `pnpm test:server` | 59 passed; 3 PostgreSQL-gated skipped | Stage-specific course settings, source-prompt projection, teacher-only full detail, focus/question decisions, SQLite API/auth/config/evaluation/review/retention, hosted mode, and Ollama adapter. |
+| Current `pnpm test:server` | 60 passed; 3 PostgreSQL-gated skipped | Stage-specific course settings, source-prompt projection, teacher-only full detail, focus/question decisions, SQLite API/auth/config/evaluation/review/retention, hosted mode, public-demo gating, and Ollama adapter. |
 | Current fresh PostgreSQL 17 integration | 3/3 passed | Teacher-only full result, minimized student projection/status, decision persistence, and database parity. |
 | Current focused App/domain contract | Green; no separate subtotal recorded | Covered by the integrated frozen-tree run without inventing a focused-test count. |
-| Current full `pnpm test` | 145 passed; 3 PostgreSQL-gated skipped | Integrated client, domain, server, shared contract, adapters, and persistence tree. |
+| Current full `pnpm test` | 146 passed; 3 PostgreSQL-gated skipped | Integrated client, domain, server, shared contract, adapters, and persistence tree. |
 | Current `pnpm build` | Passed | Production Vite bundle rebuilt after the progression-editor changes. |
 | Current production dependency audit | No known vulnerabilities | Production dependency set only. |
 | Current source/application-bundle scans | Clean | No credential values; no application-bundle class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. |
@@ -77,7 +77,7 @@ The current production audit reported no known vulnerabilities. Source and appli
 - Student status responses are minimal. Teacher queue/detail/decision routes are teacher-authenticated.
 - SQLite and PostgreSQL implement equivalent tables, constraints, indexes, append-only protections, retention locks, and prepared-query behavior.
 - Evaluations expire after 1 day. Pending review snapshots expire after 30 days; decided snapshots after 180 days. Only a hashed purge receipt survives submission retention.
-- Hosted mode requires HTTPS, explicit host/proxy configuration, a strong non-`101` class code, Secure cookies, and bounded session/evaluation/submission capacity.
+- Hosted mode requires HTTPS, explicit host/proxy configuration, Secure cookies, and bounded session/evaluation/submission capacity. Private courses require a strong non-`101` code; a public demo requires the exact server-side `true`/`101` opt-in pair.
 - Exact-origin and trusted-Host checks, restrictive security headers, no-store API responses, body/content-type limits, throttles, and generic internal/provider failures are tested.
 - Ollama adapter tests cover fixed production endpoint, non-enumerable key handling, authorization header, JSON-only input treatment, cancellation/timeout, HTTP failure, bounded streaming/body size, malformed/extra fields, and runtime metadata.
 

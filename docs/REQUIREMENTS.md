@@ -168,10 +168,12 @@ Hosted mode requires all of the following:
 - PostgreSQL `DATABASE_URL` and an HTTPS `PUBLIC_ORIGIN` configured together;
 - explicit `HOST=0.0.0.0` or `HOST=::`;
 - explicit bounded `TRUST_PROXY_HOPS`;
-- a server-only 10–32 character class code with at least six distinct characters, never `101`;
+- either a server-only 10–32 character private-course code with at least six distinct characters or the explicit public-demo pair `SYSTEMS_MAPPING_PUBLIC_DEMO=true` and `SYSTEMS_MAPPING_CLASS_CODE=101`;
 - Secure teacher and student cookies;
 - exact Host/Origin/fetch-site validation;
 - bounded login, session issuance, evaluation, submission, queue, and concurrency limits.
+
+Public-demo mode changes only the shared student entry code. It does not grant teacher access, identify students, relax origin/cookie controls, remove rate and queue limits, or change retention.
 
 Railway project/service/database creation, required variables, PostgreSQL migration, terminal deployment success, and public health readback are verified for the published release at `https://web-production-08455.up.railway.app`. The frozen source-prompt projection still requires a new deployment and live student/teacher readback before it can be attributed to Railway.
 

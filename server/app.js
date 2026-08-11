@@ -1440,10 +1440,20 @@ export function createSystemsMappingApp(options = {}) {
     decided: preflightDecidedRetentionDays,
   });
   const classCode = options.classCode ?? (hostedMode ? null : DEFAULT_CLASS_CODE);
+  if (options.publicDemo !== undefined && typeof options.publicDemo !== 'boolean') {
+    throw new TypeError('publicDemo must be a boolean when provided.');
+  }
+  const publicDemo = options.publicDemo === true;
+  if (publicDemo && !hostedMode) {
+    throw new TypeError('publicDemo may be enabled only in hosted mode.');
+  }
   let teacherBootstrapToken = options.teacherBootstrapToken ?? null;
   if (hostedMode) {
-    if (typeof classCode !== 'string' || classCode.length < 10 || classCode.length > 32
-      || classCode === DEFAULT_CLASS_CODE || new Set(classCode).size < 6) {
+    const validPublicDemoCode = publicDemo && classCode === DEFAULT_CLASS_CODE;
+    const validPrivateClassCode = !publicDemo && typeof classCode === 'string'
+      && classCode.length >= 10 && classCode.length <= 32
+      && classCode !== DEFAULT_CLASS_CODE && new Set(classCode).size >= 6;
+    if (!validPublicDemoCode && !validPrivateClassCode) {
       throw new TypeError('Hosted mode requires an explicit classCode between 10 and 32 characters with at least 6 distinct characters.');
     }
   } else if (typeof classCode !== 'string' || classCode.length < 1 || classCode.length > 32) {

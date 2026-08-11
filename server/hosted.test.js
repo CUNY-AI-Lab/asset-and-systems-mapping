@@ -91,6 +91,14 @@ describe('hosted runtime guardrails', () => {
     expect(() => createHosted({ classCode: undefined })).toThrow('Hosted mode requires an explicit classCode');
     expect(() => createHosted({ classCode: '101' })).toThrow('Hosted mode requires an explicit classCode');
     expect(() => createHosted({ classCode: 'aaaaaaaaaa' })).toThrow('Hosted mode requires an explicit classCode');
+    expect(() => createHosted({ publicDemo: true, classCode: HOSTED_CLASS_CODE })).toThrow('Hosted mode requires an explicit classCode');
+
+    const publicDemo = createHosted({ publicDemo: true, classCode: '101' });
+    try {
+      expect((await postJson(publicDemo, '/api/student/access', { code: '101' })).status).toBe(201);
+    } finally {
+      await publicDemo.close();
+    }
 
     const system = createHosted();
     try {

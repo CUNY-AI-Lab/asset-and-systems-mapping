@@ -48,6 +48,25 @@ describe('server-only runtime configuration', () => {
     expect(defaultCode.stderr).not.toContain(HOSTED_ENV.DATABASE_URL);
   });
 
+  it('requires an explicit, exact hosted public-demo configuration', () => {
+    const invalidFlag = runIndex({
+      ...HOSTED_ENV,
+      SYSTEMS_MAPPING_CLASS_CODE: '101',
+      SYSTEMS_MAPPING_PUBLIC_DEMO: 'yes',
+    });
+    expect(invalidFlag.status).not.toBe(0);
+    expect(invalidFlag.stderr).toContain('SYSTEMS_MAPPING_PUBLIC_DEMO must be true or false.');
+
+    const mismatchedCode = runIndex({
+      ...HOSTED_ENV,
+      SYSTEMS_MAPPING_CLASS_CODE: 'CALI2026Map7Qv9Wx3Z',
+      SYSTEMS_MAPPING_PUBLIC_DEMO: 'true',
+    });
+    expect(mismatchedCode.status).not.toBe(0);
+    expect(mismatchedCode.stderr).toContain('Hosted public-demo mode requires SYSTEMS_MAPPING_CLASS_CODE=101.');
+    expect(mismatchedCode.stderr).not.toContain(HOSTED_ENV.DATABASE_URL);
+  });
+
   it('fails closed when Ollama Cloud is enabled without a fresh server-only credential', () => {
     const missingKey = runIndex({
       OLLAMA_ENABLED: 'true',

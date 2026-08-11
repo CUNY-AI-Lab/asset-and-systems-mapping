@@ -94,7 +94,7 @@ TRUST_PROXY_HOPS=1
 SYSTEMS_MAPPING_CLASS_CODE=<10-32-character-server-only-code>
 ```
 
-The hosted class code must contain at least six distinct characters and cannot be `101`. Hosted cookies are always `Secure`; exact public origin, host, proxy depth, rate limits, and bounded evaluation/submission capacity are enforced. `DATABASE_SSL`, pool, connection, idle, statement, and transaction timeout variables are available for the target PostgreSQL environment.
+Private hosted courses require a class code with at least six distinct characters; `101` remains rejected by default. A public teaching demo may opt in explicitly with both `SYSTEMS_MAPPING_PUBLIC_DEMO=true` and `SYSTEMS_MAPPING_CLASS_CODE=101`. The shared demo code is low-assurance access, not student identity. Hosted cookies remain `Secure`; exact public origin, host, proxy depth, rate limits, retention, and bounded evaluation/submission capacity remain enforced. `DATABASE_SSL`, pool, connection, idle, statement, and transaction timeout variables are available for the target PostgreSQL environment.
 
 ## Design and map behavior
 
@@ -102,9 +102,9 @@ Black, white, and gray remain dominant. Restrained teal, amber, and plum accents
 
 ## Evidence and authority
 
-The current active-beta tree passed 145 tests with 3 PostgreSQL-gated skips; the server group passed 59 tests with the same 3 integration gates. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
+The current active-beta tree passed 146 tests with 3 PostgreSQL-gated skips; the server group passed 60 tests with the same 3 integration gates. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
 
-GitHub readback confirmed that PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) for the seven-stage settings change merged into `main` at commit `95c01f4`. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
+GitHub readback confirmed that PR [#3](https://github.com/CUNY-AI-Lab/systems-mapping/pull/3) merged the production-aligned tree into `main` at commit `a4bdc0d`. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 
 The disposable browser journeys verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, and the candidate → map → revision flow. A fresh progression-editor journey verified create → save → preview → publish, the current/completed-stage prompt boundary, and all seven stage controls. A separate four-viewport recapture verified the current Course settings editor at 320, 390, 430, and 1440 px with no document overflow or browser warnings/errors. The original 50-PNG archive remains at `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the current Course settings recapture is archived at `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
 
