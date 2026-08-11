@@ -19,6 +19,7 @@ RUN pnpm install --prod --frozen-lockfile
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/server ./server
 COPY --from=build --chown=node:node /app/shared ./shared
+COPY --from=build --chown=node:node /app/src/domain.js ./src/domain.js
 USER node
 EXPOSE 4177
 CMD ["pnpm", "start"]
