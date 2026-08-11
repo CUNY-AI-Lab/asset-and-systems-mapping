@@ -4,9 +4,9 @@ Updated: 2026-08-11
 
 ## Current status
 
-The current active-beta tree is automated-test green, production-build green, security-scanned, published on a draft GitHub PR, and deployed to Railway. The student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. Disposable browser journeys verified **Approve with a question** through candidate choice, map entry, and the revision stage, plus Course settings create → save → preview → publish. Live Ollama remains disabled and unverified.
+The current active-beta tree is automated-test green, production-build green, security-scanned, merged into GitHub `main`, and deployed to Railway. The student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. Disposable browser journeys verified **Approve with a question** through candidate choice, map entry, and the revision stage, plus Course settings create → save → preview → publish. Live Ollama remains disabled and unverified.
 
-The existing image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. Its Course settings images predate the progression editor. A fresh local browser pass inspected the new editor at 320, 390, 430, and the default 1280 px viewport: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. Deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; health and hardening headers passed, and HTTP bundle readback contained the two stage fields with none of the retired terminology. Simple **Approve**, **Reject**, reload restoration, export/import restoration, progression-editor recapture, and a full deployed teacher journey remain active-beta follow-up.
+The original image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. A fresh four-viewport recapture covers the current progression editor at 320, 390, 430, and 1440 px: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. Deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; health and hardening headers passed, and HTTP bundle readback contained the two stage fields with none of the retired terminology. Simple **Approve**, **Reject**, reload restoration, export/import restoration, and a full deployed teacher journey remain active-beta follow-up.
 
 ## Completed automated runs
 
@@ -27,7 +27,7 @@ The current production audit reported no known vulnerabilities. Source and appli
 
 ## Published release evidence
 
-- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. GitHub readback confirmed commit `a46667d` on draft PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1); it is not yet merged into `main`.
+- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. GitHub readback confirmed that PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) merged into `main` at commit `95c01f4`.
 - The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 - Railway project: `systems-mapping` (`ed729bd9-403b-46a6-a97c-99ad9a0294c8`) with web and PostgreSQL services.
 - Railway deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS` for the seven-stage Course settings tree; database-backed health, hardening headers, and bundle copy passed readback.
@@ -98,7 +98,7 @@ The current production audit reported no known vulnerabilities. Source and appli
 | Direct stage names | Seven verb-led labels are used throughout. | Automated DOM and current rendered-browser verified. |
 | Return to source evidence | At most three short prompts plus the student's note; no student-facing model codification or synthesized groups. | Integrated automation and current rendered journey verified. |
 | Teacher review details | Full criteria/scores are teacher-only and collapsed; the instructor writes one focus and optionally one question. | Integrated automation and current rendered **Approve with a question** journey verified. |
-| Teacher Console | Review queue first; Course settings secondary and lazy; one sequential editor across seven stages. | Automated DOM verified; rendered verification for this revision is pending. |
+| Teacher Console | Review queue first; Course settings secondary and lazy; one sequential editor across seven stages. | Automated DOM and current 320/390/430/1440 rendered-browser verified. |
 | Editorial typography | Modest serif headings, humanist controls, monospace provenance; no oversized display copy. | Source and rendered-browser verified. |
 | Monochrome-dominant palette | White/black/gray surfaces with restrained teal, amber, and plum accents. | Source and rendered-browser verified; dedicated contrast audit remains separate. |
 | Redundant legend | Micro/teal/circle; meso/amber/square; macro/plum/diamond; integration/black/double-circle; claim states repeated through text and line pattern. | DOM/source and rendered-browser verified. |
@@ -106,7 +106,7 @@ The current production audit reported no known vulnerabilities. Source and appli
 
 ## Screenshots and browser evidence
 
-The current screenshot archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`. It contains 50 PNGs. The original 44 cover 11 app states at 320, 390, 430, and 1440 px. Six new captures cover published, unsaved, and previewed Course settings at desktop and published settings at 320, 390, and 430 px. `unzip -t` passed without errors. All displayed classroom content is synthetic.
+The original screenshot archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`. It contains 50 PNGs covering 11 student and teacher states plus the earlier Course settings view. The current progression-editor recapture is `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`; it contains the current Course settings view at 320, 390, 430, and 1440 px. Both pass `unzip -t`. All displayed classroom content is synthetic.
 
 The current visual concept is `docs/concepts/preflight-teacher-review-spec-v1.png`. It is a design reference, not evidence that the running application matches it.
 
