@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+dist
+data
+coverage
+docs
+screenshots
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+**/*.test.js
+**/*.test.jsx
