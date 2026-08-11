@@ -4,9 +4,9 @@ Updated: 2026-08-11
 
 ## Current status
 
-The current active-beta tree is automated-test green, production-build green, and security-scanned. The last published Railway release predates the seven-stage Course settings change. The student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. Disposable browser journeys verified **Approve with a question** through candidate choice, map entry, and the revision stage, plus Course settings create → save → preview → publish. Live Ollama remains disabled and unverified.
+The current active-beta tree is automated-test green, production-build green, security-scanned, published on a draft GitHub PR, and deployed to Railway. The student journey limits guidance to at most three source-directed prompts, keeps all criteria/scores behind collapsed teacher-only details, and records one instructor focus plus an optional question. Disposable browser journeys verified **Approve with a question** through candidate choice, map entry, and the revision stage, plus Course settings create → save → preview → publish. Live Ollama remains disabled and unverified.
 
-The existing image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. Its Course settings images predate the progression editor. A fresh local browser pass inspected the new editor at 320, 390, 430, and the default 1280 px viewport: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. The deployed class-entry page previously produced zero console warnings and rejected the local-only class code `101`. Simple **Approve**, **Reject**, reload restoration, export/import restoration, progression-editor recapture, and changed-tree deployment remain active-beta follow-up.
+The existing image set covers 11 student and teacher states at configured 320, 390, 430, and 1440 px viewports, including class entry and the source-prompt and teacher-review views. Its Course settings images predate the progression editor. A fresh local browser pass inspected the new editor at 320, 390, 430, and the default 1280 px viewport: all seven stages were present, the editor had no document-level horizontal overflow, and the console reported no warnings or errors. Deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; health and hardening headers passed, and HTTP bundle readback contained the two stage fields with none of the retired terminology. Simple **Approve**, **Reject**, reload restoration, export/import restoration, progression-editor recapture, and a full deployed teacher journey remain active-beta follow-up.
 
 ## Completed automated runs
 
@@ -27,10 +27,10 @@ The current production audit reported no known vulnerabilities. Source and appli
 
 ## Published release evidence
 
-- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. GitHub readback confirmed application-contract commit `cb2a959` and **Active beta** notice commit `23aa134`.
+- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. GitHub readback confirmed commit `a46667d` on draft PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1); it is not yet merged into `main`.
 - The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 - Railway project: `systems-mapping` (`ed729bd9-403b-46a6-a97c-99ad9a0294c8`) with web and PostgreSQL services.
-- Railway deployment `68e0a3af-33d7-4cc9-9c4e-f95393d83963` reached `SUCCESS` for the current active-beta tree.
+- Railway deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS` for the seven-stage Course settings tree; database-backed health, hardening headers, and bundle copy passed readback.
 - Public health readback: `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`.
 - The deployed service returned the expected hardening headers. Its browser entry loaded with zero console warnings and correctly rejected `101`.
 - The preserved local SQLite handoff store passed `PRAGMA integrity_check`; it contains no student sessions, evaluations, review submissions/events, or prototype events. One previously claimed teacher account and its existing session were retained as user-owned state.

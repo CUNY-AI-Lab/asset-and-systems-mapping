@@ -84,7 +84,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 ## Hosted and Railway contract
 
-The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Deployment `68e0a3af-33d7-4cc9-9c4e-f95393d83963` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, and the deployed service returned the expected hardening headers. The hosted class-entry page loaded without console warnings and correctly rejected the local-only code `101`. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Seven-stage Course settings deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, and the deployed service returned the expected hardening headers. HTTP bundle readback found both stage fields and none of the retired terminology. The hosted class-entry page previously loaded without console warnings and correctly rejected the local-only code `101`. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>
@@ -104,7 +104,7 @@ Black, white, and gray remain dominant. Restrained teal, amber, and plum accents
 
 The current active-beta tree passed 145 tests with 3 PostgreSQL-gated skips; the server group passed 59 tests with the same 3 integration gates. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
 
-GitHub readback confirmed `cb2a959` for the application contract and `23aa134` for the **Active beta** notice. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
+GitHub readback confirmed commit `a46667d` on draft PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) for the seven-stage settings change. It is not yet merged into `main`. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 
 The disposable browser journeys verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, and the candidate → map → revision flow. A fresh progression-editor journey verified create → save → preview → publish, the current/completed-stage prompt boundary, all seven stage controls, and no document overflow at 320, 390, 430, or the default 1280 px viewport; the browser console reported no warnings or errors. The existing 50-PNG archive at `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip` passes `unzip -t`, but its Course settings images predate the progression editor and need recapture.
 

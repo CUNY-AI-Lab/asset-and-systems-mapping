@@ -80,7 +80,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
   - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
 - [x] Run the Railway migration/deploy to terminal `SUCCESS` and verify the public domain and database-backed health endpoint.
-  - Evidence: deployment `68e0a3af-33d7-4cc9-9c4e-f95393d83963` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, and expected hardening headers were present.
+  - Evidence: seven-stage Course settings deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, expected hardening headers were present, and HTTP bundle readback found both stage fields with none of the retired terminology.
 - [x] Verify the deployed browser entry with zero console warnings and rejection of the local-only class code `101`.
 - [ ] Run the full teacher-review journey against the deployed Railway/PostgreSQL service as an active-beta follow-up. Current deployment, health, headers, entry behavior, and local disposable review evidence remain independently verified.
 
@@ -93,6 +93,6 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Release boundary
 
-The prior deterministic active-beta release remains published and deployed. The current seven-stage Course settings tree is automated, built, scanned, and locally browser-verified; it still requires screenshot recapture, publication, and Railway readback. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
+The current seven-stage Course settings tree is automated, built, scanned, locally browser-verified, published on draft PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1), and deployed with health/header/bundle readback. It still requires merge to `main`, screenshot recapture, and a full deployed teacher journey. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.
