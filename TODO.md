@@ -50,7 +50,8 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Current fresh disposable PostgreSQL 17 integration: 3/3 passed.
 - [x] Current integrated client/domain/server suite: 145 passed; 3 PostgreSQL-gated tests skipped. Current server group: 59 passed; the same 3 PostgreSQL tests were gated.
 - [x] Rebuild the production bundle after the frozen pedagogy changes.
-- [ ] Recapture Course settings at 320, 390, 430, and 1440 px after the seven-stage progression editor replaced the earlier settings view.
+- [x] Recapture Course settings at 320, 390, 430, and 1440 px after the seven-stage progression editor replaced the earlier settings view.
+  - Evidence: all seven stages rendered at each viewport with no document-level horizontal overflow and no browser warnings/errors. `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip` passes `unzip -t`.
 
 ## Current local and browser proof
 
@@ -61,7 +62,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Complete the current disposable browser journey through **Approve with a question**.
   - Evidence: the journey verified source-return prompts, collapsed **Model review details**, one instructor focus and question, the student response, candidate choice, map entry, and revision stage.
 - [x] Capture the current class entry and changed student and teacher views at 320, 390, 430, and 1440 px with no document-level horizontal overflow.
-  - Evidence: the current ZIP contains 50 PNGs, including six Course settings captures. `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip` passes `unzip -t`.
+  - Evidence: the original 50-PNG archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the four current Course settings captures are in `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
 - [x] Verify the deployed class-entry page with zero console warnings and confirm that hosted mode rejects `101`.
 - [x] Run the production dependency audit and final source/application-bundle scans.
   - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.
@@ -76,7 +77,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 - [x] Confirm that the tracked publication excludes `.env`, databases, WAL/SHM files, local browser state, screenshots, credentials, and test fixtures.
 - [x] Read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and published commit lineage.
-  - Evidence: application-contract commit `cb2a959`; commit `23aa134` adds the README **Active beta** notice.
+  - Evidence: application-contract commit `cb2a959`; commit `23aa134` adds the README **Active beta** notice; PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) merged the seven-stage settings change into `main` at `95c01f4`.
 - [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
   - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
 - [x] Run the Railway migration/deploy to terminal `SUCCESS` and verify the public domain and database-backed health endpoint.
@@ -93,6 +94,6 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Release boundary
 
-The current seven-stage Course settings tree is automated, built, scanned, locally browser-verified, published on draft PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1), and deployed with health/header/bundle readback. It still requires merge to `main`, screenshot recapture, and a full deployed teacher journey. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
+The current seven-stage Course settings tree is automated, built, scanned, locally browser-verified at 320, 390, 430, and 1440 px, merged into `main` through PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1), and deployed with health/header/bundle readback. It still requires a full deployed teacher journey. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.
