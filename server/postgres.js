@@ -1,6 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
-import { DEFAULT_TEACHING_PROFILE, moduleSeeds, teachingProfileFingerprint } from './config.js';
+import {
+  DEFAULT_TEACHING_PROFILE,
+  moduleSeeds,
+  teachingProfileFingerprint,
+  upgradeSystemsMappingTeachingProfile,
+} from './config.js';
 
 const { Pool } = pg;
 const MIGRATION_LOCK_ID = 1_983_041_017;
@@ -510,6 +515,34 @@ async function seedPostgres(client) {
   ]);
 }
 
+async function upgradeStoredTeachingProfiles(client) {
+  const { rows } = await client.query(`
+    SELECT id, revision, profile_json, fingerprint
+    FROM teaching_profiles
+  `);
+  const occurredAt = new Date().toISOString();
+  for (const row of rows) {
+    const current = typeof row.profile_json === 'string' ? JSON.parse(row.profile_json) : row.profile_json;
+    const upgraded = upgradeSystemsMappingTeachingProfile(current);
+    const serialized = JSON.stringify(upgraded);
+    const profileFingerprint = teachingProfileFingerprint(upgraded);
+    if (profileFingerprint === row.fingerprint) continue;
+    await client.query(`
+      UPDATE teaching_profiles SET profile_json = $1::jsonb, fingerprint = $2 WHERE id = $3
+    `, [serialized, profileFingerprint, row.id]);
+    const note = 'Moved existing course settings into the seven-stage progression';
+    await client.query(`
+      INSERT INTO teaching_profile_events
+        (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+      SELECT $1, 'updated', $2, $3::jsonb, $4, $5, NULL, $6
+      WHERE NOT EXISTS (
+        SELECT 1 FROM teaching_profile_events
+        WHERE profile_id = $1 AND fingerprint = $4 AND note = $5
+      )
+    `, [row.id, row.revision, serialized, profileFingerprint, note, occurredAt]);
+  }
+}
+
 async function initializePostgres(database) {
   const client = await database.pool.connect();
   try {
@@ -519,6 +552,7 @@ async function initializePostgres(database) {
     await client.query(`SET LOCAL idle_in_transaction_session_timeout = '${database.transactionIdleTimeoutMs}ms'`);
     await client.query(POSTGRES_SCHEMA_SQL);
     await seedPostgres(client);
+    await upgradeStoredTeachingProfiles(client);
     await client.query(`
       INSERT INTO schema_migrations (version) VALUES (1)
       ON CONFLICT (version) DO NOTHING
@@ -537,6 +571,10 @@ async function initializePostgres(database) {
     `);
     await client.query(`
       INSERT INTO schema_migrations (version) VALUES (5)
+      ON CONFLICT (version) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO schema_migrations (version) VALUES (6)
       ON CONFLICT (version) DO NOTHING
     `);
     await client.query('COMMIT');

@@ -20,8 +20,8 @@ export async function apiRequest(path, options = {}) {
   return payload;
 }
 
-export function getPublicConfiguration(configKind, scale) {
-  const params = new URLSearchParams({ configKind, scale });
+export function getPublicConfiguration(configKind, scale, stageId) {
+  const params = new URLSearchParams({ configKind, scale, ...(stageId ? { stageId } : {}) });
   return apiRequest(`/api/config/public?${params}`);
 }
 

@@ -131,9 +131,9 @@ describe('hardened Systems Mapping server', () => {
     expect(publicResponse.status).toBe(200);
     const snapshot = await json(publicResponse);
     expect(Object.keys(snapshot).sort()).toEqual([
-      'configKind', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale',
+      'configKind', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale', 'stageId',
     ]);
-    expect(snapshot).toMatchObject({ configKind: 'preflight', scale: 'micro', revision: 1 });
+    expect(snapshot).toMatchObject({ configKind: 'preflight', scale: 'micro', stageId: 'review-suggestions', revision: 1 });
     expect(snapshot.moduleVersions).toHaveLength(13);
     expect(snapshot.moduleVersions.at(-1).id).toBe('teaching-profile.systems-mapping-default');
     expect(snapshot).not.toHaveProperty('effectivePrompt');
@@ -497,20 +497,32 @@ describe('hardened Systems Mapping server', () => {
     }
   });
 
-  it('keeps teaching-profile trials authenticated, transactional, and concurrency-safe', async () => {
+  it('keeps course-setting drafts authenticated, transactional, and concurrency-safe', async () => {
     const teacherCookie = await claimTeacher('maria-mavrides-calderon');
     const catalog = await json(await request(system.app, '/api/teacher/profiles', { headers: { cookie: teacherCookie } }));
-    expect(catalog.resource.modules).toHaveLength(5);
-    expect(catalog.resource.modules.map(({ id }) => id)).toEqual(['focus', 'evidence', 'questions', 'privacy', 'scale-adjustments']);
+    expect(catalog.resource.modules).toHaveLength(7);
+    expect(catalog.resource.modules.map(({ id }) => id)).toEqual([
+      'choose-scale', 'add-source', 'review-suggestions', 'check-instructor-response',
+      'choose-what-to-map', 'build-map', 'revise-and-export',
+    ]);
     const active = await json(await request(system.app, `/api/teacher/profiles/${catalog.activeProfileId}`, { headers: { cookie: teacherCookie } }));
     const created = await json(await postJson(system.app, '/api/teacher/profiles', {
-      name: 'Confirmation trial',
+      name: 'Confirmation guidance',
       note: 'Clarify confirmation cadence',
       sourceProfileId: active.profile.id,
     }, { cookie: teacherCookie }));
-    const nextProfile = { ...created.profile.profile, questions: 'Ask one question and wait for the student response.' };
+    const nextProfile = {
+      ...created.profile.profile,
+      stages: {
+        ...created.profile.profile.stages,
+        'review-suggestions': {
+          ...created.profile.profile.stages['review-suggestions'],
+          guidance: 'Ask one question and wait for the student response.',
+        },
+      },
+    };
     const first = await putJson(system.app, `/api/teacher/profiles/${created.profile.id}`, {
-      name: 'Confirmation trial',
+      name: 'Confirmation guidance',
       profile: nextProfile,
       note: 'Clarify confirmation cadence',
       expectedRevision: 1,
@@ -519,8 +531,17 @@ describe('hardened Systems Mapping server', () => {
     expect((await json(first)).profile).toMatchObject({ revision: 2, profile: nextProfile, updatedByName: 'Maria Mavrides Calderon' });
 
     const stale = await putJson(system.app, `/api/teacher/profiles/${created.profile.id}`, {
-      name: 'Stale trial',
-      profile: { ...nextProfile, questions: 'A stale replacement that must not win.' },
+      name: 'Stale draft',
+      profile: {
+        ...nextProfile,
+        stages: {
+          ...nextProfile.stages,
+          'review-suggestions': {
+            ...nextProfile.stages['review-suggestions'],
+            guidance: 'A stale replacement that must not win.',
+          },
+        },
+      },
       note: 'Stale overwrite attempt',
       expectedRevision: 1,
     }, { cookie: teacherCookie });

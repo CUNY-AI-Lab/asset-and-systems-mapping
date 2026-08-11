@@ -1,15 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ApiError, apiRequest } from './api.js';
+import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 
 const DASHBOARD_SECTIONS = [
   { id: 'reviews', label: 'Review submissions' },
   { id: 'guidance', label: 'Course settings' },
-];
-const PROFILE_FIELDS = [
-  { id: 'focus', label: 'Focus', rows: 5 },
-  { id: 'evidence', label: 'Evidence', rows: 5 },
-  { id: 'questions', label: 'Questions', rows: 5 },
-  { id: 'privacy', label: 'Privacy', rows: 5 },
 ];
 const PROFILE_SCALES = ['micro', 'meso', 'macro', 'integration'];
 const REVIEW_DECISIONS = [
@@ -381,9 +376,9 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNote, setNewNote] = useState('');
-  const [previewKind, setPreviewKind] = useState('preflight');
   const [previewScale, setPreviewScale] = useState('micro');
   const [preview, setPreview] = useState(null);
+  const [selectedStageId, setSelectedStageId] = useState(SYSTEMS_MAPPING_STAGES[0].id);
 
   const loadCatalog = async (preferredId = null) => {
     const result = await apiRequest('/api/teacher/profiles');
@@ -419,26 +414,24 @@ function TeachingProfiles({ onConfigurationChanged }) {
     }).catch((error) => setMessage({ type: 'error', text: error.message })).finally(() => setLoading(false));
   }, [selectedId]);
 
-  const changeSection = (field, value) => {
-    setDraft((current) => ({ ...current, profile: { ...current.profile, [field]: value } }));
-    setPreview(null);
-  };
-
-  const changeScale = (scale, value) => {
+  const changeStage = (field, value) => {
     setDraft((current) => ({
       ...current,
       profile: {
         ...current.profile,
-        contextAdjustments: { ...current.profile.contextAdjustments, [scale]: value },
+        stages: {
+          ...current.profile.stages,
+          [selectedStageId]: { ...current.profile.stages[selectedStageId], [field]: value },
+        },
       },
     }));
     setPreview(null);
   };
 
-  const createTrial = async (event) => {
+  const createDraft = async (event) => {
     event.preventDefault();
-    if (!newName.trim()) return setMessage({ type: 'error', text: 'Name the trial before creating it.' });
-    if (newNote.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short note about what this trial will test.' });
+    if (!newName.trim()) return setMessage({ type: 'error', text: 'Name the draft before creating it.' });
+    if (newNote.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short note about what you plan to change.' });
     setBusy(true);
     try {
       const result = await apiRequest('/api/teacher/profiles', {
@@ -449,14 +442,14 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setNewName('');
       setNewNote('');
       await loadCatalog(result.profile.id);
-      setMessage({ type: 'success', text: 'Trial created. The published profile is unchanged.' });
+      setMessage({ type: 'success', text: 'Draft created. Published course settings are unchanged.' });
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
     } finally { setBusy(false); }
   };
 
   const saveDraft = async () => {
-    if (!draft?.name.trim()) return setMessage({ type: 'error', text: 'Name the trial before saving it.' });
+    if (!draft?.name.trim()) return setMessage({ type: 'error', text: 'Name the draft before saving it.' });
     if (note.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short change note before saving.' });
     setBusy(true);
     try {
@@ -475,7 +468,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
       if (current) {
         setConflict(current);
-        setMessage({ type: 'error', text: 'This trial changed in another session. Your draft remains in the editor.' });
+        setMessage({ type: 'error', text: 'This draft changed in another session. Your unsaved text remains in the editor.' });
       } else setMessage({ type: 'error', text: error.message });
     } finally { setBusy(false); }
   };
@@ -485,7 +478,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
     setDraft({ name: conflict.name, profile: structuredClone(conflict.profile) });
     setConflict(null);
     setPreview(null);
-    setMessage({ type: 'success', text: `Loaded trial revision ${conflict.revision}.` });
+    setMessage({ type: 'success', text: `Loaded draft revision ${conflict.revision}.` });
   };
 
   const publish = async () => {
@@ -501,20 +494,22 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setEvents(result.events || []);
       setNote('');
       setPreview(null);
-      setMessage({ type: 'success', text: 'Trial published. New student runs now use this profile.' });
+      setMessage({ type: 'success', text: 'Draft published. New model requests now follow these stage settings.' });
       await loadCatalog(result.profile.id);
       onConfigurationChanged();
     } catch (error) {
       const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
       if (current) setConflict(current);
-      setMessage({ type: 'error', text: current ? 'This trial changed before publication. Your draft remains in the editor.' : error.message });
+      setMessage({ type: 'error', text: current ? 'This draft changed before publication. Your unsaved text remains in the editor.' : error.message });
     } finally { setBusy(false); }
   };
 
   const loadPreview = async () => {
     setBusy(true);
     try {
-      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/preview?${new URLSearchParams({ configKind: previewKind, scale: previewScale })}`);
+      const selectedStageIndex = SYSTEMS_MAPPING_STAGES.findIndex(({ id }) => id === selectedStageId);
+      const configKind = selectedStageIndex >= 4 ? 'builder' : 'preflight';
+      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/preview?${new URLSearchParams({ configKind, scale: previewScale, stageId: selectedStageId })}`);
       setPreview(result);
       setMessage(null);
     } catch (error) { setMessage({ type: 'error', text: error.message }); }
@@ -528,40 +523,49 @@ function TeachingProfiles({ onConfigurationChanged }) {
     draft.name !== detail.name || JSON.stringify(draft.profile) !== JSON.stringify(detail.profile)
   ));
   const runtime = catalog?.resource?.runtimes?.find(({ id }) => id === catalog?.runtime?.provider);
+  const selectedStageIndex = Math.max(0, SYSTEMS_MAPPING_STAGES.findIndex(({ id }) => id === selectedStageId));
+  const selectedStage = SYSTEMS_MAPPING_STAGES[selectedStageIndex];
+  const selectedStageSettings = draft?.profile?.stages?.[selectedStage.id] || { guidance: '', materials: '' };
   return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
-    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Change five sections. Save a draft before publishing it.</p></div></div>
+    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Set the guidance and course material the model receives at each stage.</p></div></div>
     <Message message={message} />
     {runtime && <p className="privacy-note"><strong>{runtime.label}.</strong> {runtime.disclosure}</p>}
     <div className="teacher-controls teaching-profile-controls">
-      <label><span>Profile</span><select aria-label="Profile" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
-      <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a trial'}</button>
+      <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
+      <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button>
     </div>
-    {creating && <form className="teaching-profile-create" onSubmit={createTrial}>
-      <label className="field"><span className="field__label">Trial name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
-      <label className="field"><span className="field__label">What will this trial test?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
-      <button type="submit" className="button" disabled={busy}>Create trial</button>
+    {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
+      <label className="field"><span className="field__label">Draft name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
+      <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
+      <button type="submit" className="button" disabled={busy}>Create draft</button>
     </form>}
     {detail && draft && <div className="teacher-workbench teaching-profile-workbench">
       <div className="teaching-profile-editor">
         <div className="section-heading"><div><h3>{detail.name}</h3><p>{profileStatusLabel(detail.status)} · revision {detail.revision}</p></div></div>
         <label className="field"><span className="field__label">Name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-        {PROFILE_FIELDS.map((field) => <label className="field" key={field.id}><span className="field__label">{field.label}</span><textarea rows={field.rows} maxLength="8000" readOnly={!editable} value={draft.profile[field.id]} onChange={(event) => changeSection(field.id, event.target.value)} /></label>)}
-        <details className="teacher-history"><summary>Scale adjustments</summary><div className="teaching-profile-scales">{PROFILE_SCALES.map((scale) => <label className="field" key={scale}><span className="field__label">{scale[0].toUpperCase() + scale.slice(1)}</span><textarea rows="4" maxLength="4000" readOnly={!editable} value={draft.profile.contextAdjustments[scale]} onChange={(event) => changeScale(scale, event.target.value)} /></label>)}</div></details>
+        <p className="field__hint">The model receives the current stage and the stages already completed. Later stages stay out of the prompt.</p>
+        <nav className="course-stage-nav" aria-label="Course progression"><ol>{SYSTEMS_MAPPING_STAGES.map((stage, index) => <li key={stage.id}><button type="button" aria-label={`Stage ${index + 1}. ${stage.label}`} className={stage.id === selectedStageId ? 'is-active' : ''} aria-current={stage.id === selectedStageId ? 'step' : undefined} onClick={() => { setSelectedStageId(stage.id); setPreview(null); }}><span>Stage {index + 1}</span><strong>{stage.label}</strong></button></li>)}</ol></nav>
+        <section className="course-stage-editor" aria-labelledby={`course-stage-heading-${selectedStage.id}`}>
+          <div><p className="eyebrow">Stage {selectedStageIndex + 1} of {SYSTEMS_MAPPING_STAGES.length}</p><h4 id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.label}</h4><p>{selectedStage.description}</p></div>
+          <label className="field"><span className="field__label">How should the model guide this stage?</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
+          <label className="field"><span className="field__label">What course material should the model draw on?</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
+          <p className="field__hint">Paste the relevant excerpt or reference text. The model does not fetch a link on its own.</p>
+        </section>
         {editable && <label className="field"><span className="field__label">Change note</span><input maxLength="500" value={note} onChange={(event) => setNote(event.target.value)} /></label>}
         {dirty && <p className="field__hint">Save this draft before previewing or publishing it.</p>}
-        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Trial conflict actions"><p>Loading the server revision will replace the draft currently visible above.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
+        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>Loading the server revision will replace the draft currently visible above.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
         <div className="teacher-actions">
           {editable && <button type="button" className="button button--secondary" disabled={busy || !dirty} onClick={saveDraft}>Save draft</button>}
-          {editable && <button type="button" className="button" disabled={busy || dirty} onClick={publish}>Publish trial</button>}
+          {editable && <button type="button" className="button" disabled={busy || dirty} onClick={publish}>Publish draft</button>}
         </div>
       </div>
       <aside className="teaching-profile-preview">
-        <h3>Preview</h3>
-        <label><span>Application step</span><select value={previewKind} onChange={(event) => { setPreviewKind(event.target.value); setPreview(null); }}><option value="preflight">Review source work</option><option value="builder">Build the map</option></select></label>
+        <h3>Preview this stage</h3>
+        <p><strong>Stage {selectedStageIndex + 1}.</strong> {selectedStage.label}</p>
         <label><span>Scale</span><select value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{PROFILE_SCALES.map((scale) => <option key={scale} value={scale}>{scale[0].toUpperCase() + scale.slice(1)}</option>)}</select></label>
-        <button type="button" className="button button--secondary" disabled={busy || dirty} onClick={loadPreview}>Preview saved draft</button>
+        <button type="button" className="button button--secondary" disabled={busy || dirty} onClick={loadPreview}>Preview saved prompt</button>
         {preview && <details className="effective-preview" open><summary>Prompt in use</summary><dl><div><dt>Fingerprint</dt><dd>{preview.fingerprint}</dd></div><div><dt>Revision</dt><dd>{preview.revision}</dd></div></dl><pre>{preview.effectivePrompt}</pre></details>}
-        <details className="teacher-history"><summary>Profile history · {events.length}</summary>{events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{event.action}</strong><p>{event.note}</p><small>{event.actorName || 'Source baseline'} · revision {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No profile history is available.</p>}</details>
+        <details className="teacher-history"><summary>Version history · {events.length}</summary>{events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{event.action}</strong><p>{event.note}</p><small>{event.actorName || 'Source baseline'} · revision {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No version history is available.</p>}</details>
       </aside>
     </div>}
   </section>;

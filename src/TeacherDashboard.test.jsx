@@ -14,16 +14,15 @@ const teacherAccess = { mode: 'manual', claimEnabled: true };
 const teacher = { id: 'local-teacher-id', displayName: 'Server Returned Teacher' };
 
 const profileValue = {
-  schemaVersion: 'cuny.teaching-profile.v1',
-  focus: 'Attend to actors and relationships represented in the source.',
-  evidence: 'Return to locatable source passages.',
-  questions: 'Ask one focused question without completing the analysis.',
-  privacy: 'Remove identifying detail that is not needed.',
-  contextAdjustments: {
-    micro: 'Attend to people and families.',
-    meso: 'Attend to organizations and procedures.',
-    macro: 'Attend to policy and infrastructure.',
-    integration: 'Connect confirmed relationships across scales.',
+  schemaVersion: 'cuny.course-progression.v1',
+  stages: {
+    'choose-scale': { guidance: 'Ask the student to choose one scale.', materials: '' },
+    'add-source': { guidance: 'Return to locatable source passages.', materials: 'Course source guide excerpt.' },
+    'review-suggestions': { guidance: 'Ask one focused question without completing the analysis.', materials: 'Course reading on relationships.' },
+    'check-instructor-response': { guidance: 'Use the instructor response as the next direction.', materials: '' },
+    'choose-what-to-map': { guidance: 'Ask the student to choose grounded actors and relationships.', materials: '' },
+    'build-map': { guidance: 'Ask what each relationship does.', materials: '' },
+    'revise-and-export': { guidance: 'Ask what changed and what the student will share.', materials: '' },
   },
 };
 
@@ -382,7 +381,7 @@ describe('TeacherDashboard', () => {
     expect(postBodies[1]).toMatchObject({ expectedRevision: 3, decision: 'revise_and_approve' });
   });
 
-  it('lazy-loads one five-section teaching profile and roves section tabs', async () => {
+  it('lazy-loads the seven-stage course progression and roves section tabs', async () => {
     const fetchMock = await renderAuthenticated();
     await waitForSubmission();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
@@ -394,11 +393,12 @@ describe('TeacherDashboard', () => {
     expect(guidanceTab).toHaveFocus();
     expect(guidanceTab).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
-    expect(await screen.findByLabelText('Focus')).toHaveValue(profileValue.focus);
-    expect(screen.getByLabelText('Evidence')).toHaveValue(profileValue.evidence);
-    expect(screen.getByLabelText('Questions')).toHaveValue(profileValue.questions);
-    expect(screen.getByLabelText('Privacy')).toHaveValue(profileValue.privacy);
-    expect(screen.getByText('Scale adjustments').closest('details')).not.toHaveAttribute('open');
+    expect(await screen.findByLabelText('How should the model guide this stage?')).toHaveValue(profileValue.stages['choose-scale'].guidance);
+    expect(screen.getByLabelText('What course material should the model draw on?')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: /Stage 3.*Review suggestions/ }));
+    expect(screen.getByLabelText('How should the model guide this stage?')).toHaveValue(profileValue.stages['review-suggestions'].guidance);
+    expect(screen.getByLabelText('What course material should the model draw on?')).toHaveValue(profileValue.stages['review-suggestions'].materials);
+    expect(screen.getByText('The model receives the current stage and the stages already completed. Later stages stay out of the prompt.')).toBeVisible();
     expect(screen.queryByLabelText('Module')).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
@@ -411,8 +411,8 @@ describe('TeacherDashboard', () => {
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
   });
 
-  it('creates, saves, and publishes a trial without editing the active profile in place', async () => {
-    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000001', name: 'Evidence trial', status: 'draft', parentId: activeProfile.id };
+  it('creates, saves, and publishes stage guidance without editing the published version in place', async () => {
+    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000001', name: 'Evidence guidance', status: 'draft', parentId: activeProfile.id };
     let profiles = [activeProfile];
     const requests = [];
     const fetchMock = vi.fn(async (path, options = {}) => {
@@ -447,34 +447,45 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Create a trial' }));
-    fireEvent.change(screen.getByLabelText('Trial name'), { target: { value: 'Evidence trial' } });
-    fireEvent.change(screen.getByLabelText('What will this trial test?'), { target: { value: 'Test shorter evidence prompts' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create trial' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create a draft' }));
+    fireEvent.change(screen.getByLabelText('Draft name'), { target: { value: 'Evidence guidance' } });
+    fireEvent.change(screen.getByLabelText('What do you plan to change?'), { target: { value: 'Focus prompts on relationships' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
 
-    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Evidence trial'));
-    fireEvent.change(screen.getByLabelText('Focus'), { target: { value: 'Return first to evidence that names a relationship.' } });
-    expect(screen.getByRole('button', { name: 'Publish trial' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Preview saved draft' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Evidence guidance'));
+    fireEvent.click(screen.getByRole('button', { name: /Stage 3.*Review suggestions/ }));
+    fireEvent.change(screen.getByLabelText('How should the model guide this stage?'), { target: { value: 'Return first to evidence that names a relationship.' } });
+    fireEvent.change(screen.getByLabelText('What course material should the model draw on?'), { target: { value: 'Use the class reading on actor and relationship mapping.' } });
+    expect(screen.getByRole('button', { name: 'Publish draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preview saved prompt' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Focus the evidence prompt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(await screen.findByText('Draft revision 2 saved.')).toBeVisible();
     expect(onConfigurationChanged).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Publish trial' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Publish draft' })).toBeEnabled();
 
-    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Publish the evidence trial' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Publish trial' }));
-    expect(await screen.findByText('Trial published. New student runs now use this profile.')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Publish the evidence guidance' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish draft' }));
+    expect(await screen.findByText('Draft published. New model requests now follow these stage settings.')).toBeVisible();
     expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
     expect(requests.some(([path, method]) => path === '/api/teacher/modules' && method === 'PUT')).toBe(false);
   });
 
-  it('preserves an unsaved trial when the server reports a newer revision', async () => {
-    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000002', name: 'Question trial', status: 'draft', parentId: activeProfile.id };
+  it('preserves unsaved stage guidance when the server reports a newer revision', async () => {
+    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000002', name: 'Question guidance', status: 'draft', parentId: activeProfile.id };
     const currentProfile = {
       ...draftProfile,
       revision: 2,
-      profile: { ...profileValue, questions: 'Ask the student to name the missing relation.' },
+      profile: {
+        ...profileValue,
+        stages: {
+          ...profileValue.stages,
+          'review-suggestions': {
+            ...profileValue.stages['review-suggestions'],
+            guidance: 'Ask the student to name the missing relation.',
+          },
+        },
+      },
       fingerprint: 'c'.repeat(64),
     };
     const profiles = [activeProfile, draftProfile];
@@ -484,7 +495,7 @@ describe('TeacherDashboard', () => {
       if (path === '/api/teacher/preflight-submissions?status=pending') return jsonResponse({ submissions: [] });
       if (path === '/api/teacher/profiles') return jsonResponse({ resource, runtime: { provider: 'deterministic', model: 'STEM Splitter' }, activeProfileId: activeProfile.id, profiles: profiles.map(({ profile: _profile, ...summary }) => summary) });
       if (path === `/api/teacher/profiles/${draftProfile.id}` && options.method === 'PUT') {
-        return jsonResponse({ error: 'This teaching profile changed after it was loaded.', details: { current: currentProfile } }, 409);
+        return jsonResponse({ error: 'This draft changed after it was loaded.', details: { current: currentProfile } }, 409);
       }
       const selected = profiles.find(({ id }) => path === `/api/teacher/profiles/${id}`);
       if (selected) return jsonResponse({ profile: selected, events: [] });
@@ -495,15 +506,16 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     await screen.findByRole('heading', { name: 'Course settings' });
-    fireEvent.change(screen.getByLabelText('Profile', { exact: true }), { target: { value: draftProfile.id } });
-    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Question trial'));
-    fireEvent.change(screen.getByLabelText('Questions'), { target: { value: 'My unsaved question remains here.' } });
+    fireEvent.change(screen.getByLabelText('Version', { exact: true }), { target: { value: draftProfile.id } });
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Question guidance'));
+    fireEvent.click(screen.getByRole('button', { name: /Stage 3.*Review suggestions/ }));
+    fireEvent.change(screen.getByLabelText('How should the model guide this stage?'), { target: { value: 'My unsaved question remains here.' } });
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Try another question' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
 
-    expect(await screen.findByText('This trial changed in another session. Your draft remains in the editor.')).toBeVisible();
-    expect(screen.getByLabelText('Questions')).toHaveValue('My unsaved question remains here.');
+    expect(await screen.findByText('This draft changed in another session. Your unsaved text remains in the editor.')).toBeVisible();
+    expect(screen.getByLabelText('How should the model guide this stage?')).toHaveValue('My unsaved question remains here.');
     fireEvent.click(screen.getByRole('button', { name: 'Load server revision 2' }));
-    expect(screen.getByLabelText('Questions')).toHaveValue('Ask the student to name the missing relation.');
+    expect(screen.getByLabelText('How should the model guide this stage?')).toHaveValue('Ask the student to name the missing relation.');
   });
 });

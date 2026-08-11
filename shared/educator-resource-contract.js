@@ -1,5 +1,5 @@
 export const EDUCATOR_RESOURCE_SCHEMA_VERSION = 'cuny.educator-resource.v1';
-export const EDUCATOR_TRIAL_STATUSES = Object.freeze(['draft', 'active', 'retired']);
+export const EDUCATOR_VERSION_STATUSES = Object.freeze(['draft', 'active', 'retired']);
 export const EDUCATOR_MODULE_EFFECTS = Object.freeze([
   'provenance',
   'student-projection',
@@ -7,6 +7,7 @@ export const EDUCATOR_MODULE_EFFECTS = Object.freeze([
   'runtime-behavior',
 ]);
 export const TEACHING_PROFILE_SCHEMA_VERSION = 'cuny.teaching-profile.v1';
+export const COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v1';
 
 function fail(message) {
   throw new TypeError(`Educator resource: ${message}`);
@@ -151,4 +152,47 @@ export function normalizeTeachingProfile(value, { contextIds = [] } = {}) {
     privacy: profileText(value.privacy, 'privacy'),
     contextAdjustments: Object.freeze(contextAdjustments),
   });
+}
+
+function normalizeProgressionStage(value, name) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${name} must be an object.`);
+  const expectedKeys = ['guidance', 'materials'];
+  const keys = Object.keys(value);
+  if (keys.some((key) => !expectedKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
+    fail(`${name} fields do not match the supported schema.`);
+  }
+  return Object.freeze({
+    guidance: profileText(value.guidance, `${name}.guidance`, { required: false, maximum: 2500 }),
+    materials: profileText(value.materials, `${name}.materials`, { required: false, maximum: 4000 }),
+  });
+}
+
+export function normalizeCourseProgression(value, { stageIds = [] } = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('course progression must be an object.');
+  const expectedKeys = ['schemaVersion', 'stages'];
+  const keys = Object.keys(value);
+  if (keys.some((key) => !expectedKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
+    fail('course progression fields do not match the supported schema.');
+  }
+  if (value.schemaVersion !== COURSE_PROGRESSION_SCHEMA_VERSION) {
+    fail(`course progression schemaVersion must be ${COURSE_PROGRESSION_SCHEMA_VERSION}.`);
+  }
+  if (!value.stages || typeof value.stages !== 'object' || Array.isArray(value.stages)) {
+    fail('course progression stages must be an object.');
+  }
+  const allowedStages = new Set(stageIds);
+  const suppliedStages = Object.keys(value.stages);
+  if (suppliedStages.some((key) => !allowedStages.has(key)) || stageIds.some((key) => !suppliedStages.includes(key))) {
+    fail('course progression stages do not match the registered progression.');
+  }
+  const stages = Object.fromEntries(stageIds.map((stageId) => [
+    stageId,
+    normalizeProgressionStage(value.stages[stageId], `stages.${stageId}`),
+  ]));
+  const normalized = Object.freeze({
+    schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
+    stages: Object.freeze(stages),
+  });
+  if (JSON.stringify(normalized).length > 60_000) fail('course progression is too large.');
+  return normalized;
 }

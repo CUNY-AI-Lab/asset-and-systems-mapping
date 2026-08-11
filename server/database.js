@@ -2,7 +2,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { DEFAULT_TEACHING_PROFILE, moduleSeeds, teachingProfileFingerprint } from './config.js';
+import {
+  DEFAULT_TEACHING_PROFILE,
+  moduleSeeds,
+  teachingProfileFingerprint,
+  upgradeSystemsMappingTeachingProfile,
+} from './config.js';
 import { openPostgresDatabase } from './postgres.js';
 
 const require = createRequire(import.meta.url);
@@ -475,6 +480,49 @@ function migrate(db) {
       ))
     `);
   }
+  upgradeStoredTeachingProfiles(db);
+}
+
+function upgradeStoredTeachingProfiles(db) {
+  const rows = db.prepare(`
+    SELECT id, revision, profile_json AS profileJson, fingerprint
+    FROM teaching_profiles
+  `).all();
+  if (!rows.length) return;
+  const update = db.prepare(`
+    UPDATE teaching_profiles SET profile_json = ?, fingerprint = ? WHERE id = ?
+  `);
+  const record = db.prepare(`
+    INSERT INTO teaching_profile_events
+      (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
+    SELECT ?, 'updated', ?, ?, ?, ?, NULL, ?
+    WHERE NOT EXISTS (
+      SELECT 1 FROM teaching_profile_events WHERE profile_id = ? AND fingerprint = ? AND note = ?
+    )
+  `);
+  const occurredAt = new Date().toISOString();
+  inTransaction(db, () => {
+    for (const row of rows) {
+      const current = JSON.parse(row.profileJson);
+      const upgraded = upgradeSystemsMappingTeachingProfile(current);
+      const serialized = JSON.stringify(upgraded);
+      const profileFingerprint = teachingProfileFingerprint(upgraded);
+      if (profileFingerprint === row.fingerprint) continue;
+      update.run(serialized, profileFingerprint, row.id);
+      const note = 'Moved existing course settings into the seven-stage progression';
+      record.run(
+        row.id,
+        row.revision,
+        serialized,
+        profileFingerprint,
+        note,
+        occurredAt,
+        row.id,
+        profileFingerprint,
+        note,
+      );
+    }
+  });
 }
 
 function seed(db) {

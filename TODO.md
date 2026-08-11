@@ -20,8 +20,8 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: pending reviews send the student to **Check your instructor's response**. **Approve** and **Approve with a question** let the student choose what to map. **Reject** returns the student to **Add a source** while preserving the memo and graph.
 - [x] Implement the teacher review queue and three decision paths.
   - Evidence: the authenticated Teacher Console defaults to Review submissions, loads one selected detail, keeps full criteria and scores collapsed behind **Model review details**, requires one instructor focus, shows one question only for **Approve with a question**, detects stale revisions, and records append-only decision events.
-- [x] Bound teacher control to one course profile with five sections.
-  - Evidence: Course settings loads only when selected and exposes Focus, Evidence, Questions, Privacy, and collapsed Scale adjustments. Teachers create a trial, save and preview its revision, and publish it. Published records remain read-only, retired records can be cloned for rollback, and legacy module routes return `410`.
+- [x] Align teacher control with the seven student stages.
+  - Evidence: Course settings loads only when selected and opens one stage at a time. Each stage contains bounded guidance and course-material fields. Saved previews include the current and completed stages in order, exclude later stages, and label instructor material as reference content. Published records remain read-only, earlier records can be cloned for rollback, and legacy module routes return `410`.
 - [x] Persist the new evaluation and review workflow in both SQLite and PostgreSQL.
   - Evidence: matching schemas, transactions, constraints, migrations, retention locks, append-only triggers, and fresh PostgreSQL 17 integration tests.
 - [x] Implement bounded retention.
@@ -48,8 +48,9 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Preserve the published pre-pedagogy release baseline: 130 passing tests, 3 PostgreSQL-gated skips, and a successful production Vite build.
 - [x] Current server and course-profile contract: 57 passed; 3 PostgreSQL-gated tests skipped in the ordinary SQLite run.
 - [x] Current fresh disposable PostgreSQL 17 integration: 3/3 passed.
-- [x] Current integrated client/domain/server suite: 142 passed; 3 PostgreSQL-gated tests skipped.
+- [x] Current integrated client/domain/server suite: 145 passed; 3 PostgreSQL-gated tests skipped. Current server group: 59 passed; the same 3 PostgreSQL tests were gated.
 - [x] Rebuild the production bundle after the frozen pedagogy changes.
+- [ ] Recapture Course settings at 320, 390, 430, and 1440 px after the seven-stage progression editor replaced the earlier settings view.
 
 ## Current local and browser proof
 
@@ -79,7 +80,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
   - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
 - [x] Run the Railway migration/deploy to terminal `SUCCESS` and verify the public domain and database-backed health endpoint.
-  - Evidence: deployment `68e0a3af-33d7-4cc9-9c4e-f95393d83963` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, and expected hardening headers were present.
+  - Evidence: seven-stage Course settings deployment `85c4fb47-686e-4921-a498-982b46a8a703` reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, expected hardening headers were present, and HTTP bundle readback found both stage fields with none of the retired terminology.
 - [x] Verify the deployed browser entry with zero console warnings and rejection of the local-only class code `101`.
 - [ ] Run the full teacher-review journey against the deployed Railway/PostgreSQL service as an active-beta follow-up. Current deployment, health, headers, entry behavior, and local disposable review evidence remain independently verified.
 
@@ -92,6 +93,6 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Release boundary
 
-The deterministic active-beta release is automated, scanned, published, deployed, and verified through its primary disposable browser journey. Unchecked items above extend branch and restoration coverage; they do not invalidate that deterministic release. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
+The current seven-stage Course settings tree is automated, built, scanned, locally browser-verified, published on draft PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1), and deployed with health/header/bundle readback. It still requires merge to `main`, screenshot recapture, and a full deployed teacher journey. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.

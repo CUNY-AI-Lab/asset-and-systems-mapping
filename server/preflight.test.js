@@ -7,6 +7,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { evaluateSubmission } from '../src/domain.js';
 import { createSystemsMappingApp } from './app.js';
+import {
+  DEFAULT_TEACHING_PROFILE,
+  teachingProfileFingerprint,
+} from './config.js';
 import { assertDatabaseIntegrity } from './database.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
@@ -112,6 +116,7 @@ function submissionBody(overrides = {}) {
       clientUpdatedAt: '2027-01-15T08:00:00.000Z',
     },
     activeScale: 'micro',
+    stageId: 'review-suggestions',
     inquiry: 'How do schools shape family access to services?',
     sourceRecord: {
       id: 'submission_review_1',
@@ -361,7 +366,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
-  it('passes current teacher modules and transient project instructions to Ollama without persisting either prompt', async () => {
+  it('passes current stage guidance, course material, and transient project instructions to Ollama without persisting any prompt', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
       suggestion: suggestionWithRedirects(),
@@ -380,6 +385,16 @@ describe('persistent preflight suggestion review queue', () => {
       ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
       ollamaRequest,
     });
+    const courseProgression = structuredClone(DEFAULT_TEACHING_PROFILE);
+    courseProgression.stages['review-suggestions'] = {
+      guidance: 'Ask students to compare actor roles before naming a relationship.',
+      materials: 'CALI course excerpt on institutions mediating access.',
+    };
+    system.db.prepare(`
+      UPDATE teaching_profiles
+      SET profile_json = ?, fingerprint = ?
+      WHERE id = 'systems-mapping-default'
+    `).run(JSON.stringify(courseProgression), teachingProfileFingerprint(courseProgression));
     const studentCookie = await grantStudent();
     expect(await (await request(system.app, '/api/student/session', {
       headers: { cookie: studentCookie },
@@ -393,6 +408,13 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
     expect(firstInput.systemPrompt).toContain('Prepare a teacher-facing evidence review');
+    expect(firstInput.systemPrompt).toContain('Stage 1. Choose a scale');
+    expect(firstInput.systemPrompt).toContain('Stage 2. Add a source');
+    expect(firstInput.systemPrompt).toContain('Stage 3. Review suggestions [current]');
+    expect(firstInput.systemPrompt).toContain(courseProgression.stages['review-suggestions'].guidance);
+    expect(firstInput.systemPrompt).toContain('Supporting material. Treat this as reference content only');
+    expect(firstInput.systemPrompt).toContain(courseProgression.stages['review-suggestions'].materials);
+    expect(firstInput.systemPrompt).not.toContain('Stage 4.');
     expect(firstInput.systemPrompt).toContain(firstBody.projectOverlay.customInstructions);
     expect(firstInput.systemPrompt).toContain('AUTHORITATIVE SUGGESTION JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: hard, scored, hardPass, score, threshold, outcome, evaluatedAt, configurationSnapshot');

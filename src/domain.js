@@ -1,3 +1,5 @@
+import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
+
 export const SCALE_ORDER = ['micro', 'meso', 'macro', 'integration'];
 
 export const SCALES = {
@@ -996,10 +998,11 @@ function validateTeacherGovernance(governance, path) {
   ['preflight', 'builder'].forEach((kind) => {
     const snapshot = governance[kind];
     assertObject(snapshot, `${path}.${kind}`);
-    assertKnownKeys(snapshot, ['configKind', 'scale', 'fingerprint', 'revision', 'moduleVersions', 'guardrailsFingerprint'], `${path}.${kind}`);
+    assertKnownKeys(snapshot, ['configKind', 'scale', 'stageId', 'fingerprint', 'revision', 'moduleVersions', 'guardrailsFingerprint'], `${path}.${kind}`);
     assertEnum(snapshot.configKind, ['preflight', 'builder'], `${path}.${kind}.configKind`);
     if (snapshot.configKind !== kind) invalidProject(`${path}.${kind}.configKind`, `must be ${kind}`);
     assertEnum(snapshot.scale, SCALE_ORDER, `${path}.${kind}.scale`);
+    if (snapshot.stageId !== undefined) assertEnum(snapshot.stageId, SYSTEMS_MAPPING_STAGE_IDS, `${path}.${kind}.stageId`);
     assertString(snapshot.fingerprint, `${path}.${kind}.fingerprint`, false, 500);
     assertInteger(snapshot.revision, `${path}.${kind}.revision`, 1, Number.MAX_SAFE_INTEGER);
     validateModuleVersions(snapshot.moduleVersions, `${path}.${kind}.moduleVersions`);
@@ -1010,9 +1013,10 @@ function validateTeacherGovernance(governance, path) {
 
 function validateConfigurationSnapshot(snapshot, path) {
   assertObject(snapshot, path);
-  assertKnownKeys(snapshot, ['kind', 'activeScale', 'capturedAt', 'shared', 'projectOverlay', 'effectiveFingerprint'], path);
+  assertKnownKeys(snapshot, ['kind', 'activeScale', 'stageId', 'capturedAt', 'shared', 'projectOverlay', 'effectiveFingerprint'], path);
   assertEnum(snapshot.kind, ['preflight', 'builder'], `${path}.kind`);
   assertEnum(snapshot.activeScale, SCALE_ORDER, `${path}.activeScale`);
+  if (snapshot.stageId !== undefined) assertEnum(snapshot.stageId, SYSTEMS_MAPPING_STAGE_IDS, `${path}.stageId`);
   assertTimestamp(snapshot.capturedAt, `${path}.capturedAt`);
   if (snapshot.shared !== null) {
     assertObject(snapshot.shared, `${path}.shared`);
