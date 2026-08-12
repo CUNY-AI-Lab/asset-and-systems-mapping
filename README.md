@@ -16,8 +16,6 @@ The implementation is local-first. Student work remains in the browser while use
 6. **Build the map** — move and annotate nodes and relationships, pan or zoom the canvas, and inspect the legend.
 7. **Revise and export** — record a reflection and export JSON, CSV, or Markdown with provenance.
 
-Generating suggestions does not edit the memo or graph. The pedagogical guidance exposed to the student contains only the short source prompts—never criterion IDs, scores, outcomes, or the full model review. Sending for review consumes a one-time server evaluation and creates a pending snapshot. The student cannot choose what to map until a teacher selects **Approve** or **Approve with a question**. **Reject** returns the student to **Add a source** without silently changing local work.
-
 ## Run locally
 
 Requirements: Node 22.5 or newer and pnpm 11.
