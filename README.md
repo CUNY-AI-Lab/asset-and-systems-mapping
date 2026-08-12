@@ -2,9 +2,9 @@
 
 # Systems Mapping
 
-Systems Mapping is a phone-primary concept and resource mapping application for source-backed student memos. It combines a seven-stage student workflow, an instructor review gate, a persistent graph workspace, and a Teacher Console. The default suggestion configuration is **STEM Splitter**.
+Systems Mapping is a resource mapping application for place-based methods of ethnographic inquiry and conceptualization. The tool spans a seven-stage student learning process with a Teacher Console for instructors to customize situated applications of an open-weight language model to support asset and systems mapping among undergraduate learners.
 
-The implementation is local-first. Student project state stays in the browser; authenticated evaluation, instructor-review records, teacher accounts, and shared prompt configuration live on the classroom server in SQLite locally or PostgreSQL when hosted.
+The implementation is local-first. Student work remains in the browser while user records and shared prompt configurations live on the classroom server in SQLite locally or PostgreSQL if hosted on the cloud.
 
 ## Student workflow
 
