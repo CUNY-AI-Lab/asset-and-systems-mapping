@@ -41,7 +41,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 - [x] Neutralize CSV formula cells and reject unknown or credential-shaped project fields.
   - Evidence: byte-level CSV tests cover formula/control/leading-whitespace prefixes; schema and portable-export canaries fail closed.
 - [x] Reconcile every tracked release document to the current implementation and deployment boundary.
-  - Evidence: README, release ledger, requirements, QA, security review, and reconciliation record agree on five stages, Part 1/Part 2, advisory review, current test/build evidence, and the Railway/GitHub provenance boundary as of 2026-08-13.
+  - Evidence: README, release ledger, requirements, QA, security review, and reconciliation record agree on five stages, Part 1/Part 2, advisory review, current test/build evidence, and the Railway/GitHub provenance boundary as of 2026-08-13. This documentation-only release receipt changes no runtime behavior.
 
 ## Current automated run
 
@@ -67,8 +67,8 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: this historical journey verified questions tied to passages in the source, collapsed review details, one instructor focus and question, the student response, candidate choice, map entry, and revision section before the non-gating redesign and current feedback labels.
 - [x] Preserve class-entry and changed student and teacher views at 320, 390, 430, and 1440 px as historical evidence with no document-level horizontal overflow.
   - Evidence: the original 50-PNG archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the four earlier Course settings captures are in `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
-- [x] Verify the five-stage Railway snapshot through health, root, class access, session and configuration readback, and logout.
-  - Evidence: deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached terminal `SUCCESS`; health and root returned 200, class access and session/configuration checks succeeded, logout removed access, and copy and no-5xx checks passed.
+- [x] Preserve the first five-stage Railway snapshot as historical evidence.
+  - Evidence: dirty-working-tree deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached terminal `SUCCESS`; health and root returned 200, class access and session/configuration checks succeeded, logout removed access, and copy and no-5xx checks passed. Clean-main deployment evidence below supersedes it as current provenance.
 - [x] Run the production dependency audit and final source/application-bundle scans.
   - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.
 
@@ -82,13 +82,15 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 - [x] Confirm that the tracked publication excludes `.env`, databases, WAL/SHM files, local browser state, screenshots, credentials, and test fixtures.
 - [x] Read back the private `CUNY-AI-Lab/systems-mapping` GitHub repository and published commit lineage.
-  - Evidence: application-contract commit `cb2a959`; commit `23aa134` adds the README **Active beta** notice; PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) merged the seven-stage settings change into `main` at `95c01f4`. GitHub `main` does not yet contain the current five-stage Part 1/Part 2 implementation.
+  - Evidence: application-contract commit `cb2a959`; commit `23aa134` adds the README **Active beta** notice; PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) merged the seven-stage settings change into `main` at `95c01f4`; PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) merged the reconciled five-stage implementation into `main` at `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`. Local `main`, `origin/main`, and GitHub `main` were synchronized at that implementation merge commit before this documentation-only receipt.
 - [x] Create/link a Railway project and application service in the intended workspace, attach PostgreSQL, and configure `DATABASE_URL`, `PUBLIC_ORIGIN`, `HOST`, `TRUST_PROXY_HOPS`, and a strong server-only class code.
   - Evidence: Railway project `ed729bd9-403b-46a6-a97c-99ad9a0294c8`, web service `7230902f-5f52-474f-8d80-5ea05d2dbedb`, and PostgreSQL service `7cee59ec-c32a-4f6e-a626-be4843cdaede`.
 - [x] Preserve public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` as historical evidence for the preceding tracked tree.
   - Evidence: it reached `SUCCESS`; `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`, and expected hardening headers and Secure cookie attributes passed readback.
-- [x] Deploy and verify the current five-stage working-tree snapshot on Railway.
-  - Evidence: deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached `SUCCESS`; live health, root, class access, session/configuration readback, logout, copy, and no-5xx checks passed. This was a dirty-current-working-directory deployment rather than a commit-backed release.
+- [x] Deploy and verify the clean five-stage implementation merge on Railway.
+  - Evidence: deployment `39d38543-20ca-4626-95e6-237ef9213881`, built from clean `main` commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, reached `SUCCESS`. Migration reported ready; live health and root returned 200 with expected security headers; class code `101` created a session; public configuration returned Part 1 and Part 2 scale groupings; logout removed access; exact local/live application-bundle hashes matched; requested copy was present; banned copy was absent; and logs showed no 5xx responses.
+- [x] Record the clean-main release in a documentation-only receipt.
+  - Evidence: this receipt changes no runtime behavior.
 - [ ] Run the full teacher-review journey against the deployed Railway/PostgreSQL service as an active-beta follow-up. Current deployment, health, headers, entry behavior, and local disposable review evidence remain independently verified.
 
 ## Required Ollama Cloud proof
@@ -100,6 +102,6 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Release boundary
 
-Railway currently runs the verified dirty-working-tree snapshot from deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15`, but GitHub `main` does not yet contain that implementation. The current five-stage scale-layer workflow groups Micro and Meso in Part 1 and Macro and Integration in Part 2; instructor review is asynchronous and advisory and never controls advancement. The paired five-view artifact closes the requested desktop/mobile recapture and populated-map evidence, while a full deployed teacher-review journey remains separate follow-up. Upstream documentation is reconciled on `codex/reconcile-five-stage-release`; remaining provenance steps are to publish and review this branch, merge it, and redeploy that exact commit. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
+PR #5 merged the reconciled five-stage implementation into GitHub `main` at `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, and local `main`, `origin/main`, and GitHub `main` were synchronized at that commit. Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` verified that clean implementation merge; dirty-working-tree deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remains historical evidence. The current five-stage scale-layer workflow groups Micro and Meso in Part 1 and Macro and Integration in Part 2; instructor review is asynchronous and advisory and never controls advancement. The paired five-view artifact closes the requested desktop/mobile recapture and populated-map evidence, while a complete live Teacher Console transaction and rendered reload/export journey remain follow-up. This documentation-only release receipt changes no runtime behavior. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.

@@ -4,9 +4,9 @@ Updated: 2026-08-13
 
 ## Current status
 
-The current active-beta working tree uses a five-stage learning cycle around one persistent map. Node selection and connection prompting share one stage. Part 1 groups Micro and Meso; Part 2 groups Macro and Integration. Instructor review is asynchronous and advisory, so pending or returned work never prevents stage navigation, scale changes, candidate choice, or map access. Accumulated Micro, Meso, Macro, and Integration records can be viewed as combined or individual layers. The latest automated, build, desktop/mobile, and Railway snapshot evidence for this redesign is recorded below. GitHub `main` does not yet contain the implementation.
+The current active-beta release uses a five-stage learning cycle around one persistent map. Node selection and connection prompting share one stage. Part 1 groups Micro and Meso; Part 2 groups Macro and Integration. Instructor review is asynchronous and advisory, so pending or returned work never prevents stage navigation, scale changes, candidate choice, or map access. Accumulated Micro, Meso, Macro, and Integration records can be viewed as combined or individual layers. PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) merged the implementation to GitHub `main` at commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`; local, `origin/main`, and GitHub `main` were synchronized before deployment.
 
-The original image set, four-viewport Course settings recapture, and public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` remain historical evidence for the preceding tracked release. The current paired five-view artifact verifies the redesigned landing, post-code state, early map, populated map, and Teacher Console at desktop and mobile sizes. Railway deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` verifies the current working-tree snapshot, but it is not a commit-backed release. Live Ollama remains disabled and unverified.
+The original image set, four-viewport Course settings recapture, and public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` remain historical evidence for the preceding tracked release. Dirty-snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` is also retained as historical evidence. The current paired five-view artifact verifies the redesigned landing, post-code state, early map, populated map, and Teacher Console at desktop and mobile sizes. Railway deployment `39d38543-20ca-4626-95e6-237ef9213881`, uploaded from clean `main` at `abddbd0a`, is the commit-backed implementation validation release. Live Ollama remains disabled and unverified.
 
 ## Completed automated runs
 
@@ -27,13 +27,14 @@ The current production audit reported no known vulnerabilities. Source and appli
 
 ## GitHub and Railway evidence
 
-- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. GitHub readback confirmed that PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1) merged into `main` at commit `95c01f4`; current GitHub `main` still precedes the five-stage Part 1/Part 2 implementation.
+- Private GitHub repository: `CUNY-AI-Lab/systems-mapping`. PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) merged the five-stage Part 1/Part 2 implementation into `main` at commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`. Local `main`, `origin/main`, and GitHub `main` were synchronized at that commit before the release upload.
 - The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 - Railway project: `systems-mapping` (`ed729bd9-403b-46a6-a97c-99ad9a0294c8`) with web and PostgreSQL services.
 - Historical Railway deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS` for the preceding tracked public-demo tree; database-backed health, hardening headers, Secure cookie attributes, class access, session readback, and logout passed.
-- Current snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached terminal `SUCCESS`. Live health and root returned 200; class access, session and configuration readback, logout cleanup, copy, and no-5xx checks passed. Railway received a dirty working-directory snapshot, so this receipt does not establish a GitHub commit-to-deployment chain.
+- Historical dirty-snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached terminal `SUCCESS`, but it did not establish a GitHub commit-to-deployment chain.
+- Implementation deployment `39d38543-20ca-4626-95e6-237ef9213881` was uploaded from clean `main` at `abddbd0a` and reached terminal `SUCCESS`. PostgreSQL migration reported ready; health and root returned 200; the response included restrictive CSP, no-referrer, nosniff, and frame-deny headers; class-code `101` access returned 201 with a `Secure`, `HttpOnly`, `SameSite=Strict` cookie; session and public configuration readback returned the Part 1/Part 2 mapping; logout removed the session; the served application bundle matched the local production build byte-for-byte; requested phrases were present, banned phrases were absent, and no 5xx responses occurred.
 - Public health readback: `https://web-production-08455.up.railway.app/api/health` returned `{"status":"ok"}`.
-- The deployed service accepted `101` only under the explicit public-demo configuration. The earlier browser entry and header readback remain historical hardening evidence; the latest snapshot acceptance covers health, root, session/configuration behavior, logout, copy checks, and absence of 5xx responses.
+- The deployed service accepted `101` only under the explicit public-demo configuration. The current commit-backed acceptance covers health, root, current hardening headers, session/configuration behavior, logout, exact bundle parity, copy checks, and absence of 5xx responses. It does not establish expiry handling, teacher-route denial, or a complete live Teacher Console transaction.
 - The preserved local SQLite handoff store passed `PRAGMA integrity_check`; it contains no student sessions, evaluations, review submissions/events, or prototype events. One previously claimed teacher account and its existing session were retained as user-owned state.
 
 ## Automated behavior verified
@@ -138,12 +139,12 @@ The earlier disposable journey passed against the preceding workflow. The curren
 - Verify current reload restoration and export/import restoration in the rendered application.
 - Extend current rendered receipts for map drag, keyboard movement, zoom/pan/fit, every annotation surface, and full focus traversal. Automated coverage remains green.
 - The final loopback listener and real SQLite handoff database are healthy; the one pre-existing claimed teacher account/session was intentionally preserved rather than treated as QA residue.
-- Railway snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached `SUCCESS`; health, root, hosted `101` access, session/configuration readback, logout, copy, and no-5xx checks passed. Because it came from a dirty working directory and GitHub `main` lacks the implementation, a commit-backed redeployment remains required for release provenance. A full teacher-review journey against deployed Railway/PostgreSQL remains useful beta coverage.
+- Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` reached `SUCCESS` from clean GitHub `main` commit `abddbd0a`; migration readiness, health/root, current hardening headers, hosted `101` access and cookie attributes, session/configuration Part 1/Part 2 readback, logout cleanup, exact live/local bundle parity, requested/banned-copy checks, and no-5xx checks passed. The earlier dirty snapshot `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remains historical only. A full teacher-review journey against deployed Railway/PostgreSQL remains useful beta coverage.
 - Local `.env` contains no Ollama key. The previously pasted key is exposed and must be revoked; no live provider run has occurred.
 - Deterministic STEM Splitter does not interpret teacher prompt or project-instruction text. Its configuration snapshots are provenance only; prompt customization affects actual generation only when an accepted provider adapter is enabled.
 - Hosted review stores the source excerpt for the disclosed retention period. Institutional approval and operating policy remain separate from code correctness.
 
-These follow-ups do not invalidate the verified Railway snapshot. They limit commit-backed release, complete teacher-review, and optional-provider claims.
+These follow-ups do not invalidate the verified commit-backed Railway release. They limit complete teacher-review, rendered restoration, session-expiry and teacher-route-denial, and optional-provider claims.
 
 ## Provenance caveat
 
