@@ -2,9 +2,11 @@
 
 ## Outcome
 
-Local `main` stopped at `7ad83ae`. `origin/main` advanced to `fd7ca0b` through two README-only commits: `1129313` and `fd7ca0b`. Neither upstream commit changed application code, tests, data, configuration, or deployment behavior.
+Local `main` initially stopped at `7ad83ae`. `origin/main` had advanced to `fd7ca0b` through two README-only commits: `1129313` and `fd7ca0b`. Neither upstream commit changed application code, tests, data, configuration, or deployment behavior.
 
-The implemented and deployed five-stage application is the authority for this reconciliation. Its release checkpoint is `4bb915a`, deployed to Railway as `3ea599f4-7fb5-4dd3-998d-c55134a69f15`. The reconciled tree passed 160 tests with 3 PostgreSQL tests skipped, and the production build passed.
+The implemented five-stage application is the authority for this reconciliation. Checkpoint `4bb915a` captured the previously deployed working tree, and dirty-working-tree Railway deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remains historical evidence. The reconciled tree passed 160 tests with 3 PostgreSQL tests skipped, and the production build passed.
+
+PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) merged the reconciled implementation into `main` at `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`. GitHub `main`, `origin/main`, and local `main` were synchronized at that commit. Railway deployment `39d38543-20ca-4626-95e6-237ef9213881`, built from that clean main commit, reached `SUCCESS`; migration reported ready; root and health returned 200 with expected security headers; class code `101` created a session; public configuration returned Part 1 and Part 2 scale groupings; logout removed the session; exact local/live bundle hashes matched; requested copy was present; banned copy was absent; and logs showed no 5xx responses.
 
 ## Passage decisions
 
@@ -18,4 +20,4 @@ The table records the meaning of each changed passage without carrying obsolete 
 
 ## Release boundary
 
-Railway runs the checkpointed five-stage working-tree snapshot identified above. GitHub `main` is not current until this branch is reviewed and merged, and Railway does not gain commit-backed provenance until that merged commit is deployed. A live Teacher Console journey and live Ollama execution remain follow-up checks; successful local tests, build, and Railway health checks do not substitute for those two browser-level checks.
+GitHub, local, and origin `main` contain the five-stage implementation through PR #5, and Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` supplies clean commit-backed runtime provenance for implementation merge `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`. The branch carrying this release receipt changes documentation only and does not change runtime behavior. A complete live Teacher Console transaction, rendered reload/export browser journey, and live Ollama execution remain follow-up checks; successful tests, build, and Railway health checks do not substitute for them.
