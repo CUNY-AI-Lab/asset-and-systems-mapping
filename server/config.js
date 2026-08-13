@@ -65,7 +65,7 @@ export const SYSTEMS_MAPPING_EDUCATOR_RESOURCE = defineEducatorResource({
       id: 'ollama-cloud',
       label: 'Ollama Cloud',
       teacherModulesAffectOutput: true,
-      disclosure: 'Published guidance and course material support the current section and earlier completed sections.',
+      disclosure: 'Published guidance and course material support the current section.',
     },
   ],
   modules: SYSTEMS_MAPPING_STAGES.map(({ id, label, description }) => ({

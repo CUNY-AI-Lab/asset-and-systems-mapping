@@ -1,5 +1,7 @@
 # Systems Mapping — requirements
 
+Updated: 2026-08-13
+
 ## Product contract
 
 Systems Mapping develops one durable, revisable concept-and-resource map from assigned, published, institutional, public, and scholarly sources. Student interpretation remains visibly secondary to the source evidence. Students remain responsible for every claim and relationship. They may receive at most three short questions that return them to specific passages in the source. The system must not show the student its criterion taxonomy, scores, outcome, or full model review; silently rewrite the source; change the graph; or promote an inference into confirmed state.
@@ -88,17 +90,17 @@ Within one transaction, the server must verify that the evaluation belongs to th
 
 The student status endpoint is `GET /api/preflight/submissions/:id`. The ID is a random bearer capability and a valid student class session is also required. The response must be limited to project ID, status, decision, revision/times, the instructor's focus, and an optional focused question. It must not reveal source content, full criteria or scores, prompt/configuration content, teacher identity, or teacher-only model-review detail. Every JSON/CSV/Markdown export must redact evaluation and review capabilities.
 
-Teacher decisions communicate direction asynchronously. A pending review or recorded decision must never prevent candidate generation, stage navigation, scale changes, or map access:
+Teacher feedback communicates direction asynchronously. A pending review or recorded decision must never prevent candidate generation, stage navigation, scale changes, or map access. Teacher Console uses accessible action labels while the database and API retain stable internal decision IDs:
 
-- **Approve** — records one instructor focus.
-- **Approve with a question** — records one instructor focus and one focused question. Its stored API decision ID remains `revise_and_approve` for schema compatibility.
-- **Reject** — records one instructor focus without redirecting or rewriting the student's current stage.
+- **Add feedback** — records one instructor focus with internal decision ID `approve`.
+- **Add feedback and a question** — records one instructor focus and one focused question with internal decision ID `revise_and_approve`.
+- **Recommend another pass** — records one instructor focus with internal decision ID `reject`, without redirecting or rewriting the student's current stage.
 
-No decision may modify the student's source, guidance, candidates, current stage, or graph. The instructor writes one focus; a question is present only for **Approve with a question**. Decisions require an expected revision; stale or duplicate writes return a conflict. Each accepted decision appends an immutable event with teacher attribution and from/to revision.
+No decision may modify the student's source, guidance, candidates, current stage, or graph. The instructor writes one focus; a question is present only for **Add feedback and a question**. Decisions require an expected revision; stale or duplicate writes return a conflict. Each accepted decision appends an immutable event with teacher attribution, the internal decision ID, and from/to revision.
 
 ## Teacher Console and course settings
 
-The Teacher Console must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the source, its identifying details, and the student note. **Review details** is collapsed by default and groups evidence excerpts, possible follow-up, and open questions without model scores, thresholds, outcomes, or criterion identifiers. The instructor form exposes one **Focus for the student**, three decisions, and one **Question for the student** only after **Approve with a question** is selected. Decision history records the same focus and optional question.
+The Teacher Console must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the source, its identifying details, and the student note. **Review details** is collapsed by default and groups evidence excerpts, possible follow-up, and open questions without model scores, thresholds, outcomes, or criterion identifiers. The instructor form exposes one **Focus for the student**, the actions **Add feedback**, **Add feedback and a question**, and **Recommend another pass**, and one **Question for the student** only after **Add feedback and a question** is selected. Decision history records the same focus and optional question and renders the user-facing label while persistence retains the internal decision ID.
 
 **Course settings** must not load until selected. It must present the same five stages as the student cycle and let the teacher open one stage at a time.
 
@@ -177,7 +179,7 @@ Hosted mode requires all of the following:
 
 Public-demo mode changes only the shared student entry code. It does not grant Teacher Console access, identify students, relax origin/cookie controls, remove rate and queue limits, or change retention.
 
-Railway project/service/database creation, required variables, PostgreSQL migration, terminal deployment success, public health, hardening headers, explicit public-demo access, session cleanup, and Maria's teacher login are verified at `https://web-production-08455.up.railway.app`.
+Current working-directory snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached `SUCCESS` at `https://web-production-08455.up.railway.app`. Live checks verified health, the application root, public-demo code `101`, session and configuration readback, logout, requested interface text, and no 5xx responses. This verifies current Railway behavior, but the snapshot was deployed before its exact tree was committed. GitHub `main` therefore remains behind the current Railway snapshot until a reconciliation branch captures the tested tree, incorporates current `origin/main`, passes release checks, and supplies a commit-backed redeployment. A complete live Teacher Console review remains follow-up, and Ollama remains disabled.
 
 ## Privacy and security boundaries
 
@@ -205,6 +207,8 @@ Automated acceptance requires the full UI/domain/server suite, the SQLite server
 
 Passing deterministic tests, local PostgreSQL integration, or a production build must never be reported as proof of browser acceptance, Railway deployment, or live Ollama Cloud execution.
 
+Current evidence as of 2026-08-13 is 160 passing tests with 3 PostgreSQL integration tests skipped, a passing production build, current desktop/mobile rendered captures, and the verified Railway snapshot described above. Delivery provenance remains incomplete until GitHub contains the reconciled tree and Railway is redeployed from that commit. This evidence does not claim a complete live Teacher Console review or a live Ollama Cloud request.
+
 ## Source authority
 
-`docs/SOURCE_LEDGER.md` remains the authority record. The fuller Drive specification governs behavior; supplied local wireframes govern compatible presentation; CALI materials provide context; Zach's August 5 notes remain unconfirmed minutes; and STEM Splitter informs architecture. Direct user decisions supersede earlier naming and visual details, including the current Systems Mapping name, descriptive stages, editorial typography, and restrained tertiary accents within an otherwise monochrome system.
+`docs/SOURCE_LEDGER.md` remains the authority record. The fuller Drive specification governs behavior; supplied local wireframes govern compatible presentation; CALI materials provide context; and Zach's August 5 notes remain unconfirmed minutes. Direct user decisions supersede earlier naming and visual details, including the current Systems Mapping name, descriptive stages, editorial typography, and restrained tertiary accents within an otherwise monochrome system.

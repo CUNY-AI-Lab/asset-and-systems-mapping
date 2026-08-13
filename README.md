@@ -2,9 +2,9 @@
 
 # Systems Mapping
 
-Systems Mapping is a phone-primary concept and resource mapping application organized around one persistent map. Students revisit a five-stage learning cycle as they work across four scales: Part 1 groups Micro and Meso, and Part 2 groups Macro and Integration. Every stage and the map remain available while instructor review happens asynchronously. Connection suggestions use the configured language model and remain student-controlled.
+Systems Mapping supports place-based ethnographic inquiry through one persistent asset and systems map. Students revisit five stages across four scales: Part 1 groups Micro and Meso; Part 2 groups Macro and Integration. Teacher Console lets instructors adapt guidance and course material for each stage and part. When a language model is enabled, it can suggest connections, but students decide what to edit, accept, or reject.
 
-The implementation is local-first. Student project state stays in the browser; authenticated evaluation, instructor-review records, teacher accounts, and shared prompt configuration live on the classroom server in SQLite locally or PostgreSQL when hosted.
+Implementation is local-first. Project state stays in browser storage. Submitted evaluations and review snapshots, teacher accounts, and shared course configuration live on classroom server in SQLite locally or PostgreSQL when hosted.
 
 ## Student workflow
 
@@ -51,7 +51,7 @@ pnpm build
 
 Fresh databases seed unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer, never default passphrases. To claim one account, start the server with a temporary, server-only `SYSTEMS_MAPPING_TEACHER_BOOTSTRAP_TOKEN` of 16–256 characters. A token authorizes one claim for that server process; claim the second account with a fresh token on a later restart. Passphrases are scrypt-derived, and teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
 
-The Teacher Console opens on **Review submissions**. Its queue loads before course settings. Selecting one submission reveals the source and student note. A collapsed **Review details** section groups evidence excerpts, possible follow-up, and open questions without presenting a model score as the instructor's judgment. The instructor writes one focus for the student, then chooses **Approve**, **Approve with a question**, or **Reject**. These decisions record asynchronous feedback without changing student work or controlling stage and map access. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
+The Teacher Console opens on **Review submissions**. Its queue loads before course settings. Selecting one submission reveals the source and student note. A collapsed **Review details** section groups evidence excerpts, possible follow-up, and open questions without presenting a model score as the instructor's judgment. The instructor writes one focus for the student, then chooses **Add feedback**, **Add feedback and a question**, or **Recommend another pass**. These actions record asynchronous feedback without changing student work or controlling stage and map access. Optimistic revisions prevent stale decisions, and accepted updates append an immutable review event.
 
 **Course settings** follows the same five stages students revisit. A teacher opens one stage at a time and writes how the model should guide it, then may paste course material the model can draw on. Only the current stage's guidance and material enter that model request. This keeps each intervention focused and lets an instructor revise one part of the cycle across successive class sessions without building a cumulative prompt. Course material enters as reference content rather than a competing instruction source.
 
@@ -86,7 +86,7 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 ## Hosted and Railway contract
 
-The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, the expected hardening headers and Secure cookie attributes passed readback, and class code `101` created a course-server session that was then closed. Maria's teacher login also passed and its verification session was closed. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Five-stage snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached `SUCCESS`; migration completed and `/api/health` returned `{"status":"ok"}`. Class code `101` created a course-server session, public configuration returned Part 1 and Part 2 scale groupings, and logout removed that session. Served bundles matched current five-stage and non-blocking review copy, and deployment logs showed no 5xx responses during verification. A full live Teacher Console review and current header readback remain follow-up. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>
@@ -111,13 +111,13 @@ Black, white, and gray remain dominant. Restrained teal, amber, and plum accents
 
 ## Evidence and authority
 
-The current active-beta tree passed 154 tests with 3 PostgreSQL-gated skips. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
+The current active-beta tree passed 160 tests with 3 PostgreSQL integration tests skipped in the ordinary local run. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
 
-GitHub readback confirmed that PR [#3](https://github.com/CUNY-AI-Lab/systems-mapping/pull/3) merged the production-aligned tree into `main` at commit `a4bdc0d`. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
+GitHub readback confirmed that PR [#3](https://github.com/CUNY-AI-Lab/systems-mapping/pull/3) merged an earlier production-aligned tree into `main` at commit `a4bdc0d`. Current five-stage implementation is checkpointed at `4bb915a` on local reconciliation branch `codex/reconcile-five-stage-release`; GitHub `main` does not contain it until branch review and merge. Tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 
-The existing disposable browser journeys and screenshot archives document earlier workflows. One earlier five-stage journey exercised a then-current instructor pause; that receipt is historical and does not verify the current advisory, non-blocking review behavior. The current local workflow has five stages, with node selection and connection prompting combined, Part 1 grouping Micro and Meso, and Part 2 grouping Macro and Integration. The instructor-meeting screenshot package is `/Users/milwright/.codex/visualizations/2026/08/11/019ff237-f0af-7702-a8a7-3f4554872338/systems-mapping-five-stage-2026-08-12/systems-mapping-instructor-meeting-views.zip`. GitHub and Railway still describe the preceding release until a new release is explicitly authorized. The design specification image is at `docs/concepts/semester-map-cycle-spec-v1.png`.
+Existing disposable browser journeys and screenshot archives document earlier workflows. One earlier five-stage journey exercised a then-current instructor pause; that receipt is historical and does not verify current advisory, non-blocking review behavior. Current workflow has five stages, with node selection and connection prompting combined, Part 1 grouping Micro and Meso, and Part 2 grouping Macro and Integration. Current annotated package is `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ui-qa-2026-08-12.zip`; it contains five paired desktop/mobile views, including a populated multi-scale map, and passes archive and visual inspection. Railway serves this current working-tree snapshot, while GitHub still needs a reviewed, merged source commit. Design specification image is at `docs/concepts/semester-map-cycle-spec-v1.png`.
 
-**Reject**, reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
+Full live Teacher Console review, rendered reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
 
 - [Source ledger](./docs/SOURCE_LEDGER.md)
 - [Requirements](./docs/REQUIREMENTS.md)
@@ -125,5 +125,6 @@ The existing disposable browser journeys and screenshot archives document earlie
 - [Security review](./docs/SECURITY_REVIEW.md)
 - [Teacher control across both applications](./docs/EDUCATOR_RESOURCE_FRAMEWORK.md)
 - [Release evidence ledger](./TODO.md)
+- [August 13 reconciliation record](./docs/RECONCILIATION_2026-08-13.md)
 
 The source ledger remains authoritative about provenance: the fuller Drive specification governs behavior; the supplied HTML/DOCX guide interaction; CALI materials provide context; Zach's August 5 notes remain unconfirmed minutes; and STEM Splitter is an architecture precedent. No Maria-specific Zoom summary was found, so none is represented as a confirmed design decision.
