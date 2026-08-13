@@ -42,7 +42,7 @@ describe('educator resource contract', () => {
     const profile = normalizeTeachingProfile({
       schemaVersion: TEACHING_PROFILE_SCHEMA_VERSION,
       focus: '  Attend to relationships. ',
-      evidence: 'Return to source passages.',
+      evidence: 'Return to passages in the memo.',
       questions: 'Ask one focused question.',
       privacy: 'Remove unnecessary identifying details.',
       contextAdjustments: { micro: '', meso: 'Name organizational roles.' },
@@ -55,17 +55,67 @@ describe('educator resource contract', () => {
   it('normalizes bounded guidance and supporting material for a registered progression', () => {
     const progression = normalizeCourseProgression({
       schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
-      stages: {
-        source: { guidance: '  Return to the source. ', materials: 'Course reading excerpt.' },
-        map: { guidance: '', materials: '' },
-      },
-    }, { stageIds: ['source', 'map'] });
-    expect(progression.stages.source.guidance).toBe('Return to the source.');
-    expect(progression.stages.source.materials).toBe('Course reading excerpt.');
-    expect(() => normalizeCourseProgression({ ...progression, extra: true }, { stageIds: ['source', 'map'] })).toThrow(/fields/);
+      parts: [
+        {
+          id: 'part-1',
+          label: 'Part 1',
+          scaleIds: ['micro', 'meso'],
+          stages: {
+            source: { guidance: '  Return to the source. ', materials: 'Course reading excerpt.' },
+            map: { guidance: '', materials: '' },
+          },
+        },
+        {
+          id: 'part-2',
+          label: 'Part 2',
+          scaleIds: ['macro', 'integration'],
+          stages: {
+            source: { guidance: '', materials: '' },
+            map: { guidance: 'Connect earlier work.', materials: '' },
+          },
+        },
+      ],
+    }, { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] });
+    expect(progression.parts[0].stages.source.guidance).toBe('Return to the source.');
+    expect(progression.parts[0].stages.source.materials).toBe('Course reading excerpt.');
+    expect(() => normalizeCourseProgression(
+      { ...progression, extra: true },
+      { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] },
+    )).toThrow(/fields/);
     expect(() => normalizeCourseProgression({
       ...progression,
-      stages: { source: progression.stages.source },
-    }, { stageIds: ['source', 'map'] })).toThrow(/registered progression/);
+      parts: [
+        { ...progression.parts[0], stages: { source: progression.parts[0].stages.source } },
+        progression.parts[1],
+      ],
+    }, { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] })).toThrow(/registered progression/);
+  });
+
+  it('requires every registered scale to appear in exactly one part', () => {
+    const stages = {
+      source: { guidance: '', materials: '' },
+      map: { guidance: '', materials: '' },
+    };
+    const base = {
+      schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
+      parts: [
+        { id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'], stages },
+        { id: 'part-2', label: 'Part 2', scaleIds: ['macro', 'integration'], stages },
+      ],
+    };
+    const options = { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] };
+    expect(normalizeCourseProgression(base, options).parts).toHaveLength(2);
+    expect(() => normalizeCourseProgression({
+      ...base,
+      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['meso', 'integration'] }],
+    }, options)).toThrow(/more than one part/);
+    expect(() => normalizeCourseProgression({
+      ...base,
+      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['macro'] }],
+    }, options)).toThrow(/do not cover/);
+    expect(() => normalizeCourseProgression({
+      ...base,
+      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['macro', 'unsupported'] }],
+    }, options)).toThrow(/unsupported scale/);
   });
 });

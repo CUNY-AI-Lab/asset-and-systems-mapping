@@ -1,35 +1,57 @@
 import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
+import { SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
 
 export const SCALE_ORDER = ['micro', 'meso', 'macro', 'integration'];
+export const SCALE_PARTS = SYSTEMS_MAPPING_PARTS;
 
 export const SCALES = {
   micro: {
     label: 'Micro',
-    prompt: 'What changes for a person or family?',
-    description: 'Families, encounters, access.',
+    prompt: 'Where is your population present, and who interacts with them there?',
+    description: 'Population, named settings, face-to-face roles, and participation.',
+    checklist: [
+      'Name every setting, using its real name, and add participation or demographic numbers when available.',
+      'Name who meets your population face to face in each setting.',
+      'Record whose voices you have heard and whose are missing.',
+    ],
   },
   meso: {
     label: 'Meso',
-    prompt: 'What changes across organizations and local systems?',
-    description: 'Organizations and policy in practice.',
+    prompt: 'How do people from Micro connect across settings?',
+    description: 'Connections among the same people and roles used in Micro.',
+    checklist: [
+      'Use the same names and roles as Micro, spelled the same way.',
+      'Describe direction, strength, how each connection happens, and who keeps it going.',
+      'Name missing connections and add numbers, affected families, or resources when available.',
+    ],
   },
   macro: {
     label: 'Macro',
-    prompt: 'What changes across policy and public infrastructure?',
-    description: 'History, law, public systems.',
+    prompt: 'Which decisions, resources, laws, beliefs, and histories shape the issue?',
+    description: 'Offices, funding, decisions, law, narrative, and history.',
+    checklist: [
+      'Name agencies, offices, funders, and decision-making bodies, including at least two relevant funding streams.',
+      'For each path, state the exact action, where it starts and ends, who receives what, and the source.',
+      'Connect laws, beliefs, narratives, and history to who they affect and how; use evidence and dates, and keep them separate from offices.',
+    ],
   },
   integration: {
     label: 'Integration',
-    prompt: 'How do the scales produce the present condition?',
-    description: 'Cross-scale synthesis and theory of change.',
+    prompt: 'What do power, community assets, and earlier scales make possible?',
+    description: 'Power, accountability, community assets, and a theory of change.',
+    checklist: [
+      'Position stakeholders by influence and proximity, show who answers to whom, and note who appears in your evidence.',
+      'Name community assets, evidence, and capacity; revise stereotypes or deficit descriptions.',
+      'Build a chain from problem to assets, activities, and outcomes; point to earlier work that supports each link, name assumptions and possible unintended consequences, and say how change would be measured.',
+    ],
   },
 };
 
 export const HARD_CRITERIA = [
-  { id: 'H1', label: 'Source integrity', help: 'The memo and its source metadata are present and locatable.' },
-  { id: 'H2', label: 'Sensitivity and consent', help: 'Sensitive material has a documented permission or a privacy-safe treatment.' },
-  { id: 'H3', label: 'Evidence ownership', help: 'The student distinguishes source claims from interpretation.' },
-  { id: 'H4', label: 'Relational content', help: 'The memo contains at least two actor-to-actor relationships.' },
+  { id: 'H1', label: 'Source details', help: 'The source includes the information needed to identify where it came from.' },
+  { id: 'H2', label: 'Sensitivity and permission', help: 'Sensitive material has documented permission or a privacy-safe treatment.' },
+  { id: 'H3', label: 'Claims and interpretation', help: 'The student makes clear what the source says and what they think it means.' },
+  { id: 'H4', label: 'Relational content', help: 'The source contains at least two actor-to-actor relationships.' },
 ];
 
 export const SCORED_CRITERIA = [
@@ -53,7 +75,7 @@ export const RELATION_VOCABULARY = [
 export const NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event'];
 export const CLAIM_STATES = ['confirmed', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'];
 
-export const PROJECT_SCHEMA_VERSION = 2;
+export const PROJECT_SCHEMA_VERSION = 5;
 
 export const PROJECT_LIMITS = Object.freeze({
   importBytes: 8 * 1024 * 1024,
@@ -97,9 +119,9 @@ export const DEFAULT_VIEWPORT = Object.freeze({ panX: 0, panY: 0, zoom: 1 });
 
 const DEFAULT_CANVAS = Object.freeze({ width: 840, height: 540, radiusX: 290, radiusY: 190 });
 
-export const BASE_GUARDRAILS = `Use only material in the active project. Preserve evidence locators. Never invent actors, relationships, quotations, or citations. Mark unsupported possibilities as research leads. Separate source claims from student interpretation. Sensitive material stays local unless the instructor explicitly changes the sharing tier. Return stable IDs and schema-valid operations only.`;
+export const BASE_GUARDRAILS = `Use only material in the active project. Keep track of where each piece of evidence appears. Never invent actors, relationships, quotations, or citations. Mark unsupported possibilities as research leads. Keep what the source says separate from the student's interpretation. Sensitive material stays local unless the instructor explicitly changes the sharing tier. Return stable IDs and schema-valid operations only.`;
 
-export const DEFAULT_MEMO = `How do New York City special-education systems shape a family's ability to secure services? A family requests an evaluation from its school. The school refers the student to the Committee on Special Education, which determines eligibility. NYC Public Schools administers services and is regulated by the New York State Education Department. Parent advocacy organizations provide guidance, but delayed evaluations burden families. Public data may undercount informal support and should be checked against interviews.`;
+export const DEFAULT_MEMO = `How do New York City special-education systems shape a family's ability to secure services? A family requests an evaluation from its school. The school refers the student to the Committee on Special Education, which determines eligibility. NYC Public Schools administers services and is regulated by the New York State Education Department. Parent advocacy organizations provide guidance, but delayed evaluations burden families. Public data may undercount informal support and should be checked against published case reports.`;
 
 export function stableId(prefix, value) {
   let hash = 2166136261;
@@ -323,9 +345,9 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
   const relationships = extractRelationships({ ...submission, text });
   const hasRelational = relationships.length >= 2;
   const hard = [
-    result('H1', text.length >= 80 && Boolean(submission.title && submission.author && submission.date && submission.location) ? 'met' : 'unmet', text ? 'Memo text and metadata panel' : null, 'A usable memo needs text, title, author, date, and a source location.', 'Complete the missing memo or source fields.', true),
-    result('H2', !submission.sensitive || submission.consent ? 'met' : 'unmet', submission.sensitive ? 'Sensitivity declaration' : 'Marked non-sensitive', 'Sensitive or interview-derived material needs documented consent or a privacy-safe treatment.', 'Document consent or remove/de-identify sensitive material.', true),
-    result('H3', submission.evidenceOwnership ? 'met' : 'unmet', submission.evidenceOwnership ? 'Evidence ownership selection' : null, 'The system must know how source claims and student interpretation are distinguished.', 'Choose an evidence-ownership rule.', true),
+    result('H1', text.length >= 80 && Boolean(submission.title && submission.author && submission.date && submission.location) ? 'met' : 'unmet', text ? 'Source and its details' : null, 'A usable source needs text, a title, an author, a date, and information about where it came from.', 'Add the missing source details.', true),
+    result('H2', !submission.sensitive || submission.consent ? 'met' : 'unmet', submission.sensitive ? 'Sensitivity declaration' : 'Marked non-sensitive', 'Sensitive material needs documented permission or a privacy-safe treatment.', 'Document permission or remove identifying details.', true),
+    result('H3', submission.evidenceOwnership ? 'met' : 'unmet', submission.evidenceOwnership ? 'Claims and interpretation are labeled' : null, 'The student must make clear what the source says and what they think it means.', 'Explain how the source claims and the student interpretation will be labeled.', true),
     { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'Mapping requires at least two actor-to-actor relationships.', 'Add two statements naming who acts on whom and how.', true), relationshipCount: relationships.length },
   ];
 
@@ -340,10 +362,10 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
     [/[?]|\b(how|why|what)\b/i, 'The inquiry is expressed as a bounded question.', 'State one bounded question the map will help answer.'],
     [/(NYC Public Schools|New York State Education Department|Committee on Special Education|family|school|organization|agency)/i, 'Specific actors are named.', 'Replace general groups with named actors or actor classes.'],
     [/(provides?|regulates?|administers?|refers?|delays?|burdens?|enables?|shapes?)/i, 'Actor-to-actor verbs make relationships extractable.', 'Write at least two explicit subject–verb–object statements.'],
-    [scalePatterns[activeScale], `The memo contains ${activeScale}-scale material.`, `Add evidence that belongs to the ${activeScale} scale.`],
+    [scalePatterns[activeScale], `The source contains ${activeScale}-scale material.`, `Add evidence that belongs to the ${activeScale} scale.`],
     [/(according|data|interview|memo|source|reports?|shows?|evidence|should be checked)/i, 'Interpretation is tied to an evidence form.', 'Name what source warrants the interpretation.'],
     [/(but|however|although|contradict|exclude|delay|burden|tension|despite)/i, 'A tension or contradiction is visible.', 'Name a tension, exclusion, or competing account.'],
-    [/(resource|support|guidance|capacity|asset|provide|enable|organization)/i, 'The memo includes an asset or capacity.', 'Identify a resource, capacity, or enabling relationship.'],
+    [/(resource|support|guidance|capacity|asset|provide|enable|organization)/i, 'The source includes an asset or capacity.', 'Identify a resource, capacity, or enabling relationship.'],
     [/(may|might|could|uncertain|unknown|needs? research|should be checked|undercount|research lead)/i, 'Uncertainty is explicitly marked.', 'Mark what is uncertain or needs further research.'],
   ];
 
@@ -388,12 +410,37 @@ function deterministicPositions(nodes) {
   }));
 }
 
+function layoutCandidates() {
+  const columns = 4;
+  const rows = 6;
+  return Array.from({ length: columns * rows }, (_, index) => ({
+    x: 75 + (index % columns) * 230,
+    y: 45 + Math.floor(index / columns) * 90,
+  }));
+}
+
+function positionsOverlap(a, b) {
+  return Math.abs(a.x - b.x) < 218 && Math.abs(a.y - b.y) < 82;
+}
+
 export function withDefaultNodeLayout(nodes) {
   if (!Array.isArray(nodes)) invalidProject('nodes', 'must be an array');
   const positions = deterministicPositions(nodes);
+  const hasExistingLayout = nodes.some((node) => Number.isFinite(node?.x) && Number.isFinite(node?.y));
+  const candidates = hasExistingLayout ? layoutCandidates() : [];
+  const occupied = [];
   return nodes.map((node, index) => {
     const nodeId = String(node?.id ?? `missing-${index}`);
-    const position = positions.get(nodeId);
+    const currentPosition = Number.isFinite(node?.x) && Number.isFinite(node?.y)
+      ? { x: node.x, y: node.y }
+      : null;
+    const position = !hasExistingLayout
+      ? positions.get(nodeId)
+      : currentPosition && !occupied.some((item) => positionsOverlap(currentPosition, item))
+        ? currentPosition
+        : candidates.find((candidate) => !occupied.some((item) => positionsOverlap(candidate, item)))
+          || positions.get(nodeId);
+    occupied.push(position);
     let annotations = node?.annotations;
     if (annotations === undefined) {
       annotations = defaultNodeAnnotations(nodeId);
@@ -406,8 +453,8 @@ export function withDefaultNodeLayout(nodes) {
     }
     return {
       ...node,
-      x: node?.x === undefined ? position.x : node.x,
-      y: node?.y === undefined ? position.y : node.y,
+      x: position.x,
+      y: position.y,
       annotations,
     };
   });
@@ -471,7 +518,7 @@ export function extractCandidates(submission) {
         claimState: 'student interpretation',
         directed: true,
         confidence: 0.82,
-        rationale: `The memo states that ${relationship.sourceLabel} ${relationship.verb} ${relationship.targetLabel}.`,
+        rationale: `The source states that ${relationship.sourceLabel} ${relationship.verb} ${relationship.targetLabel}.`,
         evidence: relationship.evidence,
         ...evidenceRef,
         evidenceRefs: [evidenceRef],
@@ -507,7 +554,7 @@ const preflightConfig = {
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
   fixedPrompt: BASE_GUARDRAILS,
-  customInstructions: 'Ask one repair question at a time. Treat interview-derived material as sensitive until documented otherwise.',
+  customInstructions: 'Ask one focused question at a time. Treat sensitive material as private until documented otherwise.',
   contextLimit: 32000,
   confidenceThreshold: 0.72,
   relationVocabulary: [...RELATION_VOCABULARY],
@@ -520,7 +567,7 @@ const builderConfig = {
   id: 'graph-builder-v1',
   profileVersion: '1.0.0',
   outputSchemaVersion: 'systems-mapping.graph-operations.v1',
-  label: 'Source-grounded graph builder',
+  label: 'Map builder',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
   fixedPrompt: `${BASE_GUARDRAILS}\nPropose node and edge operations; never apply them without student confirmation.`,
@@ -542,12 +589,12 @@ export function createDefaultProject() {
     title: 'Access to special-education services in NYC',
     author: 'Student researcher',
     date: '2026-08-05',
-    sourceType: 'course memo',
+    sourceType: 'course material',
     location: 'CALI Thinkering 2026 / local demonstration',
     rights: 'Course use only',
     sensitive: false,
     consent: false,
-    evidenceOwnership: 'Source claims and student interpretation are labeled separately',
+    evidenceOwnership: 'What the source says and what the student thinks it means are labeled separately',
     text: DEFAULT_MEMO,
   };
   return {
@@ -572,7 +619,7 @@ export function createDefaultProject() {
       hardGatesRequired: true,
       evidenceRequired: true,
       maxSharingTier: 'course',
-      releaseMode: 'sequential',
+      releaseMode: 'open',
       requireStudentConfirmation: true,
       allowResearchLeads: true,
     },
@@ -992,13 +1039,38 @@ function validateModuleVersions(moduleVersions, path) {
   });
 }
 
+function validateCourseParts(courseParts, path) {
+  if (!Array.isArray(courseParts) || courseParts.length !== SYSTEMS_MAPPING_PARTS.length) {
+    invalidProject(path, `must contain ${SYSTEMS_MAPPING_PARTS.length} course parts`);
+  }
+  const partsById = new Map();
+  courseParts.forEach((part, index) => {
+    const itemPath = `${path}[${index}]`;
+    assertObject(part, itemPath);
+    assertKnownKeys(part, ['id', 'label', 'scaleIds'], itemPath);
+    assertString(part.id, `${itemPath}.id`, false, 100);
+    assertString(part.label, `${itemPath}.label`, false, 120);
+    if (!Array.isArray(part.scaleIds)) invalidProject(`${itemPath}.scaleIds`, 'must be an array');
+    part.scaleIds.forEach((scale, scaleIndex) => assertEnum(scale, SCALE_ORDER, `${itemPath}.scaleIds[${scaleIndex}]`));
+    if (new Set(part.scaleIds).size !== part.scaleIds.length) invalidProject(`${itemPath}.scaleIds`, 'must not contain duplicates');
+    if (partsById.has(part.id)) invalidProject(`${itemPath}.id`, `duplicates ${part.id}`);
+    partsById.set(part.id, part);
+  });
+  SYSTEMS_MAPPING_PARTS.forEach((definition) => {
+    const part = partsById.get(definition.id);
+    if (!part || part.scaleIds.join(',') !== definition.scaleIds.join(',')) {
+      invalidProject(path, `${definition.label} must contain ${definition.scaleIds.join(' and ')}`);
+    }
+  });
+}
+
 function validateTeacherGovernance(governance, path) {
   assertObject(governance, path);
   assertKnownKeys(governance, ['preflight', 'builder', 'refreshedAt'], path);
   ['preflight', 'builder'].forEach((kind) => {
     const snapshot = governance[kind];
     assertObject(snapshot, `${path}.${kind}`);
-    assertKnownKeys(snapshot, ['configKind', 'scale', 'stageId', 'fingerprint', 'revision', 'moduleVersions', 'guardrailsFingerprint'], `${path}.${kind}`);
+    assertKnownKeys(snapshot, ['configKind', 'scale', 'stageId', 'fingerprint', 'revision', 'moduleVersions', 'guardrailsFingerprint', 'courseParts'], `${path}.${kind}`);
     assertEnum(snapshot.configKind, ['preflight', 'builder'], `${path}.${kind}.configKind`);
     if (snapshot.configKind !== kind) invalidProject(`${path}.${kind}.configKind`, `must be ${kind}`);
     assertEnum(snapshot.scale, SCALE_ORDER, `${path}.${kind}.scale`);
@@ -1007,6 +1079,7 @@ function validateTeacherGovernance(governance, path) {
     assertInteger(snapshot.revision, `${path}.${kind}.revision`, 1, Number.MAX_SAFE_INTEGER);
     validateModuleVersions(snapshot.moduleVersions, `${path}.${kind}.moduleVersions`);
     if (snapshot.guardrailsFingerprint !== undefined) assertString(snapshot.guardrailsFingerprint, `${path}.${kind}.guardrailsFingerprint`, false, 500);
+    if (snapshot.courseParts !== undefined) validateCourseParts(snapshot.courseParts, `${path}.${kind}.courseParts`);
   });
   assertString(governance.refreshedAt, `${path}.refreshedAt`, false, 100);
 }
@@ -1020,10 +1093,11 @@ function validateConfigurationSnapshot(snapshot, path) {
   assertTimestamp(snapshot.capturedAt, `${path}.capturedAt`);
   if (snapshot.shared !== null) {
     assertObject(snapshot.shared, `${path}.shared`);
-    assertKnownKeys(snapshot.shared, ['fingerprint', 'revision', 'moduleVersions'], `${path}.shared`);
+    assertKnownKeys(snapshot.shared, ['fingerprint', 'revision', 'moduleVersions', 'courseParts'], `${path}.shared`);
     assertString(snapshot.shared.fingerprint, `${path}.shared.fingerprint`, false, 500);
     assertInteger(snapshot.shared.revision, `${path}.shared.revision`, 1, Number.MAX_SAFE_INTEGER);
     validateModuleVersions(snapshot.shared.moduleVersions, `${path}.shared.moduleVersions`);
+    if (snapshot.shared.courseParts !== undefined) validateCourseParts(snapshot.shared.courseParts, `${path}.shared.courseParts`);
   }
   assertObject(snapshot.projectOverlay, `${path}.projectOverlay`);
   assertKnownKeys(snapshot.projectOverlay, ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'fingerprint'], `${path}.projectOverlay`);
@@ -1080,16 +1154,14 @@ export function validateProject(project) {
   project.releasedScales.forEach((scale, index) => assertEnum(scale, SCALE_ORDER, `project.releasedScales[${index}]`));
   if (new Set(project.releasedScales).size !== project.releasedScales.length) invalidProject('project.releasedScales', 'must not contain duplicates');
   if (!project.releasedScales.includes(project.activeScale)) invalidProject('project.activeScale', 'must be released');
-  const expectedReleasePrefix = SCALE_ORDER.slice(0, project.releasedScales.length);
-  if (project.releasedScales.some((scale, index) => scale !== expectedReleasePrefix[index])) invalidProject('project.releasedScales', 'must follow sequential release order');
   if (!Array.isArray(project.completedScales)) invalidProject('project.completedScales', 'must be an array');
   project.completedScales.forEach((scale, index) => {
     assertEnum(scale, SCALE_ORDER, `project.completedScales[${index}]`);
     if (!project.releasedScales.includes(scale)) invalidProject(`project.completedScales[${index}]`, 'must also be released');
   });
   if (new Set(project.completedScales).size !== project.completedScales.length) invalidProject('project.completedScales', 'must not contain duplicates');
-  assertInteger(project.stage, 'project.stage', 0, 6);
-  if (project.furthestStage !== undefined) assertInteger(project.furthestStage, 'project.furthestStage', 0, 6);
+  assertInteger(project.stage, 'project.stage', 0, 4);
+  if (project.furthestStage !== undefined) assertInteger(project.furthestStage, 'project.furthestStage', 0, 4);
   assertEnum(project.sharingTier, SHARING_TIERS, 'project.sharingTier');
   assertString(project.createdAt, 'project.createdAt', false, 100);
   assertString(project.updatedAt, 'project.updatedAt', false, 100);
@@ -1254,18 +1326,73 @@ function studentSafePreflightFromLegacy(preflight, path = 'project.preflight') {
 }
 
 function migrateLegacyProject(project) {
-  if (project?.schemaVersion !== 1) {
-    if (project?.schemaVersion === PROJECT_SCHEMA_VERSION
-      && project.preflight
-      && Array.isArray(project.preflight.hard)
-      && Array.isArray(project.preflight.scored)) {
+  const collapseReviewStage = (stage) => stage <= 1 ? stage : stage <= 3 ? 2 : stage - 1;
+  const insertConnectionStage = (stage) => stage >= 4 ? stage + 1 : stage;
+  const collapseFiveStage = (stage) => [0, 0, 1, 2, 2, 3, 4][stage] ?? stage;
+  const canonicalizeStageId = (snapshot) => {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return;
+    snapshot.stageId = ({
+      'choose-scale': 'add-source',
+      'check-instructor-response': 'review-suggestions',
+      'connect-map': 'choose-what-to-map',
+    })[snapshot.stageId] || snapshot.stageId;
+  };
+  const finishStageMigration = (migrated, { insertConnection = true } = {}) => {
+    if (Number.isInteger(migrated.stage)) {
+      migrated.stage = collapseFiveStage(insertConnection ? insertConnectionStage(migrated.stage) : migrated.stage);
+    }
+    if (Number.isInteger(migrated.furthestStage)) {
+      migrated.furthestStage = collapseFiveStage(insertConnection ? insertConnectionStage(migrated.furthestStage) : migrated.furthestStage);
+    }
+    Object.values(migrated.teacherGovernance || {}).forEach(canonicalizeStageId);
+    canonicalizeStageId(migrated.preflight?.configurationSnapshot);
+    if (migrated.portableExport && typeof migrated.portableExport === 'object' && !Array.isArray(migrated.portableExport)) {
+      migrated.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
+    }
+    migrated.schemaVersion = PROJECT_SCHEMA_VERSION;
+    return migrated;
+  };
+  if (project?.schemaVersion === 2) {
+    const migrated = cloneProject(project);
+    if (Number.isInteger(migrated.stage)) migrated.stage = collapseReviewStage(migrated.stage);
+    if (Number.isInteger(migrated.furthestStage)) migrated.furthestStage = collapseReviewStage(migrated.furthestStage);
+    if (migrated.preflight
+      && typeof migrated.preflight === 'object'
+      && !Array.isArray(migrated.preflight)
+      && Array.isArray(migrated.preflight.hard)
+      && Array.isArray(migrated.preflight.scored)) {
+      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
+    }
+    return finishStageMigration(migrated);
+  }
+  if (project?.schemaVersion === 3) {
+    const migrated = cloneProject(project);
+    if (migrated.preflight
+      && Array.isArray(migrated.preflight.hard)
+      && Array.isArray(migrated.preflight.scored)) {
+      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
+    }
+    return finishStageMigration(migrated);
+  }
+  if (project?.schemaVersion === 4) {
+    const migrated = cloneProject(project);
+    if (migrated.preflight && Array.isArray(migrated.preflight.hard) && Array.isArray(migrated.preflight.scored)) {
+      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
+    }
+    return finishStageMigration(migrated, { insertConnection: false });
+  }
+  if (project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
+    if (project.preflight && Array.isArray(project.preflight.hard) && Array.isArray(project.preflight.scored)) {
       const migrated = cloneProject(project);
       migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
       return migrated;
     }
     return project;
   }
+  if (project?.schemaVersion !== 1) return project;
   const migrated = cloneProject(project);
+  if (Number.isInteger(migrated.stage)) migrated.stage = collapseReviewStage(migrated.stage);
+  if (Number.isInteger(migrated.furthestStage)) migrated.furthestStage = collapseReviewStage(migrated.furthestStage);
   const candidateNodes = Array.isArray(migrated.candidates?.nodes) ? migrated.candidates.nodes : [];
   const graphNodes = Array.isArray(migrated.graph?.nodes) ? migrated.graph.nodes : [];
   const preferredById = new Map();
@@ -1301,9 +1428,9 @@ function migrateLegacyProject(project) {
       }
       delete snapshot.effectivePrompt;
       delete snapshot.fixedGuardrails;
+      canonicalizeStageId(snapshot);
     });
   }
-  if (migrated.portableExport && typeof migrated.portableExport === 'object' && !Array.isArray(migrated.portableExport)) migrated.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
   if (migrated.preflight
     && typeof migrated.preflight === 'object'
     && !Array.isArray(migrated.preflight)
@@ -1311,8 +1438,8 @@ function migrateLegacyProject(project) {
     && Array.isArray(migrated.preflight.scored)) {
     migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
   }
-  migrated.schemaVersion = PROJECT_SCHEMA_VERSION;
-  return migrated;
+  canonicalizeStageId(migrated.preflight?.configurationSnapshot);
+  return finishStageMigration(migrated);
 }
 
 function addRedaction(redactions, path, reason) {
@@ -1389,7 +1516,7 @@ function pseudonymizeSensitiveLabels(portable, redactions, reason) {
         addRedaction(redactions, `${path}[${index}].targetLabel`, reason);
       }
       if ((sourceAlias || targetAlias) && edge.rationale !== undefined) {
-        edge.rationale = `The memo states that ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}.`;
+        edge.rationale = `The source states that ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}.`;
         addRedaction(redactions, `${path}[${index}].rationale`, reason);
       }
     });
@@ -1622,8 +1749,8 @@ export function parseProject(value) {
     throw new Error(`Invalid Systems Mapping project JSON: ${error.message}`);
   }
   assertSafeProjectStructure(parsed);
-  if (parsed?.schemaVersion !== 1 && parsed?.schemaVersion !== PROJECT_SCHEMA_VERSION) {
-    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1 or ${PROJECT_SCHEMA_VERSION}.`);
+  if (![1, 2, 3, 4, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
+    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, or ${PROJECT_SCHEMA_VERSION}.`);
   }
   return validateProject(migrateLegacyProject(parsed));
 }

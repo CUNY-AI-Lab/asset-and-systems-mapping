@@ -26,6 +26,7 @@ import {
 import {
   composeEffectivePrompt,
   CONFIG_KINDS,
+  coursePartsForTeachingProfile,
   EFFECTIVE_SCALES,
   fingerprint,
   FIXED_GUARDRAILS,
@@ -112,6 +113,18 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'evaluatedAt must be an ISO timestamp string. configurationSnapshot must be an object; the server will replace both with authoritative values.',
   'Do not add review, prose outside the object, Markdown, graph operations, or any unlisted key.',
 ].join('\n');
+const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
+  'MAP CONNECTION JSON CONTRACT',
+  'The student has already chosen the nodes. Use only the node IDs supplied in the project input.',
+  'Use the student description to suggest connections among those nodes. Do not add nodes or facts that the student did not provide.',
+  'Do not suggest a connection that already appears in existingConnections.',
+  'Return one object with exactly one key: connections.',
+  'connections must be an array of no more than 12 objects.',
+  'Each connection must contain exactly four keys: source, target, verb, rationale.',
+  'source and target must be different node IDs from the supplied nodes.',
+  'verb must be a short, plain-language relationship phrase. rationale must briefly connect the suggestion to the student description.',
+  'Do not add confidence scores, evidence claims, Markdown, or prose outside the object.',
+].join('\n');
 const PROTOTYPE_EVENTS = new Set([
   'project_started',
   'project_resumed',
@@ -125,6 +138,21 @@ const PROTOTYPE_EVENTS = new Set([
   'recovery_exported',
 ]);
 const PROTOTYPE_STAGES = new Map(SYSTEMS_MAPPING_STAGES.map(({ label }, index) => [label, index]));
+[
+  ['Choose a scale', 0],
+  ['Add a source', 0],
+  ['Review suggestions', 1],
+  ["Check your instructor's response", 1],
+  ['Choose what to map', 2],
+  ['Connect the map', 2],
+  ['Build the map', 3],
+  ['Revise and export', 4],
+].forEach(([label, index]) => PROTOTYPE_STAGES.set(label, index));
+const canonicalStageId = (stageId) => ({
+  'choose-scale': 'add-source',
+  'check-instructor-response': 'review-suggestions',
+  'connect-map': 'choose-what-to-map',
+})[stageId] || stageId;
 const PROTOTYPE_METADATA_RULES = Object.freeze({
   stageIndex: { type: 'integer', min: 0, max: 6 },
   sourceCount: { type: 'integer', min: 0, max: 1000 },
@@ -479,7 +507,8 @@ function validatePreflightEvaluationRequest(value) {
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
-  if (!SYSTEMS_MAPPING_STAGE_IDS.includes(value.stageId)) throw new HttpError(400, 'stageId is not supported.');
+  const stageId = canonicalStageId(value.stageId);
+  if (!SYSTEMS_MAPPING_STAGE_IDS.includes(stageId)) throw new HttpError(400, 'stageId is not supported.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { max: 8000 });
   const sourceRecord = validateSourceRecord(value.sourceRecord);
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
@@ -487,13 +516,89 @@ function validatePreflightEvaluationRequest(value) {
   return {
     projectMetadata,
     activeScale: value.activeScale,
-    stageId: value.stageId,
+    stageId,
     inquiry,
     sourceRecord,
     sourceMaterial,
     projectOverlay,
     customInstructions,
   };
+}
+
+function validateConnectionSuggestionRequest(value) {
+  assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay']);
+  if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
+  const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
+  const prompt = requireSnapshotText(value.prompt, 'prompt', { max: 4000 });
+  if (!Array.isArray(value.nodes) || value.nodes.length < 2 || value.nodes.length > 50) {
+    throw new HttpError(400, 'nodes must contain between 2 and 50 items.');
+  }
+  const nodes = value.nodes.map((node, index) => {
+    const name = `nodes[${index}]`;
+    assertOnlyNamedKeys(node, ['id', 'label', 'type'], name);
+    requireObjectKeys(node, ['id', 'label', 'type'], name);
+    return {
+      id: requireSnapshotText(node.id, `${name}.id`, { max: 200 }),
+      label: requireSnapshotText(node.label, `${name}.label`, { max: 200 }),
+      type: requireSnapshotText(node.type, `${name}.type`, { max: 100 }),
+    };
+  });
+  const nodeIds = new Set(nodes.map(({ id }) => id));
+  if (nodeIds.size !== nodes.length) throw new HttpError(400, 'nodes must not contain duplicate IDs.');
+  if (!Array.isArray(value.relationships) || value.relationships.length > 100) {
+    throw new HttpError(400, 'relationships must be an array of no more than 100 items.');
+  }
+  const relationships = value.relationships.map((relationship, index) => {
+    const name = `relationships[${index}]`;
+    assertOnlyNamedKeys(relationship, ['source', 'target', 'verb'], name);
+    requireObjectKeys(relationship, ['source', 'target', 'verb'], name);
+    const source = requireSnapshotText(relationship.source, `${name}.source`, { max: 200 });
+    const target = requireSnapshotText(relationship.target, `${name}.target`, { max: 200 });
+    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
+      throw new HttpError(400, `${name} must connect two different supplied nodes.`);
+    }
+    return { source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { max: 100 }) };
+  });
+  const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
+  return {
+    activeScale: value.activeScale,
+    inquiry,
+    prompt,
+    nodes,
+    relationships,
+    projectOverlay,
+    customInstructions,
+  };
+}
+
+function validateGeneratedConnections(value, nodeIds) {
+  validateBoundedJson(value, 'generated connections', { maxSerialized: 32_000, maxObjectKeys: 80 });
+  assertOnlyNamedKeys(value, ['connections'], 'generated connections');
+  requireObjectKeys(value, ['connections'], 'generated connections');
+  if (!Array.isArray(value.connections) || value.connections.length > 12) {
+    throw new HttpError(400, 'generated connections must contain no more than 12 items.');
+  }
+  const seen = new Set();
+  return value.connections.map((connection, index) => {
+    const name = `generated connections.connections[${index}]`;
+    assertOnlyNamedKeys(connection, ['source', 'target', 'verb', 'rationale'], name);
+    requireObjectKeys(connection, ['source', 'target', 'verb', 'rationale'], name);
+    const source = requireSnapshotText(connection.source, `${name}.source`, { max: 200 });
+    const target = requireSnapshotText(connection.target, `${name}.target`, { max: 200 });
+    const verb = requireSnapshotText(connection.verb, `${name}.verb`, { max: 100 });
+    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
+      throw new HttpError(400, `${name} must connect two different supplied nodes.`);
+    }
+    const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
+    if (seen.has(key)) throw new HttpError(400, 'generated connections must not contain duplicates.');
+    seen.add(key);
+    return {
+      source,
+      target,
+      verb,
+      rationale: requireSnapshotText(connection.rationale, `${name}.rationale`, { max: 1000 }),
+    };
+  });
 }
 
 function validatePreflightConsumeRequest(value) {
@@ -536,6 +641,7 @@ function evaluationConfigSnapshot(effective, projectOverlay, customInstructions,
       fingerprint: shared.fingerprint,
       revision: shared.revision,
       moduleVersions: shared.moduleVersions,
+      courseParts: shared.courseParts,
     },
     projectOverlay,
     effectiveFingerprint: fingerprint(`${shared.fingerprint}:${fingerprint(JSON.stringify({ projectOverlay, customInstructions }))}`),
@@ -746,11 +852,14 @@ async function teacherPreflightDetail(db, submissionId) {
 
 function preflightSubmissionSummaryRow(row) {
   const projectMetadata = storedJson(row.projectMetadata);
+  const configSnapshot = row.configSnapshot === undefined ? null : storedJson(row.configSnapshot);
+  const coursePart = configSnapshot?.shared?.courseParts?.find(({ scaleIds }) => scaleIds.includes(row.activeScale)) ?? null;
   return {
     id: row.id,
     projectId: projectMetadata.projectId ?? projectMetadata.id,
     projectTitle: projectMetadata.title || '',
     activeScale: row.activeScale,
+    coursePart,
     status: row.status,
     decision: row.decision ?? null,
     revision: row.revision,
@@ -886,7 +995,7 @@ async function listModules(db, where = '', parameters = []) {
 async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null) {
   if (!CONFIG_KINDS.includes(configKind)) throw new HttpError(400, 'configKind must be preflight or builder.');
   if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, macro, or integration.');
-  const effectiveStageId = stageId || (configKind === 'builder' ? 'build-map' : 'review-suggestions');
+  const effectiveStageId = canonicalStageId(stageId || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
   if (!systemsMappingStage(effectiveStageId)) throw new HttpError(400, 'stageId is not supported.');
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
   const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
@@ -910,6 +1019,7 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
       ...modules.map(({ id, revision, fingerprint: moduleFingerprint }) => ({ id, revision, fingerprint: moduleFingerprint })),
       { id: `teaching-profile.${teachingProfile.id}`, revision: teachingProfile.revision, fingerprint: teachingProfile.fingerprint },
     ],
+    courseParts: coursePartsForTeachingProfile(teachingProfile.profile),
   };
   if (includeModules) {
     snapshot.modules = modules;
@@ -927,6 +1037,7 @@ function publicSnapshotMetadata(snapshot) {
     revision: snapshot.revision,
     moduleVersions: snapshot.moduleVersions,
     guardrailsFingerprint: fingerprint(snapshot.fixedGuardrails),
+    courseParts: snapshot.courseParts,
   };
 }
 
@@ -1860,6 +1971,48 @@ export function createSystemsMappingApp(options = {}) {
     return context.json({ evaluation: await preflightEvaluationById(db, evaluationId) }, 201);
   });
 
+  app.post('/api/map/connections', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    if (!ollamaConfig) throw new HttpError(503, 'Connection suggestions are not available for this class.');
+    const body = await parseJsonBody(context, JSON_BODY_LIMIT_BYTES);
+    const input = validateConnectionSuggestionRequest(body);
+    const sourceMetadata = { nodes: input.nodes, existingConnections: input.relationships };
+    if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
+      throw new HttpError(413, 'Use fewer nodes or existing connections for this request.');
+    }
+    const rate = preflightEvaluationLimiter.take(student.sessionRef);
+    if (!rate.allowed) {
+      throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
+    }
+    const release = preflightEvaluationCapacity.acquire();
+    if (!release) throw tooManyAttempts(1, 'Connection suggestions are busy. Try again shortly.');
+    try {
+      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, 'choose-what-to-map');
+      const systemPrompt = input.customInstructions
+        ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`
+        : `${effective.effectivePrompt}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`;
+      let connections;
+      try {
+        const generated = await ollamaRequest({
+          systemPrompt,
+          activeScale: input.activeScale,
+          inquiry: input.inquiry.trim() || 'No guiding inquiry supplied.',
+          sourceMetadata,
+          sourceText: input.prompt,
+        }, ollamaConfig);
+        const existingConnections = new Set(input.relationships.map(({ source, target, verb }) => `${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
+        connections = validateGeneratedConnections(generated.suggestion, new Set(input.nodes.map(({ id }) => id)))
+          .filter(({ source, target, verb }) => !existingConnections.has(`${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
+      } catch {
+        throw new HttpError(502, 'Connection suggestions are temporarily unavailable.');
+      }
+      return context.json({ connections }, 201);
+    } finally {
+      release();
+    }
+  });
+
   app.post('/api/preflight/submissions', async (context) => {
     const student = await currentStudentSession(context, db, now);
     if (!student) throw new HttpError(401, 'Student class access is required.');
@@ -1994,7 +2147,8 @@ export function createSystemsMappingApp(options = {}) {
     const parameters = status === 'all' ? [200] : [status, 200];
     const rows = await db.prepare(`
       SELECT ps.id, ps.project_metadata_json AS projectMetadata,
-        ps.active_scale AS activeScale, ps.status, ps.decision, ps.revision,
+        ps.config_snapshot_json AS configSnapshot, ps.active_scale AS activeScale,
+        ps.status, ps.decision, ps.revision,
         ps.created_at AS createdAt, ps.updated_at AS updatedAt, ps.reviewed_at AS reviewedAt
       FROM preflight_submissions ps
       ${where}
@@ -2115,7 +2269,7 @@ export function createSystemsMappingApp(options = {}) {
     const sourceProfile = body.sourceProfileId === undefined
       ? await activeTeachingProfile(db)
       : await teachingProfileById(db, requireTeachingProfileId(body.sourceProfileId, 'sourceProfileId'));
-    if (!sourceProfile) throw new HttpError(404, 'Source course settings not found.');
+    if (!sourceProfile) throw new HttpError(404, 'The course settings you chose were not found.');
     const profileId = randomBytes(24).toString('base64url');
     const occurredAt = new Date(clockValue(now)).toISOString();
     await inTransaction(db, async () => {
@@ -2244,7 +2398,7 @@ export function createSystemsMappingApp(options = {}) {
     if (!profile) throw new HttpError(404, 'Course settings version not found.');
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
-    const stageId = context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions');
+    const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
     const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId);
     return context.json({
       configKind: snapshot.configKind,
@@ -2257,7 +2411,7 @@ export function createSystemsMappingApp(options = {}) {
   });
 
   app.get('/api/teacher/modules', () => {
-    throw new HttpError(410, 'Teacher configuration now follows the seven stages in Course settings.');
+    throw new HttpError(410, 'Teacher configuration now follows the sections in Course settings.');
   });
 
   app.put('/api/teacher/modules/:id', () => {
@@ -2265,7 +2419,7 @@ export function createSystemsMappingApp(options = {}) {
   });
 
   app.get('/api/teacher/history', () => {
-    throw new HttpError(410, 'Version history is available in Course settings.');
+    throw new HttpError(410, 'Change history is available in Course settings.');
   });
 
   app.get('/api/teacher/effective', () => {
@@ -2280,7 +2434,7 @@ export function createSystemsMappingApp(options = {}) {
     if (!student && !teacher) throw new HttpError(401, 'Student class access or teacher authentication is required.');
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
-    const stageId = context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions');
+    const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
     return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false, null, stageId)));
   });
 

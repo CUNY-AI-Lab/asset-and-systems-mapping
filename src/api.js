@@ -41,6 +41,10 @@ export function createPreflightEvaluation(payload) {
   return apiRequest('/api/preflight/evaluations', { method: 'POST', body: payload });
 }
 
+export function suggestMapConnections(payload) {
+  return apiRequest('/api/map/connections', { method: 'POST', body: payload });
+}
+
 export function submitPreflightSubmission(payload) {
   return apiRequest('/api/preflight/submissions', { method: 'POST', body: payload });
 }

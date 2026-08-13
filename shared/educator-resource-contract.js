@@ -7,7 +7,8 @@ export const EDUCATOR_MODULE_EFFECTS = Object.freeze([
   'runtime-behavior',
 ]);
 export const TEACHING_PROFILE_SCHEMA_VERSION = 'cuny.teaching-profile.v1';
-export const COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v1';
+export const COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v2';
+export const LEGACY_COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v1';
 
 function fail(message) {
   throw new TypeError(`Educator resource: ${message}`);
@@ -167,9 +168,39 @@ function normalizeProgressionStage(value, name) {
   });
 }
 
-export function normalizeCourseProgression(value, { stageIds = [] } = {}) {
+function normalizeProgressionPart(value, name, stageIds, allowedScaleIds) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${name} must be an object.`);
+  const expectedKeys = ['id', 'label', 'scaleIds', 'stages'];
+  const keys = Object.keys(value);
+  if (keys.some((key) => !expectedKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
+    fail(`${name} fields do not match the supported schema.`);
+  }
+  if (!Array.isArray(value.scaleIds) || value.scaleIds.length < 1) fail(`${name}.scaleIds must be a non-empty array.`);
+  const scaleIds = value.scaleIds.map((scaleId, index) => identifier(scaleId, `${name}.scaleIds[${index}]`));
+  if (new Set(scaleIds).size !== scaleIds.length) fail(`${name}.scaleIds must not contain duplicates.`);
+  if (scaleIds.some((scaleId) => !allowedScaleIds.has(scaleId))) fail(`${name}.scaleIds contains an unsupported scale.`);
+  if (!value.stages || typeof value.stages !== 'object' || Array.isArray(value.stages)) {
+    fail(`${name}.stages must be an object.`);
+  }
+  const allowedStages = new Set(stageIds);
+  const suppliedStages = Object.keys(value.stages);
+  if (suppliedStages.some((key) => !allowedStages.has(key)) || stageIds.some((key) => !suppliedStages.includes(key))) {
+    fail(`${name}.stages do not match the registered progression.`);
+  }
+  return Object.freeze({
+    id: identifier(value.id, `${name}.id`),
+    label: profileText(value.label, `${name}.label`, { maximum: 120 }),
+    scaleIds: Object.freeze(scaleIds),
+    stages: Object.freeze(Object.fromEntries(stageIds.map((stageId) => [
+      stageId,
+      normalizeProgressionStage(value.stages[stageId], `${name}.stages.${stageId}`),
+    ]))),
+  });
+}
+
+export function normalizeCourseProgression(value, { stageIds = [], scaleIds = [] } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('course progression must be an object.');
-  const expectedKeys = ['schemaVersion', 'stages'];
+  const expectedKeys = ['schemaVersion', 'parts'];
   const keys = Object.keys(value);
   if (keys.some((key) => !expectedKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
     fail('course progression fields do not match the supported schema.');
@@ -177,21 +208,20 @@ export function normalizeCourseProgression(value, { stageIds = [] } = {}) {
   if (value.schemaVersion !== COURSE_PROGRESSION_SCHEMA_VERSION) {
     fail(`course progression schemaVersion must be ${COURSE_PROGRESSION_SCHEMA_VERSION}.`);
   }
-  if (!value.stages || typeof value.stages !== 'object' || Array.isArray(value.stages)) {
-    fail('course progression stages must be an object.');
+  const allowedScaleIds = new Set(scaleIds);
+  const parts = uniqueRecords(
+    value.parts,
+    'parts',
+    (part, name) => normalizeProgressionPart(part, name, stageIds, allowedScaleIds),
+  );
+  const suppliedScaleIds = parts.flatMap((part) => part.scaleIds);
+  if (new Set(suppliedScaleIds).size !== suppliedScaleIds.length) fail('course progression assigns a scale to more than one part.');
+  if (suppliedScaleIds.length !== scaleIds.length || scaleIds.some((scaleId) => !suppliedScaleIds.includes(scaleId))) {
+    fail('course progression parts do not cover the registered scales.');
   }
-  const allowedStages = new Set(stageIds);
-  const suppliedStages = Object.keys(value.stages);
-  if (suppliedStages.some((key) => !allowedStages.has(key)) || stageIds.some((key) => !suppliedStages.includes(key))) {
-    fail('course progression stages do not match the registered progression.');
-  }
-  const stages = Object.fromEntries(stageIds.map((stageId) => [
-    stageId,
-    normalizeProgressionStage(value.stages[stageId], `stages.${stageId}`),
-  ]));
   const normalized = Object.freeze({
     schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
-    stages: Object.freeze(stages),
+    parts: Object.freeze(parts),
   });
   if (JSON.stringify(normalized).length > 60_000) fail('course progression is too large.');
   return normalized;

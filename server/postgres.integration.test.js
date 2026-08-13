@@ -139,7 +139,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     });
     try {
       await second.ready;
-      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(5);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(6);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count).toBe(2);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_modules').get()).count).toBe(60);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_module_history').get()).count).toBe(60);
@@ -177,7 +177,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     expect(Buffer.isBuffer(account.passphraseSalt)).toBe(true);
 
     const catalog = await (await request(system, '/api/teacher/profiles', { headers: { cookie } })).json();
-    expect(catalog.resource.modules).toHaveLength(7);
+    expect(catalog.resource.modules).toHaveLength(5);
     const created = await jsonMutation(system, 'POST', '/api/teacher/profiles', {
       name: 'Concurrent course draft',
       note: 'Exercise concurrent profile updates',
@@ -189,13 +189,16 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       name: 'Concurrent course draft',
       profile: {
         ...draft.profile.profile,
-        stages: {
-          ...draft.profile.profile.stages,
-          'review-suggestions': {
-            ...draft.profile.profile.stages['review-suggestions'],
-            guidance: suffix,
+        parts: draft.profile.profile.parts.map((part, index) => index === 0 ? {
+          ...part,
+          stages: {
+            ...part.stages,
+            'review-suggestions': {
+              ...part.stages['review-suggestions'],
+              guidance: suffix,
+            },
           },
-        },
+        } : part),
       },
       note: suffix,
       expectedRevision: draft.profile.revision,
@@ -222,7 +225,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     const hostedActivity = await jsonMutation(system, 'POST', '/api/prototype/events', {
       event: 'stage_viewed',
       stage: 'Review suggestions',
-      metadata: { stageIndex: 2 },
+      metadata: { stageIndex: 1 },
     }, studentCookie);
     expect(hostedActivity.status).toBe(202);
     expect(await hostedActivity.json()).toEqual({ accepted: true });
@@ -230,7 +233,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       SELECT stage, metadata_json AS metadata
       FROM prototype_events WHERE event_name = ?
       ORDER BY id DESC LIMIT 1
-    `).get('stage_viewed')).toEqual({ stage: 2, metadata: '{"stageIndex":2}' });
+    `).get('stage_viewed')).toEqual({ stage: 1, metadata: '{"stageIndex":1}' });
     const hostedProjectId = `hosted_postgres_${Date.now()}`;
     const hostedEvaluation = await jsonMutation(system, 'POST', '/api/preflight/evaluations', preflightEvaluation(
       hostedProjectId,
@@ -254,7 +257,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     const hostedRecord = (await hostedSubmission.json()).submission;
     expect(hostedRecord).toMatchObject({ status: 'pending', revision: 1 });
     expect(hostedRecord).not.toHaveProperty('sourceMaterial');
-    const focusedQuestion = 'Which source passage most directly supports the relationship you mapped?';
+    const focusedQuestion = 'Which passage in the memo most directly supports the relationship you mapped?';
     const hostedDecision = await jsonMutation(
       system,
       'POST',
@@ -341,7 +344,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       const event = await localMutation(localSystem, '/api/prototype/events', {
         event: 'node_moved',
         stage: 'Build the map',
-        metadata: { stageIndex: 5, nodeCount: 4, keyboard: true },
+        metadata: { stageIndex: 3, nodeCount: 4, keyboard: true },
       }, cookie);
       expect(event.status).toBe(202);
       expect((await localSystem.db.prepare('SELECT COUNT(*) AS count FROM student_sessions').get()).count)
@@ -349,7 +352,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       const stored = await localSystem.db.prepare(`
         SELECT metadata_json AS metadata FROM prototype_events WHERE event_name = ?
       `).get('node_moved');
-      expect(stored.metadata).toBe('{"stageIndex":5,"nodeCount":4,"keyboard":true}');
+      expect(stored.metadata).toBe('{"stageIndex":3,"nodeCount":4,"keyboard":true}');
       expect(stored.metadata).not.toContain('source');
 
       const projectId = `postgres_project_${Date.now()}`;

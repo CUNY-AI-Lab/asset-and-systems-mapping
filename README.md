@@ -2,19 +2,23 @@
 
 # Systems Mapping
 
-Systems Mapping is a resource mapping application for place-based methods of ethnographic inquiry and conceptualization. The tool spans a seven-stage student learning process with a Teacher Console for instructors to customize situated applications of an open-weight language model to support asset and systems mapping among undergraduate learners.
+Systems Mapping supports place-based ethnographic inquiry through one persistent asset and systems map. Students revisit five stages across four scales: Part 1 groups Micro and Meso; Part 2 groups Macro and Integration. Teacher Console lets instructors adapt guidance and course material for each stage and part. When a language model is enabled, it can suggest connections, but students decide what to edit, accept, or reject.
 
-The implementation is local-first. Student work remains in the browser while user records and shared prompt configurations live on the classroom server in SQLite locally or PostgreSQL if hosted on the cloud.
+Implementation is local-first. Project state stays in browser storage. Submitted evaluations and review snapshots, teacher accounts, and shared course configuration live on classroom server in SQLite locally or PostgreSQL when hosted.
 
 ## Student workflow
 
-1. **Choose a scale** — choose the current micro, meso, macro, or integration release.
-2. **Add a source** — import or paste a memo and complete its source record.
-3. **Review suggestions** — read at most three short prompts that return you to source evidence, then add a note for the instructor.
-4. **Check your instructor's response** — wait for and explicitly refresh the instructor decision.
-5. **Choose what to map** — after approval, accept, edit, defer, or reject proposed nodes and relationships.
-6. **Build the map** — move and annotate nodes and relationships, pan or zoom the canvas, and inspect the legend.
-7. **Revise and export** — record a reflection and export JSON, CSV, or Markdown with provenance.
+- choose a scale and add a source asks students to set the current scale, add a source, and record the details needed to use it in the map
+- review source with your instructor asks students to identify what the evidence supports, what remains uncertain, and what they want to ask their instructor
+- choose nodes and describe connections asks students to choose supported elements, describe how they connect, and decide which model suggestions to keep
+- build map asks students to arrange, connect, and annotate selected elements while linking each claim to evidence
+- revise and export asks students to reconsider their claims, record what changed, and decide what can be shared
+
+The five stages are repeatable, and every stage and the map are directly available in every cycle. Part 1 contains Micro and Meso; Part 2 contains Macro and Integration. These parts organize course work without adding stages or map layers. Nodes and relationships keep their scale tags, positions, evidence, and annotations as the map accumulates. The map opens with every active scale layer visible; students may combine or hide layers to compare levels of analysis.
+
+After choosing nodes, the student describes how they connect. The language model receives that description, the chosen nodes, and current Teacher Console guidance. It proposes relationships without adding them automatically. The student can change both endpoints and the wording, accept or reject each suggestion, and open the map with only accepted connections.
+
+Generating guidance does not edit the source or map. The student sees only a few short prompts tied to the source—never criterion IDs, scores, outcomes, or the full model review. Sending a note to the instructor creates a review snapshot. Instructor feedback is advisory: pending, approved, or returned work never prevents the student from opening another stage, choosing nodes, or using the map.
 
 ## Run locally
 
@@ -47,17 +51,17 @@ pnpm build
 
 Fresh databases seed unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer, never default passphrases. To claim one account, start the server with a temporary, server-only `SYSTEMS_MAPPING_TEACHER_BOOTSTRAP_TOKEN` of 16–256 characters. A token authorizes one claim for that server process; claim the second account with a fresh token on a later restart. Passphrases are scrypt-derived, and teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
 
-The Teacher Console opens on **Review submissions**. Its queue loads before course settings. Selecting one submission reveals the memo and student note. Full criteria and scores remain teacher-only and closed by default behind **Model review details**. The instructor writes one focus for the student, then chooses **Approve**, **Approve with a question**, or **Reject**. The middle choice also requires one question. Optimistic revisions prevent stale decisions, and accepted decisions append an immutable review event.
+The Teacher Console opens on **Review submissions**. Its queue loads before course settings. Selecting one submission reveals the source and student note. A collapsed **Review details** section groups evidence excerpts, possible follow-up, and open questions without presenting a model score as the instructor's judgment. The instructor writes one focus for the student, then chooses **Add feedback**, **Add feedback and a question**, or **Recommend another pass**. These actions record asynchronous feedback without changing student work or controlling stage and map access. Optimistic revisions prevent stale decisions, and accepted updates append an immutable review event.
 
-**Course settings** follows the same seven stages students see. A teacher opens one stage at a time and writes how the model should guide that stage, then may paste course material the model can draw on. The prompt includes the current stage and the stages already completed in their original order. Later stages stay out of the request. Course material enters the prompt as reference content rather than a competing instruction source.
+**Course settings** follows the same five stages students revisit. A teacher opens one stage at a time and writes how the model should guide it, then may paste course material the model can draw on. Only the current stage's guidance and material enter that model request. This keeps each intervention focused and lets an instructor revise one part of the cycle across successive class sessions without building a cumulative prompt. Course material enters as reference content rather than a competing instruction source.
 
 One published version governs new model requests. A teacher creates a draft from the published or an earlier version, saves changes with a note, previews the saved prompt by stage and scale, and publishes it. Publishing retires the earlier version without erasing its history. Cloning an earlier version provides rollback without editing a published record in place.
 
-Fixed grounding, privacy, schema, and student-confirmation rules remain code-owned. The server still composes those rules from smaller internal parts, but it exposes no internal configuration matrix to the Teacher Console or its retired module endpoints. Deterministic STEM Splitter records the published version and active stage as provenance without changing its fixed score. Ollama Cloud receives the published guidance and course material for the relevant stretch of the progression.
+Fixed evidence, privacy, output, and student-confirmation rules remain code-owned. The server still composes those rules from smaller internal parts, but it exposes no internal configuration matrix to the Teacher Console or its retired module endpoints. The deterministic evaluator records the published version and current section without changing its fixed score. Ollama Cloud receives the published guidance and course material for the current section.
 
 ## Suggestion runtime
 
-With Ollama disabled, the classroom server runs the deterministic **STEM Splitter** evaluator. It applies fixed H1–H4 and C1–C8 rules with a six-of-eight threshold. Those criteria and scores are available only to the teacher inside the collapsed model-review details. The server projects no more than three short, source-directed prompts to the student. Teacher prompt edits and project instructions are recorded as configuration provenance but do not change deterministic scoring. This mode is reproducible and has no model-provider egress; it is not proof that a language model ran.
+With Ollama disabled, the classroom server runs its deterministic evaluator. It applies fixed H1–H4 and C1–C8 rules internally to validate the server response. The Teacher Console turns that result into evidence excerpts, possible follow-up, and open questions while leaving the instructional judgment to the teacher. The server shows the student no more than three short questions tied to passages in the source. Changes to teacher and project instructions are recorded but do not change deterministic scoring. This mode is reproducible and sends nothing to an outside model provider; it is not proof that a language model ran. Connection suggestions require Ollama and do not fall back to deterministic rules.
 
 Ollama Cloud is explicit opt-in:
 
@@ -68,7 +72,7 @@ OLLAMA_CLOUD_URL=https://ollama.com
 OLLAMA_MODEL=gpt-oss:20b
 ```
 
-When enabled, the server sends the published guidance and course material through the student's current stage, bounded project instructions, inquiry, scale, source metadata, and memo text to Ollama Cloud. Source text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the exact H1–H4/C1–C8 JSON schema; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic scoring.
+When enabled, the server sends the published guidance and course material for the current section, bounded project instructions, inquiry, scale, source details, and source text to Ollama Cloud. Source text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the exact H1–H4/C1–C8 JSON schema; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic scoring.
 
 The credential previously pasted into chat must be treated as exposed. It has deliberately not been placed in the local `.env` or Railway. Revoke it and configure a newly rotated key before enabling Ollama Cloud. Never prefix `OLLAMA_API_KEY` with `VITE_` or otherwise expose it to client code.
 
@@ -76,13 +80,13 @@ The credential previously pasted into chat must be treated as exposed. It has de
 
 - Browser `localStorage` holds the current student project, stage, graph records, node positions, viewport, node/relationship/map annotations, and the private capability needed to refresh an instructor response. Save failures preserve the in-memory project and offer recovery export.
 - The classroom database holds teacher identities and sessions, course profiles and append-only profile events, code-owned base configuration, bounded prototype events, authoritative evaluations, review snapshots, and append-only decision events.
-- Unsubmitted evaluations expire after 1 day. Pending review snapshots are retained for 30 days; decided snapshots for 180 days. Retention deletes source-bearing snapshots and decision rows, then keeps only a hashed, append-only purge receipt.
+- Unsubmitted evaluations expire after 1 day. Pending review snapshots are retained for 30 days; decided snapshots for 180 days. Retention deletes snapshots that contain source text and their decision rows, then keeps only a hashed, append-only purge receipt.
 - Review and evaluation IDs are random bearer capabilities. Every portable export redacts both IDs. Student status responses are deliberately minimal and never return source text, prompt content, configuration, or teacher identity.
 - Canonical JSON preserves stable graph IDs, layout, viewport, annotations, and redaction manifests. CSV cells are neutralized against spreadsheet formulas.
 
 ## Hosted and Railway contract
 
-The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Public-demo deployment `3e7210a0-33a4-4a2e-8d26-b15508c8c5ab` reached `SUCCESS`; `/api/health` returned `{"status":"ok"}`, the expected hardening headers and Secure cookie attributes passed readback, and class code `101` created a course-server session that was then closed. Maria's teacher login also passed and its verification session was closed. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
+The PostgreSQL-backed Railway service is live at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). Five-stage snapshot deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` reached `SUCCESS`; migration completed and `/api/health` returned `{"status":"ok"}`. Class code `101` created a course-server session, public configuration returned Part 1 and Part 2 scale groupings, and logout removed that session. Served bundles matched current five-stage and non-blocking review copy, and deployment logs showed no 5xx responses during verification. A full live Teacher Console review and current header readback remain follow-up. Ollama remains disabled and no provider key is installed. Hosted mode requires these server variables together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>
@@ -107,13 +111,13 @@ Black, white, and gray remain dominant. Restrained teal, amber, and plum accents
 
 ## Evidence and authority
 
-The current active-beta tree passed 146 tests with 3 PostgreSQL-gated skips; the server group passed 60 tests with the same 3 integration gates. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
+The current active-beta tree passed 160 tests with 3 PostgreSQL integration tests skipped in the ordinary local run. It produced a successful production build, and the production dependency audit reported no known vulnerabilities. Source and application-bundle scans found no credential values; the application bundle contains no local class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Numeric `101` values found in a library bundle belong only to unrelated glyph tables.
 
-GitHub readback confirmed that PR [#3](https://github.com/CUNY-AI-Lab/systems-mapping/pull/3) merged the production-aligned tree into `main` at commit `a4bdc0d`. The tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
+GitHub readback confirmed that PR [#3](https://github.com/CUNY-AI-Lab/systems-mapping/pull/3) merged an earlier production-aligned tree into `main` at commit `a4bdc0d`. Current five-stage implementation is checkpointed at `4bb915a` on local reconciliation branch `codex/reconcile-five-stage-release`; GitHub `main` does not contain it until branch review and merge. Tracked publication excludes environment files, databases, local state, screenshots, and test fixtures.
 
-The disposable browser journeys verified the source-return prompts, collapsed **Model review details**, **Approve with a question**, the instructor focus and question, and the candidate → map → revision flow. A fresh progression-editor journey verified create → save → preview → publish, the current/completed-stage prompt boundary, and all seven stage controls. A separate four-viewport recapture verified the current Course settings editor at 320, 390, 430, and 1440 px with no document overflow or browser warnings/errors. The original 50-PNG archive remains at `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the current Course settings recapture is archived at `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
+Existing disposable browser journeys and screenshot archives document earlier workflows. One earlier five-stage journey exercised a then-current instructor pause; that receipt is historical and does not verify current advisory, non-blocking review behavior. Current workflow has five stages, with node selection and connection prompting combined, Part 1 grouping Micro and Meso, and Part 2 grouping Macro and Integration. Current annotated package is `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ui-qa-2026-08-12.zip`; it contains five paired desktop/mobile views, including a populated multi-scale map, and passes archive and visual inspection. Railway serves this current working-tree snapshot, while GitHub still needs a reviewed, merged source commit. Design specification image is at `docs/concepts/semester-map-cycle-spec-v1.png`.
 
-Simple **Approve**, **Reject**, reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
+Full live Teacher Console review, rendered reload/export restoration, and live Ollama execution remain active-beta follow-up rather than claims of this deterministic release.
 
 - [Source ledger](./docs/SOURCE_LEDGER.md)
 - [Requirements](./docs/REQUIREMENTS.md)
@@ -121,5 +125,6 @@ Simple **Approve**, **Reject**, reload/export restoration, and live Ollama execu
 - [Security review](./docs/SECURITY_REVIEW.md)
 - [Teacher control across both applications](./docs/EDUCATOR_RESOURCE_FRAMEWORK.md)
 - [Release evidence ledger](./TODO.md)
+- [August 13 reconciliation record](./docs/RECONCILIATION_2026-08-13.md)
 
 The source ledger remains authoritative about provenance: the fuller Drive specification governs behavior; the supplied HTML/DOCX guide interaction; CALI materials provide context; Zach's August 5 notes remain unconfirmed minutes; and STEM Splitter is an architecture precedent. No Maria-specific Zoom summary was found, so none is represented as a confirmed design decision.

@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CLAIM_STATES,
   NODE_TYPES,
   PROJECT_LIMITS,
   SCALE_ORDER,
+  SCALE_PARTS,
   SCALES,
   configFingerprint,
   createPortableProject,
@@ -17,7 +18,6 @@ import {
   validateProject,
   withDefaultNodeLayout,
 } from './domain.js';
-import TeacherDashboard from './TeacherDashboard.jsx';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   ApiError,
@@ -28,11 +28,17 @@ import {
   getStudentSession,
   recordPrototypeEvent,
   requestStudentAccess,
+  suggestMapConnections,
   submitPreflightSubmission,
 } from './api.js';
 
-const STORAGE_KEY = 'systems-mapping-studio.project.v2';
-const LEGACY_STORAGE_KEY = 'systems-mapping-studio.project.v1';
+const STORAGE_KEY = 'systems-mapping-studio.project.v5';
+const LEGACY_STORAGE_KEYS = [
+  'systems-mapping-studio.project.v4',
+  'systems-mapping-studio.project.v3',
+  'systems-mapping-studio.project.v2',
+  'systems-mapping-studio.project.v1',
+];
 const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
 const MAX_SOURCE_CHARACTERS = 500_000;
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
@@ -50,6 +56,7 @@ const RELATION_VOCABULARY_TEXT_LIMIT = PROJECT_LIMITS.relationVocabulary * (RELA
 const VIEWPORT_LIMITS = { minZoom: 0.5, maxZoom: 2, minPan: -840, maxPan: 840 };
 
 const STAGES = SYSTEMS_MAPPING_STAGES;
+const TeacherDashboard = lazy(() => import('./TeacherDashboard.jsx'));
 
 const REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
 const REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
@@ -65,8 +72,11 @@ function invalidatePreflight(draft) {
 function loadProject() {
   try {
     const current = window.localStorage.getItem(STORAGE_KEY);
-    const legacy = current === null ? window.localStorage.getItem(LEGACY_STORAGE_KEY) : null;
-    const saved = current ?? legacy;
+    const legacyEntry = current === null
+      ? LEGACY_STORAGE_KEYS.map((key) => [key, window.localStorage.getItem(key)]).find(([, value]) => value !== null)
+      : null;
+    const saved = current ?? legacyEntry?.[1] ?? null;
+    const sourceKey = current !== null ? STORAGE_KEY : legacyEntry?.[0] ?? null;
     if (saved === null) {
       return { project: createDefaultProject(), loadError: null, recovery: null, hasSavedProject: false, persistenceBlocked: false, sourceKey: null };
     }
@@ -77,7 +87,7 @@ function loadProject() {
         recovery: null,
         hasSavedProject: true,
         persistenceBlocked: false,
-        sourceKey: current === null ? LEGACY_STORAGE_KEY : STORAGE_KEY,
+        sourceKey,
       };
     } catch (error) {
       return {
@@ -86,7 +96,7 @@ function loadProject() {
         recovery: saved,
         hasSavedProject: false,
         persistenceBlocked: true,
-        sourceKey: current === null ? LEGACY_STORAGE_KEY : STORAGE_KEY,
+        sourceKey,
       };
     }
   } catch (error) {
@@ -116,6 +126,7 @@ function handleCompositeKey(event, values, current, onChange) {
 
 function invalidateSubmissionDerived(draft, field, value) {
   const textChanged = field === 'text' && draft.submission.text !== value;
+  const priorFingerprint = draft.submission.fingerprint || stableId('src', draft.submission.text);
   draft.submission[field] = value;
   invalidatePreflight(draft);
   if (!textChanged) return;
@@ -123,15 +134,15 @@ function invalidateSubmissionDerived(draft, field, value) {
   draft.submission.fingerprint = stableId('src', value);
   draft.candidates = { nodes: [], edges: [] };
   draft.graph.nodes.forEach((node) => {
-    if (node.sourceFingerprint || String(node.evidence || '').startsWith('Memo sentence')) {
+    if (node.scale === draft.activeScale && (node.sourceFingerprint === priorFingerprint || (!node.sourceFingerprint && String(node.evidence || '').startsWith('Memo sentence')))) {
       node.claimState = 'retired';
-      node.notes = [node.notes, 'Retired after the source memo changed; regenerate to re-anchor evidence.'].filter(Boolean).join(' ');
+      node.notes = [node.notes, 'Retired after the source changed; regenerate to re-anchor evidence.'].filter(Boolean).join(' ');
     }
   });
   draft.graph.edges.forEach((edge) => {
-    if (edge.sourceFingerprint || String(edge.evidence || '').startsWith('Memo sentence')) {
+    if (edge.scale === draft.activeScale && (edge.sourceFingerprint === priorFingerprint || (!edge.sourceFingerprint && String(edge.evidence || '').startsWith('Memo sentence')))) {
       edge.claimState = 'retired';
-      edge.notes = [edge.notes, 'Retired after the source memo changed; regenerate to re-anchor evidence.'].filter(Boolean).join(' ');
+      edge.notes = [edge.notes, 'Retired after the source changed; regenerate to re-anchor evidence.'].filter(Boolean).join(' ');
     }
   });
 }
@@ -147,6 +158,7 @@ function configurationSnapshot(project, kind) {
       fingerprint: shared.fingerprint,
       revision: shared.revision,
       moduleVersions: shared.moduleVersions,
+      ...(shared.courseParts ? { courseParts: structuredClone(shared.courseParts) } : {}),
     } : null,
     projectOverlay: {
       id: local.id,
@@ -165,6 +177,14 @@ function configurationSnapshot(project, kind) {
     },
     effectiveFingerprint: stableId('run', `${shared?.fingerprint || 'local'}:${configFingerprint(local)}:${project.activeScale}`),
   };
+}
+
+function coursePartsForProject(project) {
+  return project.teacherGovernance?.preflight?.courseParts || SCALE_PARTS;
+}
+
+function coursePartForScale(project, scale = project.activeScale) {
+  return coursePartsForProject(project).find((part) => part.scaleIds.includes(scale)) || SCALE_PARTS[0];
 }
 
 function projectMetadataForReview(project) {
@@ -227,6 +247,71 @@ function preflightEvaluationPayload(project) {
     sourceMaterial: project.submission.text,
     projectOverlay: projectOverlayForEvaluation(project.configs.preflight),
   };
+}
+
+function nodesForConnectionPrompt(project) {
+  const selected = project.candidates.nodes
+    .filter((node) => node.status === 'confirmed' || node.status === 'research lead');
+  const active = project.graph.nodes
+    .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.scale === project.activeScale);
+  return [...new Map([...active, ...selected].map((node) => [node.id, node])).values()];
+}
+
+function connectionSuggestionPayload(project, prompt) {
+  const nodes = nodesForConnectionPrompt(project);
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  return {
+    activeScale: project.activeScale,
+    inquiry: project.inquiry,
+    prompt,
+    nodes: nodes.map(({ id, label, type }) => ({ id, label, type })),
+    relationships: [...project.graph.edges, ...project.candidates.edges]
+      .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired' && nodeIds.has(edge.source) && nodeIds.has(edge.target))
+      .filter((edge, index, edges) => edges.findIndex((candidate) => candidate.source === edge.source && candidate.target === edge.target && candidate.verb.trim().toLocaleLowerCase() === edge.verb.trim().toLocaleLowerCase()) === index)
+      .map(({ source, target, verb }) => ({ source, target, verb })),
+    projectOverlay: projectOverlayForEvaluation(project.configs.builder),
+  };
+}
+
+function normalizeConnectionSuggestions(response, project) {
+  if (!response || typeof response !== 'object' || Array.isArray(response) || Object.keys(response).length !== 1 || !Array.isArray(response.connections)) {
+    throw new Error('The classroom server returned invalid connection suggestions.');
+  }
+  if (response.connections.length > 12) throw new Error('The classroom server returned too many connection suggestions.');
+  const nodeById = new Map(nodesForConnectionPrompt(project).map((node) => [node.id, node]));
+  const existingConnections = new Set(project.graph.edges
+    .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+    .map(({ source, target, verb }) => `${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
+  const seen = new Set();
+  return response.connections.map((connection, index) => {
+    if (!connection || typeof connection !== 'object' || Array.isArray(connection)) throw new Error('The classroom server returned an invalid connection.');
+    const keys = Object.keys(connection).sort();
+    if (keys.join(',') !== ['rationale', 'source', 'target', 'verb'].join(',')) throw new Error('The classroom server returned an invalid connection.');
+    const source = nodeById.get(connection.source);
+    const target = nodeById.get(connection.target);
+    if (!source || !target || source.id === target.id || typeof connection.verb !== 'string' || !connection.verb.trim() || connection.verb.length > RELATIONSHIP_VERB_LIMIT || typeof connection.rationale !== 'string' || !connection.rationale.trim() || connection.rationale.length > 1000) {
+      throw new Error('The classroom server returned an invalid connection.');
+    }
+    const key = `${source.id}\u0000${connection.verb.trim().toLocaleLowerCase()}\u0000${target.id}`;
+    if (seen.has(key)) throw new Error('The classroom server returned duplicate connection suggestions.');
+    seen.add(key);
+    const id = stableId('edge', `${source.id}:${connection.verb.trim()}:${target.id}:${index}`);
+    return {
+      id,
+      source: source.id,
+      target: target.id,
+      sourceLabel: source.label,
+      targetLabel: target.label,
+      verb: connection.verb.trim(),
+      scale: project.activeScale,
+      status: 'pending',
+      claimState: 'inference',
+      notes: '',
+      directed: true,
+      rationale: connection.rationale.trim(),
+      annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' },
+    };
+  }).filter(({ source, target, verb }) => !existingConnections.has(`${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`));
 }
 
 function authoritativeEvaluationKey(project) {
@@ -317,7 +402,7 @@ function createBlankProject() {
     title: '',
     author: '',
     date: '',
-    sourceType: 'course memo',
+    sourceType: 'course material',
     location: '',
     rights: 'Course use only',
     sensitive: false,
@@ -333,7 +418,7 @@ function createBlankProject() {
   project.candidates = { nodes: [], edges: [] };
   project.graph = { nodes: [], edges: [] };
   project.reflection = '';
-  project.events = [createEvent('project.created', 'Started a blank local project')];
+  project.events = [createEvent('project.created', 'Started a blank project')];
   return project;
 }
 
@@ -350,6 +435,7 @@ function Icon({ name, size = 18 }) {
     plus: <path d="M12 5v14M5 12h14" />,
     lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
     history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
+    map: <><circle cx="6" cy="8" r="2" /><circle cx="18" cy="7" r="2" /><circle cx="13" cy="17" r="2" /><path d="m8 8 8-1M7 10l5 5m2 0 3-6" /></>,
   };
   return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -408,7 +494,7 @@ function AccessFrame({ children, onTeacher }) {
     <header className="access-header">
       <span className="brand__mark" aria-hidden="true">sm</span>
       <strong>Systems Mapping</strong>
-      <button type="button" className="access-header__teacher" onClick={onTeacher}>Teacher access</button>
+      <button type="button" className="access-header__teacher" onClick={onTeacher}>Teacher Console</button>
     </header>
     {children}
   </div>;
@@ -433,8 +519,7 @@ function ClassAccessScreen({ state, onSubmit, onTeacher }) {
   return <AccessFrame onTeacher={onTeacher}>
     <main className="access-main" id="workspace">
       <p className="eyebrow">Classroom access</p>
-      <h1>Enter your class code.</h1>
-      <p className="lede">This code opens the class workspace on this device. It does not identify you and is not strong authentication.</p>
+      <h1>Enter your class code</h1>
       <form className="class-code-form" onSubmit={submit}>
         <Field label="Class code">
           <input ref={inputRef} maxLength="32" autoComplete="one-time-code" autoCapitalize="none" spellCheck="false" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Class code" disabled={state.status === 'checking' || state.status === 'submitting'} />
@@ -442,37 +527,32 @@ function ClassAccessScreen({ state, onSubmit, onTeacher }) {
         {state.message && <p className={`access-message access-message--${state.kind || 'info'}`} role={state.kind === 'error' ? 'alert' : 'status'}>{state.message}</p>}
         <button className="button access-primary" type="submit" disabled={!code.trim() || state.status === 'checking' || state.status === 'submitting'}>{state.status === 'checking' ? 'Checking class access…' : state.status === 'submitting' ? 'Checking code…' : 'Continue'}</button>
       </form>
-      <div className="access-boundary"><Icon name="lock" /><span>Classroom access · expires automatically</span></div>
-      <details className="access-help"><summary>Having trouble?</summary><p>Confirm that the classroom server is available, then ask the teacher for the current class code. A failed code never erases the project saved in this browser.</p></details>
+      <details className="access-help"><summary>Having trouble?</summary><p>Ask your teacher for the current class code.</p></details>
     </main>
   </AccessFrame>;
 }
 
-function ResumeScreen({ project, hasSavedProject, access, saveState, prototypeLogState, onResume, onStart, onTeacher, onEndAccess, onRecovery }) {
+function ResumeScreen({ project, hasSavedProject, saveState, onResume, onStart, onTeacher, onEndAccess, onRecovery }) {
   const sourceCount = hasSavedProject && (project.submission?.text?.trim() || project.submission?.title?.trim()) ? 1 : 0;
-  const expiry = typeof access?.expiresAt === 'string' ? new Date(access.expiresAt) : null;
-  const expiryLabel = expiry && !Number.isNaN(expiry.getTime()) ? expiry.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'automatically';
-  const prototypeServer = access?.persistence === 'course-server' ? 'course server' : 'local prototype server';
   return <AccessFrame onTeacher={onTeacher}>
     <main className="resume-main" id="workspace">
       <p className="eyebrow">Class workspace open</p>
       <h1>{hasSavedProject ? 'Keep working on your map.' : 'Start a systems map.'}</h1>
-      <h2>{hasSavedProject ? project.title : 'A new local project'}</h2>
+      <h2>{hasSavedProject ? project.title : 'A new project'}</h2>
       <div className="resume-meta" aria-label="Saved project summary">
-        <span><i className="resume-stage-mark" />Stage {project.stage + 1} of {STAGES.length} · <strong>{STAGES[project.stage].label}</strong></span>
-        <span><Icon name="history" />{sourceCount} {sourceCount === 1 ? 'source' : 'sources'} · {hasSavedProject ? 'local recovery available' : 'not started'}</span>
+        <span><i className="resume-stage-mark" />Current section · <strong>{STAGES[project.stage].label}</strong></span>
+        <span><Icon name="history" />{sourceCount} {sourceCount === 1 ? 'source' : 'sources'}</span>
       </div>
       {saveState.status === 'error' && <button type="button" className="recovery-notice" onClick={onRecovery}><strong>Local recovery needs attention</strong><span>{saveState.message}</span></button>}
       {hasSavedProject ? <>
-        <p className="resume-description">Your map, notes, and node positions are saved in this browser.</p>
-        <section className="current-work" aria-label="Current work"><strong>Current work</strong><span>{STAGES[project.stage].label}</span><p>Earlier completed stages remain available to revisit.</p></section>
-      </> : <p className="resume-description">Choose a scale to begin. This browser saves your project as you work.</p>}
-      <aside className={`logging-disclosure ${prototypeLogState.status === 'degraded' ? 'logging-disclosure--degraded' : ''}`} role="status"><Icon name="history" /><div><strong>{prototypeLogState.status === 'degraded' ? `Prototype logging unavailable · ${prototypeLogState.dropped} ${prototypeLogState.dropped === 1 ? 'event' : 'events'} not recorded` : 'Prototype logging is best effort · no student identity'}</strong><p>Canonical stage changes and bounded interaction events are sent to the {prototypeServer} when it is available. Source text and annotations are never included.</p></div></aside>
+        <p className="resume-description">Continue where you left off.</p>
+        <section className="current-work" aria-label="Current work"><strong>Current work</strong><span>{coursePartForScale(project).label} · {SCALES[project.activeScale].label}</span><p>Every section and the map remain available while your instructor reviews submitted work.</p></section>
+      </> : <p className="resume-description">Choose a scale to begin.</p>}
       <div className="resume-actions">
         <button type="button" className="button access-primary" onClick={hasSavedProject ? onResume : onStart}>{hasSavedProject ? `Continue to ${STAGES[project.stage].label.toLowerCase()}` : 'Start a project'}</button>
         {hasSavedProject && <button type="button" className="resume-secondary" onClick={onStart}>Start another project</button>}
       </div>
-      <div className="access-session-line"><span>Class access expires at {expiryLabel}.</span><button type="button" onClick={onEndAccess}>End class access</button></div>
+      <div className="access-session-line"><button type="button" onClick={onEndAccess}>End class access</button></div>
     </main>
   </AccessFrame>;
 }
@@ -511,41 +591,54 @@ export function graphCsv(project) {
   return rows.map((row) => row.map(quote).join(',')).join('\n');
 }
 
-function ScaleStage({ project, update }) {
-  const canSelect = (scale) => project.releasedScales.includes(scale);
-  const availableScales = SCALE_ORDER.filter(canSelect);
-  const selectScale = (scale) => update((draft) => { draft.activeScale = scale; invalidatePreflight(draft); }, 'scale.selected', SCALES[scale].label);
+function ScaleChooser({ project, update }) {
+  const scalesOnMap = new Set([
+    ...project.graph.nodes.map(({ scale }) => scale),
+    ...project.graph.edges.map(({ scale }) => scale),
+    ...project.completedScales,
+  ]);
+  const selectScale = (scale) => update((draft) => {
+    draft.activeScale = scale;
+    if (!draft.releasedScales.includes(scale)) draft.releasedScales.push(scale);
+    invalidatePreflight(draft);
+  }, 'scale.selected', SCALES[scale].label);
+  const parts = coursePartsForProject(project);
+  const currentPart = coursePartForScale(project);
+  const currentScale = SCALES[project.activeScale];
   return (
-    <div className="narrow stage-enter">
-      <p className="eyebrow">Choose a scale</p>
-      <h1>Choose the current scale.</h1>
-      <p className="lede">Choose the scale for this map. Your instructor opens each scale in order.</p>
+    <section className="scale-chooser" aria-labelledby="scale-chooser-title">
+      <h2 id="scale-chooser-title">Choose a scale</h2>
+      <p>You can return to any scale and show it on your map.</p>
       <div className="scale-list" role="radiogroup" aria-label="Mapping scale">
-        {SCALE_ORDER.map((scale, index) => {
-          const unlocked = canSelect(scale);
-          const selected = project.activeScale === scale;
-          return (
-            <button
+        {parts.map((part) => <section className="scale-part" key={part.id} aria-labelledby={`scale-part-${part.id}`}>
+          <header><h3 id={`scale-part-${part.id}`}>{part.label}</h3><span>{part.scaleIds.map((scale) => SCALES[scale].label).join(' and ')}</span></header>
+          {part.scaleIds.map((scale) => {
+            const selected = project.activeScale === scale;
+            const index = SCALE_ORDER.indexOf(scale);
+            return <button
               className={`scale-row ${selected ? 'is-selected' : ''}`}
               type="button"
               role="radio"
               aria-checked={selected}
               tabIndex={selected ? 0 : -1}
               data-composite-value={scale}
-              disabled={!unlocked}
               key={scale}
               onClick={() => selectScale(scale)}
-              onKeyDown={(event) => handleCompositeKey(event, availableScales, project.activeScale, selectScale)}
+              onKeyDown={(event) => handleCompositeKey(event, SCALE_ORDER, project.activeScale, selectScale)}
             >
               <span className="scale-row__index">0{index + 1}</span>
               <span className="scale-row__body"><strong>{SCALES[scale].label}</strong><span>{SCALES[scale].description}</span></span>
-              <span className="scale-row__state">{selected ? 'Current' : unlocked ? 'Available' : <><Icon name="lock" size={15} /> Withheld</>}</span>
-            </button>
-          );
-        })}
+              <span className="scale-row__state">{selected ? 'Current' : scalesOnMap.has(scale) ? 'On the map' : 'Available'}</span>
+            </button>;
+          })}
+        </section>)}
       </div>
-      <aside className="withheld-note"><strong>Available later</strong><span>Your instructor may open comparison, timeline, geography, and theory of change later.</span></aside>
-    </div>
+      <section className="scale-focus" aria-labelledby="scale-focus-title">
+        <p>{currentPart.label} · {currentScale.label}</p>
+        <h3 id="scale-focus-title">{currentScale.prompt}</h3>
+        <ul>{currentScale.checklist.map((item) => <li key={item}>{item}</li>)}</ul>
+      </section>
+    </section>
   );
 }
 
@@ -555,25 +648,25 @@ async function readSourceFile(file) {
     const mammoth = await import('mammoth');
     const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
     if (result.value.length > MAX_SOURCE_CHARACTERS) throw new Error('The extracted DOCX text is too large. Use an excerpt of 500,000 characters or fewer.');
-    return { text: result.value, notice: result.messages.length ? 'DOCX imported with conversion notices; compare against the original.' : 'DOCX text imported locally.' };
+    return { text: result.value, notice: result.messages.length ? 'DOCX imported with conversion notices; compare against the original.' : 'DOCX text imported.' };
   }
   if (['txt', 'md', 'html', 'htm', 'json'].includes(extension)) {
     const raw = await file.text();
     if (extension === 'html' || extension === 'htm') {
       const text = new DOMParser().parseFromString(raw, 'text/html').body.textContent || '';
       if (text.length > MAX_SOURCE_CHARACTERS) throw new Error('The extracted HTML text is too large. Use an excerpt of 500,000 characters or fewer.');
-      return { text, notice: 'HTML text imported locally.' };
+      return { text, notice: 'HTML text imported.' };
     }
     if (raw.length > MAX_SOURCE_CHARACTERS) throw new Error('The source text is too large. Use an excerpt of 500,000 characters or fewer.');
-    return { text: raw, notice: `${extension.toUpperCase()} text imported locally.` };
+    return { text: raw, notice: `${extension.toUpperCase()} text imported.` };
   }
   if (extension === 'pdf') return { text: '', notice: 'This PDF needs text extraction or OCR. Paste its text below before generating suggestions.' };
-  throw new Error('Supported source files are DOCX, TXT, MD, HTML, JSON, and text-readable PDF by paste.');
+  throw new Error('You can import DOCX, TXT, MD, HTML, or JSON files. For a PDF, paste text that can be read and selected.');
 }
 
 function IntakeStage({ project, update, toast }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
-  const [fileNotice, setFileNotice] = useState('Files are read in this browser and are not uploaded.');
+  const [fileNotice, setFileNotice] = useState('');
   const setSubmission = (field, value) => update((draft) => { invalidateSubmissionDerived(draft, field, value); });
   const setProjectField = (field, value) => update((draft) => {
     draft[field] = value;
@@ -584,7 +677,7 @@ function IntakeStage({ project, update, toast }) {
     if (!file) return;
     try {
       if (file.name.length > FILE_NAME_LIMIT) throw new Error(`Choose a source whose file name is ${FILE_NAME_LIMIT} characters or fewer.`);
-      if (file.size > MAX_SOURCE_BYTES) throw new Error('Choose a source file smaller than 5 MB, or paste a bounded excerpt.');
+      if (file.size > MAX_SOURCE_BYTES) throw new Error('Choose a file smaller than 5 MB, or paste a shorter excerpt.');
       const result = await readSourceFile(file);
       update((draft) => {
         invalidateSubmissionDerived(draft, 'text', result.text || draft.submission.text);
@@ -604,10 +697,11 @@ function IntakeStage({ project, update, toast }) {
   };
   return (
     <div className="wide stage-enter">
-      <p className="eyebrow">Add a source · {SCALES[project.activeScale].label}</p>
-      <h1>Add a memo. Record the source.</h1>
-      <p className="lede">Import or paste the memo, then record its title, creator, date, location, rights, and sensitivity. Your source file stays on this machine.</p>
-      {project.preflight?.review?.decision === 'reject' && <section className="teacher-message" aria-label="What your instructor wrote"><strong>Your instructor asked for changes.</strong><p>{project.preflight.review.instructorAnnotation}</p>{project.preflight.review.focusedQuestion && <><h2>Question from your instructor</h2><p>{project.preflight.review.focusedQuestion}</p></>}<small>Revise only what you choose. Your instructor did not change the memo or map.</small></section>}
+      <p className="eyebrow">Choose a scale and add a source</p>
+      <h1>Choose a scale and add a source</h1>
+      <p className="lede">Choose where to focus, then import or paste a source and record where it came from.</p>
+      <ScaleChooser project={project} update={update} />
+      {project.preflight?.review?.decision === 'reject' && <section className="teacher-message" aria-label="What your instructor wrote"><strong>Your instructor asked for changes.</strong><p>{project.preflight.review.instructorAnnotation}</p>{project.preflight.review.focusedQuestion && <><h2>Question from your instructor</h2><p>{project.preflight.review.focusedQuestion}</p></>}<small>Revise only what you choose. Your instructor did not change the source or map.</small></section>}
       <div className="field-pair project-context-fields">
         <Field label="Project title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
         <Field label="Guiding inquiry"><input maxLength={MAX_EVALUATION_INQUIRY_CHARACTERS} value={project.inquiry} onChange={(event) => setProjectField('inquiry', event.target.value)} /></Field>
@@ -617,28 +711,28 @@ function IntakeStage({ project, update, toast }) {
           <label className="upload-zone">
             <input type="file" accept=".docx,.txt,.md,.html,.htm,.json,.pdf" onChange={onFile} />
             <Icon name="upload" size={26} />
-            <strong>{project.submission.fileName || 'Choose a memo'}</strong>
+            <strong>{project.submission.fileName || 'Choose a source'}</strong>
             <span>DOCX, TXT, MD, HTML, JSON, or PDF</span>
           </label>
-          <p className="privacy-note" role="status">{fileNotice}</p>
-          <Field label="Memo text" hint={`${project.submission.text.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words · edits stay local`}>
+          {fileNotice && <p className="privacy-note" role="status">{fileNotice}</p>}
+          <Field label="Source text" hint={`${project.submission.text.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words`}>
             <textarea className="memo-text" maxLength="500000" value={project.submission.text} onChange={(event) => setSubmission('text', event.target.value)} rows="15" />
           </Field>
         </div>
         <aside className="source-panel">
           <button type="button" className="disclosure-button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>
-            <span><span className="eyebrow">Source record</span><strong>{detailsOpen ? 'Hide details' : 'Show details'}</strong></span><span aria-hidden="true">{detailsOpen ? '−' : '+'}</span>
+            <span><span className="eyebrow">About this source</span><strong>{detailsOpen ? 'Hide details' : 'Show details'}</strong></span><span aria-hidden="true">{detailsOpen ? '−' : '+'}</span>
           </button>
           {detailsOpen && <div className="source-fields">
-            <Field label="Source title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.submission.title} onChange={(event) => setSubmission('title', event.target.value)} /></Field>
+            <Field label="Title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.submission.title} onChange={(event) => setSubmission('title', event.target.value)} /></Field>
             <div className="field-pair">
               <Field label="Author or creator"><input maxLength={CONFIG_TEXT_LIMIT} value={project.submission.author} onChange={(event) => setSubmission('author', event.target.value)} /></Field>
               <Field label="Date" hint="YYYY-MM-DD"><input inputMode="numeric" maxLength="10" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" value={project.submission.date} onChange={(event) => setSubmission('date', event.target.value)} /></Field>
             </div>
-            <Field label="Source type"><select value={project.submission.sourceType} onChange={(event) => setSubmission('sourceType', event.target.value)}><option>course memo</option><option>interview</option><option>public data</option><option>policy or law</option><option>secondary source</option></select></Field>
-            <Field label="Source location"><input maxLength={PROJECT_LIMITS.metadataText} value={project.submission.location} onChange={(event) => setSubmission('location', event.target.value)} /></Field>
+            <Field label="Type of material"><select value={project.submission.sourceType} onChange={(event) => setSubmission('sourceType', event.target.value)}><option>course material</option><option>published first-person account</option><option>de-identified case study</option><option>journalism</option><option>institutional document</option><option>public decision</option><option>public data</option><option>policy or law</option><option>scholarly source</option></select></Field>
+            <Field label="Where did you find it?"><input maxLength={PROJECT_LIMITS.metadataText} value={project.submission.location} onChange={(event) => setSubmission('location', event.target.value)} /></Field>
             <Field label="Rights or intended use"><input maxLength={PROJECT_LIMITS.metadataText} value={project.submission.rights} onChange={(event) => setSubmission('rights', event.target.value)} /></Field>
-            <label className="check-row"><input type="checkbox" checked={project.submission.sensitive} onChange={(event) => setSubmission('sensitive', event.target.checked)} /><span><strong>Contains sensitive or interview-derived material</strong><small>This activates a separate consent gate.</small></span></label>
+            <label className="check-row"><input type="checkbox" checked={project.submission.sensitive} onChange={(event) => setSubmission('sensitive', event.target.checked)} /><span><strong>Contains sensitive material</strong><small>Record permission or use a privacy-safe treatment before sharing it.</small></span></label>
             {project.submission.sensitive && <label className="check-row"><input type="checkbox" checked={project.submission.consent} onChange={(event) => setSubmission('consent', event.target.checked)} /><span><strong>Consent or privacy-safe treatment documented</strong><small>Non-private exports apply conservative redactions and include a manifest for review.</small></span></label>}
           </div>}
         </aside>
@@ -654,28 +748,18 @@ function SuggestionGuidance({ redirects }) {
     {redirects.length ? redirects.map((redirect, index) => {
       const promptId = stableId('redirective-prompt', `${index}:${redirect.action}`);
       return <article className="criterion-row" key={promptId} aria-labelledby={promptId}>
-        <div><div className="criterion-row__title"><h3 id={promptId}>{redirect.action}</h3></div>{redirect.evidenceExcerpt && <blockquote><span className="sr-only">Source passage: </span>{redirect.evidenceExcerpt}</blockquote>}</div>
+        <div><div className="criterion-row__title"><h3 id={promptId}>{redirect.action}</h3></div>{redirect.evidenceExcerpt && <blockquote><span className="sr-only">Passage from the source. </span>{redirect.evidenceExcerpt}</blockquote>}</div>
       </article>;
     }) : <p className="empty-message">Use your note to tell the instructor where you want feedback.</p>}
   </section></div>;
 }
 
 function suggestionRuntimeDescription(runtime, persistence) {
-  const serverLabel = persistence === 'course-server' ? 'course server' : 'local classroom server';
-  if (runtime?.provider === 'ollama-cloud') {
-    const model = typeof runtime.model === 'string' && runtime.model ? ` The server reports provider model ${runtime.model}.` : '';
-    return `Generating suggestions sends the memo, inquiry, source metadata, active teacher prompt, and project overlay from the ${serverLabel} to Ollama Cloud.${model}`;
-  }
-  if (runtime?.provider === 'deterministic') {
-    return `Generating suggestions applies fixed STEM Splitter rules on the ${serverLabel}. The source does not leave that server for a model provider; teacher prompt and project-instruction edits are provenance only and do not change the deterministic rule set.`;
-  }
-  return `The ${serverLabel} has not reported the suggestion runtime yet. Check class access before generating suggestions.`;
+  return 'Generate guidance when you are ready to review the memo.';
 }
 
 function suggestionRuntimeLabel(runtime) {
-  if (runtime?.provider === 'ollama-cloud') return `Ollama Cloud${runtime.model ? ` · ${runtime.model}` : ''}`;
-  if (runtime?.provider === 'deterministic') return 'STEM Splitter · deterministic';
-  return 'Classroom server decides at generation';
+  return 'Course guidance';
 }
 
 function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) {
@@ -779,7 +863,7 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
     <div id="project-config-panel" className="model-grid" role="tabpanel" aria-labelledby={`project-config-tab-${kind}`}>
       <div className="model-form">
         <div className="config-line"><span>Runtime</span><strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong></div>
-        <p className="privacy-note">STEM Splitter is the versioned product configuration. {suggestionRuntimeDescription(suggestionRuntime, persistence)}</p>
+        <p className="privacy-note">Edit the guidance used for this project.</p>
         <Field label="Configuration name"><input maxLength={CONFIG_TEXT_LIMIT} value={draft.label} onChange={(event) => change('label', event.target.value)} /></Field>
         <Field label="Base-model reference"><input maxLength={CONFIG_TEXT_LIMIT} value={draft.baseModel} onChange={(event) => change('baseModel', event.target.value)} /></Field>
         <div className="field-pair">
@@ -794,61 +878,61 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
       </div>
       <aside className="guardrail-panel">
         <p className="eyebrow">Shared teacher base · read only here</p>
-        <pre>{shared ? 'The authenticated classroom server supplied this configuration fingerprint. Teacher-authored prompt text remains inside the teacher boundary.' : config.fixedPrompt}</pre>
+        <pre>{shared ? 'Course settings are available.' : config.fixedPrompt}</pre>
         <dl className="config-meta"><div><dt>Project revision</dt><dd>{config.revision}</dd></div><div><dt>Project fingerprint</dt><dd>{config.fingerprint}</dd></div><div><dt>Shared revision</dt><dd>{shared?.revision || 'Local fallback'}</dd></div><div><dt>Shared fingerprint</dt><dd>{shared?.fingerprint || 'Server unavailable'}</dd></div><div><dt>Provider seam</dt><dd>{config.provider}</dd></div></dl>
-        {preview && <div className="effective-prompt"><strong>Project overlay preview</strong><p>{config.fixedPrompt}</p><hr /><p>PROJECT OVERLAY</p><p>{draft.customInstructions}</p><p className="privacy-note">{suggestionRuntime?.provider === 'ollama-cloud'
-          ? 'The shared teacher base and project overlay govern Ollama Cloud suggestion generation by server-supplied revision and fingerprint; private prompt text stays outside this browser workspace.'
-          : suggestionRuntime?.provider === 'deterministic'
-            ? 'In deterministic mode, shared teacher and project prompt edits are recorded as provenance only; they do not change the fixed rule set.'
-            : 'The classroom server has not reported whether prompt edits govern suggestion generation.'}</p></div>}
+        {preview && <div className="effective-prompt"><strong>Project guidance</strong><p>{draft.customInstructions}</p></div>}
         {config.history?.length > 0 && <details><summary>Revision history ({config.history.length})</summary><ol className="history-list">{[...config.history].reverse().map((entry) => <li key={`${entry.revision}-${entry.at}`}><strong>v{entry.revision}</strong> {entry.changeNote}<small>{entry.fingerprint}</small></li>)}</ol></details>}
       </aside>
     </div>
   </div>;
 }
 
-function SuggestionReviewStage({ project, update, toast, studentAnnotation, setStudentAnnotation, persistence, retentionDays, suggestionRuntime }) {
-  const [panel, setPanel] = useState('suggestions');
+function ReviewSourceStage({ project, studentAnnotation, setStudentAnnotation, reviewBusy, onGenerate, onSubmit, onRefresh, onRevise }) {
   const review = project.preflight?.review;
-  const hasSuggestions = project.preflight && !review;
+  const hasSuggestions = Boolean(project.preflight?.redirects);
   const evaluationReady = hasUsableEvaluation(project.preflight);
-  const actualRuntime = project.preflight?.evaluation?.runtime || suggestionRuntime;
-  const storageLabel = persistence === 'course-server' ? 'course server' : 'local classroom server';
-  const retentionDisclosure = Number.isInteger(retentionDays?.pending) && Number.isInteger(retentionDays?.decided)
-    ? `Pending snapshots are removed after ${retentionDays.pending} days; decided snapshots are removed after ${retentionDays.decided} days.`
-    : 'Snapshot retention is set by the classroom server.';
-  const evaluationRetention = Number.isFinite(retentionDays?.evaluation)
-    ? `An unsubmitted evaluation expires after ${retentionDays.evaluation} day${retentionDays.evaluation === 1 ? '' : 's'}.`
-    : 'Unsubmitted evaluations expire on the classroom server.';
+  const coursePart = coursePartForScale(project);
   return <div className="wide stage-enter">
-    <p className="eyebrow">Review suggestions · {SCALES[project.activeScale].label}</p>
-    <h1>Read the prompts with the memo.</h1>
-    <p className="lede">Read the prompts with your memo. Tell your instructor where you want feedback.</p>
-    <div className="subnav" role="tablist" aria-label="Suggestions and model setup"><button id="suggestion-tab-suggestions" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'suggestions'} tabIndex={panel === 'suggestions' ? 0 : -1} data-composite-value="suggestions" className={panel === 'suggestions' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('suggestions')}>Suggestions</button><button id="suggestion-tab-model" role="tab" aria-controls="suggestion-panel" aria-selected={panel === 'model'} tabIndex={panel === 'model' ? 0 : -1} data-composite-value="model" className={panel === 'model' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['suggestions', 'model'], panel, setPanel)} onClick={() => setPanel('model')}>Model setup</button></div>
-    <div id="suggestion-panel" role="tabpanel" aria-labelledby={`suggestion-tab-${panel}`}>{panel === 'suggestions' ? <div className="preflight-grid">
-      <section>{hasSuggestions ? <SuggestionGuidance redirects={project.preflight.redirects} /> : <p className="empty-message">Generate suggestions to open focused source prompts for this memo.</p>}</section>
-      <aside className="dry-run-panel"><p className="eyebrow">Send to your instructor</p><h2>Add a note.</h2><p className="privacy-note">{suggestionRuntimeDescription(actualRuntime, persistence)}</p>{hasSuggestions && <Field label="Note for instructor" hint={`${studentAnnotation.length.toLocaleString()} of ${PROJECT_LIMITS.annotationText.toLocaleString()} characters`}><textarea rows="8" maxLength={PROJECT_LIMITS.annotationText} value={studentAnnotation} onChange={(event) => setStudentAnnotation(event.target.value)} /></Field>}{hasSuggestions && !evaluationReady && <p className="teacher-message teacher-message--error" role="alert">These suggestions do not have a current server evaluation. Generate fresh suggestions before sending them for instructor review.</p>}<p className="privacy-note">{hasSuggestions ? `Sending stores the memo and your note on the ${storageLabel} for instructor review.` : `Generating temporarily stores the memo and source record on the ${storageLabel}.`} {hasSuggestions ? retentionDisclosure : evaluationRetention}</p></aside>
-    </div> : <ModelSetup project={project} update={update} toast={toast} suggestionRuntime={actualRuntime} persistence={persistence} />}</div>
+    <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
+    <h1>Review source with your instructor</h1>
+    <p className="lede">Return to the source, note what the evidence supports or leaves uncertain, and decide what to ask your instructor.</p>
+    <p className="teacher-message" role="status">Your instructor can review this draft while you keep working.</p>
+    <div className="preflight-grid">
+      <section>{hasSuggestions ? <SuggestionGuidance redirects={project.preflight.redirects} /> : <p className="empty-message">Generate guidance to return to specific passages in the source.</p>}</section>
+      <aside className="dry-run-panel">
+        <p className="eyebrow">Instructor guidance</p>
+        {review?.status === 'pending' ? <>
+          <h2>Waiting for your instructor</h2>
+          <p>You can continue and check for a response later.</p>
+          <button type="button" className="button button--secondary" disabled={Boolean(reviewBusy)} onClick={onRefresh}>{reviewBusy === 'refreshing' ? 'Checking response…' : 'Check response'}</button>
+        </> : review?.instructorAnnotation ? <>
+          <h2>Read your instructor's response</h2>
+          <p>{review.instructorAnnotation}</p>
+          {review.focusedQuestion && <><h3>Question from your instructor</h3><p>{review.focusedQuestion}</p></>}
+          <small>Your source and map have not been changed.</small>
+          <div className="button-row">
+            <button type="button" className="button button--secondary" disabled={Boolean(reviewBusy)} onClick={onRefresh}>{reviewBusy === 'refreshing' ? 'Checking response…' : 'Check for updates'}</button>
+            {review.status === 'rejected' && <button type="button" className="button" disabled={Boolean(reviewBusy)} onClick={onRevise}>Prepare another review</button>}
+          </div>
+        </> : <>
+          <h2>Add a note</h2>
+          {hasSuggestions && <Field label="Note for instructor" hint={`${studentAnnotation.length.toLocaleString()} of ${PROJECT_LIMITS.annotationText.toLocaleString()} characters`}><textarea rows="8" maxLength={PROJECT_LIMITS.annotationText} value={studentAnnotation} onChange={(event) => setStudentAnnotation(event.target.value)} /></Field>}
+          {hasSuggestions && !evaluationReady && <p className="teacher-message teacher-message--error" role="alert">Generate current guidance before sending your source to your instructor.</p>}
+          <button type="button" className="button" disabled={Boolean(reviewBusy)} onClick={!hasSuggestions || !evaluationReady ? onGenerate : onSubmit}>{reviewBusy === 'evaluating' ? 'Generating guidance…' : reviewBusy === 'submitting' ? 'Sending…' : !hasSuggestions ? 'Generate guidance' : !evaluationReady ? 'Generate current guidance' : 'Send to instructor'}</button>
+        </>}
+      </aside>
+    </div>
   </div>;
 }
 
-function InstructorResponseStage({ project }) {
-  const review = project.preflight?.review;
-  return <div className="narrow stage-enter">
-    <p className="eyebrow">Check your instructor's response</p>
-    <h1>{review?.status === 'approved' ? 'Your instructor responded.' : 'Your instructor has not responded yet.'}</h1>
-    {review?.status === 'pending' ? <><p className="lede">Your instructor is reviewing the submitted snapshot. Your memo and map stay unchanged.</p><section className="teacher-message" aria-live="polite"><strong>Waiting for your instructor</strong><p>Use “Check instructor response” to look for an update.</p></section></> : <><p className="lede">Read guidance before next steps.</p><section className="teacher-message" aria-label="Instructor guidance"><strong>Instructor guidance</strong><p>{review?.instructorAnnotation}</p>{review?.focusedQuestion && <><h2>Question from your instructor</h2><p>{review.focusedQuestion}</p></>}<small>This guidance did not change your memo or map.</small></section></>}
-  </div>;
-}
-
-function CandidateStage({ project, update, toast }) {
+function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
   const [kind, setKind] = useState('edges');
   const candidates = project.candidates[kind];
   const setStatus = (id, status) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (status === 'research lead' && !project.instructor.allowResearchLeads) return toast('Research leads are disabled for this project.', 'error');
-    if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add an evidence locator before advancing this candidate.', 'error');
+    if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
     const allowed = kind === 'nodes' || project.configs.builder.relationVocabulary.includes(current.verb.trim().toLowerCase());
     if (status === 'confirmed' && !allowed && !project.instructor.allowResearchLeads) return toast('This relationship is outside the configured vocabulary and research leads are disabled.', 'error');
     update((draft) => {
@@ -883,8 +967,8 @@ function CandidateStage({ project, update, toast }) {
   const decided = [...project.candidates.nodes, ...project.candidates.edges].filter((item) => item.status !== 'pending').length;
   const total = project.candidates.nodes.length + project.candidates.edges.length;
   return <div className="wide stage-enter">
-    <p className="eyebrow">Choose what to map · {decided} of {total} decided</p>
-    <div className="stage-title-row"><div><h1>Choose nodes and relationships for the map.</h1><p className="lede">Review each proposed node and relationship. Accept, edit, reject, or mark it as a research lead.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Accept all grounded items</button></div>
+    <p className="eyebrow">Choose nodes and describe connections · {decided} of {total} decided</p>
+    <div className="stage-title-row"><div><h1>Choose nodes and describe connections</h1><p className="lede">Review proposed nodes and relationships, then describe connections for the custom AI model to suggest.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Accept all supported items</button></div>
     <div className="subnav" role="tablist" aria-label="Candidate types"><button id="candidate-tab-nodes" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'nodes'} tabIndex={kind === 'nodes' ? 0 : -1} data-composite-value="nodes" className={kind === 'nodes' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('nodes')}>Nodes · {project.candidates.nodes.length}</button><button id="candidate-tab-edges" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'edges'} tabIndex={kind === 'edges' ? 0 : -1} data-composite-value="edges" className={kind === 'edges' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('edges')}>Relationships · {project.candidates.edges.length}</button></div>
     <div id="candidate-panel" className="candidate-list" role="tabpanel" aria-labelledby={`candidate-tab-${kind}`}>
       {candidates.map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
@@ -896,13 +980,13 @@ function CandidateStage({ project, update, toast }) {
         </div>
         <div className="candidate-actions" aria-label={`Decision for ${kind === 'nodes' ? item.label : `${item.sourceLabel} ${item.verb} ${item.targetLabel}`}`}>
           <button className={item.status === 'confirmed' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'confirmed')}>Accept</button>
-          {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'research lead')}>Research lead</button>}
+          {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'research lead')}>Needs research</button>}
           <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'rejected')}>Reject</button>
         </div>
       </article>)}
-      {!candidates.length && <p className="empty-message">No {kind} were proposed. Return to the memo and add explicit actors and relationships.</p>}
+      {!candidates.length && <p className="empty-message">No {kind} were proposed. Return to the source or open the map and add supported elements yourself.</p>}
     </div>
-    <p className="privacy-note">The graph builder uses fixed rules. It does not call an external model.</p>
+    <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} />
   </div>;
 }
 
@@ -915,6 +999,92 @@ function clamp(value, minimum, maximum) {
 
 function stateClass(value) {
   return String(value || 'confirmed').replaceAll(' ', '-');
+}
+
+function ConnectionPreview({ nodes, edges, suggestions }) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const shownEdges = [
+    ...edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'),
+    ...suggestions.filter((edge) => edge.status !== 'rejected'),
+  ].filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
+  const shownEdgeLayouts = shownEdges.map((edge) => {
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    const proposed = suggestions.some((suggestion) => suggestion.id === edge.id);
+    return {
+      edge,
+      source,
+      target,
+      proposed,
+      midX: (source.x + target.x) / 2,
+      midY: (source.y + target.y) / 2,
+    };
+  });
+  return <div className="connection-preview" role="img" aria-label={`Preview with ${nodes.length} nodes and ${shownEdges.length} connections`}>
+    <svg viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`} aria-hidden="true" focusable="false">
+      <defs><marker id="connection-preview-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" /></marker></defs>
+      <g className="connection-preview__lines">{shownEdgeLayouts.map(({ edge, source, target, proposed }) => <g key={edge.id} className={`connection-preview__edge ${proposed ? 'is-proposed' : 'is-existing'} ${edge.status === 'confirmed' ? 'is-accepted' : ''}`}>
+        <line x1={source.x} y1={source.y} x2={target.x} y2={target.y} markerEnd="url(#connection-preview-arrow)" />
+      </g>)}</g>
+      <g className="connection-preview__labels">{shownEdgeLayouts.map(({ edge, proposed, midX, midY }) => {
+        const labelY = midY - 10;
+        const label = edge.verb.length > 18 ? `${edge.verb.slice(0, 17)}…` : edge.verb;
+        return <g key={edge.id} className={`connection-preview__label ${proposed ? 'is-proposed' : 'is-existing'} ${edge.status === 'confirmed' ? 'is-accepted' : ''}`}>
+          <rect x={midX - 58} y={labelY - 15} width="116" height="24" rx="4" />
+          <text x={midX} y={labelY + 4}>{label}</text>
+        </g>;
+      })}</g>
+      {nodes.map((node) => <g key={node.id} className="connection-preview__node" transform={`translate(${node.x} ${node.y})`}>
+        <rect x="-78" y="-24" width="156" height="48" rx="12" />
+        <text textAnchor="middle" y="5">{node.label.length > 24 ? `${node.label.slice(0, 22)}…` : node.label}</text>
+      </g>)}
+    </svg>
+  </div>;
+}
+
+function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
+  const nodes = nodesForConnectionPrompt(project);
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = project.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  const accepted = suggestions.filter((suggestion) => suggestion.status === 'confirmed').length;
+  return <section className="connection-stage" aria-labelledby="connection-stage-title">
+    <p className="eyebrow">Connect the map · {nodes.length} nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
+    <h2 id="connection-stage-title">Describe connections between nodes</h2>
+    <p className="lede">In your own words, prompt the custom AI model to formulate new connections for you to review, edit, accept, or reject.</p>
+    <div className="connection-stage__layout">
+      <section className="connection-prompt-panel">
+        <Field label="How do these nodes connect?">
+          <textarea rows="8" maxLength="4000" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="For example: Families ask schools for evaluations, while delays make it harder to reach services." />
+        </Field>
+        {nodes.length < 2 && <p className="teacher-message teacher-message--error" role="alert">Add at least two nodes before requesting connections.</p>}
+        <button type="button" className="button" disabled={busy || nodes.length < 2 || !prompt.trim()} onClick={onSuggest}>{busy ? 'Suggesting connections…' : suggestions.length ? 'Refine map' : 'Suggest connections'}</button>
+        <div className="connection-node-list" aria-label="Nodes included in this request">{nodes.map((node) => <span key={node.id}>{node.label}</span>)}</div>
+      </section>
+      <section className="connection-preview-panel" aria-labelledby="connection-preview-title">
+        <div className="connection-preview-panel__title"><div><p className="eyebrow">Preview</p><h2 id="connection-preview-title">Connections taking shape</h2></div>{suggestions.length > 0 && <strong>{accepted} accepted</strong>}</div>
+        <ConnectionPreview nodes={nodes} edges={edges} suggestions={suggestions} />
+      </section>
+    </div>
+    <section className="connection-suggestions" aria-labelledby="connection-suggestions-title">
+      <div className="stage-title-row"><div><p className="eyebrow">Review</p><h2 id="connection-suggestions-title">Suggested connections</h2></div></div>
+      {suggestions.map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
+        <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
+        <div className="candidate-row__main">
+          <div className="candidate-expression candidate-expression--edge connection-expression">
+            <select aria-label={`Starting node for suggestion ${index + 1}`} value={item.source} onChange={(event) => onEdit(item.id, 'source', event.target.value)}>{nodes.filter((node) => node.id !== item.target).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select>
+            <input aria-label={`Connection for suggestion ${index + 1}`} maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => onEdit(item.id, 'verb', event.target.value)} />
+            <select aria-label={`Ending node for suggestion ${index + 1}`} value={item.target} onChange={(event) => onEdit(item.id, 'target', event.target.value)}>{nodes.filter((node) => node.id !== item.source).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select>
+          </div>
+          <p>{item.rationale}</p>
+        </div>
+        <div className="candidate-actions" aria-label={`Decision for ${item.sourceLabel} ${item.verb} ${item.targetLabel}`}>
+          <button className={item.status === 'confirmed' ? 'is-active' : ''} type="button" onClick={() => onDecision(item.id, 'confirmed')}>Accept</button>
+          <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => onDecision(item.id, 'rejected')}>Reject</button>
+        </div>
+      </article>)}
+      {!suggestions.length && <p className="empty-message">Describe the connections you see, then request suggestions.</p>}
+    </section>
+  </section>;
 }
 
 function ScaleGlyph({ scale, x = -57, y = 0, size = 6 }) {
@@ -987,15 +1157,15 @@ function AnnotationField({ annotationId, label, value, hint, placeholder, onDraf
     commitTimerRef.current = window.setTimeout(commit, ANNOTATION_COMMIT_DEBOUNCE_MS);
   };
   const fieldId = stableId('annotation-field', annotationId);
-  const statusId = stableId('annotation-status', annotationId);
   const hintId = hint ? stableId('annotation-hint', annotationId) : null;
   const failed = persistenceStatus === 'error' || persistenceStatus === 'validation';
   const queued = pending;
-  const statusText = failed ? persistenceMessage : queued ? 'Queued for local save' : 'Saved on this device';
+  const statusText = failed ? persistenceMessage : queued ? 'Saving…' : '';
+  const statusId = statusText ? stableId('annotation-status', annotationId) : null;
   return <div className="field annotation-field">
     <label className="field__label" htmlFor={fieldId}>{label}</label>
     <textarea id={fieldId} rows="4" maxLength={PROJECT_LIMITS.annotationText} value={draft} onChange={change} onBlur={() => flush()} aria-describedby={[statusId, hintId].filter(Boolean).join(' ')} placeholder={placeholder} />
-    <span id={statusId} className={`annotation-save annotation-save--${failed ? 'error' : queued ? 'queued' : 'saved'}`} role="status">{statusText}</span>
+    {statusText && <span id={statusId} className={`annotation-save annotation-save--${failed ? 'error' : 'queued'}`} role="status">{statusText}</span>}
     {hint && <span id={hintId} className="field__hint">{hint}</span>}
   </div>;
 }
@@ -1118,34 +1288,39 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   };
   const phoneNode = phoneLayout ? { cardX: -110, cardY: -34, cardWidth: 220, cardHeight: 68, cardRadius: 13, ringX: -120, ringY: -45, ringWidth: 240, ringHeight: 90, ringRadius: 16 } : { cardX: -78, cardY: -29, cardWidth: 156, cardHeight: 58, cardRadius: 8, ringX: -84, ringY: -35, ringWidth: 168, ringHeight: 70, ringRadius: 10 };
   const graphViewBox = phoneLayout ? '0 -130 840 800' : `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`;
+  const edgeVisuals = edges.map((edge) => {
+    const source = positions.get(edge.source);
+    const target = positions.get(edge.target);
+    if (!source || !target) return null;
+    const deltaX = target.x - source.x;
+    const deltaY = target.y - source.y;
+    const length = Math.max(1, Math.hypot(deltaX, deltaY));
+    const unitX = deltaX / length;
+    const unitY = deltaY / length;
+    return {
+      edge,
+      x1: source.x + unitX * 78,
+      y1: source.y + unitY * 30,
+      x2: target.x - unitX * 88,
+      y2: target.y - unitY * 34,
+      midX: (source.x + target.x) / 2,
+      midY: (source.y + target.y) / 2,
+      selected: selection?.kind === 'edge' && selection.id === edge.id,
+    };
+  }).filter(Boolean);
   return <svg ref={svgRef} tabIndex="-1" className={`graph-canvas ${panMode ? 'is-panning' : ''}`} role="group" aria-label={`Systems map with ${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'relationship' : 'relationships'}. Tab to a node or relationship. Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.`} viewBox={graphViewBox} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)}>
     <title>Interactive systems map</title>
     <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" /></marker></defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
-      <g className="edges">{edges.map((edge) => {
-        const source = positions.get(edge.source);
-        const target = positions.get(edge.target);
-        if (!source || !target) return null;
-        const deltaX = target.x - source.x;
-        const deltaY = target.y - source.y;
-        const length = Math.max(1, Math.hypot(deltaX, deltaY));
-        const unitX = deltaX / length;
-        const unitY = deltaY / length;
-        const x1 = source.x + unitX * 78;
-        const y1 = source.y + unitY * 30;
-        const x2 = target.x - unitX * 88;
-        const y2 = target.y - unitY * 34;
-        const midX = (source.x + target.x) / 2;
-        const midY = (source.y + target.y) / 2;
-        const selected = selection?.kind === 'edge' && selection.id === edge.id;
-        return <g key={edge.id} data-graph-id={edge.id} role="button" tabIndex="0" aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${edge.claimState} relationship`} className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect('edge', edge.id, true); } }}>
-          <line className="edge-hit" x1={x1} y1={y1} x2={x2} y2={y2} />
-          {selected && <line className="edge-selection-halo" x1={x1} y1={y1} x2={x2} y2={y2} />}
-          <line className="edge-line" x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
-          <rect className="edge-label-bg" x={midX - (phoneLayout ? 78 : 48)} y={midY - (phoneLayout ? 20 : 13)} width={phoneLayout ? 156 : 96} height={phoneLayout ? 38 : 24} rx={phoneLayout ? 6 : 2} />
-          <text className="edge-label" x={midX} y={midY + (phoneLayout ? 8 : 4)}>{edge.verb.length > (phoneLayout ? 12 : 18) ? `${edge.verb.slice(0, phoneLayout ? 11 : 17)}…` : edge.verb}</text>
-        </g>;
-      })}</g>
+      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, selected }) => <g key={edge.id} data-graph-id={edge.id} role="button" tabIndex="0" aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${edge.claimState} relationship`} className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect('edge', edge.id, true); } }}>
+        <line className="edge-hit" x1={x1} y1={y1} x2={x2} y2={y2} />
+        {selected && <line className="edge-selection-halo" x1={x1} y1={y1} x2={x2} y2={y2} />}
+        <line className="edge-line" x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
+      </g>)}</g>
+      <g className="edge-labels" aria-hidden="true">{edgeVisuals.map(({ edge, midX, midY, selected }) => <g key={edge.id} className={`graph-edge-label ${selected ? 'is-selected' : ''}`}>
+        <rect className="edge-label-bg" x={midX - (phoneLayout ? 78 : 48)} y={midY - (phoneLayout ? 20 : 13)} width={phoneLayout ? 156 : 96} height={phoneLayout ? 38 : 24} rx={phoneLayout ? 6 : 2} />
+        <text className="edge-label" x={midX} y={midY + (phoneLayout ? 8 : 4)}>{edge.verb.length > (phoneLayout ? 12 : 18) ? `${edge.verb.slice(0, phoneLayout ? 11 : 17)}…` : edge.verb}</text>
+      </g>)}</g>
       <g className="nodes">{nodes.map((node) => {
         const position = positions.get(node.id);
         const selected = selection?.kind === 'node' && selection.id === node.id;
@@ -1241,7 +1416,7 @@ const INSPECTOR_TABS = ['node', 'relationships', 'map'];
 
 function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave }) {
   const [selection, setSelection] = useState(project.graph.nodes[0] ? { kind: 'node', id: project.graph.nodes[0].id } : null);
-  const [scaleFilter, setScaleFilter] = useState(project.activeScale);
+  const [visibleScales, setVisibleScales] = useState(() => [...project.releasedScales]);
   const [claimFilter, setClaimFilter] = useState('active');
   const [inspectorTab, setInspectorTab] = useState('node');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1257,17 +1432,22 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const canvasWrapRef = useRef(null);
   const inspectorRef = useRef(null);
   const phoneLayout = usePhoneLayout();
-  const scaleEdgeIds = useMemo(() => new Set(project.graph.edges.filter((edge) => scaleFilter === 'all' || edge.scale === scaleFilter).flatMap((edge) => [edge.source, edge.target])), [project.graph.edges, scaleFilter]);
+  const visibleScaleSet = useMemo(() => new Set(visibleScales), [visibleScales]);
+  const allLayersVisible = project.releasedScales.every((scale) => visibleScaleSet.has(scale));
+  const toggleScale = (scale) => setVisibleScales((current) => current.includes(scale)
+    ? current.length === 1 ? current : current.filter((item) => item !== scale)
+    : [...current, scale]);
+  const scaleEdgeIds = useMemo(() => new Set(project.graph.edges.filter((edge) => visibleScaleSet.has(edge.scale)).flatMap((edge) => [edge.source, edge.target])), [project.graph.edges, visibleScaleSet]);
   const visibleNodes = useMemo(() => project.graph.nodes.filter((node) => {
-    const scaleMatches = scaleFilter === 'all' || node.scale === scaleFilter || scaleEdgeIds.has(node.id);
+    const scaleMatches = visibleScaleSet.has(node.scale) || scaleEdgeIds.has(node.id);
     const stateMatches = claimFilter === 'all' || (claimFilter === 'active' ? node.claimState !== 'retired' : node.claimState === claimFilter);
     return scaleMatches && stateMatches;
-  }), [project.graph.nodes, scaleFilter, scaleEdgeIds, claimFilter]);
+  }), [project.graph.nodes, visibleScaleSet, scaleEdgeIds, claimFilter]);
   const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleEdges = useMemo(() => project.graph.edges.filter((edge) => {
     const stateMatches = claimFilter === 'all' || (claimFilter === 'active' ? edge.claimState !== 'retired' : edge.claimState === claimFilter);
-    return (scaleFilter === 'all' || edge.scale === scaleFilter) && visibleIds.has(edge.source) && visibleIds.has(edge.target) && stateMatches;
-  }), [project.graph.edges, scaleFilter, visibleIds, claimFilter]);
+    return visibleScaleSet.has(edge.scale) && visibleIds.has(edge.source) && visibleIds.has(edge.target) && stateMatches;
+  }), [project.graph.edges, visibleScaleSet, visibleIds, claimFilter]);
   useEffect(() => {
     if (phoneLayout && drawerOpen) setPhoneViewport(fitViewport(visibleNodes.length ? visibleNodes : project.graph.nodes, 240));
     else setPhoneViewport(null);
@@ -1344,7 +1524,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (!project.instructor.allowResearchLeads) return toast('Research leads are disabled for this project.', 'error');
     if (project.graph.nodes.length >= PROJECT_LIMITS.nodes) return toast(`This map already contains the maximum ${PROJECT_LIMITS.nodes} nodes.`, 'error');
     if (!newNode.label.trim()) return toast('Name the node before adding it.', 'error');
-    if (project.instructor.evidenceRequired && !newNode.evidence.trim()) return toast('Add an evidence locator or research question before adding the node.', 'error');
+    if (project.instructor.evidenceRequired && !newNode.evidence.trim()) return toast('Add evidence or a question before adding the node.', 'error');
     const id = stableId('node', `${newNode.label}:${Date.now()}`);
     update((draft) => {
       draft.graph.nodes = withDefaultNodeLayout([...draft.graph.nodes, { ...newNode, label: newNode.label.trim(), id, status: 'confirmed', notes: '' }]);
@@ -1357,7 +1537,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     }));
     setNewNode({ label: '', type: 'organization', scale: project.activeScale, evidence: '', claimState: 'research lead' });
     setAddMode(null);
-    toast('Node added as a research lead.');
+    toast('Node added.');
   };
   const addEdge = () => {
     if (!project.instructor.allowResearchLeads) return toast('Research leads are disabled for this project.', 'error');
@@ -1365,14 +1545,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const source = project.graph.nodes.find((node) => node.id === newEdge.source);
     const target = project.graph.nodes.find((node) => node.id === newEdge.target);
     if (!source || !target || source.id === target.id) return toast('Choose two different nodes.', 'error');
-    if (!newEdge.verb.trim()) return toast('Name the relationship with an accountable verb.', 'error');
-    if (project.instructor.evidenceRequired && !newEdge.evidence.trim()) return toast('Add an evidence locator or research question before adding the relationship.', 'error');
+    if (!newEdge.verb.trim()) return toast('Describe the connection before adding the relationship.', 'error');
+    if (project.instructor.evidenceRequired && !newEdge.evidence.trim()) return toast('Add evidence or a question before adding the relationship.', 'error');
     const id = stableId('edge', `${newEdge.source}:${newEdge.verb}:${newEdge.target}:${Date.now()}`);
-    update((draft) => { draft.graph.edges.push({ ...newEdge, id, sourceLabel: source.label, targetLabel: target.label, scale: source.scale, status: 'confirmed', notes: '', annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' } }); }, 'edge.added', `${source.label} ${newEdge.verb} ${target.label}`);
+    update((draft) => { draft.graph.edges.push({ ...newEdge, id, sourceLabel: source.label, targetLabel: target.label, scale: project.activeScale, status: 'confirmed', notes: '', annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' } }); }, 'edge.added', `${source.label} ${newEdge.verb} ${target.label}`);
     setSelection({ kind: 'edge', id });
     setInspectorTab('relationships');
     setAddMode(null);
-    toast('Relationship added as a research lead.');
+    toast('Relationship added.');
   };
   const canvasViewport = phoneLayout && drawerOpen && phoneViewport ? phoneViewport : project.viewport;
   const setTab = (tab) => {
@@ -1389,7 +1569,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     savedRevision: saveState.savedRevision || 0,
   };
   return <div className="map-stage stage-enter">
-    <div className="map-toolbar"><h1>Build the map</h1><div className="map-toolbar__controls"><label><span>Scale</span><select value={scaleFilter} onChange={(event) => setScaleFilter(event.target.value)}><option value="all">All released</option>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}</select></label><label><span>State</span><select value={claimFilter} onChange={(event) => setClaimFilter(event.target.value)}><option value="active">Active claims</option><option value="all">All states</option>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></label></div></div>
+    <div className="map-toolbar"><h1>Build the map</h1><div className="map-toolbar__controls"><div className="map-layer-control"><span>Scale layers</span><div className="map-layer-filter" role="group" aria-label="Visible scale layers"><button type="button" className={allLayersVisible ? 'is-active' : ''} aria-pressed={allLayersVisible} onClick={() => setVisibleScales([...project.releasedScales])}>All</button>{project.releasedScales.map((scale) => <button type="button" key={scale} className={visibleScaleSet.has(scale) ? `is-active is-${scale}` : `is-${scale}`} aria-pressed={visibleScaleSet.has(scale)} onClick={() => toggleScale(scale)}><i className={`legend-symbol legend-symbol--${scale}`} />{SCALES[scale].label}</button>)}</div></div><label><span>State</span><select value={claimFilter} onChange={(event) => setClaimFilter(event.target.value)}><option value="active">Active claims</option><option value="all">All states</option>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></label></div></div>
     <div className="map-layout">
       <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={visibleNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} panMode={panMode} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
@@ -1400,14 +1580,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       <aside ref={inspectorRef} className={`inspector ${drawerOpen ? 'is-open' : ''}`} aria-label="Map inspector" aria-hidden={phoneLayout && !drawerOpen ? 'true' : undefined} inert={phoneLayout && !drawerOpen} onKeyDown={(event) => { if (event.key === 'Escape' && drawerOpen) { event.preventDefault(); closeInspector(); } }}>
         <div className="inspector__head"><h2>{selectedNode?.label || (selectedEdge ? `${selectedEdge.sourceLabel} → ${selectedEdge.targetLabel}` : 'Evolving map')}</h2>{project.instructor.allowResearchLeads && <><div className="inline-actions inspector-create-actions"><button className="icon-button" type="button" title="Add node" aria-label="Add node" onClick={() => { setAddMode(addMode === 'node' ? null : 'node'); setDrawerOpen(true); }}><Icon name="plus" /></button><button className="edge-add" type="button" title="Add relationship" aria-label="Add relationship" onClick={() => { setAddMode(addMode === 'edge' ? null : 'edge'); setDrawerOpen(true); }}>↗</button></div><div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions"><button type="button" onClick={() => { setAddMode('node'); setCreateMenuOpen(false); }}>Node</button><button type="button" onClick={() => { setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button></div>}</div></>}<button className="inspector-done" type="button" onClick={closeInspector}>Done</button></div>
         <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{INSPECTOR_TABS.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, INSPECTOR_TABS, inspectorTab, setTab)}>{tab === 'relationships' ? 'Relationships' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
-        {addMode === 'node' && <div className="add-form"><h3>Add a research lead</h3><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field><div className="field-pair"><Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value }))}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Scale"><select value={newNode.scale} onChange={(event) => setNewNode((current) => ({ ...current, scale: event.target.value }))}>{project.releasedScales.map((scale) => <option key={scale}>{scale}</option>)}</select></Field></div><Field label="Evidence or research question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newNode.evidence} onChange={(event) => setNewNode((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addNode}>Add node</button></div>}
-        {addMode === 'edge' && <div className="add-form"><h3>Add a relationship</h3><Field label="Source"><select value={newEdge.source} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{project.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Accountable verb"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} /></Field><Field label="Target"><select value={newEdge.target} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{project.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or research question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
+        {addMode === 'node' && <div className="add-form"><h3>Add a node</h3><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field><div className="field-pair"><Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value }))}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Scale"><select value={newNode.scale} onChange={(event) => setNewNode((current) => ({ ...current, scale: event.target.value }))}>{project.releasedScales.map((scale) => <option key={scale}>{scale}</option>)}</select></Field></div><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newNode.evidence} onChange={(event) => setNewNode((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addNode}>Add node</button></div>}
+        {addMode === 'edge' && <div className="add-form"><h3>Add a relationship</h3><Field label="From"><select value={newEdge.source} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{project.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Connection"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} /></Field><Field label="To"><select value={newEdge.target} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{project.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-node">{selectedNode ? <>
-          <details className="node-summary"><summary><span>Summary</span><strong>{selectedNode.type} · {selectedNode.claimState}</strong></summary><div className="node-summary__body"><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} onChange={(event) => editNode('label', event.target.value)} /></Field><div className="field-pair"><Field label="Type"><select value={selectedNode.type} onChange={(event) => editNode('type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Scale"><select value={selectedNode.scale} onChange={(event) => editNode('scale', event.target.value)}>{project.releasedScales.map((scale) => <option key={scale}>{scale}</option>)}</select></Field></div><Field label="Claim state"><select value={selectedNode.claimState} onChange={(event) => editNode('claimState', event.target.value)}>{CLAIM_STATES.filter((state) => project.instructor.allowResearchLeads || state !== 'research lead').map((state) => <option key={state}>{state}</option>)}</select></Field><div className="provenance-block"><span>Evidence locator</span><p>{selectedNode.evidence || 'No evidence locator yet.'}</p>{selectedNode.notes && <><span>Reviewer note</span><p>{selectedNode.notes}</p></>}</div></div></details>
-          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'analytical'} aria-controls="node-analytical-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'analytical' ? null : 'analytical')}><span>Analytical annotation</span><Icon name={annotationDisclosure === 'analytical' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'analytical' && <div id="node-analytical-annotation"><AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Analysis" value={selectedNode.annotations.analytical.text} placeholder="What does this actor change in the inquiry?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} /></div>}</section>
-          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence annotation</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
+          <details className="node-summary"><summary><span>Summary</span><strong>{selectedNode.type} · {selectedNode.claimState}</strong></summary><div className="node-summary__body"><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} onChange={(event) => editNode('label', event.target.value)} /></Field><div className="field-pair"><Field label="Type"><select value={selectedNode.type} onChange={(event) => editNode('type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Scale"><select value={selectedNode.scale} onChange={(event) => editNode('scale', event.target.value)}>{project.releasedScales.map((scale) => <option key={scale}>{scale}</option>)}</select></Field></div><Field label="Claim state"><select value={selectedNode.claimState} onChange={(event) => editNode('claimState', event.target.value)}>{CLAIM_STATES.filter((state) => project.instructor.allowResearchLeads || state !== 'research lead').map((state) => <option key={state}>{state}</option>)}</select></Field><div className="provenance-block"><span>Evidence</span><p>{selectedNode.evidence || 'No evidence added yet.'}</p>{selectedNode.notes && <><span>Reviewer note</span><p>{selectedNode.notes}</p></>}</div></div></details>
+          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'analytical'} aria-controls="node-analytical-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'analytical' ? null : 'analytical')}><span>Annotation</span><Icon name={annotationDisclosure === 'analytical' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'analytical' && <div id="node-analytical-annotation"><AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Annotation" value={selectedNode.annotations.analytical.text} onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} /></div>}</section>
+          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
         </> : <p className="empty-message">Choose a node on the map to inspect and annotate it.</p>}</div>}
-        {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span><small>{edge.claimState}</small></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.claimState}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence locator</span><p>{selectedEdge.evidence || 'No evidence locator yet.'}</p></div><Field label="Relationship claim state"><select value={selectedEdge.claimState} onChange={(event) => update((draft) => { const edge = draft.graph.edges.find((item) => item.id === selectedEdge.id); if (edge) edge.claimState = event.target.value; })}>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></Field></div></details><AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Relationship annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
+        {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span><small>{edge.claimState}</small></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.claimState}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence</span><p>{selectedEdge.evidence || 'No evidence added yet.'}</p></div><Field label="Relationship claim state"><select value={selectedEdge.claimState} onChange={(event) => update((draft) => { const edge = draft.graph.edges.find((item) => item.id === selectedEdge.id); if (edge) edge.claimState = event.target.value; })}>{CLAIM_STATES.map((state) => <option key={state}>{state}</option>)}</select></Field></div></details><AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
         {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary"><strong>{project.graph.nodes.length}</strong><span>nodes</span><strong>{project.graph.edges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
       </aside>
     </div>
@@ -1451,8 +1631,8 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
     <p className="lede">Describe what changed. Check the sharing tier. Then export a copy.</p>
     <div className="revision-grid">
       <section>
-        <div className="before-after"><div><span>Before mapping</span><p>{project.submission.text.split(/[.!?]/).filter((sentence) => sentence.trim()).length} memo statements were available for review.</p></div><Icon name="arrow" size={24} /><div><span>Current graph</span><p>{project.graph.nodes.length} nodes and {project.graph.edges.length} relationships are recorded.</p></div></div>
-        <Field label="What changed in your explanation?" hint="Required to complete this release"><textarea className="reflection" rows="8" maxLength={PROJECT_LIMITS.promptText} value={project.reflection} onChange={(event) => update((draft) => { draft.reflection = event.target.value; })} onBlur={() => update(() => {}, 'reflection.revised', 'Release reflection')} placeholder="I first understood… The map now shows… I still need to investigate…" /></Field>
+        <div className="before-after"><div><span>Source record</span><p>{project.submission.text.split(/[.!?]/).filter((sentence) => sentence.trim()).length} source statements were available for review.</p></div><Icon name="arrow" size={24} /><div><span>Current map</span><p>{project.graph.nodes.length} nodes and {project.graph.edges.length} relationships are recorded.</p></div></div>
+        <Field label="What changed in your explanation?" hint="Optional note for this scale cycle"><textarea className="reflection" rows="8" maxLength={PROJECT_LIMITS.promptText} value={project.reflection} onChange={(event) => update((draft) => { draft.reflection = event.target.value; })} onBlur={() => update(() => {}, 'reflection.revised', 'Scale-cycle reflection')} placeholder="I first understood… The map now shows… I still need to investigate…" /></Field>
         <div className="release-summary"><div><strong>{confirmed}</strong><span>grounded nodes</span></div><div><strong>{project.graph.edges.length}</strong><span>relationships</span></div><div><strong>{leads}</strong><span>research leads</span></div><div><strong>{project.events.length}</strong><span>recorded events</span></div></div>
         <div className="sharing-row"><Field label="Sharing tier"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} disabled={index > maxIndex}>{tier}{index > maxIndex ? ' · instructor locked' : ''}</option>)}</select></Field><p>Exports omit original file bytes. Review sensitive evidence before moving beyond private or course use.</p></div>
       </section>
@@ -1473,11 +1653,11 @@ function InstructorPanel({ project, update, toast, onNewProject }) {
     if (!draft.releasedScales.includes(scale)) draft.releasedScales.push(scale);
   }, 'release.opened', SCALES[scale].label, 'instructor');
   return <div className="instructor-panel">
-    <p className="privacy-note">Instructor controls are local to this project. Changes invalidate the gate record when they affect readiness.</p>
-    <div className="settings-section"><p className="eyebrow">Readiness and evidence</p><Field label="Readiness threshold"><input type="number" min="1" max="8" step="1" value={project.instructor.readinessThreshold} onChange={(event) => setReadinessThreshold(event.target.value)} /></Field><div className="config-line"><span>Hard gates</span><strong>H1–H4 required</strong></div><label className="check-row"><input type="checkbox" checked={project.instructor.evidenceRequired} onChange={(event) => set('evidenceRequired', event.target.checked)} /><span><strong>Require evidence locators</strong><small>Claims cannot advance on confidence alone.</small></span></label><label className="check-row"><input type="checkbox" checked={project.instructor.requireStudentConfirmation} onChange={(event) => set('requireStudentConfirmation', event.target.checked)} /><span><strong>Require student confirmation</strong><small>Model operations remain proposals.</small></span></label></div>
+    <p className="privacy-note">Instructor controls are local to this project. Changes refresh the guidance and evidence settings used for later work.</p>
+    <div className="settings-section"><p className="eyebrow">Readiness and evidence</p><Field label="Readiness threshold"><input type="number" min="1" max="8" step="1" value={project.instructor.readinessThreshold} onChange={(event) => setReadinessThreshold(event.target.value)} /></Field><div className="config-line"><span>Required checks</span><strong>H1–H4</strong></div><label className="check-row"><input type="checkbox" checked={project.instructor.evidenceRequired} onChange={(event) => set('evidenceRequired', event.target.checked)} /><span><strong>Require evidence</strong><small>Students must add evidence before moving a claim forward.</small></span></label><label className="check-row"><input type="checkbox" checked={project.instructor.requireStudentConfirmation} onChange={(event) => set('requireStudentConfirmation', event.target.checked)} /><span><strong>Require student confirmation</strong><small>Suggestions remain choices until the student confirms them.</small></span></label></div>
     <div className="settings-section"><p className="eyebrow">Privacy and publication</p><Field label="Maximum sharing tier"><select value={project.instructor.maxSharingTier} onChange={(event) => set('maxSharingTier', event.target.value)}><option>private</option><option>course</option><option>CUNY</option><option>public</option></select></Field><label className="check-row"><input type="checkbox" checked={project.instructor.allowResearchLeads} onChange={(event) => set('allowResearchLeads', event.target.checked)} /><span><strong>Allow unsupported research leads</strong><small>Leads remain visually and semantically distinct.</small></span></label></div>
-    <div className="settings-section"><p className="eyebrow">Sequential releases</p><div className="release-controls">{SCALE_ORDER.map((scale, index) => { const open = project.releasedScales.includes(scale); const previousOpen = index === 0 || project.releasedScales.includes(SCALE_ORDER[index - 1]); return <button key={scale} className={open ? 'is-open' : ''} disabled={open || !previousOpen} onClick={() => release(scale)}>{open ? <Icon name="check" size={15} /> : <Icon name="lock" size={15} />}{SCALES[scale].label}</button>; })}</div></div>
-    <div className="settings-section"><p className="eyebrow">Model contracts</p><dl className="config-summary"><div><dt>Evaluator</dt><dd>{project.configs.preflight.label} · v{project.configs.preflight.revision}</dd></div><div><dt>Builder</dt><dd>{project.configs.builder.label} · v{project.configs.builder.revision}</dd></div><div><dt>Runtime</dt><dd>{suggestionRuntimeLabel(project.preflight?.evaluation?.runtime)}</dd></div></dl><button type="button" className="button button--secondary" onClick={() => toast('Open “Review suggestions,” then “Model setup,” to revise either contract.')}>Where to edit</button></div>
+    <div className="settings-section"><p className="eyebrow">Scale layers</p><div className="release-controls">{SCALE_ORDER.map((scale) => { const open = project.releasedScales.includes(scale); return <button key={scale} className={open ? 'is-open' : ''} disabled={open} onClick={() => release(scale)}>{open ? <Icon name="check" size={15} /> : <Icon name="plus" size={15} />}{SCALES[scale].label}</button>; })}</div></div>
+    <div className="settings-section"><p className="eyebrow">Model contracts</p><dl className="config-summary"><div><dt>Evaluator</dt><dd>{project.configs.preflight.label} · v{project.configs.preflight.revision}</dd></div><div><dt>Builder</dt><dd>{project.configs.builder.label} · v{project.configs.builder.revision}</dd></div><div><dt>Runtime</dt><dd>{suggestionRuntimeLabel(project.preflight?.evaluation?.runtime)}</dd></div></dl><button type="button" className="button button--secondary" onClick={() => toast('Open “Review the source with your instructor,” then “Model setup,” to revise either contract.')}>Where to edit</button></div>
     <div className="settings-section"><p className="eyebrow">Project data</p><p className="privacy-note">Create a separate local project without changing the model presets. Export the current project first if you need to retain it.</p><button type="button" className="button button--secondary" onClick={onNewProject}>New project…</button></div>
   </div>;
 }
@@ -1508,14 +1688,16 @@ function App() {
   const [modal, setModal] = useState(null);
   const [toastState, setToastState] = useState(null);
   const [teacherOpen, setTeacherOpen] = useState(false);
-  const [accessState, setAccessState] = useState({ status: 'checking', access: null, message: 'Checking this device’s class access…', kind: 'info' });
+  const [accessState, setAccessState] = useState({ status: 'checking', access: null, message: 'Loading…', kind: 'info' });
   const [workspaceStarted, setWorkspaceStarted] = useState(false);
   const [hasSavedProject, setHasSavedProject] = useState(initialLoad.hasSavedProject);
   const [persistenceBlocked, setPersistenceBlocked] = useState(initialLoad.persistenceBlocked);
   const [pendingNewProject, setPendingNewProject] = useState(false);
-  const [prototypeLogState, setPrototypeLogState] = useState({ status: 'active', dropped: 0 });
   const [studentAnnotation, setStudentAnnotation] = useState('');
   const [reviewBusy, setReviewBusy] = useState(null);
+  const [connectionPrompt, setConnectionPrompt] = useState('');
+  const [connectionSuggestions, setConnectionSuggestions] = useState([]);
+  const [connectionBusy, setConnectionBusy] = useState(false);
   const [saveState, setSaveState] = useState({
     status: initialLoad.loadError ? 'error' : initialLoad.hasSavedProject ? 'saved' : 'idle',
     message: initialLoad.loadError || (initialLoad.hasSavedProject ? 'Project saved on this device' : 'Project not started'),
@@ -1525,11 +1707,13 @@ function App() {
   const toastTimer = useRef(null);
   const persistTimer = useRef(null);
   const pendingAnnotationsRef = useRef(new Map());
-  const prototypeLogNoticeRef = useRef({ lastShownAt: 0, sequence: 0, lastFailure: 0 });
+  const prototypeLogNoticeRef = useRef({ sequence: 0, lastFailure: 0 });
   const accessGenerationRef = useRef(0);
   const projectRef = useRef(project);
+  const connectionPromptRef = useRef(connectionPrompt);
   const workspaceRef = useRef(null);
   projectRef.current = project;
+  connectionPromptRef.current = connectionPrompt;
   const toast = useCallback((message, type = 'success') => {
     window.clearTimeout(toastTimer.current);
     setToastState({ message, type });
@@ -1575,7 +1759,7 @@ function App() {
         ? { status: 'granted', access: result.access, message: null, kind: 'info' }
         : { status: 'required', access: null, message: null, kind: 'info' });
     }).catch(() => {
-      if (active && generation === accessGenerationRef.current) setAccessState({ status: 'unavailable', access: null, message: 'The classroom server is unavailable. Try again after it is restored; your saved project is unchanged.', kind: 'error' });
+      if (active && generation === accessGenerationRef.current) setAccessState({ status: 'unavailable', access: null, message: 'The class workspace is unavailable. Try again later.', kind: 'error' });
     });
     return () => { active = false; };
   }, []);
@@ -1586,15 +1770,17 @@ function App() {
     if (remaining <= 0) {
       accessGenerationRef.current += 1;
       setReviewBusy(null);
+      setConnectionBusy(false);
       setWorkspaceStarted(false);
-      setAccessState({ status: 'expired', access: null, message: 'Class access expired. Enter the current class code to continue; your project is still preserved.', kind: 'error' });
+      setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
       return undefined;
     }
     const timer = window.setTimeout(() => {
       accessGenerationRef.current += 1;
       setReviewBusy(null);
+      setConnectionBusy(false);
       setWorkspaceStarted(false);
-      setAccessState({ status: 'expired', access: null, message: 'Class access expired. Enter the current class code to continue; your project is still preserved.', kind: 'error' });
+      setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
     }, Math.min(remaining, 2_147_000_000));
     return () => window.clearTimeout(timer);
   }, [accessState.status, accessState.access?.expiresAt]);
@@ -1669,7 +1855,7 @@ function App() {
 
   const refreshPublicConfigurations = useCallback(async () => {
     const scale = project.activeScale;
-    const stageId = STAGES[project.stage]?.id || 'choose-scale';
+    const stageId = STAGES[project.stage]?.id || 'add-source';
     try {
       const [preflight, builder] = await Promise.all([
         getPublicConfiguration('preflight', scale, stageId),
@@ -1694,13 +1880,7 @@ function App() {
 
   const markPrototypeFailure = useCallback((sequence) => {
     prototypeLogNoticeRef.current.lastFailure = Math.max(prototypeLogNoticeRef.current.lastFailure, sequence);
-    setPrototypeLogState((current) => ({ status: 'degraded', dropped: Math.min(99, current.dropped + 1) }));
-    const now = Date.now();
-    if (now - prototypeLogNoticeRef.current.lastShownAt >= 15_000) {
-      prototypeLogNoticeRef.current.lastShownAt = now;
-      toast('Prototype logging is temporarily unavailable. Local project saving continues.', 'error');
-    }
-  }, [toast]);
+  }, []);
 
   const logPrototype = useCallback((event, metadata = undefined, stageOverride = undefined) => {
     if (accessState.status !== 'granted') return Promise.resolve(false);
@@ -1709,9 +1889,6 @@ function App() {
     const accessGeneration = accessGenerationRef.current;
     return recordPrototypeEvent(event, stage, metadata).then(() => {
       if (accessGeneration !== accessGenerationRef.current) return false;
-      if (sequence > prototypeLogNoticeRef.current.lastFailure) {
-        setPrototypeLogState((current) => current.status === 'active' ? current : { status: 'active', dropped: 0 });
-      }
       return true;
     }).catch(async (error) => {
       if (error instanceof ApiError && error.status === 401) {
@@ -1725,8 +1902,9 @@ function App() {
           }
           accessGenerationRef.current += 1;
           setReviewBusy(null);
+          setConnectionBusy(false);
           setWorkspaceStarted(false);
-          setAccessState({ status: 'expired', access: null, message: 'Class access expired. Enter the current class code to continue; your project is still preserved.', kind: 'error' });
+          setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
           return false;
         } catch {
           markPrototypeFailure(sequence);
@@ -1753,12 +1931,14 @@ function App() {
   }, [logPrototype]);
 
   const setStage = (stage, options = {}) => {
+    if (!Number.isInteger(stage) || stage < 0 || stage >= STAGES.length) return false;
     const fromStage = project.stage;
     update((draft) => {
       draft.stage = stage;
       draft.furthestStage = Math.max(draft.furthestStage || 0, stage);
     }, 'stage.opened', STAGES[stage].label);
     recordStageTransition(fromStage, stage, options);
+    return true;
   };
 
   const handleReviewApiError = async (error, accessGeneration, retryLabel = 'instructor-review request') => {
@@ -1773,8 +1953,9 @@ function App() {
         }
         accessGenerationRef.current += 1;
         setReviewBusy(null);
+        setConnectionBusy(false);
         setWorkspaceStarted(false);
-        setAccessState({ status: 'expired', access: null, message: 'Class access expired. Enter the current class code to continue; your project is still preserved.', kind: 'error' });
+        setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
         return;
       } catch {
         toast('The classroom server could not confirm access. Your local project remains active; retry when the server is available.', 'error');
@@ -1802,11 +1983,11 @@ function App() {
       return;
     }
     if (runtime?.provider === 'ollama-cloud' && Number.isInteger(runtime.maxSourceBytes) && sourceBytes > runtime.maxSourceBytes) {
-      toast(`This memo is too large for the reported Ollama Cloud runtime (${runtime.maxSourceBytes.toLocaleString()} UTF-8 bytes maximum). Shorten the memo or use a focused source excerpt; your local project remains unchanged.`, 'error');
+      toast(`This source is too large for the reported Ollama Cloud runtime (${runtime.maxSourceBytes.toLocaleString()} UTF-8 bytes maximum). Shorten the source or use a focused excerpt; your local project remains unchanged.`, 'error');
       return;
     }
     if (encoder.encode(JSON.stringify(payload)).byteLength > MAX_EVALUATION_POST_BYTES) {
-      toast('The suggestion evaluation request is too large to send. Shorten the memo or use a focused source excerpt; your local project remains unchanged.', 'error');
+      toast('The guidance request is too large to send. Shorten the source or use a focused excerpt; your local project remains unchanged.', 'error');
       return;
     }
     const accessGeneration = accessGenerationRef.current;
@@ -1817,11 +1998,11 @@ function App() {
       if (!response || !Object.hasOwn(response, 'evaluation')) throw new Error('The classroom server returned an invalid suggestion-evaluation response.');
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
       if (authoritativeEvaluationKey(projectRef.current) !== requestKey) {
-        toast('The memo or model setup changed while suggestions were generated. Generate again from the current project.', 'error');
+        toast('The source or model setup changed while guidance was generated. Generate again from the current project.', 'error');
         return;
       }
       const result = normalizePreflightEvaluation(response.evaluation, projectRef.current);
-      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Source prompts generated', 'student', {
+      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Questions about the source generated', 'student', {
         configurationSnapshot: result.configurationSnapshot,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
@@ -1860,11 +2041,8 @@ function App() {
       update((draft) => {
         if (!draft.preflight) return;
         draft.preflight.review = review;
-        draft.stage = 3;
-        draft.furthestStage = Math.max(draft.furthestStage || 0, 3);
       }, 'preflight.review-submitted', 'Sent suggestion snapshot for instructor review', 'student', { status: review.status, revision: review.revision });
-      recordStageTransition(2, 3, { completed: true });
-      toast('Suggestions sent for instructor review.');
+      toast('Source and note sent for instructor review. You can continue.');
     } catch (error) {
       if (error instanceof ApiError && [409, 410].includes(error.status)) {
         update((draft) => {
@@ -1889,18 +2067,14 @@ function App() {
       if (!response || !Object.hasOwn(response, 'submission')) throw new Error('The classroom server returned an invalid instructor-review response.');
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
       const review = normalizeReviewSubmission(response.submission, project.id);
-      const rejected = review.status === 'rejected';
       update((draft) => {
         if (!draft.preflight) return;
         draft.preflight.review = review;
-        draft.stage = rejected ? 1 : 3;
-        draft.furthestStage = Math.max(draft.furthestStage || 0, 3);
-      }, 'preflight.review-refreshed', rejected ? 'Instructor requested source revision' : `Instructor review ${review.status}`, 'student', { status: review.status, revision: review.revision, ...(review.decision ? { decision: review.decision } : {}) });
-      if (rejected) {
-        recordStageTransition(3, 1, { completed: true, success: false });
-        toast('The instructor returned guidance. Your memo and map were not changed.', 'error');
+      }, 'preflight.review-refreshed', `Instructor review ${review.status}`, 'student', { status: review.status, revision: review.revision, ...(review.decision ? { decision: review.decision } : {}) });
+      if (review.status === 'rejected') {
+        toast('Your instructor returned guidance. Your source and map were not changed.', 'error');
       } else if (review.status === 'approved') {
-        toast(review.decision === 'revise_and_approve' ? 'Instructor guidance is ready. Review it before generating candidates.' : 'Instructor review is complete. Candidate generation is available.');
+        toast('Instructor guidance is ready.');
       } else {
         toast('Instructor review is still pending.');
       }
@@ -1911,12 +2085,59 @@ function App() {
     }
   };
 
-  const prepareCandidates = () => {
-    const review = project.preflight?.review;
-    if (review?.status !== 'approved' || !['approve', 'revise_and_approve'].includes(review.decision)) {
-      toast('Instructor approval is required before candidate generation.', 'error');
-      return;
+  const prepareAnotherReview = () => {
+    update((draft) => { draft.preflight = null; }, 'preflight.review-restarted', 'Prepared another instructor review');
+    setStudentAnnotation('');
+    toast('Revise your source if needed, then generate guidance for another review.');
+  };
+
+  const generateConnectionSuggestions = async () => {
+    const payload = connectionSuggestionPayload(project, connectionPrompt.trim());
+    if (payload.nodes.length < 2) return toast('Add at least two nodes before requesting connections.', 'error');
+    if (payload.nodes.length > 50) return toast('Choose 50 or fewer nodes for one connection request.', 'error');
+    if (!payload.prompt) return;
+    if (payload.projectOverlay.customInstructions.length > MAX_EVALUATION_CUSTOM_INSTRUCTIONS) {
+      return toast('Project instructions are too long for connection suggestions. Ask your instructor to shorten them.', 'error');
     }
+    const accessGeneration = accessGenerationRef.current;
+    const requestKey = stableId('connection-request', JSON.stringify(payload));
+    setConnectionBusy(true);
+    try {
+      const response = await suggestMapConnections(payload);
+      if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
+      if (stableId('connection-request', JSON.stringify(connectionSuggestionPayload(projectRef.current, connectionPromptRef.current.trim()))) !== requestKey) {
+        toast('The nodes or description changed while suggestions were being prepared. Request them again.', 'error');
+        return;
+      }
+      const normalized = normalizeConnectionSuggestions(response, projectRef.current);
+      setConnectionSuggestions(normalized);
+      toast(normalized.length ? 'Connections are ready for your review.' : 'No connections were suggested. Add more detail and try again.');
+    } catch (error) {
+      await handleReviewApiError(error, accessGeneration, 'connection request');
+    } finally {
+      if (accessGeneration === accessGenerationRef.current) setConnectionBusy(false);
+    }
+  };
+
+  const editConnectionSuggestion = (id, field, value) => {
+    const nodeById = new Map(nodesForConnectionPrompt(projectRef.current).map((node) => [node.id, node]));
+    setConnectionSuggestions((current) => current.map((suggestion) => {
+      if (suggestion.id !== id) return suggestion;
+      const next = { ...suggestion, [field]: value, status: 'pending', claimState: 'inference' };
+      if (field === 'source') next.sourceLabel = nodeById.get(value)?.label || next.sourceLabel;
+      if (field === 'target') next.targetLabel = nodeById.get(value)?.label || next.targetLabel;
+      if (field === 'source' || field === 'target' || field === 'verb') next.rationale = 'You edited this suggestion.';
+      return next;
+    }));
+  };
+
+  const decideConnectionSuggestion = (id, status) => {
+    setConnectionSuggestions((current) => current.map((suggestion) => suggestion.id === id
+      ? { ...suggestion, status, claimState: status === 'confirmed' ? 'student interpretation' : 'inference' }
+      : suggestion));
+  };
+
+  const prepareCandidates = () => {
     const extracted = extractCandidates(project.submission);
     const edges = extracted.edges.filter((edge) => edge.scale === project.activeScale);
     const requiredNodeIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
@@ -1924,10 +2145,6 @@ function App() {
       nodes: extracted.nodes.filter((node) => node.scale === project.activeScale || requiredNodeIds.has(node.id)),
       edges,
     };
-    if (!candidates.nodes.length) {
-      toast('No source-grounded actors were found at this scale. Add explicit actor-to-actor statements before generating candidates.', 'error');
-      return;
-    }
     const snapshot = configurationSnapshot(project, 'builder');
     if (!project.instructor.requireStudentConfirmation) {
       candidates.nodes.forEach((node) => { node.status = 'confirmed'; node.claimState = 'student interpretation'; });
@@ -1937,16 +2154,16 @@ function App() {
         edge.claimState = edge.status === 'confirmed' ? 'student interpretation' : edge.status === 'research lead' ? 'research lead' : edge.claimState;
       });
     }
-    update((draft) => { draft.candidates = candidates; draft.stage = 4; draft.furthestStage = Math.max(draft.furthestStage || 0, 4); }, 'candidates.generated', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { configurationSnapshot: snapshot, sourceFingerprint: project.submission.fingerprint || stableId('src', project.submission.text) });
-    recordStageTransition(project.stage, 4, { completed: true });
-    toast('Source-grounded candidates are ready for review.');
+    update((draft) => { draft.candidates = candidates; draft.stage = 2; draft.furthestStage = Math.max(draft.furthestStage || 0, 2); }, 'candidates.generated', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { configurationSnapshot: snapshot, sourceFingerprint: project.submission.fingerprint || stableId('src', project.submission.text) });
+    recordStageTransition(project.stage, 2, { completed: true });
+    toast(candidates.nodes.length ? 'Candidates based on your source are ready for review.' : 'No candidates were generated. You can open the map and add what the source supports.');
   };
 
-  const commitGraph = () => {
+  const commitMapSelections = () => {
     const acceptedNodes = project.candidates.nodes.filter((item) => item.status === 'confirmed' || item.status === 'research lead');
     const ids = new Set(acceptedNodes.map((node) => node.id));
     const acceptedEdges = project.candidates.edges.filter((item) => (item.status === 'confirmed' || item.status === 'research lead') && ids.has(item.source) && ids.has(item.target));
-    if (!acceptedNodes.length) return toast('Confirm at least one node before opening the map.', 'error');
+    const acceptedSuggestions = connectionSuggestions.filter((edge) => edge.status === 'confirmed' && edge.verb.trim() && edge.source !== edge.target);
     const reviewedNodeIds = new Set(project.candidates.nodes.map((node) => node.id));
     const reviewedEdgeIds = new Set(project.candidates.edges.map((edge) => edge.id));
     const snapshot = configurationSnapshot(project, 'builder');
@@ -1971,60 +2188,69 @@ function App() {
       const priorEdges = draft.graph.edges.map((edge) => ((reviewedEdgeIds.has(edge.id) && !edgeIds.has(edge.id)) || retiredNodeIds.has(edge.source) || retiredNodeIds.has(edge.target)) ? { ...edge, status: 'rejected', claimState: 'retired', notes: [edge.notes, 'Retired during candidate review.'].filter(Boolean).join(' ') } : edge);
       draft.graph.nodes = [...priorNodes.filter((node) => !nodeIds.has(node.id)), ...nextNodes];
       draft.graph.edges = [...priorEdges.filter((edge) => !edgeIds.has(edge.id)), ...nextEdges];
-      draft.stage = 5;
-      draft.furthestStage = Math.max(draft.furthestStage || 0, 5);
-    }, 'graph.committed', `${acceptedNodes.length} nodes and ${acceptedEdges.length} relationships confirmed`, 'student', { configurationSnapshot: snapshot, operations: { nodes: acceptedNodes.map((node) => node.id), edges: acceptedEdges.map((edge) => edge.id), retiredNodes: [...reviewedNodeIds].filter((id) => !ids.has(id)) } });
-    recordStageTransition(project.stage, 5, { completed: true });
-    toast('Confirmed operations added to the durable graph.');
+      const graphNodeIds = new Set(draft.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired').map((node) => node.id));
+      const existingIds = new Set(draft.graph.edges.map((edge) => edge.id));
+      const existingConnections = new Set(draft.graph.edges
+        .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+        .map((edge) => `${edge.source}\u0000${edge.verb.trim().toLocaleLowerCase()}\u0000${edge.target}`));
+      acceptedSuggestions.forEach((edge) => {
+        if (!graphNodeIds.has(edge.source) || !graphNodeIds.has(edge.target)) return;
+        const key = `${edge.source}\u0000${edge.verb.trim().toLocaleLowerCase()}\u0000${edge.target}`;
+        if (existingIds.has(edge.id) || existingConnections.has(key)) return;
+        draft.graph.edges.push({ ...edge, verb: edge.verb.trim(), status: 'confirmed', claimState: 'student interpretation' });
+        existingIds.add(edge.id);
+        existingConnections.add(key);
+      });
+      draft.stage = 3;
+      draft.furthestStage = Math.max(draft.furthestStage || 0, 3);
+    }, 'graph.committed', `${acceptedNodes.length} nodes, ${acceptedEdges.length} relationships, and ${acceptedSuggestions.length} suggested connections confirmed`, 'student', {
+      configurationSnapshot: snapshot,
+      operations: {
+        nodes: acceptedNodes.map((node) => node.id),
+        edges: acceptedEdges.map((edge) => edge.id),
+        suggestedEdges: acceptedSuggestions.map((edge) => edge.id),
+        retiredNodes: [...reviewedNodeIds].filter((id) => !ids.has(id)),
+      },
+    });
+    setConnectionPrompt('');
+    setConnectionSuggestions([]);
+    recordStageTransition(project.stage, 3, { completed: true });
+    toast(acceptedNodes.length || acceptedSuggestions.length ? 'Selections added to the map.' : 'Map opened without adding selections.');
   };
 
   const primary = async () => {
     switch (project.stage) {
       case 0: setStage(1, { completed: true }); break;
-      case 1: setStage(2, { completed: true }); break;
-      case 2:
-        if (!project.preflight || project.preflight.review?.decision === 'reject' || (!project.preflight.review && !hasUsableEvaluation(project.preflight))) await generateSuggestions();
-        else if (!project.preflight.review) await sendForInstructorReview();
-        else if (project.preflight.review.status === 'approved') prepareCandidates();
-        else setStage(3);
-        break;
-      case 3:
-        if (project.preflight?.review?.status === 'approved') prepareCandidates();
-        else await checkInstructorResponse();
-        break;
-      case 4: commitGraph(); break;
-      case 5: setStage(6, { completed: true }); break;
-      case 6:
-        if (!project.reflection.trim()) toast('Name the analytical change before finishing this release.', 'error');
-        else {
-          update((draft) => {
-            if (!draft.completedScales.includes(draft.activeScale)) draft.completedScales.push(draft.activeScale);
-          }, 'release.completed', SCALES[project.activeScale].label);
-          logPrototype('stage_completed', { fromStage: 6, toStage: 6, success: true }, STAGES[6].label);
-          toast('Release saved with its provenance and revision history.');
-        }
+      case 1: prepareCandidates(); break;
+      case 2: commitMapSelections(); break;
+      case 3: setStage(4, { completed: true }); break;
+      case 4:
+        update((draft) => {
+          if (!draft.completedScales.includes(draft.activeScale)) draft.completedScales.push(draft.activeScale);
+          draft.stage = 0;
+          draft.furthestStage = Math.max(draft.furthestStage || 0, 4);
+          draft.preflight = null;
+          draft.reflection = '';
+        }, 'scale.cycle-completed', SCALES[project.activeScale].label);
+        setConnectionPrompt('');
+        setConnectionSuggestions([]);
+        recordStageTransition(4, 0, { completed: true });
+        toast('Cycle saved. Choose where to focus next.');
         break;
       default: break;
     }
   };
 
   const primaryLabel = (() => {
-    if (project.stage === 2) {
-      if (reviewBusy === 'evaluating') return 'Generating suggestions…';
-      if (reviewBusy === 'submitting') return 'Sending for instructor review…';
-      if (!project.preflight || project.preflight.review?.decision === 'reject') return 'Generate suggestions';
-      if (!project.preflight.review && !hasUsableEvaluation(project.preflight)) return 'Generate fresh suggestions';
-      return !project.preflight.review ? 'Send for instructor review' : project.preflight.review.status === 'approved' ? 'Generate candidates' : 'Open instructor response';
-    }
-    if (project.stage === 3) return project.preflight?.review?.status === 'approved' ? 'Generate candidates' : reviewBusy === 'refreshing' ? 'Checking instructor response…' : 'Check instructor response';
-    if (project.stage === 4) return 'Build confirmed map';
-    if (project.stage === 5) return 'Review revision';
-    if (project.stage === 6) return 'Finish release';
-    return 'Continue';
+    if (project.stage === 0) return 'Review source';
+    if (project.stage === 1) return 'Choose nodes and connections';
+    if (project.stage === 2) return 'Open map';
+    if (project.stage === 3) return 'Revise and export';
+    return 'Start another cycle';
   })();
 
   const backDisabled = project.stage === 0;
-  const canPrimary = !reviewBusy && (project.stage !== 1 || project.submission.text.trim().length >= 80);
+  const canPrimary = !reviewBusy && !connectionBusy;
   const replaceProject = useCallback((imported, fileName = 'Imported project') => {
     const next = structuredClone(imported);
     next.updatedAt = new Date().toISOString();
@@ -2032,15 +2258,16 @@ function App() {
     setProject(next);
     setStudentAnnotation('');
     setReviewBusy(null);
+    setConnectionBusy(false);
+    setConnectionPrompt('');
+    setConnectionSuggestions([]);
     logPrototype('project_imported', { stageIndex: next.stage, nodeCount: next.graph.nodes.length, edgeCount: next.graph.edges.length }, STAGES[next.stage].label);
     logPrototype('stage_viewed', { fromStage: projectRef.current.stage, toStage: next.stage }, STAGES[next.stage].label);
   }, [logPrototype]);
   const screen = [
-    <ScaleStage project={project} update={update} />,
     <IntakeStage project={project} update={update} toast={toast} />,
-    <SuggestionReviewStage project={project} update={update} toast={toast} studentAnnotation={studentAnnotation} setStudentAnnotation={setStudentAnnotation} persistence={accessState.access?.persistence} retentionDays={accessState.access?.retentionDays} suggestionRuntime={accessState.access?.suggestionRuntime} />,
-    <InstructorResponseStage project={project} />,
-    <CandidateStage project={project} update={update} toast={toast} />,
+    <ReviewSourceStage project={project} studentAnnotation={studentAnnotation} setStudentAnnotation={setStudentAnnotation} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onSubmit={sendForInstructorReview} onRefresh={checkInstructorResponse} onRevise={prepareAnotherReview} />,
+    <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} />,
     <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} />,
   ][project.stage];
@@ -2058,7 +2285,7 @@ function App() {
       if (generation !== accessGenerationRef.current) return false;
       setAccessState({ status: 'granted', access: result.access, message: null, kind: 'info' });
       setReviewBusy(null);
-      setPrototypeLogState({ status: 'active', dropped: 0 });
+      setConnectionBusy(false);
       setWorkspaceStarted(false);
       return true;
     } catch (error) {
@@ -2070,8 +2297,8 @@ function App() {
         status: throttled ? 'throttled' : unavailable ? 'unavailable' : 'required',
         access: null,
         message: throttled
-          ? `Too many attempts. Try again${retryAfter ? ` in ${retryAfter} seconds` : ' shortly'}. Your saved project is unchanged.`
-          : unavailable ? 'The classroom server is unavailable. Try again after it is restored; your saved project is unchanged.' : 'That class code was not accepted. Check the code and try again.',
+          ? `Too many attempts. Try again${retryAfter ? ` in ${retryAfter} seconds` : ' shortly'}.`
+          : unavailable ? 'The class workspace is unavailable. Try again later.' : 'That code did not work. Check it and try again.',
         kind: 'error',
       });
       return false;
@@ -2083,8 +2310,9 @@ function App() {
     try { await endStudentAccess(); } catch { /* Local expiry still removes the UI grant. */ }
     if (generation !== accessGenerationRef.current) return;
     setReviewBusy(null);
+    setConnectionBusy(false);
     setWorkspaceStarted(false);
-    setAccessState({ status: 'required', access: null, message: 'Class access ended. Your project remains saved on this device.', kind: 'info' });
+    setAccessState({ status: 'required', access: null, message: 'Enter your class code to continue.', kind: 'info' });
   };
 
   const resumeProject = () => {
@@ -2098,13 +2326,16 @@ function App() {
     setProject(blank);
     setStudentAnnotation('');
     setReviewBusy(null);
+    setConnectionPrompt('');
+    setConnectionSuggestions([]);
+    setConnectionBusy(false);
     setHasSavedProject(false);
     setWorkspaceStarted(true);
     setPendingNewProject(false);
     setModal(null);
     logPrototype('project_started', { stageIndex: 0, nodeCount: 0, edgeCount: 0 }, STAGES[0].label);
     logPrototype('stage_viewed', { fromStage, toStage: 0 }, STAGES[0].label);
-    toast('Blank local project created.');
+    toast('Blank project created.');
   };
 
   const requestNewProject = () => {
@@ -2120,7 +2351,7 @@ function App() {
       setWorkspaceStarted(true);
       setModal(null);
     }
-    setSaveState((current) => ({ ...current, status: 'error', message: 'Working in memory only. Export a recovery copy before closing this page.' }));
+    setSaveState((current) => ({ ...current, status: 'error', message: 'Changes are not being saved. Download a copy before closing this page.' }));
   };
 
   const preserveRecoveryAndEnableStorage = () => {
@@ -2130,42 +2361,44 @@ function App() {
         window.localStorage.setItem(recoveryKey, saveState.recovery);
       }
       setPersistenceBlocked(false);
-      setSaveState((current) => ({ ...current, status: 'saving', message: 'Preparing a new versioned browser recovery…', recovery: saveState.recovery }));
+      setSaveState((current) => ({ ...current, status: 'saving', message: 'Trying to save…', recovery: saveState.recovery }));
       if (pendingNewProject) startBlankProject();
       else setModal(null);
     } catch (error) {
-      setSaveState((current) => ({ ...current, status: 'error', message: `Browser storage is still unavailable: ${error.message}` }));
+      setSaveState((current) => ({ ...current, status: 'error', message: `Saving is still unavailable: ${error.message}` }));
     }
   };
 
-  const recoveryModal = <Modal open={modal === 'storage'} title="Local save recovery" onClose={() => setModal(null)}>
+  const recoveryModal = <Modal open={modal === 'storage'} title="Save recovery" onClose={() => setModal(null)}>
     <div className="confirm-panel">
       <p>{saveState.message}</p>
-      <p>No invalid or unavailable storage value will be overwritten automatically. Download the preserved bytes, continue in memory, or explicitly preserve them under a separate recovery key before enabling a new versioned save.</p>
+      <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p>
       <div className="button-stack">
-        {saveState.recovery && <button type="button" className="button button--secondary" onClick={() => download('systems-mapping-prior-recovery.json', saveState.recovery)}>Download prior data</button>}
+        {saveState.recovery && <button type="button" className="button button--secondary" onClick={() => download('systems-mapping-prior-recovery.json', saveState.recovery)}>Download earlier copy</button>}
         <button type="button" className="button button--secondary" onClick={() => download(`${project.id}-recovery.json`, serializeProject(project))}>Download current project</button>
-        <button type="button" className="button button--ghost" onClick={continueInMemory}>Continue in memory only</button>
-        <button type="button" className="button" onClick={preserveRecoveryAndEnableStorage}>{saveState.recovery ? 'Preserve prior bytes and enable saving' : 'Retry browser storage'}</button>
+        <button type="button" className="button button--ghost" onClick={continueInMemory}>Keep working without saving</button>
+        <button type="button" className="button" onClick={preserveRecoveryAndEnableStorage}>{saveState.recovery ? 'Save earlier copy and try again' : 'Try saving again'}</button>
       </div>
     </div>
   </Modal>;
 
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
-      <a href="#workspace" className="brand" aria-label="Systems Mapping Teacher Console home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>Teacher customization</small></span></a>
+      <a href="#workspace" className="brand" aria-label="Systems Mapping Teacher Console home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>Teacher Console</small></span></a>
       <button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button>
     </header>
-    <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher"><TeacherDashboard onConfigurationChanged={refreshAfterTeacherChange} /></main>
+    <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
+      <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard onConfigurationChanged={refreshAfterTeacherChange} /></Suspense>
+    </main>
   </div>;
 
   if (accessState.status !== 'granted') return <ClassAccessScreen state={accessState} onSubmit={submitClassCode} onTeacher={() => setTeacherOpen(true)} />;
 
   if (!workspaceStarted) return <>
-    <ResumeScreen project={project} hasSavedProject={hasSavedProject} access={accessState.access} saveState={saveState} prototypeLogState={prototypeLogState} onResume={resumeProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} />
+    <ResumeScreen project={project} hasSavedProject={hasSavedProject} saveState={saveState} onResume={resumeProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} />
     {recoveryModal}
     <Modal open={modal === 'new-project'} title="Start another project" onClose={() => { setPendingNewProject(false); setModal(null); }}>
-      <div className="confirm-panel"><p>This replaces the current browser workspace with a blank local project. Export the current project first if you need a separate portable copy.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start another project</button></div></div>
+      <div className="confirm-panel"><p>This replaces the current workspace with a blank project. Export the current project first if you need a separate copy.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start another project</button></div></div>
     </Modal>
   </>;
 
@@ -2173,20 +2406,20 @@ function App() {
     <header className="app-header">
       <a href="#workspace" className="brand" aria-label="Systems Mapping home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>{project.title}</small></span></a>
       <div className="header-actions">
-        {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Local save needs attention</button> : saveState.status === 'validation' ? <span className="save-state save-state--error"><i />Complete the current field to save</span> : <span className="save-state"><i />{saveState.status === 'saving' ? 'Saving…' : 'Saved on device'}</span>}
-        {prototypeLogState.status === 'degraded' && <span className="prototype-log-state" role="status"><strong aria-hidden="true">!</strong><span>Prototype log unavailable · {prototypeLogState.dropped} dropped</span></span>}
-        <button className="text-button" type="button" onClick={() => setTeacherOpen(true)}><Icon name="settings" />Teacher access</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
+        {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <span className="save-state save-state--error"><i />Complete the current field to save</span> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
+        <button className="text-button" type="button" onClick={() => setStage(3)}><Icon name="map" />Map</button><button className="text-button" type="button" onClick={() => setTeacherOpen(true)}><Icon name="settings" />Teacher Console</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
       </div>
     </header>
-    <div className="progress-track" aria-label={`Stage ${project.stage + 1} of ${STAGES.length}`}>{STAGES.map((stage, index) => <span key={stage.label} className={index <= project.stage ? 'is-active' : ''} />)}</div>
-    <div className="sr-only" aria-live="polite">Stage {project.stage + 1} of {STAGES.length}: {STAGES[project.stage].label}</div>
+    <div className="sr-only" aria-live="polite">Current section {STAGES[project.stage].label}</div>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${project.stage}`}>{screen}</main>
-    <footer className="app-footer"><div className="footer-context"><span>{project.stage + 1} of {STAGES.length}</span><strong>{STAGES[project.stage].label}</strong></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></footer>
-    <Modal open={modal === 'stages'} title="Stages" onClose={() => setModal(null)}>
-      <ol className="stage-menu">{STAGES.map((stage, index) => { const accessible = index <= Math.max(project.furthestStage || 0, project.stage); return <li key={stage.label}><button disabled={!accessible} className={index === project.stage ? 'is-current' : ''} onClick={() => { setStage(index); setModal(null); }}><span>0{index + 1}</span><strong>{stage.label}</strong>{index === project.stage ? <em>Current</em> : accessible ? null : <Icon name="lock" size={15} />}</button></li>; })}</ol>
+    <footer className="app-footer"><div className="footer-context"><strong>{STAGES[project.stage].label}</strong></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></footer>
+    <Modal open={modal === 'stages'} title="Five stages" onClose={() => setModal(null)}>
+      <ol className="stage-menu">{STAGES.map((stage, index) => {
+        return <li key={stage.id}><button className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><strong>{stage.label}</strong>{index === project.stage ? <em>Current</em> : null}</button></li>;
+      })}</ol>
     </Modal>
     <Modal open={modal === 'new-project'} title="Start a new project" onClose={() => setModal(null)}>
-      <div className="confirm-panel"><p>This replaces the current browser workspace with a blank local project. It does not delete any JSON, CSV, or Markdown files you already exported.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start blank project</button></div></div>
+      <div className="confirm-panel"><p>This replaces the current workspace with a blank project. It does not delete any JSON, CSV, or Markdown files you already exported.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start blank project</button></div></div>
     </Modal>
     {recoveryModal}
     <div className={`toast toast--${toastState?.type || 'success'} ${toastState ? 'is-visible' : ''}`} role="status" aria-live="polite">{toastState?.type === 'success' && <Icon name="check" />}{toastState?.message}</div>

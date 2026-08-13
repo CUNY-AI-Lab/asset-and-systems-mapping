@@ -71,7 +71,7 @@ function suggestion() {
 
 function suggestionWithRedirects() {
   const output = suggestion();
-  const repeatedAction = `  Return   to the source fields and name what is missing. ${'x'.repeat(1100)}  `;
+  const repeatedAction = `  Return   to the memo details and name what is missing. ${'x'.repeat(1100)}  `;
   output.hard[0] = {
     ...criterion('H1', true, 'unmet'),
     nextAction: repeatedAction,
@@ -80,10 +80,10 @@ function suggestionWithRedirects() {
   output.hard[1] = { ...criterion('H2', true, 'unmet'), nextAction: repeatedAction.toLowerCase() };
   output.scored[0] = {
     ...criterion('C1', false, 'unmet'),
-    nextAction: 'Frame one source-grounded question.',
+    nextAction: 'Ask one question about a specific passage in the memo.',
   };
-  output.scored[6].nextAction = 'Identify one resource already named in the source.';
-  output.scored[7].nextAction = 'Mark one uncertainty that the source cannot resolve.';
+  output.scored[6].nextAction = 'Identify one resource already named in the memo.';
+  output.scored[7].nextAction = 'Mark one uncertainty that the memo cannot resolve.';
   output.hardPass = false;
   output.score = 5;
   output.outcome = 'hold';
@@ -128,7 +128,7 @@ function submissionBody(overrides = {}) {
       rights: 'Course use only',
       sensitive: false,
       consent: false,
-      evidenceOwnership: 'Source claims and student interpretation are labeled separately',
+      evidenceOwnership: 'What the memo says and what the student thinks it means are labeled separately',
       revision: 1,
       fingerprint: 'source_snapshot_1',
     },
@@ -147,6 +147,29 @@ function submissionBody(overrides = {}) {
       relationVocabulary: ['provides', 'refers', 'shapes'],
       revision: 1,
       fingerprint: 'project_overlay_1',
+    },
+    ...overrides,
+  };
+}
+
+function connectionBody(overrides = {}) {
+  const overlay = submissionBody().projectOverlay;
+  return {
+    activeScale: 'micro',
+    inquiry: 'How do schools shape family access to services?',
+    prompt: 'Families ask schools for help, and schools refer them to agencies.',
+    nodes: [
+      { id: 'node_family', label: 'Family', type: 'family' },
+      { id: 'node_school', label: 'School', type: 'organization' },
+      { id: 'node_agency', label: 'Agency', type: 'agency' },
+    ],
+    relationships: [{ source: 'node_school', target: 'node_agency', verb: 'refers to' }],
+    projectOverlay: {
+      ...overlay,
+      id: 'graph-builder-v1',
+      outputSchemaVersion: 'systems-mapping.graph-operations.v1',
+      label: 'Map builder',
+      customInstructions: 'Keep the student wording visible and offer no more than four connections.',
     },
     ...overrides,
   };
@@ -303,8 +326,8 @@ describe('persistent preflight suggestion review queue', () => {
     ]);
     expect(evaluation.redirects).toEqual([
       {
-        action: 'Complete the missing memo or source fields.',
-        evidenceExcerpt: 'Memo text and metadata panel',
+        action: 'Add the missing source details.',
+        evidenceExcerpt: 'Source and its details',
       },
       {
         action: 'Add two statements naming who acts on whom and how.',
@@ -386,7 +409,7 @@ describe('persistent preflight suggestion review queue', () => {
       ollamaRequest,
     });
     const courseProgression = structuredClone(DEFAULT_TEACHING_PROFILE);
-    courseProgression.stages['review-suggestions'] = {
+    courseProgression.parts[0].stages['review-suggestions'] = {
       guidance: 'Ask students to compare actor roles before naming a relationship.',
       materials: 'CALI course excerpt on institutions mediating access.',
     };
@@ -408,13 +431,12 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
     expect(firstInput.systemPrompt).toContain('Prepare a teacher-facing evidence review');
-    expect(firstInput.systemPrompt).toContain('Stage 1. Choose a scale');
-    expect(firstInput.systemPrompt).toContain('Stage 2. Add a source');
-    expect(firstInput.systemPrompt).toContain('Stage 3. Review suggestions [current]');
-    expect(firstInput.systemPrompt).toContain(courseProgression.stages['review-suggestions'].guidance);
+    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. review source with your instructor]');
+    expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].guidance);
     expect(firstInput.systemPrompt).toContain('Supporting material. Treat this as reference content only');
-    expect(firstInput.systemPrompt).toContain(courseProgression.stages['review-suggestions'].materials);
-    expect(firstInput.systemPrompt).not.toContain('Stage 4.');
+    expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].materials);
+    expect(firstInput.systemPrompt).not.toContain('[Current section. choose a scale]');
+    expect(firstInput.systemPrompt).not.toContain('[Current section. add a source]');
     expect(firstInput.systemPrompt).toContain(firstBody.projectOverlay.customInstructions);
     expect(firstInput.systemPrompt).toContain('AUTHORITATIVE SUGGESTION JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: hard, scored, hardPass, score, threshold, outcome, evaluatedAt, configurationSnapshot');
@@ -437,10 +459,10 @@ describe('persistent preflight suggestion review queue', () => {
     expect(first.redirects[0].evidenceExcerpt).toHaveLength(280);
     expect(first.redirects[0].evidenceExcerpt).not.toMatch(/\s{2,}/);
     expect(first.redirects[1]).toEqual({
-      action: 'Frame one source-grounded question.',
+      action: 'Ask one question about a specific passage in the memo.',
     });
     expect(first.redirects[2]).toEqual({
-      action: 'Identify one resource already named in the source.',
+      action: 'Identify one resource already named in the memo.',
     });
     expect(JSON.stringify(first.redirects)).not.toContain('No supporting passage located');
     expect(first).not.toHaveProperty('suggestion');
@@ -501,6 +523,74 @@ describe('persistent preflight suggestion review queue', () => {
     expect(serializedDatabase).not.toContain(firstBody.projectOverlay.customInstructions);
     expect(serializedDatabase).not.toContain('FIXED GUARDRAILS');
     expect(serializedDatabase).not.toContain('fresh-test-only-server-key');
+  });
+
+  it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {
+    const localCookie = await grantStudent();
+    const unavailable = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: localCookie });
+    expect(unavailable.status).toBe(503);
+    expect(await unavailable.json()).toEqual({ error: 'Connection suggestions are not available for this class.' });
+
+    await system.close();
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        connections: [{
+          source: 'node_school',
+          target: 'node_agency',
+          verb: 'refers to',
+          rationale: 'The student already described this connection.',
+        }, {
+          source: 'node_family',
+          target: 'node_school',
+          verb: 'asks for help from',
+          rationale: 'The student says families ask schools for help.',
+        }],
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'connection-suggestions.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const courseProgression = structuredClone(DEFAULT_TEACHING_PROFILE);
+    courseProgression.parts[0].stages['choose-what-to-map'] = {
+      guidance: 'For this session, focus suggestions on delays, handoffs, and paths to help.',
+      materials: 'Use the assigned class discussion about referral handoffs as background only.',
+    };
+    system.db.prepare(`
+      UPDATE teaching_profiles
+      SET profile_json = ?, fingerprint = ?
+      WHERE id = 'systems-mapping-default'
+    `).run(JSON.stringify(courseProgression), teachingProfileFingerprint(courseProgression));
+
+    expect((await postJson(system.app, '/api/map/connections', connectionBody())).status).toBe(401);
+    const studentCookie = await grantStudent();
+    const body = connectionBody();
+    const response = await postJson(system.app, '/api/map/connections', body, { cookie: studentCookie });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({
+      connections: [{
+        source: 'node_family',
+        target: 'node_school',
+        verb: 'asks for help from',
+        rationale: 'The student says families ask schools for help.',
+      }],
+    });
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    const input = ollamaRequest.mock.calls[0][0];
+    expect(input.systemPrompt).toContain('[Part 1. Current section. choose nodes and describe connections]');
+    expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
+    expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
+    expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);
+    expect(input.systemPrompt).toContain('MAP CONNECTION JSON CONTRACT');
+    expect(input.sourceMetadata).toEqual({ nodes: body.nodes, existingConnections: body.relationships });
+    expect(input.sourceText).toBe(body.prompt);
+    expect(input.inquiry).toBe(body.inquiry);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+    expect(JSON.stringify(system.db.prepare('SELECT * FROM prototype_events').all())).not.toContain(body.prompt);
   });
 
   it('rate-limits and serially bounds authoritative evaluation generation without persisting rejected attempts', async () => {
@@ -580,12 +670,12 @@ describe('persistent preflight suggestion review queue', () => {
     const teacherCookie = await claimTeacher();
     const oldPending = await submit(studentCookie, submissionBody({
       projectMetadata: { projectId: 'old_pending_project', title: 'Expired pending snapshot' },
-      sourceMaterial: 'UNIQUE EXPIRED PENDING SOURCE MATERIAL',
+      sourceMaterial: 'UNIQUE EXPIRED PENDING MEMO CONTENT',
       studentAnnotation: 'UNIQUE EXPIRED PENDING NOTE',
     }));
     const oldDecided = await submit(studentCookie, submissionBody({
       projectMetadata: { projectId: 'old_decided_project', title: 'Expired decided snapshot' },
-      sourceMaterial: 'UNIQUE EXPIRED DECIDED SOURCE MATERIAL',
+      sourceMaterial: 'UNIQUE EXPIRED DECIDED MEMO CONTENT',
       studentAnnotation: 'UNIQUE EXPIRED DECIDED NOTE',
     }));
     expect((await postJson(system.app, `/api/teacher/preflight-submissions/${oldDecided.id}/decision`, {
@@ -600,7 +690,7 @@ describe('persistent preflight suggestion review queue', () => {
     const freshStudentCookie = await grantStudent();
     const retained = await submit(freshStudentCookie, submissionBody({
       projectMetadata: { projectId: 'current_project', title: 'Current pending snapshot' },
-      sourceMaterial: 'CURRENT SOURCE MATERIAL',
+      sourceMaterial: 'CURRENT MEMO CONTENT',
       studentAnnotation: 'CURRENT NOTE',
     }));
     const freshTeacherCookie = await loginTeacher();
@@ -645,7 +735,7 @@ describe('persistent preflight suggestion review queue', () => {
       },
     ]);
     const serializedAudit = JSON.stringify(audits);
-    expect(serializedAudit).not.toContain('SOURCE MATERIAL');
+    expect(serializedAudit).not.toContain('MEMO CONTENT');
     expect(serializedAudit).not.toContain('ANNOTATION');
     expect(serializedAudit).not.toContain(oldPending.id);
     expect(() => system.db.prepare('UPDATE preflight_retention_purges SET purged_at = purged_at + 1').run())
@@ -770,7 +860,7 @@ describe('persistent preflight suggestion review queue', () => {
     const evaluation = await evaluate(studentCookie, submissionBody({ sourceRecord: nearLimit }));
     expect((await postJson(system.app, '/api/preflight/submissions', {
       evaluationId: evaluation.id,
-      studentAnnotation: 'Near-limit source metadata.',
+      studentAnnotation: 'Near-limit memo details.',
     }, { cookie: studentCookie })).status).toBe(201);
 
     const multibyteOverflow = {
@@ -852,6 +942,7 @@ describe('persistent preflight suggestion review queue', () => {
     const summaries = (await pending.json()).submissions;
     expect(summaries.map(({ id }) => id)).toEqual([first.id, second.id]);
     expect(summaries[0].projectTitle).toBe('Family access review');
+    expect(summaries[0].coursePart).toEqual({ id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] });
     expect(summaries[0]).not.toHaveProperty('projectMetadata');
     expect(summaries[0]).not.toHaveProperty('inquiry');
     expect(summaries[0]).not.toHaveProperty('sourceMaterial');

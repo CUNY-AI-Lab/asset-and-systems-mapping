@@ -12,7 +12,7 @@ import {
   withDefaultNodeLayout,
 } from './domain.js';
 
-const STORAGE_KEY = 'systems-mapping-studio.project.v2';
+const STORAGE_KEY = 'systems-mapping-studio.project.v5';
 const PERSIST_DEBOUNCE_MS = 450;
 
 let studentSession;
@@ -20,6 +20,7 @@ let accessResponder;
 let preflightEvaluationResponder;
 let preflightPostResponder;
 let preflightGetResponder;
+let connectionSuggestionResponder;
 let prototypeResponder;
 let fetchMock;
 
@@ -73,7 +74,7 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
       clientUpdatedAt: project.updatedAt,
     },
     activeScale: project.activeScale,
-    stageId: SYSTEMS_MAPPING_STAGES[project.stage]?.id || 'choose-scale',
+    stageId: SYSTEMS_MAPPING_STAGES[project.stage]?.id || 'add-source',
     inquiry: project.inquiry,
     sourceRecord: Object.fromEntries(['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership'].map((key) => [key, project.submission[key]])),
     sourceMaterial: project.submission.text,
@@ -126,11 +127,11 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
 
 function redirectFixture() {
   return [{
-    action: 'Add the missing source title and location.',
-    evidenceExcerpt: 'The memo begins without a complete source record.',
+    action: 'Add the missing title and say where the source came from.',
+    evidenceExcerpt: 'The source begins without enough identifying information.',
   }, {
-    action: 'Separate the source claim from your interpretation.',
-    evidenceExcerpt: 'According to the memo, the school administers services.',
+    action: 'Separate what the source says from your interpretation.',
+    evidenceExcerpt: 'According to the source, the school administers services.',
   }, {
     action: 'Name a second actor-to-actor relationship.',
     evidenceExcerpt: 'The school refers the student to the committee.',
@@ -172,8 +173,8 @@ function projectAwaitingReview(overrides = {}) {
       submittedAt: '2026-08-09T12:00:00.000Z',
     },
   };
-  project.stage = 3;
-  project.furthestStage = 3;
+  project.stage = 1;
+  project.furthestStage = 1;
   return Object.assign(project, overrides);
 }
 
@@ -189,6 +190,7 @@ function defaultFetch(path, options = {}) {
   }
   if (requestPath === '/api/student/logout') return jsonResponse({ ok: true });
   if (requestPath === '/api/preflight/evaluations' && options.method === 'POST') return preflightEvaluationResponder(JSON.parse(options.body));
+  if (requestPath === '/api/map/connections' && options.method === 'POST') return connectionSuggestionResponder(JSON.parse(options.body));
   if (requestPath === '/api/preflight/submissions' && options.method === 'POST') return preflightPostResponder(JSON.parse(options.body));
   if (requestPath.startsWith('/api/preflight/submissions/')) return preflightGetResponder(decodeURIComponent(requestPath.split('/').at(-1)));
   if (requestPath.startsWith('/api/config/public?')) return jsonResponse(publicConfiguration(requestPath));
@@ -233,8 +235,8 @@ function makeMapProject() {
   });
   project.releasedScales = ['micro', 'meso', 'macro'];
   project.activeScale = 'macro';
-  project.stage = 5;
-  project.furthestStage = 5;
+  project.stage = 3;
+  project.furthestStage = 3;
   return project;
 }
 
@@ -251,13 +253,13 @@ function annotationStatus(field) {
 }
 
 function selectAnnotationTarget(target) {
-  if (target === 'node') return screen.getByRole('textbox', { name: /^Analysis/ });
+  if (target === 'node') return screen.getByRole('textbox', { name: /^Annotation/ });
   if (target === 'edge') {
     fireEvent.click(screen.getByRole('tab', { name: 'Relationships' }));
     const panel = screen.getByRole('tabpanel', { name: 'Relationships' });
     const picker = within(panel).getByLabelText('Relationship list');
     fireEvent.click(within(picker).getAllByRole('button')[0]);
-    return screen.getByRole('textbox', { name: /^Relationship annotation/ });
+    return within(panel).getByRole('textbox', { name: 'Annotation' });
   }
   fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
   return screen.getByRole('textbox', { name: /^Map note/ });
@@ -324,6 +326,12 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = (body) => jsonResponse({ evaluation: evaluationRecord(body) }, 201);
     preflightPostResponder = () => jsonResponse({ submission: reviewRecord() }, 201);
     preflightGetResponder = () => jsonResponse({ submission: reviewRecord() });
+    connectionSuggestionResponder = (body) => jsonResponse({ connections: [{
+      source: body.nodes[0].id,
+      target: body.nodes[1].id,
+      verb: 'supports',
+      rationale: 'The student described support between these nodes.',
+    }] }, 201);
     prototypeResponder = () => jsonResponse({ accepted: true }, 202);
     fetchMock = vi.fn(defaultFetch);
     vi.stubGlobal('fetch', fetchMock);
@@ -346,11 +354,11 @@ describe('Systems Mapping workflow', () => {
     studentSession = null;
 
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Enter your class code.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Enter your class code' })).toBeVisible();
     const code = screen.getByRole('textbox', { name: 'Class code' });
     fireEvent.change(code, { target: { value: '999' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('That class code was not accepted');
+    expect(await screen.findByRole('alert')).toHaveTextContent('That code did not work');
     expect(code).toHaveValue('');
     expect(window.localStorage.getItem('classCode')).toBeNull();
     expect(window.sessionStorage.getItem('classCode')).toBeNull();
@@ -358,9 +366,9 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
-    expect(screen.getByText(/Stage 2 of 7/)).toHaveTextContent('Add a source');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to add a source' }));
-    expect(await screen.findByRole('heading', { name: 'Add a memo. Record the source.' })).toBeVisible();
+    expect(screen.getByText(/Current section/)).toHaveTextContent('review source with your instructor');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review source with your instructor' }));
+    expect(await screen.findByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
 
     const attempts = fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/access');
     expect(attempts.map(([, options]) => JSON.parse(options.body))).toEqual([{ code: '999' }, { code: '101' }]);
@@ -381,28 +389,24 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(input, { target: { value: hostedCode } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    expect(screen.getByText(/sent to the course server/i)).toBeVisible();
+    expect(screen.getByText('Every section and the map remain available while your instructor reviews submitted work.')).toBeVisible();
     const request = fetchMock.mock.calls.find(([path]) => String(path) === '/api/student/access');
     expect(JSON.parse(request[1].body)).toEqual({ code: hostedCode });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByText(/sends the memo, inquiry, source metadata, active teacher prompt, and project overlay from the course server to Ollama Cloud/i)).toBeVisible();
-    expect(screen.getByText(/provider model gpt-oss:120b/i)).toBeVisible();
-    expect(screen.getByText(/unsubmitted evaluation expires after 1 day/i)).toBeVisible();
-    fireEvent.click(screen.getByRole('tab', { name: 'Model setup' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Preview effective prompt' }));
-    expect(screen.getByText(/shared teacher base and project overlay govern Ollama Cloud suggestion generation/i)).toBeVisible();
-    expect(document.body).not.toHaveTextContent('Local deterministic · zero egress');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    expect(screen.getByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
   });
 
   it('starts a blank project only after a granted session and explicit start action', async () => {
     render(<App />);
     await showResumeScreen();
     expect(screen.getByRole('heading', { name: 'Start a systems map.' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Choose the current scale.' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Choose a scale and add a source' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Start a project' }));
-    expect(await screen.findByRole('heading', { name: 'Choose the current scale.' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
     expect(screen.getByText('Untitled systems map', { selector: '.brand small' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
   });
@@ -417,14 +421,14 @@ describe('Systems Mapping workflow', () => {
     render(<App />);
     for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale' }));
-    expect(screen.getByRole('heading', { name: 'Choose the current scale.' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
+    expect(screen.getByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
 
     act(() => vi.advanceTimersByTime(59_999));
-    expect(screen.getByRole('heading', { name: 'Choose the current scale.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
     act(() => vi.advanceTimersByTime(1));
-    expect(screen.getByRole('heading', { name: 'Enter your class code.' })).toBeVisible();
-    expect(screen.getByRole('alert')).toHaveTextContent('Class access expired');
+    expect(screen.getByRole('heading', { name: 'Enter your class code' })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter your class code to continue');
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY))).toMatchObject({
       id: project.id,
       title: project.title,
@@ -439,56 +443,169 @@ describe('Systems Mapping workflow', () => {
       evaluation: evaluationRecord(body, { redirects: redirectFixture() }),
     }, 201);
     await resumeSavedProject();
-    expect(screen.getByRole('heading', { name: 'Choose the current scale.' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('heading', { name: 'Add a memo. Record the source.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('NYC systems and assets map');
     fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Family service access map' } });
     expect(screen.getByText('Family service access map', { selector: '.brand small' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Guiding inquiry' })).toHaveValue('How do systems shape access to special-education services in NYC?');
     expect(screen.getByRole('textbox', { name: 'Guiding inquiry' })).toHaveAttribute('maxlength', '8000');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('heading', { name: 'Read the prompts with the memo.' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    expect(screen.getByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
-    const stageMenu = screen.getByRole('dialog', { name: 'Stages' });
-    ['Choose a scale', 'Add a source', 'Review suggestions', "Check your instructor's response", 'Choose what to map', 'Build the map', 'Revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
-    fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Stages' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
+    ['choose a scale and add a source', 'review source with your instructor', 'choose nodes and describe connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
+    within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
+    fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     const guidance = await screen.findByRole('region', { name: 'Return to the source' });
     expect(within(guidance).getAllByRole('article')).toHaveLength(3);
-    expect(within(guidance).getByRole('heading', { name: 'Add the missing source title and location.' })).toBeVisible();
-    expect(within(guidance).getByRole('heading', { name: 'Separate the source claim from your interpretation.' })).toBeVisible();
+    expect(within(guidance).getByRole('heading', { name: 'Add the missing title and say where the source came from.' })).toBeVisible();
+    expect(within(guidance).getByRole('heading', { name: 'Separate what the source says from your interpretation.' })).toBeVisible();
     expect(within(guidance).getByRole('heading', { name: 'Name a second actor-to-actor relationship.' })).toBeVisible();
-    expect(within(guidance).getByText('According to the memo, the school administers services.')).toBeVisible();
+    expect(within(guidance).getByText('According to the source, the school administers services.')).toBeVisible();
     expect(within(guidance).queryByText('Keep this completed item as written.')).not.toBeInTheDocument();
     expect(within(guidance).queryByText('Narrow the inquiry to one decision point.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'What the memo establishes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'What the source establishes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'What the model suggests' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'What remains uncertain' })).not.toBeInTheDocument();
-    expect(screen.getByText('Send to your instructor')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Add a note.' })).toBeVisible();
+    expect(screen.getByText('Instructor guidance')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Add a note' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /Note for instructor/ })).toHaveAttribute('maxlength', '4000');
     const visibleStageText = document.querySelector('.workspace').textContent;
     expect(visibleStageText).not.toMatch(/\b(?:H[1-4]|C[1-8])\b/);
     expect(visibleStageText).not.toMatch(/\b(?:pass|conditional|hold|score|scoring|criterion|criteria|checklist|hard gate)\b/i);
-    fireEvent.click(screen.getByRole('tab', { name: 'Model setup' }));
-    expect(screen.getByRole('tab', { name: 'Suggestion model' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByLabelText('Base-model reference')).toHaveValue('STEM Splitter');
-    expect(screen.getByRole('textbox', { name: /Custom project instructions/ })).toHaveAttribute('maxlength', '16000');
-    expect(screen.getByText('STEM Splitter · deterministic')).toBeVisible();
-    expect(screen.getByText(/teacher prompt and project-instruction edits are provenance only and do not change the deterministic rule set/i)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview effective prompt' }));
-    expect(screen.getByText(/prompt edits are recorded as provenance only; they do not change the fixed rule set/i)).toBeVisible();
-    expect(screen.queryByText(/shared teacher base and project overlay govern Ollama Cloud/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps every scale and the map available without waiting for review', async () => {
+    const project = createDefaultProject();
+    await resumeSavedProject(project);
+
+    const macro = screen.getByRole('radio', { name: /Macro/ });
+    expect(macro).toBeEnabled();
+    fireEvent.click(macro);
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'macro', releasedScales: ['micro', 'macro'] }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Map' }));
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    expect(screen.getByRole('group', { name: /Systems map with 0 nodes and 0 relationships/ })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+  });
+
+  it('groups Micro and Meso in Part 1 and Macro and Integration in Part 2', async () => {
+    await resumeSavedProject(createDefaultProject());
+
+    const scaleGroup = screen.getByRole('radiogroup', { name: 'Mapping scale' });
+    const part1 = within(scaleGroup).getByRole('region', { name: 'Part 1' });
+    const part2 = within(scaleGroup).getByRole('region', { name: 'Part 2' });
+    const part1Scales = within(part1).getAllByRole('radio');
+    const part2Scales = within(part2).getAllByRole('radio');
+
+    expect(part1Scales.map(({ dataset }) => dataset.compositeValue)).toEqual(['micro', 'meso']);
+    expect(part2Scales.map(({ dataset }) => dataset.compositeValue)).toEqual(['macro', 'integration']);
+    [...part1Scales, ...part2Scales].forEach((radio) => expect(radio).toBeVisible());
+
+    fireEvent.click(part2Scales[1]);
+    expect(screen.getByText('Part 2 · Integration')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'What do power, community assets, and earlier scales make possible?' })).toBeVisible();
+  });
+
+  it('keeps Map and all five stages available while instructor review is pending', async () => {
+    const project = projectAwaitingReview();
+    await resumeSavedProject(project);
+    expect(screen.getByText('Your instructor can review this draft while you keep working.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
+    const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
+    SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
+  });
+
+  it('keeps Map and all five stages available after instructor returns work', async () => {
+    const project = projectAwaitingReview();
+    project.preflight.review = {
+      submissionId: 'review_0123456789abcdefghijklmnop',
+      status: 'rejected',
+      decision: 'reject',
+      revision: 2,
+      submittedAt: '2026-08-09T12:00:00.000Z',
+      instructorAnnotation: 'Clarify one connection, then keep refining your map.',
+    };
+
+    await resumeSavedProject(project);
+    expect(screen.getByText('Clarify one connection, then keep refining your map.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
+    const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
+    SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
+  });
+
+  it('opens an empty map from candidate choice instead of gating on generated items', async () => {
+    const project = createDefaultProject();
+    project.stage = 2;
+    project.furthestStage = 2;
+    project.candidates = { nodes: [], edges: [] };
+    await resumeSavedProject(project);
+
+    expect(screen.getByText(/open the map and add supported elements yourself/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+  });
+
+  it('uses the student description to request editable connections and adds only accepted suggestions to the map', async () => {
+    const project = createDefaultProject();
+    const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node) => ({
+      ...node,
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    }));
+    project.candidates = { nodes, edges: [] };
+    project.graph = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
+    expect(screen.getByText(/prompt the custom AI model to formulate new connections/i)).toBeVisible();
+    const prompt = 'Families rely on schools, but delayed referrals make services harder to reach in this session.';
+    fireEvent.change(screen.getByRole('textbox', { name: 'How do these nodes connect?' }), { target: { value: prompt } });
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
+
+    const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
+    expect(verb).toHaveValue('supports');
+    expect(screen.getByRole('button', { name: 'Refine map' })).toBeVisible();
+    const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/map/connections' && options.method === 'POST');
+    const body = JSON.parse(request[1].body);
+    expect(body).toMatchObject({ activeScale: project.activeScale, inquiry: project.inquiry, prompt });
+    expect(body.nodes.map(({ id }) => id)).toEqual(nodes.map(({ id }) => id));
+    expect(body.relationships).toEqual([]);
+    expect(body.projectOverlay).toMatchObject({ id: project.configs.builder.id, customInstructions: project.configs.builder.customInstructions });
+    expect(body.projectOverlay).not.toHaveProperty('fixedPrompt');
+
+    fireEvent.change(verb, { target: { value: 'helps families reach' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(screen.getByRole('img', { name: /3 nodes and 1 connections/ })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ verb: 'helps families reach', status: 'confirmed', claimState: 'student interpretation' }),
+    ])));
+    expect(window.localStorage.getItem(STORAGE_KEY)).not.toContain(prompt);
   });
 
   it('shows no praise or inventory when the server returns no redirect', async () => {
     const project = createDefaultProject();
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     preflightEvaluationResponder = (body) => jsonResponse({ evaluation: evaluationRecord(body, { redirects: [] }) }, 201);
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     const guidance = await screen.findByRole('region', { name: 'Return to the source' });
     expect(within(guidance).getByText('Use your note to tell the instructor where you want feedback.')).toBeVisible();
     expect(within(guidance).queryAllByRole('article')).toHaveLength(0);
@@ -497,24 +614,23 @@ describe('Systems Mapping workflow', () => {
 
   it('rejects more than three server redirects without persisting them', async () => {
     const project = createDefaultProject();
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     preflightEvaluationResponder = (body) => jsonResponse({
       evaluation: evaluationRecord(body, {
         redirects: Array.from({ length: 4 }, (_, index) => ({ action: `Return to source point ${index + 1}.` })),
       }),
     }, 201);
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText(/no more than 3 redirects/i)).toBeVisible();
     expect(storedProject().preflight).toBeNull();
   });
 
-  it('uses the exact authoritative evaluation and capability-only submission envelopes, then restores the pending gate after reload', async () => {
+  it('uses exact evaluation and submission envelopes while pending review leaves mapping available after reload', async () => {
     await resumeSavedProject();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByRole('heading', { name: 'Return to the source' })).toBeVisible();
 
     const evaluationRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
@@ -539,10 +655,10 @@ describe('Systems Mapping workflow', () => {
     expect(portablePreflight.evaluation.evaluationId).toBe('[redacted]');
 
     fireEvent.change(screen.getByRole('textbox', { name: /Note for instructor/ }), { target: { value: 'Please review the uncertainty around referrals.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send for instructor review' }));
-    expect(await screen.findByRole('heading', { name: 'Your instructor has not responded yet.' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Check instructor response' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Generate candidates' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send to instructor' }));
+    expect(await screen.findByRole('heading', { name: 'Waiting for your instructor' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Check response' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
 
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/submissions' && options.method === 'POST');
     const body = JSON.parse(request[1].body);
@@ -556,20 +672,20 @@ describe('Systems Mapping workflow', () => {
     cleanup();
     render(<App />);
     await showResumeScreen();
-    expect(screen.getByText(/Stage 4 of 7/)).toHaveTextContent("Check your instructor's response");
-    fireEvent.click(screen.getByRole('button', { name: "Continue to check your instructor's response" }));
-    expect(await screen.findByRole('heading', { name: 'Your instructor has not responded yet.' })).toBeVisible();
+    expect(screen.getByText(/Current section/)).toHaveTextContent('review source with your instructor');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review source with your instructor' }));
+    expect(await screen.findByRole('heading', { name: 'Waiting for your instructor' })).toBeVisible();
   });
 
-  it('blocks an oversized evaluation request without truncating the local memo', async () => {
+  it('blocks an oversized evaluation request without truncating the local source', async () => {
     const project = createDefaultProject();
     project.submission.text = '😀'.repeat(180_000);
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
-    expect(await screen.findByText(/suggestion evaluation request is too large to send/i)).toBeVisible();
-    expect(screen.getByText(/Shorten the memo or use a focused source excerpt/i)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByText(/guidance request is too large to send/i)).toBeVisible();
+    expect(screen.getByText(/Shorten the source or use a focused excerpt/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(storedProject().submission.text).toBe(project.submission.text);
   });
@@ -577,15 +693,15 @@ describe('Systems Mapping workflow', () => {
   it('enforces the reported Ollama Cloud UTF-8 source boundary before provider egress', async () => {
     const project = createDefaultProject();
     project.submission.text = '😀'.repeat(33_000);
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     studentSession = () => ({
       ...grantedAccess(),
       persistence: 'course-server',
       suggestionRuntime: { provider: 'ollama-cloud', model: 'gpt-oss:120b', maxSourceBytes: 131072 },
     });
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText(/too large for the reported Ollama Cloud runtime/i)).toBeVisible();
     expect(screen.getByText(/131,072 UTF-8 bytes maximum/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
@@ -595,15 +711,15 @@ describe('Systems Mapping workflow', () => {
   it('enforces the Ollama Cloud UTF-8 inquiry boundary before provider egress', async () => {
     const project = createDefaultProject();
     project.inquiry = '😀'.repeat(2_050);
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     studentSession = () => ({
       ...grantedAccess(),
       persistence: 'course-server',
       suggestionRuntime: { provider: 'ollama-cloud', model: 'gpt-oss:120b', maxSourceBytes: 131072 },
     });
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText(/guiding inquiry is too large for the reported Ollama Cloud runtime/i)).toBeVisible();
     expect(screen.getByText(/8,192 UTF-8 bytes maximum/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
@@ -613,23 +729,23 @@ describe('Systems Mapping workflow', () => {
     const project = createDefaultProject();
     project.configs.preflight.customInstructions = 'x'.repeat(16_001);
     project.configs.preflight.fingerprint = configFingerprint(project.configs.preflight);
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText(/custom instructions must be 16,000 characters or fewer before generating suggestions/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
   });
 
   it('keeps the project editable and reports an authoritative evaluation failure without creating local suggestions', async () => {
     const project = createDefaultProject();
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     preflightEvaluationResponder = () => jsonResponse({ error: 'Suggestion generation is temporarily unavailable.' }, 502);
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText('Suggestion generation is temporarily unavailable.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Generate suggestions' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeEnabled();
     expect(storedProject().preflight).toBeNull();
   });
 
@@ -651,25 +767,25 @@ describe('Systems Mapping workflow', () => {
       },
       review: null,
     };
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     await resumeSavedProject(project);
-    expect(screen.getByRole('button', { name: 'Generate fresh suggestions' })).toBeVisible();
-    expect(screen.getByRole('alert')).toHaveTextContent('Generate fresh suggestions before sending');
+    expect(screen.getByRole('button', { name: 'Generate current guidance' })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Generate current guidance before sending');
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/submissions')).toHaveLength(0);
   });
 
   it('marks a consumed or unavailable evaluation stale and prompts fresh generation', async () => {
     const project = createDefaultProject();
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     preflightPostResponder = () => jsonResponse({ error: 'The preflight evaluation is unavailable, expired, or already used.' }, 409);
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByRole('heading', { name: 'Return to the source' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Send for instructor review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to instructor' }));
     expect(await screen.findByText(/evaluation expired or was already used/i)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Generate fresh suggestions' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Generate current guidance' })).toBeVisible();
     await waitFor(() => expect(storedProject().preflight.evaluation.evaluationId).toBe('[unavailable]'));
   });
 
@@ -680,9 +796,8 @@ describe('Systems Mapping workflow', () => {
       expect(configCalls).toHaveLength(2);
     });
     await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.moduleVersions).toHaveLength(12));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Generate suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByRole('heading', { name: 'Return to the source' })).toBeVisible();
     await waitFor(() => {
       const event = [...storedProject().events].reverse().find((entry) => entry.action === 'preflight.completed');
@@ -699,7 +814,7 @@ describe('Systems Mapping workflow', () => {
   it.each([
     ['approve', undefined, 'The source grounding is sufficient.'],
     ['revise_and_approve', 'Treat the referral as a contested handoff, then confirm each candidate.', 'Proceed with the bounded revision in mind.'],
-  ])('uses an instructor %s response as guidance without changing memo, graph, or stored redirects', async (decision, focusedQuestion, instructorAnnotation) => {
+  ])('uses an instructor %s response as guidance without changing source, graph, or stored redirects', async (decision, focusedQuestion, instructorAnnotation) => {
     const project = projectAwaitingReview();
     const originalMemo = project.submission.text;
     const originalGraph = structuredClone(project.graph);
@@ -714,25 +829,25 @@ describe('Systems Mapping workflow', () => {
     }) });
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Check instructor response' }));
-    expect(await screen.findByRole('heading', { name: 'Your instructor responded.' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
+    expect(await screen.findByRole('heading', { name: "Read your instructor's response" })).toBeVisible();
     expect(screen.getByText(instructorAnnotation)).toBeVisible();
     if (focusedQuestion) {
       expect(screen.getByRole('heading', { name: 'Question from your instructor' })).toBeVisible();
       expect(screen.getByText(focusedQuestion)).toBeVisible();
     }
     expect(screen.queryByRole('heading', { name: 'Revised suggestion' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate candidates' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
     await waitFor(() => expect(storedProject().preflight.review).toMatchObject({ status: 'approved', decision, revision: 2 }));
     expect(storedProject().submission.text).toBe(originalMemo);
     expect(storedProject().graph).toEqual(originalGraph);
     expect(storedProject().preflight.redirects).toEqual(originalRedirects);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Generate candidates' }));
-    expect(await screen.findByRole('heading', { name: 'Choose nodes and relationships for the map.' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose nodes and connections' }));
+    expect(await screen.findByRole('heading', { name: 'Choose nodes and describe connections' })).toBeVisible();
   });
 
-  it('returns a rejected review to source intake with instructor annotation and no silent memo or graph edits', async () => {
+  it('keeps rejected review guidance in the review section without redirecting or editing the source or map', async () => {
     const project = projectAwaitingReview();
     const originalMemo = project.submission.text;
     const originalGraph = structuredClone(project.graph);
@@ -745,14 +860,13 @@ describe('Systems Mapping workflow', () => {
     }) });
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Check instructor response' }));
-    expect(await screen.findByRole('heading', { name: 'Add a memo. Record the source.' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
+    expect(await screen.findByRole('heading', { name: "Read your instructor's response" })).toBeVisible();
     expect(screen.getByText('Clarify which actor performs the second handoff, then submit again.')).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ stage: 1, preflight: { review: { status: 'rejected', decision: 'reject', revision: 2 } } }));
     expect(storedProject().submission.text).toBe(originalMemo);
     expect(storedProject().graph).toEqual(originalGraph);
-    fireEvent.change(screen.getByRole('textbox', { name: /Memo text/ }), { target: { value: `${originalMemo}\nStudent-authored clarification.` } });
-    expect(screen.getByText('Clarify which actor performs the second handoff, then submit again.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
   });
 
   it('recovers a pending review after class-session renewal using only the stored review capability', async () => {
@@ -772,8 +886,8 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: "Continue to check your instructor's response" }));
-    fireEvent.click(screen.getByRole('button', { name: 'Check instructor response' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review source with your instructor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
     expect(await screen.findByText('Renewed access can retrieve this minimized status.')).toBeVisible();
     const getRequest = fetchMock.mock.calls.find(([path]) => String(path).startsWith('/api/preflight/submissions/review_'));
     expect(String(getRequest[0])).toBe(`/api/preflight/submissions/${project.preflight.review.submissionId}`);
@@ -792,10 +906,10 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale' }));
-    expect(await screen.findByRole('heading', { name: 'Choose the current scale.' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
+    expect(await screen.findByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
     await waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(2));
-    expect(screen.queryByRole('heading', { name: 'Enter your class code.' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Enter your class code' })).not.toBeInTheDocument();
   });
 
   it('expires workspace access after a prototype 401 only when session readback is null', async () => {
@@ -808,9 +922,9 @@ describe('Systems Mapping workflow', () => {
     prototypeResponder = () => jsonResponse({ error: 'Expired prototype event session.' }, 401);
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale' }));
-    expect(await screen.findByRole('heading', { name: 'Enter your class code.' })).toBeVisible();
-    expect(screen.getByRole('alert')).toHaveTextContent('Class access expired');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
+    expect(await screen.findByRole('heading', { name: 'Enter your class code' })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter your class code to continue');
     expect(sessionReads).toBeGreaterThanOrEqual(2);
   });
 
@@ -832,12 +946,12 @@ describe('Systems Mapping workflow', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    const recovery = await screen.findByRole('button', { name: 'Local save needs attention' });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    const recovery = await screen.findByRole('button', { name: 'Save needs attention' });
     fireEvent.click(recovery);
-    expect(screen.getByRole('dialog', { name: 'Local save recovery' })).toBeVisible();
-    expect(screen.getByText(/No invalid or unavailable storage value will be overwritten automatically/i)).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Save recovery' })).toBeVisible();
+    expect(screen.getByText(/You can download a copy, keep working without saving, or try saving again/i)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Download current project' })).toBeVisible();
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)).id).toBe(project.id);
   });
@@ -850,14 +964,14 @@ describe('Systems Mapping workflow', () => {
       nodes: project.candidates.nodes.map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' })),
       edges: [],
     };
-    project.stage = 4;
-    project.furthestStage = 4;
+    project.stage = 2;
+    project.furthestStage = 2;
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('tab', { name: /Nodes · 2/ }));
     const rows = screen.getAllByRole('article');
     fireEvent.click(within(rows[0]).getByRole('button', { name: 'Reject' }));
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Accept' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Build confirmed map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     await waitFor(() => {
       expect(storedProject().graph.nodes.find((node) => node.id === project.candidates.nodes[0].id)).toMatchObject({ status: 'rejected', claimState: 'retired' });
     });
@@ -874,79 +988,90 @@ describe('Systems Mapping workflow', () => {
     }));
     project.candidates = { nodes: accepted, edges: [] };
     project.graph = { nodes: [], edges: [] };
-    project.stage = 4;
-    project.furthestStage = 4;
+    project.stage = 2;
+    project.furthestStage = 2;
     const expected = withDefaultNodeLayout(accepted.map(({ x: _x, y: _y, ...node }) => node));
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Build confirmed map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
 
-    await waitFor(() => expect(storedProject().stage).toBe(5));
+    await waitFor(() => expect(storedProject().stage).toBe(3));
     const committed = storedProject().graph.nodes;
     expect(committed.map(({ id, x, y }) => ({ id, x, y })))
       .toEqual(expected.map(({ id, x, y }) => ({ id, x, y })));
     expect(new Set(committed.map(({ x, y }) => `${x},${y}`)).size).toBe(committed.length);
   });
 
-  it('invalidates candidates and retires memo-linked graph records when source text changes', async () => {
+  it('records a manually added relationship in the current scale layer', async () => {
+    const project = await openMapProject();
+    const inspector = screen.getByLabelText('Map inspector');
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add relationship' }));
+    const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
+    fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: project.graph.nodes[0].id } });
+    fireEvent.change(within(addForm).getByLabelText('Connection'), { target: { value: 'coordinates with' } });
+    fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: project.graph.nodes[1].id } });
+    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The current Macro source names this relationship.' } });
+    fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
+    await waitFor(() => expect(storedProject().graph.edges.at(-1)).toMatchObject({ scale: 'macro', verb: 'coordinates with' }));
+  });
+
+  it('combines and filters accumulated scale layers on the map', async () => {
+    const project = await openMapProject();
+    const layerGroup = screen.getByRole('group', { name: 'Visible scale layers' });
+    const all = within(layerGroup).getByRole('button', { name: 'All' });
+    const meso = within(layerGroup).getByRole('button', { name: 'Meso' });
+    const initialRelationshipCount = project.graph.edges.length;
+    const withoutMeso = project.graph.edges.filter((edge) => edge.scale !== 'meso').length;
+
+    expect(all).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('group', { name: /Systems map with/ }).getAttribute('aria-label')).toContain(`and ${initialRelationshipCount} relationships`);
+    fireEvent.click(meso);
+    expect(meso).toHaveAttribute('aria-pressed', 'false');
+    expect(all).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('group', { name: /Systems map with/ }).getAttribute('aria-label')).toContain(`and ${withoutMeso} relationships`);
+    fireEvent.click(all);
+    expect(meso).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('group', { name: /Systems map with/ }).getAttribute('aria-label')).toContain(`and ${initialRelationshipCount} relationships`);
+  });
+
+  it('invalidates current candidates and retires only the edited scale layer when source text changes', async () => {
     const project = createDefaultProject();
     project.candidates = extractCandidates(project.submission);
     project.graph = structuredClone(project.candidates);
     project.graph.nodes.forEach((node) => { node.status = 'confirmed'; node.claimState = 'student interpretation'; });
     project.graph.edges.forEach((edge) => { edge.status = 'confirmed'; edge.claimState = 'student interpretation'; });
-    project.stage = 1;
-    project.furthestStage = 1;
+    project.stage = 0;
+    project.furthestStage = 0;
     await resumeSavedProject(project);
-    fireEvent.change(screen.getByRole('textbox', { name: /Memo text/ }), { target: { value: `${project.submission.text} A later source correction changes the evidence anchor.` } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Source text/ }), { target: { value: `${project.submission.text} A later source correction changes the evidence anchor.` } });
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.candidates).toEqual({ nodes: [], edges: [] });
-      expect(stored.graph.nodes.every((node) => node.claimState === 'retired')).toBe(true);
-      expect(stored.graph.edges.every((edge) => edge.claimState === 'retired')).toBe(true);
+      expect(stored.graph.nodes.filter((node) => node.scale === project.activeScale).every((node) => node.claimState === 'retired')).toBe(true);
+      expect(stored.graph.edges.filter((edge) => edge.scale === project.activeScale).every((edge) => edge.claimState === 'retired')).toBe(true);
+      expect(stored.graph.nodes.some((node) => node.scale !== project.activeScale && node.claimState === 'student interpretation')).toBe(true);
+      expect(stored.graph.edges.some((edge) => edge.scale !== project.activeScale && edge.claimState === 'student interpretation')).toBe(true);
     });
   });
 
-  it('preserves a dirty model draft and blocks a stale cross-tab revision', async () => {
+  it('keeps model configuration outside the student review section', async () => {
     const project = createDefaultProject();
-    project.stage = 2;
-    project.furthestStage = 2;
+    project.stage = 1;
+    project.furthestStage = 1;
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('tab', { name: 'Model setup' }));
-
-    const instructions = screen.getByRole('textbox', { name: /Custom project instructions/ });
-    fireEvent.change(instructions, { target: { value: 'Unsaved local interpretation rules.' } });
-    fireEvent.change(screen.getByRole('textbox', { name: /Change note/ }), { target: { value: 'Local draft' } });
-
-    const incoming = structuredClone(project);
-    incoming.updatedAt = new Date(Date.now() + 10_000).toISOString();
-    incoming.configs.preflight = {
-      ...incoming.configs.preflight,
-      customInstructions: 'External revision instructions.',
-      revision: 2,
-      changeNote: 'External revision',
-    };
-    incoming.configs.preflight.fingerprint = configFingerprint(incoming.configs.preflight);
-    const incomingBytes = serializeProject(incoming);
-    window.localStorage.setItem(STORAGE_KEY, incomingBytes);
-    window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY, newValue: incomingBytes }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Project revision 2 is now current.');
-    expect(instructions).toHaveValue('Unsaved local interpretation rules.');
-    fireEvent.click(screen.getByRole('button', { name: 'Save revision' }));
-    expect(await screen.findByText(/changed in another session/i)).toBeVisible();
-    expect(storedProject().configs.preflight).toMatchObject({ revision: 2, customInstructions: 'External revision instructions.' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Load project revision 2' }));
-    expect(instructions).toHaveValue('External revision instructions.');
+    expect(screen.getByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
   });
 
-  it.each(['node', 'edge', 'map'])('reports queued then actual saved state for %s annotations and persists the text', async (target) => {
+  it.each(['node', 'edge', 'map'])('shows annotation saving only while work is pending and persists the text for %s', async (target) => {
     const project = await openMapProject();
     const field = selectAnnotationTarget(target);
     const text = `${target} annotation saved locally`;
     fireEvent.change(field, { target: { value: text } });
-    expect(annotationStatus(field)).toHaveTextContent('Queued for local save');
-    await waitFor(() => expect(annotationStatus(field)).toHaveTextContent('Saved on this device'));
+    expect(annotationStatus(field)).toHaveTextContent('Saving…');
+    await waitFor(() => expect(annotationStatus(field)).toBeNull());
     expect(storedAnnotation(target, project)).toBe(text);
   });
 
@@ -955,11 +1080,11 @@ describe('Systems Mapping workflow', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to build the map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to build map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     const field = selectAnnotationTarget(target);
     fireEvent.change(field, { target: { value: `${target} unsaved annotation` } });
-    expect(annotationStatus(field)).toHaveTextContent('Queued for local save');
+    expect(annotationStatus(field)).toHaveTextContent('Saving…');
     await waitFor(() => expect(annotationStatus(field)).toHaveTextContent('Local save failed: Quota exceeded'));
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)).id).toBe(project.id);
   });
@@ -974,7 +1099,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph.nodes.find((node) => node.id === project.graph.nodes[0].id).label).toBe(priorLabel);
 
     fireEvent.change(label, { target: { value: 'Corrected actor label' } });
-    await waitFor(() => expect(screen.getByText('Saved on device')).toBeVisible());
+    await waitFor(() => expect(screen.queryByText('Complete the current field to save')).not.toBeInTheDocument());
     await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.id === project.graph.nodes[0].id).label).toBe('Corrected actor label'));
   });
 
@@ -998,7 +1123,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(eventRequests('node_moved')).toHaveLength(1));
     expect(eventRequests('node_moved')[0].body).toEqual({
       event: 'node_moved',
-      stage: 'Build the map',
+      stage: 'build map',
       metadata: { keyboard: false, pointer: true },
     });
     expect(eventRequests('node_moved')[0].options).toMatchObject({ method: 'POST', credentials: 'same-origin' });
@@ -1220,16 +1345,16 @@ describe('Systems Mapping workflow', () => {
     const assertRestored = async () => {
       render(<App />);
       await showResumeScreen();
-      expect(screen.getByText(/Stage 6 of 7/)).toHaveTextContent('Build the map');
-      fireEvent.click(screen.getByRole('button', { name: 'Continue to build the map' }));
+      expect(screen.getByText(/Current section/)).toHaveTextContent('build map');
+      fireEvent.click(screen.getByRole('button', { name: 'Continue to build map' }));
       expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
       expect(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`)).toHaveAttribute('transform', 'translate(123 234)');
       expect(document.querySelector('.viewport-layer')).toHaveAttribute('transform', 'translate(37 -22) scale(1.25)');
-      expect(screen.getByRole('textbox', { name: /^Analysis/ })).toHaveValue('Restored node annotation');
+      expect(screen.getByRole('textbox', { name: /^Annotation/ })).toHaveValue('Restored node annotation');
       fireEvent.click(screen.getByRole('tab', { name: 'Relationships' }));
       const relationshipPanel = screen.getByRole('tabpanel', { name: 'Relationships' });
       fireEvent.click(within(within(relationshipPanel).getByLabelText('Relationship list')).getAllByRole('button')[0]);
-      expect(screen.getByRole('textbox', { name: /^Relationship annotation/ })).toHaveValue('Restored relationship annotation');
+      expect(within(relationshipPanel).getByRole('textbox', { name: 'Annotation' })).toHaveValue('Restored relationship annotation');
       fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
       expect(screen.getByRole('textbox', { name: /^Map note/ })).toHaveValue('Restored whole-map annotation');
     };
@@ -1256,8 +1381,8 @@ describe('Systems Mapping workflow', () => {
     }));
     project.candidates = { nodes: [], edges: [] };
     project.graph = { nodes, edges: [] };
-    project.stage = 6;
-    project.furthestStage = 6;
+    project.stage = 4;
+    project.furthestStage = 4;
     const blobs = [];
     class CapturedBlob {
       constructor(parts, options = {}) { this.parts = parts; this.type = options.type || ''; blobs.push(this); }
