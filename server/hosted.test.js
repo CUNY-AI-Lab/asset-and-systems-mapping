@@ -155,7 +155,7 @@ describe('hosted runtime guardrails', () => {
       expect(publicConfig.status).toBe(200);
       expect(await publicConfig.json()).toMatchObject({ configKind: 'preflight', scale: 'micro' });
       const activity = await postJson(system, '/api/prototype/events', {
-        event: 'stage_viewed', stage: 'Review suggestions', metadata: { stageIndex: 2 },
+        event: 'stage_viewed', stage: 'Review suggestions', metadata: { stageIndex: 1 },
       }, { headers: { cookie } });
       expect(activity.status).toBe(202);
       expect(await activity.json()).toEqual({ accepted: true });
@@ -196,7 +196,7 @@ describe('hosted runtime guardrails', () => {
       expect(system.db.prepare(`
         SELECT stage, metadata_json AS metadata
         FROM prototype_events WHERE event_name = 'stage_viewed'
-      `).get()).toEqual({ stage: 2, metadata: '{"stageIndex":2}' });
+      `).get()).toEqual({ stage: 1, metadata: '{"stageIndex":1}' });
       expect(JSON.stringify(system.db.prepare('SELECT * FROM prototype_events').all())).not.toContain('Review this handoff.');
       expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_submissions').get().count).toBe(1);
       expect(JSON.stringify(system.db.prepare('SELECT * FROM preflight_evaluations').all()))

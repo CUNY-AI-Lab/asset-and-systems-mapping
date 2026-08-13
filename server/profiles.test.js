@@ -63,15 +63,14 @@ describe('teaching profiles', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it('exposes the seven-stage progression and keeps draft changes out of the active runtime until publication', async () => {
+  it('exposes the five-stage cycle and keeps draft changes out of the active runtime until publication', async () => {
     expect((await request(system.app, '/api/teacher/profiles')).status).toBe(401);
 
     const catalogResponse = await request(system.app, '/api/teacher/profiles', { headers: { cookie: teacherCookie } });
     expect(catalogResponse.status).toBe(200);
     const catalog = await catalogResponse.json();
     expect(catalog.resource.modules.map(({ id }) => id)).toEqual([
-      'choose-scale', 'add-source', 'review-suggestions', 'check-instructor-response',
-      'choose-what-to-map', 'build-map', 'revise-and-export',
+      'add-source', 'review-suggestions', 'choose-what-to-map', 'build-map', 'revise-and-export',
     ]);
     expect(catalog.profiles).toHaveLength(1);
     expect(catalog.profiles[0]).not.toHaveProperty('profile');
@@ -80,7 +79,7 @@ describe('teaching profiles', () => {
     const before = await (await request(system.app, '/api/config/public?configKind=preflight&scale=micro', { headers: { cookie: studentCookie } })).json();
     const create = await jsonRequest(system.app, 'POST', '/api/teacher/profiles', {
       name: 'Evidence guidance',
-      note: 'Focus the source prompts on relationships',
+      note: 'Focus the questions on relationships',
       sourceProfileId: catalog.activeProfileId,
     }, teacherCookie);
     expect(create.status).toBe(201);
@@ -90,13 +89,16 @@ describe('teaching profiles', () => {
 
     const changedProfile = {
       ...created.profile.profile,
-      stages: {
-        ...created.profile.profile.stages,
-        'review-suggestions': {
-          guidance: 'Return first to the passage that names a relationship between two actors.',
-          materials: 'Use the course reading on actor and relationship mapping.',
+      parts: created.profile.profile.parts.map((part, index) => index === 0 ? {
+        ...part,
+        stages: {
+          ...part.stages,
+          'review-suggestions': {
+            guidance: 'Return first to the passage that names a relationship between two actors.',
+            materials: 'Use the course reading on actor and relationship mapping.',
+          },
         },
-      },
+      } : part),
     };
     const save = await jsonRequest(system.app, 'PUT', `/api/teacher/profiles/${created.profile.id}`, {
       name: 'Evidence guidance',
@@ -114,8 +116,8 @@ describe('teaching profiles', () => {
 
     const preview = await (await request(system.app, `/api/teacher/profiles/${created.profile.id}/preview?configKind=preflight&scale=micro&stageId=review-suggestions`, { headers: { cookie: teacherCookie } })).json();
     expect(preview.fingerprint).not.toBe(before.fingerprint);
-    expect(preview.effectivePrompt).toContain(changedProfile.stages['review-suggestions'].guidance);
-    expect(preview.effectivePrompt).toContain(changedProfile.stages['review-suggestions'].materials);
+    expect(preview.effectivePrompt).toContain(changedProfile.parts[0].stages['review-suggestions'].guidance);
+    expect(preview.effectivePrompt).toContain(changedProfile.parts[0].stages['review-suggestions'].materials);
     expect(Object.keys(preview).sort()).toEqual(['configKind', 'effectivePrompt', 'fingerprint', 'revision', 'scale', 'stageId']);
 
     const stale = await jsonRequest(system.app, 'PUT', `/api/teacher/profiles/${created.profile.id}`, {
@@ -168,11 +170,11 @@ describe('teaching profiles', () => {
     expect(() => system.db.prepare('DELETE FROM teaching_profile_events WHERE id = 1').run()).toThrow(/append-only/);
   });
 
-  it('moves an existing five-part course profile into the progression once without rewriting its history', () => {
+  it('moves an earlier course profile into the two-part progression once without rewriting its history', () => {
     const legacyProfile = {
       schemaVersion: 'cuny.teaching-profile.v1',
       focus: 'Keep attention on how institutional actors shape access.',
-      evidence: 'Require a source passage for each proposed relationship.',
+      evidence: 'Require a passage from the memo for each proposed relationship.',
       questions: 'Ask one question that returns the student to the source.',
       privacy: 'Keep sensitive source detail out of shared exports.',
       contextAdjustments: {
@@ -195,17 +197,16 @@ describe('teaching profiles', () => {
       FROM teaching_profiles WHERE id = 'systems-mapping-default'
     `).get().profileJson);
     expect(upgraded.schemaVersion).toBe(COURSE_PROGRESSION_SCHEMA_VERSION);
-    expect(upgraded.stages['choose-scale']).toMatchObject({
-      guidance: legacyProfile.focus,
-    });
-    expect(upgraded.stages['choose-scale'].materials).toContain(legacyProfile.contextAdjustments.micro);
-    expect(upgraded.stages['add-source'].guidance).toContain(legacyProfile.evidence);
-    expect(upgraded.stages['add-source'].guidance).toContain(legacyProfile.privacy);
-    expect(upgraded.stages['review-suggestions'].guidance).toBe(legacyProfile.questions);
+    expect(upgraded.parts[0].stages['add-source'].guidance).toContain(legacyProfile.focus);
+    expect(upgraded.parts[0].stages['add-source'].materials).toContain(legacyProfile.contextAdjustments.micro);
+    expect(upgraded.parts[0].stages['add-source'].guidance).toContain(legacyProfile.evidence);
+    expect(upgraded.parts[0].stages['add-source'].guidance).toContain(legacyProfile.privacy);
+    expect(upgraded.parts[0].stages['review-suggestions'].guidance).toBe(legacyProfile.questions);
+    expect(upgraded.parts[1].stages['add-source'].materials).toContain(legacyProfile.contextAdjustments.macro);
     const eventCount = () => system.db.prepare(`
       SELECT COUNT(*) AS count FROM teaching_profile_events
       WHERE profile_id = 'systems-mapping-default'
-        AND note = 'Moved existing course settings into the seven-stage progression'
+        AND note = 'Grouped course settings into two parts'
     `).get().count;
     expect(eventCount()).toBe(1);
 

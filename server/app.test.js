@@ -131,9 +131,13 @@ describe('hardened Systems Mapping server', () => {
     expect(publicResponse.status).toBe(200);
     const snapshot = await json(publicResponse);
     expect(Object.keys(snapshot).sort()).toEqual([
-      'configKind', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale', 'stageId',
+      'configKind', 'courseParts', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale', 'stageId',
     ]);
     expect(snapshot).toMatchObject({ configKind: 'preflight', scale: 'micro', stageId: 'review-suggestions', revision: 1 });
+    expect(snapshot.courseParts).toEqual([
+      { id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] },
+      { id: 'part-2', label: 'Part 2', scaleIds: ['macro', 'integration'] },
+    ]);
     expect(snapshot.moduleVersions).toHaveLength(13);
     expect(snapshot.moduleVersions.at(-1).id).toBe('teaching-profile.systems-mapping-default');
     expect(snapshot).not.toHaveProperty('effectivePrompt');
@@ -500,10 +504,9 @@ describe('hardened Systems Mapping server', () => {
   it('keeps course-setting drafts authenticated, transactional, and concurrency-safe', async () => {
     const teacherCookie = await claimTeacher('maria-mavrides-calderon');
     const catalog = await json(await request(system.app, '/api/teacher/profiles', { headers: { cookie: teacherCookie } }));
-    expect(catalog.resource.modules).toHaveLength(7);
+    expect(catalog.resource.modules).toHaveLength(5);
     expect(catalog.resource.modules.map(({ id }) => id)).toEqual([
-      'choose-scale', 'add-source', 'review-suggestions', 'check-instructor-response',
-      'choose-what-to-map', 'build-map', 'revise-and-export',
+      'add-source', 'review-suggestions', 'choose-what-to-map', 'build-map', 'revise-and-export',
     ]);
     const active = await json(await request(system.app, `/api/teacher/profiles/${catalog.activeProfileId}`, { headers: { cookie: teacherCookie } }));
     const created = await json(await postJson(system.app, '/api/teacher/profiles', {
@@ -513,13 +516,16 @@ describe('hardened Systems Mapping server', () => {
     }, { cookie: teacherCookie }));
     const nextProfile = {
       ...created.profile.profile,
-      stages: {
-        ...created.profile.profile.stages,
-        'review-suggestions': {
-          ...created.profile.profile.stages['review-suggestions'],
-          guidance: 'Ask one question and wait for the student response.',
+      parts: created.profile.profile.parts.map((part, index) => index === 0 ? {
+        ...part,
+        stages: {
+          ...part.stages,
+          'review-suggestions': {
+            ...part.stages['review-suggestions'],
+            guidance: 'Ask one question and wait for the student response.',
+          },
         },
-      },
+      } : part),
     };
     const first = await putJson(system.app, `/api/teacher/profiles/${created.profile.id}`, {
       name: 'Confirmation guidance',
@@ -534,13 +540,16 @@ describe('hardened Systems Mapping server', () => {
       name: 'Stale draft',
       profile: {
         ...nextProfile,
-        stages: {
-          ...nextProfile.stages,
-          'review-suggestions': {
-            ...nextProfile.stages['review-suggestions'],
-            guidance: 'A stale replacement that must not win.',
+        parts: nextProfile.parts.map((part, index) => index === 0 ? {
+          ...part,
+          stages: {
+            ...part.stages,
+            'review-suggestions': {
+              ...part.stages['review-suggestions'],
+              guidance: 'A stale replacement that must not win.',
+            },
           },
-        },
+        } : part),
       },
       note: 'Stale overwrite attempt',
       expectedRevision: 1,
@@ -571,12 +580,12 @@ describe('hardened Systems Mapping server', () => {
     const accepted = await postJson(system.app, '/api/prototype/events', {
       event: 'node_moved',
       stage: 'Build the map',
-      metadata: { stageIndex: 5, nodeCount: 4, edgeCount: 3, keyboard: true },
+      metadata: { stageIndex: 3, nodeCount: 4, edgeCount: 3, keyboard: true },
     }, { cookie: studentCookie });
     expect(accepted.status).toBe(202);
     expect(await json(accepted)).toEqual({ accepted: true });
 
-    for (const [stage, stageIndex] of [['Review suggestions', 2], ["Check your instructor's response", 3]]) {
+    for (const [stage, stageIndex] of [['Review suggestions', 1], ["Check your instructor's response", 1]]) {
       expect((await postJson(system.app, '/api/prototype/events', {
         event: 'stage_viewed', stage, metadata: { stageIndex },
       }, { cookie: studentCookie })).status).toBe(202);
@@ -603,8 +612,8 @@ describe('hardened Systems Mapping server', () => {
       sessionKind: 'student',
       sessionRef: expect.stringMatching(/^[a-f0-9]{16}$/),
       event: 'node_moved',
-      stage: 5,
-      metadata: '{"stageIndex":5,"nodeCount":4,"edgeCount":3,"keyboard":true}',
+      stage: 3,
+      metadata: '{"stageIndex":3,"nodeCount":4,"edgeCount":3,"keyboard":true}',
     });
     expect(JSON.stringify(system.db.prepare('SELECT * FROM prototype_events').all())).not.toContain('private');
 

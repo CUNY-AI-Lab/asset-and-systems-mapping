@@ -91,6 +91,30 @@ describe('mapping domain', () => {
     expect(stableId('node', 'Family')).not.toBe(stableId('node', 'School'));
   });
 
+  it('keeps incrementally added nodes from occupying the same map space', () => {
+    const bareNode = (index) => ({
+      id: `node_${index}`,
+      label: `Node ${index}`,
+      type: 'organization',
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'research lead',
+      notes: '',
+    });
+    let nodes = withDefaultNodeLayout(Array.from({ length: 3 }, (_, index) => bareNode(index)));
+    const originalPositions = nodes.map(({ id, x, y }) => ({ id, x, y }));
+    for (let index = 3; index < 14; index += 1) {
+      nodes = withDefaultNodeLayout([...nodes, bareNode(index)]);
+    }
+    expect(nodes.slice(0, 3).map(({ id, x, y }) => ({ id, x, y }))).toEqual(originalPositions);
+    for (let index = 0; index < nodes.length; index += 1) {
+      for (let other = index + 1; other < nodes.length; other += 1) {
+        expect(Math.abs(nodes[index].x - nodes[other].x) < 218
+          && Math.abs(nodes[index].y - nodes[other].y) < 82).toBe(false);
+      }
+    }
+  });
+
   it('passes the grounded demonstration memo', () => {
     const project = createDefaultProject();
     const result = evaluateSubmission(project.submission, project.activeScale, 6);
@@ -108,7 +132,7 @@ describe('mapping domain', () => {
 
   it('holds a memo with fewer than two explicit relationships', () => {
     const project = createDefaultProject();
-    const result = evaluateSubmission({ ...project.submission, text: 'How does this system work? The school provides one service to a family, but the remaining actors and mechanisms are not yet identified in this source record.' }, 'micro', 6);
+    const result = evaluateSubmission({ ...project.submission, text: 'How does this system work? The school provides one service to a family, but the memo does not yet identify the remaining actors and mechanisms.' }, 'micro', 6);
     expect(result.outcome).toBe('hold');
     expect(result.hard.find((item) => item.id === 'H4').status).toBe('unmet');
   });
@@ -142,10 +166,11 @@ describe('mapping domain', () => {
     expect(candidates.edges.every((edge) => edge.evidenceExcerpt && edge.evidenceHash === stableId('evh', edge.evidenceExcerpt))).toBe(true);
     expect(candidates.nodes.find((node) => node.label === 'Parent Advocacy Organizations')).toMatchObject({ type: 'organization', scale: 'meso' });
     expect(candidates.nodes.find((node) => /Ability to Secure Services/.test(node.label))).toMatchObject({ type: 'resource' });
-    expect(candidates.nodes.find((node) => node.label === 'Interviews')).toMatchObject({ type: 'resource', scale: 'micro' });
+    expect(candidates.nodes.some((node) => node.label === 'Interviews')).toBe(false);
+    expect(candidates.nodes.find((node) => node.label === 'Published Case Reports')).toBeDefined();
   });
 
-  it('extracts generic source relationships outside the demonstration vocabulary', () => {
+  it('extracts generic relationships outside the demonstration vocabulary', () => {
     const project = createDefaultProject();
     const text = 'How does the organization shape policy in Queens? The organization provides support and enables capacity. According to a source, however, results may be uncertain and should be checked.';
     const submission = { ...project.submission, text };
@@ -235,10 +260,10 @@ describe('mapping domain', () => {
     const priorV2 = createDefaultProject();
     priorV2.preflight = evaluateSubmission(priorV2.submission, priorV2.activeScale, 6);
     priorV2.preflight.hard[0].status = 'unmet';
-    priorV2.preflight.hard[0].nextAction = '  Complete   the source record.  ';
-    priorV2.preflight.hard[0].evidence = '  Source   record  ';
+    priorV2.preflight.hard[0].nextAction = '  Add   the missing memo details.  ';
+    priorV2.preflight.hard[0].evidence = '  Memo   details  ';
     priorV2.preflight.hard[1].status = 'unmet';
-    priorV2.preflight.hard[1].nextAction = 'Complete the source record.';
+    priorV2.preflight.hard[1].nextAction = 'Add the missing memo details.';
     priorV2.preflight.hard[2].status = 'unmet';
     priorV2.preflight.hard[2].nextAction = 'Separate the claim from your interpretation.';
     priorV2.preflight.hard[3].status = 'unmet';
@@ -248,7 +273,7 @@ describe('mapping domain', () => {
     const migratedPreflight = parseProject(JSON.stringify(priorV2)).preflight;
     expect(migratedPreflight).toEqual({
       redirects: [
-        { action: 'Complete the source record.', evidenceExcerpt: 'Source record' },
+        { action: 'Add the missing memo details.', evidenceExcerpt: 'Memo details' },
         { action: 'Separate the claim from your interpretation.', evidenceExcerpt: priorV2.preflight.hard[2].evidenceExcerpt || priorV2.preflight.hard[2].evidence },
         { action: 'Name a second relationship.', evidenceExcerpt: priorV2.preflight.hard[3].evidenceExcerpt || priorV2.preflight.hard[3].evidence },
       ],
@@ -403,6 +428,41 @@ describe('mapping domain', () => {
       .toEqual(migrated.graph.nodes.map(({ id, x, y }) => ({ id, x, y })));
   });
 
+  it('migrates earlier stage layouts into the five-stage progression without imposing scale order', () => {
+    const stageMap = [0, 0, 1, 1, 2, 3, 4];
+    stageMap.forEach((expected, formerStage) => {
+      const legacy = createDefaultProject();
+      legacy.schemaVersion = 2;
+      legacy.stage = formerStage;
+      legacy.furthestStage = formerStage;
+      const migrated = parseProject(JSON.stringify(legacy));
+      expect(migrated.stage).toBe(expected);
+      expect(migrated.furthestStage).toBe(expected);
+    });
+
+    const priorMapStage = createDefaultProject();
+    priorMapStage.schemaVersion = 3;
+    priorMapStage.stage = 4;
+    priorMapStage.furthestStage = 5;
+    expect(parseProject(JSON.stringify(priorMapStage))).toMatchObject({ stage: 3, furthestStage: 4 });
+
+    [0, 0, 1, 2, 2, 3, 4].forEach((expected, formerStage) => {
+      const priorSevenStageProject = createDefaultProject();
+      priorSevenStageProject.schemaVersion = 4;
+      priorSevenStageProject.stage = formerStage;
+      priorSevenStageProject.furthestStage = formerStage;
+      expect(parseProject(JSON.stringify(priorSevenStageProject))).toMatchObject({ stage: expected, furthestStage: expected });
+    });
+
+    const variedScaleOrder = createDefaultProject();
+    variedScaleOrder.releasedScales = ['micro', 'macro'];
+    variedScaleOrder.activeScale = 'macro';
+    expect(parseProject(serializeProject(variedScaleOrder))).toMatchObject({
+      activeScale: 'macro',
+      releasedScales: ['micro', 'macro'],
+    });
+  });
+
   it('round-trips exact layout, viewport, and every annotation surface', () => {
     const project = projectWithGraph();
     project.graph.nodes[0].x = -321.25;
@@ -506,7 +566,7 @@ describe('mapping domain', () => {
   });
 
   it('rejects unsupported imports', () => {
-    expect(() => parseProject('{"schemaVersion":3}')).toThrow(/not a supported/);
+    expect(() => parseProject('{"schemaVersion":6}')).toThrow(/not a supported/);
   });
 
   it('rejects structurally incomplete and policy-escalating imports', () => {

@@ -6,7 +6,7 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Current implementation and automated evidence
 
-- [x] Use seven direct, verb-led actions throughout: **Choose a scale**, **Add a source**, **Review suggestions**, **Check your instructor's response**, **Choose what to map**, **Build the map**, and **Revise and export**.
+- [x] Use five direct, verb-led stages throughout: choose a scale and add a source, review source with your instructor, choose nodes and describe connections, build map, and revise and export.
   - Evidence: current `src/App.jsx`, canonical-stage UI regression, and server prototype-stage contract.
 - [x] Keep the model's full criteria, scores, outcomes, and taxonomy out of the student workflow.
   - Evidence: the student evaluation response's `redirects` array contains at most three exact `{action, evidenceExcerpt?}` records. UI tests reject H/C identifiers, scores, outcome labels, model-review summaries, extra redirect fields, and more than three prompts.
@@ -16,16 +16,16 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: the client sends bounded project/source input to `POST /api/preflight/evaluations`; the server selects the effective teacher configuration, evaluates and validates the full result, stores it for teacher review, and returns only the student-safe prompts plus a one-time 192-bit capability and sanitized provenance.
 - [x] Prevent a student from replacing the evaluated suggestion or configuration while submitting for review.
   - Evidence: `POST /api/preflight/submissions` accepts exactly `{evaluationId, studentAnnotation}`; the server consumes a same-session, unexpired evaluation once and copies its stored source, suggestion, configuration snapshot, and runtime metadata transactionally.
-- [x] Gate candidate generation on instructor response.
-  - Evidence: pending reviews send the student to **Check your instructor's response**. **Approve** and **Approve with a question** let the student choose what to map. **Reject** returns the student to **Add a source** while preserving the memo and graph.
+- [x] Keep instructor review asynchronous and non-gating.
+  - Evidence: pending, approved, and rejected reviews remain in the combined source-review stage. Candidate choice and the persistent map remain available, including when no candidates were generated.
 - [x] Implement the teacher review queue and three decision paths.
-  - Evidence: the authenticated Teacher Console defaults to Review submissions, loads one selected detail, keeps full criteria and scores collapsed behind **Model review details**, requires one instructor focus, shows one question only for **Approve with a question**, detects stale revisions, and records append-only decision events.
-- [x] Align teacher control with the seven student stages.
-  - Evidence: Course settings loads only when selected and opens one stage at a time. Each stage contains bounded guidance and course-material fields. Saved previews include the current and completed stages in order, exclude later stages, and label instructor material as reference content. Published records remain read-only, earlier records can be cloned for rollback, and legacy module routes return `410`.
+  - Evidence: the authenticated Teacher Console defaults to Review submissions, loads one selected detail, groups evidence excerpts, possible follow-up, and open questions under collapsed **Review details**, requires one instructor focus, shows one question only for **Approve with a question**, detects stale revisions, and records append-only decision events.
+- [x] Align teacher control with the five student stages.
+  - Evidence: Course settings loads only when selected and opens one stage at a time. Each stage contains bounded guidance and course-material fields. Saved previews include only the current stage, label instructor material as reference content, and avoid cumulative prompt growth. Published records remain read-only, earlier records can be cloned for rollback, and legacy module routes return `410`.
 - [x] Persist the new evaluation and review workflow in both SQLite and PostgreSQL.
   - Evidence: matching schemas, transactions, constraints, migrations, retention locks, append-only triggers, and fresh PostgreSQL 17 integration tests.
 - [x] Implement bounded retention.
-  - Evidence: unsubmitted evaluations expire after 1 day; pending submissions after 30 days; decided submissions after 180 days. Retention removes source-bearing rows and leaves only hashed append-only purge receipts.
+  - Evidence: unsubmitted evaluations expire after 1 day; pending submissions after 30 days; decided submissions after 180 days. Retention removes rows that contain source text and leaves only hashed append-only purge receipts.
 - [x] Implement deterministic STEM Splitter and explicit Ollama Cloud runtime contracts.
   - Evidence: deterministic mode uses fixed server rules and discloses that prompt edits do not alter scoring. Ollama mode is server-only opt-in, pins `https://ollama.com`, limits source to 131,072 UTF-8 bytes, validates the exact result schema, and does not silently fall back on failure.
 - [x] Keep capability identifiers out of portable releases.
@@ -40,18 +40,21 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: teal/micro-circle, amber/meso-square, plum/macro-diamond, and black/integration-double-circle are repeated in the legend; claim states use labeled outline and line patterns.
 - [x] Neutralize CSV formula cells and reject unknown or credential-shaped project fields.
   - Evidence: byte-level CSV tests cover formula/control/leading-whitespace prefixes; schema and portable-export canaries fail closed.
-- [x] Reconcile README, requirements, QA, and security documentation to the current implementation while preserving the source authority note.
-  - Evidence: documentation updated 2026-08-11; `docs/SOURCE_LEDGER.md` was not modified.
+- [x] Reconcile README, requirements, QA, security documentation, and the source authority note to the current implementation.
+  - Evidence: documentation and `docs/SOURCE_LEDGER.md` updated 2026-08-11.
 
 ## Current automated run
 
 - [x] Preserve the published pre-pedagogy release baseline: 130 passing tests, 3 PostgreSQL-gated skips, and a successful production Vite build.
-- [x] Current server and course-profile contract: 57 passed; 3 PostgreSQL-gated tests skipped in the ordinary SQLite run.
-- [x] Current fresh disposable PostgreSQL 17 integration: 3/3 passed.
-- [x] Current integrated client/domain/server suite: 145 passed; 3 PostgreSQL-gated tests skipped. Current server group: 59 passed; the same 3 PostgreSQL tests were gated.
+- [x] Current server and course-profile contract: 60 passed; 3 PostgreSQL-gated tests skipped in the ordinary SQLite run.
+- [x] Latest disposable PostgreSQL 17 integration before the earlier six-section redesign: 3/3 passed; rerun remains a release gate because PostgreSQL was not configured for the current local suite.
+- [x] Current integrated client/domain/server suite: 150 passed; 3 PostgreSQL-gated tests skipped. Current server group: 60 passed; the same 3 PostgreSQL tests were gated.
 - [x] Rebuild the production bundle after the frozen pedagogy changes.
-- [x] Recapture Course settings at 320, 390, 430, and 1440 px after the seven-stage progression editor replaced the earlier settings view.
-  - Evidence: all seven stages rendered at each viewport with no document-level horizontal overflow and no browser warnings/errors. `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip` passes `unzip -t`.
+- [x] Preserve the earlier seven-stage Course settings recapture as historical release evidence.
+  - Evidence: `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip` passes `unzip -t` but predates the six-section redesign.
+- [x] Preserve representative six-section, direct-map, empty-map, review, and Teacher Console views across 320, 390, 430, and 1440 px as historical evidence.
+  - Evidence: `/Users/milwright/.codex/visualizations/2026/08/11/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-semester-cycle-qa.zip` contains 7 historical PNGs and passes `unzip -t`.
+- [ ] Recapture a populated multi-scale map with combined and individual layer filters; the current browser archive proves the empty-map layer controls while automated interaction tests cover populated filtering.
 
 ## Current local and browser proof
 
@@ -59,10 +62,10 @@ This ledger separates implemented and automated behavior from rendered-browser, 
   - Evidence: the final server reported `http://127.0.0.1:4177`; `/api/health` returned `{"status":"ok"}`.
 - [x] Audit the real handoff database with value-free queries and preserve existing user-owned account/session state.
   - Evidence: integrity `ok`; 2 accounts with 1 already claimed; 1 existing teacher session; 0 student sessions, evaluations, submissions, review events, or prototype events. The existing code-owned prompt base remains internal. Data directory/files are `0700`/`0600`.
-- [x] Complete the current disposable browser journey through **Approve with a question**.
-  - Evidence: the journey verified source-return prompts, collapsed **Model review details**, one instructor focus and question, the student response, candidate choice, map entry, and revision stage.
-- [x] Capture the current class entry and changed student and teacher views at 320, 390, 430, and 1440 px with no document-level horizontal overflow.
-  - Evidence: the original 50-PNG archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the four current Course settings captures are in `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
+- [x] Preserve the earlier disposable browser journey through **Approve with a question**.
+  - Evidence: this historical journey verified questions tied to passages in the source, collapsed review details, one instructor focus and question, the student response, candidate choice, map entry, and revision section before the non-gating redesign.
+- [x] Preserve class-entry and changed student and teacher views at 320, 390, 430, and 1440 px as historical evidence with no document-level horizontal overflow.
+  - Evidence: the original 50-PNG archive is `/Users/milwright/.codex/visualizations/2026/08/08/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-app-all-views-2026-08-11.zip`; the four earlier Course settings captures are in `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip`. Both pass `unzip -t`.
 - [x] Verify the deployed public-demo class access with `101`, read back the course-server session, and close the test session. Earlier browser-entry evidence retains the zero-console-warning check.
 - [x] Run the production dependency audit and final source/application-bundle scans.
   - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.
@@ -94,6 +97,6 @@ This ledger separates implemented and automated behavior from rendered-browser, 
 
 ## Release boundary
 
-The current seven-stage Course settings tree is automated, built, scanned, locally browser-verified at 320, 390, 430, and 1440 px, merged into `main` through PR [#1](https://github.com/CUNY-AI-Lab/systems-mapping/pull/1), and deployed with health/header/bundle readback. It still requires a full deployed teacher journey. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
+The previously deployed tree remains the last GitHub/Railway release evidence. The current five-stage scale-layer workflow groups Micro and Meso in Part 1 and Macro and Integration in Part 2; instructor review is asynchronous and advisory and never controls advancement. Existing rendered-browser evidence includes earlier workflows, so a current non-blocking Part 1/Part 2 recapture remains separate from commit, push, and Railway deployment actions requiring explicit authorization. Ollama Cloud remains a separate disabled capability until its exposed credential is revoked, a rotated key is installed, and a live provider run is authorized.
 
 The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.

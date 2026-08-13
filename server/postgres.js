@@ -487,7 +487,7 @@ async function seedPostgres(client) {
       module.revision,
       module.content,
       module.fingerprint,
-      'Source-grounded starting configuration',
+      'Starting configuration',
       now,
     ]);
   }
@@ -510,7 +510,7 @@ async function seedPostgres(client) {
     'systems-mapping-default',
     JSON.stringify(profileJson),
     profileFingerprint,
-    'Source-grounded starting profile',
+    'Starting course settings',
     now,
   ]);
 }
@@ -530,7 +530,7 @@ async function upgradeStoredTeachingProfiles(client) {
     await client.query(`
       UPDATE teaching_profiles SET profile_json = $1::jsonb, fingerprint = $2 WHERE id = $3
     `, [serialized, profileFingerprint, row.id]);
-    const note = 'Moved existing course settings into the seven-stage progression';
+    const note = 'Grouped course settings into two parts';
     await client.query(`
       INSERT INTO teaching_profile_events
         (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)

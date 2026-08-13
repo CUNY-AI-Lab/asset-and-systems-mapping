@@ -509,7 +509,7 @@ function upgradeStoredTeachingProfiles(db) {
       const profileFingerprint = teachingProfileFingerprint(upgraded);
       if (profileFingerprint === row.fingerprint) continue;
       update.run(serialized, profileFingerprint, row.id);
-      const note = 'Moved existing course settings into the seven-stage progression';
+      const note = 'Grouped course settings into two parts';
       record.run(
         row.id,
         row.revision,
@@ -557,7 +557,7 @@ function seed(db) {
         module.fingerprint,
         now,
       );
-      insertHistory.run(module.id, module.revision, module.content, module.fingerprint, 'Source-grounded starting configuration', now);
+      insertHistory.run(module.id, module.revision, module.content, module.fingerprint, 'Starting configuration', now);
     }
 
     const profileJson = JSON.stringify(DEFAULT_TEACHING_PROFILE);
@@ -577,7 +577,7 @@ function seed(db) {
       'systems-mapping-default',
       profileJson,
       profileFingerprint,
-      'Source-grounded starting profile',
+      'Starting course settings',
       now,
       'systems-mapping-default',
     );
