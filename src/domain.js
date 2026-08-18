@@ -31,7 +31,7 @@ export const SCALES = {
     description: 'Offices, funding, decisions, law, narrative, and history.',
     checklist: [
       'Name agencies, offices, funders, and decision-making bodies, including at least two relevant funding streams.',
-      'For each path, state the exact action, where it starts and ends, who receives what, and the source.',
+      'For each path, state the exact action, where it starts and ends, who receives what, and the supporting evidence.',
       'Connect laws, beliefs, narratives, and history to who they affect and how; use evidence and dates, and keep them separate from offices.',
     ],
   },
@@ -48,15 +48,15 @@ export const SCALES = {
 };
 
 export const HARD_CRITERIA = [
-  { id: 'H1', label: 'Source details', help: 'The source includes the information needed to identify where it came from.' },
+  { id: 'H1', label: 'Memo detail', help: 'The memo includes enough detail to begin mapping.' },
   { id: 'H2', label: 'Sensitivity and permission', help: 'Sensitive material has documented permission or a privacy-safe treatment.' },
-  { id: 'H3', label: 'Claims and interpretation', help: 'The student makes clear what the source says and what they think it means.' },
-  { id: 'H4', label: 'Relational content', help: 'The source contains at least two actor-to-actor relationships.' },
+  { id: 'H3', label: 'Claims and interpretation', help: 'The student makes clear what the memo says and what they think it means.' },
+  { id: 'H4', label: 'Connections', help: 'The memo names at least two connections among people, groups, places, or organizations.' },
 ];
 
 export const SCORED_CRITERIA = [
   { id: 'C1', label: 'Bounded inquiry' },
-  { id: 'C2', label: 'Actor specificity' },
+  { id: 'C2', label: 'Specific names' },
   { id: 'C3', label: 'Relational statements' },
   { id: 'C4', label: 'Scale fit' },
   { id: 'C5', label: 'Interpretive warrant' },
@@ -119,7 +119,7 @@ export const DEFAULT_VIEWPORT = Object.freeze({ panX: 0, panY: 0, zoom: 1 });
 
 const DEFAULT_CANVAS = Object.freeze({ width: 840, height: 540, radiusX: 290, radiusY: 190 });
 
-export const BASE_GUARDRAILS = `Use only material in the active project. Keep track of where each piece of evidence appears. Never invent actors, relationships, quotations, or citations. Mark unsupported possibilities as research leads. Keep what the source says separate from the student's interpretation. Sensitive material stays local unless the instructor explicitly changes the sharing tier. Return stable IDs and schema-valid operations only.`;
+export const BASE_GUARDRAILS = `Use only material in the active project. Keep track of where each piece of evidence appears. Never invent people, organizations, connections, quotations, or citations. Mark unsupported possibilities as needing more evidence. Keep what the memo says separate from the student's interpretation. Sensitive material stays local unless the instructor explicitly changes the sharing tier. Return stable IDs and schema-valid operations only.`;
 
 export const DEFAULT_MEMO = `How do New York City special-education systems shape a family's ability to secure services? A family requests an evaluation from its school. The school refers the student to the Committee on Special Education, which determines eligibility. NYC Public Schools administers services and is regulated by the New York State Education Department. Parent advocacy organizations provide guidance, but delayed evaluations burden families. Public data may undercount informal support and should be checked against published case reports.`;
 
@@ -344,11 +344,13 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
   const text = (submission.text || '').trim();
   const relationships = extractRelationships({ ...submission, text });
   const hasRelational = relationships.length >= 2;
+  const evidenceBoundary = locateEvidence({ ...submission, text }, /(according|data|interview|memo|reports?|shows?|evidence|testimony|should be checked)/i)
+    || (submission.evidenceOwnership ? 'Memo and interpretation are tracked separately' : null);
   const hard = [
-    result('H1', text.length >= 80 && Boolean(submission.title && submission.author && submission.date && submission.location) ? 'met' : 'unmet', text ? 'Source and its details' : null, 'A usable source needs text, a title, an author, a date, and information about where it came from.', 'Add the missing source details.', true),
+    result('H1', text.length >= 80 ? 'met' : 'unmet', text ? 'Memo text' : null, 'A usable memo needs enough detail to review.', 'Add more detail to the memo.', true),
     result('H2', !submission.sensitive || submission.consent ? 'met' : 'unmet', submission.sensitive ? 'Sensitivity declaration' : 'Marked non-sensitive', 'Sensitive material needs documented permission or a privacy-safe treatment.', 'Document permission or remove identifying details.', true),
-    result('H3', submission.evidenceOwnership ? 'met' : 'unmet', submission.evidenceOwnership ? 'Claims and interpretation are labeled' : null, 'The student must make clear what the source says and what they think it means.', 'Explain how the source claims and the student interpretation will be labeled.', true),
-    { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'Mapping requires at least two actor-to-actor relationships.', 'Add two statements naming who acts on whom and how.', true), relationshipCount: relationships.length },
+    result('H3', evidenceBoundary ? 'met' : 'unmet', evidenceBoundary, 'At least one important point should name the evidence behind it.', 'Name the evidence behind one important point.', true),
+    { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'Mapping requires at least two connections between people, groups, places, or organizations.', 'Add two statements naming what connects and how.', true), relationshipCount: relationships.length },
   ];
 
   const scalePatterns = {
@@ -359,13 +361,13 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
   };
 
   const checks = [
-    [/[?]|\b(how|why|what)\b/i, 'The inquiry is expressed as a bounded question.', 'State one bounded question the map will help answer.'],
-    [/(NYC Public Schools|New York State Education Department|Committee on Special Education|family|school|organization|agency)/i, 'Specific actors are named.', 'Replace general groups with named actors or actor classes.'],
-    [/(provides?|regulates?|administers?|refers?|delays?|burdens?|enables?|shapes?)/i, 'Actor-to-actor verbs make relationships extractable.', 'Write at least two explicit subject–verb–object statements.'],
-    [scalePatterns[activeScale], `The source contains ${activeScale}-scale material.`, `Add evidence that belongs to the ${activeScale} scale.`],
-    [/(according|data|interview|memo|source|reports?|shows?|evidence|should be checked)/i, 'Interpretation is tied to an evidence form.', 'Name what source warrants the interpretation.'],
+    [/[?]|\b(how|why|what)\b/i, 'The memo states a question to explore.', 'State the question your memo helps you explore.'],
+    [/(NYC Public Schools|New York State Education Department|Committee on Special Education|family|school|organization|agency)/i, 'Specific people, groups, or organizations are named.', 'Replace general labels with specific people, roles, groups, or organizations.'],
+    [/(provides?|regulates?|administers?|refers?|delays?|burdens?|enables?|shapes?)/i, 'Clear verbs make connections visible.', 'Use a clear verb for each connection.'],
+    [scalePatterns[activeScale], `The memo contains ${activeScale}-scale material.`, `Add evidence that belongs to the ${activeScale} scale.`],
+    [/(according|data|interview|memo|reports?|shows?|evidence|testimony|should be checked)/i, 'Interpretation is tied to evidence.', 'Name what evidence supports the interpretation.'],
     [/(but|however|although|contradict|exclude|delay|burden|tension|despite)/i, 'A tension or contradiction is visible.', 'Name a tension, exclusion, or competing account.'],
-    [/(resource|support|guidance|capacity|asset|provide|enable|organization)/i, 'The source includes an asset or capacity.', 'Identify a resource, capacity, or enabling relationship.'],
+    [/(resource|support|guidance|capacity|asset|provide|enable|organization)/i, 'The memo includes an asset or capacity.', 'Identify a resource, capacity, or enabling relationship.'],
     [/(may|might|could|uncertain|unknown|needs? research|should be checked|undercount|research lead)/i, 'Uncertainty is explicitly marked.', 'Mark what is uncertain or needs further research.'],
   ];
 
@@ -518,7 +520,7 @@ export function extractCandidates(submission) {
         claimState: 'student interpretation',
         directed: true,
         confidence: 0.82,
-        rationale: `The source states that ${relationship.sourceLabel} ${relationship.verb} ${relationship.targetLabel}.`,
+        rationale: `The memo states that ${relationship.sourceLabel} ${relationship.verb} ${relationship.targetLabel}.`,
         evidence: relationship.evidence,
         ...evidenceRef,
         evidenceRefs: [evidenceRef],
@@ -594,7 +596,7 @@ export function createDefaultProject() {
     rights: 'Course use only',
     sensitive: false,
     consent: false,
-    evidenceOwnership: 'What the source says and what the student thinks it means are labeled separately',
+    evidenceOwnership: 'What the memo says and what the student thinks it means are labeled separately',
     text: DEFAULT_MEMO,
   };
   return {
@@ -1171,7 +1173,7 @@ export function validateProject(project) {
   assertKnownKeys(project.submission, SUBMISSION_KEYS, 'project.submission');
   ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'evidenceOwnership', 'text'].forEach((field) => {
     const maximum = field === 'text' ? PROJECT_LIMITS.sourceText : field === 'id' ? 200 : field === 'title' || field === 'author' || field === 'sourceType' ? 500 : PROJECT_LIMITS.metadataText;
-    assertString(project.submission[field], `project.submission.${field}`, field !== 'id' && field !== 'sourceType', maximum);
+    assertString(project.submission[field], `project.submission.${field}`, field !== 'id', maximum);
   });
   assertBoolean(project.submission.sensitive, 'project.submission.sensitive');
   assertBoolean(project.submission.consent, 'project.submission.consent');
@@ -1180,7 +1182,7 @@ export function validateProject(project) {
   if (project.submission.revision !== undefined) assertInteger(project.submission.revision, 'project.submission.revision', 1, Number.MAX_SAFE_INTEGER);
   if (project.submission.fingerprint !== undefined) {
     assertString(project.submission.fingerprint, 'project.submission.fingerprint', false, 200);
-    if (project.submission.fingerprint !== stableId('src', project.submission.text)) invalidProject('project.submission.fingerprint', 'does not match the source text');
+    if (project.submission.fingerprint !== stableId('src', project.submission.text)) invalidProject('project.submission.fingerprint', 'does not match the memo text');
   }
 
   assertObject(project.configs, 'project.configs');
@@ -1516,7 +1518,7 @@ function pseudonymizeSensitiveLabels(portable, redactions, reason) {
         addRedaction(redactions, `${path}[${index}].targetLabel`, reason);
       }
       if ((sourceAlias || targetAlias) && edge.rationale !== undefined) {
-        edge.rationale = `The source states that ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}.`;
+        edge.rationale = `The memo states that ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}.`;
         addRedaction(redactions, `${path}[${index}].rationale`, reason);
       }
     });
@@ -1691,7 +1693,7 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     addRedaction(redactions, 'preflight.review.submissionId', 'Instructor review capability excluded from portable export');
   }
   if (redactSource) {
-    const reason = `Restricted source material excluded from ${sharingTier} export`;
+    const reason = `Restricted memo material excluded from ${sharingTier} export`;
     portable.submission.text = '';
     addRedaction(redactions, 'submission.text', reason);
     if (sensitive) {

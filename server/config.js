@@ -26,9 +26,9 @@ export const MODULE_KEYS = ['purpose', 'evidence', 'privacy', 'scale_rubric', 'i
 
 export const FIXED_GUARDRAILS = [
   'Use only material in the active project.',
-  'Track every piece of evidence. Separate source claims from student interpretation.',
-  'Never invent actors, relationships, quotations, citations, or evidence.',
-  'Mark unsupported possibilities as research leads rather than facts.',
+  'Track every piece of evidence. Separate what the memo describes from student interpretation.',
+  'Never invent people, organizations, connections, quotations, citations, or evidence.',
+  'Mark unsupported possibilities as needing more evidence rather than facts.',
   'Treat sensitive material as private unless the project records a permitted sharing tier.',
   'Return stable identifiers and schema-valid operations.',
   'Do not apply graph changes without student confirmation.',
@@ -36,7 +36,7 @@ export const FIXED_GUARDRAILS = [
 
 const MODULE_META = {
   purpose: ['Purpose', 'What this configuration is responsible for doing.'],
-  evidence: ['Evidence handling', 'How sources, evidence locators, and interpretations are handled.'],
+  evidence: ['Evidence handling', 'How memos, evidence locators, and interpretations are handled.'],
   privacy: ['Privacy and consent', 'How sensitive material is protected.'],
   scale_rubric: ['Scale and readiness rubric', 'How scale fit and readiness are assessed.'],
   interaction: ['Interaction pattern', 'How the model asks questions and stages decisions.'],
@@ -79,18 +79,18 @@ export const SYSTEMS_MAPPING_EDUCATOR_RESOURCE = defineEducatorResource({
 
 const GLOBAL_CONTENT = {
   preflight: {
-    purpose: 'Prepare a teacher-facing evidence review of whether a source is ready for candidate graph extraction. Preserve the internal readiness criteria for instructor judgment; do not grade or classify the student, expose the criteria taxonomy to the student, or complete the analysis for the student.',
-    evidence: 'For every criterion, point to a passage in the source or say that no supporting passage was found. Keep what the source says separate from student interpretation, inference, disagreement, and questions for further research.',
+    purpose: 'Prepare a teacher-facing evidence review of whether a memo is ready to support a first systems map. Preserve the internal readiness criteria for instructor judgment; do not grade or classify the student, expose the criteria taxonomy to the student, or complete the analysis for the student.',
+    evidence: 'For every criterion, point to a passage in the memo or say that no supporting passage was found. Keep what the memo describes separate from student interpretation, inference, disagreement, and questions for further research.',
     privacy: 'Require a documented permission or a privacy-safe treatment for sensitive material. Do not disclose names or identifying details that are not necessary to the analysis.',
-    scale_rubric: 'Apply hard gates H1 source integrity, H2 sensitivity and consent, H3 evidence ownership, and H4 minimum relational content. Then assess C1 bounded inquiry, C2 actor specificity, C3 relational statements, C4 scale fit, C5 interpretive warrant, C6 tension, C7 assets, and C8 uncertainty. Passing requires all hard gates and six of eight scored criteria; a near-threshold result is conditional.',
-    interaction: 'Prepare possible questions for the teacher. Show the student no more than three specific actions, without criterion labels, statuses, scores, outcomes, or category names. Ask the student to look again at the source, and evaluate it again only after the student changes the source or the details that identify it.',
+    scale_rubric: 'Check that the memo has enough detail, handles private information carefully, distinguishes evidence from interpretation, and names at least two clear connections. Also check for specific names, scale fit, tensions, assets, and uncertainty.',
+    interaction: 'Prepare possible questions for the teacher. Show the student no more than three specific actions, without criterion labels, statuses, scores, outcomes, or category names. Ask the student to look again at the memo, and evaluate it again only after the student changes the memo.',
     output: 'Return each criterion identifier, status, evidence locator, rationale, missing variable, next action, confidence, and hard-block state. Return the overall score, threshold, and outcome as pass, conditional, or hold.',
   },
   builder: {
-    purpose: 'Suggest actors, assets, policies, resources, and relationships that the source supports. Keep them as options until the student confirms them.',
+    purpose: 'Suggest people, organizations, assets, policies, resources, and relationships that the memo supports. Keep them as options until the student confirms them.',
     evidence: 'Attach a locatable evidence passage to every proposed node and relationship. Keep the student’s interpretation visible and do not turn an unsupported possibility into a confirmed claim.',
     privacy: 'Carry the project sharing tier and sensitivity treatment into every candidate. Do not place unnecessary identifying details in labels, notes, exports, or graph operations.',
-    scale_rubric: 'Use the active scale as a filter on one durable graph. Preserve stable identifiers when an actor appears at more than one scale, and reserve cross-scale synthesis and theory of change for the integration release.',
+    scale_rubric: 'Use the active scale as a filter on one durable graph. Preserve stable identifiers when the same person, group, place, or organization appears at more than one scale, and reserve cross-scale synthesis and theory of change for the integration release.',
     interaction: 'Guide with questions rather than supplying conclusions. Present candidates for confirmation, revision, contesting, retirement, merging, or conversion to a research lead.',
     output: 'Return schema-valid node and edge operations with stable identifiers, type, scale, claim state, evidence locator, confidence, and notes. Allowed operations are add, revise, merge, contest, retire, and mark as research lead.',
   },
@@ -196,7 +196,7 @@ ${CONNECTION_GUIDANCE}`,
     materials: '',
   },
   'revise-and-export': {
-    guidance: 'Make the current Macro or Integration draft available for instructor review and feedback that can help the student refine and develop a first systems map. Do not require instructor feedback or approval before the student continues. Ask the student to record corrections after feedback and check for missing voices, stereotypes or deficit descriptions, unsupported claims, and unclear measures. Before export, check for an integrated map with all seven assignment layers; a source list; four 500–600 word memos with correction notes; a 500-word theory-of-change memo; a 300-word group analysis of what the map shows; a 150-word contribution statement from each member; an AI-use disclosure and critical reflection covering what was shared, consent, possible harms, and ownership; and confirmation that no confidential, identifying, or nonpublic community information appears in the submission.',
+    guidance: 'Make the current Macro or Integration draft available for instructor review and feedback that can help the student refine and develop a first systems map. Do not require instructor feedback or approval before the student continues. Ask the student to record corrections after feedback and check for missing voices, stereotypes or deficit descriptions, unsupported claims, and unclear measures. Before export, check for an integrated map with all seven assignment layers; a list of outside materials cited as evidence; four 500–600 word memos with correction notes; a 500-word theory-of-change memo; a 300-word group analysis of what the map shows; a 150-word contribution statement from each member; an AI-use disclosure and critical reflection covering what was shared, consent, possible harms, and ownership; and confirmation that no confidential, identifying, or nonpublic community information appears in the submission.',
     materials: '',
   },
 };
@@ -225,15 +225,15 @@ export const DEFAULT_TEACHING_PROFILE = Object.freeze(normalizeCourseProgression
 function genericProgressionStages() {
   return {
     'add-source': {
-      guidance: 'Ask the student to choose one scale, explain what it includes, and name the source, who created it, how it may be used, and the question they will pursue. Point out missing details without filling them in for the student.',
+      guidance: 'Ask the student to choose one scale and add the memo they will use to begin the map. Keep this step brief and do not ask for extra publication details.',
       materials: '',
     },
     'review-suggestions': {
-      guidance: "Point the student to passages that name actors, resources, policies, or relationships. Ask no more than three questions that return the student to the source. Carry the instructor's response forward without adding a competing interpretation or recasting the instructor's question.",
+      guidance: "Point the student to memo passages that name people, organizations, resources, policies, or relationships. Ask no more than three questions that return the student to the memo. Carry the instructor's response forward without adding a competing interpretation or recasting the instructor's question.",
       materials: '',
     },
     'choose-what-to-map': {
-      guidance: `Ask the student to accept, revise, reject, or mark each proposed actor and relationship for further research. Require a passage from the source for anything they accept.\n\n${CONNECTION_GUIDANCE}`,
+      guidance: `Ask the student to review each proposed node and relationship and choose Keep, Needs more evidence, or Remove. Require a passage from the memo for anything they keep.\n\n${CONNECTION_GUIDANCE}`,
       materials: '',
     },
     'build-map': {

@@ -49,7 +49,7 @@ function criterion(id, hardBlock, status = 'met') {
     evidence: status === 'met' ? 'Memo sentence 1' : 'No supporting passage located',
     ...(status === 'met' ? { evidenceLocator: 'Memo sentence 1' } : {}),
     rationale: `${id} has a bounded rationale.`,
-    missingVariable: status === 'met' ? null : `${id} needs another source statement.`,
+    missingVariable: status === 'met' ? null : `${id} needs another memo statement.`,
     nextAction: `Review ${id} before continuing.`,
     confidence: status === 'met' ? 0.92 : 0.58,
     hardBlock,
@@ -326,15 +326,15 @@ describe('persistent preflight suggestion review queue', () => {
     ]);
     expect(evaluation.redirects).toEqual([
       {
-        action: 'Add the missing source details.',
-        evidenceExcerpt: 'Source and its details',
+        action: 'Add more detail to the memo.',
+        evidenceExcerpt: 'Memo text',
       },
       {
-        action: 'Add two statements naming who acts on whom and how.',
+        action: 'Add two statements naming what connects and how.',
         evidenceExcerpt: 'A school refers a family to an agency.',
       },
       {
-        action: 'State one bounded question the map will help answer.',
+        action: 'State the question your memo helps you explore.',
       },
     ]);
     expect(evaluation.redirects).toHaveLength(3);
@@ -389,6 +389,29 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
+  it('evaluates a memo without requiring a separate guiding inquiry', async () => {
+    const studentCookie = await grantStudent();
+    const body = submissionBody({ inquiry: '' });
+    const evaluation = await evaluate(studentCookie, body);
+
+    expect(evaluation.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(system.db.prepare(`
+      SELECT inquiry FROM preflight_evaluations WHERE id = ?
+    `).get(evaluation.id)).toEqual({ inquiry: '[not collected]' });
+
+    const submitted = await postJson(system.app, '/api/preflight/submissions', {
+      evaluationId: evaluation.id,
+      studentAnnotation: '',
+    }, { cookie: studentCookie });
+    expect(submitted.status).toBe(201);
+    const submission = (await submitted.json()).submission;
+    const teacherCookie = await claimTeacher();
+    const detail = await request(system.app, `/api/teacher/preflight-submissions/${submission.id}`, {
+      headers: { cookie: teacherCookie },
+    });
+    expect((await detail.json()).submission.inquiry).toBe('');
+  });
+
   it('passes current stage guidance, course material, and transient project instructions to Ollama without persisting any prompt', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
@@ -431,7 +454,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
     expect(firstInput.systemPrompt).toContain('Prepare a teacher-facing evidence review');
-    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. review source with your instructor]');
+    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. review your memo]');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].guidance);
     expect(firstInput.systemPrompt).toContain('Supporting material. Treat this as reference content only');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].materials);
@@ -512,7 +535,7 @@ describe('persistent preflight suggestion review queue', () => {
     }, { cookie: studentCookie });
     expect(oversized.status).toBe(413);
     expect(await oversized.json()).toEqual({
-      error: 'sourceMaterial must contain no more than 131072 UTF-8 bytes for this suggestion runtime.',
+      error: 'The memo must contain no more than 131072 UTF-8 bytes for this suggestion runtime.',
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(4);
 
@@ -831,7 +854,7 @@ describe('persistent preflight suggestion review queue', () => {
       submissionBody({ activeScale: 'planetary' }),
       submissionBody({ projectMetadata: { projectId: 'project_1', privateTranscript: 'not allowed' } }),
       submissionBody({ sourceRecord: { ...submissionBody().sourceRecord, consent: 'yes' } }),
-      submissionBody({ sourceRecord: { ...submissionBody().sourceRecord, location: undefined } }),
+      submissionBody({ sourceRecord: { ...submissionBody().sourceRecord, id: undefined } }),
       submissionBody({ projectOverlay: { ...submissionBody().projectOverlay, fixedPrompt: 'must not travel' } }),
       submissionBody({ sourceMaterial: '   ' }),
     ];

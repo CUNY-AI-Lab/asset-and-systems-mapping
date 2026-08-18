@@ -1,15 +1,15 @@
 export const SYSTEMS_MAPPING_STAGES = Object.freeze([
   Object.freeze({
     id: 'add-source',
-    label: 'choose a scale and add a source',
-    short: 'Source',
-    description: 'Students choose a scale, add a source, and record the details needed to use it in the map.',
+    label: 'add your memo',
+    short: 'Memo',
+    description: 'Students choose a scale and add the memo they will use to begin the map.',
   }),
   Object.freeze({
     id: 'review-suggestions',
-    label: 'review source with your instructor',
+    label: 'review your memo',
     short: 'Review',
-    description: 'Students identify what the source supports, what remains uncertain, and what they want to ask their instructor.',
+    description: 'Students identify what the memo supports, what remains uncertain, and what they want to ask their instructor.',
   }),
   Object.freeze({
     id: 'choose-what-to-map',

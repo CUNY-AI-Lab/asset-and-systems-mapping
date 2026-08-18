@@ -4,27 +4,27 @@ Updated: 2026-08-13
 
 ## Product contract
 
-Systems Mapping develops one durable, revisable concept-and-resource map from assigned, published, institutional, public, and scholarly sources. Student interpretation remains visibly secondary to the source evidence. Students remain responsible for every claim and relationship. They may receive at most three short questions that return them to specific passages in the source. The system must not show the student its criterion taxonomy, scores, outcome, or full model review; silently rewrite the source; change the graph; or promote an inference into confirmed state.
+Systems Mapping develops one durable, revisable concept-and-resource map from student-authored memos, which may draw on assigned, published, institutional, public, and scholarly sources. Student interpretation remains visibly distinct from evidence recorded in the memo. Students remain responsible for every claim and relationship. They may receive at most three short questions that return them to specific passages in the memo. The system must not show the student its criterion taxonomy, scores, outcome, or full model review; silently rewrite the memo; change the graph; or promote an inference into confirmed state.
 
-The interface is phone-primary and progressively disclosed. It uses descriptive stage names, modest editorial typography, black/white/gray as the dominant palette, and restrained tertiary accents whose meanings are repeated through labels, shapes, outlines, and line patterns.
+The interface is phone-primary and progressively disclosed. It uses descriptive stage names, modest editorial typography, black/white/gray as the dominant palette, and restrained scale accents repeated through plain labels and outlined swatches in the Map key.
 
 ## Five-stage learning cycle
 
-- choose a scale and add a source asks students to set the current scale, add a source, and record the details needed to use it in the map
-- review source with your instructor asks students to identify what the evidence supports, what remains uncertain, and what they want to ask their instructor
+- add your memo asks students to choose a scale, upload a memo or paste its text, and optionally name the map
+- review your memo lets students request a few focused prompts, add a note, and ask the instructor for feedback
 - choose nodes and describe connections asks students to choose supported elements, describe how they connect, and decide which model suggestions to keep
 - build map asks students to arrange, connect, and annotate selected elements while linking each claim to evidence
 - revise and export asks students to reconsider their claims, record what changed, and decide what can be shared
 
-These stages form a repeatable cycle around one persistent map, not a one-way sequence. Every stage and the map remain available throughout the project. A student may open an empty map, add supported elements manually, revisit a source, request or ignore guidance, check an instructor response, or begin another scale without waiting for approval. Part 1 groups Micro and Meso; Part 2 groups Macro and Integration. These parts organize course work without adding stages or replacing scale-specific map layers. Internal criteria remain evaluator and teacher-review semantics only. The student response must contain no H/C identifiers, criterion labels or statuses, scores, thresholds, outcome labels, rationales, missing-variable fields, full evaluation codification, or synthesized model-review groups.
+These stages form a repeatable cycle around one persistent map, not a one-way sequence. Every stage and the map remain available throughout the project. A student may open an empty map, add supported elements manually, revisit a memo, request or ignore guidance, check an instructor response, or begin another scale without waiting for approval. Part 1 groups Micro and Meso; Part 2 groups Macro and Integration. These parts organize course work without adding stages or replacing scale-specific map layers. Internal criteria remain evaluator and teacher-review semantics only. The student response must contain no H/C identifiers, criterion labels or statuses, scores, thresholds, outcome labels, rationales, missing-variable fields, full evaluation codification, or synthesized model-review groups.
 
-Each node and relationship carries its analytical scale. New cycles append to the same graph rather than replacing it. The map opens with all active scale layers visible and supports combined or individual micro, meso, macro, and integration views. Positions, evidence, annotations, and claim state persist when layers are hidden, when another scale becomes current, and across export/import. Editing a source retires only graph records tied to that source fingerprint and current scale; earlier scale layers remain intact.
+Each node and relationship carries its analytical scale. New cycles append to the same graph rather than replacing it. The map opens with all active scale layers visible and supports combined or individual micro, meso, macro, and integration views. Positions, evidence, annotations, and claim state persist when layers are hidden, when another scale becomes current, and across export/import. Editing a memo retires only graph records tied to that memo fingerprint and current scale; earlier scale layers remain intact.
 
 ## Internal suggestion semantics
 
 The suggestion evaluator returns four hard criteria and eight scored criteria:
 
-- H1 source integrity
+- H1 memo detail
 - H2 sensitivity and consent
 - H3 evidence ownership
 - H4 minimum relational content
@@ -43,8 +43,8 @@ The server derives the student projection from the authoritative result. It cont
 
 ```json
 {
-  "action": "Return to a specific source question.",
-  "evidenceExcerpt": "Optional short passage from the source."
+  "action": "Review one question raised by your memo.",
+  "evidenceExcerpt": "Optional short passage from the memo."
 }
 ```
 
@@ -67,7 +67,7 @@ An authenticated student requests an evaluation with:
 }
 ```
 
-The server, not the browser, chooses the current shared teacher configuration, executes the configured suggestion runtime, validates the exact H1–H4/C1–C8 schema, replaces timestamps/configuration metadata with authoritative values, persists the full result for teacher review, and derives the bounded student prompts. The student response contains `{evaluation}` with exactly `id`, `redirects`, `configSnapshot`, `runtime`, `createdAt`, and `expiresAt`. It must not contain the full suggestion, criteria, score, threshold, or outcome.
+`sourceRecord` and `sourceMaterial` are compatibility API identifiers for memo details and memo text; they are not student-facing labels. The server, not the browser, chooses the current shared teacher configuration, executes the configured suggestion runtime, validates the exact H1–H4/C1–C8 schema, replaces timestamps/configuration metadata with authoritative values, persists the full result for teacher review, and derives the bounded student prompts. The student response contains `{evaluation}` with exactly `id`, `redirects`, `configSnapshot`, `runtime`, `createdAt`, and `expiresAt`. It must not contain the full suggestion, criteria, score, threshold, or outcome.
 
 The submitted project overlay contains bounded configuration metadata and up to 16,000 characters of custom instructions. The server separates custom instructions before persistence. Fixed prompts, shared teacher prompt content, project custom-instruction text, and provider credentials must not be stored in or returned with the evaluation snapshot. The snapshot carries fingerprints, revisions, and module versions sufficient to identify what governed the run.
 
@@ -86,9 +86,9 @@ The browser submits only:
 }
 ```
 
-Within one transaction, the server must verify that the evaluation belongs to the current student session, is unexpired and unused, mark it consumed, and copy its authoritative project details, source, suggestion, configuration snapshot, and runtime metadata into a pending review snapshot. A student may not submit an alternative suggestion or configuration body.
+Within one transaction, the server must verify that the evaluation belongs to the current student session, is unexpired and unused, mark it consumed, and copy its authoritative project details, memo, suggestion, configuration snapshot, and runtime metadata into a pending review snapshot. A student may not submit an alternative suggestion or configuration body.
 
-The student status endpoint is `GET /api/preflight/submissions/:id`. The ID is a random bearer capability and a valid student class session is also required. The response must be limited to project ID, status, decision, revision/times, the instructor's focus, and an optional focused question. It must not reveal source content, full criteria or scores, prompt/configuration content, teacher identity, or teacher-only model-review detail. Every JSON/CSV/Markdown export must redact evaluation and review capabilities.
+The student status endpoint is `GET /api/preflight/submissions/:id`. The ID is a random bearer capability and a valid student class session is also required. The response must be limited to project ID, status, decision, revision/times, the instructor's focus, and an optional focused question. It must not reveal memo content, full criteria or scores, prompt/configuration content, teacher identity, or teacher-only model-review detail. Every JSON/CSV/Markdown export must redact evaluation and review capabilities.
 
 Teacher feedback communicates direction asynchronously. A pending review or recorded decision must never prevent candidate generation, stage navigation, scale changes, or map access. Teacher Console uses accessible action labels while the database and API retain stable internal decision IDs:
 
@@ -96,11 +96,11 @@ Teacher feedback communicates direction asynchronously. A pending review or reco
 - **Add feedback and a question** — records one instructor focus and one focused question with internal decision ID `revise_and_approve`.
 - **Recommend another pass** — records one instructor focus with internal decision ID `reject`, without redirecting or rewriting the student's current stage.
 
-No decision may modify the student's source, guidance, candidates, current stage, or graph. The instructor writes one focus; a question is present only for **Add feedback and a question**. Decisions require an expected revision; stale or duplicate writes return a conflict. Each accepted decision appends an immutable event with teacher attribution, the internal decision ID, and from/to revision.
+No decision may modify the student's memo, guidance, candidates, current stage, or graph. The instructor writes one focus; a question is present only for **Add feedback and a question**. Decisions require an expected revision; stale or duplicate writes return a conflict. Each accepted decision appends an immutable event with teacher attribution, the internal decision ID, and from/to revision.
 
 ## Teacher Console and course settings
 
-The Teacher Console must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the source, its identifying details, and the student note. **Review details** is collapsed by default and groups evidence excerpts, possible follow-up, and open questions without model scores, thresholds, outcomes, or criterion identifiers. The instructor form exposes one **Focus for the student**, the actions **Add feedback**, **Add feedback and a question**, and **Recommend another pass**, and one **Question for the student** only after **Add feedback and a question** is selected. Decision history records the same focus and optional question and renders the user-facing label while persistence retains the internal decision ID.
+The Teacher Console must default to **Review submissions**. Queue rows are minimal; only the selected submission loads its full detail. The review surface shows the memo and the student note. **Review details** is collapsed by default and groups evidence excerpts, possible follow-up, and open questions without model scores, thresholds, outcomes, or criterion identifiers. The instructor form exposes one **Focus for the student**, the actions **Add feedback**, **Add feedback and a question**, and **Recommend another pass**, and one **Question for the student** only after **Add feedback and a question** is selected. Decision history records the same focus and optional question and renders the user-facing label while persistence retains the internal decision ID.
 
 **Course settings** must not load until selected. It must present the same five stages as the student cycle and let the teacher open one stage at a time.
 
@@ -109,7 +109,7 @@ Within the node-selection stage, the student must describe how the chosen nodes 
 - **What guidance should students receive in this section?** accepts up to 2,500 characters of instructor guidance.
 - **What course material should support this section?** accepts up to 4,000 characters of pasted course material. The prompt must mark this field as reference content and must state that it cannot override fixed rules.
 
-The effective prompt must include only the current stage's instructor guidance and supporting material. It must not accumulate earlier or later stage prose. The student evaluation request must name the canonical stage ID, and the server must reject unknown IDs while migrating the former instructor-response ID into the combined source-review stage.
+The effective prompt must include only the current stage's instructor guidance and supporting material. It must not accumulate earlier or later stage prose. The student evaluation request must name the canonical stage ID, and the server must reject unknown IDs while migrating the former instructor-response ID into the combined **review your memo** stage.
 
 One published version governs new evaluations. A teacher may clone the published or an earlier version into a draft, edit stages, save a revision with a change note, preview the saved prompt by stage and scale, and publish it. Published and earlier versions are read-only. Publishing retires the former version and records append-only events for both records. Expected revisions prevent stale writes and preserve unsaved text until the teacher explicitly loads the server revision.
 
@@ -121,7 +121,7 @@ Fresh databases seed separate unclaimed identities for Maria Mavrides Calderon a
 
 ### Deterministic evaluator
 
-When Ollama is disabled, the server uses fixed, inspectable evaluation rules. No source content leaves the classroom server for a model provider. Changes to teacher and project instructions are recorded, but the deterministic evaluator does not interpret them and they do not alter scoring. The student still receives only a bounded set of questions tied to the source; full deterministic codification remains teacher-only. This is a bounded fallback and testing baseline, not a claim of live model execution.
+When Ollama is disabled, the server uses fixed, inspectable evaluation rules. No memo content leaves the classroom server for a model provider. Changes to teacher and project instructions are recorded, but the deterministic evaluator does not interpret them and they do not alter scoring. The student still receives only a bounded set of questions tied to the memo; full deterministic codification remains teacher-only. This is a bounded fallback and testing baseline, not a claim of live model execution.
 
 ### Ollama Cloud
 
@@ -130,10 +130,10 @@ Ollama Cloud must be enabled explicitly with `OLLAMA_ENABLED=true` and a fresh s
 - current effective teacher prompt;
 - project custom instructions;
 - active scale and inquiry;
-- source details;
-- source text.
+- memo details;
+- memo text.
 
-The source limit is 131,072 UTF-8 bytes and the inquiry limit is 8,192 UTF-8 bytes. The UI must disclose this egress before generation and name the runtime/model returned by the classroom server. A provider timeout, network/HTTP error, oversized response, malformed JSON, extra field, invalid criterion, or inconsistent outcome must fail closed with a generic 502 response. There is no silent deterministic fallback.
+Memo text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. The UI must disclose this transfer before generation and name the runtime/model returned by the classroom server. A provider timeout, network/HTTP error, oversized response, malformed JSON, extra field, invalid criterion, or inconsistent outcome must fail closed with a generic 502 response. There is no silent deterministic fallback.
 
 The key previously pasted into chat is exposed and must be revoked. Neither local nor Railway configuration is complete until a newly rotated key is set server-side and a separate live-provider acceptance run succeeds.
 
@@ -141,7 +141,7 @@ The key previously pasted into chat is exposed and must be revoked. Neither loca
 
 ### Browser project
 
-The browser project is versioned and validated. It persists the current stage, source details, zero to three questions, graph and candidate records, active and completed scales, evidence, configuration details, local events, sharing tier, map positions, viewport, and node, relationship, and map annotations. It must not persist the teacher-only criteria or score as student project state. It does not create student identity or cross-device synchronization. Storage failure must keep the in-memory project usable and offer recovery export.
+The browser project is versioned and validated. It persists the current stage, memo text and privacy choices, zero to three questions, graph and candidate records, active and completed scales, evidence, configuration details, local events, sharing tier, map positions, viewport, and node, relationship, and map annotations. It must not persist the teacher-only criteria or score as student project state. It does not create student identity or cross-device synchronization. Storage failure must keep the in-memory project usable and offer recovery export.
 
 Pointer movement may use transient state, but only completed moves are committed. Annotation and viewport writes are debounced/batched. Legacy projects receive deterministic positions, a bounded default viewport, and stable annotation IDs.
 
@@ -153,15 +153,15 @@ SQLite is the local persistence adapter; PostgreSQL is the hosted adapter. Both 
 - pending review snapshot: 30 days;
 - approved/rejected snapshot: 180 days.
 
-Retention deletes review rows that contain source text and their review events only through the guarded retention path. It retains an append-only receipt containing a one-way hash of the deleted submission ID, status or decision, purge time, and retention reason. Raw expired evaluations may be deleted without a separate audit row.
+Retention deletes review rows that contain memo text and their review events only through the guarded retention path. It retains an append-only receipt containing a one-way hash of the deleted submission ID, status or decision, purge time, and retention reason. Raw expired evaluations may be deleted without a separate audit row.
 
-Prototype events may contain only approved event names, canonical stage numbers, and bounded numeric/boolean metadata. They must not contain source text, labels, annotations, prompts, capabilities, or identity.
+Prototype events may contain only approved event names, canonical stage numbers, and bounded numeric/boolean metadata. They must not contain memo text, labels, annotations, prompts, capabilities, or identity.
 
 ## Graph and export contract
 
-Projects, sources, nodes, relationships, annotations, configurations, evaluations, review states, and events use stable IDs. Supported graph operations remain add, revise, merge, contest, retire, and create research lead. Unknown IDs, invalid references, unapproved relationship verbs, malformed geometry, excess collections, unknown schema fields, and credential-shaped data fail closed.
+Projects, memos, nodes, relationships, annotations, configurations, evaluations, review states, and events use stable IDs. Supported graph operations remain add, revise, merge, contest, retire, and create research lead. Unknown IDs, invalid references, unapproved relationship verbs, malformed geometry, excess collections, unknown schema fields, and credential-shaped data fail closed.
 
-No candidate becomes confirmed without explicit student action unless the instructor configuration deliberately disables confirmation. Public/restricted exports preserve IDs and redaction manifests while removing protected source/derived text. All portable tiers remove review capabilities. CSV output must neutralize leading formula markers, control characters, and leading whitespace before spreadsheet consumption.
+No candidate becomes confirmed without explicit student action unless the instructor configuration deliberately disables confirmation. Public/restricted exports preserve IDs and redaction manifests while removing protected memo and derived text. All portable tiers remove review capabilities. CSV output must neutralize leading formula markers, control characters, and leading whitespace before spreadsheet consumption.
 
 ## Access, hosted mode, and Railway
 
@@ -190,24 +190,24 @@ PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) merged the five-s
 - SQL operations use prepared parameters and guarded transactions.
 - Browser rendering uses React text/value paths; no HTML-injection sink is part of the intended UI contract.
 - Sharing tiers are private, course, CUNY, and public; private is the default.
-- The classroom database necessarily stores submitted source excerpts for instructor review during the disclosed retention period. Any hosted deployment therefore needs an institutional data-handling decision, not merely a passing technical test.
+- The classroom database necessarily stores submitted memo excerpts for instructor review during the disclosed retention period. Any hosted deployment therefore needs an institutional data-handling decision, not merely a passing technical test.
 
 ## Visual and accessibility constraints
 
 - Use restrained serif headings, humanist sans controls, and monospace provenance; no oversized bold marketing copy.
 - Keep black, white, and gray dominant. Use teal for micro/selection, amber for meso, plum for macro, and black for integration only in the legend and selected singular elements.
-- Repeat scale hue with circle/square/diamond/double-circle shape. Repeat claim state with text plus solid/dash/dash-dot/open/faded line or outline patterns.
+- Identify scales with simple labeled color swatches in the Map key. Do not place scale icons inside map cards, truncate map labels, expose internal claim-state labels, or show removed items unless the student asks to see them.
 - Keep primary controls usable at 320–430 px widths, with no document-level horizontal overflow or occluded action.
 - Use at least 44 px touch targets and at least 16 px editable text on phones where practical.
 - Preserve visible focus, logical focus return, keyboard graph movement, roving tabs, Escape dismissal, reduced-motion behavior, forced-colors support, and live status for saves/movement.
 
 ## Acceptance gates
 
-Automated acceptance requires the full UI/domain/server suite, the SQLite server suite, fresh PostgreSQL integration, production build, dependency audit, and static leakage scan. Rendered acceptance requires direct map access from every stage, pending-review continuation, empty-map entry, multi-scale layer combination, scale-specific source retirement, the student/teacher review loop, and map persistence at desktop, 320, 390, and 430 px with inspected screenshots and no relevant console errors. Delivery acceptance additionally requires private GitHub readback, a Railway deployment of the changed tree, live database/health/auth/review verification, and—if enabled—a separate Ollama Cloud run using a rotated key.
+Automated acceptance requires the full UI/domain/server suite, the SQLite server suite, fresh PostgreSQL integration, production build, dependency audit, and static leakage scan. Rendered acceptance requires direct map access from every stage, pending-review continuation, empty-map entry, multi-scale layer combination, scale-specific memo retirement, the student/teacher review loop, and map persistence at desktop, 320, 390, and 430 px with inspected screenshots and no relevant console errors. Delivery acceptance additionally requires private GitHub readback, a Railway deployment of the changed tree, live database/health/auth/review verification, and—if enabled—a separate Ollama Cloud run using a rotated key.
 
 Passing deterministic tests, local PostgreSQL integration, or a production build must never be reported as proof of browser acceptance, Railway deployment, or live Ollama Cloud execution.
 
-Current evidence as of 2026-08-13 is 160 passing tests with 3 PostgreSQL integration tests skipped, a passing production build, current desktop/mobile rendered captures, PR #5 merged to GitHub `main` at `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, and successful Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` from that clean commit. Live acceptance established migration readiness, health/root delivery, current hardening headers, public-demo access and cookie attributes, session/configuration Part 1/Part 2 readback, logout cleanup, exact live/local bundle parity, requested/banned-copy checks, and no 5xx responses. This evidence does not claim a complete live Teacher Console review, reload/export restoration, session expiry, teacher-route denial, or a live Ollama Cloud request.
+Current local evidence as of 2026-08-17 is 171 passing tests with 3 PostgreSQL integration tests skipped, a passing production build, and desktop/mobile rendered checks of the memo-first student flow. PR #5 remains merged to GitHub `main` at `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, and Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` is the previous clean commit-backed production receipt. That earlier live acceptance established migration readiness, health/root delivery, hardening headers, public-demo access and cookie attributes, session/configuration Part 1/Part 2 readback, logout cleanup, exact live/local bundle parity, requested/banned-copy checks, and no 5xx responses. This document does not by itself establish deployment of the current candidate and does not claim a complete live Teacher Console review, reload/export restoration, session expiry, teacher-route denial, or a live Ollama Cloud request.
 
 ## Source authority
 

@@ -55,7 +55,7 @@ function addAuthoritativePreflight(project, overrides = {}) {
   };
   project.preflight = {
     redirects: [{
-      action: 'Clarify which actor performs the referral.',
+      action: 'Clarify who performs the referral.',
       evidenceExcerpt: 'The school refers the student to the committee.',
     }],
     configurationSnapshot,
@@ -132,12 +132,12 @@ describe('mapping domain', () => {
 
   it('holds a memo with fewer than two explicit relationships', () => {
     const project = createDefaultProject();
-    const result = evaluateSubmission({ ...project.submission, text: 'How does this system work? The school provides one service to a family, but the memo does not yet identify the remaining actors and mechanisms.' }, 'micro', 6);
+    const result = evaluateSubmission({ ...project.submission, text: 'How does this system work? The school provides one service to a family, but the memo does not yet identify the remaining people, groups, and mechanisms.' }, 'micro', 6);
     expect(result.outcome).toBe('hold');
     expect(result.hard.find((item) => item.id === 'H4').status).toBe('unmet');
   });
 
-  it('does not treat repeated relationship words as actor-to-actor claims', () => {
+  it('does not treat repeated relationship words as connections', () => {
     const project = createDefaultProject();
     const text = 'This record repeats the word funds twice without making an actual relational claim: funds. It contains enough filler text to pass the minimum memo length requirement.';
     const result = evaluateSubmission({ ...project.submission, text }, 'integration', 6);

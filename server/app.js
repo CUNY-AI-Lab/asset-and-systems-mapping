@@ -47,6 +47,7 @@ const DEFAULT_PREFLIGHT_PENDING_RETENTION_DAYS = 30;
 const DEFAULT_PREFLIGHT_DECIDED_RETENTION_DAYS = 180;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CLASS_CODE = '101';
+const UNRECORDED_INQUIRY = '[not collected]';
 const JSON_BODY_LIMIT_BYTES = 64 * 1024;
 const CLASS_CODE_BODY_LIMIT_BYTES = 1024;
 const AUTH_BODY_LIMIT_BYTES = 8 * 1024;
@@ -361,12 +362,10 @@ function requireObjectKeys(value, keys, name) {
 
 function validateSourceRecord(value) {
   assertOnlyNamedKeys(value, SOURCE_RECORD_KEYS, 'sourceRecord');
-  requireObjectKeys(value, [
-    'id', 'title', 'author', 'date', 'sourceType', 'location', 'rights',
-    'sensitive', 'consent', 'evidenceOwnership',
-  ], 'sourceRecord');
+  requireObjectKeys(value, ['id', 'sensitive', 'consent'], 'sourceRecord');
   const validated = {};
   for (const key of ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'evidenceOwnership']) {
+    if (!Object.hasOwn(value, key)) continue;
     const max = key === 'id' ? 200 : ['title', 'author', 'sourceType'].includes(key) ? 500 : 8000;
     validated[key] = requireSnapshotText(value[key], `sourceRecord.${key}`, { min: key === 'id' ? 1 : 0, max });
   }
@@ -509,7 +508,7 @@ function validatePreflightEvaluationRequest(value) {
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   const stageId = canonicalStageId(value.stageId);
   if (!SYSTEMS_MAPPING_STAGE_IDS.includes(stageId)) throw new HttpError(400, 'stageId is not supported.');
-  const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { max: 8000 });
+  const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const sourceRecord = validateSourceRecord(value.sourceRecord);
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
@@ -727,7 +726,7 @@ function preflightSubmissionRow(row, { includeTeacher = false } = {}) {
     projectId: projectMetadata.projectId ?? projectMetadata.id,
     projectMetadata,
     activeScale: row.activeScale,
-    inquiry: row.inquiry,
+    inquiry: row.inquiry === UNRECORDED_INQUIRY ? '' : row.inquiry,
     sourceMaterial: row.sourceMaterial,
     sourceRecord: row.sourceRecord === null || row.sourceRecord === undefined ? null : storedJson(row.sourceRecord),
     studentAnnotation: row.studentAnnotation,
@@ -1857,7 +1856,7 @@ export function createSystemsMappingApp(options = {}) {
     if (ollamaConfig && Buffer.byteLength(input.sourceMaterial, 'utf8') > OLLAMA_CLOUD_LIMITS.sourceTextBytes) {
       throw new HttpError(
         413,
-        `sourceMaterial must contain no more than ${OLLAMA_CLOUD_LIMITS.sourceTextBytes} UTF-8 bytes for this suggestion runtime.`,
+        `The memo must contain no more than ${OLLAMA_CLOUD_LIMITS.sourceTextBytes} UTF-8 bytes for this suggestion runtime.`,
       );
     }
     if (ollamaConfig && Buffer.byteLength(input.inquiry, 'utf8') > OLLAMA_CLOUD_LIMITS.inquiryBytes) {
@@ -1954,7 +1953,7 @@ export function createSystemsMappingApp(options = {}) {
           student.sessionRef,
           JSON.stringify(input.projectMetadata),
           input.activeScale,
-          input.inquiry,
+          input.inquiry || UNRECORDED_INQUIRY,
           JSON.stringify(input.sourceRecord),
           input.sourceMaterial,
           JSON.stringify(input.projectOverlay),
@@ -1997,7 +1996,7 @@ export function createSystemsMappingApp(options = {}) {
         const generated = await ollamaRequest({
           systemPrompt,
           activeScale: input.activeScale,
-          inquiry: input.inquiry.trim() || 'No guiding inquiry supplied.',
+          inquiry: input.inquiry,
           sourceMetadata,
           sourceText: input.prompt,
         }, ollamaConfig);
