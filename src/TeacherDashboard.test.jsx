@@ -14,9 +14,9 @@ const teacherAccess = { mode: 'manual', claimEnabled: true };
 const teacher = { id: 'local-teacher-id', displayName: 'Server Returned Teacher' };
 
 const partOneStages = {
-  'add-source': { guidance: 'Ask the student to choose one scale and point to specific passages in the source.', materials: 'Excerpt from the course guide.' },
+  'add-source': { guidance: 'Ask the student to choose one scale and point to specific passages in the memo.', materials: 'Excerpt from the course guide.' },
   'review-suggestions': { guidance: 'Ask one focused question without completing the analysis.', materials: 'Course reading on relationships.' },
-  'choose-what-to-map': { guidance: 'Ask the student to choose grounded actors and relationships.', materials: '' },
+  'choose-what-to-map': { guidance: 'Ask the student to choose people, groups, and connections supported by the memo.', materials: '' },
   'build-map': { guidance: 'Ask what each relationship does.', materials: '' },
   'revise-and-export': { guidance: 'Ask what changed and what the student will share.', materials: '' },
 };
@@ -172,6 +172,8 @@ async function renderAuthenticated(fetchMock = authenticatedFetch()) {
 
 async function waitForSubmission() {
   expect(await screen.findByText(submissionDetail.sourceMaterial.text)).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Source' })).not.toBeInTheDocument();
   return screen.getByRole('group', { name: 'Feedback type' });
 }
 
@@ -232,8 +234,8 @@ describe('TeacherDashboard', () => {
         id: `H${index + 1}`,
         status: index === 3 ? 'unmet' : 'met',
         evidence: index === 3 ? '' : `Hard-gate evidence ${index + 1}`,
-        rationale: index === 3 ? 'The memo names only one actor-to-actor relationship.' : 'The gate is supported.',
-        nextAction: index === 3 ? 'Add a second actor-to-actor relationship.' : '',
+        rationale: index === 3 ? 'The memo names only one clear connection.' : 'The check is supported.',
+        nextAction: index === 3 ? 'Add a second connection.' : '',
         hardBlock: true,
       })),
       scored: Array.from({ length: 8 }, (_, index) => ({
@@ -386,24 +388,24 @@ describe('TeacherDashboard', () => {
     });
     await renderAuthenticated(fetchMock);
     const feedbackGroup = await waitForSubmission();
-    fireEvent.change(screen.getByLabelText('Focus for the student'), { target: { value: 'Keep the distinction between source and interpretation.' } });
+    fireEvent.change(screen.getByLabelText('Focus for the student'), { target: { value: 'Keep the distinction between memo details and your interpretation.' } });
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback and a question' }));
     fireEvent.change(screen.getByLabelText('Question for the student'), { target: { value: 'Which advising example best supports this connection?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
 
     expect(await screen.findByText('This submission changed in another session. Your feedback draft remains available.')).toBeVisible();
-    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between source and interpretation.');
+    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between memo details and your interpretation.');
     expect(screen.getByLabelText('Question for the student')).toHaveValue('Which advising example best supports this connection?');
     fireEvent.click(screen.getByRole('button', { name: 'Reload current submission' }));
     expect(screen.getByText('Loaded submission revision 3. Your feedback draft remains available.')).toBeVisible();
-    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between source and interpretation.');
+    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between memo details and your interpretation.');
     expect(screen.getByLabelText('Question for the student')).toHaveValue('Which advising example best supports this connection?');
 
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
     await waitFor(() => expect(postBodies).toHaveLength(2));
     expect(postBodies[0]).toEqual({
       decision: 'revise_and_approve',
-      instructorAnnotation: 'Keep the distinction between source and interpretation.',
+      instructorAnnotation: 'Keep the distinction between memo details and your interpretation.',
       focusedQuestion: 'Which advising example best supports this connection?',
       expectedRevision: 2,
     });
@@ -433,7 +435,7 @@ describe('TeacherDashboard', () => {
     expect(within(screen.getByLabelText('Scale')).getAllByRole('option').map(({ value }) => value)).toEqual(['micro', 'meso']);
     expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue(partOneStages['add-source'].guidance);
     expect(screen.getByLabelText('What course material should support this section?')).toHaveValue(partOneStages['add-source'].materials);
-    fireEvent.click(screen.getByRole('button', { name: 'review source with your instructor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'review your memo' }));
     expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue(partOneStages['review-suggestions'].guidance);
     expect(screen.getByLabelText('What course material should support this section?')).toHaveValue(partOneStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Part'), { target: { value: 'part-2' } });
@@ -499,9 +501,9 @@ describe('TeacherDashboard', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Evidence guidance'));
     fireEvent.change(screen.getByLabelText('Part name'), { target: { value: 'People and organizations' } });
-    fireEvent.click(screen.getByRole('button', { name: 'review source with your instructor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'review your memo' }));
     fireEvent.change(screen.getByLabelText('What guidance should students receive in this section?'), { target: { value: 'Return first to evidence that names a relationship.' } });
-    fireEvent.change(screen.getByLabelText('What course material should support this section?'), { target: { value: 'Use the class reading on actor and relationship mapping.' } });
+    fireEvent.change(screen.getByLabelText('What course material should support this section?'), { target: { value: 'Use the class reading on people, organizations, and connections.' } });
     expect(screen.getByRole('button', { name: 'Publish draft' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Check saved version' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Focus the evidence prompt' } });
@@ -511,7 +513,7 @@ describe('TeacherDashboard', () => {
     expect(savedBody.profile.parts[0]).toMatchObject({ id: 'part-1', label: 'People and organizations', scaleIds: ['micro', 'meso'] });
     expect(savedBody.profile.parts[0].stages['review-suggestions']).toEqual({
       guidance: 'Return first to evidence that names a relationship.',
-      materials: 'Use the class reading on actor and relationship mapping.',
+      materials: 'Use the class reading on people, organizations, and connections.',
     });
     expect(savedBody.profile.parts[1]).toEqual(profileValue.parts[1]);
     expect(onConfigurationChanged).not.toHaveBeenCalled();
@@ -564,7 +566,7 @@ describe('TeacherDashboard', () => {
     await screen.findByRole('heading', { name: 'Course settings' });
     fireEvent.change(screen.getByLabelText('Version', { exact: true }), { target: { value: draftProfile.id } });
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Question guidance'));
-    fireEvent.click(screen.getByRole('button', { name: 'review source with your instructor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'review your memo' }));
     fireEvent.change(screen.getByLabelText('What guidance should students receive in this section?'), { target: { value: 'My unsaved question remains here.' } });
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Try another question' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));

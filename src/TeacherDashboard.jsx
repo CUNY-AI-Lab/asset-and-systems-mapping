@@ -349,8 +349,8 @@ function ReviewSubmissions() {
         {!detailLoading && !detail && !detailError && <p className="empty-message">Choose a pending submission to review its details.</p>}
         {detail && <div className="student-work__body">
           <p className="eyebrow">{submissionContextLabel(detail)}</p>
-          <section><h3>Inquiry</h3><p>{detail.inquiry || 'No inquiry was submitted.'}</p></section>
-          <section><h3>Source excerpt</h3><p className="student-work__memo">{readableValue(detail.sourceMaterial) || 'No source excerpt was submitted.'}</p><SuggestionReview suggestion={detail.suggestion} /></section>
+          {detail.inquiry ? <section><h3>Question from earlier work</h3><p>{detail.inquiry}</p></section> : null}
+          <section><h3>Memo</h3><p className="student-work__memo">{readableValue(detail.sourceMaterial) || 'No memo was submitted.'}</p><SuggestionReview suggestion={detail.suggestion} /></section>
           <section><h3>Student note</h3><p>{readableValue(detail.studentAnnotation) || 'No student note was submitted.'}</p></section>
         </div>}
       </section>

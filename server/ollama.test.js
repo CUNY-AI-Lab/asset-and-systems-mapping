@@ -97,6 +97,10 @@ describe('Ollama Cloud suggestion adapter', () => {
     });
     expect(captured.body.messages[1].content).toContain('exactly one valid JSON object');
     expect(captured.body.messages[2].content).toContain('"activeScale":"meso"');
+    expect(captured.body.messages[2].content).toContain('"memoDetails"');
+    expect(captured.body.messages[2].content).toContain('"memoText"');
+    expect(captured.body.messages[2].content).not.toContain('"sourceMetadata"');
+    expect(captured.body.messages[2].content).not.toContain('"sourceText"');
     expect(captured.body.messages[2].content).toContain(input().sourceText);
 
     expect(result).toEqual({
@@ -121,6 +125,20 @@ describe('Ollama Cloud suggestion adapter', () => {
     });
     expect(JSON.stringify(result)).not.toContain(fakeSecret);
     expect(Object.keys(result)).toEqual(['suggestion', 'metadata']);
+  });
+
+  it('accepts memo guidance requests without a separate guiding inquiry', async () => {
+    let captured;
+    const fetchImpl = vi.fn(async (_url, options) => {
+      captured = JSON.parse(options.body);
+      return jsonResponse(envelope());
+    });
+
+    await requestOllamaSuggestion(input({ inquiry: '' }), config(), {
+      testOnly: { fetchImpl },
+    });
+
+    expect(captured.messages[2].content).toContain('"inquiry":""');
   });
 
   it('times out through AbortController with a generic error', async () => {

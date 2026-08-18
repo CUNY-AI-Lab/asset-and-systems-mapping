@@ -1,6 +1,6 @@
 # Systems Mapping — QA and visual-fidelity report
 
-Updated: 2026-08-13
+Updated: 2026-08-17
 
 ## Current status
 
@@ -13,10 +13,10 @@ The original image set, four-viewport Course settings recapture, and public-demo
 | Gate | Current result | Scope |
 | --- | --- | --- |
 | Published release baseline | 130 passed; 3 PostgreSQL-gated skipped | Pre-pedagogy GitHub/Railway tree; retained as historical release evidence, not the new total. |
-| Earlier standalone `pnpm test:server` | 60 passed; 3 PostgreSQL-gated skipped | Historical focused receipt for stage-specific course settings, source-prompt projection, teacher-only full detail, focus/question decisions, SQLite API/auth/config/evaluation/review/retention, hosted mode, public-demo gating, and Ollama adapter. The current full run supersedes it as the integrated total. |
+| Earlier standalone `pnpm test:server` | 60 passed; 3 PostgreSQL-gated skipped | Historical focused receipt for stage-specific course settings, memo prompt input, teacher-only full detail, focus/question decisions, SQLite API/auth/config/evaluation/review/retention, hosted mode, public-demo gating, and Ollama adapter. The current full run supersedes it as the integrated total. |
 | Latest disposable PostgreSQL 17 integration before this redesign | 3/3 passed | Teacher-only full result, minimized student projection/status, decision persistence, and database parity; rerun remains a release gate because PostgreSQL was not configured for the current local suite. |
 | Current focused App/domain contract | Green; no separate subtotal recorded | Covered by the integrated frozen-tree run without inventing a focused-test count. |
-| Current full `pnpm test` | 160 passed; 3 PostgreSQL integration tests skipped | Integrated client, domain, server, shared contract, adapters, and persistence tree; PostgreSQL was not configured for the ordinary run. |
+| Current full `pnpm test` | 171 passed; 3 PostgreSQL integration tests skipped | Integrated client, domain, server, shared contract, adapters, and persistence tree; PostgreSQL was not configured for the ordinary run. |
 | Current `pnpm build` | Passed | Production Vite bundle rebuilt after the five-stage cycle update; Teacher Console is emitted as a separate on-demand chunk instead of loading on the student entry path. |
 | Current production dependency audit | No known vulnerabilities | Production dependency set only. |
 | Current source/application-bundle scans | Clean | No credential values; no application-bundle class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. |
@@ -49,20 +49,20 @@ The current production audit reported no known vulnerabilities. Source and appli
 
 ### Suggestion and instructor-review workflow
 
-- The interface names five repeatable stages directly: choose a scale and add a source; review source with your instructor; choose nodes and describe connections; build map; and revise and export.
-- The student surface displays only **Return to the source** with zero to three short prompts. Each prompt contains one action and may include one short evidence excerpt.
+- The interface names five repeatable stages directly: add your memo; review your memo; choose nodes and describe connections; build map; and revise and export.
+- The student surface displays only **Return to your memo** with zero to three short prompts. Each prompt contains one action and may include one short evidence excerpt.
 - The student adds a separate note for the instructor. No criterion ID, status, score, threshold, outcome, taxonomy, rationale, missing-variable field, or synthesized model-review group is exposed.
-- Suggestion generation posts exact source/project input to the authoritative evaluation endpoint and accepts only `{evaluation:{id,redirects,configSnapshot,runtime,createdAt,expiresAt}}`.
+- Suggestion generation posts the exact project details and memo text to the authoritative evaluation endpoint and accepts only `{evaluation:{id,redirects,configSnapshot,runtime,createdAt,expiresAt}}`.
 - The request includes bounded project custom instructions but excludes the local fixed prompt. The returned configuration snapshot contains revisions/fingerprints/module versions, not teacher prompt text or custom-instruction text.
 - Review submission sends exactly `{evaluationId, studentAnnotation}`; it cannot replace suggestion/configuration data.
-- Pending, approved, and returned review states leave candidate choice, every stage, every scale, and the map available in every cycle. Instructor decisions add direction without changing the source, current stage, or graph records.
+- Pending, approved, and returned review states leave candidate choice, every stage, every scale, and the map available in every cycle. Instructor decisions add direction without changing the memo, current stage, or graph records.
 - A pending review resumes after class-session renewal using the locally held review capability. Portable copies cannot poll because capabilities are redacted.
-- Ollama Cloud source/inquiry byte limits are checked in the client and server. Provider failures remain errors rather than deterministic fallbacks.
+- Byte limits for memo text and the inquiry are checked in the client and server before an Ollama Cloud request. Provider failures remain errors rather than deterministic fallbacks.
 
 ### Teacher Console
 
 - The Teacher Console opens on a pending queue and does not load Course settings until selected.
-- One selected submission shows source text, the inquiry, and the student's note. Collapsed **Review details** groups evidence excerpts, possible follow-up, and open questions without presenting model scores or criterion labels as the instructor's judgment.
+- One selected submission shows memo text, the inquiry when present, and the student's note. Collapsed **Review details** groups evidence excerpts, possible follow-up, and open questions without presenting model scores or criterion labels as the instructor's judgment.
 - Exactly three visible feedback actions are available: **Add feedback**, **Add feedback and a question**, and **Recommend another pass**. Every action requires one **Focus for the student**. **Add feedback and a question** alone reveals and requires one **Question for the student**; stored API decision IDs remain compatible with earlier records, and no revised-model-suggestion field is accepted.
 - A recorded decision leaves the pending queue and displays returned append-only history.
 - Expected-revision conflicts preserve the unsent teacher draft and require an explicit reload before retry.
@@ -87,12 +87,12 @@ The current production audit reported no known vulnerabilities. Source and appli
 
 - Legacy projects migrate into five stages with deterministic node positions, a bounded viewport, and stable node, relationship, and map annotation IDs.
 - Every scale is selectable without a release prerequisite. The map is directly available from every stage, accepts an empty graph, opens with all active scale layers visible, and filters layers without changing stored graph records.
-- Editing a source retires only graph records on the current scale that match the prior source fingerprint; accumulated records on other scales remain active.
+- Editing a memo retires only graph records on the current scale that match the prior memo fingerprint; accumulated records on other scales remain active.
 - Layout, viewport, and every annotation surface round-trip through canonical JSON.
 - Pointer movement commits one completed node move; keyboard movement supports fine and coarse steps; pan/zoom/fit persist bounded viewport state.
 - Annotation saves report queued, saved, and failure states without discarding in-memory work.
 - Import validation rejects unknown fields, credential-shaped values, invalid references, malformed geometry, oversized collections, and policy escalation.
-- Every sharing tier redacts evaluation and review capability IDs. Restricted/sensitive projections also redact source and derived prose according to tier while preserving IDs and a manifest.
+- Every sharing tier redacts evaluation and review capability IDs. Restricted/sensitive projections also redact memo-derived prose according to tier while preserving IDs and a manifest.
 - CSV output neutralizes formula markers, tabs/carriage returns, and leading-whitespace variants at the byte boundary.
 
 ## Visual-fidelity reconciliation
@@ -100,12 +100,12 @@ The current production audit reported no known vulnerabilities. Source and appli
 | Decision | Current implementation | Verification state |
 | --- | --- | --- |
 | Direct stage names | Five verb-led labels are used throughout. | Automated DOM and the paired desktop/mobile five-view artifact verified. |
-| Return to source evidence | At most three short prompts plus the student's note; no student-facing model codification or synthesized groups. | Integrated automation and current rendered journey verified. |
+| Return to memo evidence | At most three short prompts plus the student's note; no student-facing model codification or synthesized groups. | Integrated automation and current rendered journey verified. |
 | Teacher review details | Evidence excerpts, possible follow-up, and open questions are collapsed; the instructor writes one focus and optionally one question. | Integrated automation verified; a complete current rendered teacher-review journey remains follow-up. |
 | Teacher Console | Review queue first; Course settings secondary and lazy; one editor across five repeatable stages. | Automated DOM verified; current five-stage Course settings rendered at desktop and mobile sizes. |
 | Editorial typography | Modest serif headings, humanist controls, monospace provenance; no oversized display copy. | Source and rendered-browser verified. |
 | Monochrome-dominant palette | White/black/gray surfaces with restrained teal, amber, and plum accents. | Source and rendered-browser verified; dedicated contrast audit remains separate. |
-| Redundant legend | Micro/teal/circle; meso/amber/square; macro/plum/diamond; integration/black/double-circle; claim states repeated through text and line pattern. | DOM/source and rendered-browser verified. |
+| Minimal Map key | Simple outlined swatches identify Micro, Meso, Macro, and Integration without placing icons beside map-card text. Internal claim-state labels are not shown to students. | DOM/source and rendered-browser verified. |
 | Phone-primary map | Safe-area chrome, internal canvas containment, phone inspector, 44/48 px controls, durable layout/viewport/annotations. | Automated behavior plus current 320/390/430 rendered geometry verified. |
 
 ## Screenshots and browser evidence
@@ -123,11 +123,11 @@ The semester-cycle concept is `docs/concepts/semester-map-cycle-spec-v1.png`. It
 Use a disposable database and temporary teacher claim values, never the real handoff database:
 
 1. Open the production build and enter class access.
-2. Start or resume a project, add a source, and generate suggestions.
-3. Confirm that **review the source with your instructor** shows no more than three short questions tied to the source and no full model codification; add a student note.
+2. Start or resume a project, add a memo, and generate guidance.
+3. Confirm that **review your memo** shows no more than three short questions tied to the memo and no full model codification; add a student note.
 4. Submit a student note and confirm that the instructor has not responded yet.
 5. Sign into the Teacher Console, confirm **Review details** starts collapsed, use the evidence excerpts and open questions as reference, write one focus and one question, and select **Add feedback and a question**.
-6. Return as the student, refresh the response, and verify the instructor focus/question without a source or map rewrite.
+6. Return as the student, refresh the response, and verify the instructor focus/question without a memo or map rewrite.
 7. Verify that mapping was already available while review was pending, open an empty map if no candidates exist, and combine at least two scale layers.
 8. Capture class entry and changed views at 320, 390, 430, and 1440 px and inspect for horizontal overflow.
 
@@ -142,7 +142,7 @@ The earlier disposable journey passed against the preceding workflow. The curren
 - Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` reached `SUCCESS` from clean GitHub `main` commit `abddbd0a`; migration readiness, health/root, current hardening headers, hosted `101` access and cookie attributes, session/configuration Part 1/Part 2 readback, logout cleanup, exact live/local bundle parity, requested/banned-copy checks, and no-5xx checks passed. The earlier dirty snapshot `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remains historical only. A full teacher-review journey against deployed Railway/PostgreSQL remains useful beta coverage.
 - Local `.env` contains no Ollama key. The previously pasted key is exposed and must be revoked; no live provider run has occurred.
 - Deterministic STEM Splitter does not interpret teacher prompt or project-instruction text. Its configuration snapshots are provenance only; prompt customization affects actual generation only when an accepted provider adapter is enabled.
-- Hosted review stores the source excerpt for the disclosed retention period. Institutional approval and operating policy remain separate from code correctness.
+- Hosted review stores the memo excerpt for the disclosed retention period. Institutional approval and operating policy remain separate from code correctness.
 
 These follow-ups do not invalidate the verified commit-backed Railway release. They limit complete teacher-review, rendered restoration, session-expiry and teacher-route-denial, and optional-provider claims.
 

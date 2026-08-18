@@ -63,10 +63,6 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
       projectId: project.id,
       submissionId: project.submission.id,
       title: project.title,
-      author: project.submission.author,
-      date: project.submission.date,
-      sourceType: project.submission.sourceType,
-      sourceTitle: project.submission.title,
       sharingTier: project.sharingTier,
       schemaVersion: project.schemaVersion,
       stage: project.stage,
@@ -76,7 +72,7 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
     activeScale: project.activeScale,
     stageId: SYSTEMS_MAPPING_STAGES[project.stage]?.id || 'add-source',
     inquiry: project.inquiry,
-    sourceRecord: Object.fromEntries(['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership'].map((key) => [key, project.submission[key]])),
+    sourceRecord: Object.fromEntries(['id', 'sensitive', 'consent'].map((key) => [key, project.submission[key]])),
     sourceMaterial: project.submission.text,
     projectOverlay: {
       id: config.id,
@@ -112,7 +108,7 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
     effectiveFingerprint: 'effective-server-fingerprint',
   };
   const redirects = overrides.redirects || [{
-    action: 'Clarify which actor performs the referral.',
+    action: 'Clarify who performs the referral.',
     evidenceExcerpt: 'The school refers the student to the committee.',
   }];
   return {
@@ -127,13 +123,13 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
 
 function redirectFixture() {
   return [{
-    action: 'Add the missing title and say where the source came from.',
-    evidenceExcerpt: 'The source begins without enough identifying information.',
+    action: 'Add more detail to the memo.',
+    evidenceExcerpt: 'The memo needs one more specific example.',
   }, {
-    action: 'Separate what the source says from your interpretation.',
-    evidenceExcerpt: 'According to the source, the school administers services.',
+    action: 'Separate what the memo describes from your interpretation.',
+    evidenceExcerpt: 'According to the memo, the school administers services.',
   }, {
-    action: 'Name a second actor-to-actor relationship.',
+    action: 'Name a second connection.',
     evidenceExcerpt: 'The school refers the student to the committee.',
   }];
 }
@@ -216,7 +212,7 @@ async function resumeSavedProject(project = createDefaultProject()) {
   seedProject(project);
   render(<App />);
   await showResumeScreen();
-  fireEvent.click(screen.getByRole('button', { name: /^Continue to / }));
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'Keep working on your map.' })).not.toBeInTheDocument());
   return project;
 }
@@ -246,6 +242,49 @@ async function openMapProject(project = makeMapProject()) {
   return project;
 }
 
+function mapCanvas() {
+  return screen.getByRole('group', { name: /\bmap\. \d+ nodes? and \d+ connections?/i });
+}
+
+function svgTextLines(element) {
+  return [...element.querySelectorAll('tspan')].map((line) => line.textContent);
+}
+
+function renderedNodePosition(nodeId) {
+  const transform = document.querySelector(`[data-graph-id="${nodeId}"]`)?.getAttribute('transform') || '';
+  const match = transform.match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
+  if (!match) throw new Error(`Unexpected node transform for ${nodeId}: ${transform}`);
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+function graphForScale(project, scale = project.activeScale) {
+  const scales = new Set(scale === 'all' ? project.releasedScales : [scale]);
+  const edges = project.graph.edges.filter((edge) => scales.has(edge.scale) && edge.claimState !== 'retired');
+  const endpointIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+  const nodes = project.graph.nodes.filter((node) => (scales.has(node.scale) || endpointIds.has(node.id)) && node.claimState !== 'retired');
+  return { nodes, edges };
+}
+
+function openNodeInspector(nodeId = document.querySelector('.graph-node')?.getAttribute('data-graph-id')) {
+  const node = document.querySelector(`[data-graph-id="${nodeId}"]`);
+  if (!node) throw new Error(`Visible node not found: ${nodeId}`);
+  node.focus();
+  fireEvent.keyDown(node, { key: 'Enter' });
+  return screen.getByLabelText('Map inspector');
+}
+
+function openEdgeInspector(edgeId = document.querySelector('.graph-edge')?.getAttribute('data-graph-id')) {
+  const edge = document.querySelector(`[data-graph-id="${edgeId}"]`);
+  if (!edge) throw new Error(`Visible relationship not found: ${edgeId}`);
+  fireEvent.pointerDown(edge, { pointerId: 91, button: 0 });
+  return screen.getByLabelText('Map inspector');
+}
+
+function openMapInspector() {
+  fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+  return screen.getByLabelText('Map inspector');
+}
+
 function annotationStatus(field) {
   const ids = field.getAttribute('aria-describedby')?.split(/\s+/).filter(Boolean) || [];
   const statusId = ids.find((id) => id.startsWith('annotation-status_'));
@@ -253,16 +292,17 @@ function annotationStatus(field) {
 }
 
 function selectAnnotationTarget(target) {
-  if (target === 'node') return screen.getByRole('textbox', { name: /^Annotation/ });
+  if (target === 'node') {
+    const inspector = openNodeInspector();
+    return within(inspector).getByRole('textbox', { name: /^Annotation/ });
+  }
   if (target === 'edge') {
-    fireEvent.click(screen.getByRole('tab', { name: 'Relationships' }));
-    const panel = screen.getByRole('tabpanel', { name: 'Relationships' });
-    const picker = within(panel).getByLabelText('Relationship list');
-    fireEvent.click(within(picker).getAllByRole('button')[0]);
+    const inspector = openEdgeInspector();
+    const panel = within(inspector).getByRole('tabpanel', { name: 'Relationships' });
     return within(panel).getByRole('textbox', { name: 'Annotation' });
   }
-  fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
-  return screen.getByRole('textbox', { name: /^Map note/ });
+  const inspector = openMapInspector();
+  return within(inspector).getByRole('textbox', { name: /^Map note/ });
 }
 
 function storedAnnotation(target, project) {
@@ -366,9 +406,9 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
-    expect(screen.getByText(/Current section/)).toHaveTextContent('review source with your instructor');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to review source with your instructor' }));
-    expect(await screen.findByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
+    expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Review');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Review your memo' })).toBeVisible();
 
     const attempts = fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/access');
     expect(attempts.map(([, options]) => JSON.parse(options.body))).toEqual([{ code: '999' }, { code: '101' }]);
@@ -389,12 +429,13 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(input, { target: { value: hostedCode } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    expect(screen.getByText('Every section and the map remain available while your instructor reviews submitted work.')).toBeVisible();
+    expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Part 1 · Micro');
+    expect(screen.queryByText(/instructor reviews submitted work/i)).not.toBeInTheDocument();
     const request = fetchMock.mock.calls.find(([path]) => String(path) === '/api/student/access');
     expect(JSON.parse(request[1].body)).toEqual({ code: hostedCode });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
-    expect(screen.getByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
@@ -404,9 +445,9 @@ describe('Systems Mapping workflow', () => {
     render(<App />);
     await showResumeScreen();
     expect(screen.getByRole('heading', { name: 'Start a systems map.' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Choose a scale and add a source' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Start a project' }));
-    expect(await screen.findByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Add your memo' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByText('Untitled systems map', { selector: '.brand small' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
   });
@@ -421,11 +462,11 @@ describe('Systems Mapping workflow', () => {
     render(<App />);
     for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
-    expect(screen.getByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
 
     act(() => vi.advanceTimersByTime(59_999));
-    expect(screen.getByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
     act(() => vi.advanceTimersByTime(1));
     expect(screen.getByRole('heading', { name: 'Enter your class code' })).toBeVisible();
     expect(screen.getByRole('alert')).toHaveTextContent('Enter your class code to continue');
@@ -443,26 +484,27 @@ describe('Systems Mapping workflow', () => {
       evaluation: evaluationRecord(body, { redirects: redirectFixture() }),
     }, 201);
     await resumeSavedProject();
-    expect(screen.getByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('NYC systems and assets map');
-    fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Family service access map' } });
+    expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('NYC systems and assets map');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Map title (optional)' }), { target: { value: 'Family service access map' } });
     expect(screen.getByText('Family service access map', { selector: '.brand small' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Guiding inquiry' })).toHaveValue('How do systems shape access to special-education services in NYC?');
-    expect(screen.getByRole('textbox', { name: 'Guiding inquiry' })).toHaveAttribute('maxlength', '8000');
-    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
-    expect(screen.getByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /Memo text/ })).toBeVisible();
+    expect(screen.getByText(/Aim for 500–600 words/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
     const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
-    ['choose a scale and add a source', 'review source with your instructor', 'choose nodes and describe connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
+    ['add your memo', 'review your memo', 'choose nodes and describe connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await screen.findByRole('region', { name: 'Return to the source' });
+    const guidance = await screen.findByRole('region', { name: 'Return to your memo' });
     expect(within(guidance).getAllByRole('article')).toHaveLength(3);
-    expect(within(guidance).getByRole('heading', { name: 'Add the missing title and say where the source came from.' })).toBeVisible();
-    expect(within(guidance).getByRole('heading', { name: 'Separate what the source says from your interpretation.' })).toBeVisible();
-    expect(within(guidance).getByRole('heading', { name: 'Name a second actor-to-actor relationship.' })).toBeVisible();
-    expect(within(guidance).getByText('According to the source, the school administers services.')).toBeVisible();
+    expect(within(guidance).getByRole('heading', { name: 'Add more detail to the memo.' })).toBeVisible();
+    expect(within(guidance).getByRole('heading', { name: 'Separate what the memo describes from your interpretation.' })).toBeVisible();
+    expect(within(guidance).getByRole('heading', { name: 'Name a second connection.' })).toBeVisible();
+    expect(within(guidance).getByText('According to the memo, the school administers services.')).toBeVisible();
     expect(within(guidance).queryByText('Keep this completed item as written.')).not.toBeInTheDocument();
     expect(within(guidance).queryByText('Narrow the inquiry to one decision point.')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'What the source establishes' })).not.toBeInTheDocument();
@@ -472,43 +514,82 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Add a note' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /Note for instructor/ })).toHaveAttribute('maxlength', '4000');
     const visibleStageText = document.querySelector('.workspace').textContent;
+    expect(visibleStageText).not.toMatch(/\bsources?\b/i);
     expect(visibleStageText).not.toMatch(/\b(?:H[1-4]|C[1-8])\b/);
     expect(visibleStageText).not.toMatch(/\b(?:pass|conditional|hold|score|scoring|criterion|criteria|checklist|hard gate)\b/i);
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
   });
 
-  it('keeps every scale and the map available without waiting for review', async () => {
+  it('generates memo guidance without requiring a hidden inquiry field', async () => {
+    const project = createDefaultProject();
+    project.inquiry = '';
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = (body) => jsonResponse({
+      evaluation: evaluationRecord(body, { redirects: redirectFixture() }),
+    }, 201);
+
+    await resumeSavedProject(project);
+    expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+
+    expect(await screen.findByRole('region', { name: 'Return to your memo' })).toBeVisible();
+    const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
+    expect(JSON.parse(request[1].body).inquiry).toBe('');
+  });
+
+  it('opens a non-advancing map preview and returns to the current memo stage', async () => {
     const project = createDefaultProject();
     await resumeSavedProject(project);
 
-    const macro = screen.getByRole('radio', { name: /Macro/ });
-    expect(macro).toBeEnabled();
-    fireEvent.click(macro);
+    const scale = screen.getByRole('combobox', { name: 'Scale' });
+    fireEvent.change(scale, { target: { value: 'macro' } });
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'macro', releasedScales: ['micro', 'macro'] }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
-    expect(screen.getByRole('group', { name: /Systems map with 0 nodes and 0 relationships/ })).toBeVisible();
-    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(screen.getByRole('group', { name: /Macro map\. 0 nodes and 0 connections/ })).toBeVisible();
+    expect(storedProject().stage).toBe(0);
+    expect(storedProject().furthestStage).toBe(project.furthestStage);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back to Memo' }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(storedProject().stage).toBe(0);
+    expect(storedProject().furthestStage).toBe(project.furthestStage);
   });
 
-  it('groups Micro and Meso in Part 1 and Macro and Integration in Part 2', async () => {
+  it('groups the four scale options under concise Part 1 and Part 2 labels', async () => {
     await resumeSavedProject(createDefaultProject());
 
-    const scaleGroup = screen.getByRole('radiogroup', { name: 'Mapping scale' });
-    const part1 = within(scaleGroup).getByRole('region', { name: 'Part 1' });
-    const part2 = within(scaleGroup).getByRole('region', { name: 'Part 2' });
-    const part1Scales = within(part1).getAllByRole('radio');
-    const part2Scales = within(part2).getAllByRole('radio');
+    const scale = screen.getByRole('combobox', { name: 'Scale' });
+    const groups = scale.querySelectorAll('optgroup');
+    expect([...groups].map((group) => group.label)).toEqual(['Part 1', 'Part 2']);
+    expect([...groups[0].querySelectorAll('option')].map((option) => option.value)).toEqual(['micro', 'meso']);
+    expect([...groups[1].querySelectorAll('option')].map((option) => option.value)).toEqual(['macro', 'integration']);
 
-    expect(part1Scales.map(({ dataset }) => dataset.compositeValue)).toEqual(['micro', 'meso']);
-    expect(part2Scales.map(({ dataset }) => dataset.compositeValue)).toEqual(['macro', 'integration']);
-    [...part1Scales, ...part2Scales].forEach((radio) => expect(radio).toBeVisible());
+    fireEvent.change(scale, { target: { value: 'integration' } });
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'integration' }));
+    expect(screen.queryByText('Where is your population present, and who interacts with them there?')).not.toBeInTheDocument();
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(part2Scales[1]);
-    expect(screen.getByText('Part 2 · Integration')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'What do power, community assets, and earlier scales make possible?' })).toBeVisible();
+  it('keeps the memo intake limited to fields students need', async () => {
+    await resumeSavedProject(createDefaultProject());
+
+    expect(screen.getByRole('combobox', { name: 'Scale' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /Memo text/ })).toBeVisible();
+    expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Date')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Type of material')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Where did you find it?')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Rights or intended use')).not.toBeInTheDocument();
+
+    const privacy = screen.getByRole('button', { name: /Privacy/ });
+    expect(privacy).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(privacy);
+    expect(screen.getByRole('checkbox', { name: /private or identifying information/i })).toBeVisible();
+    expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
   });
 
   it('keeps Map and all five stages available while instructor review is pending', async () => {
@@ -599,6 +680,37 @@ describe('Systems Mapping workflow', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).not.toContain(prompt);
   });
 
+  it('shows complete node and relationship text in the connection preview without ellipses', async () => {
+    const project = createDefaultProject();
+    const longNodeLabel = 'East Harlem Disability Services coordinates transportation access across neighborhood family programs END NODE';
+    const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
+    const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
+      ...node,
+      ...(index === 0 ? { label: longNodeLabel } : {}),
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    }));
+    project.candidates = { nodes, edges: [] };
+    project.graph = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'How do these nodes connect?' }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
+    const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
+    fireEvent.change(verb, { target: { value: longEdgeLabel } });
+
+    const previewNode = document.querySelector(`.connection-preview__node[data-full-label="${longNodeLabel}"]`);
+    const previewEdge = document.querySelector(`.connection-preview__label[data-full-label="${longEdgeLabel}"]`);
+    expect(svgTextLines(previewNode).join(' ')).toBe(longNodeLabel);
+    expect(svgTextLines(previewEdge).join(' ')).toBe(longEdgeLabel);
+    expect(previewNode).not.toHaveTextContent('…');
+    expect(previewEdge).not.toHaveTextContent('…');
+    expect(Number(previewNode.querySelector('rect').getAttribute('height'))).toBeGreaterThan(72);
+    expect(Number(previewEdge.querySelector('rect').getAttribute('height'))).toBeGreaterThan(24);
+  });
+
   it('shows no praise or inventory when the server returns no redirect', async () => {
     const project = createDefaultProject();
     project.stage = 1;
@@ -606,7 +718,7 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = (body) => jsonResponse({ evaluation: evaluationRecord(body, { redirects: [] }) }, 201);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await screen.findByRole('region', { name: 'Return to the source' });
+    const guidance = await screen.findByRole('region', { name: 'Return to your memo' });
     expect(within(guidance).getByText('Use your note to tell the instructor where you want feedback.')).toBeVisible();
     expect(within(guidance).queryAllByRole('article')).toHaveLength(0);
     expect(guidance.textContent).not.toMatch(/\b(?:pass|complete|met|score|criterion|checklist)\b/i);
@@ -618,7 +730,7 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 1;
     preflightEvaluationResponder = (body) => jsonResponse({
       evaluation: evaluationRecord(body, {
-        redirects: Array.from({ length: 4 }, (_, index) => ({ action: `Return to source point ${index + 1}.` })),
+        redirects: Array.from({ length: 4 }, (_, index) => ({ action: `Return to memo point ${index + 1}.` })),
       }),
     }, 201);
     await resumeSavedProject(project);
@@ -629,22 +741,23 @@ describe('Systems Mapping workflow', () => {
 
   it('uses exact evaluation and submission envelopes while pending review leaves mapping available after reload', async () => {
     await resumeSavedProject();
-    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('heading', { name: 'Return to the source' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Return to your memo' })).toBeVisible();
 
     const evaluationRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     const evaluationBody = JSON.parse(evaluationRequest[1].body);
     expect(Object.keys(evaluationBody).sort()).toEqual(['activeScale', 'stageId', 'inquiry', 'projectMetadata', 'projectOverlay', 'sourceMaterial', 'sourceRecord'].sort());
-    expect(Object.keys(evaluationBody.projectMetadata).sort()).toEqual(['author', 'clientUpdatedAt', 'date', 'furthestStage', 'id', 'projectId', 'schemaVersion', 'sharingTier', 'sourceTitle', 'sourceType', 'stage', 'submissionId', 'title'].sort());
-    expect(Object.keys(evaluationBody.sourceRecord)).toEqual(['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership']);
+    expect(Object.keys(evaluationBody.projectMetadata).sort()).toEqual(['clientUpdatedAt', 'furthestStage', 'id', 'projectId', 'schemaVersion', 'sharingTier', 'stage', 'submissionId', 'title'].sort());
+    expect(Object.keys(evaluationBody.sourceRecord)).toEqual(['id', 'sensitive', 'consent']);
+    expect(JSON.stringify(evaluationBody)).not.toMatch(/"(?:author|date|sourceType|sourceTitle|location|rights|evidenceOwnership)"/);
     expect(evaluationBody).toMatchObject({ activeScale: 'micro', stageId: 'review-suggestions', sourceMaterial: createDefaultProject().submission.text });
     expect(evaluationBody.projectOverlay).toMatchObject({ baseModel: 'STEM Splitter', customInstructions: createDefaultProject().configs.preflight.customInstructions, revision: 1 });
     expect(evaluationBody.projectOverlay).not.toHaveProperty('fixedPrompt');
     await waitFor(() => expect(storedProject().preflight?.evaluation?.evaluationId).toBe(EVALUATION_ID));
     const storedPreflight = storedProject().preflight;
     expect(Object.keys(storedPreflight).sort()).toEqual(['configurationSnapshot', 'evaluation', 'redirects', 'review']);
-    expect(storedPreflight.redirects).toEqual([{ action: 'Clarify which actor performs the referral.', evidenceExcerpt: 'The school refers the student to the committee.' }]);
+    expect(storedPreflight.redirects).toEqual([{ action: 'Clarify who performs the referral.', evidenceExcerpt: 'The school refers the student to the committee.' }]);
     expect(storedPreflight).not.toHaveProperty('hard');
     expect(storedPreflight).not.toHaveProperty('scored');
     expect(storedPreflight).not.toHaveProperty('outcome');
@@ -672,12 +785,12 @@ describe('Systems Mapping workflow', () => {
     cleanup();
     render(<App />);
     await showResumeScreen();
-    expect(screen.getByText(/Current section/)).toHaveTextContent('review source with your instructor');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to review source with your instructor' }));
+    expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Review');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Waiting for your instructor' })).toBeVisible();
   });
 
-  it('blocks an oversized evaluation request without truncating the local source', async () => {
+  it('blocks an oversized evaluation request without truncating the local memo', async () => {
     const project = createDefaultProject();
     project.submission.text = '😀'.repeat(180_000);
     project.stage = 1;
@@ -685,12 +798,12 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText(/guidance request is too large to send/i)).toBeVisible();
-    expect(screen.getByText(/Shorten the source or use a focused excerpt/i)).toBeVisible();
+    expect(screen.getByText(/Shorten the memo/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(storedProject().submission.text).toBe(project.submission.text);
   });
 
-  it('enforces the reported Ollama Cloud UTF-8 source boundary before provider egress', async () => {
+  it('enforces the reported Ollama Cloud UTF-8 memo boundary before provider egress', async () => {
     const project = createDefaultProject();
     project.submission.text = '😀'.repeat(33_000);
     project.stage = 1;
@@ -782,7 +895,7 @@ describe('Systems Mapping workflow', () => {
     preflightPostResponder = () => jsonResponse({ error: 'The preflight evaluation is unavailable, expired, or already used.' }, 409);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('heading', { name: 'Return to the source' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Return to your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Send to instructor' }));
     expect(await screen.findByText(/evaluation expired or was already used/i)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Generate current guidance' })).toBeVisible();
@@ -796,9 +909,9 @@ describe('Systems Mapping workflow', () => {
       expect(configCalls).toHaveLength(2);
     });
     await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.moduleVersions).toHaveLength(12));
-    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('heading', { name: 'Return to the source' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Return to your memo' })).toBeVisible();
     await waitFor(() => {
       const event = [...storedProject().events].reverse().find((entry) => entry.action === 'preflight.completed');
       expect(event.configurationSnapshot.shared).toMatchObject({ fingerprint: 'preflight-shared-fingerprint', revision: 3 });
@@ -812,9 +925,9 @@ describe('Systems Mapping workflow', () => {
   });
 
   it.each([
-    ['approve', undefined, 'The source grounding is sufficient.'],
+    ['approve', undefined, 'The memo provides enough support.'],
     ['revise_and_approve', 'Treat the referral as a contested handoff, then confirm each candidate.', 'Proceed with the bounded revision in mind.'],
-  ])('uses an instructor %s response as guidance without changing source, graph, or stored redirects', async (decision, focusedQuestion, instructorAnnotation) => {
+  ])('uses an instructor %s response as guidance without changing the memo, graph, or stored redirects', async (decision, focusedQuestion, instructorAnnotation) => {
     const project = projectAwaitingReview();
     const originalMemo = project.submission.text;
     const originalGraph = structuredClone(project.graph);
@@ -847,7 +960,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Choose nodes and describe connections' })).toBeVisible();
   });
 
-  it('keeps rejected review guidance in the review section without redirecting or editing the source or map', async () => {
+  it('keeps rejected review guidance in the review section without redirecting or editing the memo or map', async () => {
     const project = projectAwaitingReview();
     const originalMemo = project.submission.text;
     const originalGraph = structuredClone(project.graph);
@@ -856,13 +969,13 @@ describe('Systems Mapping workflow', () => {
       decision: 'reject',
       revision: 2,
       reviewedAt: '2026-08-09T13:00:00.000Z',
-      instructorAnnotation: 'Clarify which actor performs the second handoff, then submit again.',
+      instructorAnnotation: 'Clarify who performs the second handoff, then submit again.',
     }) });
 
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
     expect(await screen.findByRole('heading', { name: "Read your instructor's response" })).toBeVisible();
-    expect(screen.getByText('Clarify which actor performs the second handoff, then submit again.')).toBeVisible();
+    expect(screen.getByText('Clarify who performs the second handoff, then submit again.')).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ stage: 1, preflight: { review: { status: 'rejected', decision: 'reject', revision: 2 } } }));
     expect(storedProject().submission.text).toBe(originalMemo);
     expect(storedProject().graph).toEqual(originalGraph);
@@ -886,7 +999,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to review source with your instructor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
     expect(await screen.findByText('Renewed access can retrieve this minimized status.')).toBeVisible();
     const getRequest = fetchMock.mock.calls.find(([path]) => String(path).startsWith('/api/preflight/submissions/review_'));
@@ -906,8 +1019,8 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
-    expect(await screen.findByRole('heading', { name: 'Choose a scale and add a source' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     await waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(2));
     expect(screen.queryByRole('heading', { name: 'Enter your class code' })).not.toBeInTheDocument();
   });
@@ -922,7 +1035,7 @@ describe('Systems Mapping workflow', () => {
     prototypeResponder = () => jsonResponse({ error: 'Expired prototype event session.' }, 401);
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Enter your class code' })).toBeVisible();
     expect(screen.getByRole('alert')).toHaveTextContent('Enter your class code to continue');
     expect(sessionReads).toBeGreaterThanOrEqual(2);
@@ -946,8 +1059,8 @@ describe('Systems Mapping workflow', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to choose a scale and add a source' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     const recovery = await screen.findByRole('button', { name: 'Save needs attention' });
     fireEvent.click(recovery);
     expect(screen.getByRole('dialog', { name: 'Save recovery' })).toBeVisible();
@@ -969,8 +1082,8 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('tab', { name: /Nodes · 2/ }));
     const rows = screen.getAllByRole('article');
-    fireEvent.click(within(rows[0]).getByRole('button', { name: 'Reject' }));
-    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Accept' }));
+    fireEvent.click(within(rows[0]).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Keep' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     await waitFor(() => {
       expect(storedProject().graph.nodes.find((node) => node.id === project.candidates.nodes[0].id)).toMatchObject({ status: 'rejected', claimState: 'retired' });
@@ -1004,37 +1117,195 @@ describe('Systems Mapping workflow', () => {
 
   it('records a manually added relationship in the current scale layer', async () => {
     const project = await openMapProject();
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = openMapInspector();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add relationship' }));
     const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
     fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: project.graph.nodes[0].id } });
     fireEvent.change(within(addForm).getByLabelText('Connection'), { target: { value: 'coordinates with' } });
     fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: project.graph.nodes[1].id } });
-    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The current Macro source names this relationship.' } });
+    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The current Macro memo names this relationship.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
     await waitFor(() => expect(storedProject().graph.edges.at(-1)).toMatchObject({ scale: 'macro', verb: 'coordinates with' }));
   });
 
-  it('combines and filters accumulated scale layers on the map', async () => {
+  it('opens with a label-free active-scale overview, keeps the inspector closed, and makes all scales explicit', async () => {
     const project = await openMapProject();
-    const layerGroup = screen.getByRole('group', { name: 'Visible scale layers' });
-    const all = within(layerGroup).getByRole('button', { name: 'All' });
-    const meso = within(layerGroup).getByRole('button', { name: 'Meso' });
-    const initialRelationshipCount = project.graph.edges.length;
-    const withoutMeso = project.graph.edges.filter((edge) => edge.scale !== 'meso').length;
+    const graphBefore = structuredClone(storedProject().graph);
+    const scale = screen.getByRole('combobox', { name: 'Show map scale' });
+    const active = graphForScale(project);
+    const meso = graphForScale(project, 'meso');
+    const all = graphForScale(project, 'all');
+    const inspector = screen.getByLabelText('Map inspector');
 
-    expect(all).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('group', { name: /Systems map with/ }).getAttribute('aria-label')).toContain(`and ${initialRelationshipCount} relationships`);
-    fireEvent.click(meso);
-    expect(meso).toHaveAttribute('aria-pressed', 'false');
-    expect(all).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('group', { name: /Systems map with/ }).getAttribute('aria-label')).toContain(`and ${withoutMeso} relationships`);
-    fireEvent.click(all);
-    expect(meso).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('group', { name: /Systems map with/ }).getAttribute('aria-label')).toContain(`and ${initialRelationshipCount} relationships`);
+    expect(scale).toHaveValue(project.activeScale);
+    expect(within(scale).getAllByRole('option').at(-1)).toHaveValue('all');
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Macro map. ${active.nodes.length} nodes and ${active.edges.length} connections.`));
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
+    expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(active.edges.length);
+    expect(inspector).toHaveAttribute('aria-hidden', 'true');
+    expect(inspector).toHaveAttribute('inert');
+    expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
+
+    fireEvent.change(scale, { target: { value: 'meso' } });
+    expect(scale).toHaveValue('meso');
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Meso map. ${meso.nodes.length} nodes and ${meso.edges.length} connections.`));
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
+
+    fireEvent.change(scale, { target: { value: 'all' } });
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-scales map. ${all.nodes.length} nodes and ${all.edges.length} connections.`));
+    expect(screen.getByText('Choose a node to see its connections.')).toBeVisible();
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
+    expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(all.edges.length);
+    expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('invalidates current candidates and retires only the edited scale layer when source text changes', async () => {
+  it('focuses a node on its one-hop neighborhood and restores the active-scale view without changing graph data', async () => {
+    const project = await openMapProject();
+    const active = graphForScale(project);
+    const focusNode = active.nodes.find((node) => active.edges.some((edge) => edge.source === node.id || edge.target === node.id));
+    const incident = active.edges.filter((edge) => edge.source === focusNode.id || edge.target === focusNode.id);
+    const focusedNodeIds = new Set([focusNode.id, ...incident.flatMap((edge) => [edge.source, edge.target])]);
+    const graphBefore = structuredClone(storedProject().graph);
+
+    const inspector = openNodeInspector(focusNode.id);
+    const focusBar = document.querySelector('.map-focus-bar');
+    expect(focusBar).toHaveTextContent(`Showing connections for ${focusNode.label}.`);
+    expect(inspector).not.toHaveAttribute('aria-hidden');
+    expect(document.querySelector('.map-layout')).toHaveClass('has-inspector');
+    expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort()).toEqual([...focusedNodeIds].sort());
+    expect([...document.querySelectorAll('.graph-edge')].map((edge) => edge.getAttribute('data-graph-id')).sort()).toEqual(incident.map((edge) => edge.id).sort());
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(incident.length);
+    expect(storedProject().graph).toEqual(graphBefore);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
+    expect(document.querySelector('.map-focus-bar')).toBeNull();
+    expect(screen.getByLabelText('Map inspector')).toHaveAttribute('aria-hidden', 'true');
+    expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(active.nodes.length);
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(active.edges.length);
+    expect(storedProject().graph).toEqual(graphBefore);
+  });
+
+  it.each([
+    ['desktop', false],
+    ['phone', true],
+  ])('renders complete map labels with separate, dynamically sized cards on %s', async (_viewport, phone) => {
+    if (phone) installPhoneLayout();
+    const project = makeMapProject();
+    const active = graphForScale(project);
+    const incidentEdge = active.edges[0];
+    const sourceNode = project.graph.nodes.find((node) => node.id === incidentEdge.source);
+    const longNodeLabel = 'East Harlem Disability Services coordinates transportation access across neighborhood family programs END NODE';
+    const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
+    sourceNode.label = longNodeLabel;
+    incidentEdge.verb = longEdgeLabel;
+    project.graph.edges.forEach((edge) => {
+      if (edge.source === sourceNode.id) edge.sourceLabel = longNodeLabel;
+      if (edge.target === sourceNode.id) edge.targetLabel = longNodeLabel;
+    });
+
+    await openMapProject(project);
+    const inspector = openNodeInspector(sourceNode.id);
+    const renderedNode = document.querySelector(`.graph-node[data-graph-id="${sourceNode.id}"]`);
+    const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
+    const card = renderedNode.querySelector('.node-card');
+    const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
+
+    expect(svgTextLines(renderedNode.querySelector('.node-label')).join(' ')).toBe(longNodeLabel);
+    expect(svgTextLines(renderedEdge.querySelector('.edge-label')).join(' ')).toBe(longEdgeLabel);
+    expect(renderedNode).not.toHaveTextContent('…');
+    expect(renderedEdge).not.toHaveTextContent('…');
+    expect(renderedNode.querySelector('.node-scale-glyph')).toBeNull();
+    expect(Number(card.getAttribute('height'))).toBeGreaterThan(phone ? 82 : 72);
+    expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
+    expect(within(inspector).getByRole('heading', { name: longNodeLabel })).toHaveTextContent(longNodeLabel);
+
+    fireEvent.click(within(inspector).getByRole('tab', { name: 'Relationships' }));
+    const relationshipButton = within(within(inspector).getByLabelText('Relationship list')).getAllByRole('button')
+      .find((button) => button.textContent.includes(longEdgeLabel));
+    fireEvent.click(relationshipButton);
+    const summary = [...inspector.querySelectorAll('.node-summary')]
+      .find((details) => details.querySelector('summary')?.textContent.includes(longEdgeLabel));
+    expect(summary.querySelector('summary strong')).toHaveTextContent(longEdgeLabel);
+  });
+
+  it('preserves every character in maximum-length unbroken map labels', async () => {
+    const project = makeMapProject();
+    const active = graphForScale(project);
+    const incidentEdge = active.edges[0];
+    const sourceNode = project.graph.nodes.find((node) => node.id === incidentEdge.source);
+    const nodeLabel = 'N'.repeat(200);
+    const edgeLabel = 'R'.repeat(100);
+    sourceNode.label = nodeLabel;
+    incidentEdge.verb = edgeLabel;
+    project.graph.edges.forEach((edge) => {
+      if (edge.source === sourceNode.id) edge.sourceLabel = nodeLabel;
+      if (edge.target === sourceNode.id) edge.targetLabel = nodeLabel;
+    });
+
+    await openMapProject(project);
+    openNodeInspector(sourceNode.id);
+    const renderedNode = document.querySelector(`.graph-node[data-graph-id="${sourceNode.id}"] .node-label`);
+    const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"] .edge-label`);
+
+    expect(svgTextLines(renderedNode).join('')).toBe(nodeLabel);
+    expect(svgTextLines(renderedEdge).join('')).toBe(edgeLabel);
+    expect(renderedNode).not.toHaveTextContent('…');
+    expect(renderedEdge).not.toHaveTextContent('…');
+  });
+
+  it('arranges the visible scale without moving hidden scales and persists one explicit arrangement event', async () => {
+    const project = await openMapProject();
+    const before = structuredClone(storedProject());
+    const visibleIds = new Set([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')));
+    const visibleBefore = before.graph.nodes.filter((node) => visibleIds.has(node.id));
+    const hiddenBefore = before.graph.nodes.filter((node) => !visibleIds.has(node.id));
+    expect(before.graph).toEqual(project.graph);
+    expect(before.viewport).toEqual(project.viewport);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+
+    await waitFor(() => expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.arranged', detail: 'Macro arranged' }));
+    const arranged = storedProject();
+    const arrangedVisible = arranged.graph.nodes.filter((node) => visibleIds.has(node.id));
+    const arrangedHidden = arranged.graph.nodes.filter((node) => !visibleIds.has(node.id));
+    expect(arrangedVisible.map(({ id, x, y }) => ({ id, x, y }))).not.toEqual(visibleBefore.map(({ id, x, y }) => ({ id, x, y })));
+    expect(arrangedHidden.map(({ id, x, y }) => ({ id, x, y }))).toEqual(hiddenBefore.map(({ id, x, y }) => ({ id, x, y })));
+    for (let first = 0; first < arrangedVisible.length; first += 1) {
+      expect(renderedNodePosition(arrangedVisible[first].id)).toEqual({ x: arrangedVisible[first].x, y: arrangedVisible[first].y });
+      for (let second = first + 1; second < arrangedVisible.length; second += 1) {
+        const horizontalClearance = Math.abs(arrangedVisible[first].x - arrangedVisible[second].x);
+        const verticalClearance = Math.abs(arrangedVisible[first].y - arrangedVisible[second].y);
+        expect(horizontalClearance >= 184 || verticalClearance >= 72, `${arrangedVisible[first].label} overlaps ${arrangedVisible[second].label}`).toBe(true);
+      }
+    }
+    expect(arranged.viewport).toMatchObject({ zoom: expect.any(Number), panX: expect.any(Number), panY: expect.any(Number) });
+    await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
+  });
+
+  it('hides internal claim-state language behind simple remove and return actions', async () => {
+    const project = makeMapProject();
+    const removedEdge = project.graph.edges[0];
+    removedEdge.status = 'rejected';
+    removedEdge.claimState = 'retired';
+    await openMapProject(project);
+
+    ['Active claims', 'All states', 'Claim state', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'].forEach((label) => {
+      expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument();
+    });
+    expect(document.querySelector(`[data-graph-id="${removedEdge.id}"]`)).toBeNull();
+
+    const showRemoved = screen.getByRole('checkbox', { name: 'Show removed items' });
+    expect(showRemoved).not.toBeChecked();
+    fireEvent.click(showRemoved);
+    const removedElement = document.querySelector(`[data-graph-id="${removedEdge.id}"]`);
+    expect(removedElement).toBeTruthy();
+    fireEvent.pointerDown(removedElement, { pointerId: 1, button: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Return to map' }));
+    await waitFor(() => expect(storedProject().graph.edges.find((edge) => edge.id === removedEdge.id)).toMatchObject({ status: 'confirmed', claimState: 'student interpretation' }));
+  });
+
+  it('invalidates current candidates and retires only the edited scale layer when memo text changes', async () => {
     const project = createDefaultProject();
     project.candidates = extractCandidates(project.submission);
     project.graph = structuredClone(project.candidates);
@@ -1043,7 +1314,7 @@ describe('Systems Mapping workflow', () => {
     project.stage = 0;
     project.furthestStage = 0;
     await resumeSavedProject(project);
-    fireEvent.change(screen.getByRole('textbox', { name: /Source text/ }), { target: { value: `${project.submission.text} A later source correction changes the evidence anchor.` } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Memo text/ }), { target: { value: `${project.submission.text} A later memo correction changes the evidence anchor.` } });
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.candidates).toEqual({ nodes: [], edges: [] });
@@ -1059,7 +1330,7 @@ describe('Systems Mapping workflow', () => {
     project.stage = 1;
     project.furthestStage = 1;
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Review source with your instructor' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
@@ -1080,7 +1351,7 @@ describe('Systems Mapping workflow', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to build map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     const field = selectAnnotationTarget(target);
     fireEvent.change(field, { target: { value: `${target} unsaved annotation` } });
@@ -1092,22 +1363,25 @@ describe('Systems Mapping workflow', () => {
   it('retries persistence after a temporarily erased required field is corrected', async () => {
     const project = await openMapProject();
     const priorLabel = project.graph.nodes[0].label;
-    const label = screen.getByRole('textbox', { name: 'Label' });
+    const inspector = openNodeInspector(project.graph.nodes[0].id);
+    fireEvent.click(within(inspector).getByText('Summary', { selector: 'span' }));
+    const label = within(inspector).getByRole('textbox', { name: 'Label' });
     expect(label).toHaveValue(priorLabel);
     fireEvent.change(label, { target: { value: '' } });
     await screen.findByText('Complete the current field to save');
     expect(storedProject().graph.nodes.find((node) => node.id === project.graph.nodes[0].id).label).toBe(priorLabel);
 
-    fireEvent.change(label, { target: { value: 'Corrected actor label' } });
+    fireEvent.change(label, { target: { value: 'Corrected organization label' } });
     await waitFor(() => expect(screen.queryByText('Complete the current field to save')).not.toBeInTheDocument());
-    await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.id === project.graph.nodes[0].id).label).toBe('Corrected actor label'));
+    await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.id === project.graph.nodes[0].id).label).toBe('Corrected organization label'));
   });
 
   it('moves a node through the CTM path and sends the accepted, minimized prototype-event request', async () => {
     const project = await openMapProject();
     const node = project.graph.nodes[0];
-    const svg = screen.getByRole('group', { name: /Systems map with/ });
+    const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
+    const start = renderedNodePosition(node.id);
     svg.getScreenCTM = () => ({ inverse: () => ({}) });
     svg.createSVGPoint = () => ({
       x: 0,
@@ -1115,11 +1389,11 @@ describe('Systems Mapping workflow', () => {
       matrixTransform() { return { x: (this.x - 11) / 2, y: (this.y - 13) / 3 }; },
     });
 
-    fireEvent.pointerDown(nodeElement, { pointerId: 41, button: 0, clientX: 11 + node.x * 2, clientY: 13 + node.y * 3 });
-    fireEvent.pointerMove(svg, { pointerId: 41, clientX: 11 + node.x * 2 + 32, clientY: 13 + node.y * 3 + 27 });
-    fireEvent.pointerUp(svg, { pointerId: 41, clientX: 11 + node.x * 2 + 32, clientY: 13 + node.y * 3 + 27 });
+    fireEvent.pointerDown(nodeElement, { pointerId: 41, button: 0, clientX: 11 + start.x * 2, clientY: 13 + start.y * 3 });
+    fireEvent.pointerMove(svg, { pointerId: 41, clientX: 11 + start.x * 2 + 32, clientY: 13 + start.y * 3 + 27 });
+    fireEvent.pointerUp(svg, { pointerId: 41, clientX: 11 + start.x * 2 + 32, clientY: 13 + start.y * 3 + 27 });
 
-    await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${node.x + 16} ${node.y + 9})`));
+    await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${start.x + 16} ${start.y + 9})`));
     await waitFor(() => expect(eventRequests('node_moved')).toHaveLength(1));
     expect(eventRequests('node_moved')[0].body).toEqual({
       event: 'node_moved',
@@ -1140,8 +1414,9 @@ describe('Systems Mapping workflow', () => {
     });
     const project = await openMapProject();
     const node = project.graph.nodes[0];
-    const svg = screen.getByRole('group', { name: /Systems map with/ });
+    const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
+    const start = renderedNodePosition(node.id);
     const inspector = screen.getByLabelText('Map inspector');
     svg.getScreenCTM = () => ({ inverse: () => ({}) });
     svg.createSVGPoint = () => ({
@@ -1156,26 +1431,26 @@ describe('Systems Mapping workflow', () => {
 
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).not.toHaveClass('is-open');
-    fireEvent.pointerDown(nodeElement, { pointerId: 29, button: 0, clientX: node.x, clientY: node.y });
+    fireEvent.pointerDown(nodeElement, { pointerId: 29, button: 0, clientX: start.x, clientY: start.y });
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
-    fireEvent.pointerMove(svg, { pointerId: 29, clientX: node.x + 24, clientY: node.y + 16 });
+    fireEvent.pointerMove(svg, { pointerId: 29, clientX: start.x + 24, clientY: start.y + 16 });
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
-    fireEvent.pointerUp(svg, { pointerId: 29, clientX: node.x + 24, clientY: node.y + 16 });
+    fireEvent.pointerUp(svg, { pointerId: 29, clientX: start.x + 24, clientY: start.y + 16 });
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).not.toHaveClass('is-open');
 
-    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject({ x: node.x + 24, y: node.y + 16 }));
+    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject({ x: start.x + 24, y: start.y + 16 }));
     const coordinateWrites = setItem.mock.calls.filter(([key, value]) => {
       if (key !== STORAGE_KEY) return false;
       const saved = JSON.parse(value);
-      return saved.graph.nodes.some((item) => item.id === node.id && item.x === node.x + 24 && item.y === node.y + 16);
+      return saved.graph.nodes.some((item) => item.id === node.id && item.x === start.x + 24 && item.y === start.y + 16);
     });
     expect(coordinateWrites).toHaveLength(1);
     expect(eventRequests('node_moved')).toHaveLength(1);
 
     setItem.mockClear();
-    fireEvent.pointerDown(document.querySelector(`[data-graph-id="${node.id}"]`), { pointerId: 30, button: 0, clientX: node.x + 24, clientY: node.y + 16 });
-    fireEvent.pointerUp(svg, { pointerId: 30, clientX: node.x + 24, clientY: node.y + 16 });
+    fireEvent.pointerDown(document.querySelector(`[data-graph-id="${node.id}"]`), { pointerId: 30, button: 0, clientX: start.x + 24, clientY: start.y + 16 });
+    fireEvent.pointerUp(svg, { pointerId: 30, clientX: start.x + 24, clientY: start.y + 16 });
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     expect(inspector).not.toHaveAttribute('aria-hidden');
 
@@ -1226,7 +1501,8 @@ describe('Systems Mapping workflow', () => {
     const project = await openMapProject();
     const node = project.graph.nodes[0];
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
-    const svg = screen.getByRole('group', { name: /Systems map with/ });
+    const position = renderedNodePosition(node.id);
+    const svg = mapCanvas();
     const inspector = screen.getByLabelText('Map inspector');
     svg.getScreenCTM = () => ({ inverse: () => ({}) });
     svg.createSVGPoint = () => ({
@@ -1235,15 +1511,15 @@ describe('Systems Mapping workflow', () => {
       matrixTransform() { return { x: this.x, y: this.y }; },
     });
 
-    const legendButton = screen.getByRole('button', { name: 'Legend' });
-    fireEvent.click(legendButton);
-    expect(screen.getByLabelText('Map legend')).toBeVisible();
+    const keyButton = screen.getByRole('button', { name: 'Map key' });
+    fireEvent.click(keyButton);
+    expect(screen.getByLabelText('Map key')).toBeVisible();
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).toHaveAttribute('inert');
-    fireEvent.pointerDown(nodeElement, { pointerId: 51, button: 0, clientX: node.x, clientY: node.y });
-    fireEvent.pointerUp(svg, { pointerId: 51, clientX: node.x, clientY: node.y });
+    fireEvent.pointerDown(nodeElement, { pointerId: 51, button: 0, clientX: position.x, clientY: position.y });
+    fireEvent.pointerUp(svg, { pointerId: 51, clientX: position.x, clientY: position.y });
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
-    expect(screen.queryByLabelText('Map legend')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Map key')).not.toBeInTheDocument();
     expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(inspector).not.toHaveAttribute('inert');
 
@@ -1291,8 +1567,8 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
     expect(inspector).toHaveAttribute('inert');
 
-    fireEvent.pointerDown(nodeElement, { pointerId: 52, button: 0, clientX: node.x, clientY: node.y });
-    fireEvent.pointerUp(svg, { pointerId: 52, clientX: node.x, clientY: node.y });
+    fireEvent.pointerDown(nodeElement, { pointerId: 52, button: 0, clientX: position.x, clientY: position.y });
+    fireEvent.pointerUp(svg, { pointerId: 52, clientX: position.x, clientY: position.y });
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => {
@@ -1304,38 +1580,43 @@ describe('Systems Mapping workflow', () => {
   it('uses meet-style letterboxing in the no-CTM fallback for a nonmatching aspect ratio', async () => {
     const project = await openMapProject();
     const node = project.graph.nodes[0];
-    const svg = screen.getByRole('group', { name: /Systems map with/ });
+    const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
+    const position = renderedNodePosition(node.id);
     svg.getScreenCTM = () => null;
     svg.getBoundingClientRect = () => ({ left: 100, top: 50, width: 420, height: 540, right: 520, bottom: 590, x: 100, y: 50, toJSON() {} });
-    const startX = 100 + node.x * 0.5;
-    const startY = 185 + node.y * 0.5;
+    const startX = 100 + position.x * 0.5;
+    const startY = 185 + position.y * 0.5;
 
     fireEvent.pointerDown(nodeElement, { pointerId: 7, button: 0, clientX: startX, clientY: startY });
     fireEvent.pointerMove(svg, { pointerId: 7, clientX: startX + 20, clientY: startY + 15 });
     fireEvent.pointerUp(svg, { pointerId: 7, clientX: startX + 20, clientY: startY + 15 });
 
-    await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${node.x + 40} ${node.y + 30})`));
+    await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${position.x + 40} ${position.y + 30})`));
   });
 
   it('supports fine and coarse keyboard movement and persists the final coordinates', async () => {
     const project = await openMapProject();
     const node = project.graph.nodes[0];
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
+    const start = renderedNodePosition(node.id);
     nodeElement.focus();
     fireEvent.keyDown(nodeElement, { key: 'ArrowRight' });
     fireEvent.keyDown(nodeElement, { key: 'ArrowDown', shiftKey: true });
 
     expect(nodeElement).toHaveFocus();
-    await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${node.x + 8} ${node.y + 24})`));
-    expect(screen.getByText(`${node.label} moved to x ${node.x + 8}, y ${node.y + 24}.`)).toBeInTheDocument();
-    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject({ x: node.x + 8, y: node.y + 24 }));
+    await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${start.x + 8} ${start.y + 24})`));
+    expect(screen.getByText(`${node.label} moved to x ${start.x + 8}, y ${start.y + 24}.`)).toBeInTheDocument();
+    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject({ x: start.x + 8, y: start.y + 24 }));
   });
 
-  it('restores stage, layout, viewport, and node, relationship, and map annotations after reload', async () => {
+  it('restores a readable saved layout, viewport, and annotations without rearranging on reload', async () => {
     const project = makeMapProject();
-    project.graph.nodes[0].x = 123;
-    project.graph.nodes[0].y = 234;
+    project.graph.nodes.forEach((node, index) => {
+      node.x = 80 + (index % 4) * 220;
+      node.y = 70 + Math.floor(index / 4) * 130;
+    });
+    const savedPosition = { x: project.graph.nodes[0].x, y: project.graph.nodes[0].y };
     project.graph.nodes[0].annotations.analytical.text = 'Restored node annotation';
     project.graph.edges[0].annotation.text = 'Restored relationship annotation';
     project.mapAnnotation.text = 'Restored whole-map annotation';
@@ -1345,18 +1626,21 @@ describe('Systems Mapping workflow', () => {
     const assertRestored = async () => {
       render(<App />);
       await showResumeScreen();
-      expect(screen.getByText(/Current section/)).toHaveTextContent('build map');
-      fireEvent.click(screen.getByRole('button', { name: 'Continue to build map' }));
+      expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Map');
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
-      expect(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`)).toHaveAttribute('transform', 'translate(123 234)');
+      expect(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`)).toHaveAttribute('transform', `translate(${savedPosition.x} ${savedPosition.y})`);
       expect(document.querySelector('.viewport-layer')).toHaveAttribute('transform', 'translate(37 -22) scale(1.25)');
-      expect(screen.getByRole('textbox', { name: /^Annotation/ })).toHaveValue('Restored node annotation');
-      fireEvent.click(screen.getByRole('tab', { name: 'Relationships' }));
-      const relationshipPanel = screen.getByRole('tabpanel', { name: 'Relationships' });
+      expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(project.graph.nodes.map(({ id, x, y }) => ({ id, x, y })));
+      expect(storedProject().viewport).toEqual(project.viewport);
+      const inspector = openNodeInspector(project.graph.nodes[0].id);
+      expect(within(inspector).getByRole('textbox', { name: /^Annotation/ })).toHaveValue('Restored node annotation');
+      fireEvent.click(within(inspector).getByRole('tab', { name: 'Relationships' }));
+      const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Relationships' });
       fireEvent.click(within(within(relationshipPanel).getByLabelText('Relationship list')).getAllByRole('button')[0]);
       expect(within(relationshipPanel).getByRole('textbox', { name: 'Annotation' })).toHaveValue('Restored relationship annotation');
-      fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
-      expect(screen.getByRole('textbox', { name: /^Map note/ })).toHaveValue('Restored whole-map annotation');
+      fireEvent.click(within(inspector).getByRole('tab', { name: 'Map' }));
+      expect(within(inspector).getByRole('textbox', { name: /^Map note/ })).toHaveValue('Restored whole-map annotation');
     };
 
     await assertRestored();
@@ -1381,6 +1665,13 @@ describe('Systems Mapping workflow', () => {
     }));
     project.candidates = { nodes: [], edges: [] };
     project.graph = { nodes, edges: [] };
+    project.events.push({
+      id: 'evt_legacy_source_imported',
+      action: 'source.imported',
+      detail: 'field-memo.docx',
+      actor: 'student',
+      at: '2026-08-17T12:00:00.000Z',
+    });
     project.stage = 4;
     project.furthestStage = 4;
     const blobs = [];
@@ -1396,6 +1687,11 @@ describe('Systems Mapping workflow', () => {
 
     try {
       await resumeSavedProject(project);
+      expect(screen.getByText('nodes on map')).toBeVisible();
+      expect(screen.getByText('items needing evidence')).toBeVisible();
+      expect(screen.getByText('memo imported')).toBeInTheDocument();
+      expect(screen.queryByText('source imported')).not.toBeInTheDocument();
+      expect(screen.queryByText('research leads')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
       expect(blobs).toHaveLength(1);
       expect(blobs[0].type).toBe('text/csv');
@@ -1407,6 +1703,18 @@ describe('Systems Mapping workflow', () => {
       });
       expect(bytesContain(bytes, encoder.encode('"node"'))).toBe(true);
       expect(bytesContain(bytes, encoder.encode('"\'=cmd"'))).toBe(true);
+      expect(csv).toContain('"label_or_from"');
+      expect(csv).not.toContain('label_or_source');
+      expect(csv).not.toContain('claim_state');
+      expect(csv).not.toContain('"confirmed"');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Markdown' }));
+      expect(blobs).toHaveLength(2);
+      const markdown = blobs[1].parts.join('');
+      expect(markdown).toContain('## Memo');
+      expect(markdown).not.toMatch(/^## Source\b/m);
+      expect(markdown).toContain('## Items needing evidence');
+      expect(markdown).not.toMatch(/\b(?:student interpretation|inference|contested|research lead|retired|claim_state)\b/i);
     } finally {
       if (priorCreate === undefined) delete URL.createObjectURL; else URL.createObjectURL = priorCreate;
       if (priorRevoke === undefined) delete URL.revokeObjectURL; else URL.revokeObjectURL = priorRevoke;

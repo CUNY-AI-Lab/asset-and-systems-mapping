@@ -6,8 +6,8 @@ Systems Mapping and STEM Splitter ask teachers to control different classroom ac
 
 | | Systems Mapping | STEM Splitter |
 | --- | --- | --- |
-| Student work | Sources, inquiry, interpretation, concepts, relationships, and graph annotations | Audio stems, mixer actions, class labels, and timestamped notes |
-| Instructor role | Review source use and write one focus without controlling map access | Set repertoire and vocabulary emphasis while students listen and describe what they hear |
+| Student work | Memos, evidence, inquiry, interpretation, concepts, relationships, and graph annotations | Audio stems, mixer actions, class labels, and timestamped notes |
+| Instructor role | Review a memo and write one focus without controlling map access | Set repertoire and vocabulary emphasis while students listen and describe what they hear |
 | Student handoff | Guidance can be revisited while the map remains available | The Listening Guide returns one listening move or question at a time |
 | Current control | One published version with guidance and course material for each of five repeatable stages | One versioned class amendment appended beneath a code-owned prompt |
 | Runtime effect | Deterministic rules record the version and section as provenance; Ollama receives only the current section | The active amendment changes the Listening Guide prompt |
