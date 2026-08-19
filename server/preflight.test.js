@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { evaluateSubmission } from '../src/domain.js';
+import { deterministicMemoReview } from '../src/domain.js';
 import { createSystemsMappingApp } from './app.js';
 import {
   DEFAULT_TEACHING_PROFILE,
@@ -42,66 +42,33 @@ function cookieFrom(response) {
   return response.headers.get('set-cookie')?.split(';')[0];
 }
 
-function criterion(id, hardBlock, status = 'met') {
+function memoReviewFixture() {
   return {
-    id,
-    status,
-    evidence: status === 'met' ? 'Memo sentence 1' : 'No supporting passage located',
-    ...(status === 'met' ? { evidenceLocator: 'Memo sentence 1' } : {}),
-    rationale: `${id} has a bounded rationale.`,
-    missingVariable: status === 'met' ? null : `${id} needs another memo statement.`,
-    nextAction: `Review ${id} before continuing.`,
-    confidence: status === 'met' ? 0.92 : 0.58,
-    hardBlock,
+    guidance: [
+      {
+        point: `  The memo   already grounds the referral. ${'x'.repeat(1100)}  `,
+        evidenceExcerpt: `  Memo   sentence one. ${'y'.repeat(4100)}  `,
+      },
+      { point: 'Ask one question about a specific passage in the memo.' },
+    ],
+    nodes: [
+      { label: '  School  ', type: 'organization', scale: 'meso', evidence: 'A school refers a family to an agency.' },
+      { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
+      { label: 'family', type: 'family', scale: 'micro', evidence: 'duplicate label must be dropped' },
+      { label: 'Agency', type: 'not-a-type', scale: 'not-a-scale', evidence: '' },
+    ],
+    connections: [
+      { source: 'School', target: 'Family', verb: '  refers  ', rationale: 'The memo names the referral directly.' },
+      { source: 'School', target: 'School', verb: 'loops', rationale: 'self loops must be dropped' },
+      { source: 'School', target: 'Unknown Node', verb: 'points', rationale: 'unknown endpoints must be dropped' },
+    ],
+    example: 'One evident connection: School refers Family, because the memo names the referral directly.',
+    readiness: { ready: true, note: '  The memo   already supports mapping. Continue to choose nodes.  ' },
   };
 }
 
-function suggestion() {
-  return {
-    hard: [1, 2, 3, 4].map((index) => criterion(`H${index}`, true)),
-    scored: [1, 2, 3, 4, 5, 6, 7, 8].map((index) => criterion(`C${index}`, false, index <= 6 ? 'met' : 'unmet')),
-    hardPass: true,
-    score: 6,
-    threshold: 6,
-    outcome: 'pass',
-    evaluatedAt: '2027-01-15T08:00:00.000Z',
-    configurationSnapshot: { kind: 'provider-placeholder' },
-  };
-}
-
-function suggestionWithRedirects() {
-  const output = suggestion();
-  const repeatedAction = `  Return   to the memo details and name what is missing. ${'x'.repeat(1100)}  `;
-  output.hard[0] = {
-    ...criterion('H1', true, 'unmet'),
-    nextAction: repeatedAction,
-    evidenceExcerpt: `  Memo   sentence one. ${'y'.repeat(4100)}  `,
-  };
-  output.hard[1] = { ...criterion('H2', true, 'unmet'), nextAction: repeatedAction.toLowerCase() };
-  output.scored[0] = {
-    ...criterion('C1', false, 'unmet'),
-    nextAction: 'Ask one question about a specific passage in the memo.',
-  };
-  output.scored[6].nextAction = 'Identify one resource already named in the memo.';
-  output.scored[7].nextAction = 'Mark one uncertainty that the memo cannot resolve.';
-  output.hardPass = false;
-  output.score = 5;
-  output.outcome = 'hold';
-  return output;
-}
-
-function suggestionWithoutRedirects() {
-  const output = suggestion();
-  output.scored = output.scored.map((entry) => ({
-    ...entry,
-    status: 'met',
-    evidence: 'Memo sentence 1',
-    evidenceLocator: 'Memo sentence 1',
-    missingVariable: null,
-    confidence: 0.92,
-  }));
-  output.score = 8;
-  return output;
+function sparseMemoReviewFixture() {
+  return { guidance: [], nodes: [], connections: [], example: null, readiness: { ready: false, note: '' } };
 }
 
 function submissionBody(overrides = {}) {
@@ -322,31 +289,15 @@ describe('persistent preflight suggestion review queue', () => {
       expiresAt: '2027-01-15T08:00:01.000Z',
     });
     expect(Object.keys(evaluation).sort()).toEqual([
-      'configSnapshot', 'createdAt', 'expiresAt', 'id', 'redirects', 'runtime',
+      'configSnapshot', 'createdAt', 'expiresAt', 'id', 'review', 'runtime',
     ]);
-    expect(evaluation.redirects).toEqual([
-      {
-        action: 'Add more detail to the memo.',
-        evidenceExcerpt: 'Memo text',
-      },
-      {
-        action: 'Add two statements naming what connects and how.',
-        evidenceExcerpt: 'A school refers a family to an agency.',
-      },
-      {
-        action: 'State the question your memo helps you explore.',
-      },
-    ]);
-    expect(evaluation.redirects).toHaveLength(3);
-    for (const redirect of evaluation.redirects) {
-      expect(Object.keys(redirect).sort()).toEqual(
-        redirect.evidenceExcerpt === undefined ? ['action'] : ['action', 'evidenceExcerpt'],
-      );
-    }
+    const expectedReview = deterministicMemoReview({ ...body.sourceRecord, text: body.sourceMaterial }, body.activeScale);
+    expect(evaluation.review).toEqual(expectedReview);
+    expect(Object.keys(evaluation.review).sort()).toEqual(['connections', 'example', 'guidance', 'nodes', 'readiness']);
     expect(evaluation).not.toHaveProperty('suggestion');
     expect(JSON.stringify(evaluation)).not.toMatch(/"(?:hard|scored|status|score|outcome)"/);
-    expect(JSON.stringify(evaluation.redirects)).not.toMatch(/\b[HC][1-8]\b/);
-    const expected = evaluateSubmission({ ...body.sourceRecord, text: body.sourceMaterial }, body.activeScale, 6);
+    expect(JSON.stringify(evaluation.review)).not.toMatch(/\b[HC][1-8]\b/);
+    const expected = { ...expectedReview };
     expected.evaluatedAt = evaluation.createdAt;
     expected.configurationSnapshot = evaluation.configSnapshot;
     expect(evaluation.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
@@ -415,7 +366,7 @@ describe('persistent preflight suggestion review queue', () => {
   it('passes current stage guidance, course material, and transient project instructions to Ollama without persisting any prompt', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
-      suggestion: suggestionWithRedirects(),
+      suggestion: memoReviewFixture(),
       metadata: {
         provider: 'ollama-cloud',
         model: 'server-model',
@@ -461,12 +412,11 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).not.toContain('[Current section. choose a scale]');
     expect(firstInput.systemPrompt).not.toContain('[Current section. add a source]');
     expect(firstInput.systemPrompt).toContain(firstBody.projectOverlay.customInstructions);
-    expect(firstInput.systemPrompt).toContain('AUTHORITATIVE SUGGESTION JSON CONTRACT');
-    expect(firstInput.systemPrompt).toContain('exactly these keys: hard, scored, hardPass, score, threshold, outcome, evaluatedAt, configurationSnapshot');
-    expect(firstInput.systemPrompt).toContain('ID order H1, H2, H3, H4');
-    expect(firstInput.systemPrompt).toContain('ID order C1, C2, C3, C4, C5, C6, C7, C8');
-    expect(firstInput.systemPrompt).toContain('threshold must be 6');
-    expect(firstInput.systemPrompt.lastIndexOf('AUTHORITATIVE SUGGESTION JSON CONTRACT'))
+    expect(firstInput.systemPrompt).toContain('MEMO REVIEW JSON CONTRACT');
+    expect(firstInput.systemPrompt).toContain('exactly these keys: guidance, nodes, connections, example, readiness');
+    expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
+    expect(firstInput.systemPrompt).toContain('encourage the student to continue to choosing nodes and describing connections');
+    expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
       .toBeGreaterThan(firstInput.systemPrompt.lastIndexOf(firstBody.projectOverlay.customInstructions));
     expect(first.runtime).toEqual({
       provider: 'ollama-cloud',
@@ -476,18 +426,27 @@ describe('persistent preflight suggestion review queue', () => {
       requestedModel: 'server-model',
       evalCount: 42,
     });
-    expect(first.redirects).toHaveLength(3);
-    expect(first.redirects[0].action).toHaveLength(500);
-    expect(first.redirects[0].action).not.toMatch(/\s{2,}/);
-    expect(first.redirects[0].evidenceExcerpt).toHaveLength(280);
-    expect(first.redirects[0].evidenceExcerpt).not.toMatch(/\s{2,}/);
-    expect(first.redirects[1]).toEqual({
-      action: 'Ask one question about a specific passage in the memo.',
+    expect(first.review.guidance).toHaveLength(2);
+    expect(first.review.guidance[0].point.length).toBeLessThanOrEqual(500);
+    expect(first.review.guidance[0].point).not.toMatch(/\s{2,}/);
+    expect(first.review.guidance[0].evidenceExcerpt.length).toBeLessThanOrEqual(500);
+    expect(first.review.guidance[0].evidenceExcerpt).not.toMatch(/\s{2,}/);
+    expect(first.review.guidance[1]).toEqual({
+      point: 'Ask one question about a specific passage in the memo.',
     });
-    expect(first.redirects[2]).toEqual({
-      action: 'Identify one resource already named in the memo.',
+    expect(first.review.nodes).toEqual([
+      { label: 'School', type: 'organization', scale: 'meso', evidence: 'A school refers a family to an agency.' },
+      { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
+      { label: 'Agency', type: 'event', scale: 'micro', evidence: '' },
+    ]);
+    expect(first.review.connections).toEqual([
+      { source: 'School', target: 'Family', verb: 'refers', rationale: 'The memo names the referral directly.' },
+    ]);
+    expect(first.review.example).toBe('One evident connection: School refers Family, because the memo names the referral directly.');
+    expect(first.review.readiness).toEqual({
+      ready: true,
+      note: 'The memo already supports mapping. Continue to choose nodes.',
     });
-    expect(JSON.stringify(first.redirects)).not.toContain('No supporting passage located');
     expect(first).not.toHaveProperty('suggestion');
 
     const changedContent = 'Apply the revised teacher-authored CALI scale rubric marker OLLAMA_PROMPT_REVISION_TWO.';
@@ -505,17 +464,17 @@ describe('persistent preflight suggestion review queue', () => {
     expect(second.configSnapshot.shared.fingerprint).not.toBe(first.configSnapshot.shared.fingerprint);
 
     ollamaRequest.mockResolvedValueOnce({
-      suggestion: suggestionWithoutRedirects(),
+      suggestion: sparseMemoReviewFixture(),
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
     });
-    const noRedirects = await evaluate(studentCookie, submissionBody({
-      projectMetadata: { projectId: 'no_redirects', title: 'No student redirect required' },
+    const sparse = await evaluate(studentCookie, submissionBody({
+      projectMetadata: { projectId: 'sparse_review', title: 'Sparse review still responds' },
     }));
-    expect(noRedirects.redirects).toEqual([]);
-    expect(noRedirects).not.toHaveProperty('suggestion');
+    expect(sparse.review).toEqual(sparseMemoReviewFixture());
+    expect(sparse).not.toHaveProperty('suggestion');
 
     ollamaRequest.mockResolvedValueOnce({
-      suggestion: { ...suggestion(), fabricatedProviderField: 'must fail closed' },
+      suggestion: { hard: [], scored: [], fabricatedProviderField: 'must fail closed' },
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
     });
     const { studentAnnotation: _annotation, ...thirdBody } = submissionBody({
@@ -673,7 +632,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
     releaseProvider({
-      suggestion: suggestion(),
+      suggestion: memoReviewFixture(),
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
     });
     expect((await firstRequest).status).toBe(201);
@@ -820,9 +779,10 @@ describe('persistent preflight suggestion review queue', () => {
     expect(stored.sourceMaterial).toBe(submissionBody().sourceMaterial);
     expect(JSON.parse(stored.sourceRecord)).toEqual(submissionBody().sourceRecord);
     expect(JSON.parse(stored.suggestion)).toMatchObject({
-      hard: expect.any(Array),
-      scored: expect.any(Array),
-      threshold: 6,
+      guidance: expect.any(Array),
+      nodes: expect.any(Array),
+      connections: expect.any(Array),
+      readiness: expect.objectContaining({ ready: expect.any(Boolean) }),
       evaluatedAt: '2027-01-15T08:00:00.000Z',
     });
     expect(JSON.parse(stored.suggestion).configurationSnapshot).toEqual(JSON.parse(stored.configSnapshot));
@@ -980,10 +940,10 @@ describe('persistent preflight suggestion review queue', () => {
         id: first.id,
         sourceMaterial: submissionBody().sourceMaterial,
         suggestion: expect.objectContaining({
-          hard: expect.arrayContaining([expect.objectContaining({ id: 'H1', status: expect.any(String) })]),
-          scored: expect.arrayContaining([expect.objectContaining({ id: 'C1', status: expect.any(String) })]),
-          score: expect.any(Number),
-          outcome: expect.any(String),
+          guidance: expect.any(Array),
+          nodes: expect.any(Array),
+          connections: expect.any(Array),
+          readiness: expect.objectContaining({ ready: expect.any(Boolean) }),
         }),
         reviewingTeacher: null,
       }),
@@ -1059,7 +1019,7 @@ describe('persistent preflight suggestion review queue', () => {
       { decision: 'reject', instructorAnnotation: 'Needs another source.', revisedSuggestion: 'Not allowed for reject.', expectedRevision: 1 },
       { decision: 'approve', instructorAnnotation: 'Looks good.', focusedQuestion: 'Not allowed for approve.', expectedRevision: 1 },
       { decision: 'reject', instructorAnnotation: 'Needs another source.', focusedQuestion: 'Not allowed for reject.', expectedRevision: 1 },
-      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: suggestion(), expectedRevision: 1 },
+      { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: memoReviewFixture(), expectedRevision: 1 },
       { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: '   ', expectedRevision: 1 },
       { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', focusedQuestion: 'x'.repeat(1001), expectedRevision: 1 },
       { decision: 'revise_and_approve', instructorAnnotation: 'Use this.', expectedRevision: 1 },

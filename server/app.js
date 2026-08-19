@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
-import { evaluateSubmission } from '../src/domain.js';
+import { deterministicMemoReview } from '../src/domain.js';
 import {
   SYSTEMS_MAPPING_STAGE_IDS,
   SYSTEMS_MAPPING_STAGES,
@@ -64,7 +64,6 @@ const STUDENT_SESSION_ISSUE_BUCKET = 'student-session-issuance';
 const PREFLIGHT_SCALES = new Set(['micro', 'meso', 'macro', 'integration']);
 const PREFLIGHT_STATUSES = new Set(['pending', 'approved', 'rejected']);
 const PREFLIGHT_DECISIONS = new Set(['approve', 'revise_and_approve', 'reject']);
-const STUDENT_REDIRECT_LIMIT = 3;
 const STUDENT_REDIRECT_ACTION_MAX_CHARS = 500;
 const STUDENT_REDIRECT_EVIDENCE_MAX_CHARS = 280;
 const PROJECT_METADATA_RULES = Object.freeze({
@@ -90,29 +89,21 @@ const PROJECT_OVERLAY_KEYS = Object.freeze([
   'id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel',
   'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'fingerprint',
 ]);
-const SUGGESTION_KEYS = [
-  'hard', 'scored', 'hardPass', 'score', 'threshold', 'outcome', 'evaluatedAt', 'configurationSnapshot',
-];
-const CRITERION_KEYS = [
-  'id', 'status', 'evidence', 'evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId',
-  'sourceId', 'evidenceRefs', 'rationale', 'missingVariable', 'nextAction', 'confidence',
-  'hardBlock', 'relationshipCount', 'sourceLabel', 'targetLabel', 'verb', 'scale',
-];
+const MEMO_REVIEW_NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event'];
+const MEMO_REVIEW_LIMITS = Object.freeze({
+  guidance: 8, nodes: 20, connections: 12, point: 500, evidence: 500,
+  label: 200, verb: 100, rationale: 1000, example: 1000, note: 500,
+});
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
-  'AUTHORITATIVE SUGGESTION JSON CONTRACT',
-  'Return one object with exactly these keys: hard, scored, hardPass, score, threshold, outcome, evaluatedAt, configurationSnapshot.',
-  'hard must be an array of exactly four criterion objects in ID order H1, H2, H3, H4.',
-  'scored must be an array of exactly eight criterion objects in ID order C1, C2, C3, C4, C5, C6, C7, C8.',
-  'Every criterion must include exactly these required keys: id, status, evidence, rationale, missingVariable, nextAction, confidence, hardBlock.',
-  `A criterion may additionally include only these evidence keys: ${CRITERION_KEYS.filter((key) => ![
-    'id', 'status', 'evidence', 'rationale', 'missingVariable', 'nextAction', 'confidence', 'hardBlock',
-  ].includes(key)).join(', ')}.`,
-  'status must be met or unmet. missingVariable must be null or a string. confidence must be a number from 0 through 1.',
-  'hardBlock must be true for H1-H4 and false for C1-C8.',
-  'hardPass must equal whether all four hard criteria are met. score must equal the number of met scored criteria. threshold must be 6.',
-  'outcome must be hold when hardPass is false, pass when hardPass is true and score is at least threshold, and conditional otherwise.',
-  'evaluatedAt must be an ISO timestamp string. configurationSnapshot must be an object; the server will replace both with authoritative values.',
-  'Do not add review, prose outside the object, Markdown, graph operations, or any unlisted key.',
+  'MEMO REVIEW JSON CONTRACT',
+  'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
+  'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
+  `guidance must be an array of no more than ${MEMO_REVIEW_LIMITS.guidance} objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
+  `nodes must be an array of no more than ${MEMO_REVIEW_LIMITS.nodes} objects with exactly these keys: label, type, scale, evidence. These are the people, groups, places, organizations, policies, resources, datasets, or events evident in the memo. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, macro, integration. evidence must quote or closely paraphrase the memo passage that supports the node.`,
+  `connections must be an array of no more than ${MEMO_REVIEW_LIMITS.connections} objects with exactly these keys: source, target, verb, rationale. source and target must exactly match labels from nodes and must differ. verb is a short plain-language relationship phrase. rationale must point to what in the memo makes the connection evident.`,
+  'example must be a short plain-language paragraph, or null, that walks through ONE evident connection across nodes so the student can see how a memo statement becomes a mapped connection.',
+  'readiness must be an object with exactly the keys ready and note. Set ready to true when the memo already supports mapping: clear elements and at least two evident connections. When ready is true, the note must say so plainly and encourage the student to continue to choosing nodes and describing connections. When ready is false, the note must name what the memo most needs without discouraging the student.',
+  'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   'MAP CONNECTION JSON CONTRACT',
@@ -460,44 +451,60 @@ function validateBoundedJson(value, name, {
   return value;
 }
 
-function validateCriterion(value, name, expectedId, hardBlock) {
-  assertOnlyNamedKeys(value, CRITERION_KEYS, name);
-  if (value.id !== expectedId) throw new HttpError(400, `${name}.id must be ${expectedId}.`);
-  if (!['met', 'unmet'].includes(value.status)) throw new HttpError(400, `${name}.status must be met or unmet.`);
-  requireSnapshotText(value.evidence, `${name}.evidence`, { max: 32_000 });
-  requireSnapshotText(value.rationale, `${name}.rationale`, { max: 8000 });
-  requireSnapshotText(value.nextAction, `${name}.nextAction`, { max: 8000 });
-  if (value.missingVariable !== null) requireSnapshotText(value.missingVariable, `${name}.missingVariable`, { max: 8000 });
-  if (typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) {
-    throw new HttpError(400, `${name}.confidence must be a finite number between 0 and 1.`);
+function normalizeMemoReview(value, activeScale, name = 'memo review') {
+  if (!isPlainObject(value)) throw new HttpError(400, `${name} must be an object.`);
+  if (!['guidance', 'nodes', 'connections', 'readiness', 'example'].some((key) => Object.hasOwn(value, key))) {
+    throw new HttpError(400, `${name} does not follow the memo review contract.`);
   }
-  if (value.hardBlock !== hardBlock) throw new HttpError(400, `${name}.hardBlock is inconsistent with its criterion group.`);
-  for (const field of ['evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId', 'sourceId', 'sourceLabel', 'targetLabel', 'verb']) {
-    if (value[field] !== undefined) requireSnapshotText(value[field], `${name}.${field}`, { max: field === 'evidenceExcerpt' ? 32_000 : 1000 });
-  }
-  if (value.relationshipCount !== undefined) requireInteger(value.relationshipCount, `${name}.relationshipCount`, 0, 1000);
-  if (value.scale !== undefined && !PREFLIGHT_SCALES.has(value.scale)) throw new HttpError(400, `${name}.scale is not supported.`);
-  if (value.evidenceRefs !== undefined && !Array.isArray(value.evidenceRefs)) throw new HttpError(400, `${name}.evidenceRefs must be an array.`);
-}
-
-function validateSuggestion(value, name = 'suggestion') {
-  validateBoundedJson(value, name);
-  assertOnlyNamedKeys(value, SUGGESTION_KEYS, name);
-  requireObjectKeys(value, SUGGESTION_KEYS, name);
-  if (!Array.isArray(value.hard) || value.hard.length !== 4) throw new HttpError(400, `${name}.hard must contain four criteria.`);
-  if (!Array.isArray(value.scored) || value.scored.length !== 8) throw new HttpError(400, `${name}.scored must contain eight criteria.`);
-  value.hard.forEach((criterion, index) => validateCriterion(criterion, `${name}.hard[${index}]`, `H${index + 1}`, true));
-  value.scored.forEach((criterion, index) => validateCriterion(criterion, `${name}.scored[${index}]`, `C${index + 1}`, false));
-  const hardPass = value.hard.every((criterion) => criterion.status === 'met');
-  const score = value.scored.filter((criterion) => criterion.status === 'met').length;
-  if (value.hardPass !== hardPass) throw new HttpError(400, `${name}.hardPass does not match its criteria.`);
-  if (value.score !== score) throw new HttpError(400, `${name}.score does not match its criteria.`);
-  requireInteger(value.threshold, `${name}.threshold`, 1, 8);
-  const outcome = !hardPass ? 'hold' : score >= value.threshold ? 'pass' : 'conditional';
-  if (value.outcome !== outcome) throw new HttpError(400, `${name}.outcome does not match its criteria.`);
-  requireTimestamp(value.evaluatedAt, `${name}.evaluatedAt`);
-  validateBoundedJson(value.configurationSnapshot, `${name}.configurationSnapshot`);
-  return value;
+  validateBoundedJson(value, name, { maxSerialized: 64_000, maxObjectKeys: 400 });
+  const guidance = (Array.isArray(value.guidance) ? value.guidance : [])
+    .map((item) => {
+      if (!isPlainObject(item)) return null;
+      const point = collapsedRedirectText(item.point, MEMO_REVIEW_LIMITS.point);
+      if (!point) return null;
+      const evidenceExcerpt = collapsedRedirectText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence);
+      return { point, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) };
+    })
+    .filter(Boolean)
+    .slice(0, MEMO_REVIEW_LIMITS.guidance);
+  const seenLabels = new Set();
+  const nodes = (Array.isArray(value.nodes) ? value.nodes : [])
+    .map((node) => {
+      if (!isPlainObject(node)) return null;
+      const label = collapsedRedirectText(node.label, MEMO_REVIEW_LIMITS.label);
+      if (!label || seenLabels.has(label.toLocaleLowerCase())) return null;
+      seenLabels.add(label.toLocaleLowerCase());
+      return {
+        label,
+        type: MEMO_REVIEW_NODE_TYPES.includes(node.type) ? node.type : 'event',
+        scale: PREFLIGHT_SCALES.has(node.scale) ? node.scale : activeScale,
+        evidence: collapsedRedirectText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || '',
+      };
+    })
+    .filter(Boolean)
+    .slice(0, MEMO_REVIEW_LIMITS.nodes);
+  const nodeByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node.label]));
+  const seenConnections = new Set();
+  const connections = (Array.isArray(value.connections) ? value.connections : [])
+    .map((connection) => {
+      if (!isPlainObject(connection)) return null;
+      const source = nodeByLower.get(collapsedRedirectText(connection.source, MEMO_REVIEW_LIMITS.label)?.toLocaleLowerCase());
+      const target = nodeByLower.get(collapsedRedirectText(connection.target, MEMO_REVIEW_LIMITS.label)?.toLocaleLowerCase());
+      const verb = collapsedRedirectText(connection.verb, MEMO_REVIEW_LIMITS.verb);
+      if (!source || !target || source === target || !verb) return null;
+      const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
+      if (seenConnections.has(key)) return null;
+      seenConnections.add(key);
+      return { source, target, verb, rationale: collapsedRedirectText(connection.rationale, MEMO_REVIEW_LIMITS.rationale) || '' };
+    })
+    .filter(Boolean)
+    .slice(0, MEMO_REVIEW_LIMITS.connections);
+  const example = collapsedRedirectText(value.example, MEMO_REVIEW_LIMITS.example) || null;
+  const readiness = {
+    ready: isPlainObject(value.readiness) && value.readiness.ready === true,
+    note: collapsedRedirectText(isPlainObject(value.readiness) ? value.readiness.note : null, MEMO_REVIEW_LIMITS.note) || '',
+  };
+  return { guidance, nodes, connections, example, readiness };
 }
 
 function validatePreflightEvaluationRequest(value) {
@@ -667,32 +674,44 @@ function sourcePassageForRedirect(criterion) {
   return evidence;
 }
 
-function studentRedirects(value) {
+function studentMemoReview(value, activeScale = 'micro') {
   const suggestion = storedJson(value);
-  const criteria = [
-    ...suggestion.hard.filter(({ status }) => status === 'unmet'),
-    ...suggestion.scored.filter(({ status }) => status === 'unmet'),
-  ];
-  const seen = new Set();
-  const redirects = [];
-  for (const criterion of criteria) {
-    const action = collapsedRedirectText(criterion.nextAction, STUDENT_REDIRECT_ACTION_MAX_CHARS);
-    if (!action) continue;
-    const dedupeKey = action.toLowerCase();
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
-    const evidenceExcerpt = sourcePassageForRedirect(criterion);
-    redirects.push({ action, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) });
-    if (redirects.length === STUDENT_REDIRECT_LIMIT) break;
+  if (!PREFLIGHT_SCALES.has(activeScale)) activeScale = 'micro';
+  if (Array.isArray(suggestion?.hard) || Array.isArray(suggestion?.scored)) {
+    // Legacy rubric rows keep responding: unmet next actions become guidance.
+    const criteria = [
+      ...(Array.isArray(suggestion.hard) ? suggestion.hard : []),
+      ...(Array.isArray(suggestion.scored) ? suggestion.scored : []),
+    ].filter(({ status }) => status === 'unmet');
+    const seen = new Set();
+    const guidance = [];
+    for (const criterion of criteria) {
+      const point = collapsedRedirectText(criterion.nextAction, STUDENT_REDIRECT_ACTION_MAX_CHARS);
+      if (!point) continue;
+      const dedupeKey = point.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const evidenceExcerpt = sourcePassageForRedirect(criterion);
+      guidance.push({ point, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) });
+      if (guidance.length === MEMO_REVIEW_LIMITS.guidance) break;
+    }
+    return {
+      guidance,
+      nodes: [],
+      connections: [],
+      example: null,
+      readiness: { ready: suggestion.outcome === 'pass', note: '' },
+    };
   }
-  return redirects;
+  const { evaluatedAt: _evaluatedAt, configurationSnapshot: _configurationSnapshot, ...review } = suggestion;
+  return normalizeMemoReview(review, activeScale, 'stored memo review');
 }
 
 function preflightEvaluationResponse(row) {
   if (!row) return null;
   return {
     id: row.id,
-    redirects: studentRedirects(row.suggestion),
+    review: studentMemoReview(row.suggestion, row.activeScale),
     configSnapshot: storedJson(row.configSnapshot),
     runtime: storedJson(row.runtimeMetadata),
     createdAt: responseTimestamp(row.createdAt),
@@ -801,7 +820,8 @@ const PREFLIGHT_SUBMISSION_SELECT = `
 async function preflightEvaluationById(db, evaluationId) {
   const row = await db.prepare(`
     SELECT id, suggestion_json AS suggestion, config_snapshot_json AS configSnapshot,
-      runtime_metadata_json AS runtimeMetadata, created_at AS createdAt, expires_at AS expiresAt
+      runtime_metadata_json AS runtimeMetadata, active_scale AS activeScale,
+      created_at AS createdAt, expires_at AS expiresAt
     FROM preflight_evaluations WHERE id = ?
   `).get(evaluationId);
   return preflightEvaluationResponse(row);
@@ -1900,9 +1920,8 @@ export function createSystemsMappingApp(options = {}) {
             sourceMetadata: input.sourceRecord,
             sourceText: input.sourceMaterial,
           }, ollamaConfig);
-          validateSuggestion(generated.suggestion, 'generated suggestion');
-          suggestion = { ...structuredClone(generated.suggestion), evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
-          validateSuggestion(suggestion);
+          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review');
+          suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
           runtimeMetadata = authoritativeRuntimeMetadata(generated.metadata, {
             provider: 'ollama-cloud',
             model: ollamaConfig.model,
@@ -1912,14 +1931,12 @@ export function createSystemsMappingApp(options = {}) {
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
         }
       } else {
-        suggestion = evaluateSubmission(
-          { ...input.sourceRecord, text: input.sourceMaterial },
+        const review = normalizeMemoReview(
+          deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale),
           input.activeScale,
-          6,
+          'deterministic memo review',
         );
-        suggestion.evaluatedAt = new Date(createdAt).toISOString();
-        suggestion.configurationSnapshot = configSnapshot;
-        validateSuggestion(suggestion);
+        suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
         runtimeMetadata = authoritativeRuntimeMetadata({}, {
           provider: 'deterministic',
           model: 'STEM Splitter',

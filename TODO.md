@@ -1,6 +1,20 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-13
+Updated: 2026-08-19
+
+## 2026-08-19 memo review redesign
+
+This redesign supersedes the earlier "student-safe redirects" contract. Items below that describe at-most-three `{action, evidenceExcerpt}` records, unmet-criteria filtering, the student note for instructor review, or memo edits retiring map items describe the pre-redesign behavior and are retained as history.
+
+- [x] Replace the rubric suggestion contract (H1–H4 / C1–C8, redirects) with an unfiltered memo review contract: `guidance`, `nodes`, `connections`, `example`, `readiness` — the model's reading reaches the student bounded only by size and shape limits, never by score.
+  - Evidence: `server/app.js` `OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION`, `normalizeMemoReview`, `studentMemoReview`; `server/preflight.test.js`; `src/domain.test.js`.
+- [x] Call the model automatically on **review your memo**, seed **choose nodes and describe connections** from its proposals merged with local extraction, and let the readiness signal encourage advancement without gating anything.
+  - Evidence: `src/App.jsx` auto-review effect, `buildCandidatesFromProject`, readiness banner; `src/App.test.jsx`.
+- [x] Keep the memo collapsed but editable on every later stage; memo edits never retire map items or clear candidates — they only mark guidance refreshable by fingerprint.
+  - Evidence: `MemoDrawer`, `invalidateSubmissionDerived`, staleness tests in `src/App.test.jsx`.
+- [x] Remove instructor-review UI from the student workflow (no "Add a note", "Note for instructor", "Instructor guidance", or review-status panels). Server review endpoints and the Teacher Console queue remain for retained records.
+- [x] Allow connection suggestions with an empty description: the client sends a bounded excerpt of the memo itself, and the button requires only two nodes.
+- [x] Current run: 166 client tests passing (3 PostgreSQL-gated skips), 65 server tests passing, production Vite build succeeding.
 
 This ledger separates implemented and automated behavior from rendered-browser, local-handoff, GitHub, Railway, and live-provider proof. A checked item has current evidence. A source file or earlier screenshot alone is not enough to close an external gate.
 

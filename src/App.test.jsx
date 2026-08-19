@@ -9,6 +9,7 @@ import {
   createPortableProject,
   extractCandidates,
   serializeProject,
+  stableId,
   withDefaultNodeLayout,
 } from './domain.js';
 
@@ -18,8 +19,6 @@ const PERSIST_DEBOUNCE_MS = 450;
 let studentSession;
 let accessResponder;
 let preflightEvaluationResponder;
-let preflightPostResponder;
-let preflightGetResponder;
 let connectionSuggestionResponder;
 let prototypeResponder;
 let fetchMock;
@@ -107,13 +106,10 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
     projectOverlay: storedOverlay,
     effectiveFingerprint: 'effective-server-fingerprint',
   };
-  const redirects = overrides.redirects || [{
-    action: 'Clarify who performs the referral.',
-    evidenceExcerpt: 'The school refers the student to the committee.',
-  }];
+  const review = overrides.review || memoReviewFixture();
   return {
     id: EVALUATION_ID,
-    redirects: structuredClone(redirects),
+    review: structuredClone(review),
     configSnapshot,
     runtime: overrides.runtime || { provider: 'deterministic', model: 'STEM Splitter', createdAt },
     createdAt,
@@ -121,40 +117,29 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
   };
 }
 
-function redirectFixture() {
-  return [{
-    action: 'Add more detail to the memo.',
-    evidenceExcerpt: 'The memo needs one more specific example.',
-  }, {
-    action: 'Separate what the memo describes from your interpretation.',
-    evidenceExcerpt: 'According to the memo, the school administers services.',
-  }, {
-    action: 'Name a second connection.',
-    evidenceExcerpt: 'The school refers the student to the committee.',
-  }];
-}
-
-function reviewRecord(projectId = 'project_cali_demo', overrides = {}) {
+function memoReviewFixture() {
   return {
-    id: 'review_0123456789abcdefghijklmnop',
-    projectId,
-    status: 'pending',
-    decision: null,
-    revision: 1,
-    submittedAt: '2026-08-09T12:00:00.000Z',
-    updatedAt: '2026-08-09T12:00:00.000Z',
-    reviewedAt: null,
-    instructorAnnotation: null,
-    focusedQuestion: null,
-    ...overrides,
+    guidance: [{
+      point: 'The memo grounds the referral in a specific handoff.',
+      evidenceExcerpt: 'The school refers the student to the committee.',
+    }, {
+      point: 'Where does the delay enter the referral process?',
+    }],
+    nodes: [
+      { label: 'School', type: 'organization', scale: 'meso', evidence: 'The school refers the student to the committee.' },
+      { label: 'Committee', type: 'agency', scale: 'meso', evidence: 'The school refers the student to the committee.' },
+    ],
+    connections: [{ source: 'School', target: 'Committee', verb: 'refers students to', rationale: 'The memo names the referral directly.' }],
+    example: 'One evident connection: the school refers students to the committee, because the memo names that handoff directly.',
+    readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and describe connections.' },
   };
 }
 
-function projectAwaitingReview(overrides = {}) {
+function projectWithMemoReview(overrides = {}) {
   const project = createDefaultProject();
   const evaluation = evaluationRecord(evaluationPayloadFixture(project));
   project.preflight = {
-    redirects: structuredClone(evaluation.redirects),
+    memoReview: structuredClone(evaluation.review),
     configurationSnapshot: structuredClone(evaluation.configSnapshot),
     evaluation: {
       evaluationId: evaluation.id,
@@ -162,12 +147,7 @@ function projectAwaitingReview(overrides = {}) {
       createdAt: evaluation.createdAt,
       expiresAt: evaluation.expiresAt,
     },
-    review: {
-      submissionId: 'review_0123456789abcdefghijklmnop',
-      status: 'pending',
-      revision: 1,
-      submittedAt: '2026-08-09T12:00:00.000Z',
-    },
+    sourceFingerprint: project.submission.fingerprint || stableId('src', project.submission.text),
   };
   project.stage = 1;
   project.furthestStage = 1;
@@ -187,8 +167,6 @@ function defaultFetch(path, options = {}) {
   if (requestPath === '/api/student/logout') return jsonResponse({ ok: true });
   if (requestPath === '/api/preflight/evaluations' && options.method === 'POST') return preflightEvaluationResponder(JSON.parse(options.body));
   if (requestPath === '/api/map/connections' && options.method === 'POST') return connectionSuggestionResponder(JSON.parse(options.body));
-  if (requestPath === '/api/preflight/submissions' && options.method === 'POST') return preflightPostResponder(JSON.parse(options.body));
-  if (requestPath.startsWith('/api/preflight/submissions/')) return preflightGetResponder(decodeURIComponent(requestPath.split('/').at(-1)));
   if (requestPath.startsWith('/api/config/public?')) return jsonResponse(publicConfiguration(requestPath));
   if (requestPath === '/api/prototype/events') return prototypeResponder(options);
   return jsonResponse({ error: `Unexpected fetch: ${requestPath}` }, 500);
@@ -364,8 +342,6 @@ describe('Systems Mapping workflow', () => {
       ? jsonResponse({ access: grantedAccess() }, 201)
       : jsonResponse({ error: 'Invalid class code.' }, 401);
     preflightEvaluationResponder = (body) => jsonResponse({ evaluation: evaluationRecord(body) }, 201);
-    preflightPostResponder = () => jsonResponse({ submission: reviewRecord() }, 201);
-    preflightGetResponder = () => jsonResponse({ submission: reviewRecord() });
     connectionSuggestionResponder = (body) => jsonResponse({ connections: [{
       source: body.nodes[0].id,
       target: body.nodes[1].id,
@@ -480,9 +456,6 @@ describe('Systems Mapping workflow', () => {
   });
 
   it('uses canonical stage labels and renders annotation guidance without checklist identifiers or scores', async () => {
-    preflightEvaluationResponder = (body) => jsonResponse({
-      evaluation: evaluationRecord(body, { redirects: redirectFixture() }),
-    }, 201);
     await resumeSavedProject();
     expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('NYC systems and assets map');
@@ -499,24 +472,25 @@ describe('Systems Mapping workflow', () => {
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await screen.findByRole('region', { name: 'Return to your memo' });
-    expect(within(guidance).getAllByRole('article')).toHaveLength(3);
-    expect(within(guidance).getByRole('heading', { name: 'Add more detail to the memo.' })).toBeVisible();
-    expect(within(guidance).getByRole('heading', { name: 'Separate what the memo describes from your interpretation.' })).toBeVisible();
-    expect(within(guidance).getByRole('heading', { name: 'Name a second connection.' })).toBeVisible();
-    expect(within(guidance).getByText('According to the memo, the school administers services.')).toBeVisible();
-    expect(within(guidance).queryByText('Keep this completed item as written.')).not.toBeInTheDocument();
-    expect(within(guidance).queryByText('Narrow the inquiry to one decision point.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'What the source establishes' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'What the model suggests' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'What remains uncertain' })).not.toBeInTheDocument();
-    expect(screen.getByText('Instructor guidance')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Add a note' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /Note for instructor/ })).toHaveAttribute('maxlength', '4000');
+    const guidance = await screen.findByRole('region', { name: 'What the model noticed' });
+    expect(within(guidance).getAllByRole('article')).toHaveLength(2);
+    expect(within(guidance).getByText('The memo grounds the referral in a specific handoff.')).toBeVisible();
+    expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
+    expect(within(guidance).getByText('The school refers the student to the committee.')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Where your memo stands' })).toHaveTextContent('The memo already supports mapping');
+    const scaffold = screen.getByRole('complementary', { name: /Nodes and connections evident in your memo/ });
+    expect(within(scaffold).getByLabelText('Nodes evident in the memo')).toHaveTextContent('School');
+    expect(within(scaffold).getByText('refers students to')).toBeVisible();
+    expect(within(scaffold).getByText(/One evident connection: the school refers students to the committee/)).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Return to your memo' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Instructor guidance')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Add a note' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Note for instructor/ })).not.toBeInTheDocument();
     const visibleStageText = document.querySelector('.workspace').textContent;
     expect(visibleStageText).not.toMatch(/\bsources?\b/i);
+    expect(visibleStageText).not.toMatch(/\binstructor review\b/i);
     expect(visibleStageText).not.toMatch(/\b(?:H[1-4]|C[1-8])\b/);
-    expect(visibleStageText).not.toMatch(/\b(?:pass|conditional|hold|score|scoring|criterion|criteria|checklist|hard gate)\b/i);
+    expect(visibleStageText).not.toMatch(/\b(?:conditional|hold|score|scoring|criterion|criteria|checklist|hard gate)\b/i);
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
   });
@@ -526,15 +500,11 @@ describe('Systems Mapping workflow', () => {
     project.inquiry = '';
     project.stage = 1;
     project.furthestStage = 1;
-    preflightEvaluationResponder = (body) => jsonResponse({
-      evaluation: evaluationRecord(body, { redirects: redirectFixture() }),
-    }, 201);
-
     await resumeSavedProject(project);
     expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
 
-    expect(await screen.findByRole('region', { name: 'Return to your memo' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     expect(JSON.parse(request[1].body).inquiry).toBe('');
   });
@@ -592,32 +562,12 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
   });
 
-  it('keeps Map and all five stages available while instructor review is pending', async () => {
-    const project = projectAwaitingReview();
+  it('keeps Map and all five stages available with guidance present and never mentions instructor review', async () => {
+    const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.getByText('Your instructor can review this draft while you keep working.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
-    const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
-    SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
-  });
-
-  it('keeps Map and all five stages available after instructor returns work', async () => {
-    const project = projectAwaitingReview();
-    project.preflight.review = {
-      submissionId: 'review_0123456789abcdefghijklmnop',
-      status: 'rejected',
-      decision: 'reject',
-      revision: 2,
-      submittedAt: '2026-08-09T12:00:00.000Z',
-      instructorAnnotation: 'Clarify one connection, then keep refining your map.',
-    };
-
-    await resumeSavedProject(project);
-    expect(screen.getByText('Clarify one connection, then keep refining your map.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Where your memo stands' })).toBeVisible();
+    expect(document.querySelector('.workspace').textContent).not.toMatch(/instructor review|send to instructor|note for instructor/i);
+    screen.getAllByRole('button', { name: /Choose nodes and connections/ }).forEach((button) => expect(button).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
@@ -632,7 +582,7 @@ describe('Systems Mapping workflow', () => {
     project.candidates = { nodes: [], edges: [] };
     await resumeSavedProject(project);
 
-    expect(screen.getByText(/open the map and add supported elements yourself/i)).toBeVisible();
+    expect(screen.getByText(/add elements yourself on the map/i)).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
@@ -653,14 +603,14 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
-    expect(screen.getByText(/prompt the custom AI model to formulate new connections/i)).toBeVisible();
+    expect(screen.getByText(/the model reads your memo directly/i)).toBeVisible();
     const prompt = 'Families rely on schools, but delayed referrals make services harder to reach in this session.';
-    fireEvent.change(screen.getByRole('textbox', { name: 'How do these nodes connect?' }), { target: { value: prompt } });
+    fireEvent.change(screen.getByRole('textbox', { name: /How do these nodes connect/ }), { target: { value: prompt } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
 
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
     expect(verb).toHaveValue('supports');
-    expect(screen.getByRole('button', { name: 'Refine map' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Suggest more connections' })).toBeVisible();
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/map/connections' && options.method === 'POST');
     const body = JSON.parse(request[1].body);
     expect(body).toMatchObject({ activeScale: project.activeScale, inquiry: project.inquiry, prompt });
@@ -696,7 +646,7 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 2;
     await resumeSavedProject(project);
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'How do these nodes connect?' }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /How do these nodes connect/ }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
     fireEvent.change(verb, { target: { value: longEdgeLabel } });
@@ -711,39 +661,46 @@ describe('Systems Mapping workflow', () => {
     expect(Number(previewEdge.querySelector('rect').getAttribute('height'))).toBeGreaterThan(24);
   });
 
-  it('shows no praise or inventory when the server returns no redirect', async () => {
-    const project = createDefaultProject();
-    project.stage = 1;
-    project.furthestStage = 1;
-    preflightEvaluationResponder = (body) => jsonResponse({ evaluation: evaluationRecord(body, { redirects: [] }) }, 201);
-    await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await screen.findByRole('region', { name: 'Return to your memo' });
-    expect(within(guidance).getByText('Use your note to tell the instructor where you want feedback.')).toBeVisible();
-    expect(within(guidance).queryAllByRole('article')).toHaveLength(0);
-    expect(guidance.textContent).not.toMatch(/\b(?:pass|complete|met|score|criterion|checklist)\b/i);
-  });
-
-  it('rejects more than three server redirects without persisting them', async () => {
+  it('shows the model text verbatim without canned praise when the review is sparse', async () => {
     const project = createDefaultProject();
     project.stage = 1;
     project.furthestStage = 1;
     preflightEvaluationResponder = (body) => jsonResponse({
       evaluation: evaluationRecord(body, {
-        redirects: Array.from({ length: 4 }, (_, index) => ({ action: `Return to memo point ${index + 1}.` })),
+        review: { guidance: [], nodes: [], connections: [], example: null, readiness: { ready: false, note: '' } },
       }),
     }, 201);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText(/no more than 3 redirects/i)).toBeVisible();
+    const guidance = await screen.findByRole('region', { name: 'What the model noticed' });
+    expect(within(guidance).getByText(/returned no guidance this time/)).toBeVisible();
+    expect(within(guidance).queryAllByRole('article')).toHaveLength(0);
+    expect(guidance.textContent).not.toMatch(/\b(?:pass|complete|met|score|criterion|checklist)\b/i);
+  });
+
+  it('rejects an oversized guidance list without persisting it', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = (body) => jsonResponse({
+      evaluation: evaluationRecord(body, {
+        review: {
+          ...memoReviewFixture(),
+          guidance: Array.from({ length: 9 }, (_, index) => ({ point: `Guidance point ${index + 1}.` })),
+        },
+      }),
+    }, 201);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByText(/no more than 8 items/i)).toBeVisible();
     expect(storedProject().preflight).toBeNull();
   });
 
-  it('uses exact evaluation and submission envelopes while pending review leaves mapping available after reload', async () => {
+  it('uses the exact evaluation envelope and keeps the stored memo review portable after reload', async () => {
     await resumeSavedProject();
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('heading', { name: 'Return to your memo' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
 
     const evaluationRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     const evaluationBody = JSON.parse(evaluationRequest[1].body);
@@ -756,30 +713,16 @@ describe('Systems Mapping workflow', () => {
     expect(evaluationBody.projectOverlay).not.toHaveProperty('fixedPrompt');
     await waitFor(() => expect(storedProject().preflight?.evaluation?.evaluationId).toBe(EVALUATION_ID));
     const storedPreflight = storedProject().preflight;
-    expect(Object.keys(storedPreflight).sort()).toEqual(['configurationSnapshot', 'evaluation', 'redirects', 'review']);
-    expect(storedPreflight.redirects).toEqual([{ action: 'Clarify who performs the referral.', evidenceExcerpt: 'The school refers the student to the committee.' }]);
+    expect(Object.keys(storedPreflight).sort()).toEqual(['configurationSnapshot', 'evaluation', 'memoReview', 'sourceFingerprint']);
+    expect(storedPreflight.memoReview).toEqual(memoReviewFixture());
     expect(storedPreflight).not.toHaveProperty('hard');
     expect(storedPreflight).not.toHaveProperty('scored');
     expect(storedPreflight).not.toHaveProperty('outcome');
     expect(storedPreflight.configurationSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
     expect(storedPreflight.configurationSnapshot.projectOverlay).not.toHaveProperty('fixedPrompt');
     const portablePreflight = createPortableProject(storedProject()).preflight;
-    expect(Object.keys(portablePreflight).sort()).toEqual(['configurationSnapshot', 'evaluation', 'redirects', 'review']);
+    expect(Object.keys(portablePreflight).sort()).toEqual(['configurationSnapshot', 'evaluation', 'memoReview', 'sourceFingerprint']);
     expect(portablePreflight.evaluation.evaluationId).toBe('[redacted]');
-
-    fireEvent.change(screen.getByRole('textbox', { name: /Note for instructor/ }), { target: { value: 'Please review the uncertainty around referrals.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send to instructor' }));
-    expect(await screen.findByRole('heading', { name: 'Waiting for your instructor' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Check response' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
-
-    const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/submissions' && options.method === 'POST');
-    const body = JSON.parse(request[1].body);
-    expect(body).toEqual({ evaluationId: EVALUATION_ID, studentAnnotation: 'Please review the uncertainty around referrals.' });
-    expect(body).not.toHaveProperty('suggestion');
-    expect(body).not.toHaveProperty('configSnapshot');
-    await waitFor(() => expect(storedProject().preflight.review).toMatchObject({ submissionId: 'review_0123456789abcdefghijklmnop', status: 'pending', revision: 1 }));
-    expect(storedProject().preflight.evaluation).toMatchObject({ evaluationId: EVALUATION_ID, runtime: { provider: 'deterministic', model: 'STEM Splitter' } });
     expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
 
     cleanup();
@@ -787,7 +730,8 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Review');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { name: 'Waiting for your instructor' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'Where your memo stands' })).toBeVisible();
+    expect(screen.getByText('The memo already supports mapping. Continue to choose nodes and describe connections.')).toBeVisible();
   });
 
   it('blocks an oversized evaluation request without truncating the local memo', async () => {
@@ -862,44 +806,23 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().preflight).toBeNull();
   });
 
-  it('requires fresh generation when the stored authoritative evaluation has expired', async () => {
-    const project = createDefaultProject();
-    const payload = evaluationPayloadFixture(project);
-    const evaluation = evaluationRecord(payload, {
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    });
-    project.preflight = {
-      redirects: structuredClone(evaluation.redirects),
-      configurationSnapshot: structuredClone(evaluation.configSnapshot),
-      evaluation: {
-        evaluationId: evaluation.id,
-        runtime: evaluation.runtime,
-        createdAt: evaluation.createdAt,
-        expiresAt: evaluation.expiresAt,
-      },
-      review: null,
-    };
-    project.stage = 1;
-    project.furthestStage = 1;
+  it('marks guidance refreshable after a memo edit without erasing the guidance or any work', async () => {
+    const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.getByRole('button', { name: 'Generate current guidance' })).toBeVisible();
-    expect(screen.getByRole('alert')).toHaveTextContent('Generate current guidance before sending');
-    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/submissions')).toHaveLength(0);
-  });
+    expect(screen.getByRole('region', { name: 'Where your memo stands' })).toBeVisible();
+    expect(screen.queryByText(/Your memo has changed since this guidance was generated/)).not.toBeInTheDocument();
 
-  it('marks a consumed or unavailable evaluation stale and prompts fresh generation', async () => {
-    const project = createDefaultProject();
-    project.stage = 1;
-    project.furthestStage = 1;
-    preflightPostResponder = () => jsonResponse({ error: 'The preflight evaluation is unavailable, expired, or already used.' }, 409);
-    await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('heading', { name: 'Return to your memo' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Send to instructor' }));
-    expect(await screen.findByText(/evaluation expired or was already used/i)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Generate current guidance' })).toBeVisible();
-    await waitFor(() => expect(storedProject().preflight.evaluation.evaluationId).toBe('[unavailable]'));
+    const drawer = document.querySelector('.memo-drawer');
+    drawer.open = true;
+    fireEvent.change(within(drawer).getByRole('textbox', { name: /Memo text/ }), {
+      target: { value: `${project.submission.text} A later correction adds one more connection.` },
+    });
+
+    expect(await screen.findByText(/Your memo has changed since this guidance was generated/)).toBeVisible();
+    expect(screen.getByRole('region', { name: 'What the model noticed' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Refresh guidance' })).toBeEnabled();
+    screen.getAllByRole('button', { name: /Choose nodes and connections/ }).forEach((button) => expect(button).toBeEnabled());
+    await waitFor(() => expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture()));
   });
 
   it('stores the shared and project configuration snapshots with a preflight event', async () => {
@@ -911,7 +834,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.moduleVersions).toHaveLength(12));
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('heading', { name: 'Return to your memo' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
     await waitFor(() => {
       const event = [...storedProject().events].reverse().find((entry) => entry.action === 'preflight.completed');
       expect(event.configurationSnapshot.shared).toMatchObject({ fingerprint: 'preflight-shared-fingerprint', revision: 3 });
@@ -924,86 +847,19 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
-  it.each([
-    ['approve', undefined, 'The memo provides enough support.'],
-    ['revise_and_approve', 'Treat the referral as a contested handoff, then confirm each candidate.', 'Proceed with the bounded revision in mind.'],
-  ])('uses an instructor %s response as guidance without changing the memo, graph, or stored redirects', async (decision, focusedQuestion, instructorAnnotation) => {
-    const project = projectAwaitingReview();
-    const originalMemo = project.submission.text;
-    const originalGraph = structuredClone(project.graph);
-    const originalRedirects = structuredClone(project.preflight.redirects);
-    preflightGetResponder = () => jsonResponse({ submission: reviewRecord(project.id, {
-      status: 'approved',
-      decision,
-      revision: 2,
-      reviewedAt: '2026-08-09T13:00:00.000Z',
-      instructorAnnotation,
-      focusedQuestion: focusedQuestion ?? null,
-    }) });
-
+  it('advances into candidate choice from the guidance banner with model-proposed nodes and connections seeded', async () => {
+    const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
-    expect(await screen.findByRole('heading', { name: "Read your instructor's response" })).toBeVisible();
-    expect(screen.getByText(instructorAnnotation)).toBeVisible();
-    if (focusedQuestion) {
-      expect(screen.getByRole('heading', { name: 'Question from your instructor' })).toBeVisible();
-      expect(screen.getByText(focusedQuestion)).toBeVisible();
-    }
-    expect(screen.queryByRole('heading', { name: 'Revised suggestion' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
-    await waitFor(() => expect(storedProject().preflight.review).toMatchObject({ status: 'approved', decision, revision: 2 }));
-    expect(storedProject().submission.text).toBe(originalMemo);
-    expect(storedProject().graph).toEqual(originalGraph);
-    expect(storedProject().preflight.redirects).toEqual(originalRedirects);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Choose nodes and connections' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: /Choose nodes and connections/ }));
     expect(await screen.findByRole('heading', { name: 'Choose nodes and describe connections' })).toBeVisible();
-  });
-
-  it('keeps rejected review guidance in the review section without redirecting or editing the memo or map', async () => {
-    const project = projectAwaitingReview();
-    const originalMemo = project.submission.text;
-    const originalGraph = structuredClone(project.graph);
-    preflightGetResponder = () => jsonResponse({ submission: reviewRecord(project.id, {
-      status: 'rejected',
-      decision: 'reject',
-      revision: 2,
-      reviewedAt: '2026-08-09T13:00:00.000Z',
-      instructorAnnotation: 'Clarify who performs the second handoff, then submit again.',
-    }) });
-
-    await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
-    expect(await screen.findByRole('heading', { name: "Read your instructor's response" })).toBeVisible();
-    expect(screen.getByText('Clarify who performs the second handoff, then submit again.')).toBeVisible();
-    await waitFor(() => expect(storedProject()).toMatchObject({ stage: 1, preflight: { review: { status: 'rejected', decision: 'reject', revision: 2 } } }));
-    expect(storedProject().submission.text).toBe(originalMemo);
-    expect(storedProject().graph).toEqual(originalGraph);
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
-  });
-
-  it('recovers a pending review after class-session renewal using only the stored review capability', async () => {
-    const project = projectAwaitingReview();
-    seedProject(project);
-    studentSession = null;
-    preflightGetResponder = (submissionId) => jsonResponse({ submission: reviewRecord(project.id, {
-      id: submissionId,
-      status: 'approved',
-      decision: 'approve',
-      revision: 2,
-      reviewedAt: '2026-08-09T13:00:00.000Z',
-      instructorAnnotation: 'Renewed access can retrieve this minimized status.',
-    }) });
-    render(<App />);
-    const code = await screen.findByRole('textbox', { name: 'Class code' });
-    fireEvent.change(code, { target: { value: '101' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Check response' }));
-    expect(await screen.findByText('Renewed access can retrieve this minimized status.')).toBeVisible();
-    const getRequest = fetchMock.mock.calls.find(([path]) => String(path).startsWith('/api/preflight/submissions/review_'));
-    expect(String(getRequest[0])).toBe(`/api/preflight/submissions/${project.preflight.review.submissionId}`);
+    await waitFor(() => {
+      const stored = storedProject();
+      expect(stored.stage).toBe(2);
+      expect(stored.candidates.nodes.map(({ label }) => label)).toEqual(expect.arrayContaining(['School', 'Committee']));
+      expect(stored.candidates.edges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sourceLabel: 'School', targetLabel: 'Committee', verb: 'refers students to' }),
+      ]));
+    });
   });
 
   it('keeps a newly valid class grant active when a stale prototype 401 reads back a valid session', async () => {
@@ -1118,7 +974,10 @@ describe('Systems Mapping workflow', () => {
   it('records a manually added relationship in the current scale layer', async () => {
     const project = await openMapProject();
     const inspector = openMapInspector();
-    fireEvent.click(within(inspector).getByRole('button', { name: 'Add relationship' }));
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
+    const addActions = document.getElementById('inspector-add-actions');
+    expect(within(addActions).getByRole('button', { name: 'Node' })).toBeVisible();
+    fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
     const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
     fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: project.graph.nodes[0].id } });
     fireEvent.change(within(addForm).getByLabelText('Connection'), { target: { value: 'coordinates with' } });
@@ -1305,7 +1164,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(storedProject().graph.edges.find((edge) => edge.id === removedEdge.id)).toMatchObject({ status: 'confirmed', claimState: 'student interpretation' }));
   });
 
-  it('invalidates current candidates and retires only the edited scale layer when memo text changes', async () => {
+  it('keeps candidates and the whole map intact when memo text changes', async () => {
     const project = createDefaultProject();
     project.candidates = extractCandidates(project.submission);
     project.graph = structuredClone(project.candidates);
@@ -1317,11 +1176,12 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Memo text/ }), { target: { value: `${project.submission.text} A later memo correction changes the evidence anchor.` } });
     await waitFor(() => {
       const stored = storedProject();
-      expect(stored.candidates).toEqual({ nodes: [], edges: [] });
-      expect(stored.graph.nodes.filter((node) => node.scale === project.activeScale).every((node) => node.claimState === 'retired')).toBe(true);
-      expect(stored.graph.edges.filter((edge) => edge.scale === project.activeScale).every((edge) => edge.claimState === 'retired')).toBe(true);
-      expect(stored.graph.nodes.some((node) => node.scale !== project.activeScale && node.claimState === 'student interpretation')).toBe(true);
-      expect(stored.graph.edges.some((edge) => edge.scale !== project.activeScale && edge.claimState === 'student interpretation')).toBe(true);
+      expect(stored.submission.revision).toBe((project.submission.revision || 1) + 1);
+      expect(stored.candidates.nodes).toHaveLength(project.candidates.nodes.length);
+      expect(stored.candidates.edges).toHaveLength(project.candidates.edges.length);
+      expect(stored.graph.nodes.every((node) => node.claimState === 'student interpretation')).toBe(true);
+      expect(stored.graph.edges.every((edge) => edge.claimState === 'student interpretation')).toBe(true);
+      expect(JSON.stringify(stored.graph)).not.toContain('Removed after the memo changed');
     });
   });
 

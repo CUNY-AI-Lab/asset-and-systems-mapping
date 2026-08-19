@@ -167,9 +167,12 @@ describe('hosted runtime guardrails', () => {
       const evaluation = (await evaluated.json()).evaluation;
       expect(evaluation).toMatchObject({
         runtime: { provider: 'deterministic', model: 'STEM Splitter' },
-        redirects: expect.any(Array),
+        review: expect.objectContaining({
+          guidance: expect.any(Array),
+          nodes: expect.any(Array),
+          connections: expect.any(Array),
+        }),
       });
-      expect(evaluation.redirects.length).toBeLessThanOrEqual(3);
       expect(evaluation).not.toHaveProperty('suggestion');
       expect(evaluation.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
       const submitted = await postJson(system, '/api/preflight/submissions', {

@@ -22,13 +22,11 @@ import {
   ApiError,
   createPreflightEvaluation,
   endStudentAccess,
-  getPreflightSubmission,
   getPublicConfiguration,
   getStudentSession,
   recordPrototypeEvent,
   requestStudentAccess,
   suggestMapConnections,
-  submitPreflightSubmission,
 } from './api.js';
 
 const STORAGE_KEY = 'systems-mapping-studio.project.v5';
@@ -57,15 +55,12 @@ const VIEWPORT_LIMITS = { minZoom: 0.5, maxZoom: 2, minPan: -840, maxPan: 840 };
 const STAGES = SYSTEMS_MAPPING_STAGES;
 const TeacherDashboard = lazy(() => import('./TeacherDashboard.jsx'));
 
-const REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
-const REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
-
-function preserveRejectedReview(draft) {
-  return draft.preflight?.review?.decision === 'reject';
+function invalidatePreflight(draft) {
+  draft.preflight = null;
 }
 
-function invalidatePreflight(draft) {
-  if (!preserveRejectedReview(draft)) draft.preflight = null;
+function memoFingerprint(submission) {
+  return submission.fingerprint || stableId('src', submission.text);
 }
 
 function loadProject() {
@@ -125,25 +120,12 @@ function handleCompositeKey(event, values, current, onChange) {
 
 function invalidateSubmissionDerived(draft, field, value) {
   const textChanged = field === 'text' && draft.submission.text !== value;
-  const priorFingerprint = draft.submission.fingerprint || stableId('src', draft.submission.text);
   draft.submission[field] = value;
-  invalidatePreflight(draft);
   if (!textChanged) return;
+  // Editing the memo never removes existing work. Guidance and candidates
+  // simply become refreshable against the new fingerprint.
   draft.submission.revision = (draft.submission.revision || 1) + 1;
   draft.submission.fingerprint = stableId('src', value);
-  draft.candidates = { nodes: [], edges: [] };
-  draft.graph.nodes.forEach((node) => {
-    if (node.scale === draft.activeScale && (node.sourceFingerprint === priorFingerprint || (!node.sourceFingerprint && String(node.evidence || '').startsWith('Memo sentence')))) {
-      node.claimState = 'retired';
-      node.notes = [node.notes, 'Removed after the memo changed; review it again to reconnect the evidence.'].filter(Boolean).join(' ');
-    }
-  });
-  draft.graph.edges.forEach((edge) => {
-    if (edge.scale === draft.activeScale && (edge.sourceFingerprint === priorFingerprint || (!edge.sourceFingerprint && String(edge.evidence || '').startsWith('Memo sentence')))) {
-      edge.claimState = 'retired';
-      edge.notes = [edge.notes, 'Removed after the memo changed; review it again to reconnect the evidence.'].filter(Boolean).join(' ');
-    }
-  });
 }
 
 function configurationSnapshot(project, kind) {
@@ -237,6 +219,14 @@ function preflightEvaluationPayload(project) {
   };
 }
 
+function memoPromptExcerpt(text) {
+  const collapsed = String(text || '').replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= 4000) return collapsed;
+  const prefix = collapsed.slice(0, 4001);
+  const boundary = prefix.lastIndexOf(' ');
+  return (boundary > 2000 ? prefix.slice(0, boundary) : collapsed.slice(0, 4000)).trim();
+}
+
 function nodesForConnectionPrompt(project) {
   const selected = project.candidates.nodes
     .filter((node) => node.status === 'confirmed' || node.status === 'research lead');
@@ -308,73 +298,31 @@ function authoritativeEvaluationKey(project) {
   return stableId('evaluation-request', JSON.stringify({ ...payload, projectMetadata: stableMetadata }));
 }
 
-function hasUsableEvaluation(preflight, now = Date.now()) {
-  const evaluation = preflight?.evaluation;
-  return Boolean(evaluation
-    && /^[A-Za-z0-9_-]{32}$/.test(evaluation.evaluationId)
-    && Number.isFinite(Date.parse(evaluation.expiresAt))
-    && Date.parse(evaluation.expiresAt) > now);
-}
-
 function normalizePreflightEvaluation(evaluation, project) {
-  if (!evaluation || typeof evaluation !== 'object' || Array.isArray(evaluation)) throw new Error('The classroom server returned an invalid suggestion evaluation.');
-  const expectedKeys = ['id', 'redirects', 'configSnapshot', 'runtime', 'createdAt', 'expiresAt'];
+  if (!evaluation || typeof evaluation !== 'object' || Array.isArray(evaluation)) throw new Error('The classroom server returned an invalid memo review.');
+  const expectedKeys = ['id', 'review', 'configSnapshot', 'runtime', 'createdAt', 'expiresAt'];
   if (Object.keys(evaluation).length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(evaluation, key))) {
-    throw new Error('The classroom server returned an invalid suggestion-evaluation shape.');
+    throw new Error('The classroom server returned an invalid memo-review shape.');
   }
   if (typeof evaluation.id !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(evaluation.id)) throw new Error('The classroom server returned an invalid evaluation identifier.');
-  if (!Array.isArray(evaluation.redirects) || !evaluation.configSnapshot || !evaluation.runtime) throw new Error('The classroom server returned an incomplete suggestion evaluation.');
+  if (!evaluation.review || typeof evaluation.review !== 'object' || Array.isArray(evaluation.review) || !evaluation.configSnapshot || !evaluation.runtime) {
+    throw new Error('The classroom server returned an incomplete memo review.');
+  }
   const preflight = {
-    redirects: structuredClone(evaluation.redirects),
+    memoReview: structuredClone(evaluation.review),
     configurationSnapshot: structuredClone(evaluation.configSnapshot),
     evaluation: {
-    evaluationId: evaluation.id,
-    runtime: structuredClone(evaluation.runtime),
-    createdAt: evaluation.createdAt,
-    expiresAt: evaluation.expiresAt,
+      evaluationId: evaluation.id,
+      runtime: structuredClone(evaluation.runtime),
+      createdAt: evaluation.createdAt,
+      expiresAt: evaluation.expiresAt,
     },
-    review: null,
+    sourceFingerprint: memoFingerprint(project.submission),
   };
   const candidate = structuredClone(project);
   candidate.preflight = preflight;
   validateProject(candidate);
   return preflight;
-}
-
-function normalizeReviewSubmission(submission, projectId) {
-  if (!submission || typeof submission !== 'object' || Array.isArray(submission)) throw new Error('The classroom server returned an invalid instructor-review record.');
-  const expectedKeys = ['id', 'projectId', 'status', 'decision', 'revision', 'submittedAt', 'updatedAt', 'reviewedAt', 'instructorAnnotation', 'focusedQuestion'];
-  if (Object.keys(submission).length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(submission, key))) {
-    throw new Error('The classroom server returned an invalid instructor-review shape.');
-  }
-  if (typeof submission.id !== 'string' || !submission.id || submission.id.length > 200) throw new Error('The classroom server returned an invalid review identifier.');
-  if (submission.projectId !== projectId) throw new Error('The instructor-review record does not belong to this project.');
-  if (!REVIEW_STATUSES.includes(submission.status)) throw new Error('The classroom server returned an invalid review status.');
-  if (!Number.isInteger(submission.revision) || submission.revision < 1) throw new Error('The classroom server returned an invalid review revision.');
-  if (typeof submission.submittedAt !== 'string' || !submission.submittedAt) throw new Error('The classroom server returned an invalid review timestamp.');
-  if (typeof submission.updatedAt !== 'string' || Number.isNaN(Date.parse(submission.updatedAt))) throw new Error('The classroom server returned an invalid review-update timestamp.');
-  if (submission.reviewedAt !== null && (typeof submission.reviewedAt !== 'string' || Number.isNaN(Date.parse(submission.reviewedAt)))) throw new Error('The classroom server returned an invalid reviewed timestamp.');
-  const decision = submission.decision ?? undefined;
-  const instructorAnnotation = submission.instructorAnnotation ?? undefined;
-  const focusedQuestion = submission.focusedQuestion ?? undefined;
-  if (decision !== undefined && !REVIEW_DECISIONS.includes(decision)) throw new Error('The classroom server returned an invalid instructor decision.');
-  if (instructorAnnotation !== undefined && (typeof instructorAnnotation !== 'string' || !instructorAnnotation.trim() || instructorAnnotation.length > PROJECT_LIMITS.reviewText)) throw new Error('The classroom server returned an invalid instructor annotation.');
-  if (focusedQuestion !== undefined && (typeof focusedQuestion !== 'string' || !focusedQuestion.trim() || focusedQuestion.length > PROJECT_LIMITS.focusedQuestion)) throw new Error('The classroom server returned an invalid focused question.');
-  if (submission.status === 'pending' && (decision !== undefined || instructorAnnotation !== undefined || focusedQuestion !== undefined)) throw new Error('The classroom server returned an inconsistent pending review.');
-  if (submission.status === 'approved' && !['approve', 'revise_and_approve'].includes(decision)) throw new Error('The classroom server returned an inconsistent approval.');
-  if (submission.status === 'rejected' && decision !== 'reject') throw new Error('The classroom server returned an inconsistent rejection.');
-  if (submission.status !== 'pending' && instructorAnnotation === undefined) throw new Error('The classroom server returned a decision without instructor guidance.');
-  if (decision === 'revise_and_approve' && focusedQuestion === undefined) throw new Error('The classroom server returned a revision decision without a focused question.');
-  if (decision !== 'revise_and_approve' && focusedQuestion !== undefined) throw new Error('The classroom server returned a focused question for an incompatible decision.');
-  return {
-    submissionId: submission.id,
-    status: submission.status,
-    revision: submission.revision,
-    submittedAt: submission.submittedAt,
-    ...(decision !== undefined ? { decision } : {}),
-    ...(instructorAnnotation !== undefined ? { instructorAnnotation } : {}),
-    ...(focusedQuestion !== undefined ? { focusedQuestion } : {}),
-  };
 }
 
 function createBlankProject() {
@@ -652,7 +600,6 @@ function IntakeStage({ project, update, toast }) {
       <h1>Add your memo</h1>
       <p className="lede lede--compact">Choose a scale, then upload your memo or paste it below.</p>
       <ScaleChooser project={project} update={update} />
-      {project.preflight?.review?.decision === 'reject' && <section className="teacher-message" aria-label="What your instructor wrote"><strong>Your instructor asked for changes.</strong><p>{project.preflight.review.instructorAnnotation}</p>{project.preflight.review.focusedQuestion && <><h2>Question from your instructor</h2><p>{project.preflight.review.focusedQuestion}</p></>}<small>Revise only what you choose. Your instructor did not change the memo or map.</small></section>}
       <div className="project-context-fields">
         <Field label="Map title (optional)"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
       </div>
@@ -683,17 +630,17 @@ function IntakeStage({ project, update, toast }) {
   );
 }
 
-function SuggestionGuidance({ redirects }) {
-  const headingId = stableId('suggestion-region', 'return-to-memo');
-  return <div className="criteria-list"><section aria-labelledby={headingId}>
-    <h2 id={headingId}>Return to your memo</h2>
-    {redirects.length ? redirects.map((redirect, index) => {
-      const promptId = stableId('redirective-prompt', `${index}:${redirect.action}`);
-      return <article className="criterion-row" key={promptId} aria-labelledby={promptId}>
-        <div><div className="criterion-row__title"><h3 id={promptId}>{redirect.action}</h3></div>{redirect.evidenceExcerpt && <blockquote><span className="sr-only">Passage from your memo. </span>{redirect.evidenceExcerpt}</blockquote>}</div>
-      </article>;
-    }) : <p className="empty-message">Use your note to tell the instructor where you want feedback.</p>}
-  </section></div>;
+function MemoDrawer({ project, update, hint }) {
+  const words = project.submission.text.trim().split(/\s+/).filter(Boolean).length;
+  return <details className="memo-drawer">
+    <summary>
+      <span className="memo-drawer__title"><strong>Your memo</strong><small>{words.toLocaleString()} {words === 1 ? 'word' : 'words'} · open to read or edit</small></span>
+      <span className="memo-drawer__mark" aria-hidden="true" />
+    </summary>
+    <Field label="Memo text" hint={hint || 'Edits stay in your project and never remove existing work. Refresh the guidance whenever you want the model to reread the memo.'}>
+      <textarea className="memo-text" maxLength="500000" rows="12" value={project.submission.text} onChange={(event) => update((draft) => { invalidateSubmissionDerived(draft, 'text', event.target.value); })} />
+    </Field>
+  </details>;
 }
 
 function suggestionRuntimeDescription(runtime, persistence) {
@@ -829,45 +776,62 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
   </div>;
 }
 
-function ReviewMemoStage({ project, studentAnnotation, setStudentAnnotation, reviewBusy, onGenerate, onSubmit, onRefresh, onRevise }) {
-  const review = project.preflight?.review;
-  const hasSuggestions = Boolean(project.preflight?.redirects);
-  const evaluationReady = hasUsableEvaluation(project.preflight);
+function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }) {
+  const review = project.preflight?.memoReview;
+  const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
   const coursePart = coursePartForScale(project);
+  const busy = reviewBusy === 'evaluating';
+  const hasMemo = Boolean(project.submission.text.trim());
   return <div className="wide stage-enter">
     <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
     <h1>Review your memo</h1>
     <p className="lede">Check what your memo supports, note what is uncertain, and decide what to ask your instructor.</p>
-    <p className="teacher-message" role="status">Your instructor can review this draft while you keep working.</p>
-    <div className="preflight-grid">
-      <section>{hasSuggestions ? <SuggestionGuidance redirects={project.preflight.redirects} /> : <p className="empty-message">Generate guidance tied to specific passages in your memo.</p>}</section>
-      <aside className="dry-run-panel">
-        <p className="eyebrow">Instructor guidance</p>
-        {review?.status === 'pending' ? <>
-          <h2>Waiting for your instructor</h2>
-          <p>You can continue and check for a response later.</p>
-          <button type="button" className="button button--secondary" disabled={Boolean(reviewBusy)} onClick={onRefresh}>{reviewBusy === 'refreshing' ? 'Checking response…' : 'Check response'}</button>
-        </> : review?.instructorAnnotation ? <>
-          <h2>Read your instructor's response</h2>
-          <p>{review.instructorAnnotation}</p>
-          {review.focusedQuestion && <><h3>Question from your instructor</h3><p>{review.focusedQuestion}</p></>}
-          <small>Your memo and map have not been changed.</small>
-          <div className="button-row">
-            <button type="button" className="button button--secondary" disabled={Boolean(reviewBusy)} onClick={onRefresh}>{reviewBusy === 'refreshing' ? 'Checking response…' : 'Check for updates'}</button>
-            {review.status === 'rejected' && <button type="button" className="button" disabled={Boolean(reviewBusy)} onClick={onRevise}>Prepare another review</button>}
-          </div>
-        </> : <>
-          <h2>Add a note</h2>
-          {hasSuggestions && <Field label="Note for instructor" hint={`${studentAnnotation.length.toLocaleString()} of ${PROJECT_LIMITS.annotationText.toLocaleString()} characters`}><textarea rows="8" maxLength={PROJECT_LIMITS.annotationText} value={studentAnnotation} onChange={(event) => setStudentAnnotation(event.target.value)} /></Field>}
-          {hasSuggestions && !evaluationReady && <p className="teacher-message teacher-message--error" role="alert">Generate current guidance before sending your memo to your instructor.</p>}
-          <button type="button" className="button" disabled={Boolean(reviewBusy)} onClick={!hasSuggestions || !evaluationReady ? onGenerate : onSubmit}>{reviewBusy === 'evaluating' ? 'Generating guidance…' : reviewBusy === 'submitting' ? 'Sending…' : !hasSuggestions ? 'Generate guidance' : !evaluationReady ? 'Generate current guidance' : 'Send to instructor'}</button>
-        </>}
-      </aside>
-    </div>
+    <MemoDrawer project={project} update={update} />
+    {!hasMemo && <p className="empty-message">Add memo text above to begin. The model reads the memo and surfaces the nodes and connections already evident in it.</p>}
+    {busy && !review && <p className="review-progress" role="status">The model is reading your memo…</p>}
+    {review && <>
+      <section className={`readiness-banner ${review.readiness.ready && !stale ? 'is-ready' : ''}`} aria-label="Where your memo stands">
+        <div className="readiness-banner__text">
+          {review.readiness.note && <p>{review.readiness.note}</p>}
+          {stale && <p className="readiness-banner__stale" role="status">Your memo has changed since this guidance was generated. Refresh to have the model reread it — your edits are never lost.</p>}
+        </div>
+        <div className="button-row">
+          <button type="button" className="button button--secondary" disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Rereading your memo…' : 'Refresh guidance'}</button>
+          <button type="button" className="button" onClick={onContinue}>Choose nodes and connections<Icon name="arrow" /></button>
+        </div>
+      </section>
+      <div className="preflight-grid">
+        <section className="memo-guidance" aria-labelledby="memo-guidance-title">
+          <h2 id="memo-guidance-title">What the model noticed</h2>
+          {review.guidance.length ? review.guidance.map((item, index) => (
+            <article className="criterion-row" key={stableId('guidance', `${index}:${item.point}`)}>
+              <div>
+                <p>{item.point}</p>
+                {item.evidenceExcerpt && <blockquote><span className="sr-only">Passage from your memo. </span>{item.evidenceExcerpt}</blockquote>}
+              </div>
+            </article>
+          )) : <p className="empty-message">The model returned no guidance this time. Refresh to try again.</p>}
+        </section>
+        <aside className="memo-scaffold" aria-labelledby="memo-scaffold-title">
+          <p className="eyebrow">Taking shape</p>
+          <h2 id="memo-scaffold-title">Nodes and connections evident in your memo</h2>
+          {review.nodes.length ? <div className="connection-node-list" aria-label="Nodes evident in the memo">{review.nodes.map((node) => <span key={node.label}>{node.label}</span>)}</div> : <p className="empty-message">No elements surfaced yet. Expand the memo above and refresh, or add elements yourself at the next stage.</p>}
+          {review.connections.length > 0 && <ul className="memo-scaffold__connections">{review.connections.map((connection, index) => (
+            <li key={stableId('scaffold-edge', `${index}:${connection.source}:${connection.verb}:${connection.target}`)}>
+              <span className="memo-scaffold__claim"><strong>{connection.source}</strong> <em>{connection.verb}</em> <strong>{connection.target}</strong></span>
+              {connection.rationale && <small>{connection.rationale}</small>}
+            </li>
+          ))}</ul>}
+          {review.example && <div className="memo-scaffold__example"><p className="eyebrow">Worked example</p><p>{review.example}</p></div>}
+          <p className="privacy-note">These are suggestions grounded in your memo. At the next stage you decide what to keep, edit, or remove — nothing is added for you.</p>
+        </aside>
+      </div>
+    </>}
+    {!review && !busy && hasMemo && <div className="button-row"><button className="button" type="button" onClick={onGenerate}>Generate guidance</button></div>}
   </div>;
 }
 
-function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
+function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy }) {
   const [kind, setKind] = useState('edges');
   const candidates = project.candidates[kind];
   const setStatus = (id, status) => {
@@ -910,7 +874,11 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const total = project.candidates.nodes.length + project.candidates.edges.length;
   return <div className="wide stage-enter">
     <p className="eyebrow">Choose nodes and describe connections · {decided} of {total} decided</p>
-    <div className="stage-title-row"><div><h1>Choose nodes and describe connections</h1><p className="lede">Review proposed nodes and relationships, then describe connections for the custom AI model to suggest.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Keep all supported items</button></div>
+    <div className="stage-title-row"><div><h1>Choose nodes and describe connections</h1><p className="lede">These nodes and relationships come from your memo. Keep, edit, or remove each one — then ask the model for more connections below. Everything here is a suggestion until you decide.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Keep all supported items</button></div>
+    <MemoDrawer project={project} update={update} hint="Edit the memo here whenever you want, then use “Reread memo” to refresh these suggestions. Your decisions on kept items are preserved." />
+    <div className="button-row candidate-refresh-row">
+      <button className="button button--secondary" type="button" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Rereading memo…' : 'Reread memo for new suggestions'}</button>
+    </div>
     <div className="subnav" role="tablist" aria-label="Candidate types"><button id="candidate-tab-nodes" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'nodes'} tabIndex={kind === 'nodes' ? 0 : -1} data-composite-value="nodes" className={kind === 'nodes' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('nodes')}>Nodes · {project.candidates.nodes.length}</button><button id="candidate-tab-edges" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'edges'} tabIndex={kind === 'edges' ? 0 : -1} data-composite-value="edges" className={kind === 'edges' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('edges')}>Relationships · {project.candidates.edges.length}</button></div>
     <div id="candidate-panel" className="candidate-list" role="tabpanel" aria-labelledby={`candidate-tab-${kind}`}>
       {candidates.map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
@@ -926,7 +894,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
           <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'rejected')}>Remove</button>
         </div>
       </article>)}
-      {!candidates.length && <p className="empty-message">No {kind} were proposed. Return to your memo or open the map and add supported elements yourself.</p>}
+      {!candidates.length && <p className="empty-message">No {kind === 'nodes' ? 'nodes' : 'relationships'} yet. Open your memo above to add detail and choose “Reread memo,” or add elements yourself on the map — nothing blocks you from continuing.</p>}
     </div>
     <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} />
   </div>;
@@ -1134,14 +1102,14 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
   return <section className="connection-stage" aria-labelledby="connection-stage-title">
     <p className="eyebrow">Connect the map · {nodes.length} nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
     <h2 id="connection-stage-title">Describe connections between nodes</h2>
-    <p className="lede">In your own words, prompt the custom AI model to formulate new connections for you to review, edit, accept, or reject.</p>
+    <p className="lede">Describe how the nodes connect in your own words, or just ask for suggestions — with nothing written, the model reads your memo directly. Every suggestion stays editable, and nothing joins the map until you accept it.</p>
     <div className="connection-stage__layout">
       <section className="connection-prompt-panel">
-        <Field label="How do these nodes connect?">
+        <Field label="How do these nodes connect?" hint="Optional. Leave this empty and the model will draw connections straight from your memo.">
           <textarea rows="8" maxLength="4000" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="For example: Families ask schools for evaluations, while delays make it harder to reach services." />
         </Field>
-        {nodes.length < 2 && <p className="teacher-message teacher-message--error" role="alert">Add at least two nodes before requesting connections.</p>}
-        <button type="button" className="button" disabled={busy || nodes.length < 2 || !prompt.trim()} onClick={onSuggest}>{busy ? 'Suggesting connections…' : suggestions.length ? 'Refine map' : 'Suggest connections'}</button>
+        {nodes.length < 2 && <p className="teacher-message" role="status">Keep at least two nodes above and the model can suggest connections between them.</p>}
+        <button type="button" className="button" disabled={busy || nodes.length < 2} onClick={onSuggest}>{busy ? 'Suggesting connections…' : suggestions.length ? 'Suggest more connections' : 'Suggest connections'}</button>
         <div className="connection-node-list" aria-label="Nodes included in this request">{nodes.map((node) => <span key={node.id}>{node.label}</span>)}</div>
       </section>
       <section className="connection-preview-panel" aria-labelledby="connection-preview-title">
@@ -1166,7 +1134,7 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
           <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => onDecision(item.id, 'rejected')}>Reject</button>
         </div>
       </article>)}
-      {!suggestions.length && <p className="empty-message">Describe the connections you see, then request suggestions.</p>}
+      {!suggestions.length && <p className="empty-message">Choose “Suggest connections” to see proposals here. Accepted connections appear in the preview and join the map when you continue.</p>}
     </section>
   </section>;
 }
@@ -1778,6 +1746,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const mapLabel = visibleScale === 'all' ? 'All-scales map' : `${SCALES[visibleScale]?.label || visibleScale} map`;
   const focusLabel = focusedNode?.label || (focusedEdge ? `${focusedEdge.sourceLabel} to ${focusedEdge.targetLabel}` : '');
   return <div className={`map-stage stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''}`}>
+    <MemoDrawer project={project} update={update} hint="The memo travels with the map. Edit it here whenever the map surfaces something new." />
     <div className="map-toolbar"><h1>Build the map</h1><div className="map-toolbar__controls"><label><span>Show</span><select aria-label="Show map scale" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All scales</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
     {focusActive ? <div className="map-focus-bar" role="status"><span>Showing connections for <strong>{focusLabel}</strong>.</span><button type="button" onClick={showFullMap}>Show full map</button></div> : visibleScale === 'all' ? <p className="map-overview-hint">Choose a node to see its connections.</p> : null}
     <div className={`map-layout ${drawerOpen ? 'has-inspector' : ''}`}>
@@ -1788,7 +1757,13 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         <div className="sr-only" aria-live="polite">{announcement}</div>
       </section>
       <aside ref={inspectorRef} className={`inspector ${drawerOpen ? 'is-open' : ''}`} aria-label="Map inspector" aria-hidden={!drawerOpen ? 'true' : undefined} inert={!drawerOpen} onKeyDown={(event) => { if (event.key === 'Escape' && drawerOpen) { event.preventDefault(); closeInspector(); } }}>
-        <div className="inspector__head"><h2>{selectedNode?.label || (selectedEdge ? `${selectedEdge.sourceLabel} → ${selectedEdge.targetLabel}` : 'Evolving map')}</h2>{project.instructor.allowResearchLeads && <><div className="inline-actions inspector-create-actions"><button className="icon-button" type="button" title="Add node" aria-label="Add node" onClick={() => { setAddMode(addMode === 'node' ? null : 'node'); setDrawerOpen(true); }}><Icon name="plus" /></button><button className="edge-add" type="button" title="Add relationship" aria-label="Add relationship" onClick={() => { setAddMode(addMode === 'edge' ? null : 'edge'); setDrawerOpen(true); }}>↗</button></div><div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions"><button type="button" onClick={() => { setAddMode('node'); setCreateMenuOpen(false); }}>Node</button><button type="button" onClick={() => { setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button></div>}</div></>}<button className="inspector-done" type="button" onClick={closeInspector}>Done</button></div>
+        <div className="inspector__head">
+          <h2>{selectedNode?.label || (selectedEdge ? `${selectedEdge.sourceLabel} → ${selectedEdge.targetLabel}` : 'Evolving map')}</h2>
+          <div className="inspector__actions">
+            {project.instructor.allowResearchLeads && <div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions"><button type="button" onClick={() => { setAddMode('node'); setCreateMenuOpen(false); }}>Node</button><button type="button" onClick={() => { setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button></div>}</div>}
+            <button className="inspector-done" type="button" onClick={closeInspector}>Done</button>
+          </div>
+        </div>
         <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{INSPECTOR_TABS.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, INSPECTOR_TABS, inspectorTab, setTab)}>{tab === 'relationships' ? 'Relationships' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
         {addMode === 'node' && <div className="add-form"><h3>Add a node</h3><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field><div className="field-pair"><Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value }))}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Scale"><select value={newNode.scale} onChange={(event) => setNewNode((current) => ({ ...current, scale: event.target.value }))}>{project.releasedScales.map((scale) => <option key={scale}>{scale}</option>)}</select></Field></div><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newNode.evidence} onChange={(event) => setNewNode((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addNode}>Add node</button></div>}
         {addMode === 'edge' && <div className="add-form"><h3>Add a relationship</h3><Field label="From"><select value={newEdge.source} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{project.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Connection"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} /></Field><Field label="To"><select value={newEdge.target} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{project.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
@@ -1840,6 +1815,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
     <p className="eyebrow">Revise and export</p>
     <h1>Describe your revision. Export a copy.</h1>
     <p className="lede">Describe what changed, then export a copy.</p>
+    <MemoDrawer project={project} update={update} />
     <div className="revision-grid">
       <section>
         <div className="before-after"><div><span>Memo</span><p>{project.submission.text.split(/[.!?]/).filter((sentence) => sentence.trim()).length} memo statements were available for review.</p></div><Icon name="arrow" size={24} /><div><span>Current map</span><p>{project.graph.nodes.length} nodes and {project.graph.edges.length} relationships are recorded.</p></div></div>
@@ -1905,7 +1881,6 @@ function App() {
   const [hasSavedProject, setHasSavedProject] = useState(initialLoad.hasSavedProject);
   const [persistenceBlocked, setPersistenceBlocked] = useState(initialLoad.persistenceBlocked);
   const [pendingNewProject, setPendingNewProject] = useState(false);
-  const [studentAnnotation, setStudentAnnotation] = useState('');
   const [reviewBusy, setReviewBusy] = useState(null);
   const [connectionPrompt, setConnectionPrompt] = useState('');
   const [connectionSuggestions, setConnectionSuggestions] = useState([]);
@@ -1921,6 +1896,7 @@ function App() {
   const pendingAnnotationsRef = useRef(new Map());
   const prototypeLogNoticeRef = useRef({ sequence: 0, lastFailure: 0 });
   const accessGenerationRef = useRef(0);
+  const autoReviewKeyRef = useRef('');
   const projectRef = useRef(project);
   const connectionPromptRef = useRef(connectionPrompt);
   const workspaceRef = useRef(null);
@@ -2219,100 +2195,27 @@ function App() {
         return;
       }
       const result = normalizePreflightEvaluation(response.evaluation, projectRef.current);
-      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Questions about the memo generated', 'student', {
+      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Memo guidance generated', 'student', {
         configurationSnapshot: result.configurationSnapshot,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
       });
-      setStudentAnnotation('');
-      toast('Prompts are ready for your review.');
+      toast('Guidance is ready.');
+      return true;
     } catch (error) {
-      await handleReviewApiError(error, accessGeneration, 'suggestion request');
+      await handleReviewApiError(error, accessGeneration, 'guidance request');
+      return false;
     } finally {
       if (accessGeneration === accessGenerationRef.current) setReviewBusy(null);
     }
-  };
-
-  const sendForInstructorReview = async () => {
-    if (!project.preflight || project.preflight.review) return;
-    if (!hasUsableEvaluation(project.preflight)) {
-      if (project.preflight.evaluation && project.preflight.evaluation.evaluationId !== '[unavailable]') {
-        update((draft) => {
-          if (draft.preflight?.evaluation) draft.preflight.evaluation.evaluationId = '[unavailable]';
-        }, 'preflight.evaluation-unavailable', 'Evaluation is not current');
-      }
-      toast('This guidance is no longer available. Generate it again before sending your note to the instructor.', 'error');
-      return;
-    }
-    const accessGeneration = accessGenerationRef.current;
-    const payload = {
-      evaluationId: project.preflight.evaluation.evaluationId,
-      studentAnnotation,
-    };
-    setReviewBusy('submitting');
-    try {
-      const response = await submitPreflightSubmission(payload);
-      if (!response || !Object.hasOwn(response, 'submission')) throw new Error('The classroom server returned an invalid instructor-review response.');
-      if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
-      const review = normalizeReviewSubmission(response.submission, project.id);
-      update((draft) => {
-        if (!draft.preflight) return;
-        draft.preflight.review = review;
-      }, 'preflight.review-submitted', 'Sent suggestion snapshot for instructor review', 'student', { status: review.status, revision: review.revision });
-      toast('Memo and note sent for instructor review. You can continue.');
-    } catch (error) {
-      if (error instanceof ApiError && [409, 410].includes(error.status)) {
-        update((draft) => {
-          if (draft.preflight?.evaluation) draft.preflight.evaluation.evaluationId = '[unavailable]';
-        }, 'preflight.evaluation-unavailable', 'Evaluation expired or was already used');
-        toast('This evaluation expired or was already used. Generate fresh suggestions before sending for instructor review.', 'error');
-      } else {
-        await handleReviewApiError(error, accessGeneration);
-      }
-    } finally {
-      if (accessGeneration === accessGenerationRef.current) setReviewBusy(null);
-    }
-  };
-
-  const checkInstructorResponse = async () => {
-    const submissionId = project.preflight?.review?.submissionId;
-    if (!submissionId || submissionId === '[redacted]') return toast('This portable copy does not contain the private review capability. Return to the original browser workspace to check the response.', 'error');
-    const accessGeneration = accessGenerationRef.current;
-    setReviewBusy('refreshing');
-    try {
-      const response = await getPreflightSubmission(submissionId);
-      if (!response || !Object.hasOwn(response, 'submission')) throw new Error('The classroom server returned an invalid instructor-review response.');
-      if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
-      const review = normalizeReviewSubmission(response.submission, project.id);
-      update((draft) => {
-        if (!draft.preflight) return;
-        draft.preflight.review = review;
-      }, 'preflight.review-refreshed', `Instructor review ${review.status}`, 'student', { status: review.status, revision: review.revision, ...(review.decision ? { decision: review.decision } : {}) });
-      if (review.status === 'rejected') {
-        toast('Your instructor returned guidance. Your memo and map were not changed.', 'error');
-      } else if (review.status === 'approved') {
-        toast('Instructor guidance is ready.');
-      } else {
-        toast('Instructor review is still pending.');
-      }
-    } catch (error) {
-      await handleReviewApiError(error, accessGeneration);
-    } finally {
-      if (accessGeneration === accessGenerationRef.current) setReviewBusy(null);
-    }
-  };
-
-  const prepareAnotherReview = () => {
-    update((draft) => { draft.preflight = null; }, 'preflight.review-restarted', 'Prepared another instructor review');
-    setStudentAnnotation('');
-    toast('Revise your memo if needed, then generate guidance for another review.');
   };
 
   const generateConnectionSuggestions = async () => {
-    const payload = connectionSuggestionPayload(project, connectionPrompt.trim());
-    if (payload.nodes.length < 2) return toast('Add at least two nodes before requesting connections.', 'error');
+    const effectivePrompt = connectionPrompt.trim() || memoPromptExcerpt(project.submission.text);
+    if (!effectivePrompt) return toast('Write a sentence about how the nodes connect, or add memo text first.', 'error');
+    const payload = connectionSuggestionPayload(project, effectivePrompt);
+    if (payload.nodes.length < 2) return toast('Keep at least two nodes before requesting connections.', 'error');
     if (payload.nodes.length > 50) return toast('Choose 50 or fewer nodes for one connection request.', 'error');
-    if (!payload.prompt) return;
     if (payload.projectOverlay.customInstructions.length > MAX_EVALUATION_CUSTOM_INSTRUCTIONS) {
       return toast('Project instructions are too long for connection suggestions. Ask your instructor to shorten them.', 'error');
     }
@@ -2322,7 +2225,7 @@ function App() {
     try {
       const response = await suggestMapConnections(payload);
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
-      if (stableId('connection-request', JSON.stringify(connectionSuggestionPayload(projectRef.current, connectionPromptRef.current.trim()))) !== requestKey) {
+      if (stableId('connection-request', JSON.stringify(connectionSuggestionPayload(projectRef.current, connectionPromptRef.current.trim() || memoPromptExcerpt(projectRef.current.submission.text)))) !== requestKey) {
         toast('The nodes or description changed while suggestions were being prepared. Request them again.', 'error');
         return;
       }
@@ -2354,26 +2257,119 @@ function App() {
       : suggestion));
   };
 
-  const prepareCandidates = () => {
-    const extracted = extractCandidates(project.submission);
-    const edges = extracted.edges.filter((edge) => edge.scale === project.activeScale);
-    const requiredNodeIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
-    const candidates = {
-      nodes: extracted.nodes.filter((node) => node.scale === project.activeScale || requiredNodeIds.has(node.id)),
-      edges,
-    };
-    const snapshot = configurationSnapshot(project, 'builder');
-    if (!project.instructor.requireStudentConfirmation) {
-      candidates.nodes.forEach((node) => { node.status = 'confirmed'; node.claimState = 'student interpretation'; });
-      candidates.edges.forEach((edge) => {
-        const allowed = project.configs.builder.relationVocabulary.includes(edge.verb.trim().toLowerCase());
-        edge.status = allowed ? 'confirmed' : project.instructor.allowResearchLeads ? 'research lead' : 'pending';
-        edge.claimState = edge.status === 'confirmed' ? 'student interpretation' : edge.status === 'research lead' ? 'research lead' : edge.claimState;
+  // Scaffolding begins as soon as the student reaches the review stage: the
+  // model reads the memo once per fingerprint without waiting for a click.
+  useEffect(() => {
+    if (project.stage !== 1 || accessState.status !== 'granted' || !workspaceStarted || reviewBusy) return undefined;
+    if (project.submission.text.trim().length < 40) return undefined;
+    if (project.preflight?.memoReview) return undefined;
+    const key = `${project.id}:${memoFingerprint(project.submission)}:${project.activeScale}`;
+    if (autoReviewKeyRef.current === key) return undefined;
+    const timer = window.setTimeout(() => {
+      autoReviewKeyRef.current = key;
+      generateSuggestions();
+    }, 700);
+    return () => window.clearTimeout(timer);
+    // The fingerprint key guards against repeats; generateSuggestions is recreated per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.stage, project.id, project.submission.fingerprint, project.activeScale, project.preflight, accessState.status, workspaceStarted, reviewBusy]);
+
+  const buildCandidatesFromProject = (currentProject) => {
+    const extracted = extractCandidates(currentProject.submission);
+    const review = currentProject.preflight?.memoReview;
+    const fingerprint = memoFingerprint(currentProject.submission);
+    const nodeById = new Map();
+    (review?.nodes || []).forEach((node) => {
+      const id = stableId('node', node.label);
+      if (nodeById.has(id)) return;
+      nodeById.set(id, {
+        id,
+        label: node.label,
+        type: node.type,
+        scale: node.scale,
+        status: 'pending',
+        claimState: 'inference',
+        evidence: node.evidence || '',
+        sourceFingerprint: fingerprint,
+        notes: '',
       });
-    }
-    update((draft) => { draft.candidates = candidates; draft.stage = 2; draft.furthestStage = Math.max(draft.furthestStage || 0, 2); }, 'candidates.generated', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { configurationSnapshot: snapshot, sourceFingerprint: project.submission.fingerprint || stableId('src', project.submission.text) });
+    });
+    extracted.nodes.forEach((node) => {
+      if (!nodeById.has(node.id)) nodeById.set(node.id, { ...node, sourceFingerprint: node.sourceFingerprint || fingerprint });
+    });
+    const edgeKeyOf = (edge) => `${edge.source}::${edge.verb.trim().toLocaleLowerCase()}::${edge.target}`;
+    const edgeByKey = new Map();
+    (review?.connections || []).forEach((connection) => {
+      const source = stableId('node', connection.source);
+      const target = stableId('node', connection.target);
+      if (!nodeById.has(source) || !nodeById.has(target) || source === target) return;
+      const id = stableId('edge', `${connection.source}:${connection.verb}:${connection.target}`);
+      const edge = {
+        id,
+        source,
+        target,
+        sourceLabel: nodeById.get(source).label,
+        targetLabel: nodeById.get(target).label,
+        verb: connection.verb,
+        scale: nodeById.get(source).scale,
+        status: 'pending',
+        claimState: 'inference',
+        directed: true,
+        rationale: connection.rationale || '',
+        evidence: connection.rationale || '',
+        sourceFingerprint: fingerprint,
+        notes: '',
+        annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' },
+      };
+      if (!edgeByKey.has(edgeKeyOf(edge))) edgeByKey.set(edgeKeyOf(edge), edge);
+    });
+    extracted.edges.forEach((edge) => {
+      if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
+      const key = edgeKeyOf(edge);
+      if (!edgeByKey.has(key)) edgeByKey.set(key, { ...edge, sourceFingerprint: edge.sourceFingerprint || fingerprint });
+    });
+    // Decisions already made on matching items survive a reread.
+    const priorNodes = new Map(currentProject.candidates.nodes.map((node) => [node.id, node]));
+    const priorEdges = new Map(currentProject.candidates.edges.map((edge) => [edge.id, edge]));
+    const nodes = withDefaultNodeLayout([...nodeById.values()].map((node) => {
+      const prior = priorNodes.get(node.id);
+      return prior ? { ...node, status: prior.status, claimState: prior.claimState, notes: prior.notes || node.notes } : node;
+    }));
+    const edges = [...edgeByKey.values()].map((edge) => {
+      const prior = priorEdges.get(edge.id);
+      return prior ? { ...edge, status: prior.status, claimState: prior.claimState, notes: prior.notes || edge.notes } : edge;
+    });
+    return { nodes, edges };
+  };
+
+  const applyConfirmationDefaults = (candidates, currentProject) => {
+    if (currentProject.instructor.requireStudentConfirmation) return candidates;
+    candidates.nodes.forEach((node) => {
+      if (node.status === 'pending') { node.status = 'confirmed'; node.claimState = 'student interpretation'; }
+    });
+    candidates.edges.forEach((edge) => {
+      if (edge.status !== 'pending') return;
+      const allowed = currentProject.configs.builder.relationVocabulary.includes(edge.verb.trim().toLowerCase());
+      edge.status = allowed ? 'confirmed' : currentProject.instructor.allowResearchLeads ? 'research lead' : 'pending';
+      edge.claimState = edge.status === 'confirmed' ? 'student interpretation' : edge.status === 'research lead' ? 'research lead' : edge.claimState;
+    });
+    return candidates;
+  };
+
+  const prepareCandidates = () => {
+    const candidates = applyConfirmationDefaults(buildCandidatesFromProject(project), project);
+    const snapshot = configurationSnapshot(project, 'builder');
+    update((draft) => { draft.candidates = candidates; draft.stage = 2; draft.furthestStage = Math.max(draft.furthestStage || 0, 2); }, 'candidates.generated', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { configurationSnapshot: snapshot, sourceFingerprint: memoFingerprint(project.submission) });
     recordStageTransition(project.stage, 2, { completed: true });
-    toast(candidates.nodes.length ? 'Items based on your memo are ready for review.' : 'No items were generated. You can open the map and add what the memo supports.');
+    toast(candidates.nodes.length ? 'Nodes and connections from your memo are ready for review.' : 'No items surfaced yet. Add elements yourself, or edit the memo and reread it.');
+  };
+
+  const refreshCandidatesFromMemo = async () => {
+    await generateSuggestions();
+    const current = projectRef.current;
+    const candidates = applyConfirmationDefaults(buildCandidatesFromProject(current), current);
+    update((draft) => { draft.candidates = candidates; }, 'candidates.refreshed', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { sourceFingerprint: memoFingerprint(current.submission) });
+    toast(candidates.nodes.length ? 'Suggestions refreshed from your memo.' : 'The reread surfaced no items yet. You can still add elements yourself.');
   };
 
   const commitMapSelections = () => {
@@ -2481,7 +2477,6 @@ function App() {
     next.updatedAt = new Date().toISOString();
     next.events = [...(next.events || []), createEvent('project.imported', fileName)].slice(-500);
     setProject(next);
-    setStudentAnnotation('');
     setReviewBusy(null);
     setConnectionBusy(false);
     setConnectionPrompt('');
@@ -2492,8 +2487,8 @@ function App() {
   }, [logPrototype]);
   const stageScreens = [
     <IntakeStage project={project} update={update} toast={toast} />,
-    <ReviewMemoStage project={project} studentAnnotation={studentAnnotation} setStudentAnnotation={setStudentAnnotation} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onSubmit={sendForInstructorReview} onRefresh={checkInstructorResponse} onRevise={prepareAnotherReview} />,
-    <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} />,
+    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onContinue={primary} />,
+    <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} />,
     <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} />,
   ];
@@ -2567,7 +2562,6 @@ function App() {
     const fromStage = projectRef.current.stage;
     const blank = createBlankProject();
     setProject(blank);
-    setStudentAnnotation('');
     setReviewBusy(null);
     setConnectionPrompt('');
     setConnectionSuggestions([]);

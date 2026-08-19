@@ -93,6 +93,12 @@ export const PROJECT_LIMITS = Object.freeze({
   focusedQuestion: 1_000,
   redirectAction: 500,
   redirectEvidence: 280,
+  memoGuidanceItems: 8,
+  memoGuidanceText: 500,
+  memoGuidanceEvidence: 500,
+  memoReviewNodes: 20,
+  memoReviewConnections: 12,
+  memoReviewExample: 1000,
   noteText: 4_000,
   rationaleText: 8_000,
   eventText: 8_000,
@@ -537,6 +543,46 @@ export function extractCandidates(submission) {
   return { nodes, edges };
 }
 
+export function deterministicMemoReview(submission, activeScale = 'micro') {
+  const { nodes, edges } = extractCandidates(submission);
+  const orderedNodes = [...nodes].sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
+  const reviewNodes = orderedNodes.slice(0, PROJECT_LIMITS.memoReviewNodes).map((node) => ({
+    label: node.label,
+    type: node.type,
+    scale: node.scale,
+    evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
+  }));
+  const nodeLabels = new Set(reviewNodes.map((node) => node.label));
+  const connections = edges
+    .filter((edge) => nodeLabels.has(edge.sourceLabel) && nodeLabels.has(edge.targetLabel))
+    .slice(0, PROJECT_LIMITS.memoReviewConnections)
+    .map((edge) => ({
+      source: edge.sourceLabel,
+      target: edge.targetLabel,
+      verb: edge.verb,
+      rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
+    }));
+  const guidance = connections.slice(0, PROJECT_LIMITS.memoGuidanceItems).map((connection) => ({
+    point: truncateCollapsedText(`The memo connects ${connection.source} and ${connection.target} through "${connection.verb}."`, PROJECT_LIMITS.memoGuidanceText),
+    ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
+  }));
+  if (!guidance.length) {
+    guidance.push({ point: 'The offline reader could not find connection phrases in this memo. A language model is not configured for this class, so only direct statements such as "X provides Y" are recognized. You can still continue and add elements yourself.' });
+  }
+  const first = connections[0] || null;
+  const example = first
+    ? truncateCollapsedText(`One evident connection: ${first.source} ${first.verb} ${first.target}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
+    : null;
+  const ready = reviewNodes.length >= 2 && connections.length >= 1;
+  const readiness = {
+    ready,
+    note: truncateCollapsedText(ready
+      ? `The memo already names ${reviewNodes.length} elements and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose nodes and describe connections.`
+      : 'The offline reader found fewer than two connected elements, but that is not a judgment of the memo. Continue when you are ready, or expand the memo here first.', PROJECT_LIMITS.memoGuidanceText),
+  };
+  return { guidance, nodes: reviewNodes, connections, example, readiness };
+}
+
 export function createEvent(action, detail, actor = 'student', metadata = {}) {
   return {
     ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
@@ -897,49 +943,6 @@ function validateConfig(config, path) {
   if (configFingerprint(config) !== config.fingerprint) invalidProject(`${path}.fingerprint`, 'does not match the effective configuration');
 }
 
-function validateCriterion(criterion, path) {
-  assertObject(criterion, path);
-  assertKnownKeys(criterion, ['id', 'status', 'rationale', 'missingVariable', 'nextAction', 'confidence', 'hardBlock', 'relationshipCount', 'sourceLabel', 'targetLabel', 'verb', 'scale', ...EVIDENCE_KEYS], path);
-  assertString(criterion.id, `${path}.id`, false, 100);
-  assertEnum(criterion.status, ['met', 'unmet'], `${path}.status`);
-  assertString(criterion.evidence, `${path}.evidence`, false, PROJECT_LIMITS.evidenceExcerpt);
-  assertString(criterion.rationale, `${path}.rationale`, false, PROJECT_LIMITS.rationaleText);
-  if (criterion.missingVariable !== null) assertString(criterion.missingVariable, `${path}.missingVariable`, false, PROJECT_LIMITS.rationaleText);
-  assertString(criterion.nextAction, `${path}.nextAction`, false, PROJECT_LIMITS.rationaleText);
-  assertFiniteNumber(criterion.confidence, `${path}.confidence`, 0, 1);
-  assertBoolean(criterion.hardBlock, `${path}.hardBlock`);
-  if (criterion.relationshipCount !== undefined) assertInteger(criterion.relationshipCount, `${path}.relationshipCount`, 0, PROJECT_LIMITS.edges);
-  if (criterion.sourceLabel !== undefined) assertString(criterion.sourceLabel, `${path}.sourceLabel`, false, 200);
-  if (criterion.targetLabel !== undefined) assertString(criterion.targetLabel, `${path}.targetLabel`, false, 200);
-  if (criterion.verb !== undefined) assertString(criterion.verb, `${path}.verb`, false, 100);
-  if (criterion.scale !== undefined) assertEnum(criterion.scale, SCALE_ORDER, `${path}.scale`);
-  validateEvidence(criterion, path);
-}
-
-function validateSuggestionResult(suggestion, path, { allowWorkflow = false, legacyReview = false } = {}) {
-  assertObject(suggestion, path);
-  assertKnownKeys(suggestion, ['hard', 'scored', 'hardPass', 'score', 'threshold', 'outcome', 'evaluatedAt', 'configurationSnapshot', ...(allowWorkflow ? ['evaluation', 'review'] : [])], path);
-  if (!Array.isArray(suggestion.hard) || suggestion.hard.length !== HARD_CRITERIA.length) invalidProject(`${path}.hard`, `must contain ${HARD_CRITERIA.length} criteria`);
-  if (!Array.isArray(suggestion.scored) || suggestion.scored.length !== SCORED_CRITERIA.length) invalidProject(`${path}.scored`, `must contain ${SCORED_CRITERIA.length} criteria`);
-  suggestion.hard.forEach((criterion, index) => validateCriterion(criterion, `${path}.hard[${index}]`));
-  suggestion.scored.forEach((criterion, index) => validateCriterion(criterion, `${path}.scored[${index}]`));
-  assertBoolean(suggestion.hardPass, `${path}.hardPass`);
-  assertInteger(suggestion.score, `${path}.score`, 0, 8);
-  assertInteger(suggestion.threshold, `${path}.threshold`, 1, 8);
-  assertEnum(suggestion.outcome, ['pass', 'conditional', 'hold'], `${path}.outcome`);
-  const expectedOutcome = !suggestion.hardPass ? 'hold' : suggestion.score >= suggestion.threshold ? 'pass' : 'conditional';
-  if (suggestion.outcome !== expectedOutcome) invalidProject(`${path}.outcome`, `must be ${expectedOutcome} for the stored gate results`);
-  assertTimestamp(suggestion.evaluatedAt, `${path}.evaluatedAt`);
-  if (suggestion.configurationSnapshot !== undefined) validateConfigurationSnapshot(suggestion.configurationSnapshot, `${path}.configurationSnapshot`);
-  if (allowWorkflow && suggestion.evaluation !== undefined && suggestion.evaluation !== null) validatePreflightEvaluation(suggestion.evaluation, `${path}.evaluation`);
-  if (allowWorkflow && suggestion.evaluation) {
-    if (suggestion.configurationSnapshot === undefined) invalidProject(`${path}.configurationSnapshot`, 'is required for an authoritative evaluation');
-    if (suggestion.evaluatedAt !== suggestion.evaluation.createdAt) invalidProject(`${path}.evaluatedAt`, 'must match the authoritative evaluation timestamp');
-    if (suggestion.configurationSnapshot.capturedAt !== suggestion.evaluation.createdAt) invalidProject(`${path}.configurationSnapshot.capturedAt`, 'must match the authoritative evaluation timestamp');
-  }
-  if (allowWorkflow && suggestion.review !== undefined && suggestion.review !== null) validatePreflightReview(suggestion.review, `${path}.review`, { legacy: legacyReview });
-}
-
 function validatePreflightEvaluation(evaluation, path) {
   assertObject(evaluation, path);
   assertKnownKeys(evaluation, ['evaluationId', 'runtime', 'createdAt', 'expiresAt'], path);
@@ -970,52 +973,62 @@ function validatePreflightEvaluation(evaluation, path) {
   });
 }
 
-function validatePreflightReview(review, path, { legacy = false } = {}) {
-  const questionField = legacy ? 'revisedSuggestion' : 'focusedQuestion';
+function validateMemoReview(review, path) {
   assertObject(review, path);
-  assertKnownKeys(review, ['submissionId', 'status', 'revision', 'submittedAt', 'decision', 'instructorAnnotation', questionField], path);
-  assertString(review.submissionId, `${path}.submissionId`, false, 200);
-  assertEnum(review.status, PREFLIGHT_REVIEW_STATUSES, `${path}.status`);
-  assertInteger(review.revision, `${path}.revision`, 1, Number.MAX_SAFE_INTEGER);
-  assertTimestamp(review.submittedAt, `${path}.submittedAt`);
-  if (review.decision !== undefined) assertEnum(review.decision, PREFLIGHT_REVIEW_DECISIONS, `${path}.decision`);
-  if (review.instructorAnnotation !== undefined) assertString(review.instructorAnnotation, `${path}.instructorAnnotation`, false, PROJECT_LIMITS.reviewText);
-  if (review[questionField] !== undefined) assertString(review[questionField], `${path}.${questionField}`, false, legacy ? PROJECT_LIMITS.reviewText : PROJECT_LIMITS.focusedQuestion);
-
-  if (review.status === 'pending') {
-    if (review.decision !== undefined) invalidProject(`${path}.decision`, 'must be omitted while review is pending');
-    if (review.instructorAnnotation !== undefined) invalidProject(`${path}.instructorAnnotation`, 'must be omitted while review is pending');
-    if (review[questionField] !== undefined) invalidProject(`${path}.${questionField}`, 'must be omitted while review is pending');
-    return;
+  assertKnownKeys(review, ['guidance', 'nodes', 'connections', 'example', 'readiness'], path);
+  ['guidance', 'nodes', 'connections', 'example', 'readiness'].forEach((field) => {
+    if (!Object.hasOwn(review, field)) invalidProject(`${path}.${field}`, 'is required');
+  });
+  if (!Array.isArray(review.guidance) || review.guidance.length > PROJECT_LIMITS.memoGuidanceItems) {
+    invalidProject(`${path}.guidance`, `must be an array of no more than ${PROJECT_LIMITS.memoGuidanceItems} items`);
   }
-  const expectedDecision = review.status === 'rejected' ? 'reject' : null;
-  if (expectedDecision && review.decision !== expectedDecision) invalidProject(`${path}.decision`, `must be ${expectedDecision} when review is ${review.status}`);
-  if (review.status === 'approved' && !['approve', 'revise_and_approve'].includes(review.decision)) invalidProject(`${path}.decision`, 'must be approve or revise_and_approve when review is approved');
-  if (review.instructorAnnotation === undefined) invalidProject(`${path}.instructorAnnotation`, 'is required after instructor review');
-  if (review.decision === 'revise_and_approve' && review[questionField] === undefined) invalidProject(`${path}.${questionField}`, 'is required for revise_and_approve');
-  if (review.decision !== 'revise_and_approve' && review[questionField] !== undefined) invalidProject(`${path}.${questionField}`, 'is allowed only for revise_and_approve');
-}
-
-function validateRedirect(redirect, path) {
-  assertObject(redirect, path);
-  assertKnownKeys(redirect, ['action', 'evidenceExcerpt'], path);
-  assertString(redirect.action, `${path}.action`, false, PROJECT_LIMITS.redirectAction);
-  if (normalizeWhitespace(redirect.action) !== redirect.action) invalidProject(`${path}.action`, 'must use collapsed whitespace');
-  if (redirect.evidenceExcerpt !== undefined) {
-    assertString(redirect.evidenceExcerpt, `${path}.evidenceExcerpt`, false, PROJECT_LIMITS.redirectEvidence);
-    if (normalizeWhitespace(redirect.evidenceExcerpt) !== redirect.evidenceExcerpt) invalidProject(`${path}.evidenceExcerpt`, 'must use collapsed whitespace');
+  review.guidance.forEach((item, index) => {
+    const itemPath = `${path}.guidance[${index}]`;
+    assertObject(item, itemPath);
+    assertKnownKeys(item, ['point', 'evidenceExcerpt'], itemPath);
+    assertString(item.point, `${itemPath}.point`, false, PROJECT_LIMITS.memoGuidanceText);
+    if (item.evidenceExcerpt !== undefined) assertString(item.evidenceExcerpt, `${itemPath}.evidenceExcerpt`, false, PROJECT_LIMITS.memoGuidanceEvidence);
+  });
+  if (!Array.isArray(review.nodes) || review.nodes.length > PROJECT_LIMITS.memoReviewNodes) {
+    invalidProject(`${path}.nodes`, `must be an array of no more than ${PROJECT_LIMITS.memoReviewNodes} nodes`);
   }
+  review.nodes.forEach((node, index) => {
+    const nodePath = `${path}.nodes[${index}]`;
+    assertObject(node, nodePath);
+    assertKnownKeys(node, ['label', 'type', 'scale', 'evidence'], nodePath);
+    assertString(node.label, `${nodePath}.label`, false, 200);
+    assertEnum(node.type, NODE_TYPES, `${nodePath}.type`);
+    assertEnum(node.scale, SCALE_ORDER, `${nodePath}.scale`);
+    assertString(node.evidence, `${nodePath}.evidence`, true, PROJECT_LIMITS.memoGuidanceEvidence);
+  });
+  if (!Array.isArray(review.connections) || review.connections.length > PROJECT_LIMITS.memoReviewConnections) {
+    invalidProject(`${path}.connections`, `must be an array of no more than ${PROJECT_LIMITS.memoReviewConnections} connections`);
+  }
+  review.connections.forEach((connection, index) => {
+    const connectionPath = `${path}.connections[${index}]`;
+    assertObject(connection, connectionPath);
+    assertKnownKeys(connection, ['source', 'target', 'verb', 'rationale'], connectionPath);
+    assertString(connection.source, `${connectionPath}.source`, false, 200);
+    assertString(connection.target, `${connectionPath}.target`, false, 200);
+    if (connection.source === connection.target) invalidProject(`${connectionPath}.target`, 'must differ from source');
+    assertString(connection.verb, `${connectionPath}.verb`, false, 100);
+    assertString(connection.rationale, `${connectionPath}.rationale`, true, PROJECT_LIMITS.rationaleText);
+  });
+  if (review.example !== null) assertString(review.example, `${path}.example`, false, PROJECT_LIMITS.memoReviewExample);
+  assertObject(review.readiness, `${path}.readiness`);
+  assertKnownKeys(review.readiness, ['ready', 'note'], `${path}.readiness`);
+  assertBoolean(review.readiness.ready, `${path}.readiness.ready`);
+  assertString(review.readiness.note, `${path}.readiness.note`, true, PROJECT_LIMITS.memoGuidanceText);
 }
 
 function validateStudentPreflight(preflight, path) {
   assertObject(preflight, path);
-  assertKnownKeys(preflight, ['redirects', 'configurationSnapshot', 'evaluation', 'review'], path);
-  ['redirects', 'configurationSnapshot', 'evaluation', 'review'].forEach((field) => {
+  assertKnownKeys(preflight, ['memoReview', 'configurationSnapshot', 'evaluation', 'sourceFingerprint'], path);
+  ['memoReview', 'configurationSnapshot', 'evaluation', 'sourceFingerprint'].forEach((field) => {
     if (!Object.hasOwn(preflight, field)) invalidProject(`${path}.${field}`, 'is required');
   });
-  if (!Array.isArray(preflight.redirects)) invalidProject(`${path}.redirects`, 'must be an array');
-  if (preflight.redirects.length > 3) invalidProject(`${path}.redirects`, 'must contain no more than 3 redirects');
-  preflight.redirects.forEach((redirect, index) => validateRedirect(redirect, `${path}.redirects[${index}]`));
+  if (preflight.memoReview !== null) validateMemoReview(preflight.memoReview, `${path}.memoReview`);
+  if (preflight.sourceFingerprint !== null) assertString(preflight.sourceFingerprint, `${path}.sourceFingerprint`, false, 200);
   if (preflight.configurationSnapshot !== null) {
     validateConfigurationSnapshot(preflight.configurationSnapshot, `${path}.configurationSnapshot`);
     if (preflight.configurationSnapshot.kind !== 'preflight') invalidProject(`${path}.configurationSnapshot.kind`, 'must be preflight');
@@ -1025,7 +1038,6 @@ function validateStudentPreflight(preflight, path) {
   if (preflight.evaluation && preflight.configurationSnapshot.capturedAt !== preflight.evaluation.createdAt) {
     invalidProject(`${path}.configurationSnapshot.capturedAt`, 'must match the authoritative evaluation timestamp');
   }
-  if (preflight.review !== null) validatePreflightReview(preflight.review, `${path}.review`);
 }
 
 function validateModuleVersions(moduleVersions, path) {
@@ -1277,54 +1289,11 @@ function truncateCollapsedText(value, maximum) {
   return (boundary > 0 ? prefix.slice(0, boundary) : collapsed.slice(0, maximum)).trim();
 }
 
-function legacyRedirectAction(criterion) {
-  return truncateCollapsedText(criterion.nextAction, PROJECT_LIMITS.redirectAction);
-}
-
-function redirectsFromLegacySuggestion(suggestion) {
-  const redirects = [];
-  const seenActions = new Set();
-  [...suggestion.hard, ...suggestion.scored].filter((criterion) => criterion.status === 'unmet').some((criterion) => {
-    const action = legacyRedirectAction(criterion);
-    if (!action) return false;
-    const key = action.toLocaleLowerCase('en-US');
-    if (!seenActions.has(key)) {
-      const evidenceSource = typeof criterion.evidenceExcerpt === 'string'
-        ? criterion.evidenceExcerpt
-        : typeof criterion.evidence === 'string' ? criterion.evidence : '';
-      const evidenceExcerpt = truncateCollapsedText(evidenceSource, PROJECT_LIMITS.redirectEvidence);
-      redirects.push({ action, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) });
-      seenActions.add(key);
-    }
-    return redirects.length === 3;
-  });
-  return redirects;
-}
-
-function migrateLegacyReview(review) {
-  if (review === null || review === undefined) return null;
-  const focusedQuestion = review.revisedSuggestion === undefined
-    ? undefined
-    : truncateCollapsedText(review.revisedSuggestion, PROJECT_LIMITS.focusedQuestion);
-  return {
-    submissionId: review.submissionId,
-    status: review.status,
-    revision: review.revision,
-    submittedAt: review.submittedAt,
-    ...(review.decision !== undefined ? { decision: review.decision } : {}),
-    ...(review.instructorAnnotation !== undefined ? { instructorAnnotation: review.instructorAnnotation } : {}),
-    ...(focusedQuestion !== undefined ? { focusedQuestion } : {}),
-  };
-}
-
-function studentSafePreflightFromLegacy(preflight, path = 'project.preflight') {
-  validateSuggestionResult(preflight, path, { allowWorkflow: true, legacyReview: true });
-  return {
-    redirects: redirectsFromLegacySuggestion(preflight),
-    configurationSnapshot: preflight.configurationSnapshot === undefined ? null : preflight.configurationSnapshot,
-    evaluation: preflight.evaluation ?? null,
-    review: migrateLegacyReview(preflight.review),
-  };
+function legacyPreflightShape(preflight) {
+  return Boolean(preflight
+    && typeof preflight === 'object'
+    && !Array.isArray(preflight)
+    && (Array.isArray(preflight.hard) || Array.isArray(preflight.redirects)));
 }
 
 function migrateLegacyProject(project) {
@@ -1358,35 +1327,23 @@ function migrateLegacyProject(project) {
     const migrated = cloneProject(project);
     if (Number.isInteger(migrated.stage)) migrated.stage = collapseReviewStage(migrated.stage);
     if (Number.isInteger(migrated.furthestStage)) migrated.furthestStage = collapseReviewStage(migrated.furthestStage);
-    if (migrated.preflight
-      && typeof migrated.preflight === 'object'
-      && !Array.isArray(migrated.preflight)
-      && Array.isArray(migrated.preflight.hard)
-      && Array.isArray(migrated.preflight.scored)) {
-      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
-    }
+    if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return finishStageMigration(migrated);
   }
   if (project?.schemaVersion === 3) {
     const migrated = cloneProject(project);
-    if (migrated.preflight
-      && Array.isArray(migrated.preflight.hard)
-      && Array.isArray(migrated.preflight.scored)) {
-      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
-    }
+    if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return finishStageMigration(migrated);
   }
   if (project?.schemaVersion === 4) {
     const migrated = cloneProject(project);
-    if (migrated.preflight && Array.isArray(migrated.preflight.hard) && Array.isArray(migrated.preflight.scored)) {
-      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
-    }
+    if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return finishStageMigration(migrated, { insertConnection: false });
   }
   if (project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
-    if (project.preflight && Array.isArray(project.preflight.hard) && Array.isArray(project.preflight.scored)) {
+    if (legacyPreflightShape(project.preflight)) {
       const migrated = cloneProject(project);
-      migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
+      migrated.preflight = null;
       return migrated;
     }
     return project;
@@ -1433,13 +1390,7 @@ function migrateLegacyProject(project) {
       canonicalizeStageId(snapshot);
     });
   }
-  if (migrated.preflight
-    && typeof migrated.preflight === 'object'
-    && !Array.isArray(migrated.preflight)
-    && Array.isArray(migrated.preflight.hard)
-    && Array.isArray(migrated.preflight.scored)) {
-    migrated.preflight = studentSafePreflightFromLegacy(migrated.preflight);
-  }
+  if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
   canonicalizeStageId(migrated.preflight?.configurationSnapshot);
   return finishStageMigration(migrated);
 }
@@ -1626,21 +1577,9 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
     portable.mapAnnotation.text = '';
     addRedaction(redactions, 'mapAnnotation.text', reason);
   }
-  if (portable.preflight) {
-    portable.preflight.redirects.forEach((redirect, index) => {
-      if (redirect.action) {
-        redirect.action = '[redacted]';
-        addRedaction(redactions, `preflight.redirects[${index}].action`, reason);
-      }
-    });
-    if (portable.preflight.review) {
-      ['instructorAnnotation', 'focusedQuestion'].forEach((field) => {
-        if (portable.preflight.review[field]) {
-          portable.preflight.review[field] = '[redacted]';
-          addRedaction(redactions, `preflight.review.${field}`, reason);
-        }
-      });
-    }
+  if (portable.preflight?.memoReview) {
+    portable.preflight.memoReview = null;
+    addRedaction(redactions, 'preflight.memoReview', reason);
   }
   portable.events.forEach((event, index) => {
     if (event.detail) {
@@ -1688,10 +1627,6 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     portable.preflight.evaluation.evaluationId = '[redacted]';
     addRedaction(redactions, 'preflight.evaluation.evaluationId', 'Preflight evaluation capability excluded from portable export');
   }
-  if (portable.preflight?.review?.submissionId) {
-    portable.preflight.review.submissionId = '[redacted]';
-    addRedaction(redactions, 'preflight.review.submissionId', 'Instructor review capability excluded from portable export');
-  }
   if (redactSource) {
     const reason = `Restricted memo material excluded from ${sharingTier} export`;
     portable.submission.text = '';
@@ -1710,8 +1645,8 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     redactEvidenceExcerpts(portable.candidates.edges, 'candidates.edges', redactions, reason);
     redactEvidenceExcerpts(portable.graph.nodes, 'graph.nodes', redactions, reason);
     redactEvidenceExcerpts(portable.graph.edges, 'graph.edges', redactions, reason);
-    if (portable.preflight) {
-      redactEvidenceExcerpts(portable.preflight.redirects, 'preflight.redirects', redactions, reason);
+    if (portable.preflight?.memoReview) {
+      redactEvidenceExcerpts(portable.preflight.memoReview.guidance, 'preflight.memoReview.guidance', redactions, reason);
     }
     const labels = sensitive && sharingTier !== 'private'
       ? pseudonymizeSensitiveLabels(portable, redactions, reason)

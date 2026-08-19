@@ -45,14 +45,6 @@ export function suggestMapConnections(payload) {
   return apiRequest('/api/map/connections', { method: 'POST', body: payload });
 }
 
-export function submitPreflightSubmission(payload) {
-  return apiRequest('/api/preflight/submissions', { method: 'POST', body: payload });
-}
-
-export function getPreflightSubmission(submissionId) {
-  return apiRequest(`/api/preflight/submissions/${encodeURIComponent(submissionId)}`);
-}
-
 export function recordPrototypeEvent(event, stage, metadata = undefined) {
   return apiRequest('/api/prototype/events', {
     method: 'POST',
