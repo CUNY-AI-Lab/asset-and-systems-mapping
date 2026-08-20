@@ -1669,6 +1669,26 @@ export function serializePortableProject(project, sharingTier = project.sharingT
   return JSON.stringify(createPortableProject(project, sharingTier), null, 2);
 }
 
+const FILE_SLUG_LIMIT = 60;
+
+export function projectFileSlug(project) {
+  const base = [project?.title, project?.submission?.title].find((value) => typeof value === 'string' && value.trim()) || 'systems-map';
+  const slug = base
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, FILE_SLUG_LIMIT)
+    .replace(/-+$/g, '');
+  return slug || 'systems-map';
+}
+
+export function exportFileName(project, extension, suffix = '') {
+  const date = new Date().toISOString().slice(0, 10);
+  return `${projectFileSlug(project)}${suffix ? `-${suffix}` : ''}-${date}.${extension}`;
+}
+
 export function serializeProject(project) {
   const validated = validateProject(project);
   return JSON.stringify({ ...validated, exportedAt: new Date().toISOString() });

@@ -398,6 +398,21 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS preflight_review_events_reviewer_idx
       ON preflight_review_events(reviewing_teacher_id);
 
+    CREATE TABLE IF NOT EXISTS saved_projects (
+      token_hash TEXT PRIMARY KEY
+        CHECK(length(token_hash) = 64 AND token_hash NOT GLOB '*[^0-9a-f]*'),
+      project_id TEXT NOT NULL CHECK(length(project_id) BETWEEN 1 AND 200),
+      project_json TEXT NOT NULL CHECK(
+        length(project_json) BETWEEN 2 AND 2000000
+        AND json_valid(project_json) AND json_type(project_json) = 'object'
+      ),
+      created_session_ref TEXT NOT NULL CHECK(length(created_session_ref) = 16),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL CHECK(updated_at >= created_at)
+    ) STRICT;
+
+    CREATE INDEX IF NOT EXISTS saved_projects_updated_idx ON saved_projects(updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS preflight_retention_purge_guard (
       singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
       reason TEXT NOT NULL CHECK(reason = 'retention')

@@ -61,6 +61,9 @@ const STUDENT_ATTEMPT_BUCKET = 'loopback-student-access';
 const TEACHER_ATTEMPT_BUCKET = 'loopback-teacher-auth';
 const PROTOTYPE_RATE_BUCKET = 'loopback-prototype-events';
 const STUDENT_SESSION_ISSUE_BUCKET = 'student-session-issuance';
+const SAVED_PROJECT_BODY_LIMIT_BYTES = 2 * 1024 * 1024;
+const SAVED_PROJECT_JSON_LIMIT = 2_000_000;
+const SAVED_PROJECT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,64}$/;
 const PREFLIGHT_SCALES = new Set(['micro', 'meso', 'macro', 'integration']);
 const PREFLIGHT_STATUSES = new Set(['pending', 'approved', 'rejected']);
 const PREFLIGHT_DECISIONS = new Set(['approve', 'revise_and_approve', 'reject']);
@@ -284,6 +287,24 @@ async function parseJsonBody(context, maxBytes = JSON_BODY_LIMIT_BYTES) {
   } catch {
     throw new HttpError(400, 'Request body must be valid JSON.');
   }
+}
+
+function parseSavedProjectPayload(body) {
+  assertOnlyKeys(body, ['project']);
+  if (typeof body.project !== 'string' || body.project.length < 2 || body.project.length > SAVED_PROJECT_JSON_LIMIT) {
+    throw new HttpError(400, `project must be serialized JSON of 2 to ${SAVED_PROJECT_JSON_LIMIT} characters.`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(body.project);
+  } catch {
+    throw new HttpError(400, 'project must be valid JSON.');
+  }
+  if (!isPlainObject(parsed)) throw new HttpError(400, 'project must be a JSON object.');
+  if (typeof parsed.id !== 'string' || parsed.id.length < 1 || parsed.id.length > 200) {
+    throw new HttpError(400, 'project.id must be a string of 1 to 200 characters.');
+  }
+  return { serialized: body.project, projectId: parsed.id };
 }
 
 function requireString(value, name, { min = 1, max = 20_000 } = {}) {
@@ -1483,6 +1504,19 @@ export function createSystemsMappingApp(options = {}) {
   const prototypeEventWindowMs = positiveInteger(options.prototypeEventWindowMs, 'prototypeEventWindowMs', 60_000);
   const prototypeMaxRows = positiveInteger(options.prototypeMaxRows, 'prototypeMaxRows', 2000, { max: 100_000 });
   const prototypeRetentionMs = positiveInteger(options.prototypeRetentionMs, 'prototypeRetentionMs', DEFAULT_PROTOTYPE_RETENTION_MS);
+  const savedProjectCreateLimit = positiveInteger(options.savedProjectCreateLimit, 'savedProjectCreateLimit', 10, { max: 1000 });
+  const savedProjectCreateWindowMs = positiveInteger(
+    options.savedProjectCreateWindowMs,
+    'savedProjectCreateWindowMs',
+    DEFAULT_PREFLIGHT_SUBMISSION_WINDOW_MS,
+  );
+  const savedProjectWriteLimit = positiveInteger(options.savedProjectWriteLimit, 'savedProjectWriteLimit', 600, { max: 100_000 });
+  const savedProjectWriteWindowMs = positiveInteger(
+    options.savedProjectWriteWindowMs,
+    'savedProjectWriteWindowMs',
+    DEFAULT_PREFLIGHT_SUBMISSION_WINDOW_MS,
+  );
+  const savedProjectMaxTotal = positiveInteger(options.savedProjectMaxTotal, 'savedProjectMaxTotal', 5000, { max: 1_000_000 });
   const preflightSubmissionLimit = positiveInteger(options.preflightSubmissionLimit, 'preflightSubmissionLimit', 5, { max: 100 });
   const preflightSubmissionWindowMs = positiveInteger(
     options.preflightSubmissionWindowMs,
@@ -1650,6 +1684,16 @@ export function createSystemsMappingApp(options = {}) {
     now,
   });
   const preflightEvaluationCapacity = concurrencyLimiter(preflightEvaluationConcurrency);
+  const savedProjectCreateLimiter = rateLimiter({
+    limit: savedProjectCreateLimit,
+    windowMs: savedProjectCreateWindowMs,
+    now,
+  });
+  const savedProjectWriteLimiter = rateLimiter({
+    limit: savedProjectWriteLimit,
+    windowMs: savedProjectWriteWindowMs,
+    now,
+  });
   const dummyPassphrase = randomBytes(32).toString('base64url');
   const dummySalt = randomBytes(16);
   let dummyCredentials;
@@ -2153,6 +2197,64 @@ export function createSystemsMappingApp(options = {}) {
       metadata,
     });
     return context.json({ accepted: true }, 202);
+  });
+
+  app.post('/api/projects', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    const rate = savedProjectCreateLimiter.take(student.sessionRef);
+    if (!rate.allowed) throw tooManyAttempts(rate.retryAfterSeconds, 'Project link limit reached. Try again later.');
+    const body = await parseJsonBody(context, SAVED_PROJECT_BODY_LIMIT_BYTES);
+    const { serialized, projectId } = parseSavedProjectPayload(body);
+    const token = randomBytes(24).toString('base64url');
+    const savedAt = clockValue(now);
+    await inTransaction(db, async () => {
+      const total = await db.prepare('SELECT COUNT(*) AS count FROM saved_projects').get();
+      if ((total?.count ?? 0) >= savedProjectMaxTotal) {
+        throw new HttpError(507, 'The class workspace cannot store more project links right now.');
+      }
+      await db.prepare(`
+        INSERT INTO saved_projects (token_hash, project_id, project_json, created_session_ref, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(createHash('sha256').update(token).digest('hex'), projectId, serialized, student.sessionRef, savedAt, savedAt);
+    });
+    return context.json({ token, updatedAt: savedAt }, 201);
+  });
+
+  app.get('/api/projects/:token', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    const token = context.req.param('token');
+    if (!SAVED_PROJECT_TOKEN_PATTERN.test(token)) throw new HttpError(404, 'Project link not found.');
+    const row = await db.prepare(`
+      SELECT project_id AS projectId, project_json AS project, updated_at AS updatedAt
+      FROM saved_projects WHERE token_hash = ?
+    `).get(createHash('sha256').update(token).digest('hex'));
+    if (!row) throw new HttpError(404, 'Project link not found.');
+    return context.json({ projectId: row.projectId, project: row.project, updatedAt: row.updatedAt });
+  });
+
+  app.put('/api/projects/:token', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    const token = context.req.param('token');
+    if (!SAVED_PROJECT_TOKEN_PATTERN.test(token)) throw new HttpError(404, 'Project link not found.');
+    const rate = savedProjectWriteLimiter.take(student.sessionRef);
+    if (!rate.allowed) throw tooManyAttempts(rate.retryAfterSeconds, 'Project sync limit reached. Try again later.');
+    const body = await parseJsonBody(context, SAVED_PROJECT_BODY_LIMIT_BYTES);
+    const { serialized, projectId } = parseSavedProjectPayload(body);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const updatedAt = clockValue(now);
+    await inTransaction(db, async () => {
+      const row = await db.prepare('SELECT project_id AS projectId FROM saved_projects WHERE token_hash = ?').get(tokenHash);
+      if (!row) throw new HttpError(404, 'Project link not found.');
+      if (row.projectId !== projectId) {
+        throw new HttpError(409, 'This link belongs to a different project. Create a new link for this project.');
+      }
+      await db.prepare('UPDATE saved_projects SET project_json = ?, updated_at = ? WHERE token_hash = ?')
+        .run(serialized, updatedAt, tokenHash);
+    });
+    return context.json({ updatedAt });
   });
 
   app.use('/api/teacher/*', async (context, next) => {

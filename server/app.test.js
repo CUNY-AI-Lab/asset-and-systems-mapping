@@ -696,6 +696,75 @@ describe('hardened Systems Mapping server', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM prototype_events').get().count).toBe(0);
   });
 
+  it('stores, returns, and updates saved projects behind unguessable link tokens', async () => {
+    const studentCookie = await grantStudent();
+    const projectJson = JSON.stringify({ id: 'proj_1', schemaVersion: 5, title: 'Phishing memo map', updatedAt: '2026-08-20T00:00:00.000Z' });
+
+    const unauthenticated = await postJson(system.app, '/api/projects', { project: projectJson });
+    expect(unauthenticated.status).toBe(401);
+
+    const created = await postJson(system.app, '/api/projects', { project: projectJson }, { cookie: studentCookie });
+    expect(created.status).toBe(201);
+    const { token, updatedAt } = await json(created);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(updatedAt).toBe(currentTime);
+    const storedHash = system.db.prepare('SELECT token_hash AS hash FROM saved_projects').get().hash;
+    expect(storedHash).toBe(createHash('sha256').update(token).digest('hex'));
+    expect(storedHash).not.toBe(token);
+
+    expect((await request(system.app, `/api/projects/${token}`)).status).toBe(401);
+    const fetched = await request(system.app, `/api/projects/${token}`, { headers: { cookie: studentCookie } });
+    expect(fetched.status).toBe(200);
+    expect(await json(fetched)).toEqual({ projectId: 'proj_1', project: projectJson, updatedAt: currentTime });
+
+    currentTime += 5000;
+    const revised = JSON.stringify({ id: 'proj_1', schemaVersion: 5, title: 'Phishing memo map', updatedAt: '2026-08-20T01:00:00.000Z', stage: 2 });
+    const updated = await putJson(system.app, `/api/projects/${token}`, { project: revised }, { cookie: studentCookie });
+    expect(updated.status).toBe(200);
+    expect((await json(updated)).updatedAt).toBe(currentTime);
+    expect((await json(await request(system.app, `/api/projects/${token}`, { headers: { cookie: studentCookie } }))).project).toBe(revised);
+
+    const mismatched = await putJson(system.app, `/api/projects/${token}`, {
+      project: JSON.stringify({ id: 'proj_other', schemaVersion: 5 }),
+    }, { cookie: studentCookie });
+    expect(mismatched.status).toBe(409);
+
+    const missing = await request(system.app, `/api/projects/${'a'.repeat(32)}`, { headers: { cookie: studentCookie } });
+    expect(missing.status).toBe(404);
+    expect((await request(system.app, '/api/projects/short', { headers: { cookie: studentCookie } })).status).toBe(404);
+
+    const invalidBody = await postJson(system.app, '/api/projects', { project: 'not json' }, { cookie: studentCookie });
+    expect(invalidBody.status).toBe(400);
+    const missingId = await postJson(system.app, '/api/projects', { project: '{"title":"no id"}' }, { cookie: studentCookie });
+    expect(missingId.status).toBe(400);
+    const extraKey = await postJson(system.app, '/api/projects', { project: projectJson, extra: true }, { cookie: studentCookie });
+    expect(extraKey.status).toBe(400);
+  });
+
+  it('keeps saved project links available to later class sessions and rate-limits link creation', async () => {
+    const firstCookie = await grantStudent();
+    const projectJson = JSON.stringify({ id: 'proj_persist', schemaVersion: 5 });
+    const created = await json(await postJson(system.app, '/api/projects', { project: projectJson }, { cookie: firstCookie }));
+
+    currentTime += 20_000; // The first student session expires (TTL 10s); the link must survive it.
+    const secondCookie = await grantStudent();
+    const fetched = await request(system.app, `/api/projects/${created.token}`, { headers: { cookie: secondCookie } });
+    expect(fetched.status).toBe(200);
+    expect((await json(fetched)).projectId).toBe('proj_persist');
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await postJson(system.app, '/api/projects', {
+        project: JSON.stringify({ id: `proj_rate_${attempt}`, schemaVersion: 5 }),
+      }, { cookie: secondCookie });
+      expect([201, 429]).toContain(response.status);
+      if (response.status === 429) break;
+    }
+    const throttled = await postJson(system.app, '/api/projects', {
+      project: JSON.stringify({ id: 'proj_rate_final', schemaVersion: 5 }),
+    }, { cookie: secondCookie });
+    expect(throttled.status).toBe(429);
+  });
+
   it('sets SQLite safety pragmas, integrity checks, and owner-only database permissions', async () => {
     expect(system.db.prepare('PRAGMA foreign_keys').get().foreign_keys).toBe(1);
     expect(system.db.prepare('PRAGMA trusted_schema').get().trusted_schema).toBe(0);

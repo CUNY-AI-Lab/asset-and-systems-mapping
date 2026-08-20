@@ -139,7 +139,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     });
     try {
       await second.ready;
-      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(6);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(7);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count).toBe(2);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_modules').get()).count).toBe(60);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_module_history').get()).count).toBe(60);
@@ -149,9 +149,9 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
         SELECT COUNT(*) AS count FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name IN (
           'preflight_evaluations', 'preflight_submissions', 'preflight_review_events',
-          'preflight_retention_purge_guard', 'preflight_retention_purges'
+          'preflight_retention_purge_guard', 'preflight_retention_purges', 'saved_projects'
         )
-      `).get()).count).toBe(5);
+      `).get()).count).toBe(6);
     } finally {
       await second.close();
     }

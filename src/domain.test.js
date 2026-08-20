@@ -9,8 +9,10 @@ import {
   createEvent,
   createPortableProject,
   evaluateSubmission,
+  exportFileName,
   extractCandidates,
   parseProject,
+  projectFileSlug,
   serializePortableProject,
   serializeProject,
   stableId,
@@ -670,5 +672,27 @@ describe('mapping domain', () => {
     expect(event.configRevision).toBe(3);
     expect(event.result).toEqual({ outcome: 'pass' });
     expect(event.action).toBe('preflight.completed');
+  });
+
+  it('builds descriptive export file names from the project title', () => {
+    const project = createDefaultProject();
+    project.title = 'Access to Special-Education Services (NYC)!';
+    expect(projectFileSlug(project)).toBe('access-to-special-education-services-nyc');
+    const today = new Date().toISOString().slice(0, 10);
+    expect(exportFileName(project, 'json')).toBe(`access-to-special-education-services-nyc-${today}.json`);
+    expect(exportFileName(project, 'json', 'recovery')).toBe(`access-to-special-education-services-nyc-recovery-${today}.json`);
+  });
+
+  it('falls back to the memo title and then a stable default for export file names', () => {
+    const project = createDefaultProject();
+    project.title = '   ';
+    project.submission.title = 'Café Crème: A Memo';
+    expect(projectFileSlug(project)).toBe('cafe-creme-a-memo');
+    project.submission.title = '';
+    expect(projectFileSlug(project)).toBe('systems-map');
+    project.title = '!!!';
+    expect(projectFileSlug(project)).toBe('systems-map');
+    project.title = 'x'.repeat(200);
+    expect(projectFileSlug(project)).toBe('x'.repeat(60));
   });
 });

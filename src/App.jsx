@@ -9,6 +9,7 @@ import {
   createPortableProject,
   createDefaultProject,
   createEvent,
+  exportFileName,
   extractCandidates,
   parseProject,
   serializePortableProject,
@@ -21,12 +22,15 @@ import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   ApiError,
   createPreflightEvaluation,
+  createProjectLink,
   endStudentAccess,
+  fetchProjectLink,
   getPublicConfiguration,
   getStudentSession,
   recordPrototypeEvent,
   requestStudentAccess,
   suggestMapConnections,
+  updateProjectLink,
 } from './api.js';
 
 const STORAGE_KEY = 'systems-mapping-studio.project.v5';
@@ -36,6 +40,9 @@ const LEGACY_STORAGE_KEYS = [
   'systems-mapping-studio.project.v2',
   'systems-mapping-studio.project.v1',
 ];
+const LINK_STORAGE_KEY = 'systems-mapping-studio.link.v1';
+const LINK_PATH_PATTERN = /^\/p\/([A-Za-z0-9_-]{20,64})\/?$/;
+const LINK_SYNC_DEBOUNCE_MS = 4000;
 const MAX_MEMO_BYTES = 5 * 1024 * 1024;
 const MAX_MEMO_CHARACTERS = 500_000;
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
@@ -103,6 +110,48 @@ function loadProject() {
       sourceKey: null,
     };
   }
+}
+
+function loadStoredLink() {
+  try {
+    const raw = window.localStorage.getItem(LINK_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.token !== 'string' || typeof parsed?.projectId !== 'string') return null;
+    return { token: parsed.token, projectId: parsed.projectId };
+  } catch {
+    return null;
+  }
+}
+
+function storeLink(link) {
+  try {
+    if (link) window.localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(link));
+    else window.localStorage.removeItem(LINK_STORAGE_KEY);
+  } catch {
+    // The link still works for this visit even when browser storage is unavailable.
+  }
+}
+
+function linkUrl(token) {
+  return `${window.location.origin}/p/${token}`;
+}
+
+function describeLinkError(error) {
+  if (error instanceof ApiError) {
+    if (error.status === 401) return 'Class access ended. Enter the class code again to keep syncing this link.';
+    if (error.status === 404) return 'This project link was not found. It may have been removed or belong to a different class workspace.';
+    if (error.status === 409) return 'This link belongs to a different project. Create a new link for the current project.';
+    if (error.status === 413) return 'This project is too large to sync to its link. Export a copy instead.';
+    if (error.status === 429) return 'Link syncing is briefly paused. Recent changes will sync shortly.';
+    return error.message;
+  }
+  return 'The project link could not be reached. Changes are still saved on this device.';
+}
+
+function urlLinkToken() {
+  const match = LINK_PATH_PATTERN.exec(window.location.pathname);
+  return match ? match[1] : null;
 }
 
 function handleCompositeKey(event, values, current, onChange) {
@@ -372,6 +421,7 @@ function Icon({ name, size = 18 }) {
     lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
     history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
     map: <><circle cx="6" cy="8" r="2" /><circle cx="18" cy="7" r="2" /><circle cx="13" cy="17" r="2" /><path d="m8 8 8-1M7 10l5 5m2 0 3-6" /></>,
+    link: <><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" /><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" /></>,
   };
   return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -468,7 +518,7 @@ function ClassAccessScreen({ state, onSubmit, onTeacher }) {
   </AccessFrame>;
 }
 
-function ResumeScreen({ project, hasSavedProject, saveState, onResume, onStart, onTeacher, onEndAccess, onRecovery }) {
+function ResumeScreen({ project, hasSavedProject, saveState, onResume, onStart, onTeacher, onEndAccess, onRecovery, linkNotice = null }) {
   const memoCount = hasSavedProject && (project.submission?.text?.trim() || project.submission?.title?.trim()) ? 1 : 0;
   return <AccessFrame onTeacher={onTeacher}>
     <main className="resume-main" id="workspace">
@@ -480,6 +530,7 @@ function ResumeScreen({ project, hasSavedProject, saveState, onResume, onStart, 
         <span>Stage · {STAGES[project.stage].short}</span>
         <span><Icon name="history" />{memoCount} {memoCount === 1 ? 'memo' : 'memos'}</span>
       </div>
+      {linkNotice && <p className="access-message access-message--error" role="alert">{linkNotice}</p>}
       {saveState.status === 'error' && <button type="button" className="recovery-notice" onClick={onRecovery}><strong>Local recovery needs attention</strong><span>{saveState.message}</span></button>}
       <div className="resume-actions">
         <button type="button" className="button access-primary" onClick={hasSavedProject ? onResume : onStart}>{hasSavedProject ? 'Continue' : 'Start'}</button>
@@ -1874,9 +1925,9 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
   const exportProject = (format) => {
     try {
       const portable = createPortableProject(project, project.sharingTier);
-      if (format === 'json') download(`${project.id}.json`, serializePortableProject(project, project.sharingTier));
-      if (format === 'csv') download(`${project.id}.csv`, graphCsv(portable), 'text/csv');
-      if (format === 'markdown') download(`${project.id}.md`, projectMarkdown(portable), 'text/markdown');
+      if (format === 'json') download(exportFileName(project, 'json'), serializePortableProject(project, project.sharingTier));
+      if (format === 'csv') download(exportFileName(project, 'csv'), graphCsv(portable), 'text/csv');
+      if (format === 'markdown') download(exportFileName(project, 'md'), projectMarkdown(portable), 'text/markdown');
       logPrototype('project_exported', { nodeCount: portable.graph.nodes.length, relationshipCount: portable.graph.edges.length });
       toast(portable.portableExport.redacted ? `Export created with ${portable.portableExport.redactions.length} recorded redactions.` : 'Export created with no required redactions.');
     } catch (error) {
@@ -1963,8 +2014,14 @@ function App() {
     recovery: initialLoad.recovery,
     savedRevision: 0,
   });
+  const [link, setLink] = useState(loadStoredLink);
+  const [linkStatus, setLinkStatus] = useState('idle');
+  const [linkMessage, setLinkMessage] = useState(null);
   const toastTimer = useRef(null);
   const persistTimer = useRef(null);
+  const linkSyncTimer = useRef(null);
+  const linkLoadAttemptedRef = useRef(false);
+  const linkRef = useRef(link);
   const pendingAnnotationsRef = useRef(new Map());
   const prototypeLogNoticeRef = useRef({ sequence: 0, lastFailure: 0 });
   const accessGenerationRef = useRef(0);
@@ -1974,6 +2031,7 @@ function App() {
   const workspaceRef = useRef(null);
   projectRef.current = project;
   connectionPromptRef.current = connectionPrompt;
+  linkRef.current = link;
   const toast = useCallback((message, type = 'success') => {
     window.clearTimeout(toastTimer.current);
     setToastState({ message, type });
@@ -2555,7 +2613,104 @@ function App() {
     setMapPreviewOpen(false);
     logPrototype('project_imported', { stageIndex: next.stage, nodeCount: next.graph.nodes.length, edgeCount: next.graph.edges.length }, STAGES[next.stage].label);
     logPrototype('stage_viewed', { fromStage: projectRef.current.stage, toStage: next.stage }, STAGES[next.stage].label);
+    if (urlLinkToken() && linkRef.current?.projectId !== next.id) window.history.replaceState(null, '', '/');
   }, [logPrototype]);
+
+  const syncLinkNow = useCallback(async () => {
+    const activeLink = linkRef.current;
+    const snapshot = projectRef.current;
+    if (!activeLink || activeLink.projectId !== snapshot.id) return false;
+    let serialized;
+    try {
+      serialized = serializeProject(snapshot);
+    } catch {
+      return false; // The local save flow already surfaces validation problems.
+    }
+    setLinkStatus('syncing');
+    try {
+      await updateProjectLink(activeLink.token, serialized);
+      setLinkStatus('synced');
+      setLinkMessage(null);
+      return true;
+    } catch (error) {
+      setLinkStatus('error');
+      setLinkMessage(describeLinkError(error));
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceStarted || !link || link.projectId !== project.id) return undefined;
+    window.clearTimeout(linkSyncTimer.current);
+    linkSyncTimer.current = window.setTimeout(syncLinkNow, LINK_SYNC_DEBOUNCE_MS);
+    return () => window.clearTimeout(linkSyncTimer.current);
+  }, [project, workspaceStarted, link, syncLinkNow]);
+
+  useEffect(() => {
+    if (accessState.status !== 'granted' || linkLoadAttemptedRef.current) return;
+    linkLoadAttemptedRef.current = true;
+    const token = urlLinkToken();
+    if (!token) return;
+    fetchProjectLink(token).then((result) => {
+      const incoming = parseProject(result.project);
+      const nextLink = { token, projectId: incoming.id };
+      setLink(nextLink);
+      linkRef.current = nextLink;
+      storeLink(nextLink);
+      const local = projectRef.current;
+      if (local.id !== incoming.id || Date.parse(incoming.updatedAt || 0) > Date.parse(local.updatedAt || 0)) {
+        replaceProject(incoming, 'Project link');
+        setHasSavedProject(true);
+      }
+      setLinkStatus('synced');
+      setLinkMessage(null);
+    }).catch((error) => {
+      setLinkStatus('error');
+      setLinkMessage(error instanceof ApiError
+        ? describeLinkError(error)
+        : `The linked project could not be loaded: ${error.message}`);
+    });
+  }, [accessState.status, replaceProject]);
+
+  const createLink = useCallback(async () => {
+    const committed = commitPendingAnnotations();
+    const snapshot = committed.project;
+    let serialized;
+    try {
+      serialized = serializeProject(snapshot);
+    } catch (error) {
+      toast(`Complete the current required field before creating a link: ${error.message}`, 'error');
+      return;
+    }
+    setLinkStatus('creating');
+    setLinkMessage(null);
+    try {
+      const result = await createProjectLink(serialized);
+      const nextLink = { token: result.token, projectId: snapshot.id };
+      setLink(nextLink);
+      linkRef.current = nextLink;
+      storeLink(nextLink);
+      setLinkStatus('synced');
+      window.history.replaceState(null, '', `/p/${result.token}`);
+      toast('Project link created.');
+    } catch (error) {
+      setLinkStatus('error');
+      const message = describeLinkError(error);
+      setLinkMessage(message);
+      toast(message, 'error');
+    }
+  }, [commitPendingAnnotations, toast]);
+
+  const copyLink = useCallback(async () => {
+    const activeLink = linkRef.current;
+    if (!activeLink) return;
+    try {
+      await navigator.clipboard.writeText(linkUrl(activeLink.token));
+      toast('Project link copied.');
+    } catch {
+      toast('Copy is unavailable. Select the link text and copy it by hand.', 'error');
+    }
+  }, [toast]);
   const stageScreens = [
     <IntakeStage project={project} update={update} toast={toast} />,
     <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onContinue={primary} />,
@@ -2642,6 +2797,7 @@ function App() {
     setWorkspaceStarted(true);
     setPendingNewProject(false);
     setModal(null);
+    if (urlLinkToken()) window.history.replaceState(null, '', '/');
     logPrototype('project_started', { stageIndex: 0, nodeCount: 0, edgeCount: 0 }, STAGES[0].label);
     logPrototype('stage_viewed', { fromStage, toStage: 0 }, STAGES[0].label);
     toast('Blank project created.');
@@ -2684,7 +2840,7 @@ function App() {
       <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p>
       <div className="button-stack">
         {saveState.recovery && <button type="button" className="button button--secondary" onClick={() => download('systems-mapping-prior-recovery.json', saveState.recovery)}>Download earlier copy</button>}
-        <button type="button" className="button button--secondary" onClick={() => download(`${project.id}-recovery.json`, serializeProject(project))}>Download current project</button>
+        <button type="button" className="button button--secondary" onClick={() => download(exportFileName(project, 'json', 'recovery'), serializeProject(project))}>Download current project</button>
         <button type="button" className="button button--ghost" onClick={continueInMemory}>Keep working without saving</button>
         <button type="button" className="button" onClick={preserveRecoveryAndEnableStorage}>{saveState.recovery ? 'Save earlier copy and try again' : 'Try saving again'}</button>
       </div>
@@ -2704,7 +2860,7 @@ function App() {
   if (accessState.status !== 'granted') return <ClassAccessScreen state={accessState} onSubmit={submitClassCode} onTeacher={() => setTeacherOpen(true)} />;
 
   if (!workspaceStarted) return <>
-    <ResumeScreen project={project} hasSavedProject={hasSavedProject} saveState={saveState} onResume={resumeProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} />
+    <ResumeScreen project={project} hasSavedProject={hasSavedProject} saveState={saveState} onResume={resumeProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} linkNotice={linkStatus === 'error' ? linkMessage : null} />
     {recoveryModal}
     <Modal open={modal === 'new-project'} title="Start another project" onClose={() => { setPendingNewProject(false); setModal(null); }}>
       <div className="confirm-panel"><p>This replaces the current workspace with a blank project. Export the current project first if you need a separate copy.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start another project</button></div></div>
@@ -2716,7 +2872,7 @@ function App() {
       <a href="#workspace" className="brand" aria-label="Systems Mapping home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>{project.title}</small></span></a>
       <div className="header-actions">
         {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <span className="save-state save-state--error"><i />Complete the current field to save</span> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
-        <button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => { setMapPreviewOpen(false); setTeacherOpen(true); }}><Icon name="settings" />Teacher Console</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
+        <button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" onClick={() => { setMapPreviewOpen(false); setTeacherOpen(true); }}><Icon name="settings" />Teacher Console</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
       </div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
@@ -2729,6 +2885,29 @@ function App() {
     </Modal>
     <Modal open={modal === 'new-project'} title="Start a new project" onClose={() => setModal(null)}>
       <div className="confirm-panel"><p>This replaces the current workspace with a blank project. It does not delete any JSON, CSV, or Markdown files you already exported.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start blank project</button></div></div>
+    </Modal>
+    <Modal open={modal === 'project-link'} title="Project link" onClose={() => setModal(null)}>
+      <div className="confirm-panel">
+        {link && link.projectId === project.id ? <>
+          <p>Open this link on any device, enter the class code, and this project picks up where you left off. Changes sync to the link automatically while you work.</p>
+          <p className="project-link-url"><code>{linkUrl(link.token)}</code></p>
+          <p className={`project-link-status${linkStatus === 'error' ? ' project-link-status--error' : ''}`} role="status">
+            {linkStatus === 'syncing' || linkStatus === 'creating' ? 'Syncing latest changes…' : linkStatus === 'synced' ? 'Latest changes are synced to this link.' : linkMessage || 'Changes sync while you work.'}
+          </p>
+          <div className="button-row">
+            <button type="button" className="button button--ghost" onClick={() => setModal(null)}>Close</button>
+            <button type="button" className="button" onClick={copyLink}>Copy link</button>
+          </div>
+        </> : <>
+          <p>Create a unique link for this project so you can return to it from any device. Opening the link after entering the class code restores the project exactly where you left it.</p>
+          {link && <p className="project-link-status">Your earlier link stays usable for the project it was created on.</p>}
+          {linkStatus === 'error' && linkMessage && <p className="error-text">{linkMessage}</p>}
+          <div className="button-row">
+            <button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button>
+            <button type="button" className="button" disabled={linkStatus === 'creating'} onClick={createLink}>{linkStatus === 'creating' ? 'Creating link…' : 'Create project link'}</button>
+          </div>
+        </>}
+      </div>
     </Modal>
     {recoveryModal}
     <div className={`toast toast--${toastState?.type || 'success'} ${toastState ? 'is-visible' : ''}`} role="status" aria-live="polite">{toastState?.type === 'success' && <Icon name="check" />}{toastState?.message}</div>

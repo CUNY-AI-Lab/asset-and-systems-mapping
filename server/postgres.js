@@ -323,6 +323,21 @@ const POSTGRES_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS preflight_review_events_reviewer_idx
     ON preflight_review_events(reviewing_teacher_id);
 
+  CREATE TABLE IF NOT EXISTS saved_projects (
+    token_hash TEXT PRIMARY KEY CHECK(token_hash ~ '^[0-9a-f]{64}$'),
+    project_id TEXT NOT NULL CHECK(length(project_id) BETWEEN 1 AND 200),
+    project_json TEXT NOT NULL CHECK(
+      length(project_json) BETWEEN 2 AND 2000000
+      AND jsonb_typeof(project_json::jsonb) = 'object'
+    ),
+    created_session_ref TEXT NOT NULL CHECK(length(created_session_ref) = 16),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    CONSTRAINT saved_projects_update_order CHECK (updated_at >= created_at)
+  );
+
+  CREATE INDEX IF NOT EXISTS saved_projects_updated_idx ON saved_projects(updated_at DESC);
+
   CREATE TABLE IF NOT EXISTS preflight_retention_purge_guard (
     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
     reason TEXT NOT NULL CHECK(reason = 'retention')
@@ -575,6 +590,10 @@ async function initializePostgres(database) {
     `);
     await client.query(`
       INSERT INTO schema_migrations (version) VALUES (6)
+      ON CONFLICT (version) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO schema_migrations (version) VALUES (7)
       ON CONFLICT (version) DO NOTHING
     `);
     await client.query('COMMIT');

@@ -45,6 +45,18 @@ export function suggestMapConnections(payload) {
   return apiRequest('/api/map/connections', { method: 'POST', body: payload });
 }
 
+export function createProjectLink(project) {
+  return apiRequest('/api/projects', { method: 'POST', body: { project } });
+}
+
+export function fetchProjectLink(token) {
+  return apiRequest(`/api/projects/${encodeURIComponent(token)}`);
+}
+
+export function updateProjectLink(token, project) {
+  return apiRequest(`/api/projects/${encodeURIComponent(token)}`, { method: 'PUT', body: { project } });
+}
+
 export function recordPrototypeEvent(event, stage, metadata = undefined) {
   return apiRequest('/api/prototype/events', {
     method: 'POST',
