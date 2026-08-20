@@ -50,7 +50,7 @@ const NODE_LABEL_LIMIT = 200;
 const RELATIONSHIP_VERB_LIMIT = 100;
 const FILE_NAME_LIMIT = 255;
 const RELATION_VOCABULARY_TEXT_LIMIT = PROJECT_LIMITS.relationVocabulary * (RELATIONSHIP_VERB_LIMIT + 2);
-const VIEWPORT_LIMITS = { minZoom: 0.5, maxZoom: 2, minPan: -840, maxPan: 840 };
+const VIEWPORT_LIMITS = { minZoom: 0.25, maxZoom: 2, minPan: -5000, maxPan: 5000 };
 
 const STAGES = SYSTEMS_MAPPING_STAGES;
 const TeacherDashboard = lazy(() => import('./TeacherDashboard.jsx'));
@@ -831,23 +831,22 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
   </div>;
 }
 
+const CANDIDATE_STEPS = ['nodes', 'edges', 'suggest'];
+
 function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy }) {
-  const [kind, setKind] = useState('edges');
-  const candidates = project.candidates[kind];
-  const setStatus = (id, status) => {
+  const [step, setStep] = useState('nodes');
+  const setStatus = (kind, id, status) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (status === 'research lead' && !project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
     if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
-    const allowed = kind === 'nodes' || project.configs.builder.relationVocabulary.includes(current.verb.trim().toLowerCase());
-    if (status === 'confirmed' && !allowed && !project.instructor.allowResearchLeads) return toast('This relationship uses a different verb, and items needing evidence are turned off.', 'error');
     update((draft) => {
       const item = draft.candidates[kind].find((candidate) => candidate.id === id);
-      item.status = status === 'confirmed' && !allowed ? 'research lead' : status;
-      item.claimState = item.status === 'research lead' ? 'research lead' : item.status === 'confirmed' ? 'student interpretation' : item.claimState;
+      item.status = status;
+      item.claimState = status === 'research lead' ? 'research lead' : status === 'confirmed' ? 'student interpretation' : item.claimState;
     }, `candidate.${status}`, id);
   };
-  const edit = (id, field, value) => update((draft) => {
+  const edit = (kind, id, field, value) => update((draft) => {
     const item = draft.candidates[kind].find((candidate) => candidate.id === id);
     const previousLabel = item.label;
     item[field] = value;
@@ -859,49 +858,93 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       item.notes = item.notes || `Label revised from ${previousLabel}`;
     }
   });
-  const confirmAll = () => update((draft) => {
-    draft.candidates.nodes.forEach((item) => {
-      if (!draft.instructor.evidenceRequired || item.evidence) { item.status = 'confirmed'; item.claimState = 'student interpretation'; }
+  const keepAllRemaining = (kind) => update((draft) => {
+    draft.candidates[kind].forEach((item) => {
+      if (item.status !== 'pending') return;
+      if (draft.instructor.evidenceRequired && !item.evidence) return;
+      item.status = 'confirmed';
+      item.claimState = 'student interpretation';
     });
-    draft.candidates.edges.forEach((item) => {
-      const allowed = draft.configs.builder.relationVocabulary.includes(item.verb.trim().toLowerCase());
-      const evidenceReady = !draft.instructor.evidenceRequired || item.evidence;
-      item.status = evidenceReady && allowed ? 'confirmed' : evidenceReady && draft.instructor.allowResearchLeads ? 'research lead' : 'pending';
-      item.claimState = item.status === 'confirmed' ? 'student interpretation' : item.status === 'research lead' ? 'research lead' : item.claimState;
-    });
-  }, 'candidates.batch-confirmed', 'All grounded candidates');
-  const decided = [...project.candidates.nodes, ...project.candidates.edges].filter((item) => item.status !== 'pending').length;
-  const total = project.candidates.nodes.length + project.candidates.edges.length;
+  }, 'candidates.batch-confirmed', kind === 'nodes' ? 'Remaining nodes kept' : 'Remaining connections kept');
+  const counts = Object.fromEntries(['nodes', 'edges'].map((kind) => {
+    const items = project.candidates[kind];
+    return [kind, {
+      total: items.length,
+      decided: items.filter((item) => item.status !== 'pending').length,
+      remaining: items.filter((item) => item.status === 'pending').length,
+    }];
+  }));
+  const stepCopy = {
+    nodes: {
+      tab: `Nodes · ${counts.nodes.total}`,
+      title: 'Choose your nodes',
+      lede: 'These nodes come from your memo. Keep, rename, or remove each one — connections come next, and nothing joins the map until you decide.',
+    },
+    edges: {
+      tab: `Connections · ${counts.edges.total}`,
+      title: 'Confirm how they connect',
+      lede: 'Each connection links two kept nodes with wording from your memo. Edit the wording so it says what you mean, keep what is right, and remove what is not — this is where you describe the connections.',
+    },
+    suggest: {
+      tab: 'More connections',
+      title: 'Ask for more connections',
+      lede: 'Optional. Your kept connections already describe the map. If something still feels missing, ask for suggestions — with nothing written, the model reads your memo directly, and nothing joins the map until you accept it.',
+    },
+  };
+  const candidateRows = (kind) => project.candidates[kind].map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
+    <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
+    <div className="candidate-row__main">
+      {kind === 'nodes' ? <div className="candidate-expression"><input aria-label="Node label" maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label="Node type" value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></div> : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><input aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
+      <p><span className="evidence-chip">{item.evidence || 'Evidence unresolved'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
+      <details className="candidate-note">
+        <summary>{item.notes ? 'Note added' : 'Add a note'}</summary>
+        <Field label="Reviewer note"><input maxLength={PROJECT_LIMITS.noteText} value={item.notes || ''} placeholder="Optional reason or condition" onChange={(event) => edit(kind, item.id, 'notes', event.target.value)} /></Field>
+      </details>
+    </div>
+    <div className="candidate-actions" aria-label={`Decision for ${kind === 'nodes' ? item.label : `${item.sourceLabel} ${item.verb} ${item.targetLabel}`}`}>
+      <button className={item.status === 'confirmed' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'confirmed')}>Keep</button>
+      {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'research lead')}>Needs more evidence</button>}
+      <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'rejected')}>Remove</button>
+    </div>
+  </article>);
+  const decisionStep = step === 'nodes' || step === 'edges';
   return <div className="wide stage-enter">
-    <p className="eyebrow">Choose nodes and describe connections · {decided} of {total} decided</p>
-    <div className="stage-title-row"><div><h1>Choose nodes and describe connections</h1><p className="lede">These nodes and relationships come from your memo. Keep, edit, or remove each one — then ask the model for more connections below. Everything here is a suggestion until you decide.</p></div><button className="button button--secondary" type="button" onClick={confirmAll}>Keep all supported items</button></div>
-    <MemoDrawer project={project} update={update} hint="Edit the memo here whenever you want, then use “Reread memo” to refresh these suggestions. Your decisions on kept items are preserved." />
-    <div className="button-row candidate-refresh-row">
-      <button className="button button--secondary" type="button" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Rereading memo…' : 'Reread memo for new suggestions'}</button>
+    <p className="eyebrow">Choose what to map · step {CANDIDATE_STEPS.indexOf(step) + 1} of {CANDIDATE_STEPS.length}</p>
+    <div className="stage-title-row"><div><h1>{stepCopy[step].title}</h1><p className="lede">{stepCopy[step].lede}</p></div></div>
+    <div className="subnav candidate-steps" role="tablist" aria-label="Choose what to map">
+      {CANDIDATE_STEPS.map((id) => <button key={id} id={`candidate-tab-${id}`} role="tab" aria-controls="candidate-panel" aria-selected={step === id} tabIndex={step === id ? 0 : -1} data-composite-value={id} className={step === id ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, CANDIDATE_STEPS, step, setStep)} onClick={() => setStep(id)}>{stepCopy[id].tab}</button>)}
     </div>
-    <div className="subnav" role="tablist" aria-label="Candidate types"><button id="candidate-tab-nodes" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'nodes'} tabIndex={kind === 'nodes' ? 0 : -1} data-composite-value="nodes" className={kind === 'nodes' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('nodes')}>Nodes · {project.candidates.nodes.length}</button><button id="candidate-tab-edges" role="tab" aria-controls="candidate-panel" aria-selected={kind === 'edges'} tabIndex={kind === 'edges' ? 0 : -1} data-composite-value="edges" className={kind === 'edges' ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, ['nodes', 'edges'], kind, setKind)} onClick={() => setKind('edges')}>Relationships · {project.candidates.edges.length}</button></div>
-    <div id="candidate-panel" className="candidate-list" role="tabpanel" aria-labelledby={`candidate-tab-${kind}`}>
-      {candidates.map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
-        <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
-        <div className="candidate-row__main">
-          {kind === 'nodes' ? <div className="candidate-expression"><input aria-label="Node label" maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(item.id, 'label', event.target.value)} /><span>is a</span><select aria-label="Node type" value={item.type} onChange={(event) => edit(item.id, 'type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></div> : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><input aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
-          <p><span className="evidence-chip">{item.evidence || 'Evidence unresolved'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
-          <Field label="Reviewer note"><input maxLength={PROJECT_LIMITS.noteText} value={item.notes || ''} placeholder="Optional reason or condition" onChange={(event) => edit(item.id, 'notes', event.target.value)} /></Field>
+    {decisionStep && <>
+      <MemoDrawer project={project} update={update} hint="Edit the memo here whenever you want, then use “Reread memo” to refresh these suggestions. Your decisions on kept items are preserved." />
+      <div className="button-row candidate-refresh-row">
+        <button className="button button--secondary" type="button" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Rereading memo…' : 'Reread memo for new suggestions'}</button>
+      </div>
+    </>}
+    <div id="candidate-panel" role="tabpanel" aria-labelledby={`candidate-tab-${step}`}>
+      {decisionStep && <>
+        {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} decided</p>}
+        <div className="candidate-list">
+          {candidateRows(step)}
+          {!counts[step].total && <p className="empty-message">{step === 'nodes'
+            ? 'No nodes yet. Open your memo above to add detail and choose “Reread memo,” or add elements yourself on the map — nothing blocks you from continuing.'
+            : 'No connections came from your memo yet. Continue to ask the model for suggestions, or add relationships yourself on the map.'}</p>}
         </div>
-        <div className="candidate-actions" aria-label={`Decision for ${kind === 'nodes' ? item.label : `${item.sourceLabel} ${item.verb} ${item.targetLabel}`}`}>
-          <button className={item.status === 'confirmed' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'confirmed')}>Keep</button>
-          {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'research lead')}>Needs more evidence</button>}
-          <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => setStatus(item.id, 'rejected')}>Remove</button>
+        <div className="button-row candidate-step-actions">
+          {counts[step].remaining > 0 && <button className="button button--secondary" type="button" onClick={() => keepAllRemaining(step)}>Keep all {counts[step].remaining} remaining</button>}
+          <button className="button" type="button" onClick={() => setStep(step === 'nodes' ? 'edges' : 'suggest')}>{step === 'nodes' ? 'Continue to connections' : 'Continue'}<Icon name="arrow" /></button>
         </div>
-      </article>)}
-      {!candidates.length && <p className="empty-message">No {kind === 'nodes' ? 'nodes' : 'relationships'} yet. Open your memo above to add detail and choose “Reread memo,” or add elements yourself on the map — nothing blocks you from continuing.</p>}
+      </>}
+      {step === 'suggest' && <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} />}
     </div>
-    <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} />
   </div>;
 }
 
 const GRAPH_WIDTH = 840;
 const GRAPH_HEIGHT = 540;
+// The visible window stays 840x540; nodes may live and move in a larger world
+// so maps with many cards are not forced to overlap inside one screen.
+const WORLD_WIDTH = 2520;
+const WORLD_HEIGHT = 1620;
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -986,26 +1029,31 @@ function mapEdgeLabelGeometry(label, phoneLayout = false) {
   };
 }
 
-function arrangedMapPositions(nodes, groupByScale, maximumColumns = 3, phoneLayout = false) {
+function arrangedMapPositions(nodes, groupByScale, maximumColumns = 5, phoneLayout = false) {
   if (!nodes.length) return new Map();
   const sortNodes = (items) => [...items].sort((a, b) => a.y - b.y || a.label.localeCompare(b.label));
   const orderedNodes = groupByScale
     ? ['micro', 'meso', 'macro', 'integration'].flatMap((scale) => sortNodes(nodes.filter((node) => node.scale === scale)))
     : sortNodes(nodes);
   const positions = new Map();
-  const columns = Math.min(maximumColumns, Math.max(1, orderedNodes.length));
+  const columns = Math.max(1, Math.min(maximumColumns, Math.ceil(Math.sqrt(orderedNodes.length)), orderedNodes.length));
+  // Column pitch is card width plus breathing room, never a division of the
+  // window: large maps spread into the world and the viewport zooms to fit.
+  const columnPitch = phoneLayout ? 308 : 268;
   const rows = Math.ceil(orderedNodes.length / columns);
   const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(...orderedNodes
     .slice(row * columns, (row + 1) * columns)
     .map((node) => mapNodeGeometry(node.label, phoneLayout).cardHeight)));
-  const verticalGap = phoneLayout ? 26 : 20;
+  const verticalGap = phoneLayout ? 30 : 26;
   const contentHeight = rowHeights.reduce((total, height) => total + height, 0) + verticalGap * Math.max(0, rows - 1);
-  let cursorY = Math.max(20, (GRAPH_HEIGHT - contentHeight) / 2);
+  const contentWidth = columns * columnPitch;
+  const startX = Math.max(24, (GRAPH_WIDTH - contentWidth) / 2);
+  let cursorY = Math.max(24, (GRAPH_HEIGHT - contentHeight) / 2);
   rowHeights.forEach((rowHeight, row) => {
     const centerY = cursorY + rowHeight / 2;
     orderedNodes.slice(row * columns, (row + 1) * columns).forEach((node, column) => {
       positions.set(node.id, {
-        x: Math.round((GRAPH_WIDTH * (column + 0.5)) / columns),
+        x: Math.round(startX + columnPitch * (column + 0.5)),
         y: Math.round(centerY),
       });
     });
@@ -1069,8 +1117,26 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
       midY: (source.y + target.y) / 2,
     };
   });
+  const nodeBounds = nodes.map((node) => {
+    const geometry = mapNodeGeometry(node.label);
+    return {
+      left: node.x + geometry.cardX,
+      right: node.x + geometry.cardX + geometry.cardWidth,
+      top: node.y + geometry.cardY,
+      bottom: node.y + geometry.cardY + geometry.cardHeight,
+    };
+  });
+  const previewViewBox = nodeBounds.length
+    ? (() => {
+      const minX = Math.min(...nodeBounds.map(({ left }) => left)) - 24;
+      const minY = Math.min(...nodeBounds.map(({ top }) => top)) - 24;
+      const width = Math.max(GRAPH_WIDTH, Math.max(...nodeBounds.map(({ right }) => right)) + 24 - minX);
+      const height = Math.max(GRAPH_HEIGHT, Math.max(...nodeBounds.map(({ bottom }) => bottom)) + 24 - minY);
+      return `${minX} ${minY} ${width} ${height}`;
+    })()
+    : `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`;
   return <div className="connection-preview" role="img" aria-label={`Preview with ${nodes.length} nodes and ${shownEdges.length} connections`}>
-    <svg viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`} aria-hidden="true" focusable="false">
+    <svg viewBox={previewViewBox} aria-hidden="true" focusable="false">
       <defs><marker id="connection-preview-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" /></marker></defs>
       <g className="connection-preview__lines">{shownEdgeLayouts.map(({ edge, source, target, proposed }) => <g key={edge.id} className={`connection-preview__edge ${proposed ? 'is-proposed' : 'is-existing'} ${edge.status === 'confirmed' ? 'is-accepted' : ''}`}>
         <line x1={source.x} y1={source.y} x2={target.x} y2={target.y} markerEnd="url(#connection-preview-arrow)" />
@@ -1097,19 +1163,25 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
 function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
   const nodes = nodesForConnectionPrompt(project);
   const nodeIds = new Set(nodes.map((node) => node.id));
-  const edges = project.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  // Connections kept at the previous step count as existing here, so the
+  // preview stays continuous with the student's decisions before "Open map."
+  const keptCandidateEdges = project.candidates.edges
+    .filter((edge) => (edge.status === 'confirmed' || edge.status === 'research lead') && nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  const edges = [...new Map([...project.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)), ...keptCandidateEdges]
+    .map((edge) => [edge.id, edge])).values()];
   const accepted = suggestions.filter((suggestion) => suggestion.status === 'confirmed').length;
-  return <section className="connection-stage" aria-labelledby="connection-stage-title">
-    <p className="eyebrow">Connect the map · {nodes.length} nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
-    <h2 id="connection-stage-title">Describe connections between nodes</h2>
-    <p className="lede">Describe how the nodes connect in your own words, or just ask for suggestions — with nothing written, the model reads your memo directly. Every suggestion stays editable, and nothing joins the map until you accept it.</p>
+  return <section className="connection-stage" aria-label="More connection suggestions">
+    <p className="eyebrow">{nodes.length} kept nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
     <div className="connection-stage__layout">
       <section className="connection-prompt-panel">
-        <Field label="How do these nodes connect?" hint="Optional. Leave this empty and the model will draw connections straight from your memo.">
-          <textarea rows="8" maxLength="4000" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="For example: Families ask schools for evaluations, while delays make it harder to reach services." />
-        </Field>
-        {nodes.length < 2 && <p className="teacher-message" role="status">Keep at least two nodes above and the model can suggest connections between them.</p>}
+        {nodes.length < 2 && <p className="teacher-message" role="status">Keep at least two nodes and the model can suggest connections between them.</p>}
         <button type="button" className="button" disabled={busy || nodes.length < 2} onClick={onSuggest}>{busy ? 'Suggesting connections…' : suggestions.length ? 'Suggest more connections' : 'Suggest connections'}</button>
+        <details className="connection-hint">
+          <summary>Steer the suggestions (optional)</summary>
+          <Field label="How do these nodes connect?" hint="Only needed if you want to point the model somewhere specific — otherwise it reads your memo.">
+            <textarea rows="6" maxLength="4000" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="For example: Families ask schools for evaluations, while delays make it harder to reach services." />
+          </Field>
+        </details>
         <div className="connection-node-list" aria-label="Nodes included in this request">{nodes.map((node) => <span key={node.id}>{node.label}</span>)}</div>
       </section>
       <section className="connection-preview-panel" aria-labelledby="connection-preview-title">
@@ -1294,8 +1366,8 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     interaction.moved = true;
     if (interaction.kind === 'node') {
       const delta = viewDelta(event, true);
-      interaction.latestX = clamp(Math.round(interaction.originX + delta.x), interaction.halfWidth + 8, GRAPH_WIDTH - interaction.halfWidth - 8);
-      interaction.latestY = clamp(Math.round(interaction.originY + delta.y), interaction.halfHeight + 8, GRAPH_HEIGHT - interaction.halfHeight - 8);
+      interaction.latestX = clamp(Math.round(interaction.originX + delta.x), interaction.halfWidth + 8, WORLD_WIDTH - interaction.halfWidth - 8);
+      interaction.latestY = clamp(Math.round(interaction.originY + delta.y), interaction.halfHeight + 8, WORLD_HEIGHT - interaction.halfHeight - 8);
       schedule(() => setTransientNode({ id: interaction.nodeId, x: interaction.latestX, y: interaction.latestY }));
     } else {
       const delta = viewDelta(event);
@@ -1329,8 +1401,8 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     const step = event.shiftKey ? 24 : 8;
     const [dx, dy] = deltas[event.key];
     const geometry = mapNodeGeometry(node.label, phoneLayout);
-    const x = clamp(node.x + dx * step, geometry.cardWidth / 2 + 8, GRAPH_WIDTH - geometry.cardWidth / 2 - 8);
-    const y = clamp(node.y + dy * step, geometry.cardHeight / 2 + 8, GRAPH_HEIGHT - geometry.cardHeight / 2 - 8);
+    const x = clamp(node.x + dx * step, geometry.cardWidth / 2 + 8, WORLD_WIDTH - geometry.cardWidth / 2 - 8);
+    const y = clamp(node.y + dy * step, geometry.cardHeight / 2 + 8, WORLD_HEIGHT - geometry.cardHeight / 2 - 8);
     onSelect('node', node.id, false);
     onMoveNode(node.id, x, y, 'keyboard');
     onAnnounce(`${node.label} moved to x ${x}, y ${y}.`);
@@ -1534,7 +1606,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     initialLayoutCheckedRef.current = true;
     const currentNodes = project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired');
     const positions = mapNeedsReadableOverview(currentNodes, project.events, phoneLayout)
-      ? arrangedMapPositions(currentNodes, new Set(currentNodes.map((node) => node.scale)).size > 1, 3, phoneLayout)
+      ? arrangedMapPositions(currentNodes, new Set(currentNodes.map((node) => node.scale)).size > 1, phoneLayout ? 3 : 5, phoneLayout)
       : null;
     const positionedNodes = currentNodes.map((node) => ({ ...node, ...(positions?.get(node.id) || {}) }));
     const nextScaleEdges = project.graph.edges.filter((edge) => edge.status !== 'rejected'
@@ -1648,7 +1720,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const arrangeMap = () => {
     const nodes = visibleNodes.length ? visibleNodes : project.graph.nodes.filter((node) => showRemoved || node.claimState !== 'retired');
-    const positions = arrangedMapPositions(nodes, visibleScale === 'all' && !phoneLayout, phoneLayout && visibleScale !== 'all' ? 2 : 3, phoneLayout);
+    const positions = arrangedMapPositions(nodes, visibleScale === 'all' && !phoneLayout, phoneLayout ? (visibleScale !== 'all' ? 2 : 3) : 5, phoneLayout);
     const arrangedNodes = nodes.map((node) => ({ ...node, ...positions.get(node.id) }));
     const nextViewport = fitViewport(arrangedNodes, phoneLayout ? 650 : 440, phoneLayout);
     update((draft) => {
@@ -1752,7 +1824,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     <div className={`map-layout ${drawerOpen ? 'has-inspector' : ''}`}>
       <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} mapLabel={mapLabel} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} panMode={panMode} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
-        <div className="canvas-controls" role="toolbar" aria-label="Map view controls" aria-hidden={drawerOpen ? 'true' : undefined} inert={drawerOpen}><button type="button" aria-pressed={panMode} className={panMode ? 'is-active' : ''} onClick={() => setPanMode((current) => !current)}>Pan</button><button type="button" aria-label="Zoom out" onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" onClick={() => zoomBy(0.15)}>+</button><button type="button" onClick={arrangeMap}>Arrange map</button><button type="button" onClick={fitMap}>Fit map</button><button type="button" aria-expanded={legendOpen} onClick={() => setLegendOpen((current) => { const opening = !current; if (opening) { setDrawerOpen(false); setCreateMenuOpen(false); } return opening; })}>Map key</button><button className="phone-inspector-trigger" type="button" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setDrawerOpen(true); }}>Details</button></div>
+        <div className="canvas-controls" role="toolbar" aria-label="Map view controls" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}><button type="button" aria-pressed={panMode} className={panMode ? 'is-active' : ''} onClick={() => setPanMode((current) => !current)}>Pan</button><button type="button" aria-label="Zoom out" onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" onClick={() => zoomBy(0.15)}>+</button><button type="button" onClick={arrangeMap}>Arrange map</button><button type="button" onClick={fitMap}>Fit map</button><button type="button" aria-expanded={legendOpen} onClick={() => setLegendOpen((current) => { const opening = !current; if (opening) { setDrawerOpen(false); setCreateMenuOpen(false); } return opening; })}>Map key</button><button className="phone-inspector-trigger" type="button" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setDrawerOpen(true); }}>Details</button></div>
         {legendOpen && <aside className="map-legend" aria-label="Map key"><div className="map-legend__head"><strong>Map key</strong><button type="button" onClick={() => setLegendOpen(false)} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend /></aside>}
         <div className="sr-only" aria-live="polite">{announcement}</div>
       </section>
@@ -2348,10 +2420,7 @@ function App() {
       if (node.status === 'pending') { node.status = 'confirmed'; node.claimState = 'student interpretation'; }
     });
     candidates.edges.forEach((edge) => {
-      if (edge.status !== 'pending') return;
-      const allowed = currentProject.configs.builder.relationVocabulary.includes(edge.verb.trim().toLowerCase());
-      edge.status = allowed ? 'confirmed' : currentProject.instructor.allowResearchLeads ? 'research lead' : 'pending';
-      edge.claimState = edge.status === 'confirmed' ? 'student interpretation' : edge.status === 'research lead' ? 'research lead' : edge.claimState;
+      if (edge.status === 'pending') { edge.status = 'confirmed'; edge.claimState = 'student interpretation'; }
     });
     return candidates;
   };
@@ -2436,7 +2505,9 @@ function App() {
     setConnectionPrompt('');
     setConnectionSuggestions([]);
     recordStageTransition(project.stage, 3, { completed: true });
-    toast(acceptedNodes.length || acceptedSuggestions.length ? 'Selections added to the map.' : 'Map opened without adding selections.');
+    const pendingCount = [...project.candidates.nodes, ...project.candidates.edges].filter((item) => item.status === 'pending').length;
+    const pendingNote = pendingCount ? ` ${pendingCount} undecided ${pendingCount === 1 ? 'item' : 'items'} stayed off the map.` : '';
+    toast(acceptedNodes.length || acceptedSuggestions.length ? `Selections added to the map.${pendingNote}` : `Map opened without adding selections.${pendingNote}`);
   };
 
   const primary = async () => {

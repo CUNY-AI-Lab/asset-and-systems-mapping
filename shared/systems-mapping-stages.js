@@ -13,9 +13,9 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
   }),
   Object.freeze({
     id: 'choose-what-to-map',
-    label: 'choose nodes and describe connections',
+    label: 'choose nodes and connections',
     short: 'Connections',
-    description: 'Students choose supported nodes and relationships, then describe connections for the custom AI model to suggest.',
+    description: 'Students choose supported nodes first, then confirm and edit how those nodes connect, and can ask the custom AI model for further connection suggestions.',
   }),
   Object.freeze({
     id: 'build-map',

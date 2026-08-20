@@ -65,7 +65,7 @@ function addAuthoritativePreflight(project, overrides = {}) {
       ],
       connections: [{ source: 'School', target: 'Committee', verb: 'refers', rationale: 'The memo names the referral directly.' }],
       example: 'One evident connection: School refers Committee, because the memo names the referral directly.',
-      readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and describe connections.' },
+      readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and connections.' },
     },
     configurationSnapshot,
     evaluation: {

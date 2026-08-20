@@ -563,7 +563,7 @@ describe('persistent preflight suggestion review queue', () => {
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const input = ollamaRequest.mock.calls[0][0];
-    expect(input.systemPrompt).toContain('[Part 1. Current section. choose nodes and describe connections]');
+    expect(input.systemPrompt).toContain('[Part 1. Current section. choose nodes and connections]');
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
     expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);

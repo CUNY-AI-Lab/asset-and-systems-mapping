@@ -131,7 +131,7 @@ function memoReviewFixture() {
     ],
     connections: [{ source: 'School', target: 'Committee', verb: 'refers students to', rationale: 'The memo names the referral directly.' }],
     example: 'One evident connection: the school refers students to the committee, because the memo names that handoff directly.',
-    readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and describe connections.' },
+    readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and connections.' },
   };
 }
 
@@ -468,7 +468,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
     const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
-    ['add your memo', 'review your memo', 'choose nodes and describe connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
+    ['add your memo', 'review your memo', 'choose nodes and connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
@@ -583,7 +583,8 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByText(/add elements yourself on the map/i)).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    expect(screen.getByRole('heading', { name: 'Ask for more connections' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -602,9 +603,11 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 2;
     await resumeSavedProject(project);
 
-    expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    expect(screen.getByRole('heading', { name: 'Ask for more connections' })).toBeVisible();
     expect(screen.getByText(/the model reads your memo directly/i)).toBeVisible();
     const prompt = 'Families rely on schools, but delayed referrals make services harder to reach in this session.';
+    fireEvent.click(screen.getByText('Steer the suggestions (optional)'));
     fireEvent.change(screen.getByRole('textbox', { name: /How do these nodes connect/ }), { target: { value: prompt } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
 
@@ -646,6 +649,8 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 2;
     await resumeSavedProject(project);
 
+    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    fireEvent.click(screen.getByText('Steer the suggestions (optional)'));
     fireEvent.change(screen.getByRole('textbox', { name: /How do these nodes connect/ }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
@@ -731,7 +736,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Review');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('region', { name: 'Where your memo stands' })).toBeVisible();
-    expect(screen.getByText('The memo already supports mapping. Continue to choose nodes and describe connections.')).toBeVisible();
+    expect(screen.getByText('The memo already supports mapping. Continue to choose nodes and connections.')).toBeVisible();
   });
 
   it('blocks an oversized evaluation request without truncating the local memo', async () => {
@@ -851,7 +856,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: /Choose nodes and connections/ }));
-    expect(await screen.findByRole('heading', { name: 'Choose nodes and describe connections' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.stage).toBe(2);
@@ -944,6 +949,39 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => {
       expect(storedProject().graph.nodes.find((node) => node.id === project.candidates.nodes[0].id)).toMatchObject({ status: 'rejected', claimState: 'retired' });
     });
+  });
+
+  it('keeps a relationship whose verb is outside the course vocabulary when the student chooses Keep', async () => {
+    const project = createDefaultProject();
+    const extracted = extractCandidates(project.submission);
+    const nodes = extracted.nodes.slice(0, 2).map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+    const edge = {
+      ...extracted.edges[0],
+      source: nodes[0].id,
+      target: nodes[1].id,
+      sourceLabel: nodes[0].label,
+      targetLabel: nodes[1].label,
+      verb: 'receives an invitation from',
+      status: 'pending',
+      claimState: 'inference',
+      evidence: 'The memo describes the invitation directly.',
+    };
+    project.candidates = { nodes, edges: [edge] };
+    project.graph = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Connections · 1/ }));
+    const row = screen.getAllByRole('article')[0];
+    fireEvent.click(within(row).getByRole('button', { name: 'Keep' }));
+    expect(within(row).getByRole('button', { name: 'Keep' })).toHaveClass('is-active');
+    await waitFor(() => expect(storedProject().candidates.edges[0]).toMatchObject({ status: 'confirmed', claimState: 'student interpretation' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    await waitFor(() => expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ verb: 'receives an invitation from', status: 'confirmed', claimState: 'student interpretation' }),
+    ])));
   });
 
   it('lays out the accepted subset on a first build without changing later saved positions', async () => {

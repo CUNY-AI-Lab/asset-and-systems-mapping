@@ -577,7 +577,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro') {
   const readiness = {
     ready,
     note: truncateCollapsedText(ready
-      ? `The memo already names ${reviewNodes.length} elements and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose nodes and describe connections.`
+      ? `The memo already names ${reviewNodes.length} elements and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose nodes and connections.`
       : 'The offline reader found fewer than two connected elements, but that is not a judgment of the memo. Continue when you are ready, or expand the memo here first.', PROJECT_LIMITS.memoGuidanceText),
   };
   return { guidance, nodes: reviewNodes, connections, example, readiness };
