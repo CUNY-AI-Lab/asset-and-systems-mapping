@@ -63,18 +63,29 @@ Fixed evidence, privacy, output, and student-confirmation rules remain code-owne
 
 With Ollama enabled, the model reads the memo under the memo review contract and returns grounded guidance, proposed nodes and connections, one worked example, and a readiness signal — passed to the student without filtering or scoring, bounded only by size and shape limits. With Ollama disabled, the classroom server runs an offline reader that recognizes only direct connection phrases such as "X provides Y"; it says so plainly in its guidance, proposes whatever nodes and connections it can find, and never judges the memo. This offline mode is reproducible and sends nothing to an outside model provider; it is not proof that a language model ran. Connection suggestions require Ollama and do not fall back to offline rules.
 
-Ollama Cloud is explicit opt-in:
+Ollama Cloud is the primary model runtime and OpenRouter is an optional backup; both are explicit opt-in:
 
 ```dotenv
 OLLAMA_ENABLED=true
 OLLAMA_API_KEY=<fresh-rotated-server-only-key>
 OLLAMA_CLOUD_URL=https://ollama.com
-OLLAMA_MODEL=gpt-oss:20b
+OLLAMA_MODEL=deepseek-v4-flash:0731
+OLLAMA_TIMEOUT_MS=90000
+OLLAMA_MAX_OUTPUT_TOKENS=8192
+
+OPENROUTER_ENABLED=true
+OPENROUTER_API_KEY=<fresh-rotated-server-only-key>
+OPENROUTER_URL=https://openrouter.ai
+OPENROUTER_MODEL=deepseek/deepseek-v4-flash-0731
+OPENROUTER_TIMEOUT_MS=90000
+OPENROUTER_MAX_OUTPUT_TOKENS=8192
 ```
 
-When enabled, the server sends the published guidance and course material for the current section, bounded project instructions, inquiry, scale, memo details, and memo text to Ollama Cloud. Memo text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the exact H1–H4/C1–C8 JSON schema; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic scoring.
+When both runtimes are enabled, every request goes to Ollama Cloud first; provider-side failures (timeouts, HTTP errors, malformed envelopes) retry once through OpenRouter, while input-shaped failures never retry. The stored runtime metadata records which provider actually served each evaluation. With only OpenRouter enabled it serves as the primary runtime. Thinking models such as DeepSeek V4 Flash spend output tokens on reasoning before the JSON answer, so the token and timeout headroom above is required — the 2,048-token default truncates real memo reviews.
 
-The credential previously pasted into chat must be treated as exposed. It has deliberately not been placed in the local `.env` or Railway. Revoke it and configure a newly rotated key before enabling Ollama Cloud. Never prefix `OLLAMA_API_KEY` with `VITE_` or otherwise expose it to client code.
+The server sends the published guidance and course material for the current section, bounded project instructions, inquiry, scale, memo details, and memo text to the configured provider. Memo text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the memo review JSON contract; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic output.
+
+Any credential pasted into chat or shell history must be treated as exposed: revoke it and configure a newly rotated key. Never prefix `OLLAMA_API_KEY` or `OPENROUTER_API_KEY` with `VITE_` or otherwise expose them to client code.
 
 ## Persistence and retention
 

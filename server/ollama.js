@@ -279,12 +279,12 @@ async function cancelBody(response) {
   }
 }
 
-async function readBoundedBody(response) {
+async function readBoundedBody(response, providerLabel = 'Ollama Cloud') {
   const headerValue = response?.headers?.get?.('content-length');
   const declaredLength = headerValue === null || headerValue === undefined ? null : Number(headerValue);
   if (Number.isFinite(declaredLength) && declaredLength > OLLAMA_CLOUD_LIMITS.providerBodyBytes) {
     await cancelBody(response);
-    fail('Ollama Cloud response exceeds the supported size.', 'response_too_large');
+    fail(`${providerLabel} response exceeds the supported size.`, 'response_too_large');
   }
 
   if (response?.body && typeof response.body.getReader === 'function') {
@@ -295,7 +295,7 @@ async function readBoundedBody(response) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (!(value instanceof Uint8Array)) fail('Ollama Cloud returned an invalid response.', 'invalid_response');
+        if (!(value instanceof Uint8Array)) fail(`${providerLabel} returned an invalid response.`, 'invalid_response');
         received += value.byteLength;
         if (received > OLLAMA_CLOUD_LIMITS.providerBodyBytes) {
           try {
@@ -303,7 +303,7 @@ async function readBoundedBody(response) {
           } catch {
             // The bounded response error below remains authoritative.
           }
-          fail('Ollama Cloud response exceeds the supported size.', 'response_too_large');
+          fail(`${providerLabel} response exceeds the supported size.`, 'response_too_large');
         }
         chunks.push(Buffer.from(value));
       }
@@ -313,10 +313,10 @@ async function readBoundedBody(response) {
     return Buffer.concat(chunks, received).toString('utf8');
   }
 
-  if (typeof response?.text !== 'function') fail('Ollama Cloud returned an invalid response.', 'invalid_response');
+  if (typeof response?.text !== 'function') fail(`${providerLabel} returned an invalid response.`, 'invalid_response');
   const body = await response.text();
   if (byteLength(body) > OLLAMA_CLOUD_LIMITS.providerBodyBytes) {
-    fail('Ollama Cloud response exceeds the supported size.', 'response_too_large');
+    fail(`${providerLabel} response exceeds the supported size.`, 'response_too_large');
   }
   return body;
 }
@@ -403,6 +403,18 @@ function parseProviderEnvelope(body, requestedModel) {
 
   return { suggestion, metadata: Object.freeze(metadata) };
 }
+
+export {
+  JSON_ONLY_INSTRUCTION,
+  assertJsonCompatible,
+  cancelBody,
+  integerOption,
+  isPlainObject,
+  normalizeInput,
+  normalizeTestBaseUrl,
+  readBoundedBody,
+  testRuntime,
+};
 
 export async function requestOllamaSuggestion(input, config, { signal, testOnly } = {}) {
   const normalizedConfig = validateOllamaCloudConfig(config);

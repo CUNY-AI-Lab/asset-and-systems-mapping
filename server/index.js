@@ -2,7 +2,8 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadEnvFile } from 'node:process';
 import { createSystemsMappingApp } from './app.js';
-import { validateOllamaCloudConfig } from './ollama.js';
+import { requestOllamaSuggestion, validateOllamaCloudConfig } from './ollama.js';
+import { requestOpenRouterSuggestion, validateOpenRouterConfig, withOpenRouterFallback } from './openrouter.js';
 
 try {
   loadEnvFile('.env');
@@ -98,6 +99,36 @@ function takeOllamaConfig() {
     apiKey,
     baseUrl,
     model: process.env.OLLAMA_MODEL || 'gpt-oss:20b',
+    timeoutMs: optionalInteger('OLLAMA_TIMEOUT_MS', { fallback: undefined, min: 10, max: 120_000 }),
+    maxOutputTokens: optionalInteger('OLLAMA_MAX_OUTPUT_TOKENS', { fallback: undefined, min: 1, max: 8192 }),
+  });
+}
+
+function takeOpenRouterConfig() {
+  const enabled = process.env.OPENROUTER_ENABLED;
+  if (enabled !== undefined && !['true', 'false'].includes(enabled)) {
+    throw new Error('OPENROUTER_ENABLED must be true or false.');
+  }
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  if (enabled !== 'true') return null;
+  if (typeof apiKey !== 'string' || apiKey.length < 20) {
+    throw new Error('OPENROUTER_API_KEY must be a fresh server-only credential when OpenRouter is enabled.');
+  }
+  const baseUrl = process.env.OPENROUTER_URL || 'https://openrouter.ai';
+  if (baseUrl !== 'https://openrouter.ai') {
+    throw new Error('OPENROUTER_URL must be https://openrouter.ai.');
+  }
+  const model = process.env.OPENROUTER_MODEL;
+  if (typeof model !== 'string' || model.length === 0) {
+    throw new Error('OPENROUTER_MODEL is required when OpenRouter is enabled.');
+  }
+  return validateOpenRouterConfig({
+    apiKey,
+    baseUrl,
+    model,
+    timeoutMs: optionalInteger('OPENROUTER_TIMEOUT_MS', { fallback: undefined, min: 10, max: 120_000 }),
+    maxOutputTokens: optionalInteger('OPENROUTER_MAX_OUTPUT_TOKENS', { fallback: undefined, min: 1, max: 8192 }),
   });
 }
 
@@ -128,6 +159,25 @@ if (process.env.DATABASE_SSL !== undefined && !['true', 'false'].includes(proces
 const publicDemo = takePublicDemo(hostedMode);
 const runtimeClassCode = takeClassCode(hostedMode, publicDemo);
 const ollamaConfig = takeOllamaConfig();
+const openRouterConfig = takeOpenRouterConfig();
+
+// Ollama Cloud is the primary model runtime; OpenRouter either backs it up on
+// provider-side failures or serves alone when it is the only runtime enabled.
+let suggestionOptions = {};
+if (ollamaConfig && openRouterConfig) {
+  suggestionOptions = {
+    ollamaConfig,
+    ollamaRequest: withOpenRouterFallback(requestOllamaSuggestion, openRouterConfig),
+  };
+} else if (openRouterConfig) {
+  suggestionOptions = {
+    ollamaConfig: openRouterConfig,
+    suggestionProvider: 'openrouter',
+    ollamaRequest: requestOpenRouterSuggestion,
+  };
+} else if (ollamaConfig) {
+  suggestionOptions = { ollamaConfig };
+}
 
 const { app, close, ready } = createSystemsMappingApp({
   dbPath: process.env.DATABASE_PATH || 'data/systems-mapping.sqlite',
@@ -146,7 +196,7 @@ const { app, close, ready } = createSystemsMappingApp({
   teacherBootstrapToken: takeBootstrapToken(),
   classCode: runtimeClassCode,
   publicDemo,
-  ollamaConfig,
+  ...suggestionOptions,
   studentSessionTtlMs: optionalDuration('STUDENT_SESSION_TTL_MS', { min: 1000, max: 7 * 24 * 60 * 60 * 1000 }),
   sessionTtlMs: optionalDuration('TEACHER_SESSION_TTL_MS', { min: 60_000, max: 30 * 24 * 60 * 60 * 1000 }),
 });

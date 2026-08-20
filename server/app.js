@@ -621,10 +621,18 @@ const OLLAMA_RUNTIME_INTEGER_FIELDS = Object.freeze([
   'evalCount', 'evalDurationNs',
 ]);
 
+const MODEL_SUGGESTION_PROVIDERS = new Set(['ollama-cloud', 'openrouter']);
+
 function authoritativeRuntimeMetadata(value, { provider, model, createdAt }) {
   if (!isPlainObject(value)) value = {};
-  const metadata = { provider, model, createdAt: new Date(createdAt).toISOString() };
-  if (provider === 'ollama-cloud') {
+  // A fallback runtime may serve the request through a different provider than
+  // the configured primary; the stored metadata records the one that answered.
+  const servedProvider = MODEL_SUGGESTION_PROVIDERS.has(value.provider) ? value.provider : provider;
+  const servedModel = MODEL_SUGGESTION_PROVIDERS.has(servedProvider) && typeof value.model === 'string' && value.model.length > 0
+    ? requireSnapshotText(value.model, 'runtime.model', { max: 200 })
+    : model;
+  const metadata = { provider: servedProvider, model: servedModel, createdAt: new Date(createdAt).toISOString() };
+  if (MODEL_SUGGESTION_PROVIDERS.has(servedProvider)) {
     metadata.maxSourceBytes = OLLAMA_CLOUD_LIMITS.sourceTextBytes;
     if (value.requestedModel !== undefined) metadata.requestedModel = requireSnapshotText(value.requestedModel, 'runtime.requestedModel', { max: 200 });
     if (value.doneReason !== undefined) metadata.doneReason = requireSnapshotText(value.doneReason, 'runtime.doneReason', { max: 100 });
@@ -1557,9 +1565,13 @@ export function createSystemsMappingApp(options = {}) {
   }
   const ollamaRequest = options.ollamaRequest ?? requestOllamaSuggestion;
   if (typeof ollamaRequest !== 'function') throw new TypeError('ollamaRequest must be a function.');
+  const suggestionProvider = options.suggestionProvider ?? 'ollama-cloud';
+  if (!MODEL_SUGGESTION_PROVIDERS.has(suggestionProvider)) {
+    throw new TypeError('suggestionProvider must be a supported model provider.');
+  }
   const suggestionRuntime = Object.freeze(ollamaConfig
     ? {
-      provider: 'ollama-cloud',
+      provider: suggestionProvider,
       model: ollamaConfig.model,
       maxSourceBytes: OLLAMA_CLOUD_LIMITS.sourceTextBytes,
     }
@@ -1923,7 +1935,7 @@ export function createSystemsMappingApp(options = {}) {
           const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review');
           suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
           runtimeMetadata = authoritativeRuntimeMetadata(generated.metadata, {
-            provider: 'ollama-cloud',
+            provider: suggestionProvider,
             model: ollamaConfig.model,
             createdAt,
           });
