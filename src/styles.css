@@ -98,8 +98,8 @@ a { color: inherit; }
   transition: opacity .15s;
 }
 .brand__lab:hover, .brand__lab:focus-visible { opacity: .7; }
-.lab-mark { display: block; width: 34px; height: 25px; }
-.brand__home { display: grid; min-width: 0; text-decoration: none; color: inherit; }
+.lab-logo { display: block; height: 26px; width: auto; }
+.brand__home { display: grid; min-width: 0; padding-left: 12px; border-left: 1px solid var(--line); text-decoration: none; color: inherit; }
 .brand strong { font-family: var(--display); font-size: 16px; font-weight: 600; line-height: 1.2; letter-spacing: -.015em; }
 .brand small { max-width: min(500px, 42vw); color: var(--muted); font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; white-space: normal; }
 
@@ -1143,7 +1143,7 @@ label.button:focus-within {
 
 @media (max-width: 600px) {
   .app-header { padding-right: calc(12px + var(--safe-right)); padding-left: calc(12px + var(--safe-left)); }
-  .lab-mark { width: 30px; height: 22px; }
+  .lab-logo { height: 22px; }
   .brand strong { font-size: 13px; }
   .header-actions { gap: 0; }
   .text-button { min-width: 44px; padding: 0; justify-content: center; font-size: 0; }
@@ -1273,7 +1273,7 @@ label.button:focus-within {
 }
 
 @media (forced-colors: active) {
-  .lab-mark, .button, .dry-run-panel, .account-initials { forced-color-adjust: none; }
+  .lab-logo, .button, .dry-run-panel, .account-initials { forced-color-adjust: none; }
   .graph-node .node-card { fill: Canvas; stroke: CanvasText; }
   .graph-node .node-selection-ring { fill: none; stroke: Highlight; }
   .graph-edge .edge-line { stroke: CanvasText !important; }

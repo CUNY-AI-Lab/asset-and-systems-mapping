@@ -19,6 +19,7 @@ import {
   withDefaultNodeLayout,
 } from './domain.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
+import cunyAiLabLogo from './assets/cuny-ai-lab-logo.png';
 import {
   ApiError,
   createPreflightEvaluation,
@@ -426,18 +427,8 @@ function Icon({ name, size = 18 }) {
   return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-function LabMark() {
-  // Geometry and colors traced from the CUNY AI Lab favicon (ailab.gc.cuny.edu).
-  return <svg aria-hidden="true" className="lab-mark" viewBox="0 0 354 259" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="39" y="1" width="291" height="46" rx="23" fill="#1d3a83" />
-    <rect x="0" y="71" width="291" height="47" rx="23.5" fill="#3b73e6" />
-    <rect x="63" y="142" width="290" height="46" rx="23" fill="#2fb8d6" />
-    <rect x="31" y="212" width="290" height="47" rx="23.5" fill="#2a6fb8" />
-  </svg>;
-}
-
 function LabLink() {
-  return <a className="brand__lab" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><LabMark /></a>;
+  return <a className="brand__lab" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img className="lab-logo" src={cunyAiLabLogo} alt="" /></a>;
 }
 
 function Modal({ open, title, onClose, children, wide = false }) {
