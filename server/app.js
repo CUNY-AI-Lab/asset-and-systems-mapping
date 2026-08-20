@@ -1939,7 +1939,9 @@ export function createSystemsMappingApp(options = {}) {
             model: ollamaConfig.model,
             createdAt,
           });
-        } catch {
+        } catch (error) {
+          // Code-only server log; provider bodies and memo content never land in logs.
+          console.warn('memo review generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
         }
       } else {
@@ -2032,7 +2034,8 @@ export function createSystemsMappingApp(options = {}) {
         const existingConnections = new Set(input.relationships.map(({ source, target, verb }) => `${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
         connections = validateGeneratedConnections(generated.suggestion, new Set(input.nodes.map(({ id }) => id)))
           .filter(({ source, target, verb }) => !existingConnections.has(`${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
-      } catch {
+      } catch (error) {
+        console.warn('connection suggestion generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
         throw new HttpError(502, 'Connection suggestions are temporarily unavailable.');
       }
       return context.json({ connections }, 201);
