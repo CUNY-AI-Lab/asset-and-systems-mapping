@@ -91,19 +91,15 @@ a { color: inherit; }
   min-width: 0;
   text-decoration: none;
 }
-.brand__mark {
-  width: 34px;
-  height: 34px;
+.brand__lab {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  color: #fff;
-  background: var(--ink);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: -.04em;
+  transition: opacity .15s;
 }
-.brand > span:last-child { display: grid; min-width: 0; }
+.brand__lab:hover, .brand__lab:focus-visible { opacity: .7; }
+.lab-mark { display: block; width: 34px; height: 25px; }
+.brand__home { display: grid; min-width: 0; text-decoration: none; color: inherit; }
 .brand strong { font-family: var(--display); font-size: 16px; font-weight: 600; line-height: 1.2; letter-spacing: -.015em; }
 .brand small { max-width: min(500px, 42vw); color: var(--muted); font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; white-space: normal; }
 
@@ -1095,7 +1091,7 @@ label.button:focus-within {
 @media (max-width: 900px) {
   :root { --header: 64px; --footer: 68px; }
   .app-header { padding-right: calc(18px + var(--safe-right)); padding-left: calc(18px + var(--safe-left)); }
-  .brand > span:last-child { display: none; }
+  .brand__home { display: none; }
   .brand small, .save-state { display: none; }
   .header-actions { gap: 2px; }
   .text-button { padding: 0 7px; font-size: 12px; }
@@ -1147,7 +1143,7 @@ label.button:focus-within {
 
 @media (max-width: 600px) {
   .app-header { padding-right: calc(12px + var(--safe-right)); padding-left: calc(12px + var(--safe-left)); }
-  .brand__mark { width: 32px; height: 32px; }
+  .lab-mark { width: 30px; height: 22px; }
   .brand strong { font-size: 13px; }
   .header-actions { gap: 0; }
   .text-button { min-width: 44px; padding: 0; justify-content: center; font-size: 0; }
@@ -1277,7 +1273,7 @@ label.button:focus-within {
 }
 
 @media (forced-colors: active) {
-  .brand__mark, .button, .dry-run-panel, .account-initials { forced-color-adjust: none; }
+  .lab-mark, .button, .dry-run-panel, .account-initials { forced-color-adjust: none; }
   .graph-node .node-card { fill: Canvas; stroke: CanvasText; }
   .graph-node .node-selection-ring { fill: none; stroke: Highlight; }
   .graph-edge .edge-line { stroke: CanvasText !important; }

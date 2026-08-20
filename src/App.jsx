@@ -426,6 +426,20 @@ function Icon({ name, size = 18 }) {
   return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
+function LabMark() {
+  // Geometry and colors traced from the CUNY AI Lab favicon (ailab.gc.cuny.edu).
+  return <svg aria-hidden="true" className="lab-mark" viewBox="0 0 354 259" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="39" y="1" width="291" height="46" rx="23" fill="#1d3a83" />
+    <rect x="0" y="71" width="291" height="47" rx="23.5" fill="#3b73e6" />
+    <rect x="63" y="142" width="290" height="46" rx="23" fill="#2fb8d6" />
+    <rect x="31" y="212" width="290" height="47" rx="23.5" fill="#2a6fb8" />
+  </svg>;
+}
+
+function LabLink() {
+  return <a className="brand__lab" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><LabMark /></a>;
+}
+
 function Modal({ open, title, onClose, children, wide = false }) {
   const closeRef = useRef(null);
   const modalRef = useRef(null);
@@ -478,7 +492,7 @@ function Field({ label, hint, children, className = '' }) {
 function AccessFrame({ children, onTeacher }) {
   return <div className="access-shell">
     <header className="access-header">
-      <span className="brand__mark" aria-hidden="true">sm</span>
+      <LabLink />
       <strong>Systems Mapping</strong>
       <button type="button" className="access-header__teacher" onClick={onTeacher}>Teacher Console</button>
     </header>
@@ -2849,7 +2863,7 @@ function App() {
 
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
-      <a href="#workspace" className="brand" aria-label="Systems Mapping Teacher Console home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>Teacher Console</small></span></a>
+      <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Teacher Console home"><strong>Systems Mapping</strong><small>Teacher Console</small></a></div>
       <button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
@@ -2869,7 +2883,7 @@ function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <a href="#workspace" className="brand" aria-label="Systems Mapping home"><span className="brand__mark">sm</span><span><strong>Systems Mapping</strong><small>{project.title}</small></span></a>
+      <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping home"><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
       <div className="header-actions">
         {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <span className="save-state save-state--error"><i />Complete the current field to save</span> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
         <button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" onClick={() => { setMapPreviewOpen(false); setTeacherOpen(true); }}><Icon name="settings" />Teacher Console</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
