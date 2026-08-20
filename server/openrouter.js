@@ -298,6 +298,8 @@ export function withOpenRouterFallback(primaryRequest, backupConfig) {
       return await primaryRequest(input, config, options);
     } catch (error) {
       if (!shouldFallToBackup(error)) throw error;
+      // Code-only server log so operators can see which side of the chain failed.
+      console.warn('primary suggestion runtime failed, using backup:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
       return requestOpenRouterSuggestion(input, normalizedBackup, options);
     }
   };
