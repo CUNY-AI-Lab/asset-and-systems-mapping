@@ -16,7 +16,7 @@ const DEFAULT_BASE_URL = 'https://openrouter.ai';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 2_048;
 const PROVIDER_LABEL = 'OpenRouter';
-const CONFIG_KEYS = new Set(['apiKey', 'baseUrl', 'model', 'timeoutMs', 'maxOutputTokens']);
+const CONFIG_KEYS = new Set(['apiKey', 'baseUrl', 'model', 'timeoutMs', 'maxOutputTokens', 'reasoningEnabled']);
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u;
 
 // Errors with these codes describe the caller's input or intent, so a backup
@@ -99,6 +99,10 @@ export function validateOpenRouterConfig(config) {
       'OpenRouter output token limit',
     ),
   };
+  if (config.reasoningEnabled !== undefined) {
+    if (typeof config.reasoningEnabled !== 'boolean') fail('OpenRouter reasoning option must be a boolean.', 'invalid_config');
+    normalized.reasoningEnabled = config.reasoningEnabled;
+  }
   Object.defineProperty(normalized, 'apiKey', {
     value: apiKey,
     enumerable: false,
@@ -234,6 +238,7 @@ export async function requestOpenRouterSuggestion(input, config, { signal, testO
     response_format: { type: 'json_object' },
     stream: false,
     max_tokens: normalizedConfig.maxOutputTokens,
+    ...(normalizedConfig.reasoningEnabled === undefined ? {} : { reasoning: { enabled: normalizedConfig.reasoningEnabled } }),
   });
   if (byteLength(body) > OLLAMA_CLOUD_LIMITS.requestBodyBytes) {
     fail('OpenRouter request exceeds the supported size.', 'input_too_large');

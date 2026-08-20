@@ -16,7 +16,7 @@ export const OLLAMA_CLOUD_LIMITS = Object.freeze({
 });
 
 const VALID_SCALES = new Set(['micro', 'meso', 'macro', 'integration']);
-const CONFIG_KEYS = new Set(['apiKey', 'baseUrl', 'model', 'timeoutMs', 'maxOutputTokens']);
+const CONFIG_KEYS = new Set(['apiKey', 'baseUrl', 'model', 'timeoutMs', 'maxOutputTokens', 'think']);
 const RESPONSE_KEYS = new Set([
   'model',
   'created_at',
@@ -191,6 +191,10 @@ export function validateOllamaCloudConfig(config) {
       'Ollama Cloud output token limit',
     ),
   };
+  if (config.think !== undefined) {
+    if (typeof config.think !== 'boolean') fail('Ollama Cloud think option must be a boolean.', 'invalid_config');
+    normalized.think = config.think;
+  }
   Object.defineProperty(normalized, 'apiKey', {
     value: apiKey,
     enumerable: false,
@@ -435,6 +439,7 @@ export async function requestOllamaSuggestion(input, config, { signal, testOnly 
     format: 'json',
     stream: false,
     options: { num_predict: normalizedConfig.maxOutputTokens },
+    ...(normalizedConfig.think === undefined ? {} : { think: normalizedConfig.think }),
   });
   if (byteLength(body) > OLLAMA_CLOUD_LIMITS.requestBodyBytes) {
     fail('Ollama Cloud request exceeds the supported size.', 'input_too_large');

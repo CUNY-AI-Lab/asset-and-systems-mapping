@@ -80,6 +80,13 @@ function takeClassCode(isHosted, publicDemo) {
   return code;
 }
 
+function optionalBoolean(name) {
+  const raw = process.env[name];
+  if (raw === undefined) return undefined;
+  if (!['true', 'false'].includes(raw)) throw new Error(`${name} must be true or false.`);
+  return raw === 'true';
+}
+
 function takeOllamaConfig() {
   const enabled = process.env.OLLAMA_ENABLED;
   if (enabled !== undefined && !['true', 'false'].includes(enabled)) {
@@ -101,6 +108,7 @@ function takeOllamaConfig() {
     model: process.env.OLLAMA_MODEL || 'gpt-oss:20b',
     timeoutMs: optionalInteger('OLLAMA_TIMEOUT_MS', { fallback: undefined, min: 10, max: 120_000 }),
     maxOutputTokens: optionalInteger('OLLAMA_MAX_OUTPUT_TOKENS', { fallback: undefined, min: 1, max: 8192 }),
+    think: optionalBoolean('OLLAMA_THINK'),
   });
 }
 
@@ -129,6 +137,7 @@ function takeOpenRouterConfig() {
     model,
     timeoutMs: optionalInteger('OPENROUTER_TIMEOUT_MS', { fallback: undefined, min: 10, max: 120_000 }),
     maxOutputTokens: optionalInteger('OPENROUTER_MAX_OUTPUT_TOKENS', { fallback: undefined, min: 1, max: 8192 }),
+    reasoningEnabled: optionalBoolean('OPENROUTER_REASONING'),
   });
 }
 

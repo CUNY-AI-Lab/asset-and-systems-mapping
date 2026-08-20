@@ -245,3 +245,19 @@ describe('Ollama Cloud suggestion adapter', () => {
     })).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });
+
+describe('Ollama Cloud think control', () => {
+  it('passes think through to the request body only when configured', async () => {
+    let captured;
+    const fetchImpl = vi.fn(async (url, options) => {
+      captured = JSON.parse(options.body);
+      return jsonResponse(envelope());
+    });
+
+    await requestOllamaSuggestion(input(), config(), { testOnly: { fetchImpl } });
+    expect(captured.think).toBeUndefined();
+
+    await requestOllamaSuggestion(input(), config({ think: false }), { testOnly: { fetchImpl } });
+    expect(captured.think).toBe(false);
+  });
+});

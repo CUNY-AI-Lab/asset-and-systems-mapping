@@ -114,6 +114,20 @@ describe('OpenRouter suggestion adapter', () => {
     expect(Number.isFinite(Date.parse(result.metadata.createdAt))).toBe(true);
   });
 
+  it('passes reasoning control through to the request body only when configured', async () => {
+    let captured;
+    const fetchImpl = vi.fn(async (url, options) => {
+      captured = JSON.parse(options.body);
+      return jsonResponse(envelope());
+    });
+
+    await requestOpenRouterSuggestion(input(), config(), { testOnly: { fetchImpl } });
+    expect(captured.reasoning).toBeUndefined();
+
+    await requestOpenRouterSuggestion(input(), config({ reasoningEnabled: false }), { testOnly: { fetchImpl } });
+    expect(captured.reasoning).toEqual({ enabled: false });
+  });
+
   it('rejects fenced content, truncated completions, and provider HTTP failures with typed codes', async () => {
     const fenced = vi.fn(async () => jsonResponse(envelope('```json\n{"guidance":[]}\n```')));
     await expect(requestOpenRouterSuggestion(input(), config(), { testOnly: { fetchImpl: fenced } }))
