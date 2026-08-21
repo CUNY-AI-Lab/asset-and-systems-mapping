@@ -639,6 +639,27 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
+  it('keeps only the newest review capability active without blocking later scales or cycles', async () => {
+    const studentCookie = await grantStudent();
+    const scales = ['micro', 'meso', 'macro', 'integration', 'micro', 'meso'];
+    const evaluations = [];
+    for (const [index, activeScale] of scales.entries()) {
+      evaluations.push(await evaluate(studentCookie, submissionBody({
+        activeScale,
+        projectMetadata: { projectId: `cycle_${index}`, title: `Cycle ${index + 1}` },
+      })));
+    }
+
+    expect(evaluations).toHaveLength(scales.length);
+    const rows = system.db.prepare(`
+      SELECT id, consumed_at AS consumedAt FROM preflight_evaluations ORDER BY created_at, id
+    `).all();
+    expect(rows).toHaveLength(scales.length);
+    expect(rows.filter(({ consumedAt }) => consumedAt === null)).toHaveLength(1);
+    expect(rows.find(({ id }) => id === evaluations.at(-1).id)?.consumedAt).toBeNull();
+    expect(rows.filter(({ id }) => id !== evaluations.at(-1).id).every(({ consumedAt }) => consumedAt !== null)).toBe(true);
+  });
+
   it('purges expired raw snapshots in bounded batches and preserves only an append-only hashed audit', async () => {
     await system.close();
     system = createSystemsMappingApp({

@@ -45,6 +45,17 @@ const POSTGRES_SCHEMA_SQL = `
     used_at BIGINT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS teacher_password_resets (
+    token_hash TEXT PRIMARY KEY CHECK(token_hash ~ '^[0-9a-f]{64}$'),
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    created_at BIGINT NOT NULL,
+    expires_at BIGINT NOT NULL CHECK(expires_at > created_at),
+    used_at BIGINT CHECK(used_at IS NULL OR used_at >= created_at)
+  );
+
+  CREATE INDEX IF NOT EXISTS teacher_password_resets_account_idx
+    ON teacher_password_resets(account_id, expires_at);
+
   CREATE TABLE IF NOT EXISTS student_sessions (
     token_hash TEXT PRIMARY KEY,
     created_at BIGINT NOT NULL,
@@ -594,6 +605,10 @@ async function initializePostgres(database) {
     `);
     await client.query(`
       INSERT INTO schema_migrations (version) VALUES (7)
+      ON CONFLICT (version) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO schema_migrations (version) VALUES (8)
       ON CONFLICT (version) DO NOTHING
     `);
     await client.query('COMMIT');

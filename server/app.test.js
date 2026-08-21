@@ -5,7 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { STUDENT_SESSION_COOKIE, TEACHER_SESSION_COOKIE } from './auth.js';
+import { issuePasswordReset, STUDENT_SESSION_COOKIE, TEACHER_SESSION_COOKIE } from './auth.js';
 import { createSystemsMappingApp } from './app.js';
 import { assertDatabaseIntegrity, inTransaction, prototypeEventAudit } from './database.js';
 
@@ -105,6 +105,34 @@ describe('hardened Systems Mapping server', () => {
     expect(response.status).toBe(201);
     return cookieFrom(response);
   }
+
+  it('uses an account-bound password reset once and revokes prior teacher sessions', async () => {
+    const oldCookie = await claimTeacher();
+    const { token } = await issuePasswordReset(system.db, 'zach-muhlbauer', 60_000, { now: () => currentTime });
+    const nextPassphrase = 'a newly chosen teacher phrase';
+
+    const reset = await postJson(system.app, '/api/auth/reset-password', { token, passphrase: nextPassphrase });
+    expect(reset.status).toBe(200);
+    expect(await json(reset)).toEqual({ reset: true });
+    expect((await json(await request(system.app, '/api/auth/me', { headers: { cookie: oldCookie } }))).user).toBeNull();
+
+    const replay = await postJson(system.app, '/api/auth/reset-password', { token, passphrase: 'another valid teacher phrase' });
+    expect(replay.status).toBe(401);
+    expect(await json(replay)).toEqual({ error: 'This password reset link is invalid or has expired.' });
+
+    const oldLogin = await postJson(system.app, '/api/auth/login', { userId: 'zach-muhlbauer', passphrase: TEACHER_PASSPHRASE });
+    expect(oldLogin.status).toBe(401);
+    const newLogin = await postJson(system.app, '/api/auth/login', { userId: 'zach-muhlbauer', passphrase: nextPassphrase });
+    expect(newLogin.status).toBe(200);
+  });
+
+  it('rejects expired and malformed password reset links without changing credentials', async () => {
+    await claimTeacher();
+    const { token } = await issuePasswordReset(system.db, 'zach-muhlbauer', 60_000, { now: () => currentTime });
+    currentTime += 60_001;
+    expect((await postJson(system.app, '/api/auth/reset-password', { token, passphrase: 'a new expired phrase' })).status).toBe(401);
+    expect((await postJson(system.app, '/api/auth/reset-password', { token: 'not-a-token', passphrase: 'a valid-length phrase' })).status).toBe(401);
+  });
 
   it('publishes no teacher roster, prompt text, class code, or private account state', async () => {
     const bootstrapResponse = await request(system.app, '/api/auth/accounts');
