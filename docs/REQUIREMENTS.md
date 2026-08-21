@@ -168,7 +168,7 @@ Hosted mode requires all of the following:
 
 Public-demo mode changes only the shared student entry code. It does not grant Teacher Console access, identify students, relax origin/cookie controls, remove rate and queue limits, or change retention.
 
-PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) and Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` are historical evidence for the preceding Macro/Integration implementation. They do not verify this Micro/Meso/Exosphere/Macrosphere candidate. A fresh deployment and live readback are required before any current-runtime claim.
+PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged the current ecological implementation into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`. Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS` from that clean commit and passed migration, health, access, student-to-teacher API denial, configuration, logout, header, exact-bundle, provider, and no-5xx readback. PR #5 and deployment `39d38543-20ca-4626-95e6-237ef9213881` remain historical evidence for the preceding Macro/Integration implementation.
 
 ## Privacy and security boundaries
 
@@ -203,7 +203,7 @@ The 171-test run, build, browser captures, PR #5 receipt, and Railway deployment
 
 Rendered acceptance is recorded in `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ecological-cycle-qa-2026-08-21/systems-mapping-ecological-cycle-qa-2026-08-21.zip` (SHA-256 `89f959144d0257a0a21d6440f7be3a37e50925f60adc7dd1687caeb246277c11`). Its 40 true PNGs cover all 15 states at desktop and 390 px plus five map/Teacher states each at 320 and 430 px; 4 fabricated memos and 4 metadata/assertion files accompany them. Strict checks found no truncation, overlap, overflow, console errors, or captured success toasts and recorded Micro 6/0, exact-ID Meso carry-forward, cumulative 21/19, and Teacher Console after authentication. No credentials are packaged.
 
-Delivery acceptance remains pending: the changed tree must be committed and pushed to GitHub `main`, deployed to Railway, and read back through the live database, health, access, Teacher Console, configuration, logout, header, bundle, and log checks. Live-provider acceptance remains separate and pending unless an authorized rotated key is enabled.
+Delivery acceptance is recorded: PR #9 is merged on GitHub `main`; Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS`; live migration, health, public access, student-to-teacher denial, Teacher Console route, configuration, logout, headers, exact bundle hashes, and zero HTTP 5xx passed. Fabricated East Harlem memos produced schema-valid live `ollama-cloud` reviews for Micro 7/0, Meso 0/6 exact carried IDs, Exosphere 11/5, and Macrosphere 8/1; the connection-suggestion route returned six exact-ID relationships. No production teacher credential or provider secret was exposed. Provider-key rotation provenance remains an operator confirmation outside this functional acceptance.
 
 ## Source authority
 

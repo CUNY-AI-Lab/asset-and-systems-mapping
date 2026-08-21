@@ -14,7 +14,7 @@ The current candidate reworks the four analytical levels around one persistent m
 
 The five workflow stages remain repeatable. The current student interface has no instructor-submission field. Retained instructor review stays advisory, and an outstanding evaluation must not block another stage, level, or cycle. This pass removes only the course-wide active-evaluation ceiling; per-session supersession and retention purges remain unchanged and are deferred from redesign.
 
-Current local automated, PostgreSQL, build, audit, leakage, and rendered-browser checks are recorded below. GitHub publication, Railway deployment/live readback, and a separately authorized live model request remain pending.
+Current automated, PostgreSQL, build, audit, leakage, rendered-browser, GitHub, Railway, hosted readback, and live-provider checks are recorded below.
 
 ## Current candidate receipts
 
@@ -25,6 +25,10 @@ Current local automated, PostgreSQL, build, audit, leakage, and rendered-browser
 | Production build | Passed; emitted `index-DKxOo_cS.js`, `TeacherDashboard-CO55RhLk.js`, and `index-CisvqIv_.css` | Local production build, not deployed bundle parity. |
 | Dependency and leakage checks | `pnpm audit --prod` reported no known vulnerabilities; gitleaks found no secret in the dirty diff or three intended untracked documentation/concept files; `git diff --check` passed | Does not replace live header, configuration, or log inspection. |
 | Annotated rendered package | 40 true PNGs, 4 fabricated memos, and 4 metadata/assertion files; SHA-256 `89f959144d0257a0a21d6440f7be3a37e50925f60adc7dd1687caeb246277c11` | Local disposable runtime; no credentials; not live-provider evidence. |
+| GitHub publication | PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged feature commit `e17142b7c4974a8db4fe02bcded47f0ce5ecf497` into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491` | Local, `origin/main`, and GitHub `main` matched before deployment. |
+| Railway deployment | `51a03b7e-6752-4681-8714-5bbf6106d843` reached terminal `SUCCESS` from the clean merge | PostgreSQL migration and healthcheck passed. |
+| Hosted readback | Root/health/security headers, public-demo access, session/configuration/logout, student-to-teacher denial, Teacher Console route, exact asset hashes, and zero HTTP 5xx passed | No teacher passphrase was used or exposed. |
+| Live provider | `ollama-cloud` / `deepseek-v4-flash:0731` returned valid Micro 7/0, Meso 0/6 exact-ID, Exosphere 11/5, Macrosphere 8/1 reviews; connection suggestions returned six exact-ID relationships | Fabricated East Harlem memos only; key value and rotation history were not inspected. |
 
 ## Historical evidence only
 
@@ -38,14 +42,14 @@ The following receipts predate the 2026-08-21 reversion and remain useful baseli
 | PR #5 at `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597` | Merged and synchronized before its release | Predates Exosphere and Macrosphere. |
 | Railway deployment `39d38543-20ca-4626-95e6-237ef9213881` | Reached `SUCCESS` for the preceding clean tree | Does not establish current deployment or live behavior. |
 
-Earlier security, persistence, session, and review receipts remain historical regression references. Current local replacements are recorded above; only GitHub, Railway, hosted readback, and any authorized live-provider result remain outside this local receipt.
+Earlier security, persistence, session, and review receipts remain historical regression references. Current local and hosted replacements are recorded above. An authenticated production Teacher Console mutation and credential-owner confirmation of provider-key rotation remain separate operator checks.
 
 ## Current acceptance matrix
 
 | Area | Required proof | Status |
 | --- | --- | --- |
-| Micro model contract | Provider and deterministic paths return nodes and exactly zero connections, examples, or connection prompts. | Verified locally |
-| Meso carry-forward | Meso receives existing Micro node IDs, returns no new nodes, proposes connections only among those IDs, and does not duplicate carried nodes. | Verified locally |
+| Micro model contract | Provider and deterministic paths return nodes and exactly zero connections, examples, or connection prompts. | Verified locally and live |
+| Meso carry-forward | Meso receives existing Micro node IDs, returns no new nodes, proposes connections only among those IDs, and does not duplicate carried nodes. | Verified locally and live |
 | Level migration | `macro` becomes `exosphere`; `integration` becomes `macrosphere` across nodes, relationships, current/completed levels, course settings, and exports without data loss. | Verified locally, including populated PostgreSQL v8→v9 migration |
 | Ecological map | Exosphere and Macrosphere render distinct concentric regions that contain nodes and connections. | Verified in inspected captures |
 | Filters | Showing all available levels or one level never deletes, rewrites, or repositions hidden graph records. | Verified locally |
@@ -56,7 +60,7 @@ Earlier security, persistence, session, and review receipts remain historical re
 | Evaluation capacity | Many outstanding evaluations in one course do not trigger a course-wide active-evaluation maximum. | Verified locally |
 | Unchanged behavior | Per-session supersession and retention-purge tests continue to pass without redesign. | Verified locally |
 | Persistence | SQLite and PostgreSQL preserve stable IDs, sphere membership, annotations, positions, and viewport. | Verified locally |
-| Delivery | Changed tree is committed, pushed, deployed, and verified through health, auth, database, and rendered UI checks. | Pending |
+| Delivery | Changed tree is committed, pushed, deployed, and verified through migration, health, public access/authz, configuration, logout, headers, assets, logs, and live-provider checks. | Verified; no production teacher credential used |
 
 ## Required rendered journey
 
@@ -97,17 +101,17 @@ The package contains all 15 states at 1440×1000 and 390×844, plus five map/Tea
 
 ## Release gate
 
-Local verification is complete for the current working tree. Do not report the candidate as deployed until the remaining external receipts are recorded against the committed tree. The gate is:
+The ecological candidate is published and deployed. The completed gate is:
 
 - [x] full UI, domain, shared-contract, server, SQLite, and fresh PostgreSQL tests;
 - [x] production build, dependency audit, and static leakage scan;
 - [x] rendered desktop and phone journeys with inspected screenshots and no relevant console errors;
-- GitHub readback showing the changed commit on `main`;
-- Railway deployment reaching terminal success;
-- live health, class access, Teacher Console authentication, current public configuration, migration, logout, and changed-bundle checks;
-- a separate live-provider run only if a rotated provider key is enabled.
+- [x] GitHub readback showing the changed commit on `main`;
+- [x] Railway deployment reaching terminal success;
+- [x] live health, class access, Teacher Console route and authorization boundary, current public configuration, migration, logout, and changed-bundle checks;
+- [x] live-provider runs using fabricated memos for all four levels and connection refinement.
 
-The inspected local browser package establishes browser usability for its disposable runtime. It does not prove GitHub publication, Railway deployment, live hosted behavior, or live provider behavior.
+The inspected local browser package establishes responsive browser usability. The separate GitHub, Railway, hosted readback, and provider receipts above establish the current release chain. No authenticated production Teacher Console mutation was performed.
 
 ## Source authority
 
