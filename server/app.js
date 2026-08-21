@@ -66,7 +66,7 @@ const STUDENT_SESSION_ISSUE_BUCKET = 'student-session-issuance';
 const SAVED_PROJECT_BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 const SAVED_PROJECT_JSON_LIMIT = 2_000_000;
 const SAVED_PROJECT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,64}$/;
-const PREFLIGHT_SCALES = new Set(['micro', 'meso', 'macro', 'integration']);
+const PREFLIGHT_SCALES = new Set(['micro', 'meso', 'exosphere', 'macrosphere']);
 const PREFLIGHT_STATUSES = new Set(['pending', 'approved', 'rejected']);
 const PREFLIGHT_DECISIONS = new Set(['approve', 'revise_and_approve', 'reject']);
 const STUDENT_REDIRECT_ACTION_MAX_CHARS = 500;
@@ -76,6 +76,7 @@ const PROJECT_METADATA_RULES = Object.freeze({
   projectId: { type: 'string', max: 200 },
   submissionId: { type: 'string', max: 200 },
   title: { type: 'string', max: 500, empty: true },
+  participantName: { type: 'string', max: 500, empty: true },
   author: { type: 'string', max: 500, empty: true },
   date: { type: 'string', max: 100, empty: true },
   sourceType: { type: 'string', max: 500, empty: true },
@@ -104,10 +105,10 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
   `guidance must be an array of no more than ${MEMO_REVIEW_LIMITS.guidance} objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
-  `nodes must be an array of no more than ${MEMO_REVIEW_LIMITS.nodes} objects with exactly these keys: label, type, scale, evidence. These are the people, groups, places, organizations, policies, resources, datasets, or events evident in the memo. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, macro, integration. evidence must quote or closely paraphrase the memo passage that supports the node.`,
-  `connections must be an array of no more than ${MEMO_REVIEW_LIMITS.connections} objects with exactly these keys: source, target, verb, rationale. source and target must exactly match labels from nodes and must differ. verb is a short plain-language relationship phrase. rationale must point to what in the memo makes the connection evident.`,
-  'example must be a short plain-language paragraph, or null, that walks through ONE evident connection across nodes so the student can see how a memo statement becomes a mapped connection.',
-  'readiness must be an object with exactly the keys ready and note. Set ready to true when the memo already supports mapping: clear elements and at least two evident connections. When ready is true, the note must say so plainly and encourage the student to continue to choosing nodes and describing connections. When ready is false, the note must name what the memo most needs without discouraging the student.',
+  `nodes must be an array of no more than ${MEMO_REVIEW_LIMITS.nodes} objects with exactly these keys: label, type, scale, evidence. These are the people, groups, places, organizations, policies, resources, datasets, or events evident in the memo. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node.`,
+  `connections must be an array of no more than ${MEMO_REVIEW_LIMITS.connections} objects with exactly these keys: source, target, verb, rationale. For Micro, connections MUST be empty. For Meso, nodes MUST be empty and source and target MUST use exact IDs from carriedNodes in the project input. For Exosphere and Macrosphere, source and target must exactly match labels from nodes. Endpoints must differ; verb is a short plain-language relationship phrase; rationale must point to what in the memo makes the connection evident.`,
+  'For Meso, use the human-readable carriedNodes labels—not their IDs—in guidance, rationale, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that walks through ONE evident connection.',
+  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For later levels, ready means the memo supports clear elements and at least one evident connection. Readiness never blocks the student from continuing.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
@@ -140,7 +141,7 @@ const PROTOTYPE_STAGES = new Map(SYSTEMS_MAPPING_STAGES.map(({ label }, index) =
   ['Add a source', 0],
   ['Review suggestions', 1],
   ["Check your instructor's response", 1],
-  ['Choose what to map', 2],
+  ['Choose nodes and describe connections', 2],
   ['Connect the map', 2],
   ['Build the map', 3],
   ['Revise and export', 4],
@@ -474,24 +475,33 @@ function validateBoundedJson(value, name, {
   return value;
 }
 
-function normalizeMemoReview(value, activeScale, name = 'memo review') {
+function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNodes = null) {
   if (!isPlainObject(value)) throw new HttpError(400, `${name} must be an object.`);
   if (!['guidance', 'nodes', 'connections', 'readiness', 'example'].some((key) => Object.hasOwn(value, key))) {
     throw new HttpError(400, `${name} does not follow the memo review contract.`);
   }
   validateBoundedJson(value, name, { maxSerialized: 64_000, maxObjectKeys: 400 });
+  const carriedNodeById = new Map((Array.isArray(carriedNodes) ? carriedNodes : []).map((node) => [node.id, node]));
+  const humanizeCarriedIds = (input, maximum) => {
+    let text = collapsedRedirectText(input, maximum * 2);
+    if (!text || activeScale !== 'meso') return collapsedRedirectText(text, maximum);
+    [...carriedNodeById.values()]
+      .sort((left, right) => right.id.length - left.id.length)
+      .forEach((node) => { text = text.split(node.id).join(node.label); });
+    return collapsedRedirectText(text, maximum);
+  };
   const guidance = (Array.isArray(value.guidance) ? value.guidance : [])
     .map((item) => {
       if (!isPlainObject(item)) return null;
-      const point = collapsedRedirectText(item.point, MEMO_REVIEW_LIMITS.point);
+      const point = humanizeCarriedIds(item.point, MEMO_REVIEW_LIMITS.point);
       if (!point) return null;
-      const evidenceExcerpt = collapsedRedirectText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence);
+      const evidenceExcerpt = humanizeCarriedIds(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence);
       return { point, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) };
     })
     .filter(Boolean)
     .slice(0, MEMO_REVIEW_LIMITS.guidance);
   const seenLabels = new Set();
-  const nodes = (Array.isArray(value.nodes) ? value.nodes : [])
+  const nodes = (activeScale === 'meso' ? [] : (Array.isArray(value.nodes) ? value.nodes : []))
     .map((node) => {
       if (!isPlainObject(node)) return null;
       const label = collapsedRedirectText(node.label, MEMO_REVIEW_LIMITS.label);
@@ -500,7 +510,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review') {
       return {
         label,
         type: MEMO_REVIEW_NODE_TYPES.includes(node.type) ? node.type : 'event',
-        scale: PREFLIGHT_SCALES.has(node.scale) ? node.scale : activeScale,
+        scale: activeScale,
         evidence: collapsedRedirectText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || '',
       };
     })
@@ -508,34 +518,87 @@ function normalizeMemoReview(value, activeScale, name = 'memo review') {
     .slice(0, MEMO_REVIEW_LIMITS.nodes);
   const nodeByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node.label]));
   const seenConnections = new Set();
-  const connections = (Array.isArray(value.connections) ? value.connections : [])
+  const connections = (activeScale === 'micro' ? [] : (Array.isArray(value.connections) ? value.connections : []))
     .map((connection) => {
       if (!isPlainObject(connection)) return null;
-      const source = nodeByLower.get(collapsedRedirectText(connection.source, MEMO_REVIEW_LIMITS.label)?.toLocaleLowerCase());
-      const target = nodeByLower.get(collapsedRedirectText(connection.target, MEMO_REVIEW_LIMITS.label)?.toLocaleLowerCase());
+      const sourceReference = collapsedRedirectText(connection.source, MEMO_REVIEW_LIMITS.label);
+      const targetReference = collapsedRedirectText(connection.target, MEMO_REVIEW_LIMITS.label);
+      let source;
+      let target;
+      let sourceLabel;
+      let targetLabel;
+      if (activeScale === 'meso' && carriedNodes !== null) {
+        const sourceNode = carriedNodeById.get(sourceReference);
+        const targetNode = carriedNodeById.get(targetReference);
+        source = sourceNode?.id;
+        target = targetNode?.id;
+        sourceLabel = sourceNode?.label;
+        targetLabel = targetNode?.label;
+      } else if (activeScale === 'meso') {
+        source = sourceReference;
+        target = targetReference;
+        sourceLabel = collapsedRedirectText(connection.sourceLabel, MEMO_REVIEW_LIMITS.label);
+        targetLabel = collapsedRedirectText(connection.targetLabel, MEMO_REVIEW_LIMITS.label);
+      } else {
+        source = nodeByLower.get(sourceReference?.toLocaleLowerCase());
+        target = nodeByLower.get(targetReference?.toLocaleLowerCase());
+      }
       const verb = collapsedRedirectText(connection.verb, MEMO_REVIEW_LIMITS.verb);
       if (!source || !target || source === target || !verb) return null;
       const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
       if (seenConnections.has(key)) return null;
       seenConnections.add(key);
-      return { source, target, verb, rationale: collapsedRedirectText(connection.rationale, MEMO_REVIEW_LIMITS.rationale) || '' };
+      return {
+        source,
+        target,
+        ...(sourceLabel ? { sourceLabel } : {}),
+        ...(targetLabel ? { targetLabel } : {}),
+        verb,
+        rationale: humanizeCarriedIds(connection.rationale, MEMO_REVIEW_LIMITS.rationale) || '',
+      };
     })
     .filter(Boolean)
     .slice(0, MEMO_REVIEW_LIMITS.connections);
-  const example = collapsedRedirectText(value.example, MEMO_REVIEW_LIMITS.example) || null;
+  const example = activeScale === 'micro' ? null : humanizeCarriedIds(value.example, MEMO_REVIEW_LIMITS.example) || null;
   const readiness = {
-    ready: isPlainObject(value.readiness) && value.readiness.ready === true,
-    note: collapsedRedirectText(isPlainObject(value.readiness) ? value.readiness.note : null, MEMO_REVIEW_LIMITS.note) || '',
+    ready: activeScale === 'micro'
+      ? nodes.length >= 2
+      : activeScale === 'meso'
+        ? connections.length >= 1 && isPlainObject(value.readiness) && value.readiness.ready === true
+        : isPlainObject(value.readiness) && value.readiness.ready === true,
+    note: humanizeCarriedIds(isPlainObject(value.readiness) ? value.readiness.note : null, MEMO_REVIEW_LIMITS.note) || '',
   };
   return { guidance, nodes, connections, example, readiness };
 }
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes',
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
+  const hasCarriedNodes = Object.hasOwn(value, 'carriedNodes');
+  if (value.activeScale === 'meso' && !hasCarriedNodes) throw new HttpError(400, 'carriedNodes is required for Meso.');
+  if (value.activeScale !== 'meso' && hasCarriedNodes) throw new HttpError(400, 'carriedNodes is supported only for Meso.');
+  if (hasCarriedNodes && (!Array.isArray(value.carriedNodes) || value.carriedNodes.length > 50)) {
+    throw new HttpError(400, 'carriedNodes must contain no more than 50 items.');
+  }
+  const seenCarriedNodeIds = new Set();
+  const carriedNodes = hasCarriedNodes ? value.carriedNodes.map((node, index) => {
+    const nodeName = `carriedNodes[${index}]`;
+    assertOnlyNamedKeys(node, ['id', 'label', 'type'], nodeName);
+    requireObjectKeys(node, ['id', 'label', 'type'], nodeName);
+    const id = requireSnapshotText(node.id, `${nodeName}.id`, { max: 200 });
+    if (seenCarriedNodeIds.has(id)) throw new HttpError(400, `${nodeName}.id must be unique.`);
+    seenCarriedNodeIds.add(id);
+    const type = requireSnapshotText(node.type, `${nodeName}.type`, { max: 100 });
+    if (!MEMO_REVIEW_NODE_TYPES.includes(type)) throw new HttpError(400, `${nodeName}.type is not supported.`);
+    return {
+      id,
+      label: requireSnapshotText(node.label, `${nodeName}.label`, { max: MEMO_REVIEW_LIMITS.label }),
+      type,
+    };
+  }) : [];
   const stageId = canonicalStageId(value.stageId);
   if (!SYSTEMS_MAPPING_STAGE_IDS.includes(stageId)) throw new HttpError(400, 'stageId is not supported.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
@@ -551,12 +614,14 @@ function validatePreflightEvaluationRequest(value) {
     sourceMaterial,
     projectOverlay,
     customInstructions,
+    carriedNodes,
   };
 }
 
 function validateConnectionSuggestionRequest(value) {
   assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay']);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
+  if (value.activeScale === 'micro') throw new HttpError(400, 'Micro uses nodes only. Connection suggestions begin in Meso.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const prompt = requireSnapshotText(value.prompt, 'prompt', { max: 4000 });
   if (!Array.isArray(value.nodes) || value.nodes.length < 2 || value.nodes.length > 50) {
@@ -1037,14 +1102,14 @@ async function listModules(db, where = '', parameters = []) {
     LEFT JOIN accounts a ON a.id = pm.updated_by
     ${where}
     ORDER BY CASE pm.config_kind WHEN 'preflight' THEN 1 ELSE 2 END,
-      CASE pm.scale WHEN 'global' THEN 0 WHEN 'micro' THEN 1 WHEN 'meso' THEN 2 WHEN 'macro' THEN 3 ELSE 4 END,
+      CASE pm.scale WHEN 'global' THEN 0 WHEN 'micro' THEN 1 WHEN 'meso' THEN 2 WHEN 'exosphere' THEN 3 ELSE 4 END,
       ${MODULE_ORDER_SQL}
   `).all(...parameters)).map(moduleRow);
 }
 
 async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null) {
   if (!CONFIG_KINDS.includes(configKind)) throw new HttpError(400, 'configKind must be preflight or builder.');
-  if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, macro, or integration.');
+  if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, exosphere, or macrosphere.');
   const effectiveStageId = canonicalStageId(stageId || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
   if (!systemsMappingStage(effectiveStageId)) throw new HttpError(400, 'stageId is not supported.');
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
@@ -1561,12 +1626,6 @@ export function createSystemsMappingApp(options = {}) {
     'connectionSuggestionWindowMs',
     DEFAULT_PREFLIGHT_SUBMISSION_WINDOW_MS,
   );
-  const preflightMaxActiveEvaluationsTotal = positiveInteger(
-    options.preflightMaxActiveEvaluationsTotal,
-    'preflightMaxActiveEvaluationsTotal',
-    100,
-    { max: 10_000 },
-  );
   const preflightEvaluationPurgeLimit = positiveInteger(
     options.preflightEvaluationPurgeLimit,
     'preflightEvaluationPurgeLimit',
@@ -1970,10 +2029,10 @@ export function createSystemsMappingApp(options = {}) {
     }
     const rate = preflightEvaluationLimiter.take(student.sessionRef);
     if (!rate.allowed) {
-      throw tooManyAttempts(rate.retryAfterSeconds, 'Preflight evaluation limit reached for this class session. Try again later.');
+      throw tooManyAttempts(rate.retryAfterSeconds, 'You have requested guidance several times in this class session. Try again later.');
     }
     const release = preflightEvaluationCapacity.acquire();
-    if (!release) throw tooManyAttempts(1, 'Preflight evaluation capacity is busy. Try again shortly.');
+    if (!release) throw tooManyAttempts(1, 'Guidance is busy. Try again shortly.');
 
     const evaluationId = randomBytes(24).toString('base64url');
     const createdAt = clockValue(now);
@@ -2002,8 +2061,9 @@ export function createSystemsMappingApp(options = {}) {
             inquiry: input.inquiry,
             sourceMetadata: input.sourceRecord,
             sourceText: input.sourceMaterial,
+            ...(input.activeScale === 'meso' ? { carriedNodes: input.carriedNodes } : {}),
           }, ollamaConfig);
-          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review');
+          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review', input.activeScale === 'meso' ? input.carriedNodes : null);
           suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
           runtimeMetadata = authoritativeRuntimeMetadata(generated.metadata, {
             provider: suggestionProvider,
@@ -2017,9 +2077,10 @@ export function createSystemsMappingApp(options = {}) {
         }
       } else {
         const review = normalizeMemoReview(
-          deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale),
+          deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale, { carriedNodes: input.carriedNodes }),
           input.activeScale,
           'deterministic memo review',
+          input.activeScale === 'meso' ? input.carriedNodes : null,
         );
         suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
         runtimeMetadata = authoritativeRuntimeMetadata({}, {
@@ -2030,7 +2091,7 @@ export function createSystemsMappingApp(options = {}) {
       }
 
       await inTransaction(db, async () => {
-        await db.advisoryTransactionLock?.('preflight-evaluations:active-cap');
+        await db.advisoryTransactionLock?.('preflight-evaluations:issue');
         await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit });
         // Only the newest review capability is usable for a class session. Older
         // unused reviews are no longer reachable from the student project and
@@ -2039,13 +2100,6 @@ export function createSystemsMappingApp(options = {}) {
           UPDATE preflight_evaluations SET consumed_at = ?
           WHERE student_session_ref = ? AND consumed_at IS NULL AND expires_at > ?
         `).run(createdAt, student.sessionRef, createdAt);
-        const { count } = await db.prepare(`
-          SELECT COUNT(*) AS count FROM preflight_evaluations
-          WHERE consumed_at IS NULL AND expires_at > ?
-        `).get(createdAt);
-        if (count >= preflightMaxActiveEvaluationsTotal) {
-          throw new HttpError(429, 'The course has reached its active preflight evaluation limit.');
-        }
         await db.prepare(`
           INSERT INTO preflight_evaluations (
             id, student_session_ref, project_metadata_json, active_scale, inquiry,
@@ -2186,7 +2240,7 @@ export function createSystemsMappingApp(options = {}) {
       return true;
     });
     if (!consumedEvaluation) {
-      throw new HttpError(409, 'The preflight evaluation is unavailable, expired, or already used.');
+      throw new HttpError(409, 'This guidance is unavailable, expired, or already used.');
     }
     return context.json({
       submission: await studentPreflightSubmission(db, submissionId),
@@ -2562,13 +2616,16 @@ export function createSystemsMappingApp(options = {}) {
     const scale = context.req.query('scale') || 'micro';
     const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
     const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId);
+    const part = profile.profile.parts.find(({ scaleIds }) => scaleIds.includes(scale));
+    const settings = part?.stages?.[stageId];
+    if (!part || !settings) throw new HttpError(400, 'This part, level, and section do not belong together.');
     return context.json({
-      configKind: snapshot.configKind,
       scale: snapshot.scale,
       stageId: snapshot.stageId,
-      effectivePrompt: snapshot.effectivePrompt,
-      fingerprint: snapshot.fingerprint,
-      revision: snapshot.revision,
+      part: { id: part.id, label: part.label },
+      guidance: settings.guidance,
+      materials: settings.materials,
+      revision: profile.revision,
     });
   });
 

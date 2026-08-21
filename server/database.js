@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import {
   DEFAULT_TEACHING_PROFILE,
+  LEGACY_DEFAULT_MODULE_FINGERPRINTS,
   moduleSeeds,
   teachingProfileFingerprint,
   upgradeSystemsMappingTeachingProfile,
@@ -17,6 +18,40 @@ const ACCOUNT_SEEDS = [
   { id: 'maria-mavrides-calderon', displayName: 'Maria Mavrides Calderon' },
 ];
 const sqliteTransactionStates = new WeakMap();
+const LEGACY_SCALE_IDS = Object.freeze({
+  macro: 'exosphere',
+  integration: 'macrosphere',
+});
+const SCALE_SCALAR_KEYS = new Set(['scale', 'activeScale']);
+const SCALE_COLLECTION_KEYS = new Set(['scaleIds', 'releasedScales', 'completedScales']);
+const LEGACY_PROMPT_MODULE_ID = /^(preflight|builder)\.(macro|integration)\.(purpose|evidence|privacy|scale_rubric|interaction|output)$/;
+
+function migratePromptModuleId(value) {
+  if (typeof value !== 'string' || !LEGACY_PROMPT_MODULE_ID.test(value)) return value;
+  return value.replace('.macro.', '.exosphere.').replace('.integration.', '.macrosphere.');
+}
+
+function migrateScaleIds(value, parentKey = '') {
+  if (Array.isArray(value)) {
+    return value.map((item) => SCALE_COLLECTION_KEYS.has(parentKey) && typeof item === 'string'
+      ? LEGACY_SCALE_IDS[item] ?? item
+      : migrateScaleIds(item));
+  }
+  if (!value || typeof value !== 'object') {
+    if (parentKey === 'id') return migratePromptModuleId(value);
+    return SCALE_SCALAR_KEYS.has(parentKey) && typeof value === 'string'
+      ? LEGACY_SCALE_IDS[value] ?? value
+      : value;
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, migrateScaleIds(item, key)]));
+}
+
+function migrateScaleIdsJson(value) {
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+  const original = JSON.stringify(parsed);
+  const migrated = JSON.stringify(migrateScaleIds(parsed));
+  return typeof value === 'string' && migrated === original ? value : migrated;
+}
 
 function sqliteTransactionState(db) {
   let state = sqliteTransactionStates.get(db);
@@ -196,7 +231,7 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS prompt_modules (
       id TEXT PRIMARY KEY,
       config_kind TEXT NOT NULL CHECK(config_kind IN ('preflight', 'builder')),
-      scale TEXT NOT NULL CHECK(scale IN ('global', 'micro', 'meso', 'macro', 'integration')),
+      scale TEXT NOT NULL CHECK(scale IN ('global', 'micro', 'meso', 'exosphere', 'macrosphere')),
       module_key TEXT NOT NULL CHECK(module_key IN ('purpose', 'evidence', 'privacy', 'scale_rubric', 'interaction', 'output')),
       label TEXT NOT NULL,
       description TEXT NOT NULL,
@@ -298,7 +333,7 @@ function migrate(db) {
       project_metadata_json TEXT NOT NULL
         CHECK(length(project_metadata_json) BETWEEN 2 AND 4096)
         CHECK(json_valid(project_metadata_json) AND json_type(project_metadata_json) = 'object'),
-      active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'macro', 'integration')),
+      active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere')),
       inquiry TEXT NOT NULL CHECK(length(inquiry) BETWEEN 1 AND 8000),
       source_record_json TEXT NOT NULL
         CHECK(length(source_record_json) BETWEEN 2 AND 16384)
@@ -332,7 +367,7 @@ function migrate(db) {
       project_metadata_json TEXT NOT NULL
         CHECK(length(project_metadata_json) BETWEEN 2 AND 4096)
         CHECK(json_valid(project_metadata_json) AND json_type(project_metadata_json) = 'object'),
-      active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'macro', 'integration')),
+      active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere')),
       inquiry TEXT NOT NULL CHECK(length(inquiry) BETWEEN 1 AND 8000),
       source_material TEXT NOT NULL CHECK(length(source_material) BETWEEN 1 AND 500000),
       source_record_json TEXT
@@ -506,7 +541,268 @@ function migrate(db) {
       ))
     `);
   }
+  migrateEcologicalScaleIds(db);
   upgradeStoredTeachingProfiles(db);
+}
+
+function migrateEcologicalScaleIds(db) {
+  const constrainedTables = ['prompt_modules', 'preflight_evaluations', 'preflight_submissions'];
+  const hasLegacyConstraints = constrainedTables.some((table) => {
+    const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table);
+    return /\b(?:macro|integration)\b/.test(row?.sql || '');
+  });
+
+  if (hasLegacyConstraints) {
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      inTransaction(db, () => db.exec(`
+        DROP TABLE IF EXISTS prompt_modules_ecological_migration;
+        DROP TABLE IF EXISTS prompt_module_history_ecological_migration;
+        DROP TABLE IF EXISTS preflight_evaluations_ecological_migration;
+        DROP TABLE IF EXISTS preflight_submissions_ecological_migration;
+
+        CREATE TABLE prompt_modules_ecological_migration (
+          id TEXT PRIMARY KEY,
+          config_kind TEXT NOT NULL CHECK(config_kind IN ('preflight', 'builder')),
+          scale TEXT NOT NULL CHECK(scale IN ('global', 'micro', 'meso', 'exosphere', 'macrosphere')),
+          module_key TEXT NOT NULL CHECK(module_key IN ('purpose', 'evidence', 'privacy', 'scale_rubric', 'interaction', 'output')),
+          label TEXT NOT NULL,
+          description TEXT NOT NULL,
+          content TEXT NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 1,
+          fingerprint TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          updated_by TEXT REFERENCES accounts(id),
+          UNIQUE(config_kind, scale, module_key)
+        );
+
+        CREATE TABLE prompt_module_history_ecological_migration (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          module_id TEXT NOT NULL REFERENCES prompt_modules_ecological_migration(id) ON DELETE CASCADE,
+          revision INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          fingerprint TEXT NOT NULL,
+          change_note TEXT NOT NULL,
+          changed_at TEXT NOT NULL,
+          changed_by TEXT REFERENCES accounts(id),
+          UNIQUE(module_id, revision)
+        );
+
+        INSERT INTO prompt_modules_ecological_migration (
+          id, config_kind, scale, module_key, label, description, content,
+          revision, fingerprint, updated_at, updated_by
+        )
+        SELECT
+          CASE
+            WHEN scale = 'macro' THEN replace(id, '.macro.', '.exosphere.')
+            WHEN scale = 'integration' THEN replace(id, '.integration.', '.macrosphere.')
+            ELSE id
+          END,
+          config_kind,
+          CASE scale WHEN 'macro' THEN 'exosphere' WHEN 'integration' THEN 'macrosphere' ELSE scale END,
+          module_key, label, description, content, revision, fingerprint, updated_at, updated_by
+        FROM prompt_modules;
+
+        INSERT INTO prompt_module_history_ecological_migration (
+          id, module_id, revision, content, fingerprint, change_note, changed_at, changed_by
+        )
+        SELECT
+          id,
+          replace(replace(module_id, '.macro.', '.exosphere.'), '.integration.', '.macrosphere.'),
+          revision, content, fingerprint, change_note, changed_at, changed_by
+        FROM prompt_module_history;
+
+        CREATE TABLE preflight_evaluations_ecological_migration (
+          id TEXT PRIMARY KEY CHECK(length(id) = 32),
+          student_session_ref TEXT NOT NULL CHECK(length(student_session_ref) = 16),
+          project_metadata_json TEXT NOT NULL
+            CHECK(length(project_metadata_json) BETWEEN 2 AND 4096)
+            CHECK(json_valid(project_metadata_json) AND json_type(project_metadata_json) = 'object'),
+          active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere')),
+          inquiry TEXT NOT NULL CHECK(length(inquiry) BETWEEN 1 AND 8000),
+          source_record_json TEXT NOT NULL
+            CHECK(length(source_record_json) BETWEEN 2 AND 16384)
+            CHECK(json_valid(source_record_json) AND json_type(source_record_json) = 'object'),
+          source_material TEXT NOT NULL CHECK(length(source_material) BETWEEN 1 AND 500000),
+          project_overlay_json TEXT NOT NULL
+            CHECK(length(project_overlay_json) BETWEEN 2 AND 65536)
+            CHECK(json_valid(project_overlay_json) AND json_type(project_overlay_json) = 'object'),
+          suggestion_json TEXT NOT NULL
+            CHECK(length(suggestion_json) BETWEEN 2 AND 65536)
+            CHECK(json_valid(suggestion_json) AND json_type(suggestion_json) = 'object'),
+          config_snapshot_json TEXT NOT NULL
+            CHECK(length(config_snapshot_json) BETWEEN 2 AND 65536)
+            CHECK(json_valid(config_snapshot_json) AND json_type(config_snapshot_json) = 'object'),
+          runtime_metadata_json TEXT NOT NULL
+            CHECK(length(runtime_metadata_json) BETWEEN 2 AND 4096)
+            CHECK(json_valid(runtime_metadata_json) AND json_type(runtime_metadata_json) = 'object'),
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL CHECK(expires_at > created_at),
+          consumed_at INTEGER CHECK(consumed_at IS NULL OR (consumed_at >= created_at AND consumed_at < expires_at))
+        ) STRICT;
+
+        INSERT INTO preflight_evaluations_ecological_migration (
+          id, student_session_ref, project_metadata_json, active_scale, inquiry,
+          source_record_json, source_material, project_overlay_json, suggestion_json,
+          config_snapshot_json, runtime_metadata_json, created_at, expires_at, consumed_at
+        )
+        SELECT
+          id, student_session_ref, project_metadata_json,
+          CASE active_scale WHEN 'macro' THEN 'exosphere' WHEN 'integration' THEN 'macrosphere' ELSE active_scale END,
+          inquiry, source_record_json, source_material, project_overlay_json, suggestion_json,
+          config_snapshot_json, runtime_metadata_json, created_at, expires_at, consumed_at
+        FROM preflight_evaluations;
+
+        CREATE TABLE preflight_submissions_ecological_migration (
+          id TEXT PRIMARY KEY CHECK(length(id) = 32),
+          student_session_ref TEXT NOT NULL CHECK(length(student_session_ref) = 16),
+          project_metadata_json TEXT NOT NULL
+            CHECK(length(project_metadata_json) BETWEEN 2 AND 4096)
+            CHECK(json_valid(project_metadata_json) AND json_type(project_metadata_json) = 'object'),
+          active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere')),
+          inquiry TEXT NOT NULL CHECK(length(inquiry) BETWEEN 1 AND 8000),
+          source_material TEXT NOT NULL CHECK(length(source_material) BETWEEN 1 AND 500000),
+          source_record_json TEXT
+            CHECK(source_record_json IS NULL OR (
+              length(source_record_json) BETWEEN 2 AND 16384
+              AND json_valid(source_record_json) AND json_type(source_record_json) = 'object'
+            )),
+          student_annotation TEXT NOT NULL CHECK(length(student_annotation) <= 4000),
+          suggestion_json TEXT NOT NULL
+            CHECK(length(suggestion_json) BETWEEN 2 AND 65536)
+            CHECK(json_valid(suggestion_json) AND json_type(suggestion_json) = 'object'),
+          config_snapshot_json TEXT NOT NULL
+            CHECK(length(config_snapshot_json) BETWEEN 2 AND 65536)
+            CHECK(json_valid(config_snapshot_json) AND json_type(config_snapshot_json) = 'object'),
+          runtime_metadata_json TEXT
+            CHECK(runtime_metadata_json IS NULL OR (
+              length(runtime_metadata_json) BETWEEN 2 AND 4096
+              AND json_valid(runtime_metadata_json) AND json_type(runtime_metadata_json) = 'object'
+            )),
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+          decision TEXT CHECK(decision IN ('approve', 'revise_and_approve', 'reject')),
+          revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
+          reviewed_at INTEGER CHECK(reviewed_at IS NULL OR reviewed_at >= created_at),
+          reviewing_teacher_id TEXT REFERENCES accounts(id),
+          instructor_annotation TEXT CHECK(instructor_annotation IS NULL OR length(instructor_annotation) BETWEEN 1 AND 8000),
+          revised_suggestion TEXT
+            CHECK(revised_suggestion IS NULL OR length(revised_suggestion) BETWEEN 1 AND 20000),
+          CHECK(
+            (status = 'pending' AND decision IS NULL AND reviewed_at IS NULL
+              AND reviewing_teacher_id IS NULL AND instructor_annotation IS NULL
+              AND revised_suggestion IS NULL)
+            OR
+            (status = 'approved' AND decision IN ('approve', 'revise_and_approve')
+              AND reviewed_at IS NOT NULL AND reviewing_teacher_id IS NOT NULL
+              AND instructor_annotation IS NOT NULL
+              AND ((decision = 'approve' AND revised_suggestion IS NULL)
+                OR (decision = 'revise_and_approve' AND revised_suggestion IS NOT NULL)))
+            OR
+            (status = 'rejected' AND decision = 'reject'
+              AND reviewed_at IS NOT NULL AND reviewing_teacher_id IS NOT NULL
+              AND instructor_annotation IS NOT NULL AND revised_suggestion IS NULL)
+          )
+        ) STRICT;
+
+        INSERT INTO preflight_submissions_ecological_migration (
+          id, student_session_ref, project_metadata_json, active_scale, inquiry,
+          source_material, source_record_json, student_annotation, suggestion_json,
+          config_snapshot_json, runtime_metadata_json, status, decision, revision,
+          created_at, updated_at, reviewed_at, reviewing_teacher_id,
+          instructor_annotation, revised_suggestion
+        )
+        SELECT
+          id, student_session_ref, project_metadata_json,
+          CASE active_scale WHEN 'macro' THEN 'exosphere' WHEN 'integration' THEN 'macrosphere' ELSE active_scale END,
+          inquiry, source_material, source_record_json, student_annotation, suggestion_json,
+          config_snapshot_json, runtime_metadata_json, status, decision, revision,
+          created_at, updated_at, reviewed_at, reviewing_teacher_id,
+          instructor_annotation, revised_suggestion
+        FROM preflight_submissions;
+
+        DROP TRIGGER IF EXISTS preflight_submissions_no_delete;
+        DROP TABLE prompt_module_history;
+        DROP TABLE prompt_modules;
+        DROP TABLE preflight_evaluations;
+        DROP TABLE preflight_submissions;
+
+        ALTER TABLE prompt_modules_ecological_migration RENAME TO prompt_modules;
+        ALTER TABLE prompt_module_history_ecological_migration RENAME TO prompt_module_history;
+        ALTER TABLE preflight_evaluations_ecological_migration RENAME TO preflight_evaluations;
+        ALTER TABLE preflight_submissions_ecological_migration RENAME TO preflight_submissions;
+
+        CREATE INDEX prompt_history_changed_idx ON prompt_module_history(changed_at DESC);
+        CREATE INDEX preflight_evaluations_expiry_idx ON preflight_evaluations(expires_at, id);
+        CREATE INDEX preflight_evaluations_session_idx
+          ON preflight_evaluations(student_session_ref, consumed_at, expires_at);
+        CREATE INDEX preflight_submissions_student_idx
+          ON preflight_submissions(student_session_ref, created_at DESC);
+        CREATE INDEX preflight_submissions_queue_idx
+          ON preflight_submissions(status, created_at, id);
+        CREATE INDEX preflight_submissions_reviewer_idx
+          ON preflight_submissions(reviewing_teacher_id);
+
+        CREATE TRIGGER preflight_submissions_no_delete
+        BEFORE DELETE ON preflight_submissions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM preflight_retention_purge_guard
+          WHERE singleton = 1 AND reason = 'retention'
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'preflight_submissions are retention-managed');
+        END;
+      `));
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  const evaluationRows = db.prepare(`
+    SELECT id, project_overlay_json AS projectOverlay, suggestion_json AS suggestion,
+      config_snapshot_json AS configSnapshot
+    FROM preflight_evaluations
+  `).all();
+  const submissionRows = db.prepare(`
+    SELECT id, suggestion_json AS suggestion, config_snapshot_json AS configSnapshot
+    FROM preflight_submissions
+  `).all();
+  const savedProjectRows = db.prepare(`
+    SELECT token_hash AS tokenHash, project_json AS projectJson FROM saved_projects
+  `).all();
+  const updateEvaluation = db.prepare(`
+    UPDATE preflight_evaluations
+    SET project_overlay_json = ?, suggestion_json = ?, config_snapshot_json = ?
+    WHERE id = ?
+  `);
+  const updateSubmission = db.prepare(`
+    UPDATE preflight_submissions SET suggestion_json = ?, config_snapshot_json = ? WHERE id = ?
+  `);
+  const updateSavedProject = db.prepare(`
+    UPDATE saved_projects SET project_json = ? WHERE token_hash = ?
+  `);
+  inTransaction(db, () => {
+    for (const row of evaluationRows) {
+      const projectOverlay = migrateScaleIdsJson(row.projectOverlay);
+      const suggestion = migrateScaleIdsJson(row.suggestion);
+      const configSnapshot = migrateScaleIdsJson(row.configSnapshot);
+      if (projectOverlay !== row.projectOverlay || suggestion !== row.suggestion || configSnapshot !== row.configSnapshot) {
+        updateEvaluation.run(projectOverlay, suggestion, configSnapshot, row.id);
+      }
+    }
+    for (const row of submissionRows) {
+      const suggestion = migrateScaleIdsJson(row.suggestion);
+      const configSnapshot = migrateScaleIdsJson(row.configSnapshot);
+      if (suggestion !== row.suggestion || configSnapshot !== row.configSnapshot) {
+        updateSubmission.run(suggestion, configSnapshot, row.id);
+      }
+    }
+    for (const row of savedProjectRows) {
+      const projectJson = migrateScaleIdsJson(row.projectJson);
+      if (projectJson !== row.projectJson) updateSavedProject.run(projectJson, row.tokenHash);
+    }
+  });
 }
 
 function upgradeStoredTeachingProfiles(db) {
@@ -570,7 +866,8 @@ function seed(db) {
         (module_id, revision, content, fingerprint, change_note, changed_at, changed_by)
       VALUES (?, ?, ?, ?, ?, ?, NULL)
     `);
-    for (const module of moduleSeeds()) {
+    const currentModules = moduleSeeds();
+    for (const module of currentModules) {
       insertModule.run(
         module.id,
         module.configKind,
@@ -584,6 +881,25 @@ function seed(db) {
         now,
       );
       insertHistory.run(module.id, module.revision, module.content, module.fingerprint, 'Starting configuration', now);
+    }
+
+    const readModule = db.prepare(`
+      SELECT revision, fingerprint FROM prompt_modules WHERE id = ?
+    `);
+    const updateUntouchedModule = db.prepare(`
+      UPDATE prompt_modules
+      SET content = ?, revision = 2, fingerprint = ?, updated_at = ?, updated_by = NULL
+      WHERE id = ? AND revision = 1 AND fingerprint = ?
+    `);
+    for (const module of currentModules) {
+      const legacyFingerprint = LEGACY_DEFAULT_MODULE_FINGERPRINTS[module.id];
+      if (!legacyFingerprint) continue;
+      const row = readModule.get(module.id);
+      if (row?.revision !== 1 || row.fingerprint !== legacyFingerprint) continue;
+      const result = updateUntouchedModule.run(module.content, module.fingerprint, now, module.id, legacyFingerprint);
+      if (result.changes === 1) {
+        insertHistory.run(module.id, 2, module.content, module.fingerprint, 'Updated default for ecological levels', now);
+      }
     }
 
     const profileJson = JSON.stringify(DEFAULT_TEACHING_PROFILE);

@@ -13,7 +13,8 @@ import {
   withDefaultNodeLayout,
 } from './domain.js';
 
-const STORAGE_KEY = 'systems-mapping-studio.project.v5';
+const STORAGE_KEY = 'systems-mapping-studio.project.v6';
+const LEGACY_V5_STORAGE_KEY = 'systems-mapping-studio.project.v5';
 const PERSIST_DEBOUNCE_MS = 450;
 
 let studentSession;
@@ -62,6 +63,7 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
       projectId: project.id,
       submissionId: project.submission.id,
       title: project.title,
+      participantName: project.participantName,
       sharingTier: project.sharingTier,
       schemaVersion: project.schemaVersion,
       stage: project.stage,
@@ -87,6 +89,11 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
       revision: config.revision,
       fingerprint: config.fingerprint,
     },
+    ...(project.activeScale === 'meso' ? {
+      carriedNodes: project.graph.nodes
+        .filter((node) => node.scale === 'micro' && node.status !== 'rejected' && node.claimState !== 'retired')
+        .map(({ id, label, type }) => ({ id, label, type })),
+    } : {}),
   };
 }
 
@@ -195,22 +202,135 @@ async function resumeSavedProject(project = createDefaultProject()) {
   return project;
 }
 
-function makeMapProject() {
+function makeMapProject(activeScale = 'meso') {
   const project = createDefaultProject();
   project.candidates = { nodes: [], edges: [] };
   project.graph = extractCandidates(project.submission);
   project.graph.nodes.forEach((node) => {
+    if (node.scale === 'meso') node.scale = 'micro';
     node.status = 'confirmed';
     node.claimState = 'student interpretation';
   });
   project.graph.edges.forEach((edge) => {
+    if (edge.scale === 'micro') edge.scale = 'meso';
     edge.status = 'confirmed';
     edge.claimState = 'student interpretation';
   });
-  project.releasedScales = ['micro', 'meso', 'macro'];
-  project.activeScale = 'macro';
+  const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
+  project.releasedScales = levels.slice(0, levels.indexOf(activeScale) + 1);
+  project.activeScale = activeScale;
+  if (activeScale === 'macrosphere') {
+    const outerNode = project.graph.nodes.find((node) => node.scale === 'exosphere');
+    const outerEdge = project.graph.edges.find((edge) => edge.scale === 'exosphere');
+    if (outerNode) outerNode.scale = 'macrosphere';
+    if (outerEdge) outerEdge.scale = 'macrosphere';
+  }
+  const activeEndpointIds = new Set(project.graph.edges
+    .filter((edge) => edge.scale === activeScale)
+    .flatMap((edge) => [edge.source, edge.target]));
+  project.graph.nodes.sort((left, right) => Number(right.scale === activeScale || activeEndpointIds.has(right.id))
+    - Number(left.scale === activeScale || activeEndpointIds.has(left.id)));
+  project.graph.edges.sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
   project.stage = 3;
   project.furthestStage = 3;
+  return project;
+}
+
+function makeSixNodeMicroProject() {
+  const project = makeMapProject('micro');
+  const labels = [
+    'East Harlem Disability Services',
+    'Adult Participants',
+    'Family Support Navigator',
+    'Family Caregivers',
+    'Lexington Avenue Program Office',
+    'Accessible Van Program',
+  ];
+  project.graph.nodes = project.graph.nodes.slice(0, labels.length).map((node, index) => ({
+    ...node,
+    label: labels[index],
+    scale: 'micro',
+    x: 150 + (index % 3) * 270,
+    y: 175 + Math.floor(index / 3) * 190,
+  }));
+  project.graph.edges = [];
+  project.viewport = { panX: 37, panY: -22, zoom: 1.25 };
+  return project;
+}
+
+function makePhoneEcologyOverviewProject() {
+  const project = makeSixNodeMicroProject();
+  project.releasedScales = ['micro', 'meso', 'exosphere', 'macrosphere'];
+  return project;
+}
+
+function makeDenseEcologyOverviewProject() {
+  const project = makePhoneEcologyOverviewProject();
+  const template = project.graph.nodes[0];
+  const labelsByScale = {
+    micro: [
+      'East Harlem Disability Services',
+      'Adult Participants',
+      'Family Support Navigator',
+      'Family Caregivers',
+      'Lexington Avenue Program Office',
+      'Accessible Van Program',
+    ],
+    exosphere: [
+      'Borough Grants Unit',
+      'City Disability Services Office',
+      'Public Transportation Authority',
+      'Workforce Development Agency',
+      'Community Health Funding Council',
+      'Neighborhood Provider Network',
+      'Community Advisory Council',
+      'Care Coordination Partnership',
+    ],
+    macrosphere: [
+      'State Disability Services Policy',
+      'Federal Accessibility Standards',
+      'Public Benefits Funding Rules',
+      'Regional Housing Conditions',
+      'National Employment Policy',
+      'Local Transit Coalition',
+      'Family Support Alliance',
+    ],
+  };
+  project.graph.nodes = Object.entries(labelsByScale).flatMap(([scale, labels], scaleIndex) => labels.map((label, index) => ({
+    ...template,
+    id: `dense-${scale}-${index}`,
+    label,
+    scale,
+    x: 150 + (index % 3) * 248,
+    y: 175 + scaleIndex * 140 + Math.floor(index / 3) * 90,
+    annotations: {
+      analytical: { id: `annotation-dense-${scale}-${index}-analytical`, text: '' },
+      evidence: { id: `annotation-dense-${scale}-${index}-evidence`, text: '' },
+    },
+  })));
+  project.graph.edges = [];
+  return project;
+}
+
+function makeCrossLayerEcologyProject() {
+  const project = makeMapProject('exosphere');
+  const source = project.graph.nodes.find((node) => node.scale === 'exosphere');
+  const target = project.graph.nodes.find((node) => node.scale === 'micro');
+  const edge = project.graph.edges[0];
+  Object.assign(source, { label: 'Borough Grants Unit', x: 2660, y: 1220 });
+  Object.assign(target, { label: 'East Harlem Disability Services', x: 1250, y: 1180 });
+  project.graph.nodes = [target, source];
+  project.graph.edges = [{
+    ...edge,
+    id: 'edge-cross-layer-funds',
+    source: source.id,
+    target: target.id,
+    sourceLabel: source.label,
+    targetLabel: target.label,
+    verb: 'funds',
+    scale: 'exosphere',
+  }];
+  project.viewport = { zoom: 0.85, panX: -1841, panY: -767 };
   return project;
 }
 
@@ -302,8 +422,8 @@ function installAnimationFrameStub() {
   Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, writable: true, value: vi.fn() });
 }
 
-function installPhoneLayout() {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+function installPhoneLayout(width = 390) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
   vi.stubGlobal('matchMedia', vi.fn(() => ({
     matches: true,
     media: '(max-width: 600px)',
@@ -316,11 +436,46 @@ function installPhoneLayout() {
   })));
 }
 
+function installResponsiveLayout(initialWidth = 1024) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+  vi.stubGlobal('matchMedia', vi.fn(() => ({
+    get matches() { return window.innerWidth <= 600; },
+    media: '(max-width: 600px)',
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })));
+  return (width) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+    act(() => window.dispatchEvent(new Event('resize')));
+  };
+}
+
 function viewportTransform() {
   const value = document.querySelector('.viewport-layer')?.getAttribute('transform') || '';
   const match = value.match(/^translate\((-?[\d.]+) (-?[\d.]+)\) scale\(([\d.]+)\)$/);
   if (!match) throw new Error(`Unexpected viewport transform: ${value}`);
   return { panX: Number(match[1]), panY: Number(match[2]), zoom: Number(match[3]) };
+}
+
+function translatedRectBounds(group, rect) {
+  const match = (group.getAttribute('transform') || '').match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
+  if (!match) throw new Error(`Unexpected translated group: ${group.getAttribute('transform')}`);
+  const left = Number(match[1]) + Number(rect.getAttribute('x'));
+  const top = Number(match[2]) + Number(rect.getAttribute('y'));
+  const width = Number(rect.getAttribute('width'));
+  const height = Number(rect.getAttribute('height'));
+  return { left, top, right: left + width, bottom: top + height };
+}
+
+function rectsIntersect(left, right) {
+  return left.left < right.right
+    && left.right > right.left
+    && left.top < right.bottom
+    && left.bottom > right.top;
 }
 
 function bytesContain(haystack, needle) {
@@ -413,7 +568,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Choose nodes' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
   });
 
@@ -426,6 +581,20 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByText('Untitled systems map', { selector: '.brand small' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
+  });
+
+  it('loads the v5 browser workspace as legacy data and persists it under the v6 key', async () => {
+    const legacy = createDefaultProject();
+    legacy.schemaVersion = 5;
+    delete legacy.participantName;
+    window.localStorage.setItem(LEGACY_V5_STORAGE_KEY, JSON.stringify(legacy));
+
+    render(<App />);
+    await showResumeScreen();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 6, participantName: '' }));
   });
 
   it('expires an ISO-timestamped class grant at the exact fake-clock boundary without erasing local project bytes', async () => {
@@ -459,6 +628,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject();
     expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('NYC systems and assets map');
+    expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('');
     fireEvent.change(screen.getByRole('textbox', { name: 'Map title (optional)' }), { target: { value: 'Family service access map' } });
     expect(screen.getByText('Family service access map', { selector: '.brand small' })).toBeVisible();
     expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
@@ -468,7 +638,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
     const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
-    ['add your memo', 'review your memo', 'choose nodes and connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
+    ['add your memo', 'review your memo', 'choose nodes and describe connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
@@ -478,13 +648,14 @@ describe('Systems Mapping workflow', () => {
     expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
     expect(within(guidance).getByText('The school refers the student to the committee.')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Where your memo stands' })).toHaveTextContent('The memo already supports mapping');
-    const scaffold = screen.getByRole('complementary', { name: /Nodes and connections evident in your memo/ });
+    const scaffold = screen.getByRole('complementary', { name: 'Nodes evident in your memo' });
     expect(within(scaffold).getByLabelText('Nodes evident in the memo')).toHaveTextContent('School');
-    expect(within(scaffold).getByText('refers students to')).toBeVisible();
-    expect(within(scaffold).getByText(/One evident connection: the school refers students to the committee/)).toBeVisible();
+    expect(within(scaffold).queryByText('refers students to')).not.toBeInTheDocument();
+    expect(within(scaffold).queryByText(/One evident connection: the school refers students to the committee/)).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Return to your memo' })).not.toBeInTheDocument();
     expect(screen.queryByText('Instructor guidance')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Add a note' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Add a note')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Note for instructor/ })).not.toBeInTheDocument();
     const visibleStageText = document.querySelector('.workspace').textContent;
     expect(visibleStageText).not.toMatch(/\bsources?\b/i);
@@ -513,13 +684,13 @@ describe('Systems Mapping workflow', () => {
     const project = createDefaultProject();
     await resumeSavedProject(project);
 
-    const scale = screen.getByRole('combobox', { name: 'Scale' });
-    fireEvent.change(scale, { target: { value: 'macro' } });
-    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'macro', releasedScales: ['micro', 'macro'] }));
+    const scale = screen.getByRole('combobox', { name: 'Level' });
+    fireEvent.change(scale, { target: { value: 'exosphere' } });
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'exosphere', releasedScales: ['micro', 'exosphere'] }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
-    expect(screen.getByRole('group', { name: /Macro map\. 0 nodes and 0 connections/ })).toBeVisible();
+    expect(screen.getByRole('group', { name: /Exosphere map\. 0 nodes and 0 connections/ })).toBeVisible();
     expect(storedProject().stage).toBe(0);
     expect(storedProject().furthestStage).toBe(project.furthestStage);
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back to Memo' }));
@@ -531,14 +702,14 @@ describe('Systems Mapping workflow', () => {
   it('groups the four scale options under concise Part 1 and Part 2 labels', async () => {
     await resumeSavedProject(createDefaultProject());
 
-    const scale = screen.getByRole('combobox', { name: 'Scale' });
+    const scale = screen.getByRole('combobox', { name: 'Level' });
     const groups = scale.querySelectorAll('optgroup');
     expect([...groups].map((group) => group.label)).toEqual(['Part 1', 'Part 2']);
     expect([...groups[0].querySelectorAll('option')].map((option) => option.value)).toEqual(['micro', 'meso']);
-    expect([...groups[1].querySelectorAll('option')].map((option) => option.value)).toEqual(['macro', 'integration']);
+    expect([...groups[1].querySelectorAll('option')].map((option) => option.value)).toEqual(['exosphere', 'macrosphere']);
 
-    fireEvent.change(scale, { target: { value: 'integration' } });
-    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'integration' }));
+    fireEvent.change(scale, { target: { value: 'macrosphere' } });
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'macrosphere' }));
     expect(screen.queryByText('Where is your population present, and who interacts with them there?')).not.toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
   });
@@ -546,8 +717,9 @@ describe('Systems Mapping workflow', () => {
   it('keeps the memo intake limited to fields students need', async () => {
     await resumeSavedProject(createDefaultProject());
 
-    expect(screen.getByRole('combobox', { name: 'Scale' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Level' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /Memo text/ })).toBeVisible();
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Date')).not.toBeInTheDocument();
@@ -562,17 +734,86 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
   });
 
+  it('persists the optional student or group name and shows it in the project-link summary', async () => {
+    await resumeSavedProject(createDefaultProject());
+    const participant = screen.getByRole('textbox', { name: 'Student or group name (optional)' });
+    fireEvent.change(participant, { target: { value: 'East Harlem mapping group' } });
+    await waitFor(() => expect(storedProject().participantName).toBe('East Harlem mapping group'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project link' }));
+    const dialog = screen.getByRole('dialog', { name: 'Project link' });
+    expect(within(dialog).getByText('Student or group name (optional)')).toBeVisible();
+    expect(within(dialog).getByText('East Harlem mapping group')).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close Project link' }));
+
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('East Harlem mapping group');
+  });
+
   it('keeps Map and all five stages available with guidance present and never mentions instructor review', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     expect(screen.getByRole('region', { name: 'Where your memo stands' })).toBeVisible();
     expect(document.querySelector('.workspace').textContent).not.toMatch(/instructor review|send to instructor|note for instructor/i);
-    screen.getAllByRole('button', { name: /Choose nodes and connections/ }).forEach((button) => expect(button).toBeEnabled());
+    screen.getAllByRole('button', { name: 'Choose nodes' }).forEach((button) => expect(button).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
     const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
     SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
+  });
+
+  it('keeps forward stage navigation available while optional model requests are running', async () => {
+    let releaseReview;
+    preflightEvaluationResponder = (body) => new Promise((resolve) => {
+      releaseReview = () => resolve(jsonResponse({ evaluation: evaluationRecord(body) }, 201));
+    });
+    const reviewProject = createDefaultProject();
+    reviewProject.stage = 1;
+    reviewProject.furthestStage = 1;
+    await resumeSavedProject(reviewProject);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByText('The model is reading your memo…')).toBeVisible();
+    const reviewForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Choose nodes' });
+    expect(reviewForward).toBeEnabled();
+    fireEvent.click(reviewForward);
+    expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
+    await act(async () => { releaseReview(); await Promise.resolve(); });
+
+    cleanup();
+    window.localStorage.clear();
+    let releaseConnections;
+    connectionSuggestionResponder = (body) => new Promise((resolve) => {
+      releaseConnections = () => resolve(jsonResponse({ connections: [{
+        source: body.nodes[0].id,
+        target: body.nodes[1].id,
+        verb: 'supports',
+        rationale: 'The student described support between these nodes.',
+      }] }, 201));
+    });
+    const connectionProject = createDefaultProject();
+    connectionProject.activeScale = 'exosphere';
+    connectionProject.releasedScales = ['micro', 'meso', 'exosphere'];
+    connectionProject.candidates.nodes = extractCandidates(connectionProject.submission).nodes.slice(0, 2).map((node) => ({
+      ...node,
+      scale: 'exosphere',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    }));
+    connectionProject.stage = 2;
+    connectionProject.furthestStage = 2;
+    await resumeSavedProject(connectionProject);
+    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
+    expect(screen.getByRole('button', { name: 'Refining map…' })).toBeDisabled();
+    const connectionForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' });
+    expect(connectionForward).toBeEnabled();
+    fireEvent.click(connectionForward);
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    await act(async () => { releaseConnections(); await Promise.resolve(); });
   });
 
   it('opens an empty map from candidate choice instead of gating on generated items', async () => {
@@ -583,8 +824,8 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByText(/add elements yourself on the map/i)).toBeVisible();
-    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
-    expect(screen.getByRole('heading', { name: 'Ask for more connections' })).toBeVisible();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Describe connections between nodes' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -592,8 +833,11 @@ describe('Systems Mapping workflow', () => {
 
   it('uses the student description to request editable connections and adds only accepted suggestions to the map', async () => {
     const project = createDefaultProject();
+    project.activeScale = 'exosphere';
+    project.releasedScales = ['micro', 'meso', 'exosphere'];
     const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node) => ({
       ...node,
+      scale: 'exosphere',
       status: 'confirmed',
       claimState: 'student interpretation',
     }));
@@ -604,16 +848,17 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
-    expect(screen.getByRole('heading', { name: 'Ask for more connections' })).toBeVisible();
-    expect(screen.getByText(/the model reads your memo directly/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
+    expect(screen.getByText(/add directions if you want the model to focus/i)).toBeVisible();
     const prompt = 'Families rely on schools, but delayed referrals make services harder to reach in this session.';
     fireEvent.click(screen.getByText('Steer the suggestions (optional)'));
-    fireEvent.change(screen.getByRole('textbox', { name: /How do these nodes connect/ }), { target: { value: prompt } });
+    expect(screen.getByText(/prompt the custom AI model to formulate new connections/i)).toBeVisible();
+    fireEvent.change(screen.getByRole('textbox', { name: /Describe connections between nodes/ }), { target: { value: prompt } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
 
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
     expect(verb).toHaveValue('supports');
-    expect(screen.getByRole('button', { name: 'Suggest more connections' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Refine map' })).toBeVisible();
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/map/connections' && options.method === 'POST');
     const body = JSON.parse(request[1].body);
     expect(body).toMatchObject({ activeScale: project.activeScale, inquiry: project.inquiry, prompt });
@@ -635,10 +880,13 @@ describe('Systems Mapping workflow', () => {
 
   it('shows complete node and relationship text in the connection preview without ellipses', async () => {
     const project = createDefaultProject();
+    project.activeScale = 'exosphere';
+    project.releasedScales = ['micro', 'meso', 'exosphere'];
     const longNodeLabel = 'East Harlem Disability Services coordinates transportation access across neighborhood family programs END NODE';
     const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
     const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
       ...node,
+      scale: 'exosphere',
       ...(index === 0 ? { label: longNodeLabel } : {}),
       status: 'confirmed',
       claimState: 'student interpretation',
@@ -651,7 +899,7 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
     fireEvent.click(screen.getByText('Steer the suggestions (optional)'));
-    fireEvent.change(screen.getByRole('textbox', { name: /How do these nodes connect/ }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Describe connections between nodes/ }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
     fireEvent.change(verb, { target: { value: longEdgeLabel } });
@@ -702,7 +950,9 @@ describe('Systems Mapping workflow', () => {
   });
 
   it('uses the exact evaluation envelope and keeps the stored memo review portable after reload', async () => {
-    await resumeSavedProject();
+    const project = createDefaultProject();
+    project.participantName = 'East Harlem mapping group';
+    await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
@@ -710,8 +960,10 @@ describe('Systems Mapping workflow', () => {
     const evaluationRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     const evaluationBody = JSON.parse(evaluationRequest[1].body);
     expect(Object.keys(evaluationBody).sort()).toEqual(['activeScale', 'stageId', 'inquiry', 'projectMetadata', 'projectOverlay', 'sourceMaterial', 'sourceRecord'].sort());
-    expect(Object.keys(evaluationBody.projectMetadata).sort()).toEqual(['clientUpdatedAt', 'furthestStage', 'id', 'projectId', 'schemaVersion', 'sharingTier', 'stage', 'submissionId', 'title'].sort());
+    expect(Object.keys(evaluationBody.projectMetadata).sort()).toEqual(['clientUpdatedAt', 'furthestStage', 'id', 'participantName', 'projectId', 'schemaVersion', 'sharingTier', 'stage', 'submissionId', 'title'].sort());
+    expect(evaluationBody.projectMetadata.participantName).toBe('East Harlem mapping group');
     expect(Object.keys(evaluationBody.sourceRecord)).toEqual(['id', 'sensitive', 'consent']);
+    expect(evaluationBody.sourceRecord).not.toHaveProperty('participantName');
     expect(JSON.stringify(evaluationBody)).not.toMatch(/"(?:author|date|sourceType|sourceTitle|location|rights|evidenceOwnership)"/);
     expect(evaluationBody).toMatchObject({ activeScale: 'micro', stageId: 'review-suggestions', sourceMaterial: createDefaultProject().submission.text });
     expect(evaluationBody.projectOverlay).toMatchObject({ baseModel: 'STEM Splitter', customInstructions: createDefaultProject().configs.preflight.customInstructions, revision: 1 });
@@ -739,6 +991,32 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByText('The memo already supports mapping. Continue to choose nodes and connections.')).toBeVisible();
   });
 
+  it('sends the exact carried Micro node IDs when Meso guidance is generated', async () => {
+    const project = createDefaultProject();
+    const microNodes = extractCandidates(project.submission).nodes
+      .filter((node) => node.scale === 'micro')
+      .slice(0, 2)
+      .map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+    microNodes[0].label = 'Renamed family support participants';
+    project.activeScale = 'meso';
+    project.releasedScales = ['micro', 'meso'];
+    project.graph = { nodes: microNodes, edges: [] };
+    project.candidates = { nodes: [], edges: [] };
+    project.preflight = null;
+    project.stage = 0;
+    project.furthestStage = 0;
+
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    await screen.findByRole('region', { name: 'What the model noticed' });
+
+    const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
+    const body = JSON.parse(request[1].body);
+    expect(body.carriedNodes).toEqual(microNodes.map(({ id, label, type }) => ({ id, label, type })));
+    expect(body.carriedNodes[0].id).not.toBe(stableId('node', body.carriedNodes[0].label));
+  });
+
   it('blocks an oversized evaluation request without truncating the local memo', async () => {
     const project = createDefaultProject();
     project.submission.text = '😀'.repeat(180_000);
@@ -752,7 +1030,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().submission.text).toBe(project.submission.text);
   });
 
-  it('enforces the reported Ollama Cloud UTF-8 memo boundary before provider egress', async () => {
+  it.each(['ollama-cloud', 'openrouter'])('enforces the reported %s UTF-8 memo boundary before provider egress', async (provider) => {
     const project = createDefaultProject();
     project.submission.text = '😀'.repeat(33_000);
     project.stage = 1;
@@ -760,17 +1038,17 @@ describe('Systems Mapping workflow', () => {
     studentSession = () => ({
       ...grantedAccess(),
       persistence: 'course-server',
-      suggestionRuntime: { provider: 'ollama-cloud', model: 'gpt-oss:120b', maxSourceBytes: 131072 },
+      suggestionRuntime: { provider, model: 'gpt-oss:120b', maxSourceBytes: 131072 },
     });
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText(/too large for the reported Ollama Cloud runtime/i)).toBeVisible();
+    expect(await screen.findByText(/too large for the reported model runtime/i)).toBeVisible();
     expect(screen.getByText(/131,072 UTF-8 bytes maximum/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(storedProject().submission.text).toBe(project.submission.text);
   });
 
-  it('enforces the Ollama Cloud UTF-8 inquiry boundary before provider egress', async () => {
+  it.each(['ollama-cloud', 'openrouter'])('enforces the %s UTF-8 inquiry boundary before provider egress', async (provider) => {
     const project = createDefaultProject();
     project.inquiry = '😀'.repeat(2_050);
     project.stage = 1;
@@ -778,11 +1056,11 @@ describe('Systems Mapping workflow', () => {
     studentSession = () => ({
       ...grantedAccess(),
       persistence: 'course-server',
-      suggestionRuntime: { provider: 'ollama-cloud', model: 'gpt-oss:120b', maxSourceBytes: 131072 },
+      suggestionRuntime: { provider, model: 'gpt-oss:120b', maxSourceBytes: 131072 },
     });
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText(/guiding inquiry is too large for the reported Ollama Cloud runtime/i)).toBeVisible();
+    expect(await screen.findByText(/guiding inquiry is too large for the reported model runtime/i)).toBeVisible();
     expect(screen.getByText(/8,192 UTF-8 bytes maximum/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
   });
@@ -826,7 +1104,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByText(/Your memo has changed since this guidance was generated/)).toBeVisible();
     expect(screen.getByRole('region', { name: 'What the model noticed' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Refresh guidance' })).toBeEnabled();
-    screen.getAllByRole('button', { name: /Choose nodes and connections/ }).forEach((button) => expect(button).toBeEnabled());
+    screen.getAllByRole('button', { name: 'Choose nodes' }).forEach((button) => expect(button).toBeEnabled());
     await waitFor(() => expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture()));
   });
 
@@ -852,19 +1130,155 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
-  it('advances into candidate choice from the guidance banner with model-proposed nodes and connections seeded', async () => {
+  it('keeps Micro node-only even when the provider returns connections', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: /Choose nodes and connections/ }));
+    expect(screen.queryByText('refers students to')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes' }));
     expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Confirm how they connect' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Describe connections between nodes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Describe connections between nodes/ })).not.toBeInTheDocument();
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.stage).toBe(2);
       expect(stored.candidates.nodes.map(({ label }) => label)).toEqual(expect.arrayContaining(['School', 'Committee']));
+      expect(stored.candidates.nodes.every((node) => node.scale === 'micro')).toBe(true);
+      expect(stored.candidates.edges).toEqual([]);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Keep all/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.edges).toEqual([]);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/connections')).toHaveLength(0);
+  });
+
+  it('reuses exact Micro node IDs for Meso connections without creating duplicate nodes', async () => {
+    const project = createDefaultProject();
+    const microNodes = extractCandidates(project.submission).nodes
+      .filter((node) => node.scale === 'micro')
+      .slice(0, 2)
+      .map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+    microNodes[0].label = 'Renamed family support participants';
+    const [source, target] = microNodes;
+    expect(source.id).not.toBe(stableId('node', source.label));
+    project.activeScale = 'meso';
+    project.releasedScales = ['micro', 'meso'];
+    project.graph = { nodes: microNodes, edges: [] };
+    project.candidates = { nodes: [], edges: [] };
+    project.stage = 1;
+    project.furthestStage = 1;
+    const review = {
+      guidance: [{ point: 'The memo names a connection between the two Micro nodes.' }],
+      nodes: [],
+      connections: [{ source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, verb: 'coordinates with', rationale: 'The memo names this connection directly.' }],
+      example: `${source.label} coordinates with ${target.label}.`,
+      readiness: { ready: true, note: 'The memo supports reviewing a Meso connection.' },
+    };
+    const evaluation = evaluationRecord(evaluationPayloadFixture(project), { review });
+    project.preflight = {
+      memoReview: structuredClone(review),
+      configurationSnapshot: structuredClone(evaluation.configSnapshot),
+      evaluation: {
+        evaluationId: evaluation.id,
+        runtime: evaluation.runtime,
+        createdAt: evaluation.createdAt,
+        expiresAt: evaluation.expiresAt,
+      },
+      sourceFingerprint: project.submission.fingerprint || stableId('src', project.submission.text),
+    };
+
+    await resumeSavedProject(project);
+    expect(screen.getByRole('heading', { name: 'Connections evident in your memo' })).toBeVisible();
+    microNodes.forEach((node) => expect(screen.getByRole('region', { name: 'Nodes carried forward from Micro' })).toHaveTextContent(node.label));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose connections' }));
+    expect(await screen.findByRole('heading', { name: 'Confirm how they connect' })).toBeVisible();
+    const carried = screen.getByRole('region', { name: 'Nodes from Micro' });
+    microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
+    expect(screen.queryByRole('tab', { name: /Nodes/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Connections · 1' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'More connections' })).toBeVisible();
+    await waitFor(() => {
+      expect(storedProject().candidates.nodes).toEqual([]);
+      expect(storedProject().candidates.edges[0]).toMatchObject({ source: source.id, target: target.id, scale: 'meso' });
+    });
+
+    const connectionRow = screen.getAllByRole('article')[0];
+    fireEvent.click(within(connectionRow).getByRole('button', { name: 'Keep' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
+    await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
+    const suggestionRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/map/connections' && options.method === 'POST');
+    expect(JSON.parse(suggestionRequest[1].body).nodes.map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
+    expect(new Set(storedProject().graph.nodes.map(({ id }) => id)).size).toBe(microNodes.length);
+    expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: source.id, target: target.id, verb: 'coordinates with', scale: 'meso' }),
+    ]));
+  });
+
+  it('keeps an existing Micro node in Micro when an Exosphere memo names it again', async () => {
+    const project = createDefaultProject();
+    const existing = {
+      ...extractCandidates(project.submission).nodes.find((node) => node.scale === 'micro'),
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    };
+    existing.label = 'Renamed family participants';
+    const originalIdentity = { id: existing.id, label: existing.label, scale: existing.scale };
+    const outerLabel = 'New York City Department of Community Access';
+    project.activeScale = 'exosphere';
+    project.releasedScales = ['micro', 'meso', 'exosphere'];
+    project.graph = { nodes: [existing], edges: [] };
+    project.candidates = { nodes: [], edges: [] };
+    project.instructor.requireStudentConfirmation = false;
+    project.stage = 1;
+    project.furthestStage = 1;
+    const review = {
+      guidance: [{ point: 'The memo names an indirect institutional influence.' }],
+      nodes: [
+        { label: existing.label, type: existing.type, scale: 'exosphere', evidence: 'The memo names the participants.' },
+        { label: outerLabel, type: 'agency', scale: 'exosphere', evidence: 'The memo names the department.' },
+      ],
+      connections: [{ source: outerLabel, target: existing.label, verb: 'shapes access for', rationale: 'The memo describes the indirect influence.' }],
+      example: `${outerLabel} shapes access for ${existing.label}.`,
+      readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
+    };
+    const evaluation = evaluationRecord(evaluationPayloadFixture(project), { review });
+    project.preflight = {
+      memoReview: structuredClone(review),
+      configurationSnapshot: structuredClone(evaluation.configSnapshot),
+      evaluation: {
+        evaluationId: evaluation.id,
+        runtime: evaluation.runtime,
+        createdAt: evaluation.createdAt,
+        expiresAt: evaluation.expiresAt,
+      },
+      sourceFingerprint: project.submission.fingerprint || stableId('src', project.submission.text),
+    };
+
+    await resumeSavedProject(project);
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes and connections' }));
+    await waitFor(() => {
+      const stored = storedProject();
+      expect(stored.candidates.nodes.some((node) => node.id === existing.id)).toBe(false);
+      expect(stored.candidates.nodes.find((node) => node.label === outerLabel)).toMatchObject({ scale: 'exosphere', status: 'confirmed' });
       expect(stored.candidates.edges).toEqual(expect.arrayContaining([
-        expect.objectContaining({ sourceLabel: 'School', targetLabel: 'Committee', verb: 'refers students to' }),
+        expect.objectContaining({ source: stableId('node', outerLabel), target: existing.id, scale: 'exosphere' }),
       ]));
     });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.nodes.find((node) => node.id === existing.id)).toMatchObject(originalIdentity);
+    expect(storedProject().graph.nodes.filter((node) => node.id === existing.id)).toHaveLength(1);
+    expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: stableId('node', outerLabel), target: existing.id, scale: 'exosphere' }),
+    ]));
   });
 
   it('keeps a newly valid class grant active when a stale prototype 401 reads back a valid session', async () => {
@@ -933,7 +1347,7 @@ describe('Systems Mapping workflow', () => {
   it('retires a previously committed candidate when the reviewer later rejects it', async () => {
     const project = createDefaultProject();
     const extracted = extractCandidates(project.submission);
-    project.candidates = { nodes: extracted.nodes.slice(0, 2), edges: [] };
+    project.candidates = { nodes: extracted.nodes.slice(0, 2).map((node) => ({ ...node, scale: 'micro' })), edges: [] };
     project.graph = {
       nodes: project.candidates.nodes.map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' })),
       edges: [],
@@ -941,7 +1355,6 @@ describe('Systems Mapping workflow', () => {
     project.stage = 2;
     project.furthestStage = 2;
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('tab', { name: /Nodes · 2/ }));
     const rows = screen.getAllByRole('article');
     fireEvent.click(within(rows[0]).getByRole('button', { name: 'Remove' }));
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Keep' }));
@@ -953,8 +1366,10 @@ describe('Systems Mapping workflow', () => {
 
   it('keeps a relationship whose verb is outside the course vocabulary when the student chooses Keep', async () => {
     const project = createDefaultProject();
+    project.activeScale = 'exosphere';
+    project.releasedScales = ['micro', 'meso', 'exosphere'];
     const extracted = extractCandidates(project.submission);
-    const nodes = extracted.nodes.slice(0, 2).map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+    const nodes = extracted.nodes.slice(0, 2).map((node) => ({ ...node, scale: 'exosphere', status: 'confirmed', claimState: 'student interpretation' }));
     const edge = {
       ...extracted.edges[0],
       source: nodes[0].id,
@@ -965,6 +1380,7 @@ describe('Systems Mapping workflow', () => {
       status: 'pending',
       claimState: 'inference',
       evidence: 'The memo describes the invitation directly.',
+      scale: 'exosphere',
     };
     project.candidates = { nodes, edges: [edge] };
     project.graph = { nodes: [], edges: [] };
@@ -988,6 +1404,7 @@ describe('Systems Mapping workflow', () => {
     const project = createDefaultProject();
     const accepted = extractCandidates(project.submission).nodes.slice(0, 4).map((node) => ({
       ...node,
+      scale: 'micro',
       x: 500,
       y: 300,
       status: 'confirmed',
@@ -1011,49 +1428,531 @@ describe('Systems Mapping workflow', () => {
 
   it('records a manually added relationship in the current scale layer', async () => {
     const project = await openMapProject();
+    const microNodes = project.graph.nodes.filter((node) => node.scale === 'micro');
     const inspector = openMapInspector();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     const addActions = document.getElementById('inspector-add-actions');
-    expect(within(addActions).getByRole('button', { name: 'Node' })).toBeVisible();
     fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
     const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
-    fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: project.graph.nodes[0].id } });
+    fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: microNodes[0].id } });
     fireEvent.change(within(addForm).getByLabelText('Connection'), { target: { value: 'coordinates with' } });
-    fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: project.graph.nodes[1].id } });
-    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The current Macro memo names this relationship.' } });
+    fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: microNodes[1].id } });
+    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The current Meso memo names this relationship.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
-    await waitFor(() => expect(storedProject().graph.edges.at(-1)).toMatchObject({ scale: 'macro', verb: 'coordinates with' }));
+    await waitFor(() => expect(storedProject().graph.edges.at(-1)).toMatchObject({
+      source: microNodes[0].id,
+      target: microNodes[1].id,
+      scale: 'meso',
+      verb: 'coordinates with',
+    }));
   });
 
-  it('opens with a label-free active-scale overview, keeps the inspector closed, and makes all scales explicit', async () => {
-    const project = await openMapProject();
+  it('limits manual map additions to nodes in Micro and carried-node relationships in Meso', async () => {
+    await openMapProject(makeMapProject('micro'));
+    let inspector = openMapInspector();
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
+    let actions = document.getElementById('inspector-add-actions');
+    expect(within(actions).getByRole('button', { name: 'Node' })).toBeVisible();
+    expect(within(actions).queryByRole('button', { name: 'Relationship' })).not.toBeInTheDocument();
+
+    cleanup();
+    const project = await openMapProject(makeMapProject('meso'));
+    inspector = openMapInspector();
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
+    actions = document.getElementById('inspector-add-actions');
+    expect(within(actions).queryByRole('button', { name: 'Node' })).not.toBeInTheDocument();
+    fireEvent.click(within(actions).getByRole('button', { name: 'Relationship' }));
+    const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
+    const expectedLabels = project.graph.nodes
+      .filter((node) => node.scale === 'micro')
+      .map((node) => node.label);
+    expect(within(within(addForm).getByLabelText('From')).getAllByRole('option').map((option) => option.textContent)).toEqual(expectedLabels);
+    expect(within(within(addForm).getByLabelText('To')).getAllByRole('option').map((option) => option.textContent)).toEqual(expectedLabels);
+  });
+
+  it.each(['exosphere', 'macrosphere'])('renders the %s ecological backdrop and changes layer filters without mutating graph data', async (activeScale) => {
+    const project = await openMapProject(makeMapProject(activeScale));
     const graphBefore = structuredClone(storedProject().graph);
-    const scale = screen.getByRole('combobox', { name: 'Show map scale' });
+    const scale = screen.getByRole('combobox', { name: 'Show map layer' });
     const active = graphForScale(project);
     const meso = graphForScale(project, 'meso');
     const all = graphForScale(project, 'all');
     const inspector = screen.getByLabelText('Map inspector');
 
     expect(scale).toHaveValue(project.activeScale);
-    expect(within(scale).getAllByRole('option').at(-1)).toHaveValue('all');
-    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Macro map. ${active.nodes.length} nodes and ${active.edges.length} connections.`));
+    expect(within(scale).getAllByRole('option').map((option) => option.value)).toEqual([...project.releasedScales, 'all']);
+    expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`${activeScale === 'exosphere' ? 'Exosphere' : 'Macrosphere'} map. ${active.nodes.length} nodes and ${active.edges.length} ${active.edges.length === 1 ? 'connection' : 'connections'}.`));
+    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(project.releasedScales.length);
+    expect(document.querySelector(`[data-ecology-layer="${activeScale}"]`)).toHaveClass('is-visible');
+    expect(document.querySelectorAll('[data-ecology-layer].is-muted')).toHaveLength(project.releasedScales.length - 1);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
-    expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(active.edges.length);
+    expect(screen.getByText('Choose a node to see its connections.')).toBeVisible();
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).toHaveAttribute('inert');
     expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
 
     fireEvent.change(scale, { target: { value: 'meso' } });
     expect(scale).toHaveValue('meso');
-    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Meso map. ${meso.nodes.length} nodes and ${meso.edges.length} connections.`));
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Meso map. ${meso.nodes.length} nodes and ${meso.edges.length} ${meso.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
 
     fireEvent.change(scale, { target: { value: 'all' } });
-    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-scales map. ${all.nodes.length} nodes and ${all.edges.length} connections.`));
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(screen.getByText('Choose a node to see its connections.')).toBeVisible();
+    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(project.releasedScales.length);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(all.edges.length);
     expect(storedProject().graph).toEqual(graphBefore);
+  });
+
+  it('uses the ecological map when an outer layer is available and centers a readable layer view', async () => {
+    const project = makeMapProject('meso');
+    project.releasedScales.push('exosphere');
+    await openMapProject(project);
+
+    expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
+    const anchor = document.querySelector('.graph-node');
+    const [, anchorX, anchorY] = (anchor?.getAttribute('transform') || '').match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/) || [];
+    expect(anchorX).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
+    await waitFor(() => expect(storedProject().viewport.panX).not.toBe(0));
+    const viewport = storedProject().viewport;
+    expect(viewport.zoom).toBeGreaterThanOrEqual(0.85);
+    expect((420 - viewport.panX) / viewport.zoom).toBeCloseTo(Number(anchorX), 0);
+    expect((270 - viewport.panY) / viewport.zoom).toBeCloseTo(Number(anchorY), 0);
+  });
+
+  it.each([
+    ['desktop', false],
+    ['phone', true],
+  ])('keeps arranged ecological nodes clear of one another and every layer label on %s', async (_viewport, phone) => {
+    if (phone) installPhoneLayout();
+    await openMapProject(makeMapProject('exosphere'));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
+
+    const translatedRect = (group, rect) => {
+      const match = (group.getAttribute('transform') || '').match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
+      if (!match) throw new Error(`Unexpected translated group: ${group.getAttribute('transform')}`);
+      const offsetX = Number(match[1]);
+      const offsetY = Number(match[2]);
+      const x = offsetX + Number(rect.getAttribute('x'));
+      const y = offsetY + Number(rect.getAttribute('y'));
+      const width = Number(rect.getAttribute('width'));
+      const height = Number(rect.getAttribute('height'));
+      return { left: x, top: y, right: x + width, bottom: y + height };
+    };
+    const intersects = (left, right) => left.left < right.right
+      && left.right > right.left
+      && left.top < right.bottom
+      && left.bottom > right.top;
+    const labelRects = [...document.querySelectorAll('.ecology-layer__label')]
+      .map((group) => translatedRect(group, group.querySelector('rect')));
+    const nodeRects = [...document.querySelectorAll('.graph-node')].map((group) => ({
+      id: group.getAttribute('data-full-label'),
+      bounds: translatedRect(group, group.querySelector('.node-card')),
+    }));
+    const labelCollisions = nodeRects.flatMap(({ id, bounds }) => (
+      labelRects.some((label) => intersects(bounds, label)) ? [id] : []
+    ));
+    const nodeCollisions = [];
+    nodeRects.forEach((left, first) => nodeRects.slice(first + 1).forEach((right) => {
+      if (intersects(left.bounds, right.bounds)) nodeCollisions.push(`${left.id} / ${right.id}`);
+    }));
+
+    expect(labelCollisions).toEqual([]);
+    expect(nodeCollisions).toEqual([]);
+  });
+
+  it.each([320, 390, 430])('keeps a six-node all-layer ecology overview readable, separate, and on canvas at %ipx without saving it', async (width) => {
+    installPhoneLayout(width);
+    const project = makePhoneEcologyOverviewProject();
+    await openMapProject(project);
+    const durableGraph = structuredClone(storedProject().graph);
+    const durableViewport = { ...storedProject().viewport };
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    await waitFor(() => {
+      expect(document.querySelectorAll('.graph-node')).toHaveLength(6);
+      expect(viewportTransform().zoom).toBe(1.5);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
+
+    const view = viewportTransform();
+    const visible = { left: 0, right: 840, top: -130, bottom: 670 };
+    const bounds = [...document.querySelectorAll('.graph-node')].map((group) => {
+      const world = translatedRectBounds(group, group.querySelector('.node-card'));
+      return {
+        id: group.getAttribute('data-graph-id'),
+        left: world.left * view.zoom + view.panX,
+        right: world.right * view.zoom + view.panX,
+        top: world.top * view.zoom + view.panY,
+        bottom: world.bottom * view.zoom + view.panY,
+      };
+    });
+
+    bounds.forEach((nodeBounds) => {
+      expect(nodeBounds.left, `${nodeBounds.id} clips at the left`).toBeGreaterThanOrEqual(visible.left);
+      expect(nodeBounds.right, `${nodeBounds.id} clips at the right`).toBeLessThanOrEqual(visible.right);
+      expect(nodeBounds.top, `${nodeBounds.id} clips at the top`).toBeGreaterThanOrEqual(visible.top);
+      expect(nodeBounds.bottom, `${nodeBounds.id} clips at the bottom`).toBeLessThanOrEqual(visible.bottom);
+    });
+    bounds.forEach((left, first) => bounds.slice(first + 1).forEach((right) => {
+      expect(rectsIntersect(left, right), `${left.id} overlaps ${right.id}`).toBe(false);
+    }));
+    [...document.querySelectorAll('.graph-node')].forEach((group) => {
+      expect(svgTextLines(group.querySelector('.node-label')).join(' ')).toBe(group.getAttribute('data-full-label'));
+      expect(group).not.toHaveTextContent('…');
+    });
+    expect(storedProject().graph).toEqual(durableGraph);
+    expect(storedProject().viewport).toEqual(durableViewport);
+  });
+
+  it('reflows a dense all-layer ecology map at each phone width, clears inner and outer collisions, and restores desktop without writes', async () => {
+    const resizeTo = installResponsiveLayout();
+    const project = makeDenseEcologyOverviewProject();
+    await openMapProject(project);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    const durableGraph = structuredClone(storedProject().graph);
+    const durableViewport = { ...storedProject().viewport };
+    const desktopPositions = new Map(project.graph.nodes.map(({ id }) => [id, renderedNodePosition(id)]));
+
+    for (const width of [320, 390, 430]) {
+      resizeTo(width);
+      await waitFor(() => {
+        expect(viewportTransform().zoom).toBe(1.5);
+        expect(renderedNodePosition(project.graph.nodes[0].id)).not.toEqual(desktopPositions.get(project.graph.nodes[0].id));
+      });
+
+      const nodeBounds = [...document.querySelectorAll('.graph-node')].map((group) => ({
+        id: group.getAttribute('data-full-label'),
+        bounds: translatedRectBounds(group, group.querySelector('.node-card')),
+      }));
+      const layerLabelBounds = [...document.querySelectorAll('.ecology-layer__label')]
+        .map((group) => translatedRectBounds(group, group.querySelector('rect')));
+      const nodeCollisions = [];
+      nodeBounds.forEach((left, first) => nodeBounds.slice(first + 1).forEach((right) => {
+        if (rectsIntersect(left.bounds, right.bounds)) nodeCollisions.push(`${left.id} / ${right.id}`);
+      }));
+      const labelCollisions = nodeBounds.flatMap(({ id, bounds }) => (
+        layerLabelBounds.some((label) => rectsIntersect(bounds, label)) ? [id] : []
+      ));
+
+      expect(nodeBounds).toHaveLength(21);
+      expect(nodeCollisions).toEqual([]);
+      expect(labelCollisions).toEqual([]);
+      [...document.querySelectorAll('.graph-node')].forEach((group) => {
+        expect(svgTextLines(group.querySelector('.node-label')).join(' ')).toBe(group.getAttribute('data-full-label'));
+        expect(group).not.toHaveTextContent('…');
+      });
+      expect(storedProject().graph).toEqual(durableGraph);
+      expect(storedProject().viewport).toEqual(durableViewport);
+
+      resizeTo(1024);
+      await waitFor(() => expect(viewportTransform()).toEqual(durableViewport));
+      desktopPositions.forEach((position, id) => expect(renderedNodePosition(id)).toEqual(position));
+      expect(storedProject().graph).toEqual(durableGraph);
+      expect(storedProject().viewport).toEqual(durableViewport);
+    }
+  });
+
+  it('keeps keyboard-moved ecological nodes out of their layer label', async () => {
+    await openMapProject(makeMapProject('exosphere'));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    const node = [...document.querySelectorAll('.graph-node--exosphere')]
+      .sort((left, right) => renderedNodePosition(left.getAttribute('data-graph-id')).y - renderedNodePosition(right.getAttribute('data-graph-id')).y)[0];
+    for (let step = 0; step < 80; step += 1) fireEvent.keyDown(node, { key: 'ArrowUp', shiftKey: true });
+
+    const moved = document.querySelector(`[data-graph-id="${node.getAttribute('data-graph-id')}"]`);
+    const nodePosition = renderedNodePosition(node.getAttribute('data-graph-id'));
+    const nodeCard = moved.querySelector('.node-card');
+    const cardBounds = {
+      left: nodePosition.x + Number(nodeCard.getAttribute('x')),
+      right: nodePosition.x + Number(nodeCard.getAttribute('x')) + Number(nodeCard.getAttribute('width')),
+      top: nodePosition.y + Number(nodeCard.getAttribute('y')),
+      bottom: nodePosition.y + Number(nodeCard.getAttribute('y')) + Number(nodeCard.getAttribute('height')),
+    };
+    const labelGroup = document.querySelector('[data-ecology-layer="exosphere"] .ecology-layer__label');
+    const labelRect = labelGroup.querySelector('rect');
+    const [, labelX, labelY] = labelGroup.getAttribute('transform').match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
+    const labelBounds = {
+      left: Number(labelX) + Number(labelRect.getAttribute('x')),
+      right: Number(labelX) + Number(labelRect.getAttribute('x')) + Number(labelRect.getAttribute('width')),
+      top: Number(labelY) + Number(labelRect.getAttribute('y')),
+      bottom: Number(labelY) + Number(labelRect.getAttribute('y')) + Number(labelRect.getAttribute('height')),
+    };
+    expect(cardBounds.left < labelBounds.right
+      && cardBounds.right > labelBounds.left
+      && cardBounds.top < labelBounds.bottom
+      && cardBounds.bottom > labelBounds.top).toBe(false);
+  });
+
+  it.each([320, 390, 430])('keeps all six Micro nodes readable, separate, and on canvas at %ipx without saving the phone layout', async (width) => {
+    installPhoneLayout(width);
+    const project = makeSixNodeMicroProject();
+    const durablePositions = project.graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
+    const durableViewport = { ...project.viewport };
+    await openMapProject(project);
+
+    await waitFor(() => expect(viewportTransform().zoom).toBe(1.5));
+    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    await waitFor(() => expect(viewportTransform().zoom).toBe(1.5));
+
+    const view = viewportTransform();
+    const visible = { left: 0, right: 840, top: -130, bottom: 670 };
+    const bounds = [...document.querySelectorAll('.graph-node')].map((group) => {
+      const position = renderedNodePosition(group.getAttribute('data-graph-id'));
+      const card = group.querySelector('.node-card');
+      return {
+        id: group.getAttribute('data-graph-id'),
+        left: (position.x + Number(card.getAttribute('x'))) * view.zoom + view.panX,
+        right: (position.x + Number(card.getAttribute('x')) + Number(card.getAttribute('width'))) * view.zoom + view.panX,
+        top: (position.y + Number(card.getAttribute('y'))) * view.zoom + view.panY,
+        bottom: (position.y + Number(card.getAttribute('y')) + Number(card.getAttribute('height'))) * view.zoom + view.panY,
+      };
+    });
+
+    expect(bounds).toHaveLength(6);
+    bounds.forEach((nodeBounds) => {
+      expect(nodeBounds.left, `${nodeBounds.id} clips at the left`).toBeGreaterThanOrEqual(visible.left);
+      expect(nodeBounds.right, `${nodeBounds.id} clips at the right`).toBeLessThanOrEqual(visible.right);
+      expect(nodeBounds.top, `${nodeBounds.id} clips at the top`).toBeGreaterThanOrEqual(visible.top);
+      expect(nodeBounds.bottom, `${nodeBounds.id} clips at the bottom`).toBeLessThanOrEqual(visible.bottom);
+    });
+    bounds.forEach((left, first) => bounds.slice(first + 1).forEach((right) => {
+      const overlapArea = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left))
+        * Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+      expect(overlapArea, `${left.id} overlaps ${right.id}`).toBe(0);
+    }));
+    [...document.querySelectorAll('.graph-node')].forEach((group) => {
+      expect(svgTextLines(group.querySelector('.node-label')).join(' ')).toBe(group.getAttribute('data-full-label'));
+      expect(group).not.toHaveTextContent('…');
+    });
+    expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(durablePositions);
+    expect(storedProject().viewport).toEqual(durableViewport);
+  });
+
+  it('uses phone-only geometry across breakpoint changes and restores the exact saved desktop map', async () => {
+    const resizeTo = installResponsiveLayout();
+    const project = makeSixNodeMicroProject();
+    const durablePositions = project.graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
+    const durableViewport = { ...project.viewport };
+    await openMapProject(project);
+
+    durablePositions.forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
+    expect(viewportTransform()).toEqual(durableViewport);
+
+    resizeTo(390);
+    await waitFor(() => expect(viewportTransform().zoom).toBe(1.5));
+    expect(project.graph.nodes.some((node) => renderedNodePosition(node.id).x !== node.x)).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    resizeTo(1024);
+    await waitFor(() => expect(viewportTransform()).toEqual(durableViewport));
+    durablePositions.forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
+    expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(durablePositions);
+    expect(storedProject().viewport).toEqual(durableViewport);
+  });
+
+  it('keeps the initial automatic desktop fit and a nonzero relationship geometry', async () => {
+    const project = makeMapProject('meso');
+    project.events.push(
+      { id: 'event-desktop-fit-1', action: 'graph.committed', actor: 'student', at: '2026-08-21T18:00:00.000Z', detail: 'First cycle' },
+      { id: 'event-desktop-fit-2', action: 'graph.committed', actor: 'student', at: '2026-08-21T18:05:00.000Z', detail: 'Second cycle' },
+    );
+    const durableViewport = { ...project.viewport };
+    await openMapProject(project);
+
+    await waitFor(() => expect(viewportTransform()).not.toEqual(durableViewport));
+    const line = [...document.querySelectorAll('.graph-edge .edge-line')].find((candidate) => (
+      Number(candidate.getAttribute('x1')) !== Number(candidate.getAttribute('x2'))
+      && Number(candidate.getAttribute('y1')) !== Number(candidate.getAttribute('y2'))
+    ));
+    expect(line).toBeDefined();
+    expect(Number(line.getAttribute('x1'))).not.toBe(Number(line.getAttribute('x2')));
+    expect(Number(line.getAttribute('y1'))).not.toBe(Number(line.getAttribute('y2')));
+    expect(storedProject().viewport).toEqual(durableViewport);
+  });
+
+  it('refits a desktop-focused relationship when crossing into phone detail and restores the durable desktop map', async () => {
+    const resizeTo = installResponsiveLayout();
+    const project = makeMapProject('meso');
+    const durablePositions = project.graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
+    const durableViewport = { ...project.viewport };
+    await openMapProject(project);
+
+    const edge = document.querySelector('.graph-edge');
+    edge.focus();
+    fireEvent.keyDown(edge, { key: 'Enter' });
+    const inspector = screen.getByLabelText('Map inspector');
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
+    expect(mapCanvas()).not.toHaveClass('is-detail-view');
+
+    resizeTo(390);
+    await waitFor(() => {
+      expect(mapCanvas()).toHaveClass('is-detail-view');
+      expect(viewportTransform().zoom).toBe(1.5);
+    });
+    const phoneLine = document.querySelector('.graph-edge .edge-line');
+    expect(Number(phoneLine.getAttribute('x1'))).not.toBe(Number(phoneLine.getAttribute('x2')));
+    const view = viewportTransform();
+    [...document.querySelectorAll('.graph-node')].forEach((group) => {
+      const position = renderedNodePosition(group.getAttribute('data-graph-id'));
+      const card = group.querySelector('.node-card');
+      const bounds = {
+        left: (position.x + Number(card.getAttribute('x'))) * view.zoom + view.panX,
+        right: (position.x + Number(card.getAttribute('x')) + Number(card.getAttribute('width'))) * view.zoom + view.panX,
+        top: (position.y + Number(card.getAttribute('y'))) * view.zoom + view.panY,
+        bottom: (position.y + Number(card.getAttribute('y')) + Number(card.getAttribute('height'))) * view.zoom + view.panY,
+      };
+      expect(bounds.left).toBeGreaterThanOrEqual(0);
+      expect(bounds.right).toBeLessThanOrEqual(840);
+      expect(bounds.top).toBeGreaterThanOrEqual(-130);
+      expect(bounds.bottom).toBeLessThanOrEqual(670);
+    });
+
+    resizeTo(1024);
+    await waitFor(() => {
+      expect(mapCanvas()).not.toHaveClass('is-detail-view');
+      expect(viewportTransform()).toEqual(durableViewport);
+    });
+    const visibleIds = [...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id'));
+    durablePositions.filter(({ id }) => visibleIds.includes(id)).forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
+    expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(durablePositions);
+    expect(storedProject().viewport).toEqual(durableViewport);
+  });
+
+  it('shows a distant cross-layer ecology relationship in a compact readable detail without changing its durable map', async () => {
+    const project = makeCrossLayerEcologyProject();
+    const durableGraph = structuredClone(project.graph);
+    const durableViewport = { ...project.viewport };
+    await openMapProject(project);
+
+    const edge = document.querySelector('.graph-edge');
+    edge.focus();
+    fireEvent.keyDown(edge, { key: 'Enter' });
+    const inspector = screen.getByLabelText('Map inspector');
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    await waitFor(() => {
+      expect(inspector).toHaveAttribute('aria-hidden', 'true');
+      expect(mapCanvas()).toHaveClass('is-detail-view');
+    });
+
+    expect(document.querySelector('.ecology-layers')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Arrange map' })).not.toBeInTheDocument();
+    const assertDetailInsideCanvas = () => {
+      const view = viewportTransform();
+      expect(view.zoom).toBeGreaterThanOrEqual(0.85);
+      [...document.querySelectorAll('.graph-node')].forEach((group) => {
+        const position = renderedNodePosition(group.getAttribute('data-graph-id'));
+        const card = group.querySelector('.node-card');
+        const bounds = {
+          left: (position.x + Number(card.getAttribute('x'))) * view.zoom + view.panX,
+          right: (position.x + Number(card.getAttribute('x')) + Number(card.getAttribute('width'))) * view.zoom + view.panX,
+          top: (position.y + Number(card.getAttribute('y'))) * view.zoom + view.panY,
+          bottom: (position.y + Number(card.getAttribute('y')) + Number(card.getAttribute('height'))) * view.zoom + view.panY,
+        };
+        expect(bounds.left).toBeGreaterThanOrEqual(0);
+        expect(bounds.right).toBeLessThanOrEqual(840);
+        expect(bounds.top).toBeGreaterThanOrEqual(0);
+        expect(bounds.bottom).toBeLessThanOrEqual(540);
+      });
+      const label = document.querySelector('.graph-edge-label');
+      const background = label.querySelector('.edge-label-bg');
+      const labelBounds = {
+        left: Number(background.getAttribute('x')) * view.zoom + view.panX,
+        right: (Number(background.getAttribute('x')) + Number(background.getAttribute('width'))) * view.zoom + view.panX,
+        top: Number(background.getAttribute('y')) * view.zoom + view.panY,
+        bottom: (Number(background.getAttribute('y')) + Number(background.getAttribute('height'))) * view.zoom + view.panY,
+      };
+      expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe('funds');
+      expect(labelBounds.left).toBeGreaterThanOrEqual(0);
+      expect(labelBounds.right).toBeLessThanOrEqual(840);
+      expect(labelBounds.top).toBeGreaterThanOrEqual(0);
+      expect(labelBounds.bottom).toBeLessThanOrEqual(540);
+    };
+    assertDetailInsideCanvas();
+    expect(storedProject().graph).toEqual(durableGraph);
+    expect(storedProject().viewport).toEqual(durableViewport);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
+    assertDetailInsideCanvas();
+    expect(storedProject().graph).toEqual(durableGraph);
+    expect(storedProject().viewport).toEqual(durableViewport);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
+    await waitFor(() => {
+      expect(mapCanvas()).not.toHaveClass('is-detail-view');
+      expect(viewportTransform()).toEqual(durableViewport);
+    });
+    durableGraph.nodes.forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
+    expect(document.querySelector('.ecology-layers')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Arrange map' })).toBeVisible();
+    expect(storedProject().graph).toEqual(durableGraph);
+    expect(storedProject().viewport).toEqual(durableViewport);
+  });
+
+  it('opens a relationship with Enter and keeps its complete phone detail in view after Done', async () => {
+    installPhoneLayout();
+    await openMapProject(makeMapProject('exosphere'));
+    const edge = document.querySelector('.graph-edge[tabindex="0"]');
+    edge.focus();
+    fireEvent.keyDown(edge, { key: 'Enter' });
+    const inspector = screen.getByLabelText('Map inspector');
+    expect(inspector).toHaveClass('is-open');
+    expect(within(inspector).getByRole('tab', { name: 'Relationships' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+
+    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
+    expect(mapCanvas()).toHaveClass('is-detail-view');
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(2);
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(1);
+    const view = viewportTransform();
+    const visible = { left: 0, right: 840, top: -130, bottom: 670 };
+    const transformedBounds = [...document.querySelectorAll('.graph-node')].map((group) => {
+      const position = renderedNodePosition(group.getAttribute('data-graph-id'));
+      const card = group.querySelector('.node-card');
+      return {
+        left: (position.x + Number(card.getAttribute('x'))) * view.zoom + view.panX,
+        right: (position.x + Number(card.getAttribute('x')) + Number(card.getAttribute('width'))) * view.zoom + view.panX,
+        top: (position.y + Number(card.getAttribute('y'))) * view.zoom + view.panY,
+        bottom: (position.y + Number(card.getAttribute('y')) + Number(card.getAttribute('height'))) * view.zoom + view.panY,
+      };
+    });
+    transformedBounds.forEach((bounds) => {
+      expect(bounds.left).toBeGreaterThanOrEqual(visible.left);
+      expect(bounds.right).toBeLessThanOrEqual(visible.right);
+      expect(bounds.top).toBeGreaterThanOrEqual(visible.top);
+      expect(bounds.bottom).toBeLessThanOrEqual(visible.bottom);
+    });
+    const renderedLabel = document.querySelector('.graph-edge-label');
+    expect(svgTextLines(renderedLabel.querySelector('.edge-label')).join(' ')).toBe(renderedLabel.getAttribute('data-full-label'));
+    expect(renderedLabel).not.toHaveTextContent('…');
+  });
+
+  it('renders exact saved in-band ecological positions after reload', async () => {
+    await openMapProject(makeMapProject('exosphere'));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
+    await waitFor(() => expect(storedProject().events.some((event) => event.action === 'map.arranged')).toBe(true));
+    const savedPositions = storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
+
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+
+    savedPositions.forEach(({ id, x, y }) => {
+      expect(document.querySelector(`[data-graph-id="${id}"]`)).toHaveAttribute('transform', `translate(${x} ${y})`);
+    });
+    expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(savedPositions);
   });
 
   it('focuses a node on its one-hop neighborhood and restores the active-scale view without changing graph data', async () => {
@@ -1104,23 +2003,24 @@ describe('Systems Mapping workflow', () => {
     await openMapProject(project);
     const inspector = openNodeInspector(sourceNode.id);
     const renderedNode = document.querySelector(`.graph-node[data-graph-id="${sourceNode.id}"]`);
-    const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
     const card = renderedNode.querySelector('.node-card');
-    const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
 
     expect(svgTextLines(renderedNode.querySelector('.node-label')).join(' ')).toBe(longNodeLabel);
-    expect(svgTextLines(renderedEdge.querySelector('.edge-label')).join(' ')).toBe(longEdgeLabel);
     expect(renderedNode).not.toHaveTextContent('…');
-    expect(renderedEdge).not.toHaveTextContent('…');
     expect(renderedNode.querySelector('.node-scale-glyph')).toBeNull();
     expect(Number(card.getAttribute('height'))).toBeGreaterThan(phone ? 82 : 72);
-    expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
     expect(within(inspector).getByRole('heading', { name: longNodeLabel })).toHaveTextContent(longNodeLabel);
 
     fireEvent.click(within(inspector).getByRole('tab', { name: 'Relationships' }));
     const relationshipButton = within(within(inspector).getByLabelText('Relationship list')).getAllByRole('button')
       .find((button) => button.textContent.includes(longEdgeLabel));
     fireEvent.click(relationshipButton);
+    expect(within(within(inspector).getByLabelText('Relationship list')).getAllByRole('button')).toHaveLength(1);
+    const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
+    const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
+    expect(svgTextLines(renderedEdge.querySelector('.edge-label')).join(' ')).toBe(longEdgeLabel);
+    expect(renderedEdge).not.toHaveTextContent('…');
+    expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
     const summary = [...inspector.querySelectorAll('.node-summary')]
       .find((details) => details.querySelector('summary')?.textContent.includes(longEdgeLabel));
     expect(summary.querySelector('summary strong')).toHaveTextContent(longEdgeLabel);
@@ -1162,7 +2062,7 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
 
-    await waitFor(() => expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.arranged', detail: 'Macro arranged' }));
+    await waitFor(() => expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.arranged', detail: 'Meso arranged' }));
     const arranged = storedProject();
     const arrangedVisible = arranged.graph.nodes.filter((node) => visibleIds.has(node.id));
     const arrangedHidden = arranged.graph.nodes.filter((node) => !visibleIds.has(node.id));
@@ -1205,6 +2105,8 @@ describe('Systems Mapping workflow', () => {
   it('keeps candidates and the whole map intact when memo text changes', async () => {
     const project = createDefaultProject();
     project.candidates = extractCandidates(project.submission);
+    project.candidates.nodes.forEach((node) => { if (node.scale === 'meso') node.scale = 'micro'; });
+    project.candidates.edges.forEach((edge) => { if (edge.scale === 'micro') edge.scale = 'meso'; });
     project.graph = structuredClone(project.candidates);
     project.graph.nodes.forEach((node) => { node.status = 'confirmed'; node.claimState = 'student interpretation'; });
     project.graph.edges.forEach((edge) => { edge.status = 'confirmed'; edge.claimState = 'student interpretation'; });
@@ -1231,7 +2133,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Choose nodes and connections' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Choose nodes' })).toBeEnabled();
   });
 
   it.each(['node', 'edge', 'map'])('shows annotation saving only while work is pending and persists the text for %s', async (target) => {
@@ -1315,6 +2217,8 @@ describe('Systems Mapping workflow', () => {
     const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
     const start = renderedNodePosition(node.id);
+    const dragZoom = viewportTransform().zoom;
+    const draggedPosition = { x: Math.round(start.x + 24 / dragZoom), y: Math.round(start.y + 16 / dragZoom) };
     const inspector = screen.getByLabelText('Map inspector');
     svg.getScreenCTM = () => ({ inverse: () => ({}) });
     svg.createSVGPoint = () => ({
@@ -1337,18 +2241,18 @@ describe('Systems Mapping workflow', () => {
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).not.toHaveClass('is-open');
 
-    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject({ x: start.x + 24, y: start.y + 16 }));
+    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject(draggedPosition));
     const coordinateWrites = setItem.mock.calls.filter(([key, value]) => {
       if (key !== STORAGE_KEY) return false;
       const saved = JSON.parse(value);
-      return saved.graph.nodes.some((item) => item.id === node.id && item.x === start.x + 24 && item.y === start.y + 16);
+      return saved.graph.nodes.some((item) => item.id === node.id && item.x === draggedPosition.x && item.y === draggedPosition.y);
     });
     expect(coordinateWrites).toHaveLength(1);
     expect(eventRequests('node_moved')).toHaveLength(1);
 
     setItem.mockClear();
-    fireEvent.pointerDown(document.querySelector(`[data-graph-id="${node.id}"]`), { pointerId: 30, button: 0, clientX: start.x + 24, clientY: start.y + 16 });
-    fireEvent.pointerUp(svg, { pointerId: 30, clientX: start.x + 24, clientY: start.y + 16 });
+    fireEvent.pointerDown(document.querySelector(`[data-graph-id="${node.id}"]`), { pointerId: 30, button: 0, clientX: draggedPosition.x, clientY: draggedPosition.y });
+    fireEvent.pointerUp(svg, { pointerId: 30, clientX: draggedPosition.x, clientY: draggedPosition.y });
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     expect(inspector).not.toHaveAttribute('aria-hidden');
 
@@ -1370,6 +2274,7 @@ describe('Systems Mapping workflow', () => {
     expect(zoomIn).toBeVisible();
     expect(pan).toBeVisible();
     fireEvent.click(zoomIn);
+    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThan(durableViewport.zoom));
     fireEvent.click(pan);
     expect(pan).toHaveAttribute('aria-pressed', 'true');
     const beforePan = viewportTransform();
@@ -1427,7 +2332,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(addDisclosure);
     expect(addDisclosure).toHaveAttribute('aria-expanded', 'true');
     const addActions = document.getElementById('inspector-add-actions');
-    expect(within(addActions).getByRole('button', { name: 'Node' })).toBeVisible();
+    expect(within(addActions).queryByRole('button', { name: 'Node' })).not.toBeInTheDocument();
     expect(within(addActions).getByRole('button', { name: 'Relationship' })).toBeVisible();
     fireEvent.click(addDisclosure);
     expect(addDisclosure).toHaveAttribute('aria-expanded', 'false');
@@ -1558,11 +2463,29 @@ describe('Systems Mapping workflow', () => {
         evidence: { id: `annotation-csv-evidence-${index}`, text: '' },
       },
       label,
+      scale: 'exosphere',
       status: 'confirmed',
       claimState: 'confirmed',
     }));
     project.candidates = { nodes: [], edges: [] };
-    project.graph = { nodes, edges: [] };
+    const edgeId = stableId('edge', `${nodes[0].id}:documents:${nodes[1].id}`);
+    project.graph = { nodes, edges: [{
+      id: edgeId,
+      source: nodes[0].id,
+      target: nodes[1].id,
+      sourceLabel: nodes[0].label,
+      targetLabel: nodes[1].label,
+      verb: 'documents',
+      scale: 'exosphere',
+      status: 'confirmed',
+      claimState: 'confirmed',
+      notes: '',
+      directed: true,
+      rationale: 'The memo records this relationship.',
+      evidence: 'Memo sentence 1',
+      annotation: { id: stableId('annotation', `edge:${edgeId}:relationship`), text: '' },
+    }] };
+    project.releasedScales = ['micro', 'exosphere'];
     project.events.push({
       id: 'evt_legacy_source_imported',
       action: 'source.imported',
@@ -1587,7 +2510,7 @@ describe('Systems Mapping workflow', () => {
       await resumeSavedProject(project);
       expect(screen.getByText('nodes on map')).toBeVisible();
       expect(screen.getByText('items needing evidence')).toBeVisible();
-      expect(screen.getByText('memo imported')).toBeInTheDocument();
+      expect(screen.getByText('Memo imported')).toBeInTheDocument();
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
@@ -1612,6 +2535,7 @@ describe('Systems Mapping workflow', () => {
       expect(markdown).toContain('## Memo');
       expect(markdown).not.toMatch(/^## Source\b/m);
       expect(markdown).toContain('## Items needing evidence');
+      expect(markdown).toContain(`${nodes[0].label} **documents** ${nodes[1].label} — level: Exosphere; evidence: Memo sentence 1`);
       expect(markdown).not.toMatch(/\b(?:student interpretation|inference|contested|research lead|retired|claim_state)\b/i);
     } finally {
       if (priorCreate === undefined) delete URL.createObjectURL; else URL.createObjectURL = priorCreate;

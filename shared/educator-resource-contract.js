@@ -7,8 +7,9 @@ export const EDUCATOR_MODULE_EFFECTS = Object.freeze([
   'runtime-behavior',
 ]);
 export const TEACHING_PROFILE_SCHEMA_VERSION = 'cuny.teaching-profile.v1';
-export const COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v2';
+export const COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v3';
 export const LEGACY_COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v1';
+export const LEGACY_PARTS_COURSE_PROGRESSION_SCHEMA_VERSION = 'cuny.course-progression.v2';
 
 function fail(message) {
   throw new TypeError(`Educator resource: ${message}`);

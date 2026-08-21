@@ -8,6 +8,7 @@ import {
   createDefaultProject,
   createEvent,
   createPortableProject,
+  deterministicMemoReview,
   evaluateSubmission,
   exportFileName,
   extractCandidates,
@@ -24,6 +25,12 @@ function projectWithGraph() {
   const project = createDefaultProject();
   project.instructor.maxSharingTier = 'public';
   project.candidates = extractCandidates(project.submission);
+  project.candidates.nodes.forEach((node) => {
+    if (node.scale === 'meso') node.scale = 'micro';
+  });
+  project.candidates.edges.forEach((edge) => {
+    if (edge.scale === 'micro') edge.scale = 'meso';
+  });
   project.graph = structuredClone(project.candidates);
   return project;
 }
@@ -97,6 +104,32 @@ function legacyV1Project() {
 }
 
 describe('mapping domain', () => {
+  it('uses carried Micro labels in deterministic Meso guidance while retaining exact endpoint IDs', () => {
+    const carriedNodes = [
+      { id: 'node_school_91f4', label: 'East Harlem school team', type: 'organization' },
+      { id: 'node_family_7aa2', label: 'Family caregivers', type: 'family' },
+    ];
+    const review = deterministicMemoReview({
+      ...createDefaultProject().submission,
+      text: 'East Harlem school team refers to Family caregivers.',
+    }, 'meso', { carriedNodes });
+
+    expect(review.nodes).toEqual([]);
+    expect(review.connections[0]).toMatchObject({
+      source: carriedNodes[0].id,
+      target: carriedNodes[1].id,
+      sourceLabel: carriedNodes[0].label,
+      targetLabel: carriedNodes[1].label,
+    });
+    const studentText = JSON.stringify({ guidance: review.guidance, example: review.example, readiness: review.readiness });
+    expect(studentText).toContain(carriedNodes[0].label);
+    expect(studentText).toContain(carriedNodes[1].label);
+    expect(studentText).not.toContain(carriedNodes[0].id);
+    expect(studentText).not.toContain(carriedNodes[1].id);
+    expect(review.guidance[0].point).toBe('East Harlem school team refers Family caregivers.');
+    expect(studentText).not.toMatch(/offline reader|connects .* through/i);
+  });
+
   it('creates stable identifiers', () => {
     expect(stableId('node', 'Family')).toBe(stableId('node', 'Family'));
     expect(stableId('node', 'Family')).not.toBe(stableId('node', 'School'));
@@ -141,9 +174,9 @@ describe('mapping domain', () => {
     expect(result.hard.find((item) => item.id === 'H2').status).toBe('unmet');
   });
 
-  it('holds a memo with fewer than two explicit relationships', () => {
+  it('holds a Micro memo with fewer than two named actors or settings', () => {
     const project = createDefaultProject();
-    const result = evaluateSubmission({ ...project.submission, text: 'How does this system work? The school provides one service to a family, but the memo does not yet identify the remaining people, groups, and mechanisms.' }, 'micro', 6);
+    const result = evaluateSubmission({ ...project.submission, text: 'A family is present in this draft. The family appears again, but no second person, role, group, or setting has been named yet.' }, 'micro', 6);
     expect(result.outcome).toBe('hold');
     expect(result.hard.find((item) => item.id === 'H4').status).toBe('unmet');
   });
@@ -151,7 +184,7 @@ describe('mapping domain', () => {
   it('does not treat repeated relationship words as connections', () => {
     const project = createDefaultProject();
     const text = 'This record repeats the word funds twice without making an actual relational claim: funds. It contains enough filler text to pass the minimum memo length requirement.';
-    const result = evaluateSubmission({ ...project.submission, text }, 'integration', 6);
+    const result = evaluateSubmission({ ...project.submission, text }, 'macrosphere', 6);
     const h4 = result.hard.find((item) => item.id === 'H4');
     expect(h4.status).toBe('unmet');
     expect(h4.relationshipCount).toBe(0);
@@ -161,7 +194,7 @@ describe('mapping domain', () => {
   it('classifies every hard-pass result below threshold as conditional', () => {
     const project = createDefaultProject();
     const text = 'Council funds Clinic. Clinic serves Residents. Plain descriptive filler records the arrangement in neutral language without additional analytical signals or uncertainty markers.';
-    const result = evaluateSubmission({ ...project.submission, text }, 'integration', 6);
+    const result = evaluateSubmission({ ...project.submission, text }, 'macrosphere', 6);
     expect(result.hardPass).toBe(true);
     expect(result.score).toBeLessThan(5);
     expect(result.outcome).toBe('conditional');
@@ -185,10 +218,24 @@ describe('mapping domain', () => {
     const project = createDefaultProject();
     const text = 'How does the organization shape policy in Queens? The organization provides support and enables capacity. According to a source, however, results may be uncertain and should be checked.';
     const submission = { ...project.submission, text };
-    expect(evaluateSubmission(submission, 'macro', 6).outcome).toBe('pass');
+    expect(evaluateSubmission(submission, 'exosphere', 6).outcome).toBe('pass');
     const candidates = extractCandidates(submission);
     expect(candidates.nodes.length).toBeGreaterThan(0);
     expect(candidates.edges.map((edge) => edge.verb)).toEqual(expect.arrayContaining(['shapes', 'provides', 'enables']));
+  });
+
+  it('extracts named Micro actors and settings from a node-only memo', () => {
+    const project = createDefaultProject();
+    const text = 'East Harlem Disability Services. Families. Students. Teachers. P.S. 146. The community center. According to the course memo, these are the people and settings to examine.';
+    const submission = { ...project.submission, text };
+    const candidates = extractCandidates(submission);
+    const labels = candidates.nodes.map(({ label }) => label);
+
+    expect(candidates.edges).toEqual([]);
+    expect(labels).toEqual(expect.arrayContaining(['East Harlem Disability Services', 'Family', 'Students', 'Teachers', 'Community Center']));
+    expect(candidates.nodes.every((node) => node.evidenceExcerpt && node.evidenceHash === stableId('evh', node.evidenceExcerpt))).toBe(true);
+    const result = evaluateSubmission(submission, 'micro', 6);
+    expect(result.hard.find((item) => item.id === 'H4')).toMatchObject({ status: 'met', nodeCount: expect.any(Number) });
   });
 
   it('deduplicates repeated semantic edges while retaining distinct evidence records', () => {
@@ -212,7 +259,11 @@ describe('mapping domain', () => {
 
   it('round-trips supported project exports', () => {
     const project = createDefaultProject();
-    expect(parseProject(serializeProject(project)).id).toBe(project.id);
+    project.participantName = 'East Harlem mapping group';
+    expect(parseProject(serializeProject(project))).toMatchObject({
+      id: project.id,
+      participantName: 'East Harlem mapping group',
+    });
   });
 
   it('strictly validates and migrates authoritative evaluation provenance without accepting server-internal fields', () => {
@@ -235,6 +286,18 @@ describe('mapping domain', () => {
       promptEvalCount: 2048,
     };
     expect(() => validateProject(cloudRuntime)).not.toThrow();
+
+    const openRouterRuntime = structuredClone(project);
+    openRouterRuntime.preflight.evaluation.runtime = {
+      provider: 'openrouter',
+      model: 'openai/gpt-oss-120b',
+      requestedModel: 'openai/gpt-oss-120b',
+      maxSourceBytes: 131072,
+      createdAt: openRouterRuntime.preflight.evaluation.createdAt,
+      promptEvalCount: 2048,
+      evalCount: 512,
+    };
+    expect(() => validateProject(openRouterRuntime)).not.toThrow();
 
     const internalField = structuredClone(project);
     internalField.preflight.evaluation.studentSessionRef = 'must-not-persist';
@@ -410,12 +473,180 @@ describe('mapping domain', () => {
     });
 
     const variedScaleOrder = createDefaultProject();
-    variedScaleOrder.releasedScales = ['micro', 'macro'];
-    variedScaleOrder.activeScale = 'macro';
+    variedScaleOrder.releasedScales = ['micro', 'exosphere'];
+    variedScaleOrder.activeScale = 'exosphere';
     expect(parseProject(serializeProject(variedScaleOrder))).toMatchObject({
-      activeScale: 'macro',
-      releasedScales: ['micro', 'macro'],
+      activeScale: 'exosphere',
+      releasedScales: ['micro', 'exosphere'],
     });
+  });
+
+  it('migrates schema v5 levels, Micro relationships, and canonical module IDs without changing student work', () => {
+    const legacy = projectWithGraph();
+    legacy.schemaVersion = 5;
+    delete legacy.participantName;
+    legacy.activeScale = 'macro';
+    legacy.releasedScales = ['micro', 'macro', 'integration'];
+    legacy.completedScales = ['macro'];
+    const candidateMicroEdge = legacy.candidates.edges[0];
+    const graphMicroEdge = legacy.graph.edges[0];
+    candidateMicroEdge.scale = 'micro';
+    graphMicroEdge.scale = 'micro';
+    candidateMicroEdge.annotation.text = 'Preserve candidate relationship annotation';
+    graphMicroEdge.annotation.text = 'Preserve graph relationship annotation';
+    [candidateMicroEdge.source, candidateMicroEdge.target].forEach((id) => {
+      legacy.candidates.nodes.find((node) => node.id === id).scale = 'micro';
+      legacy.graph.nodes.find((node) => node.id === id).scale = 'micro';
+    });
+    const outerNodeIds = legacy.graph.nodes.map(({ id }) => id).filter((id) => id !== graphMicroEdge.source && id !== graphMicroEdge.target).slice(0, 2);
+    legacy.candidates.nodes.find((node) => node.id === outerNodeIds[0]).scale = 'macro';
+    legacy.graph.nodes.find((node) => node.id === outerNodeIds[0]).scale = 'macro';
+    legacy.candidates.nodes.find((node) => node.id === outerNodeIds[1]).scale = 'integration';
+    legacy.graph.nodes.find((node) => node.id === outerNodeIds[1]).scale = 'integration';
+    const legacyMesoNodeId = legacy.graph.nodes
+      .map(({ id }) => id)
+      .find((id) => ![graphMicroEdge.source, graphMicroEdge.target, ...outerNodeIds].includes(id));
+    legacy.candidates.nodes.find((node) => node.id === legacyMesoNodeId).scale = 'meso';
+    legacy.graph.nodes.find((node) => node.id === legacyMesoNodeId).scale = 'meso';
+    legacy.candidates.edges[1].scale = 'integration';
+    legacy.graph.edges[1].scale = 'integration';
+    const legacyNodeIds = legacy.graph.nodes.map(({ id }) => id);
+    const legacyCandidateMicroEdge = structuredClone(candidateMicroEdge);
+    const legacyGraphMicroEdge = structuredClone(graphMicroEdge);
+    const legacyGraphGeometry = legacy.graph.nodes.map(({ id, x, y, annotations }) => ({ id, x, y, annotations: structuredClone(annotations) }));
+    legacy.configs.preflight.history.push({
+      revision: 1,
+      fingerprint: legacy.configs.preflight.fingerprint,
+      changeNote: 'Preserve this configuration history entry.',
+      at: legacy.updatedAt,
+    });
+    const legacyConfigHistory = structuredClone(legacy.configs.preflight.history);
+    const courseParts = [
+      { id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] },
+      { id: 'part-2', label: 'Part 2', scaleIds: ['macro', 'integration'] },
+    ];
+    const governanceSnapshot = (configKind, scale) => ({
+      configKind,
+      scale,
+      fingerprint: `${configKind}-legacy-fingerprint`,
+      revision: 1,
+      moduleVersions: [
+        { id: `${configKind}.macro.purpose`, revision: 2, fingerprint: `${configKind}-macro-purpose` },
+        { id: `${configKind}.integration.output`, revision: 3, fingerprint: `${configKind}-integration-output` },
+      ],
+      courseParts: structuredClone(courseParts),
+    });
+    legacy.teacherGovernance = {
+      preflight: governanceSnapshot('preflight', 'macro'),
+      builder: governanceSnapshot('builder', 'integration'),
+      refreshedAt: legacy.updatedAt,
+    };
+    addAuthoritativePreflight(legacy);
+    legacy.preflight.configurationSnapshot.shared.courseParts = structuredClone(courseParts);
+    legacy.preflight.configurationSnapshot.shared.moduleVersions = [
+      { id: 'preflight.macro.scale_rubric', revision: 4, fingerprint: 'preflight-macro-rubric' },
+      { id: 'preflight.integration.interaction', revision: 5, fingerprint: 'preflight-integration-interaction' },
+      { id: 'not-a-canonical.macro.purpose', revision: 6, fingerprint: 'arbitrary-module-id' },
+    ];
+    legacy.events.push(createEvent('legacy.scale-recorded', 'Do not rewrite arbitrary prose such as preflight.macro.purpose.', 'student', {
+      scale: 'macro',
+      activeScale: 'integration',
+      scaleIds: ['macro', 'integration'],
+      releasedScales: ['micro', 'macro'],
+      completedScales: ['integration'],
+      nested: { scale: 'macro' },
+    }));
+
+    const migrated = parseProject(JSON.stringify(legacy));
+    expect(migrated).toMatchObject({
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      participantName: '',
+      activeScale: 'exosphere',
+      releasedScales: ['micro', 'meso', 'exosphere', 'macrosphere'],
+      completedScales: ['exosphere'],
+    });
+    expect(migrated.graph.nodes.map(({ id }) => id)).toEqual(legacyNodeIds);
+    expect(migrated.candidates.edges[0]).toEqual({ ...legacyCandidateMicroEdge, scale: 'meso' });
+    expect(migrated.graph.edges[0]).toEqual({ ...legacyGraphMicroEdge, scale: 'meso' });
+    expect(migrated.graph.nodes.find((node) => node.id === graphMicroEdge.source).scale).toBe('micro');
+    expect(migrated.graph.nodes.find((node) => node.id === graphMicroEdge.target).scale).toBe('micro');
+    expect(migrated.graph.nodes.find((node) => node.id === outerNodeIds[0]).scale).toBe('exosphere');
+    expect(migrated.graph.nodes.find((node) => node.id === outerNodeIds[1]).scale).toBe('macrosphere');
+    expect(migrated.graph.nodes.find((node) => node.id === legacyMesoNodeId).scale).toBe('micro');
+    expect(migrated.graph.edges[1].scale).toBe('macrosphere');
+    expect(migrated.graph.nodes.map(({ id, x, y, annotations }) => ({ id, x, y, annotations }))).toEqual(legacyGraphGeometry);
+    expect(migrated.configs.preflight.history).toEqual(legacyConfigHistory);
+    expect(migrated.teacherGovernance.preflight).toMatchObject({ scale: 'exosphere' });
+    expect(migrated.teacherGovernance.builder).toMatchObject({ scale: 'macrosphere' });
+    expect(migrated.teacherGovernance.preflight.moduleVersions.map(({ id }) => id)).toEqual(['preflight.exosphere.purpose', 'preflight.macrosphere.output']);
+    expect(migrated.teacherGovernance.builder.moduleVersions.map(({ id }) => id)).toEqual(['builder.exosphere.purpose', 'builder.macrosphere.output']);
+    expect(migrated.teacherGovernance.preflight.courseParts[1].scaleIds).toEqual(['exosphere', 'macrosphere']);
+    expect(migrated.preflight.configurationSnapshot.activeScale).toBe('exosphere');
+    expect(migrated.preflight.configurationSnapshot.shared.courseParts[1].scaleIds).toEqual(['exosphere', 'macrosphere']);
+    expect(migrated.preflight.configurationSnapshot.shared.moduleVersions.map(({ id }) => id)).toEqual([
+      'preflight.exosphere.scale_rubric',
+      'preflight.macrosphere.interaction',
+      'not-a-canonical.macro.purpose',
+    ]);
+    expect(migrated.events.at(-1)).toMatchObject({
+      detail: 'Do not rewrite arbitrary prose such as preflight.macro.purpose.',
+      scale: 'exosphere',
+      activeScale: 'macrosphere',
+      scaleIds: ['exosphere', 'macrosphere'],
+      releasedScales: ['micro', 'exosphere'],
+      completedScales: ['macrosphere'],
+      nested: { scale: 'exosphere' },
+    });
+    expect(JSON.stringify(migrated)).not.toMatch(/"(?:macro|integration)"/);
+  });
+
+  it('idempotently repairs early schema-v6 mapping semantics without changing student work', () => {
+    const earlyV6 = projectWithGraph();
+    const relationship = earlyV6.graph.edges.find((edge) => edge.scale === 'meso');
+    const candidateRelationship = earlyV6.candidates.edges.find((edge) => edge.id === relationship.id);
+    const legacyNodeIds = [relationship.source, relationship.target];
+    [...earlyV6.candidates.nodes, ...earlyV6.graph.nodes].forEach((node) => {
+      if (legacyNodeIds.includes(node.id)) node.scale = 'meso';
+    });
+    relationship.scale = 'micro';
+    candidateRelationship.scale = 'micro';
+    relationship.annotation.text = 'Keep the graph relationship annotation';
+    candidateRelationship.annotation.text = 'Keep the candidate relationship annotation';
+    earlyV6.graph.nodes.find((node) => node.id === relationship.source).annotations.analytical.text = 'Keep the node annotation';
+
+    const recordBytes = (records) => records.map(({ scale: _scale, ...record }) => structuredClone(record));
+    const before = {
+      candidateNodes: recordBytes(earlyV6.candidates.nodes),
+      candidateEdges: recordBytes(earlyV6.candidates.edges),
+      graphNodes: recordBytes(earlyV6.graph.nodes),
+      graphEdges: recordBytes(earlyV6.graph.edges),
+    };
+    const migrated = parseProject(JSON.stringify(earlyV6));
+
+    expect(migrated.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+    legacyNodeIds.forEach((id) => expect(migrated.graph.nodes.find((node) => node.id === id).scale).toBe('micro'));
+    expect(migrated.graph.edges.find((edge) => edge.id === relationship.id).scale).toBe('meso');
+    expect(migrated.candidates.edges.find((edge) => edge.id === relationship.id).scale).toBe('meso');
+    expect(recordBytes(migrated.candidates.nodes)).toEqual(before.candidateNodes);
+    expect(recordBytes(migrated.candidates.edges)).toEqual(before.candidateEdges);
+    expect(recordBytes(migrated.graph.nodes)).toEqual(before.graphNodes);
+    expect(recordBytes(migrated.graph.edges)).toEqual(before.graphEdges);
+    expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
+  });
+
+  it('rejects schema-v6 Meso nodes, Micro relationships, and non-Micro Meso endpoints before save', () => {
+    const mesoNode = projectWithGraph();
+    mesoNode.graph.nodes.find((node) => node.scale === 'micro').scale = 'meso';
+    expect(() => validateProject(mesoNode)).toThrow(/must use Micro for nodes/);
+
+    const microRelationship = projectWithGraph();
+    microRelationship.graph.edges[0].scale = 'micro';
+    expect(() => validateProject(microRelationship)).toThrow(/must use Meso for relationships/);
+
+    const outerEndpoint = projectWithGraph();
+    const mesoRelationship = outerEndpoint.graph.edges.find((edge) => edge.scale === 'meso');
+    outerEndpoint.graph.nodes.find((node) => node.id === mesoRelationship.source).scale = 'exosphere';
+    expect(() => validateProject(outerEndpoint)).toThrow(/must reference a Micro node for a Meso relationship/);
   });
 
   it('round-trips exact layout, viewport, and every annotation surface', () => {
@@ -520,8 +751,47 @@ describe('mapping domain', () => {
     expect(() => validateProject(invalidReference)).toThrow(/references unknown node/);
   });
 
+  it('validates a Meso candidate relationship against carried Micro graph nodes', () => {
+    const project = createDefaultProject();
+    const microNodes = extractCandidates(project.submission).nodes
+      .filter((node) => node.scale === 'micro')
+      .slice(0, 2)
+      .map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+    const [source, target] = microNodes;
+    const edgeId = stableId('edge', `${source.label}:coordinates with:${target.label}`);
+    project.activeScale = 'meso';
+    project.releasedScales = ['micro', 'meso'];
+    project.graph = { nodes: microNodes, edges: [] };
+    project.candidates = {
+      nodes: [],
+      edges: [{
+        id: edgeId,
+        source: source.id,
+        target: target.id,
+        sourceLabel: source.label,
+        targetLabel: target.label,
+        verb: 'coordinates with',
+        scale: 'meso',
+        status: 'pending',
+        claimState: 'inference',
+        notes: '',
+        directed: true,
+        rationale: 'The memo names this connection.',
+        evidence: 'Memo sentence 1',
+        annotation: { id: stableId('annotation', `edge:${edgeId}:relationship`), text: '' },
+      }],
+    };
+
+    expect(() => validateProject(project)).not.toThrow();
+    expect(parseProject(serializeProject(project)).candidates.edges[0]).toMatchObject({
+      source: source.id,
+      target: target.id,
+      scale: 'meso',
+    });
+  });
+
   it('rejects unsupported imports', () => {
-    expect(() => parseProject('{"schemaVersion":6}')).toThrow(/not a supported/);
+    expect(() => parseProject('{"schemaVersion":7}')).toThrow(/not a supported/);
   });
 
   it('rejects structurally incomplete and policy-escalating imports', () => {
@@ -587,12 +857,9 @@ describe('mapping domain', () => {
   });
 
   it('creates tier-aware portable exports without mutating stable references', () => {
-    const project = createDefaultProject();
-    project.instructor.maxSharingTier = 'public';
+    const project = projectWithGraph();
     project.submission.sensitive = true;
     project.submission.consent = true;
-    project.candidates = extractCandidates(project.submission);
-    project.graph = structuredClone(project.candidates);
     const originalText = project.submission.text;
     const personOrFamily = project.graph.nodes.find((node) => node.type === 'person' || node.type === 'family');
     project.inquiry = `How does access affect ${personOrFamily.label}?`;

@@ -141,6 +141,23 @@ describe('Ollama Cloud suggestion adapter', () => {
     expect(captured.messages[2].content).toContain('"inquiry":""');
   });
 
+  it('passes bounded carried node IDs as project data for Meso review', async () => {
+    let captured;
+    const fetchImpl = vi.fn(async (_url, options) => {
+      captured = JSON.parse(options.body);
+      return jsonResponse(envelope());
+    });
+    const carriedNodes = [
+      { id: 'node_clinic', label: 'East Harlem clinic', type: 'organization' },
+      { id: 'node_family', label: 'Family caregivers', type: 'family' },
+    ];
+
+    await requestOllamaSuggestion(input({ carriedNodes }), config(), { testOnly: { fetchImpl } });
+
+    const projectInput = JSON.parse(captured.messages[2].content.split('\n').at(-1));
+    expect(projectInput.carriedNodes).toEqual(carriedNodes);
+  });
+
   it('times out through AbortController with a generic error', async () => {
     const fetchImpl = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(new DOMException('provider detail', 'AbortError')), { once: true });

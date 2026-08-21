@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { COURSE_PROGRESSION_SCHEMA_VERSION } from '../shared/educator-resource-contract.js';
 import { createSystemsMappingApp } from './app.js';
+import { fingerprint, moduleSeeds } from './config.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
 const BOOTSTRAP_TOKEN = 'profile-test-bootstrap-token';
@@ -114,11 +115,20 @@ describe('teaching profiles', () => {
     const stillActive = await (await request(system.app, '/api/config/public?configKind=preflight&scale=micro', { headers: { cookie: studentCookie } })).json();
     expect(stillActive.fingerprint).toBe(before.fingerprint);
 
+    await system.db.prepare("UPDATE prompt_modules SET revision = 99 WHERE id = 'preflight.micro.purpose'").run();
+
     const preview = await (await request(system.app, `/api/teacher/profiles/${created.profile.id}/preview?configKind=preflight&scale=micro&stageId=review-suggestions`, { headers: { cookie: teacherCookie } })).json();
-    expect(preview.fingerprint).not.toBe(before.fingerprint);
-    expect(preview.effectivePrompt).toContain(changedProfile.parts[0].stages['review-suggestions'].guidance);
-    expect(preview.effectivePrompt).toContain(changedProfile.parts[0].stages['review-suggestions'].materials);
-    expect(Object.keys(preview).sort()).toEqual(['configKind', 'effectivePrompt', 'fingerprint', 'revision', 'scale', 'stageId']);
+    expect(preview).toMatchObject({
+      part: { id: 'part-1', label: 'Part 1' },
+      scale: 'micro',
+      stageId: 'review-suggestions',
+      guidance: changedProfile.parts[0].stages['review-suggestions'].guidance,
+      materials: changedProfile.parts[0].stages['review-suggestions'].materials,
+      revision: 2,
+    });
+    expect(Object.keys(preview).sort()).toEqual(['guidance', 'materials', 'part', 'revision', 'scale', 'stageId']);
+    expect(preview).not.toHaveProperty('effectivePrompt');
+    expect(preview).not.toHaveProperty('fingerprint');
 
     const stale = await jsonRequest(system.app, 'PUT', `/api/teacher/profiles/${created.profile.id}`, {
       name: 'Evidence guidance',
@@ -139,7 +149,7 @@ describe('teaching profiles', () => {
     expect(published.events[0].action).toBe('published');
 
     const after = await (await request(system.app, '/api/config/public?configKind=preflight&scale=micro', { headers: { cookie: studentCookie } })).json();
-    expect(after.fingerprint).toBe(preview.fingerprint);
+    expect(after.fingerprint).not.toBe(before.fingerprint);
     expect(after.moduleVersions.at(-1)).toMatchObject({ id: `teaching-profile.${created.profile.id}`, revision: 2 });
   });
 
@@ -213,5 +223,41 @@ describe('teaching profiles', () => {
     system.close();
     system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
     expect(eventCount()).toBe(1);
+  });
+
+  it('updates untouched prompt defaults without overwriting instructor-authored module content', () => {
+    const legacyMacroPurpose = 'Focus Macro work on agencies, offices, funders, decision-making bodies, laws, beliefs, public narratives, and histories that affect the population.';
+    const customBuilderPurpose = 'Keep this instructor-authored Exosphere purpose exactly.';
+    system.db.prepare(`
+      UPDATE prompt_modules SET content = ?, revision = 1, fingerprint = ?
+      WHERE id = 'preflight.exosphere.purpose'
+    `).run(legacyMacroPurpose, fingerprint(legacyMacroPurpose));
+    system.db.prepare(`
+      UPDATE prompt_modules SET content = ?, revision = 1, fingerprint = ?
+      WHERE id = 'builder.exosphere.purpose'
+    `).run(customBuilderPurpose, fingerprint(customBuilderPurpose));
+    system.close();
+
+    system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
+    const currentDefault = moduleSeeds().find(({ id }) => id === 'preflight.exosphere.purpose');
+    expect(system.db.prepare(`
+      SELECT content, revision, fingerprint FROM prompt_modules
+      WHERE id = 'preflight.exosphere.purpose'
+    `).get()).toEqual({ content: currentDefault.content, revision: 2, fingerprint: currentDefault.fingerprint });
+    expect(system.db.prepare(`
+      SELECT content, revision, fingerprint FROM prompt_modules
+      WHERE id = 'builder.exosphere.purpose'
+    `).get()).toEqual({ content: customBuilderPurpose, revision: 1, fingerprint: fingerprint(customBuilderPurpose) });
+    const upgradeHistoryCount = () => system.db.prepare(`
+      SELECT COUNT(*) AS count FROM prompt_module_history
+      WHERE module_id = 'preflight.exosphere.purpose'
+        AND revision = 2
+        AND change_note = 'Updated default for ecological levels'
+    `).get().count;
+    expect(upgradeHistoryCount()).toBe(1);
+
+    system.close();
+    system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
+    expect(upgradeHistoryCount()).toBe(1);
   });
 });
