@@ -7,7 +7,7 @@ export const SYSTEMS_MAPPING_PARTS = Object.freeze([
   Object.freeze({
     id: 'part-2',
     label: 'Part 2',
-    scaleIds: Object.freeze(['macro', 'integration']),
+    scaleIds: Object.freeze(['exosphere', 'macrosphere']),
   }),
 ]);
 

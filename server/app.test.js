@@ -164,7 +164,7 @@ describe('hardened Systems Mapping server', () => {
     expect(snapshot).toMatchObject({ configKind: 'preflight', scale: 'micro', stageId: 'review-suggestions', revision: 1 });
     expect(snapshot.courseParts).toEqual([
       { id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] },
-      { id: 'part-2', label: 'Part 2', scaleIds: ['macro', 'integration'] },
+      { id: 'part-2', label: 'Part 2', scaleIds: ['exosphere', 'macrosphere'] },
     ]);
     expect(snapshot.moduleVersions).toHaveLength(13);
     expect(snapshot.moduleVersions.at(-1).id).toBe('teaching-profile.systems-mapping-default');

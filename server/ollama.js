@@ -6,6 +6,7 @@ export const OLLAMA_CLOUD_LIMITS = Object.freeze({
   systemPromptBytes: 64 * 1024,
   inquiryBytes: 8 * 1024,
   sourceMetadataBytes: 16 * 1024,
+  carriedNodesBytes: 16 * 1024,
   sourceTextBytes: 128 * 1024,
   requestBodyBytes: 256 * 1024,
   providerBodyBytes: 256 * 1024,
@@ -15,7 +16,7 @@ export const OLLAMA_CLOUD_LIMITS = Object.freeze({
   outputTokensMax: 8_192,
 });
 
-const VALID_SCALES = new Set(['micro', 'meso', 'macro', 'integration']);
+const VALID_SCALES = new Set(['micro', 'meso', 'exosphere', 'macrosphere']);
 const CONFIG_KEYS = new Set(['apiKey', 'baseUrl', 'model', 'timeoutMs', 'maxOutputTokens', 'think']);
 const RESPONSE_KEYS = new Set([
   'model',
@@ -206,7 +207,7 @@ export function validateOllamaCloudConfig(config) {
 
 function normalizeInput(input) {
   if (!isPlainObject(input)) fail('Suggestion input is required.', 'invalid_input');
-  const allowedKeys = new Set(['systemPrompt', 'activeScale', 'inquiry', 'sourceMetadata', 'sourceText']);
+  const allowedKeys = new Set(['systemPrompt', 'activeScale', 'inquiry', 'sourceMetadata', 'sourceText', 'carriedNodes']);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
     fail('Suggestion input contains an unsupported field.', 'invalid_input');
   }
@@ -240,6 +241,22 @@ function normalizeInput(input) {
   if (byteLength(serializedMetadata) > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
     fail('The memo details are too large.', 'input_too_large');
   }
+  let carriedNodes;
+  if (input.carriedNodes !== undefined) {
+    if (!Array.isArray(input.carriedNodes) || input.carriedNodes.length > 50) {
+      fail('Carried nodes are not in the expected format.', 'invalid_input');
+    }
+    try {
+      assertJsonCompatible(input.carriedNodes, 'Carried nodes');
+      carriedNodes = JSON.stringify(input.carriedNodes);
+    } catch (error) {
+      if (error instanceof OllamaCloudError) throw error;
+      fail('Carried nodes are not in the expected format.', 'invalid_input');
+    }
+    if (byteLength(carriedNodes) > OLLAMA_CLOUD_LIMITS.carriedNodesBytes) {
+      fail('Carried nodes are too large.', 'input_too_large');
+    }
+  }
 
   return {
     systemPrompt,
@@ -248,6 +265,7 @@ function normalizeInput(input) {
       inquiry,
       memoDetails: input.sourceMetadata,
       memoText: sourceText,
+      ...(carriedNodes === undefined ? {} : { carriedNodes: JSON.parse(carriedNodes) }),
     }),
   };
 }

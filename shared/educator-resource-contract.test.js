@@ -68,19 +68,19 @@ describe('educator resource contract', () => {
         {
           id: 'part-2',
           label: 'Part 2',
-          scaleIds: ['macro', 'integration'],
+          scaleIds: ['exosphere', 'macrosphere'],
           stages: {
             source: { guidance: '', materials: '' },
             map: { guidance: 'Connect earlier work.', materials: '' },
           },
         },
       ],
-    }, { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] });
+    }, { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'exosphere', 'macrosphere'] });
     expect(progression.parts[0].stages.source.guidance).toBe('Return to the source.');
     expect(progression.parts[0].stages.source.materials).toBe('Course reading excerpt.');
     expect(() => normalizeCourseProgression(
       { ...progression, extra: true },
-      { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] },
+      { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'exosphere', 'macrosphere'] },
     )).toThrow(/fields/);
     expect(() => normalizeCourseProgression({
       ...progression,
@@ -88,7 +88,7 @@ describe('educator resource contract', () => {
         { ...progression.parts[0], stages: { source: progression.parts[0].stages.source } },
         progression.parts[1],
       ],
-    }, { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] })).toThrow(/registered progression/);
+    }, { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'exosphere', 'macrosphere'] })).toThrow(/registered progression/);
   });
 
   it('requires every registered scale to appear in exactly one part', () => {
@@ -100,22 +100,22 @@ describe('educator resource contract', () => {
       schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
       parts: [
         { id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'], stages },
-        { id: 'part-2', label: 'Part 2', scaleIds: ['macro', 'integration'], stages },
+        { id: 'part-2', label: 'Part 2', scaleIds: ['exosphere', 'macrosphere'], stages },
       ],
     };
-    const options = { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'macro', 'integration'] };
+    const options = { stageIds: ['source', 'map'], scaleIds: ['micro', 'meso', 'exosphere', 'macrosphere'] };
     expect(normalizeCourseProgression(base, options).parts).toHaveLength(2);
     expect(() => normalizeCourseProgression({
       ...base,
-      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['meso', 'integration'] }],
+      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['meso', 'macrosphere'] }],
     }, options)).toThrow(/more than one part/);
     expect(() => normalizeCourseProgression({
       ...base,
-      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['macro'] }],
+      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['exosphere'] }],
     }, options)).toThrow(/do not cover/);
     expect(() => normalizeCourseProgression({
       ...base,
-      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['macro', 'unsupported'] }],
+      parts: [base.parts[0], { ...base.parts[1], scaleIds: ['exosphere', 'unsupported'] }],
     }, options)).toThrow(/unsupported scale/);
   });
 });

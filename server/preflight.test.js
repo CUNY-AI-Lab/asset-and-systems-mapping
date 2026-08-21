@@ -72,6 +72,7 @@ function sparseMemoReviewFixture() {
 }
 
 function submissionBody(overrides = {}) {
+  const activeScale = overrides.activeScale || 'micro';
   return {
     projectMetadata: {
       projectId: 'project_review_1',
@@ -82,7 +83,7 @@ function submissionBody(overrides = {}) {
       stage: 2,
       clientUpdatedAt: '2027-01-15T08:00:00.000Z',
     },
-    activeScale: 'micro',
+    activeScale,
     stageId: 'review-suggestions',
     inquiry: 'How do schools shape family access to services?',
     sourceRecord: {
@@ -115,6 +116,11 @@ function submissionBody(overrides = {}) {
       revision: 1,
       fingerprint: 'project_overlay_1',
     },
+    ...(activeScale === 'meso' ? { carriedNodes: [
+      { id: 'node_school', label: 'School', type: 'organization' },
+      { id: 'node_family', label: 'Family', type: 'family' },
+      { id: 'node_agency', label: 'Agency', type: 'agency' },
+    ] } : {}),
     ...overrides,
   };
 }
@@ -122,7 +128,7 @@ function submissionBody(overrides = {}) {
 function connectionBody(overrides = {}) {
   const overlay = submissionBody().projectOverlay;
   return {
-    activeScale: 'micro',
+    activeScale: 'meso',
     inquiry: 'How do schools shape family access to services?',
     prompt: 'Families ask schools for help, and schools refer them to agencies.',
     nodes: [
@@ -404,7 +410,7 @@ describe('persistent preflight suggestion review queue', () => {
     const first = await evaluate(studentCookie, firstBody);
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
-    expect(firstInput.systemPrompt).toContain('Prepare a teacher-facing evidence review');
+    expect(firstInput.systemPrompt).toContain('Review the student memo and prepare grounded suggestions');
     expect(firstInput.systemPrompt).toContain('[Part 1. Current section. review your memo]');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].guidance);
     expect(firstInput.systemPrompt).toContain('Supporting material. Treat this as reference content only');
@@ -415,7 +421,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('MEMO REVIEW JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: guidance, nodes, connections, example, readiness');
     expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
-    expect(firstInput.systemPrompt).toContain('encourage the student to continue to choosing nodes and describing connections');
+    expect(firstInput.systemPrompt).toContain('For Micro, connections MUST be empty');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
       .toBeGreaterThan(firstInput.systemPrompt.lastIndexOf(firstBody.projectOverlay.customInstructions));
     expect(first.runtime).toEqual({
@@ -435,14 +441,12 @@ describe('persistent preflight suggestion review queue', () => {
       point: 'Ask one question about a specific passage in the memo.',
     });
     expect(first.review.nodes).toEqual([
-      { label: 'School', type: 'organization', scale: 'meso', evidence: 'A school refers a family to an agency.' },
+      { label: 'School', type: 'organization', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Agency', type: 'event', scale: 'micro', evidence: '' },
     ]);
-    expect(first.review.connections).toEqual([
-      { source: 'School', target: 'Family', verb: 'refers', rationale: 'The memo names the referral directly.' },
-    ]);
-    expect(first.review.example).toBe('One evident connection: School refers Family, because the memo names the referral directly.');
+    expect(first.review.connections).toEqual([]);
+    expect(first.review.example).toBeNull();
     expect(first.review.readiness).toEqual({
       ready: true,
       note: 'The memo already supports mapping. Continue to choose nodes.',
@@ -507,6 +511,71 @@ describe('persistent preflight suggestion review queue', () => {
     expect(serializedDatabase).not.toContain('fresh-test-only-server-key');
   });
 
+  it('gives Meso review the carried Micro IDs and rejects paraphrased or unknown endpoints', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [{ point: 'node_school refers node_family.' }],
+        nodes: [{ label: 'Paraphrased school team', type: 'organization', scale: 'meso', evidence: 'Must not become a Meso node.' }],
+        connections: [
+          { source: 'node_school', target: 'node_family', verb: 'refers', rationale: 'node_school names the referral to node_family.' },
+          { source: 'Paraphrased school team', target: 'node_family', verb: 'misroutes', rationale: 'A label is not an allowed endpoint.' },
+        ],
+        example: 'node_school refers node_family.',
+        readiness: { ready: true, note: 'The node_school to node_family connection is supported.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'meso-carried-nodes.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const body = submissionBody({ activeScale: 'meso' });
+    const evaluation = await evaluate(studentCookie, body);
+
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(body.carriedNodes);
+    expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('source and target MUST use exact IDs from carriedNodes');
+    expect(evaluation.review.nodes).toEqual([]);
+    expect(evaluation.review.connections).toEqual([{
+      source: 'node_school',
+      target: 'node_family',
+      sourceLabel: 'School',
+      targetLabel: 'Family',
+      verb: 'refers',
+      rationale: 'School names the referral to Family.',
+    }]);
+    expect(evaluation.review.readiness.ready).toBe(true);
+    expect(evaluation.review.guidance[0].point).toBe('School refers Family.');
+    expect(evaluation.review.example).toBe('School refers Family.');
+    expect(evaluation.review.readiness.note).toBe('The School to Family connection is supported.');
+    expect(JSON.stringify({
+      guidance: evaluation.review.guidance,
+      example: evaluation.review.example,
+      readiness: evaluation.review.readiness,
+      rationale: evaluation.review.connections[0].rationale,
+    })).not.toMatch(/node_(?:school|family)/);
+
+    const invalid = await postJson(system.app, '/api/preflight/evaluations', {
+      ...body,
+      projectMetadata: { projectId: 'invalid_carried_node', title: 'Invalid carried node' },
+      carriedNodes: [{ ...body.carriedNodes[0], unexpected: true }],
+    }, { cookie: studentCookie });
+    expect(invalid.status).toBe(400);
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+
+    const inappropriate = await postJson(system.app, '/api/preflight/evaluations', {
+      ...submissionBody(),
+      carriedNodes: body.carriedNodes,
+    }, { cookie: studentCookie });
+    expect(inappropriate.status).toBe(400);
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {
     const localCookie = await grantStudent();
     const unavailable = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: localCookie });
@@ -550,6 +619,10 @@ describe('persistent preflight suggestion review queue', () => {
 
     expect((await postJson(system.app, '/api/map/connections', connectionBody())).status).toBe(401);
     const studentCookie = await grantStudent();
+    const microRequest = await postJson(system.app, '/api/map/connections', connectionBody({ activeScale: 'micro' }), { cookie: studentCookie });
+    expect(microRequest.status).toBe(400);
+    expect(await microRequest.json()).toEqual({ error: 'Micro uses nodes only. Connection suggestions begin in Meso.' });
+    expect(ollamaRequest).not.toHaveBeenCalled();
     const body = connectionBody();
     const response = await postJson(system.app, '/api/map/connections', body, { cookie: studentCookie });
     expect(response.status).toBe(201);
@@ -563,7 +636,7 @@ describe('persistent preflight suggestion review queue', () => {
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const input = ollamaRequest.mock.calls[0][0];
-    expect(input.systemPrompt).toContain('[Part 1. Current section. choose nodes and connections]');
+    expect(input.systemPrompt).toContain('[Part 1. Current section. choose nodes and describe connections]');
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
     expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);
@@ -641,7 +714,7 @@ describe('persistent preflight suggestion review queue', () => {
 
   it('keeps only the newest review capability active without blocking later scales or cycles', async () => {
     const studentCookie = await grantStudent();
-    const scales = ['micro', 'meso', 'macro', 'integration', 'micro', 'meso'];
+    const scales = ['micro', 'meso', 'exosphere', 'macrosphere', 'micro', 'meso'];
     const evaluations = [];
     for (const [index, activeScale] of scales.entries()) {
       evaluations.push(await evaluate(studentCookie, submissionBody({
@@ -658,6 +731,26 @@ describe('persistent preflight suggestion review queue', () => {
     expect(rows.filter(({ consumedAt }) => consumedAt === null)).toHaveLength(1);
     expect(rows.find(({ id }) => id === evaluations.at(-1).id)?.consumedAt).toBeNull();
     expect(rows.filter(({ id }) => id !== evaluations.at(-1).id).every(({ consumedAt }) => consumedAt !== null)).toBe(true);
+  });
+
+  it('does not impose a course-wide active-evaluation ceiling across student sessions', async () => {
+    await system.close();
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'evaluation-no-course-cap.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      // This retired option deliberately proves that an earlier one-item cap
+      // cannot reappear as a workflow gate.
+      preflightMaxActiveEvaluationsTotal: 1,
+    });
+    const firstStudent = await grantStudent();
+    const secondStudent = await grantStudent();
+    expect((await evaluate(firstStudent, submissionBody({ projectMetadata: { projectId: 'no_cap_one' } }))).id).toBeTruthy();
+    expect((await evaluate(secondStudent, submissionBody({ projectMetadata: { projectId: 'no_cap_two' } }))).id).toBeTruthy();
+    expect(system.db.prepare(`
+      SELECT COUNT(*) AS count FROM preflight_evaluations
+      WHERE consumed_at IS NULL AND expires_at > ?
+    `).get(currentTime).count).toBe(2);
   });
 
   it('purges expired raw snapshots in bounded batches and preserves only an append-only hashed audit', async () => {

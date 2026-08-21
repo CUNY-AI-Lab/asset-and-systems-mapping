@@ -1,7 +1,7 @@
 import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
 import { SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
 
-export const SCALE_ORDER = ['micro', 'meso', 'macro', 'integration'];
+export const SCALE_ORDER = ['micro', 'meso', 'exosphere', 'macrosphere'];
 export const SCALE_PARTS = SYSTEMS_MAPPING_PARTS;
 
 export const SCALES = {
@@ -25,24 +25,24 @@ export const SCALES = {
       'Name missing connections and add numbers, affected families, or resources when available.',
     ],
   },
-  macro: {
-    label: 'Macro',
-    prompt: 'Which decisions, resources, laws, beliefs, and histories shape the issue?',
-    description: 'Offices, funding, decisions, law, narrative, and history.',
+  exosphere: {
+    label: 'Exosphere',
+    prompt: 'Which institutions and decisions shape daily experience from outside immediate settings?',
+    description: 'Institutions, services, funding, and indirect decisions.',
     checklist: [
-      'Name agencies, offices, funders, and decision-making bodies, including at least two relevant funding streams.',
-      'For each path, state the exact action, where it starts and ends, who receives what, and the supporting evidence.',
-      'Connect laws, beliefs, narratives, and history to who they affect and how; use evidence and dates, and keep them separate from offices.',
+      'Name agencies, offices, funders, service systems, and decision-making bodies.',
+      'Show where resources and decisions start, where they go, and who is affected.',
+      'Keep indirect institutional influences separate from broader laws, beliefs, and structures.',
     ],
   },
-  integration: {
-    label: 'Integration',
-    prompt: 'What do power, community assets, and earlier scales make possible?',
-    description: 'Power, accountability, community assets, and a theory of change.',
+  macrosphere: {
+    label: 'Macrosphere',
+    prompt: 'Which laws, beliefs, histories, and structures shape the whole system?',
+    description: 'Law, policy, history, culture, ideology, and structural power.',
     checklist: [
-      'Position stakeholders by influence and proximity, show who answers to whom, and note who appears in your evidence.',
-      'Name community assets, evidence, and capacity; revise stereotypes or deficit descriptions.',
-      'Build a chain from problem to assets, activities, and outcomes; point to earlier work that supports each link, name assumptions and possible unintended consequences, and say how change would be measured.',
+      'Name laws, policies, public narratives, beliefs, and historical conditions.',
+      'Show who each structure affects, how it shapes earlier layers, and what evidence supports that connection.',
+      'Include community knowledge, counter-narratives, accountability, and possible change without turning them into individual deficits.',
     ],
   },
 };
@@ -51,14 +51,14 @@ export const HARD_CRITERIA = [
   { id: 'H1', label: 'Memo detail', help: 'The memo includes enough detail to begin mapping.' },
   { id: 'H2', label: 'Sensitivity and permission', help: 'Sensitive material has documented permission or a privacy-safe treatment.' },
   { id: 'H3', label: 'Claims and interpretation', help: 'The student makes clear what the memo says and what they think it means.' },
-  { id: 'H4', label: 'Connections', help: 'The memo names at least two connections among people, groups, places, or organizations.' },
+  { id: 'H4', label: 'Map elements', help: 'The memo names enough elements for the active level. Micro requires nodes; later levels also examine connections.' },
 ];
 
 export const SCORED_CRITERIA = [
   { id: 'C1', label: 'Bounded inquiry' },
   { id: 'C2', label: 'Specific names' },
   { id: 'C3', label: 'Relational statements' },
-  { id: 'C4', label: 'Scale fit' },
+  { id: 'C4', label: 'Level fit' },
   { id: 'C5', label: 'Interpretive warrant' },
   { id: 'C6', label: 'Tension or contradiction' },
   { id: 'C7', label: 'Assets and capacities' },
@@ -75,7 +75,7 @@ export const RELATION_VOCABULARY = [
 export const NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event'];
 export const CLAIM_STATES = ['confirmed', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'];
 
-export const PROJECT_SCHEMA_VERSION = 5;
+export const PROJECT_SCHEMA_VERSION = 6;
 
 export const PROJECT_LIMITS = Object.freeze({
   importBytes: 8 * 1024 * 1024,
@@ -304,8 +304,8 @@ function inferNodeType(label) {
 }
 
 function inferScale(label, fallback = 'meso') {
-  if (/\b(?:cross-scale|integration|feedback|theory of change)\b/i.test(label)) return 'integration';
-  if (/\b(?:polic(?:y|ies)|laws?|regulations?|states?|cities|city|federal|public systems?|departments?|funding)\b/i.test(label)) return 'macro';
+  if (/\b(?:culture|ideolog(?:y|ies)|capitalism|racism|structural|public narratives?|counter-narratives?|histor(?:y|ies|ical)|rights?|laws?|regulations?)\b/i.test(label)) return 'macrosphere';
+  if (/\b(?:states?|cities|city|federal|public systems?|departments?|agenc(?:y|ies)|offices?|funding|funders?|service systems?)\b/i.test(label)) return 'exosphere';
   if (/\b(?:organizations?|schools?|agenc(?:y|ies)|providers?|committees?|programs?|procedures?|institutions?)\b/i.test(label)) return 'meso';
   if (/\b(?:famil(?:y|ies)|persons?|students?|residents?|experiences?|interviews?|caregivers?|parents?)\b/i.test(label)) return 'micro';
   return fallback;
@@ -334,7 +334,7 @@ export function extractRelationships(submission) {
         if (relationships.length >= PROJECT_LIMITS.edges) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.edges} relationship records`);
         const sourceScale = inferScale(sourceLabel, 'meso');
         const targetScale = inferScale(targetLabel, sourceScale);
-        const scale = targetScale === 'macro' || targetScale === 'integration' ? targetScale : sourceScale;
+        const scale = targetScale === 'exosphere' || targetScale === 'macrosphere' ? targetScale : sourceScale;
         relationships.push({ sourceLabel, targetLabel, verb: match.verb, scale, ...evidence });
         currentSubject = match.passive ? targetLabel : sourceLabel;
       } else if (subject) {
@@ -349,21 +349,25 @@ export function extractRelationships(submission) {
 export function evaluateSubmission(submission, activeScale = 'micro', threshold = 6) {
   const text = (submission.text || '').trim();
   const relationships = extractRelationships({ ...submission, text });
+  const mappedNodes = extractCandidates({ ...submission, text }).nodes;
   const hasRelational = relationships.length >= 2;
+  const hasMicroNodes = mappedNodes.length >= 2;
   const evidenceBoundary = locateEvidence({ ...submission, text }, /(according|data|interview|memo|reports?|shows?|evidence|testimony|should be checked)/i)
     || (submission.evidenceOwnership ? 'Memo and interpretation are tracked separately' : null);
   const hard = [
     result('H1', text.length >= 80 ? 'met' : 'unmet', text ? 'Memo text' : null, 'A usable memo needs enough detail to review.', 'Add more detail to the memo.', true),
     result('H2', !submission.sensitive || submission.consent ? 'met' : 'unmet', submission.sensitive ? 'Sensitivity declaration' : 'Marked non-sensitive', 'Sensitive material needs documented permission or a privacy-safe treatment.', 'Document permission or remove identifying details.', true),
     result('H3', evidenceBoundary ? 'met' : 'unmet', evidenceBoundary, 'At least one important point should name the evidence behind it.', 'Name the evidence behind one important point.', true),
-    { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'Mapping requires at least two connections between people, groups, places, or organizations.', 'Add two statements naming what connects and how.', true), relationshipCount: relationships.length },
+    activeScale === 'micro'
+      ? { ...result('H4', hasMicroNodes ? 'met' : 'unmet', mappedNodes[0]?.evidence || mappedNodes[0]?.evidenceLocator || null, 'Micro begins with at least two clearly named people, roles, groups, or settings.', 'Name at least two people, roles, groups, or settings that belong in the map.', true), nodeCount: mappedNodes.length }
+      : { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'This level needs at least two clear connections between map elements.', 'Add two statements naming what connects and how.', true), relationshipCount: relationships.length },
   ];
 
   const scalePatterns = {
     micro: /(family|person|student|experience|interview|caregiver)/i,
     meso: /(school|organization|agency|provider|committee|procedure)/i,
-    macro: /(policy|law|state|city|funding|public data|department)/i,
-    integration: /(across|cross-scale|together|feedback|theory of change)/i,
+    exosphere: /(agency|office|department|service system|funding|funder|city|state)/i,
+    macrosphere: /(policy|law|history|culture|belief|narrative|racism|capitalism|structure)/i,
   };
 
   const checks = [
@@ -476,6 +480,20 @@ function withDefaultEdgeAnnotations(edges) {
   });
 }
 
+const NODE_ONLY_COMMON_NOUN = /\b(?:famil(?:y|ies)|students?|parents?|caregivers?|teachers?|residents?|children|case\s+workers?|social\s+workers?|community\s+members?|classrooms?|schools?|community\s+centers?|clinics?|homes?|neighbou?rhoods?|programs?|organizations?)\b/gi;
+const NODE_ONLY_PROPER_NOUN = /\b(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)(?:\s+(?:(?:of|for|and|the|in|at|on)\s+)?(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)){1,8}\b/g;
+const NODE_ONLY_IGNORED_LABEL = /^(?:According to|Course Memo|Memo Sentence|This Memo|The Memo|What Evidence|No Evidence)$/i;
+
+function nodeOnlyLabels(excerpt) {
+  const labels = [
+    ...excerpt.matchAll(NODE_ONLY_PROPER_NOUN),
+    ...excerpt.matchAll(NODE_ONLY_COMMON_NOUN),
+  ].map((match) => displayLabel(match[0]));
+  return [...new Map(labels
+    .filter((label) => plausibleLabel(label) && !NODE_ONLY_IGNORED_LABEL.test(label))
+    .map((label) => [label.toLocaleLowerCase(), label])).values()];
+}
+
 export function extractCandidates(submission) {
   const nodeMap = new Map();
   const relationships = extractRelationships(submission);
@@ -501,6 +519,38 @@ export function extractCandidates(submission) {
       }
     });
   });
+  if (!nodeMap.size) {
+    sentenceRecords(submission.text || '').forEach((sentence) => {
+      const evidence = evidenceForSentence(submission, sentence);
+      const evidenceRef = {
+        evidenceId: evidence.evidenceId,
+        sourceId: evidence.sourceId,
+        evidenceLocator: evidence.evidenceLocator,
+        evidenceExcerpt: evidence.evidenceExcerpt,
+        evidenceHash: evidence.evidenceHash,
+      };
+      nodeOnlyLabels(sentence.excerpt).forEach((label) => {
+        const key = label.toLocaleLowerCase();
+        if (!nodeMap.has(key)) {
+          nodeMap.set(key, {
+            id: stableId('node', label),
+            label,
+            type: inferNodeType(label),
+            scale: inferScale(label, 'micro'),
+            status: 'pending',
+            claimState: 'inference',
+            evidence: evidence.evidence,
+            ...evidenceRef,
+            evidenceRefs: [evidenceRef],
+            notes: '',
+          });
+          return;
+        }
+        const node = nodeMap.get(key);
+        if (!node.evidenceRefs.some((item) => item.evidenceId === evidenceRef.evidenceId)) node.evidenceRefs.push(evidenceRef);
+      });
+    });
+  }
   if (nodeMap.size > PROJECT_LIMITS.nodes) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.nodes} node records`);
   const nodes = withDefaultNodeLayout([...nodeMap.values()]);
   const edgeMap = new Map();
@@ -543,44 +593,70 @@ export function extractCandidates(submission) {
   return { nodes, edges };
 }
 
-export function deterministicMemoReview(submission, activeScale = 'micro') {
+export function deterministicMemoReview(submission, activeScale = 'micro', { carriedNodes = [] } = {}) {
   const { nodes, edges } = extractCandidates(submission);
   const orderedNodes = [...nodes].sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
-  const reviewNodes = orderedNodes.slice(0, PROJECT_LIMITS.memoReviewNodes).map((node) => ({
+  const reviewNodes = (activeScale === 'meso' ? [] : orderedNodes).slice(0, PROJECT_LIMITS.memoReviewNodes).map((node) => ({
     label: node.label,
     type: node.type,
-    scale: node.scale,
+    scale: activeScale,
     evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
   }));
   const nodeLabels = new Set(reviewNodes.map((node) => node.label));
-  const connections = edges
-    .filter((edge) => nodeLabels.has(edge.sourceLabel) && nodeLabels.has(edge.targetLabel))
+  const carriedNodeByLabel = new Map(carriedNodes.map((node) => [String(node.label || '').trim().toLocaleLowerCase(), node]));
+  const connections = activeScale === 'micro' ? [] : edges
+    .filter((edge) => activeScale === 'meso'
+      ? carriedNodeByLabel.has(edge.sourceLabel.trim().toLocaleLowerCase()) && carriedNodeByLabel.has(edge.targetLabel.trim().toLocaleLowerCase())
+      : nodeLabels.has(edge.sourceLabel) && nodeLabels.has(edge.targetLabel))
     .slice(0, PROJECT_LIMITS.memoReviewConnections)
-    .map((edge) => ({
-      source: edge.sourceLabel,
-      target: edge.targetLabel,
-      verb: edge.verb,
-      rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
+    .map((edge) => {
+      const carriedSource = carriedNodeByLabel.get(edge.sourceLabel.trim().toLocaleLowerCase());
+      const carriedTarget = carriedNodeByLabel.get(edge.targetLabel.trim().toLocaleLowerCase());
+      return {
+        source: activeScale === 'meso' ? carriedSource.id : edge.sourceLabel,
+        target: activeScale === 'meso' ? carriedTarget.id : edge.targetLabel,
+        sourceLabel: activeScale === 'meso' ? carriedSource.label : edge.sourceLabel,
+        targetLabel: activeScale === 'meso' ? carriedTarget.label : edge.targetLabel,
+        verb: edge.verb,
+        rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
+      };
+    });
+  const guidance = activeScale === 'micro'
+    ? reviewNodes.slice(0, PROJECT_LIMITS.memoGuidanceItems).map((node) => ({
+      point: truncateCollapsedText(`${node.label} could become a Micro node.`, PROJECT_LIMITS.memoGuidanceText),
+      ...(node.evidence ? { evidenceExcerpt: truncateCollapsedText(node.evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
+    }))
+    : connections.slice(0, PROJECT_LIMITS.memoGuidanceItems).map((connection) => ({
+      point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
+      ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
     }));
-  const guidance = connections.slice(0, PROJECT_LIMITS.memoGuidanceItems).map((connection) => ({
-    point: truncateCollapsedText(`The memo connects ${connection.source} and ${connection.target} through "${connection.verb}."`, PROJECT_LIMITS.memoGuidanceText),
-    ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
-  }));
   if (!guidance.length) {
-    guidance.push({ point: 'The offline reader could not find connection phrases in this memo. A language model is not configured for this class, so only direct statements such as "X provides Y" are recognized. You can still continue and add elements yourself.' });
+    guidance.push({ point: activeScale === 'micro'
+      ? 'No clearly named people, roles, groups, or settings were found. You can continue and add nodes yourself.'
+      : 'No clear connections were found. You can continue and describe them yourself.' });
   }
   const first = connections[0] || null;
   const example = first
-    ? truncateCollapsedText(`One evident connection: ${first.source} ${first.verb} ${first.target}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
+    ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
     : null;
-  const ready = reviewNodes.length >= 2 && connections.length >= 1;
+  const ready = activeScale === 'meso'
+    ? carriedNodes.length >= 2 && connections.length >= 1
+    : reviewNodes.length >= 2 && (activeScale === 'micro' || connections.length >= 1);
   const readiness = {
     ready,
     note: truncateCollapsedText(ready
-      ? `The memo already names ${reviewNodes.length} elements and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose nodes and connections.`
-      : 'The offline reader found fewer than two connected elements, but that is not a judgment of the memo. Continue when you are ready, or expand the memo here first.', PROJECT_LIMITS.memoGuidanceText),
+      ? activeScale === 'micro'
+        ? `The memo names ${reviewNodes.length} possible nodes. Continue to choose which ones belong in the Micro map.`
+        : activeScale === 'meso'
+          ? `The memo describes ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'} among nodes carried from Micro. Continue to choose which connections belong in the map.`
+          : `The memo names ${reviewNodes.length} elements and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose what belongs in the map.`
+      : activeScale === 'micro'
+        ? 'Fewer than two possible nodes were found. You can continue, or name more people, roles, groups, or settings in the memo.'
+        : activeScale === 'meso'
+          ? 'No clear connections among the nodes from Micro were found. You can continue, or describe those connections in the memo.'
+          : 'Fewer than two connected elements were found. You can continue, or describe more connections in the memo.', PROJECT_LIMITS.memoGuidanceText),
   };
-  return { guidance, nodes: reviewNodes, connections, example, readiness };
+  return { guidance, nodes: reviewNodes, connections, example: activeScale === 'micro' ? null : example, readiness };
 }
 
 export function createEvent(action, detail, actor = 'student', metadata = {}) {
@@ -618,7 +694,7 @@ const builderConfig = {
   label: 'Map builder',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
-  fixedPrompt: `${BASE_GUARDRAILS}\nPropose node and edge operations; never apply them without student confirmation.`,
+  fixedPrompt: `${BASE_GUARDRAILS}\nPropose only operations appropriate to the active level: nodes only for Micro, connections among carried nodes for Meso, and nodes plus connections for Exosphere and Macrosphere. Never apply an operation without student confirmation.`,
   customInstructions: 'Use Ecological Systems Theory as an organizing lens. Guide with questions rather than supplying conclusions.',
   contextLimit: 32000,
   confidenceThreshold: 0.72,
@@ -649,6 +725,7 @@ export function createDefaultProject() {
     schemaVersion: PROJECT_SCHEMA_VERSION,
     id: 'project_cali_demo',
     title: 'NYC systems and assets map',
+    participantName: '',
     inquiry: 'How do systems shape access to special-education services in NYC?',
     activeScale: 'micro',
     releasedScales: ['micro'],
@@ -685,7 +762,7 @@ const SHARING_TIERS = ['private', 'course', 'CUNY', 'public'];
 const CANDIDATE_STATUSES = ['pending', 'confirmed', 'research lead', 'rejected'];
 const PREFLIGHT_REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
 const PREFLIGHT_REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
-const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud'];
+const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter'];
 const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
   'evalCount', 'evalDurationNs',
@@ -698,7 +775,7 @@ const FORBIDDEN_PROJECT_KEYS = new Set([
 
 const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId', 'sourceId', 'evidenceRefs'];
-const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
+const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
 const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', ...EVIDENCE_KEYS];
@@ -837,6 +914,7 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     assertString(node.label, `${itemPath}.label`, false, 200);
     assertEnum(node.type, NODE_TYPES, `${itemPath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${itemPath}.scale`);
+    if (node.scale === 'meso') invalidProject(`${itemPath}.scale`, 'must use Micro for nodes; Meso records relationships between Micro nodes');
     assertEnum(node.status, CANDIDATE_STATUSES, `${itemPath}.status`);
     assertEnum(node.claimState, CLAIM_STATES, `${itemPath}.claimState`);
     assertString(node.notes ?? '', `${itemPath}.notes`, true, PROJECT_LIMITS.noteText);
@@ -871,8 +949,18 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners) {
     if (nodesById.get(edge.target)?.label !== edge.targetLabel) invalidProject(`${itemPath}.targetLabel`, 'does not match its target node');
     assertString(edge.verb, `${itemPath}.verb`, false, 100);
     assertEnum(edge.scale, SCALE_ORDER, `${itemPath}.scale`);
+    if (edge.scale === 'micro') invalidProject(`${itemPath}.scale`, 'must use Meso for relationships; Micro contains nodes only');
     assertEnum(edge.status, CANDIDATE_STATUSES, `${itemPath}.status`);
     assertEnum(edge.claimState, CLAIM_STATES, `${itemPath}.claimState`);
+    if (edge.scale === 'meso') {
+      const sourceNode = nodesById.get(edge.source);
+      const targetNode = nodesById.get(edge.target);
+      if (sourceNode?.scale !== 'micro') invalidProject(`${itemPath}.source`, 'must reference a Micro node for a Meso relationship');
+      if (targetNode?.scale !== 'micro') invalidProject(`${itemPath}.target`, 'must reference a Micro node for a Meso relationship');
+      const relationshipIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
+      if (relationshipIsLive && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live Micro node');
+      if (relationshipIsLive && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live Micro node');
+    }
     assertString(edge.notes ?? '', `${itemPath}.notes`, true, PROJECT_LIMITS.noteText);
     if (edge.directed !== undefined) assertBoolean(edge.directed, `${itemPath}.directed`);
     if (edge.confidence !== undefined) assertFiniteNumber(edge.confidence, `${itemPath}.confidence`, 0, 1);
@@ -1007,9 +1095,11 @@ function validateMemoReview(review, path) {
   review.connections.forEach((connection, index) => {
     const connectionPath = `${path}.connections[${index}]`;
     assertObject(connection, connectionPath);
-    assertKnownKeys(connection, ['source', 'target', 'verb', 'rationale'], connectionPath);
+    assertKnownKeys(connection, ['source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'rationale'], connectionPath);
     assertString(connection.source, `${connectionPath}.source`, false, 200);
     assertString(connection.target, `${connectionPath}.target`, false, 200);
+    if (connection.sourceLabel !== undefined) assertString(connection.sourceLabel, `${connectionPath}.sourceLabel`, false, 200);
+    if (connection.targetLabel !== undefined) assertString(connection.targetLabel, `${connectionPath}.targetLabel`, false, 200);
     if (connection.source === connection.target) invalidProject(`${connectionPath}.target`, 'must differ from source');
     assertString(connection.verb, `${connectionPath}.verb`, false, 100);
     assertString(connection.rationale, `${connectionPath}.rationale`, true, PROJECT_LIMITS.rationaleText);
@@ -1161,6 +1251,7 @@ export function validateProject(project) {
   if (project.schemaVersion !== PROJECT_SCHEMA_VERSION) throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion ${PROJECT_SCHEMA_VERSION}.`);
   assertString(project.id, 'project.id', false, 200);
   assertString(project.title, 'project.title', true, 500);
+  assertString(project.participantName, 'project.participantName', true, 500);
   assertString(project.inquiry, 'project.inquiry', true, PROJECT_LIMITS.promptText);
   assertEnum(project.activeScale, SCALE_ORDER, 'project.activeScale');
   if (!Array.isArray(project.releasedScales) || !project.releasedScales.length) invalidProject('project.releasedScales', 'must be a non-empty array');
@@ -1221,11 +1312,13 @@ export function validateProject(project) {
   const annotationOwners = { byId: new Map(), byOwner: new Map() };
   assertObject(project.candidates, 'project.candidates');
   assertKnownKeys(project.candidates, ['nodes', 'edges'], 'project.candidates');
-  const candidateNodeIds = validateNodeCollection(project.candidates.nodes, 'project.candidates.nodes', annotationOwners);
-  validateEdgeCollection(project.candidates.edges, project.candidates.nodes, candidateNodeIds, 'project.candidates.edges', annotationOwners);
   assertObject(project.graph, 'project.graph');
   assertKnownKeys(project.graph, ['nodes', 'edges'], 'project.graph');
+  const candidateNodeIds = validateNodeCollection(project.candidates.nodes, 'project.candidates.nodes', annotationOwners);
   const graphNodeIds = validateNodeCollection(project.graph.nodes, 'project.graph.nodes', annotationOwners);
+  const candidateEdgeNodeIds = new Set([...graphNodeIds, ...candidateNodeIds]);
+  const candidateEdgeNodes = [...project.graph.nodes, ...project.candidates.nodes];
+  validateEdgeCollection(project.candidates.edges, candidateEdgeNodes, candidateEdgeNodeIds, 'project.candidates.edges', annotationOwners);
   validateEdgeCollection(project.graph.edges, project.graph.nodes, graphNodeIds, 'project.graph.edges', annotationOwners);
   assertObject(project.viewport, 'project.viewport');
   assertKnownKeys(project.viewport, ['panX', 'panY', 'zoom'], 'project.viewport');
@@ -1296,6 +1389,81 @@ function legacyPreflightShape(preflight) {
     && (Array.isArray(preflight.hard) || Array.isArray(preflight.redirects)));
 }
 
+const LEGACY_SCALE_IDS = Object.freeze({ macro: 'exosphere', integration: 'macrosphere' });
+const LEGACY_PROMPT_MODULE_ID = /^(preflight|builder)\.(macro|integration)\.(purpose|evidence|privacy|scale_rubric|interaction|output)$/;
+
+function migratePromptModuleId(value) {
+  if (typeof value !== 'string' || !LEGACY_PROMPT_MODULE_ID.test(value)) return value;
+  return value.replace('.macro.', '.exosphere.').replace('.integration.', '.macrosphere.');
+}
+
+function migrateScaleVocabulary(project) {
+  const migrated = cloneProject(project);
+  const scalarKeys = new Set(['scale', 'activeScale']);
+  const collectionKeys = new Set(['scaleIds', 'releasedScales', 'completedScales']);
+  const visit = (value, parentKey = '', inModuleVersions = false) => {
+    if (Array.isArray(value)) {
+      return value.map((item) => collectionKeys.has(parentKey) && typeof item === 'string'
+        ? LEGACY_SCALE_IDS[item] || item
+        : visit(item, '', inModuleVersions || parentKey === 'moduleVersions'));
+    }
+    if (!value || typeof value !== 'object') {
+      if (inModuleVersions && parentKey === 'id') return migratePromptModuleId(value);
+      return scalarKeys.has(parentKey) && typeof value === 'string'
+        ? LEGACY_SCALE_IDS[value] || value
+        : value;
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item, key, inModuleVersions)]));
+  };
+  const rewritten = visit(migrated);
+  rewritten.participantName = typeof rewritten.participantName === 'string' ? rewritten.participantName : '';
+  if (rewritten.portableExport && typeof rewritten.portableExport === 'object' && !Array.isArray(rewritten.portableExport)) {
+    rewritten.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
+  }
+  rewritten.schemaVersion = PROJECT_SCHEMA_VERSION;
+  return rewritten;
+}
+
+function migrateLegacyMappingSemantics(project) {
+  let migratedEdge = false;
+  let migratedNode = false;
+  ['candidates', 'graph'].forEach((container) => {
+    const nodes = project?.[container]?.nodes;
+    if (!Array.isArray(nodes)) return;
+    nodes.forEach((node) => {
+      if (!node || typeof node !== 'object' || Array.isArray(node) || node.scale !== 'meso') return;
+      node.scale = 'micro';
+      migratedNode = true;
+    });
+  });
+  ['candidates', 'graph'].forEach((container) => {
+    const edges = project?.[container]?.edges;
+    const nodesById = new Map((project?.[container]?.nodes || []).map((node) => [node.id, node]));
+    if (!Array.isArray(edges)) return;
+    edges.forEach((edge) => {
+      if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
+      if (edge.scale === 'micro') {
+        edge.scale = 'meso';
+        migratedEdge = true;
+        return;
+      }
+      if (edge.scale !== 'meso') return;
+      const endpointScales = [nodesById.get(edge.source)?.scale, nodesById.get(edge.target)?.scale];
+      const outerEndpoint = ['integration', 'macrosphere', 'macro', 'exosphere']
+        .find((scale) => endpointScales.includes(scale));
+      if (outerEndpoint) edge.scale = outerEndpoint;
+    });
+  });
+  if (migratedEdge && Array.isArray(project.releasedScales) && !project.releasedScales.includes('meso')) {
+    const microIndex = project.releasedScales.indexOf('micro');
+    project.releasedScales.splice(microIndex >= 0 ? microIndex + 1 : project.releasedScales.length, 0, 'meso');
+  }
+  if (migratedNode && Array.isArray(project.releasedScales) && !project.releasedScales.includes('micro')) {
+    project.releasedScales.unshift('micro');
+  }
+  return project;
+}
+
 function migrateLegacyProject(project) {
   const collapseReviewStage = (stage) => stage <= 1 ? stage : stage <= 3 ? 2 : stage - 1;
   const insertConnectionStage = (stage) => stage >= 4 ? stage + 1 : stage;
@@ -1321,7 +1489,7 @@ function migrateLegacyProject(project) {
       migrated.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
     }
     migrated.schemaVersion = PROJECT_SCHEMA_VERSION;
-    return migrated;
+    return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
   };
   if (project?.schemaVersion === 2) {
     const migrated = cloneProject(project);
@@ -1340,13 +1508,19 @@ function migrateLegacyProject(project) {
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return finishStageMigration(migrated, { insertConnection: false });
   }
+  if (project?.schemaVersion === 5) {
+    const migrated = cloneProject(project);
+    if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
+    return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
+  }
   if (project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
-    if (legacyPreflightShape(project.preflight)) {
-      const migrated = cloneProject(project);
-      migrated.preflight = null;
-      return migrated;
-    }
-    return project;
+    // Early schema-v6 builds still wrote nodes at Meso and relationships at
+    // Micro. Normalize those records idempotently before strict validation so
+    // an existing local or linked project is repaired without losing IDs,
+    // evidence, annotations, or geometry.
+    const migrated = cloneProject(project);
+    if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
+    return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
   }
   if (project?.schemaVersion !== 1) return project;
   const migrated = cloneProject(project);
@@ -1613,6 +1787,10 @@ export function createPortableProject(project, sharingTier = project.sharingTier
   }
   const portable = cloneProject(project);
   const redactions = [];
+  if (['CUNY', 'public'].includes(sharingTier) && portable.participantName) {
+    portable.participantName = '';
+    addRedaction(redactions, 'participantName', 'Student or group name excluded from broader export');
+  }
   const sensitive = portable.submission.sensitive;
   const restrictedRights = /(?:course use only|restricted|private|confidential|no redistribution|permission required)/i.test(portable.submission.rights);
   const redactSource = (sharingTier !== 'private' && sensitive)
@@ -1625,7 +1803,7 @@ export function createPortableProject(project, sharingTier = project.sharingTier
   });
   if (portable.preflight?.evaluation?.evaluationId) {
     portable.preflight.evaluation.evaluationId = '[redacted]';
-    addRedaction(redactions, 'preflight.evaluation.evaluationId', 'Preflight evaluation capability excluded from portable export');
+    addRedaction(redactions, 'preflight.evaluation.evaluationId', 'Guidance capability excluded from portable export');
   }
   if (redactSource) {
     const reason = `Restricted memo material excluded from ${sharingTier} export`;
@@ -1706,8 +1884,8 @@ export function parseProject(value) {
     throw new Error(`Invalid Systems Mapping project JSON: ${error.message}`);
   }
   assertSafeProjectStructure(parsed);
-  if (![1, 2, 3, 4, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
-    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, or ${PROJECT_SCHEMA_VERSION}.`);
+  if (![1, 2, 3, 4, 5, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
+    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, or ${PROJECT_SCHEMA_VERSION}.`);
   }
   return validateProject(migrateLegacyProject(parsed));
 }

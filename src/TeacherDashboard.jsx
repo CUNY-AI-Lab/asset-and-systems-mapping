@@ -44,10 +44,52 @@ function scaleLabel(scale) {
     : '';
 }
 
-function scaleListLabel(scales = []) {
-  const labels = scales.map(scaleLabel).filter(Boolean);
-  if (labels.length < 2) return labels[0] || '';
-  return `${labels.slice(0, -1).join(', ')}${labels.length > 2 ? ',' : ''} and ${labels.at(-1)}`;
+function stageModelUse(stageId, scale) {
+  if (stageId === 'review-suggestions') {
+    return {
+      active: true,
+      configKind: 'preflight',
+      activeDetail: scale === 'micro'
+        ? 'The model uses these settings to identify possible Micro nodes.'
+        : 'The model uses these settings when it reviews the memo.',
+    };
+  }
+  if (stageId === 'choose-what-to-map') {
+    return {
+      active: true,
+      configKind: 'builder',
+      activeDetail: scale === 'micro'
+        ? 'The model uses these settings when students reread the memo for new node suggestions.'
+        : scale === 'meso'
+          ? 'The model uses these settings when students reread the memo or ask for connection suggestions.'
+          : 'The model uses these settings when students reread the memo or ask for node and connection suggestions.',
+    };
+  }
+  return {
+    active: false,
+    configKind: 'preflight',
+    inactiveDetail: 'No model request runs here. Changes are saved for course planning.',
+  };
+}
+
+function runtimeEffect(runtime, stageId, scale) {
+  const stageUse = stageModelUse(stageId, scale);
+  if (!stageUse.active) {
+    return {
+      label: 'Course note only in this section.',
+      detail: stageUse.inactiveDetail,
+    };
+  }
+  if (runtime?.provider === 'ollama-cloud' || runtime?.provider === 'openrouter') {
+    return {
+      label: 'Model guidance is active.',
+      detail: stageUse.activeDetail,
+    };
+  }
+  return {
+    label: 'Offline review is active.',
+    detail: 'These settings are saved, but offline suggestions do not use them.',
+  };
 }
 
 function submissionPart(submission) {
@@ -79,7 +121,8 @@ function uniqueValues(values) {
 }
 
 function submissionLabel(submission, index = 0) {
-  return readableValue(submission?.projectMetadata?.title)
+  return readableValue(submission?.projectMetadata?.participantName)
+    || readableValue(submission?.projectMetadata?.title)
     || readableValue(submission?.projectMetadata?.projectTitle)
     || `Submission ${String(index + 1).padStart(2, '0')}`;
 }
@@ -101,18 +144,38 @@ function DecisionHistory({ events, title = 'Feedback history' }) {
 }
 
 function SuggestionReview({ suggestion }) {
+  const guidance = Array.isArray(suggestion?.guidance) ? suggestion.guidance : [];
+  const nodes = Array.isArray(suggestion?.nodes) ? suggestion.nodes : [];
+  const connections = Array.isArray(suggestion?.connections) ? suggestion.connections : [];
+  const currentReview = guidance.length || nodes.length || connections.length || readableValue(suggestion?.readiness?.note);
   const hard = Array.isArray(suggestion?.hard) ? suggestion.hard : [];
   const scored = Array.isArray(suggestion?.scored) ? suggestion.scored : [];
   const criteria = [...hard, ...scored];
-  if (!suggestion || !criteria.length) return <p className="empty-message">No guidance was submitted.</p>;
+  if (!suggestion || (!currentReview && !criteria.length)) return <p className="empty-message">No guidance was submitted.</p>;
 
-  const evidence = uniqueValues(criteria.flatMap((criterion) => [criterion.evidence, criterion.evidenceExcerpt, criterion.evidenceLocator]));
-  const followUp = uniqueValues(criteria.flatMap((criterion) => [criterion.rationale, criterion.nextAction]));
-  const uncertainties = uniqueValues(criteria.flatMap((criterion) => {
+  const legacyEvidence = uniqueValues(criteria.flatMap((criterion) => [criterion.evidence, criterion.evidenceExcerpt, criterion.evidenceLocator]));
+  const legacyFollowUp = uniqueValues(criteria.flatMap((criterion) => [criterion.rationale, criterion.nextAction]));
+  const legacyUncertainties = uniqueValues(criteria.flatMap((criterion) => {
     const status = readableValue(criterion.status).toLowerCase();
     const unresolved = criterion.hardBlock || criterion.missingVariable || /(?:fail|hold|missing|open|uncertain|blocked|not met)/.test(status);
     return unresolved ? [criterion.missingVariable, criterion.nextAction, criterion.rationale] : [];
   }));
+  const evidence = currentReview
+    ? uniqueValues([
+      ...guidance.map((item) => item?.evidenceExcerpt),
+      ...nodes.map((node) => node?.evidence),
+      ...connections.map((connection) => connection?.rationale),
+    ])
+    : legacyEvidence;
+  const mapIdeas = currentReview
+    ? uniqueValues([
+      ...nodes.map((node) => node?.label),
+      ...connections.map((connection) => `${readableValue(connection?.sourceLabel || connection?.source)} ${readableValue(connection?.verb)} ${readableValue(connection?.targetLabel || connection?.target)}`),
+    ])
+    : legacyFollowUp;
+  const questions = currentReview
+    ? uniqueValues([...guidance.map((item) => item?.point), suggestion?.readiness?.note])
+    : legacyUncertainties;
 
   const annotation = (label, values, emptyText) => <section className="suggestion-annotation">
     <h4>{label}</h4>
@@ -124,9 +187,9 @@ function SuggestionReview({ suggestion }) {
     <div className="teacher-model-review__body">
       <p className="teacher-model-review__note">Use these details as reference. You decide what the student should revisit.</p>
       <div className="suggestion-review">
-        {annotation('Evidence excerpts', evidence, 'No supporting evidence was recorded.')}
-        {annotation('Possible follow-up', followUp, 'No follow-up was suggested.')}
-        {annotation('Open questions', uncertainties, 'No unresolved question was recorded.')}
+        {annotation(currentReview ? 'Memo evidence' : 'Evidence excerpts', evidence, 'No supporting memo passage was recorded.')}
+        {annotation(currentReview ? 'Map ideas' : 'Possible follow-up', mapIdeas, 'No map item was suggested.')}
+        {annotation(currentReview ? 'Questions to consider' : 'Open questions', questions, 'No question was suggested.')}
       </div>
     </div>
   </details>;
@@ -384,6 +447,7 @@ function ReviewSubmissions() {
         {!detailLoading && !detail && !detailError && <p className="empty-message">Choose a pending submission to review its details.</p>}
         {detail && <div className="student-work__body">
           <p className="eyebrow">{submissionContextLabel(detail)}</p>
+          {readableValue(detail.projectMetadata?.participantName) ? <section><h3>Student or group</h3><p>{readableValue(detail.projectMetadata.participantName)}</p></section> : null}
           {detail.inquiry ? <section><h3>Question from earlier work</h3><p>{detail.inquiry}</p></section> : null}
           <section><h3>Memo</h3><p className="student-work__memo">{readableValue(detail.sourceMaterial) || 'No memo was submitted.'}</p><SuggestionReview suggestion={detail.suggestion} /></section>
           <section><h3>Student note</h3><p>{readableValue(detail.studentAnnotation) || 'No student note was submitted.'}</p></section>
@@ -478,18 +542,6 @@ function TeachingProfiles({ onConfigurationChanged }) {
     setPreview(null);
   };
 
-  const changePartLabel = (value) => {
-    if (!selectedPart) return;
-    setDraft((current) => ({
-      ...current,
-      profile: {
-        ...current.profile,
-        parts: current.profile.parts.map((part) => part.id === selectedPart.id ? { ...part, label: value } : part),
-      },
-    }));
-    setPreview(null);
-  };
-
   const changeStage = (field, value) => {
     if (!selectedPart) return;
     setDraft((current) => ({
@@ -574,7 +626,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setEvents(result.events || []);
       setNote('');
       setPreview(null);
-      setMessage({ type: 'success', text: 'Draft published. Student guidance now uses these section settings.' });
+      setMessage({ type: 'success', text: 'Draft published. These course settings are now current.' });
       await loadCatalog(result.profile.id);
       onConfigurationChanged();
     } catch (error) {
@@ -587,8 +639,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const loadPreview = async () => {
     setBusy(true);
     try {
-      const selectedStageIndex = SYSTEMS_MAPPING_STAGES.findIndex(({ id }) => id === selectedStageId);
-      const configKind = selectedStageIndex >= 4 ? 'builder' : 'preflight';
+      const { configKind } = stageModelUse(selectedStageId, previewScale);
       const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/preview?${new URLSearchParams({ configKind, scale: previewScale, stageId: selectedStageId })}`);
       setPreview(result);
       setMessage(null);
@@ -605,30 +656,36 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const selectedStageIndex = Math.max(0, SYSTEMS_MAPPING_STAGES.findIndex(({ id }) => id === selectedStageId));
   const selectedStage = SYSTEMS_MAPPING_STAGES[selectedStageIndex];
   const selectedStageSettings = selectedPart?.stages?.[selectedStage.id] || { guidance: '', materials: '' };
+  const stageUse = stageModelUse(selectedStageId, previewScale);
+  const runtime = runtimeEffect(catalog?.runtime, selectedStageId, previewScale);
   return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
     <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Adapt guidance and course material for this exercise and its relationship to the broader course.</p></div></div>
+    <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
     <Message message={message} />
-    <div className="teacher-controls teaching-profile-controls">
-      <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
-      <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button>
-    </div>
-    {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
-      <label className="field"><span className="field__label">Draft name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
-      <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
-      <button type="submit" className="button" disabled={busy}>Create draft</button>
-    </form>}
+    <details className="teacher-history teaching-profile-versioning">
+      <summary>Version and history</summary>
+      <div className="teacher-controls teaching-profile-controls">
+        <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
+        <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button>
+      </div>
+      {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
+        <label className="field"><span className="field__label">Draft name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
+        <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
+        <button type="submit" className="button" disabled={busy}>Create draft</button>
+      </form>}
+      {detail && draft && <label className="field"><span className="field__label">Name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
+      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{event.action}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
+    </details>
     {detail && draft && <div className="teacher-workbench teaching-profile-workbench">
       <div className="teaching-profile-editor">
-        <div className="section-heading"><div><h3>{detail.name}</h3><p>{profileStatusLabel(detail.status)} · revision {detail.revision}</p></div></div>
-        <label className="field"><span className="field__label">Name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-        <p className="field__hint">Adjust each section separately as the course, assignment, or class session changes.</p>
+        <div className="section-heading"><div><h3>{detail.name}</h3></div></div>
+        <p className="field__hint">Adjust one section at a time as the course, assignment, or class session changes.</p>
         {selectedPart ? <>
-          <div className="teacher-controls teaching-profile-controls">
+          <div className="teacher-controls teaching-profile-controls" role="group" aria-label="Course section">
             <label><span>Part</span><select aria-label="Part" value={selectedPart.id} onChange={(event) => selectPart(event.target.value)}>{profileParts.map((part) => <option key={part.id} value={part.id}>{part.label}</option>)}</select></label>
+            <label><span>Section</span><select aria-label="Section" value={selectedStageId} onChange={(event) => { setSelectedStageId(event.target.value); setPreview(null); }}>{SYSTEMS_MAPPING_STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label>
           </div>
-          <label className="field"><span className="field__label">Part name</span><input maxLength="120" readOnly={!editable} value={selectedPart.label} onChange={(event) => changePartLabel(event.target.value)} /></label>
-          <label className="field"><span className="field__label">Included scales</span><input readOnly value={scaleListLabel(selectedPart.scaleIds)} /></label>
-          <nav className="course-stage-nav" aria-label={`${selectedPart.label} sections`}><ol>{SYSTEMS_MAPPING_STAGES.map((stage) => <li key={stage.id}><button type="button" aria-label={stage.label} className={stage.id === selectedStageId ? 'is-active' : ''} aria-current={stage.id === selectedStageId ? 'step' : undefined} onClick={() => { setSelectedStageId(stage.id); setPreview(null); }}><strong>{stage.label}</strong></button></li>)}</ol></nav>
+          <p className="field__hint">This guidance applies to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
         </> : <p className="teacher-message teacher-message--error" role="alert">This course settings version does not include any parts.</p>}
         {selectedPart && <section className="course-stage-editor" aria-labelledby={`course-stage-heading-${selectedStage.id}`}>
           <div><h4 id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.label}</h4><p>{selectedStage.description}</p></div>
@@ -646,11 +703,10 @@ function TeachingProfiles({ onConfigurationChanged }) {
       </div>
       <aside className="teaching-profile-preview">
         <h3>Preview this section</h3>
-        <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${selectedStage.label}` : ''}</p>
-        {selectedPart && <label><span>Scale</span><select value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{selectedPart.scaleIds.map((scale) => <option key={scale} value={scale}>{scaleLabel(scale)}</option>)}</select></label>}
+        <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${scaleLabel(previewScale)} · ${selectedStage.label}` : ''}</p>
+        {selectedPart && <label className="field"><span className="field__label">Preview level</span><select aria-label="Preview level" value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{selectedPart.scaleIds.map((scale) => <option key={scale} value={scale}>{scaleLabel(scale)}</option>)}</select></label>}
         <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Check saved version</button>
-        {preview && <div className="effective-preview"><strong>Saved version {preview.revision}</strong><p>{selectedPart?.label} · {selectedStage.label} · {scaleLabel(previewScale)}</p></div>}
-        <details className="teacher-history"><summary>Change history · {events.length}</summary>{events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{event.action}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}</details>
+        {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Guidance</strong><p>{preview.guidance || 'No guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
       </aside>
     </div>}
   </section>;

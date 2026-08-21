@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
 import {
   DEFAULT_TEACHING_PROFILE,
+  LEGACY_DEFAULT_MODULE_FINGERPRINTS,
   moduleSeeds,
   teachingProfileFingerprint,
   upgradeSystemsMappingTeachingProfile,
@@ -13,6 +14,33 @@ const ACCOUNT_SEEDS = Object.freeze([
   { id: 'zach-muhlbauer', displayName: 'Zach Muhlbauer' },
   { id: 'maria-mavrides-calderon', displayName: 'Maria Mavrides Calderon' },
 ]);
+const LEGACY_SCALE_IDS = Object.freeze({
+  macro: 'exosphere',
+  integration: 'macrosphere',
+});
+const SCALE_SCALAR_KEYS = new Set(['scale', 'activeScale']);
+const SCALE_COLLECTION_KEYS = new Set(['scaleIds', 'releasedScales', 'completedScales']);
+const LEGACY_PROMPT_MODULE_ID = /^(preflight|builder)\.(macro|integration)\.(purpose|evidence|privacy|scale_rubric|interaction|output)$/;
+
+function migratePromptModuleId(value) {
+  if (typeof value !== 'string' || !LEGACY_PROMPT_MODULE_ID.test(value)) return value;
+  return value.replace('.macro.', '.exosphere.').replace('.integration.', '.macrosphere.');
+}
+
+function migrateScaleIds(value, parentKey = '') {
+  if (Array.isArray(value)) {
+    return value.map((item) => SCALE_COLLECTION_KEYS.has(parentKey) && typeof item === 'string'
+      ? LEGACY_SCALE_IDS[item] ?? item
+      : migrateScaleIds(item));
+  }
+  if (!value || typeof value !== 'object') {
+    if (parentKey === 'id') return migratePromptModuleId(value);
+    return SCALE_SCALAR_KEYS.has(parentKey) && typeof value === 'string'
+      ? LEGACY_SCALE_IDS[value] ?? value
+      : value;
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, migrateScaleIds(item, key)]));
+}
 
 const POSTGRES_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -68,7 +96,8 @@ const POSTGRES_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS prompt_modules (
     id TEXT PRIMARY KEY,
     config_kind TEXT NOT NULL CHECK(config_kind IN ('preflight', 'builder')),
-    scale TEXT NOT NULL CHECK(scale IN ('global', 'micro', 'meso', 'macro', 'integration')),
+    scale TEXT NOT NULL CONSTRAINT prompt_modules_scale_check
+      CHECK(scale IN ('global', 'micro', 'meso', 'exosphere', 'macrosphere')),
     module_key TEXT NOT NULL CHECK(module_key IN ('purpose', 'evidence', 'privacy', 'scale_rubric', 'interaction', 'output')),
     label TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -173,7 +202,8 @@ const POSTGRES_SCHEMA_SQL = `
     project_metadata_json JSONB NOT NULL
       CHECK(jsonb_typeof(project_metadata_json) = 'object')
       CHECK(pg_column_size(project_metadata_json) <= 8192),
-    active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'macro', 'integration')),
+    active_scale TEXT NOT NULL CONSTRAINT preflight_evaluations_active_scale_check
+      CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere')),
     inquiry TEXT NOT NULL CHECK(char_length(inquiry) BETWEEN 1 AND 8000),
     source_record_json JSONB NOT NULL
       CHECK(jsonb_typeof(source_record_json) = 'object')
@@ -208,7 +238,8 @@ const POSTGRES_SCHEMA_SQL = `
       CHECK(jsonb_typeof(project_metadata_json) = 'object')
       CONSTRAINT preflight_project_metadata_storage_limit
         CHECK(pg_column_size(project_metadata_json) <= 8192),
-    active_scale TEXT NOT NULL CHECK(active_scale IN ('micro', 'meso', 'macro', 'integration')),
+    active_scale TEXT NOT NULL CONSTRAINT preflight_submissions_active_scale_check
+      CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere')),
     inquiry TEXT NOT NULL CHECK(char_length(inquiry) BETWEEN 1 AND 8000),
     source_material TEXT NOT NULL CHECK(char_length(source_material) BETWEEN 1 AND 500000),
     source_record_json JSONB
@@ -475,6 +506,148 @@ export function compilePostgresSql(source) {
     .replace(/\bAS\s+([A-Za-z][A-Za-z0-9]*)/gi, (_match, alias) => `AS "${alias}"`);
 }
 
+function migratedJsonDocument(value) {
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+  const original = JSON.stringify(parsed);
+  const migrated = JSON.stringify(migrateScaleIds(parsed));
+  return migrated === original ? null : migrated;
+}
+
+function serializedJsonDocument(value) {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+async function migrateEcologicalScaleIds(client) {
+  const applied = await client.query('SELECT version FROM schema_migrations WHERE version = 9');
+  if (applied.rows.length) return;
+
+  await client.query(`
+    ALTER TABLE prompt_modules
+      DROP CONSTRAINT IF EXISTS prompt_modules_scale_check;
+    ALTER TABLE preflight_evaluations
+      DROP CONSTRAINT IF EXISTS preflight_evaluations_active_scale_check;
+    ALTER TABLE preflight_submissions
+      DROP CONSTRAINT IF EXISTS preflight_submissions_active_scale_check;
+  `);
+
+  await client.query(`
+    INSERT INTO prompt_modules (
+      id, config_kind, scale, module_key, label, description, content,
+      revision, fingerprint, updated_at, updated_by
+    )
+    SELECT
+      CASE
+        WHEN scale = 'macro' THEN replace(id, '.macro.', '.exosphere.')
+        WHEN scale = 'integration' THEN replace(id, '.integration.', '.macrosphere.')
+      END,
+      config_kind,
+      CASE scale WHEN 'macro' THEN 'exosphere' WHEN 'integration' THEN 'macrosphere' END,
+      module_key, label, description, content, revision, fingerprint, updated_at, updated_by
+    FROM prompt_modules
+    WHERE scale IN ('macro', 'integration')
+  `);
+  await client.query(`
+    UPDATE prompt_module_history AS history
+    SET module_id = replace(
+      replace(history.module_id, '.macro.', '.exosphere.'),
+      '.integration.', '.macrosphere.'
+    )
+    WHERE history.module_id IN (
+      SELECT id FROM prompt_modules WHERE scale IN ('macro', 'integration')
+    )
+  `);
+  await client.query(`DELETE FROM prompt_modules WHERE scale IN ('macro', 'integration')`);
+
+  await client.query(`
+    UPDATE preflight_evaluations
+    SET active_scale = CASE active_scale
+      WHEN 'macro' THEN 'exosphere'
+      WHEN 'integration' THEN 'macrosphere'
+    END
+    WHERE active_scale IN ('macro', 'integration')
+  `);
+  await client.query(`
+    UPDATE preflight_submissions
+    SET active_scale = CASE active_scale
+      WHEN 'macro' THEN 'exosphere'
+      WHEN 'integration' THEN 'macrosphere'
+    END
+    WHERE active_scale IN ('macro', 'integration')
+  `);
+
+  const evaluationRows = await client.query(`
+    SELECT id, project_overlay_json, suggestion_json, config_snapshot_json
+    FROM preflight_evaluations
+  `);
+  for (const row of evaluationRows.rows) {
+    const projectOverlay = migratedJsonDocument(row.project_overlay_json);
+    const suggestion = migratedJsonDocument(row.suggestion_json);
+    const configSnapshot = migratedJsonDocument(row.config_snapshot_json);
+    if (projectOverlay || suggestion || configSnapshot) {
+      await client.query(`
+        UPDATE preflight_evaluations
+        SET project_overlay_json = $1::jsonb,
+          suggestion_json = $2::jsonb,
+          config_snapshot_json = $3::jsonb
+        WHERE id = $4
+      `, [
+        projectOverlay ?? serializedJsonDocument(row.project_overlay_json),
+        suggestion ?? serializedJsonDocument(row.suggestion_json),
+        configSnapshot ?? serializedJsonDocument(row.config_snapshot_json),
+        row.id,
+      ]);
+    }
+  }
+
+  const submissionRows = await client.query(`
+    SELECT id, suggestion_json, config_snapshot_json FROM preflight_submissions
+  `);
+  for (const row of submissionRows.rows) {
+    const suggestion = migratedJsonDocument(row.suggestion_json);
+    const configSnapshot = migratedJsonDocument(row.config_snapshot_json);
+    if (suggestion || configSnapshot) {
+      await client.query(`
+        UPDATE preflight_submissions
+        SET suggestion_json = $1::jsonb, config_snapshot_json = $2::jsonb
+        WHERE id = $3
+      `, [
+        suggestion ?? serializedJsonDocument(row.suggestion_json),
+        configSnapshot ?? serializedJsonDocument(row.config_snapshot_json),
+        row.id,
+      ]);
+    }
+  }
+
+  const savedProjectRows = await client.query(`
+    SELECT token_hash, project_json FROM saved_projects
+  `);
+  for (const row of savedProjectRows.rows) {
+    const projectJson = migratedJsonDocument(row.project_json);
+    if (projectJson) {
+      await client.query(`
+        UPDATE saved_projects SET project_json = $1 WHERE token_hash = $2
+      `, [projectJson, row.token_hash]);
+    }
+  }
+
+  await client.query(`
+    ALTER TABLE prompt_modules
+      ADD CONSTRAINT prompt_modules_scale_check
+      CHECK(scale IN ('global', 'micro', 'meso', 'exosphere', 'macrosphere'));
+    ALTER TABLE preflight_evaluations
+      ADD CONSTRAINT preflight_evaluations_active_scale_check
+      CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere'));
+    ALTER TABLE preflight_submissions
+      ADD CONSTRAINT preflight_submissions_active_scale_check
+      CHECK(active_scale IN ('micro', 'meso', 'exosphere', 'macrosphere'));
+  `);
+
+  await client.query(`
+    INSERT INTO schema_migrations (version) VALUES (9)
+    ON CONFLICT (version) DO NOTHING
+  `);
+}
+
 async function seedPostgres(client) {
   const now = new Date().toISOString();
   for (const account of ACCOUNT_SEEDS) {
@@ -485,7 +658,8 @@ async function seedPostgres(client) {
     `, [account.id, account.displayName, now]);
   }
 
-  for (const module of moduleSeeds()) {
+  const currentModules = moduleSeeds();
+  for (const module of currentModules) {
     await client.query(`
       INSERT INTO prompt_modules
         (id, config_kind, scale, module_key, label, description, content, revision, fingerprint, updated_at)
@@ -516,6 +690,24 @@ async function seedPostgres(client) {
       'Starting configuration',
       now,
     ]);
+  }
+
+  for (const module of currentModules) {
+    const legacyFingerprint = LEGACY_DEFAULT_MODULE_FINGERPRINTS[module.id];
+    if (!legacyFingerprint) continue;
+    const upgraded = await client.query(`
+      UPDATE prompt_modules
+      SET content = $1, revision = 2, fingerprint = $2, updated_at = $3, updated_by = NULL
+      WHERE id = $4 AND revision = 1 AND fingerprint = $5
+      RETURNING id
+    `, [module.content, module.fingerprint, now, module.id, legacyFingerprint]);
+    if (!upgraded.rowCount) continue;
+    await client.query(`
+      INSERT INTO prompt_module_history
+        (module_id, revision, content, fingerprint, change_note, changed_at, changed_by)
+      VALUES ($1, 2, $2, $3, $4, $5, NULL)
+      ON CONFLICT (module_id, revision) DO NOTHING
+    `, [module.id, module.content, module.fingerprint, 'Updated default for ecological levels', now]);
   }
 
   const profileJson = DEFAULT_TEACHING_PROFILE;
@@ -577,6 +769,7 @@ async function initializePostgres(database) {
     await client.query(`SET LOCAL statement_timeout = '${database.statementTimeoutMs}ms'`);
     await client.query(`SET LOCAL idle_in_transaction_session_timeout = '${database.transactionIdleTimeoutMs}ms'`);
     await client.query(POSTGRES_SCHEMA_SQL);
+    await migrateEcologicalScaleIds(client);
     await seedPostgres(client);
     await upgradeStoredTeachingProfiles(client);
     await client.query(`
