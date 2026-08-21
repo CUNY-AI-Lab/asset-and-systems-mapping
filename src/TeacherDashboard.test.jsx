@@ -187,6 +187,29 @@ describe('TeacherDashboard', () => {
     vi.unstubAllGlobals();
   });
 
+  it('renders an account-bound reset form and clears it after a successful passphrase change', async () => {
+    const resetToken = 'A'.repeat(43);
+    const onResetComplete = vi.fn();
+    const fetchMock = vi.fn(async (path, options = {}) => {
+      if (path === '/api/auth/accounts') return jsonResponse({ teacherAccess });
+      if (path === '/api/auth/me') return jsonResponse({ user: null });
+      if (path === '/api/auth/reset-password') {
+        expect(options.method).toBe('POST');
+        expect(JSON.parse(options.body)).toEqual({ token: resetToken, passphrase: 'a newly chosen teacher phrase' });
+        return jsonResponse({ reset: true });
+      }
+      throw new Error(`Unexpected fetch: ${path}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TeacherDashboard resetToken={resetToken} onResetComplete={onResetComplete} onConfigurationChanged={vi.fn()} />);
+
+    expect(screen.getByRole('heading', { name: 'Choose a new passphrase' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('New passphrase'), { target: { value: 'a newly chosen teacher phrase' } });
+    fireEvent.change(screen.getByLabelText('Confirm new passphrase'), { target: { value: 'a newly chosen teacher phrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new passphrase' }));
+    await waitFor(() => expect(onResetComplete).toHaveBeenCalledTimes(1));
+  });
+
   it('defaults to the pending review queue and offers three advisory feedback modes', async () => {
     const fetchMock = await renderAuthenticated();
     expect(screen.getByText('Review student work and provide feedback to help them refine and develop first drafts of their systems map.')).toBeVisible();

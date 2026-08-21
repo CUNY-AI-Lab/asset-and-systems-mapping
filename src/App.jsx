@@ -2002,7 +2002,12 @@ function App() {
   const [project, setProject] = useState(initialLoad.project);
   const [modal, setModal] = useState(null);
   const [toastState, setToastState] = useState(null);
-  const [teacherOpen, setTeacherOpen] = useState(false);
+  const [passwordResetToken, setPasswordResetToken] = useState(() => {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const token = hash.get('teacher-reset');
+    return typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
+  });
+  const [teacherOpen, setTeacherOpen] = useState(() => passwordResetToken !== null);
   const [accessState, setAccessState] = useState({ status: 'checking', access: null, message: 'Loading…', kind: 'info' });
   const [workspaceStarted, setWorkspaceStarted] = useState(false);
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false);
@@ -2042,6 +2047,11 @@ function App() {
     setToastState({ message, type });
     toastTimer.current = window.setTimeout(() => setToastState(null), 3200);
   }, []);
+  const finishPasswordReset = useCallback(() => {
+    setPasswordResetToken(null);
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    toast('Passphrase updated. Sign in to Teacher Console.', 'success');
+  }, [toast]);
 
   const stageAnnotationDraft = useCallback((annotationId, text) => {
     const firstPendingDraft = pendingAnnotationsRef.current.size === 0;
@@ -2858,7 +2868,7 @@ function App() {
       <button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
-      <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard onConfigurationChanged={refreshAfterTeacherChange} /></Suspense>
+      <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} /></Suspense>
     </main>
   </div>;
 

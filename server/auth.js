@@ -76,6 +76,60 @@ export function hashSessionToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+export function validPasswordResetToken(token) {
+  return typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token);
+}
+
+export async function issuePasswordReset(db, accountId, ttlMs = 30 * 60 * 1000, { now = Date.now } = {}) {
+  if (typeof accountId !== 'string' || !accountId) throw new TypeError('A teacher account ID is required.');
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 60_000 || ttlMs > 24 * 60 * 60 * 1000) {
+    throw new TypeError('Password reset lifetime must be between one minute and one day.');
+  }
+  const token = randomBytes(32).toString('base64url');
+  const tokenHash = hashSessionToken(token);
+  const createdAt = nowValue(now);
+  const expiresAt = createdAt + ttlMs;
+  await inTransaction(db, async () => {
+    await db.advisoryTransactionLock?.(`teacher-password-reset:${accountId}`);
+    const account = await db.prepare('SELECT id FROM accounts WHERE id = ? AND passphrase_hash IS NOT NULL').get(accountId);
+    if (!account) throw new Error('The claimed teacher account was not found.');
+    await db.prepare('DELETE FROM teacher_password_resets WHERE expires_at <= ? OR account_id = ?').run(createdAt, accountId);
+    await db.prepare(`
+      INSERT INTO teacher_password_resets (token_hash, account_id, created_at, expires_at, used_at)
+      VALUES (?, ?, ?, ?, NULL)
+    `).run(tokenHash, accountId, createdAt, expiresAt);
+  });
+  return { token, expiresAt };
+}
+
+export async function consumePasswordReset(db, token, passphrase, { now = Date.now } = {}) {
+  if (!validPasswordResetToken(token)) return null;
+  const tokenHash = hashSessionToken(token);
+  const checkedAt = nowValue(now);
+  return inTransaction(db, async () => {
+    await db.advisoryTransactionLock?.(`teacher-password-reset:${tokenHash}`);
+    const reset = await db.prepare(`
+      SELECT r.account_id AS accountId, a.display_name AS displayName
+      FROM teacher_password_resets r
+      JOIN accounts a ON a.id = r.account_id
+      WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?
+    `).get(tokenHash, checkedAt);
+    if (!reset) return null;
+    const credentials = await hashPassphrase(passphrase);
+    const changed = await db.prepare(`
+      UPDATE teacher_password_resets SET used_at = ?
+      WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?
+    `).run(checkedAt, tokenHash, checkedAt);
+    if (changed.changes !== 1) return null;
+    await db.prepare(`
+      UPDATE accounts SET passphrase_hash = ?, passphrase_salt = ? WHERE id = ?
+    `).run(credentials.hash, credentials.salt, reset.accountId);
+    await db.prepare('UPDATE teacher_password_resets SET used_at = ? WHERE account_id = ? AND used_at IS NULL').run(checkedAt, reset.accountId);
+    await db.prepare('DELETE FROM sessions WHERE account_id = ?').run(reset.accountId);
+    return { id: reset.accountId, displayName: reset.displayName };
+  });
+}
+
 export function sessionReference(token) {
   return hashSessionToken(token).slice(0, 16);
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ApiError, apiRequest } from './api.js';
+import { ApiError, apiRequest, resetTeacherPassword } from './api.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 
 const DASHBOARD_SECTIONS = [
@@ -197,6 +197,41 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
       {mode === 'claim' && <><label className="field"><span className="field__label">Confirm passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label><label className="field"><span className="field__label">One-time setup code</span><input maxLength="256" type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label></>}
       <Message message={message} />
       <button type="submit" className="button" disabled={busy}>{busy ? 'Working…' : mode === 'login' ? 'Sign in' : 'Claim account'}</button>
+    </form>
+  </div>;
+}
+
+function PasswordReset({ token, onComplete }) {
+  const [passphrase, setPassphrase] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [message, setMessage] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    if (passphrase.length < 10) return setMessage({ type: 'error', text: 'Use a passphrase with at least 10 characters.' });
+    if (passphrase !== confirmation) return setMessage({ type: 'error', text: 'The two passphrases do not match.' });
+    setBusy(true);
+    setMessage(null);
+    try {
+      await resetTeacherPassword(token, passphrase);
+      setPassphrase('');
+      setConfirmation('');
+      onComplete();
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div className="teacher-access">
+    <p className="eyebrow">Teacher Console</p>
+    <h1>Choose a new passphrase</h1>
+    <p className="lede">This link works once. After you save the new passphrase, sign in with your teacher account ID.</p>
+    <form className="access-form" onSubmit={submit}>
+      <label className="field"><span className="field__label">New passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} /></label>
+      <label className="field"><span className="field__label">Confirm new passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+      <Message message={message} />
+      <button type="submit" className="button" disabled={busy}>{busy ? 'Saving…' : 'Save new passphrase'}</button>
     </form>
   </div>;
 }
@@ -645,7 +680,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged }) {
   </div>;
 }
 
-export default function TeacherDashboard({ onConfigurationChanged }) {
+export default function TeacherDashboard({ onConfigurationChanged, resetToken = null, onResetComplete = () => {} }) {
   const [teacherAccess, setTeacherAccess] = useState({ mode: 'manual', claimEnabled: false });
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -664,6 +699,7 @@ export default function TeacherDashboard({ onConfigurationChanged }) {
     setUser(null);
     await refreshAccess();
   };
+  if (resetToken) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
   if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Teacher Console…</p></div>;
   if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>The Teacher Console is unavailable.</h1><p className="lede">{fatal}. Check the course server, then reopen the console.</p></div>;
   return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;

@@ -29,6 +29,10 @@ export function getStudentSession() {
   return apiRequest('/api/student/session');
 }
 
+export function resetTeacherPassword(token, passphrase) {
+  return apiRequest('/api/auth/reset-password', { method: 'POST', body: { token, passphrase } });
+}
+
 export function requestStudentAccess(code) {
   return apiRequest('/api/student/access', { method: 'POST', body: { code } });
 }

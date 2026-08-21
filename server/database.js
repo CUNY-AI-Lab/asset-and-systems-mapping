@@ -174,6 +174,17 @@ function migrate(db) {
       used_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS teacher_password_resets (
+      token_hash TEXT PRIMARY KEY CHECK(length(token_hash) = 64 AND token_hash NOT GLOB '*[^0-9a-f]*'),
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL CHECK(expires_at > created_at),
+      used_at INTEGER CHECK(used_at IS NULL OR used_at >= created_at)
+    );
+
+    CREATE INDEX IF NOT EXISTS teacher_password_resets_account_idx
+      ON teacher_password_resets(account_id, expires_at);
+
     CREATE TABLE IF NOT EXISTS student_sessions (
       token_hash TEXT PRIMARY KEY,
       created_at INTEGER NOT NULL,

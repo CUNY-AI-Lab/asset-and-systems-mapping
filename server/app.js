@@ -11,6 +11,7 @@ import {
 import {
   clearSession,
   clearStudentSession,
+  consumePasswordReset,
   constantTimeSecretEqual,
   currentStudentSession,
   currentTeacherSession,
@@ -21,6 +22,7 @@ import {
   setSessionCookie,
   setStudentSessionCookie,
   validatePassphrase,
+  validPasswordResetToken,
   verifyPassphrase,
 } from './auth.js';
 import {
@@ -1541,7 +1543,7 @@ export function createSystemsMappingApp(options = {}) {
     DEFAULT_PREFLIGHT_EVALUATION_TTL_MS,
     { min: 1000, max: 7 * DAY_MS },
   );
-  const preflightEvaluationLimit = positiveInteger(options.preflightEvaluationLimit, 'preflightEvaluationLimit', 5, { max: 100 });
+  const preflightEvaluationLimit = positiveInteger(options.preflightEvaluationLimit, 'preflightEvaluationLimit', 20, { max: 100 });
   const preflightEvaluationWindowMs = positiveInteger(
     options.preflightEvaluationWindowMs,
     'preflightEvaluationWindowMs',
@@ -1553,11 +1555,11 @@ export function createSystemsMappingApp(options = {}) {
     2,
     { max: 10 },
   );
-  const preflightMaxActiveEvaluationsPerSession = positiveInteger(
-    options.preflightMaxActiveEvaluationsPerSession,
-    'preflightMaxActiveEvaluationsPerSession',
-    3,
-    { max: 20 },
+  const connectionSuggestionLimit = positiveInteger(options.connectionSuggestionLimit, 'connectionSuggestionLimit', 20, { max: 100 });
+  const connectionSuggestionWindowMs = positiveInteger(
+    options.connectionSuggestionWindowMs,
+    'connectionSuggestionWindowMs',
+    DEFAULT_PREFLIGHT_SUBMISSION_WINDOW_MS,
   );
   const preflightMaxActiveEvaluationsTotal = positiveInteger(
     options.preflightMaxActiveEvaluationsTotal,
@@ -1683,6 +1685,11 @@ export function createSystemsMappingApp(options = {}) {
     windowMs: preflightEvaluationWindowMs,
     now,
   });
+  const connectionSuggestionLimiter = rateLimiter({
+    limit: connectionSuggestionLimit,
+    windowMs: connectionSuggestionWindowMs,
+    now,
+  });
   const preflightEvaluationCapacity = concurrencyLimiter(preflightEvaluationConcurrency);
   const savedProjectCreateLimiter = rateLimiter({
     limit: savedProjectCreateLimit,
@@ -1748,7 +1755,7 @@ export function createSystemsMappingApp(options = {}) {
   };
 
   app.use('/api/auth/*', async (context, next) => {
-    if (context.req.method !== 'POST' || !['/api/auth/claim', '/api/auth/login'].includes(context.req.path)) {
+    if (context.req.method !== 'POST' || !['/api/auth/claim', '/api/auth/login', '/api/auth/reset-password'].includes(context.req.path)) {
       await next();
       return;
     }
@@ -1854,6 +1861,26 @@ export function createSystemsMappingApp(options = {}) {
     teacherLimiter.clear(attemptKey);
     setSessionCookie(context, session.token, teacherSessionTtlMs, secureCookies);
     return context.json({ user: publicUser(account) });
+  });
+
+  app.post('/api/auth/reset-password', async (context) => {
+    const attemptKey = clientRateKey(context, TEACHER_ATTEMPT_BUCKET, { hostedMode, trustedProxyHops });
+    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many teacher authentication attempts. Try again later.');
+    const body = await parseJsonBody(context, AUTH_BODY_LIMIT_BYTES);
+    assertOnlyKeys(body, ['token', 'passphrase']);
+    if (!validPasswordResetToken(body.token) || validatePassphrase(body.passphrase)) {
+      const failure = teacherLimiter.fail(attemptKey);
+      if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many teacher authentication attempts. Try again later.');
+      throw new HttpError(401, 'This password reset link is invalid or has expired.');
+    }
+    const account = await consumePasswordReset(db, body.token, body.passphrase, { now });
+    if (!account) {
+      const failure = teacherLimiter.fail(attemptKey);
+      if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many teacher authentication attempts. Try again later.');
+      throw new HttpError(401, 'This password reset link is invalid or has expired.');
+    }
+    teacherLimiter.clear(attemptKey);
+    return context.json({ reset: true });
   });
 
   app.get('/api/auth/me', async (context) => context.json({ user: publicUser(await currentUser(context, db, now)) }));
@@ -2005,15 +2032,17 @@ export function createSystemsMappingApp(options = {}) {
       await inTransaction(db, async () => {
         await db.advisoryTransactionLock?.('preflight-evaluations:active-cap');
         await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit });
-        const { count, sessionCount } = await db.prepare(`
-          SELECT COUNT(*) AS count,
-            SUM(CASE WHEN student_session_ref = ? THEN 1 ELSE 0 END) AS sessionCount
-          FROM preflight_evaluations
+        // Only the newest review capability is usable for a class session. Older
+        // unused reviews are no longer reachable from the student project and
+        // must not accumulate into a workflow-blocking "active" ceiling.
+        await db.prepare(`
+          UPDATE preflight_evaluations SET consumed_at = ?
+          WHERE student_session_ref = ? AND consumed_at IS NULL AND expires_at > ?
+        `).run(createdAt, student.sessionRef, createdAt);
+        const { count } = await db.prepare(`
+          SELECT COUNT(*) AS count FROM preflight_evaluations
           WHERE consumed_at IS NULL AND expires_at > ?
-        `).get(student.sessionRef, createdAt);
-        if ((sessionCount ?? 0) >= preflightMaxActiveEvaluationsPerSession) {
-          throw new HttpError(429, 'This class session already has the maximum number of active preflight evaluations.');
-        }
+        `).get(createdAt);
         if (count >= preflightMaxActiveEvaluationsTotal) {
           throw new HttpError(429, 'The course has reached its active preflight evaluation limit.');
         }
@@ -2055,7 +2084,7 @@ export function createSystemsMappingApp(options = {}) {
     if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
       throw new HttpError(413, 'Use fewer nodes or existing connections for this request.');
     }
-    const rate = preflightEvaluationLimiter.take(student.sessionRef);
+    const rate = connectionSuggestionLimiter.take(student.sessionRef);
     if (!rate.allowed) {
       throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
     }
