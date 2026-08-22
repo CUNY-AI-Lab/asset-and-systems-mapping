@@ -16,7 +16,9 @@ Updated: 2026-08-22
   - Evidence: 243 tests passed with 4 PostgreSQL tests skipped behind their explicit environment guard, including new regressions for level-wide clause rejection, Exosphere carried-node/connection reviews, and stored-review replay. `pnpm build` passed.
 - [x] Verify the full four-level cycle in a real browser against the built bundle.
   - Evidence: a disposable local SQLite run at 1440×1000 walked Micro (7 concrete nodes, 0 relationships) → Meso (5 carried-ID connections, callouts anchored beside their endpoints in the annulus) → Exosphere (3 new institutions + 3 connections tying them to the map, none re-proposed) → Macrosphere (4 structures + 3 connections); the cumulative graph held micro 7/0, meso 0/5, exosphere 3/3, macrosphere 4/3 with zero retired items, zero duplicate edges, zero rendered label/card overlaps in the pairwise scan, working full-screen mode, and zero console errors.
-- [ ] Commit, push, update GitHub `main`, deploy the changed tree, and record terminal deployment plus live health evidence.
+- [x] Commit, push, deploy the changed tree, and record terminal deployment plus live health evidence.
+  - Evidence: commit `5b8f6fc` pushed as PR [#11](https://github.com/CUNY-AI-Lab/systems-mapping/pull/11) (open for merge into `main`). Railway deployment `48e6ea86-3c51-48fc-8629-e9fdc277c7be` reached terminal `SUCCESS`; the PostgreSQL migration reported ready; `/api/health` returned `{"status":"ok"}`; the live root served HTTP 200 with the exact local bundle `index-o0Eb8nT7.js`.
+- [ ] Merge PR #11 into GitHub `main` (operator action; the tarball deployment does not depend on it).
 
 ## 2026-08-22 map progression and canvas candidate
 
