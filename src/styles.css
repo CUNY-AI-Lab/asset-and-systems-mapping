@@ -156,10 +156,10 @@ a { color: inherit; }
   padding: calc(var(--header) + 64px) 40px calc(var(--footer) + 68px);
 }
 .workspace--stage-0 { padding-top: calc(var(--header) + 34px); }
-.workspace--stage-3 { padding: calc(var(--header) + 30px) 28px calc(var(--footer) + 30px); background: #fafafa; }
+.workspace--stage-3 { padding: calc(var(--header) + 24px) clamp(10px, 1.2vw, 22px) calc(var(--footer) + 28px); background: #fafafa; }
 .narrow { width: min(760px, 100%); margin: 0 auto; }
 .wide { width: min(1180px, 100%); margin: 0 auto; }
-.map-stage { width: min(1380px, 100%); margin: 0 auto; }
+.map-stage { width: min(1880px, 100%); margin: 0 auto; }
 
 .stage-enter { animation: stage-in .34s ease both; }
 @keyframes stage-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -410,14 +410,15 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3
 .map-focus-bar { min-height: var(--control-height); display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -4px 0 10px; padding: 7px 8px 7px 12px; border-left: 3px solid var(--teal); background: var(--teal-pale); color: var(--ink); font-size: 12px; line-height: 1.4; }
 .map-focus-bar button { min-height: var(--control-height); padding: 0 12px; border: 1px solid var(--teal); background: #fff; color: var(--teal); font-size: 12px; font-weight: 750; }
 .map-overview-hint { margin: -7px 0 12px; color: var(--muted); font-size: 12px; }
-.map-layout { min-height: 620px; display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); background: #fff; }
+.map-layout { min-height: clamp(680px, 72dvh, 900px); display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); background: #fff; }
 .map-layout.has-inspector { grid-template-columns: minmax(0, 1fr) 340px; }
 .canvas-wrap { position: relative; min-width: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; overflow: hidden; background-image: linear-gradient(#eeeeee 1px, transparent 1px), linear-gradient(90deg, #eeeeee 1px, transparent 1px); background-size: 32px 32px; }
-.graph-canvas { width: 100%; height: 100%; min-height: 600px; display: block; }
+.graph-canvas { width: 100%; height: 100%; min-height: clamp(660px, 70dvh, 880px); display: block; }
 .edges line { stroke: var(--muted); stroke-width: 1.4; }
 .edge-labels { pointer-events: none; }
 .edge-label-bg { fill: #fff; stroke: var(--line); }
 .edge-label { fill: var(--muted); font-size: 12px; text-anchor: middle; }
+.graph-edge-label[data-edge-scale="meso"] .edge-label { fill: var(--ink); font-weight: 700; }
 .graph-node { cursor: pointer; }
 .graph-node rect { fill: #fff; stroke: var(--line); stroke-width: 1.4; filter: drop-shadow(0 3px 6px rgba(0,0,0,.06)); }
 .graph-node--micro rect { stroke: var(--micro); }
@@ -465,6 +466,7 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3
 .before-after p { margin: 10px 0 0; font-family: var(--display); font-size: 17px; font-weight: 500; line-height: 1.45; }
 .reflection { font-size: 15px; }
 .release-summary { display: grid; grid-template-columns: repeat(4, 1fr); margin: 24px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--line); }
+.release-summary--node-only { grid-template-columns: repeat(3, 1fr); }
 .release-summary div { display: grid; gap: 4px; padding: 15px 10px; border-right: 1px solid var(--line); }
 .release-summary div:last-child { border-right: 0; }
 .release-summary strong { font-size: 20px; }
@@ -1028,7 +1030,7 @@ label.button:focus-within {
 .graph-edge { cursor: pointer; }
 .graph-edge.is-muted { opacity: .2; }
 .graph-edge.is-muted:hover { opacity: .72; }
-.edge-hit { stroke: transparent !important; stroke-width: 22 !important; pointer-events: stroke; }
+.edge-hit { fill: none; stroke: transparent !important; stroke-width: 22 !important; pointer-events: stroke; }
 .edge-selection-halo { stroke: var(--teal); stroke-width: 9; stroke-linecap: round; opacity: .34; fill: none; pointer-events: none; }
 .edge-line { stroke: #555 !important; stroke-width: 1.8 !important; fill: none; }
 .graph-edge--retired { opacity: .45; }
@@ -1036,7 +1038,9 @@ label.button:focus-within {
 .graph-edge.is-selected .edge-line { stroke: var(--teal) !important; stroke-width: 4 !important; }
 .graph-edge-label.is-selected .edge-label-bg { stroke: var(--teal); stroke-width: 2; }
 #arrowhead path { fill: #555; }
-.canvas-controls { position: relative; z-index: 6; display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 12px; border-top: 1px solid var(--line); background: rgba(255,255,255,.98); }
+/* Desktop controls float over the canvas so zoom, pan, and full screen stay
+   visible without scrolling past the enlarged map. */
+.canvas-controls { position: absolute; z-index: 6; left: 12px; bottom: 12px; max-width: calc(100% - 24px); display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 6px; border: 1px solid var(--line); background: rgba(255,255,255,.96); box-shadow: 0 10px 26px rgba(0,0,0,.10); }
 .canvas-controls button { min-width: 44px; min-height: 44px; padding: 0 11px; border: 1px solid transparent; background: #fff; font-size: 12px; font-weight: 750; }
 .canvas-controls button:hover, .canvas-controls button.is-active { border-color: var(--teal); color: var(--teal); background: var(--teal-pale); }
 .phone-inspector-trigger { display: block; }
@@ -1070,6 +1074,7 @@ label.button:focus-within {
 .ecology-layer.is-muted { opacity: .16; }
 .ecology-layer__label rect { fill: #fff; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .ecology-layer__label text { fill: currentColor; font-size: 15px; font-weight: 800; text-anchor: middle; }
+.ecology-layer--meso .ecology-layer__label text { font-size: 22px; }
 .graph-canvas--ecology .edge-label-bg { fill: rgba(255,255,255,.96); }
 .inspector { min-height: 0; overflow: auto; }
 .inspector__head { position: static; z-index: 4; background: #fff; }
@@ -1117,11 +1122,15 @@ label.button:focus-within {
 .map-summary span { color: var(--muted); font-size: 10px; text-transform: uppercase; }
 
 @media (min-width: 901px) and (min-height: 620px) {
-  .workspace--stage-3 { height: 100dvh; min-height: 0; overflow: auto; }
-  .map-stage { height: 100%; display: flex; flex-direction: column; }
-  .map-stage > .map-layout { flex: 1 1 auto; min-height: 380px; height: auto; }
-  .canvas-wrap, .graph-canvas, .inspector { min-height: 0; height: 100%; }
-  .canvas-wrap, .graph-canvas { min-height: 340px; }
+  /* The map screen fits the viewport: the canvas flexes to whatever height
+     remains under the memo drawer and toolbar, so the map and its floating
+     controls are fully visible without scrolling. Opening the memo drawer
+     scrolls inside the workspace instead of pushing the map off screen. */
+  .workspace--stage-3 { height: 100dvh; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  .map-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .map-stage > .map-layout { flex: 1 1 auto; min-height: 480px; }
+  .canvas-wrap, .graph-canvas, .inspector { height: 100%; }
+  .canvas-wrap, .graph-canvas { min-height: 480px; }
 }
 
 @media (max-width: 900px) {
@@ -1218,19 +1227,20 @@ label.button:focus-within {
   .map-toolbar { padding: 0 14px; }
   .map-toolbar h1 { font-size: 26px; }
   .map-layout { min-height: 0; display: block; border-right: 0; border-left: 0; }
-  .canvas-wrap { min-height: 430px; height: min(58dvh, 520px); overflow: hidden; }
-  .graph-canvas { width: 100%; max-width: 100%; height: 100%; min-height: 430px; }
-  .graph-canvas--ecology { min-height: 520px; }
+  .canvas-wrap { min-height: 520px; height: min(70dvh, 680px); overflow: hidden; }
+  .graph-canvas { width: 100%; max-width: 100%; height: 100%; min-height: 520px; }
+  .graph-canvas--ecology { min-height: 560px; }
   .node-label { font-size: 22px; }
   .node-evidence { font-size: 18px; }
   .edge-label { font-size: 26px; }
   .ecology-layer__label text { font-size: 24px; }
+  .ecology-layer--meso .ecology-layer__label text { font-size: 26px; }
   .ecology-layer__label rect { height: 48px; transform: translateY(-6px); }
   .edge-hit { stroke-width: 110 !important; }
-  .canvas-controls { right: auto; bottom: auto; left: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; padding: 1px 0 max(1px, var(--safe-bottom)); }
+  .canvas-controls { position: static; right: auto; bottom: auto; left: auto; max-width: none; border: 0; border-top: 1px solid var(--line); box-shadow: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; padding: 1px 0 max(1px, var(--safe-bottom)); }
   .canvas-controls button { min-width: 0; min-height: 44px; padding: 6px 5px; font-size: 13px; line-height: 1.2; white-space: normal; }
   .canvas-controls button[aria-label="Zoom out"], .canvas-controls button[aria-label="Zoom in"] { font-size: 20px; line-height: 1; }
-  .canvas-controls .phone-inspector-trigger { display: block; grid-column: span 2; border-color: var(--teal); color: var(--teal); }
+  .canvas-controls .phone-inspector-trigger { display: block; grid-column: auto; border-color: var(--teal); color: var(--teal); }
   .canvas-wrap.is-inspector-open .canvas-controls { visibility: hidden; pointer-events: none; }
   .map-legend { inset: 8px 8px auto; width: auto; max-height: calc(100% - 16px); }
   .legend-grid { grid-template-columns: 1fr; gap: 20px; padding: 16px; }
@@ -1392,4 +1402,47 @@ label.button:focus-within {
 .connection-hint > .field { padding: 0 14px 14px; }
 @media (max-width: 900px) {
   .readiness-banner { grid-template-columns: 1fr; }
+}
+
+/* Full-screen map is an in-app viewport so it remains available on browsers
+   that do not expose or permit the native Fullscreen API. */
+body.map-fullscreen-open { overflow: hidden; }
+.map-stage.is-fullscreen {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  margin: 0;
+  padding: max(12px, var(--safe-top)) max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fafafa;
+}
+.map-stage.is-fullscreen > .memo-drawer { display: none; }
+.map-stage.is-fullscreen .map-toolbar { flex: 0 0 auto; }
+.map-stage.is-fullscreen .map-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+.map-stage.is-fullscreen .canvas-wrap,
+.map-stage.is-fullscreen .graph-canvas,
+.map-stage.is-fullscreen .inspector {
+  min-height: 0;
+  height: 100%;
+}
+.map-stage.is-fullscreen .canvas-wrap { touch-action: none; }
+
+@media (max-width: 600px) {
+  .map-stage.is-fullscreen { padding: max(8px, var(--safe-top)) 0 max(8px, var(--safe-bottom)); }
+  .map-stage.is-fullscreen .map-toolbar { padding: 0 10px; }
+  .map-stage.is-fullscreen .map-focus-bar,
+  .map-stage.is-fullscreen .map-overview-hint { margin-right: 10px; margin-left: 10px; }
+  .map-stage.is-fullscreen .map-layout,
+  .map-stage.is-fullscreen .canvas-wrap,
+  .map-stage.is-fullscreen .graph-canvas { min-height: 0; height: 100%; }
+  .map-stage.is-fullscreen .inspector { bottom: 0; max-height: min(54dvh, 520px); }
 }

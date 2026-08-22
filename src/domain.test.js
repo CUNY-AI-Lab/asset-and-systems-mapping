@@ -12,6 +12,8 @@ import {
   evaluateSubmission,
   exportFileName,
   extractCandidates,
+  isDiscreteMicroNodeLabel,
+  normalizeMicroNodeLabel,
   parseProject,
   projectFileSlug,
   serializePortableProject,
@@ -209,7 +211,9 @@ describe('mapping domain', () => {
     expect(candidates.edges.every((edge) => RELATION_VOCABULARY.includes(edge.verb))).toBe(true);
     expect(candidates.edges.every((edge) => edge.evidenceExcerpt && edge.evidenceHash === stableId('evh', edge.evidenceExcerpt))).toBe(true);
     expect(candidates.nodes.find((node) => node.label === 'Parent Advocacy Organizations')).toMatchObject({ type: 'organization', scale: 'meso' });
-    expect(candidates.nodes.find((node) => /Ability to Secure Services/.test(node.label))).toMatchObject({ type: 'resource' });
+    // The memo's framing question never mints theme nodes; only declarative
+    // sentences about actual actors and objects produce candidates.
+    expect(candidates.nodes.some((node) => /Ability to Secure Services/.test(node.label))).toBe(false);
     expect(candidates.nodes.some((node) => node.label === 'Interviews')).toBe(false);
     expect(candidates.nodes.find((node) => node.label === 'Published Case Reports')).toBeDefined();
   });
@@ -221,7 +225,9 @@ describe('mapping domain', () => {
     expect(evaluateSubmission(submission, 'exosphere', 6).outcome).toBe('pass');
     const candidates = extractCandidates(submission);
     expect(candidates.nodes.length).toBeGreaterThan(0);
-    expect(candidates.edges.map((edge) => edge.verb)).toEqual(expect.arrayContaining(['shapes', 'provides', 'enables']));
+    expect(candidates.edges.map((edge) => edge.verb)).toEqual(expect.arrayContaining(['provides', 'enables']));
+    // The question sentence frames the inquiry without asserting a claim.
+    expect(candidates.edges.map((edge) => edge.verb)).not.toContain('shapes');
   });
 
   it('extracts named Micro actors and settings from a node-only memo', () => {
@@ -236,6 +242,35 @@ describe('mapping domain', () => {
     expect(candidates.nodes.every((node) => node.evidenceExcerpt && node.evidenceHash === stableId('evh', node.evidenceExcerpt))).toBe(true);
     const result = evaluateSubmission(submission, 'micro', 6);
     expect(result.hard.find((item) => item.id === 'H4')).toMatchObject({ status: 'met', nodeCount: expect.any(Number) });
+  });
+
+  it('keeps nominal delays out of relationships and extracts the discrete Micro actor and object', () => {
+    const project = createDefaultProject();
+    const text = 'Adult Participants face delays when the Accessible Van Program is unavailable.';
+    const submission = { ...project.submission, text };
+    const candidates = extractCandidates(submission);
+
+    expect(candidates.edges).toEqual([]);
+    expect(candidates.nodes.map(({ label }) => label)).toEqual(['Adult Participants', 'Accessible Van Program']);
+    expect(candidates.nodes.map(({ type }) => type)).toEqual(['person', 'resource']);
+    expect(deterministicMemoReview(submission, 'micro').nodes.map(({ label }) => label))
+      .toEqual(['Adult Participants', 'Accessible Van Program']);
+  });
+
+  it('rejects ambiguous Micro clauses while preserving exact long names and participial labels', () => {
+    const officialName = 'New York State Office for People with Developmental Disabilities and Community-Based Access Coordination';
+    const participialPopulation = 'Adults experiencing housing insecurity';
+
+    expect(normalizeMicroNodeLabel(officialName)).toBe(officialName);
+    expect(isDiscreteMicroNodeLabel(officialName)).toBe(true);
+    expect(normalizeMicroNodeLabel(participialPopulation)).toBe(participialPopulation);
+    expect(isDiscreteMicroNodeLabel(participialPopulation)).toBe(true);
+    expect(normalizeMicroNodeLabel('when the Accessible Van Program is unavailable')).toBe('Accessible Van Program');
+    expect(isDiscreteMicroNodeLabel('Adult Participants face delays')).toBe(false);
+    expect(normalizeMicroNodeLabel('Adult Participants face delays when the Accessible Van Program is unavailable.')).toBeNull();
+    expect(isDiscreteMicroNodeLabel('Adult Participants face delays when the Accessible Van Program is unavailable.')).toBe(false);
+    expect(normalizeMicroNodeLabel('Adult Participants Face Delays When the Accessible Van Program Is Unavailable.')).toBeNull();
+    expect(isDiscreteMicroNodeLabel('Adult Participants Face Delays When the Accessible Van Program Is Unavailable.')).toBe(false);
   });
 
   it('deduplicates repeated semantic edges while retaining distinct evidence records', () => {
@@ -754,9 +789,8 @@ describe('mapping domain', () => {
   it('validates a Meso candidate relationship against carried Micro graph nodes', () => {
     const project = createDefaultProject();
     const microNodes = extractCandidates(project.submission).nodes
-      .filter((node) => node.scale === 'micro')
       .slice(0, 2)
-      .map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+      .map((node) => ({ ...node, scale: 'micro', status: 'confirmed', claimState: 'student interpretation' }));
     const [source, target] = microNodes;
     const edgeId = stableId('edge', `${source.label}:coordinates with:${target.label}`);
     project.activeScale = 'meso';

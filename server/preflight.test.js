@@ -421,6 +421,11 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('MEMO REVIEW JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: guidance, nodes, connections, example, readiness');
     expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
+    expect(firstInput.systemPrompt).toContain('each node label MUST be exactly one concrete actor, object, institution, policy, or event');
+    expect(firstInput.systemPrompt).toContain('BE SELECTIVE');
+    expect(firstInput.systemPrompt).toContain('written as a short noun phrase');
+    expect(firstInput.systemPrompt).toContain('the whole clause is never a node label');
+    expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
     expect(firstInput.systemPrompt).toContain('For Micro, connections MUST be empty');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
       .toBeGreaterThan(firstInput.systemPrompt.lastIndexOf(firstBody.projectOverlay.customInstructions));
@@ -511,6 +516,65 @@ describe('persistent preflight suggestion review queue', () => {
     expect(serializedDatabase).not.toContain('fresh-test-only-server-key');
   });
 
+  it('drops provider clause labels at every level without guessing, while preserving discrete labels and official names', async () => {
+    await system.close();
+    const fullClause = 'Adult Participants face delays when the Accessible Van Program is unavailable.';
+    const shortClause = 'Adult Participants face delays';
+    const officialName = 'New York State Office for People with Developmental Disabilities and Community-Based Access Coordination';
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [],
+        nodes: [
+          { label: fullClause, type: 'event', scale: 'micro', evidence: fullClause },
+          { label: shortClause, type: 'event', scale: 'micro', evidence: fullClause },
+          { label: 'Adult Participants', type: 'person', scale: 'micro', evidence: fullClause },
+          { label: 'Accessible Van Program', type: 'resource', scale: 'micro', evidence: fullClause },
+          { label: officialName, type: 'agency', scale: 'micro', evidence: 'The office coordinates access.' },
+        ],
+        connections: [],
+        example: null,
+        readiness: { ready: true, note: 'Ready.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'micro-discrete-provider-nodes.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const micro = await evaluate(studentCookie, submissionBody({ sourceMaterial: fullClause }));
+
+    expect(micro.review.nodes.map(({ label }) => label)).toEqual([
+      'Adult Participants',
+      'Accessible Van Program',
+      officialName,
+    ]);
+    expect(micro.review.nodes[0].evidence).toBe(fullClause);
+    expect(micro.review.nodes.map(({ label }) => label)).not.toEqual(expect.arrayContaining([fullClause, shortClause]));
+    expect(micro.review.readiness.ready).toBe(true);
+    const storedMicro = JSON.parse(system.db.prepare(`
+      SELECT suggestion_json AS suggestion FROM preflight_evaluations WHERE id = ?
+    `).get(micro.id).suggestion);
+    expect(storedMicro.nodes).toEqual(micro.review.nodes);
+
+    const exosphere = await evaluate(studentCookie, submissionBody({
+      activeScale: 'exosphere',
+      projectMetadata: { projectId: 'outer_label_contract', title: 'Outer level remains unchanged' },
+      sourceMaterial: fullClause,
+    }));
+    // The discrete-label rule now holds at every level: clauses are dropped
+    // at Exosphere too, while complete official names always survive.
+    expect(exosphere.review.nodes.map(({ label }) => label)).toEqual([
+      'Adult Participants',
+      'Accessible Van Program',
+      officialName,
+    ]);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('gives Meso review the carried Micro IDs and rejects paraphrased or unknown endpoints', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
@@ -574,6 +638,64 @@ describe('persistent preflight suggestion review queue', () => {
     }, { cookie: studentCookie });
     expect(inappropriate.status).toBe(400);
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets Exosphere reviews tie new institutions to carried map nodes without re-proposing them', async () => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'node_school', label: 'School', type: 'organization' },
+      { id: 'node_family', label: 'Family', type: 'family' },
+    ];
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [{ point: 'The memo names an indirect funder.' }],
+        nodes: [
+          { label: 'School', type: 'organization', scale: 'exosphere', evidence: 'Already mapped; must not repeat.' },
+          { label: 'City Education Fund', type: 'agency', scale: 'exosphere', evidence: 'The fund pays for the program.' },
+        ],
+        connections: [
+          { source: 'City Education Fund', target: 'School', verb: 'funds', rationale: 'The fund pays for the program.' },
+          { source: 'City Education Fund', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are rejected.' },
+          { source: 'School', target: 'Family', verb: 'refers', rationale: 'Already mapped; must not repeat.' },
+        ],
+        example: 'City Education Fund funds School.',
+        readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'exosphere-carried-nodes.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const carriedConnections = [{ source: 'node_school', target: 'node_family', verb: 'refers' }];
+    const body = submissionBody({ activeScale: 'exosphere', carriedNodes, carriedConnections });
+    const evaluation = await evaluate(studentCookie, body);
+
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(carriedNodes);
+    expect(ollamaRequest.mock.calls[0][0].carriedConnections).toEqual(carriedConnections);
+    expect(evaluation.review.nodes.map(({ label }) => label)).toEqual(['City Education Fund']);
+    expect(evaluation.review.connections).toEqual([{
+      source: 'City Education Fund',
+      target: 'node_school',
+      sourceLabel: 'City Education Fund',
+      targetLabel: 'School',
+      verb: 'funds',
+      rationale: 'The fund pays for the program.',
+    }]);
+
+    // The stored review replays with the same endpoints intact.
+    const readBack = await system.app.request('http://127.0.0.1:4177/api/preflight/evaluations/current', {
+      headers: { origin: 'http://127.0.0.1:4177', 'sec-fetch-site': 'same-origin', cookie: studentCookie },
+    });
+    if (readBack.status === 200) {
+      const stored = (await readBack.json()).evaluation;
+      expect(stored.review.connections).toEqual(evaluation.review.connections);
+    }
   });
 
   it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {

@@ -28,6 +28,9 @@ describe('course-setting prompt composition', () => {
       expect(prompt).toContain('Return only the memo-review object required by the application: guidance, nodes, connections, example, and readiness.');
     }
     expect(microPrompt).toContain('Micro returns nodes and an empty connections array.');
+    expect(microPrompt).toContain('exactly one discrete actor or object each');
+    expect(microPrompt).toContain('Write each label as a noun phrase, not a sentence, clause, proposition, action, relationship, finding, or explanation.');
+    expect(microPrompt).toContain('Preserve a complete official name even when it is long.');
     expect(microPrompt).toContain('return no connections');
     expect(mesoPrompt).toContain('Meso returns an empty nodes array and connections whose source and target are exact IDs from carriedNodes.');
     expect(mesoPrompt).toContain('Use exact carriedNodes IDs for source and target');

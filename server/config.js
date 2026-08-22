@@ -111,7 +111,7 @@ const SCALE_CONTENT = {
     privacy: 'Use role descriptions instead of personal names when a name is not needed. Do not include confidential, identifying, or nonpublic community information.',
     scale_rubric: 'Micro work should show which settings the population participates in, who is present, how many people take part, and how often participation occurs when known.',
     interaction: 'Ask the student to research missing details and keep their interpretation separate from the evidence they use.',
-    output: 'Return Micro nodes for the population, settings, and face-to-face roles. Include supporting memo passages when available, and return no connections.',
+    output: 'Return Micro nodes for exactly one discrete actor or object each: a population, named setting, or face-to-face role. Write each label as a noun phrase, not a sentence, clause, proposition, action, relationship, finding, or explanation. Put that material in evidence or guidance instead. Preserve a complete official name even when it is long. Include supporting memo passages when available, and return no connections.',
   },
   meso: {
     purpose: 'Focus Meso work on connections among the same people and roles already mapped in Micro, especially who communicates about the same child or family.',

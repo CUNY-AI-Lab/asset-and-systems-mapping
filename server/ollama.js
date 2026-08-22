@@ -207,7 +207,7 @@ export function validateOllamaCloudConfig(config) {
 
 function normalizeInput(input) {
   if (!isPlainObject(input)) fail('Suggestion input is required.', 'invalid_input');
-  const allowedKeys = new Set(['systemPrompt', 'activeScale', 'inquiry', 'sourceMetadata', 'sourceText', 'carriedNodes']);
+  const allowedKeys = new Set(['systemPrompt', 'activeScale', 'inquiry', 'sourceMetadata', 'sourceText', 'carriedNodes', 'carriedConnections']);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
     fail('Suggestion input contains an unsupported field.', 'invalid_input');
   }
@@ -257,6 +257,22 @@ function normalizeInput(input) {
       fail('Carried nodes are too large.', 'input_too_large');
     }
   }
+  let carriedConnections;
+  if (input.carriedConnections !== undefined) {
+    if (!Array.isArray(input.carriedConnections) || input.carriedConnections.length > 100) {
+      fail('Carried connections are not in the expected format.', 'invalid_input');
+    }
+    try {
+      assertJsonCompatible(input.carriedConnections, 'Carried connections');
+      carriedConnections = JSON.stringify(input.carriedConnections);
+    } catch (error) {
+      if (error instanceof OllamaCloudError) throw error;
+      fail('Carried connections are not in the expected format.', 'invalid_input');
+    }
+    if (byteLength(carriedConnections) > OLLAMA_CLOUD_LIMITS.carriedNodesBytes) {
+      fail('Carried connections are too large.', 'input_too_large');
+    }
+  }
 
   return {
     systemPrompt,
@@ -266,6 +282,7 @@ function normalizeInput(input) {
       memoDetails: input.sourceMetadata,
       memoText: sourceText,
       ...(carriedNodes === undefined ? {} : { carriedNodes: JSON.parse(carriedNodes) }),
+      ...(carriedConnections === undefined ? {} : { carriedConnections: JSON.parse(carriedConnections) }),
     }),
   };
 }

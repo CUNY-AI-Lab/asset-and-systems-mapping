@@ -12,6 +12,7 @@ import {
 
 const fakeSecret = 'unit-test-openrouter-key-do-not-use';
 const model = 'deepseek/deepseek-v4-flash-0731';
+const MICRO_NODE_CONTRACT = 'For Micro, each node label MUST be exactly one discrete actor or object named in the memo and written as a noun phrase.';
 
 function config(overrides = {}) {
   return {
@@ -126,6 +127,29 @@ describe('OpenRouter suggestion adapter', () => {
 
     await requestOpenRouterSuggestion(input(), config({ reasoningEnabled: false }), { testOnly: { fetchImpl } });
     expect(captured.reasoning).toEqual({ enabled: false });
+  });
+
+  it('delivers the Micro discrete-node contract and active scale to the provider without rewriting them', async () => {
+    let captured;
+    const fetchImpl = vi.fn(async (_url, options) => {
+      captured = JSON.parse(options.body);
+      return jsonResponse(envelope());
+    });
+
+    await requestOpenRouterSuggestion(input({
+      systemPrompt: `${MICRO_NODE_CONTRACT}\nPreserve complete official names even when they are long.`,
+      activeScale: 'micro',
+      sourceText: 'Adult Participants face delays when the Accessible Van Program is unavailable.',
+    }), config(), { testOnly: { fetchImpl } });
+
+    expect(captured.messages[0]).toEqual({
+      role: 'system',
+      content: `${MICRO_NODE_CONTRACT}\nPreserve complete official names even when they are long.`,
+    });
+    const projectInput = JSON.parse(captured.messages[2].content.split('\n').at(-1));
+    expect(projectInput.activeScale).toBe('micro');
+    expect(projectInput.memoText).toContain('Adult Participants face delays');
+    expect(projectInput).not.toHaveProperty('carriedNodes');
   });
 
   it('rejects fenced content, truncated completions, and provider HTTP failures with typed codes', async () => {
