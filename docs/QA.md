@@ -1,10 +1,18 @@
 # Systems Mapping — QA and visual-fidelity report
 
-Updated: 2026-08-22
+Updated: 2026-08-23
 
 ## Candidate status
 
-The current local candidate refines the four analytical levels around one persistent map:
+The current local candidate gives each ring its own representational grammar (the 2026-08-23 outer-rings pass, on top of the 2026-08-22 concreteness pass):
+
+- Level assignment is governed by testable delimiters, printed on every Review screen and enforced in the model contract: Micro is what the memo-writer is in the room with; Meso holds only links between mapped settings; an Exosphere item passes the never-in-the-room test and must trace a pathway into a mapped element; a Macrosphere item is a pattern with no door.
+- Outer-level verbs come from closed registers (institutional at Exosphere: funds, administers, regulates, employs, sets rules for…; deontic at Macrosphere: mandates, prohibits, defines eligibility for, normalizes, frames…). Off-register verbs coerce to a canonical entry or drop at generation time; "leverages" cannot appear as a relationship anywhere.
+- The Exosphere is produced by elicitation, not extraction: the model walks the carried map by institutional category and may propose institutions the memo never names, marked `basis: "inference"` with verification-oriented evidence; students can also add institutions from a standard category checklist with a typed pathway to a chosen anchor. Every Exosphere connection lands on a carried map element.
+- The Macrosphere holds structures, never edges: each structure carries a deontic verb and a student-editable scope of mapped elements (`scopeNodeIds`), rendered on the map as a shaded convex-hull field over its members. Selecting a structure lights exactly its field; the Macrosphere layer view shows fields plus members instead of spokes.
+- Leverage is an analytic pass, not a verb: at the Macrosphere, Revise & Export opens with Find-Leverage tagging (stuck / has energy / ripples outward); tags persist and export.
+
+Carried forward from 2026-08-22:
 
 - Node labels are concrete at every level: one named actor, object, institution, policy, or event per node; clause and theme labels are rejected everywhere, and question sentences never mint nodes or relationships.
 - Reviews are selective: per-level ceilings (Micro 10 nodes; Meso 8 connections; Exosphere/Macrosphere 8 new nodes and 6 connections) and at most 4 guidance points.

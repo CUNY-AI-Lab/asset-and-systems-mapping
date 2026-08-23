@@ -421,12 +421,16 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('MEMO REVIEW JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: guidance, nodes, connections, example, readiness');
     expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
-    expect(firstInput.systemPrompt).toContain('each node label MUST be exactly one concrete actor, object, institution, policy, or event');
+    expect(firstInput.systemPrompt).toContain('each node label MUST be exactly one concrete, nameable actor, object, institution, policy, or event');
     expect(firstInput.systemPrompt).toContain('BE SELECTIVE');
     expect(firstInput.systemPrompt).toContain('written as a short noun phrase');
     expect(firstInput.systemPrompt).toContain('the whole clause is never a node label');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
-    expect(firstInput.systemPrompt).toContain('For Micro, connections MUST be empty');
+    expect(firstInput.systemPrompt).toContain('For Micro AND Macrosphere, connections MUST be empty');
+    expect(firstInput.systemPrompt).toContain('LEVEL TESTS');
+    expect(firstInput.systemPrompt).toContain('a pattern with no door');
+    expect(firstInput.systemPrompt).toContain('verb MUST be exactly one of: funds, administers, regulates');
+    expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
       .toBeGreaterThan(firstInput.systemPrompt.lastIndexOf(firstBody.projectOverlay.customInstructions));
     expect(first.runtime).toEqual({
@@ -695,6 +699,122 @@ describe('persistent preflight suggestion review queue', () => {
     if (readBack.status === 200) {
       const stored = (await readBack.json()).evaluation;
       expect(stored.review.connections).toEqual(evaluation.review.connections);
+    }
+  });
+
+  it('holds Exosphere connections to the institutional register, the carried-map anchor, and the basis marker', async () => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'node_school', label: 'School', type: 'organization' },
+      { id: 'node_family', label: 'Family', type: 'family' },
+    ];
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
+        nodes: [
+          { label: 'Google', type: 'organization', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
+          { label: 'Printing Vendor', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.' },
+        ],
+        connections: [
+          { source: 'Google', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
+          // "leverages" has no place in any register: the connection drops.
+          { source: 'Google', target: 'Family', verb: 'leverages', rationale: 'Register violation.' },
+          // Near-register verbs coerce to their canonical entry.
+          { source: 'Google', target: 'School', verb: 'oversees', rationale: 'Alias resolves to regulates.' },
+          // A pathway between two floating new nodes never lands on the map.
+          { source: 'Google', target: 'Printing Vendor', verb: 'funds', rationale: 'No carried anchor.' },
+        ],
+        example: null,
+        readiness: { ready: true, note: 'Pathways land on the map.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'exosphere-register.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'exosphere', carriedNodes }));
+    expect(evaluation.review.nodes).toEqual([
+      { label: 'Google', type: 'organization', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
+      { label: 'Printing Vendor', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
+    ]);
+    expect(evaluation.review.connections).toEqual([
+      { source: 'Google', target: 'node_school', sourceLabel: 'Google', targetLabel: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
+      { source: 'Google', target: 'node_school', sourceLabel: 'Google', targetLabel: 'School', verb: 'regulates', rationale: 'Alias resolves to regulates.' },
+    ]);
+  });
+
+  it('returns Macrosphere structures with resolved scopes and deontic verbs, never connections', async () => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'node_school', label: 'School', type: 'organization' },
+      { id: 'node_family', label: 'Family', type: 'family' },
+      { id: 'node_agency', label: 'Agency', type: 'agency' },
+    ];
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [{ point: 'One structure conditions several mapped elements.' }],
+        nodes: [
+          {
+            label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
+            evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
+            deontic: 'defines eligibility for',
+            scope: ['School', 'node_family', 'Unknown Thing', 'School'],
+          },
+          {
+            label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
+            evidence: 'Verify: who is assumed to plan?', basis: 'inference',
+            // Off-register deontic verbs fall back to the neutral entry.
+            deontic: 'leverages',
+            scope: [{ id: 'node_agency', label: 'Agency' }],
+          },
+        ],
+        // Any macro connection is scale confusion; the server never passes one through.
+        connections: [
+          { source: 'Universal Pre-K Law', target: 'School', verb: 'shapes', rationale: 'Must be dropped.' },
+        ],
+        example: null,
+        readiness: { ready: true, note: 'One structure has a scope.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'macrosphere-scopes.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'macrosphere', carriedNodes }));
+    expect(evaluation.review.connections).toEqual([]);
+    expect(evaluation.review.nodes).toEqual([
+      {
+        label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
+        evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
+        deontic: 'defines eligibility for',
+        scope: [{ id: 'node_school', label: 'School' }, { id: 'node_family', label: 'Family' }],
+      },
+      {
+        label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
+        evidence: 'Verify: who is assumed to plan?', basis: 'inference',
+        deontic: 'shapes',
+        scope: [{ id: 'node_agency', label: 'Agency' }],
+      },
+    ]);
+
+    // The stored review replays scope pairs without carried context.
+    const readBack = await system.app.request('http://127.0.0.1:4177/api/preflight/evaluations/current', {
+      headers: { origin: 'http://127.0.0.1:4177', 'sec-fetch-site': 'same-origin', cookie: studentCookie },
+    });
+    if (readBack.status === 200) {
+      const stored = (await readBack.json()).evaluation;
+      expect(stored.review.nodes).toEqual(evaluation.review.nodes);
+      expect(stored.review.connections).toEqual([]);
     }
   });
 

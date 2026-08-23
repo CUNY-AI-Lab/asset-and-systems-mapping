@@ -1446,3 +1446,51 @@ body.map-fullscreen-open { overflow: hidden; }
   .map-stage.is-fullscreen .graph-canvas { min-height: 0; height: 100%; }
   .map-stage.is-fullscreen .inspector { bottom: 0; max-height: min(54dvh, 520px); }
 }
+
+/* Outer-ring grammars: level tests, elicitation panels, structure scopes,
+   and the find-leverage pass. */
+.level-test { max-width: 720px; margin: -8px 0 20px; padding: 10px 14px; border-left: 3px solid var(--plum); background: var(--plum-pale); color: var(--ink); font-size: 13px; line-height: 1.5; }
+
+.basis-chip { display: inline-block; margin-right: 10px; padding: 2px 8px; border: 1px solid var(--plum); border-radius: 999px; color: var(--plum); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.connection-node-list span.is-inferred { border-style: dashed; }
+.connection-node-list span.is-inferred em { color: var(--plum); font-style: normal; font-size: 11px; }
+
+.memo-scaffold__structures { margin: 0 0 18px; padding: 0; list-style: none; display: grid; gap: 12px; }
+.memo-scaffold__structures li { display: grid; gap: 4px; }
+.memo-scaffold__structures small { color: var(--plum); }
+.memo-scaffold__pending { color: var(--muted); font-weight: 400; }
+
+.scope-editor { display: grid; gap: 10px; margin: 10px 0 6px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--macrosphere); background: #fafafa; }
+.scope-editor__mode label { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 650; }
+.scope-editor__mode select { height: 34px; padding: 0 8px; font-size: 13px; }
+.scope-editor__members { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.scope-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid var(--ink); border-radius: 999px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.scope-chip:hover { background: var(--bad-pale); }
+.scope-editor__add { height: 34px; padding: 0 8px; font-size: 13px; max-width: 220px; }
+.scope-editor__empty { color: var(--muted); font-size: 12px; }
+
+.elicitation-panel { margin: 34px 0 8px; padding: 24px; border: 1px solid var(--ink); border-top: 3px solid var(--plum); background: #fff; }
+.elicitation-panel h2 { margin: 4px 0 6px; font-size: 20px; }
+.elicitation-panel .lede { margin: 0 0 16px; max-width: 640px; }
+.elicitation-panel__chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.elicitation-panel__chips button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.elicitation-panel__chips button.is-active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.elicitation-panel__form { display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(140px, 1fr) minmax(180px, 1.2fr) auto; gap: 14px; align-items: end; }
+.elicitation-panel__form .button { height: var(--control-height); }
+@media (max-width: 900px) { .elicitation-panel__form { grid-template-columns: 1fr; } }
+
+/* A structure's field: a set contour over the existing layout. The fat
+   round-joined stroke pads the hull past the node cards it covers. */
+.scope-field { fill: var(--plum); stroke: var(--plum); opacity: .12; stroke-width: 300; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
+.scope-field.is-selected { opacity: .2; }
+.scope-field.is-muted { opacity: .06; }
+
+.leverage-pass { margin: 40px 0; padding: 24px; border: 1px solid var(--ink); border-top: 3px solid var(--teal); background: #fff; }
+.leverage-pass .lede { max-width: 680px; }
+.leverage-list { display: grid; gap: 0; margin-top: 12px; border-top: 1px solid var(--line); }
+.leverage-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.leverage-row__label { font-size: 14px; font-weight: 600; }
+.leverage-row__label small { color: var(--muted); font-weight: 400; }
+.leverage-row__tags { display: flex; gap: 6px; }
+.leverage-row__tags button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; cursor: pointer; }
+.leverage-row__tags button.is-active { border-color: var(--ink); background: var(--ink); color: #fff; }
