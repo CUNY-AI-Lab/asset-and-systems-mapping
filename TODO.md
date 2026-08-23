@@ -17,8 +17,9 @@ Design authority: the "Outer Rings" research memo (EST codification + mapping-pr
   - Evidence: 253 tests passed with 4 PostgreSQL tests skipped behind their explicit environment guard, including new regressions for the Exosphere register/anchor/basis, Macrosphere scope resolution + forced-empty connections + replay, per-scale lexicon resolution, deterministic elicitation guidance, scope/leverage schema validation, and four new UI flows (structure scope editing + commit, field rendering, institution elicitation, leverage tagging). `npm run build` passed.
 - [x] Verify the full four-level cycle in a real browser against the built bundle.
   - Evidence: a disposable local SQLite run walked Micro (7 concrete nodes) → Meso (2 relationships) → Exosphere (review surfaced only anchored register pathways plus the category-walk guidance; "Google — sets rules for — Punchbowl" added through the elicitation panel and committed to the exo band) → Macrosphere (review surfaced structures with "reach drawn at the next step" and zero connections; "Gendered planning norms · belief · normalizes" built with a 3-element scope, rendered as a shaded field over Jordan/Sam/Paperless Post with the label on the macro band, selection lit exactly the field) → Find-Leverage (tags stored: Jordan stuck, the structure ripples). Final all-layers map: 9 nodes, 3 edges, 1 field, zero pairwise card/label overlaps, zero app console errors.
-- [ ] Commit, push, and deploy the changed tree (deployment awaiting operator go-ahead).
-- [ ] Merge PR #11 into GitHub `main` (operator action; carried forward).
+- [x] Commit, push, and merge into GitHub `main`.
+  - Evidence: commit `3d0b8e6` merged via PR [#12](https://github.com/CUNY-AI-Lab/systems-mapping/pull/12) (merge commit `9fcc89a`); PR [#11](https://github.com/CUNY-AI-Lab/systems-mapping/pull/11) merged first as its base (merge commit `11d228a`).
+- [ ] Deploy the merged tree to Railway and record terminal deployment plus live health evidence (awaiting operator go-ahead; the tarball deploy uploads the local tree).
 
 Known limitation: under the deterministic (offline) runtime, outer-level reviews can re-surface extractor object-phrases the student already rejected at Micro, because rejected candidates leave no durable record. The production DeepSeek runtime is governed by the new contract instead; a rejected-label memory is a candidate follow-up.
 
@@ -38,7 +39,8 @@ Known limitation: under the deterministic (offline) runtime, outer-level reviews
   - Evidence: a disposable local SQLite run at 1440×1000 walked Micro (7 concrete nodes, 0 relationships) → Meso (5 carried-ID connections, callouts anchored beside their endpoints in the annulus) → Exosphere (3 new institutions + 3 connections tying them to the map, none re-proposed) → Macrosphere (4 structures + 3 connections); the cumulative graph held micro 7/0, meso 0/5, exosphere 3/3, macrosphere 4/3 with zero retired items, zero duplicate edges, zero rendered label/card overlaps in the pairwise scan, working full-screen mode, and zero console errors.
 - [x] Commit, push, deploy the changed tree, and record terminal deployment plus live health evidence.
   - Evidence: commit `5b8f6fc` pushed as PR [#11](https://github.com/CUNY-AI-Lab/systems-mapping/pull/11) (open for merge into `main`). Railway deployment `48e6ea86-3c51-48fc-8629-e9fdc277c7be` reached terminal `SUCCESS`; the PostgreSQL migration reported ready; `/api/health` returned `{"status":"ok"}`; the live root served HTTP 200 with the exact local bundle `index-o0Eb8nT7.js`.
-- [ ] Merge PR #11 into GitHub `main` (operator action; the tarball deployment does not depend on it).
+- [x] Merge PR #11 into GitHub `main`.
+  - Evidence: merged 2026-08-23 as merge commit `11d228a`, ahead of PR #12.
 
 ## 2026-08-22 map progression and canvas candidate
 
