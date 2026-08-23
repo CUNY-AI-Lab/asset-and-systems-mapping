@@ -1,9 +1,11 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  LEVERAGE_TAGS,
   NODE_TYPES,
   PROJECT_LIMITS,
   SCALE_ORDER,
   SCALE_PARTS,
+  SCALE_VERB_LEXICONS,
   SCALES,
   configFingerprint,
   createPortableProject,
@@ -607,13 +609,20 @@ function download(name, contents, type = 'application/json') {
 }
 
 function projectMarkdown(project) {
+  const nodeById = new Map(project.graph.nodes.map((node) => [node.id, node]));
   const nodeLines = project.graph.nodes.map((node) => {
     const annotations = [node.annotations?.analytical?.text && `analysis: ${node.annotations.analytical.text}`, node.annotations?.evidence?.text && `evidence note: ${node.annotations.evidence.text}`].filter(Boolean).join('; ');
-    return `- **${node.label}** — ${node.type}; level: ${SCALES[node.scale]?.label || node.scale}; evidence: ${node.evidence || 'needs evidence'}${annotations ? `; ${annotations}` : ''}`;
+    const reach = node.scale === 'macrosphere' && node.scopeNodeIds?.length
+      ? `; ${node.deontic || 'shapes'}: ${node.scopeNodeIds.map((memberId) => nodeById.get(memberId)?.label).filter(Boolean).join(', ')}`
+      : '';
+    return `- **${node.label}** — ${node.type}; level: ${SCALES[node.scale]?.label || node.scale}; evidence: ${node.evidence || 'needs evidence'}${reach}${annotations ? `; ${annotations}` : ''}`;
   });
   const edgeLines = project.graph.edges.map((edge) => `- ${edge.sourceLabel} **${edge.verb}** ${edge.targetLabel} — level: ${SCALES[edge.scale]?.label || edge.scale}; evidence: ${edge.evidence || 'needs evidence'}${edge.annotation?.text ? `; annotation: ${edge.annotation.text}` : ''}`);
+  const leverageLines = project.graph.nodes
+    .filter((node) => node.leverage && node.status !== 'rejected' && node.claimState !== 'retired')
+    .map((node) => `- **${node.label}** — ${LEVERAGE_TAG_COPY[node.leverage] || node.leverage}`);
   const redactionLines = project.portableExport?.redactions?.map((entry) => `- ${entry.path}: ${entry.reason}`).join('\n') || '- None';
-  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Reflection\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
+  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n${leverageLines.length ? `## Leverage\n\n${leverageLines.join('\n')}\n\n` : ''}## Reflection\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
 }
 
 export function graphCsv(project) {
@@ -889,21 +898,25 @@ const LEVEL_REVIEW_COPY = Object.freeze({
     items: 'the people, roles, groups, and settings',
     scaffoldTitle: 'Nodes evident in your memo',
     next: 'Choose nodes',
+    test: 'This ring holds what you are in the room with: the people, groups, settings, and things you deal with directly.',
   }),
   meso: Object.freeze({
     items: 'connections among your Micro nodes',
     scaffoldTitle: 'Connections evident in your memo',
     next: 'Choose connections',
+    test: 'This ring holds no new elements — only the connections between settings you already mapped.',
   }),
   exosphere: Object.freeze({
-    items: 'the institutions, agencies, and services shaping things from outside',
-    scaffoldTitle: 'Institutions evident in your memo',
+    items: 'the institutions behind your mapped settings',
+    scaffoldTitle: 'Institutions behind your map',
     next: 'Choose institutions',
+    test: 'The test for this ring: you are never in the room there, yet a decision made there reaches something on your map.',
   }),
   macrosphere: Object.freeze({
     items: 'the laws, policies, and beliefs shaping the whole system',
-    scaffoldTitle: 'Structures evident in your memo',
+    scaffoldTitle: 'Structures shaping your map',
     next: 'Choose structures',
+    test: 'The test for this ring: a pattern with no door — if you could visit it or it could email you, it belongs further in.',
   }),
 });
 
@@ -950,6 +963,7 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
     <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
     <h1>Review your memo</h1>
     <p className="lede">Check what your memo supports and what remains uncertain.</p>
+    {levelCopy.test && <p className="level-test">{levelCopy.test}</p>}
     <MemoDrawer project={project} update={update} />
     {!hasMemo && <p className="empty-message">Add memo text above to begin. The model reads the memo and surfaces {levelCopy.items} already evident in it.</p>}
     {busy && !review && <p className="review-progress" role="status">The model is reading your memo…</p>}
@@ -980,7 +994,12 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
           <p className="eyebrow">Taking shape</p>
           <h2 id="memo-scaffold-title">{levelCopy.scaffoldTitle}</h2>
           {connectionsOnly && microNodes.length > 0 && <div className="connection-node-list" role="region" aria-label="Nodes carried forward from Micro">{microNodes.map((node) => <span key={node.id}>{node.label}</span>)}</div>}
-          {!connectionsOnly && surfacedNodes.length ? <div className="connection-node-list" aria-label="Nodes evident in the memo">{surfacedNodes.map((node) => <span key={node.label}>{node.label}</span>)}</div> : null}
+          {!connectionsOnly && surfacedNodes.length ? (project.activeScale === 'macrosphere'
+            ? <ul className="memo-scaffold__structures" aria-label="Structures evident in the memo">{surfacedNodes.map((node) => <li key={node.label}>
+              <span className="memo-scaffold__claim"><strong>{node.label}</strong> <em>{node.deontic || 'shapes'}</em>{node.scope?.length ? <> {node.scope.map((member) => member.label).join(', ')}</> : <span className="memo-scaffold__pending"> — reach drawn at the next step</span>}</span>
+              {node.basis === 'inference' && <small>Inferred — verify this is real before keeping it.</small>}
+            </li>)}</ul>
+            : <div className="connection-node-list" aria-label="Nodes evident in the memo">{surfacedNodes.map((node) => <span key={node.label} className={node.basis === 'inference' ? 'is-inferred' : ''}>{node.label}{node.basis === 'inference' && <em> · inferred</em>}</span>)}</div>) : null}
           {!connectionsOnly && !surfacedNodes.length ? <p className="empty-message">No elements surfaced yet. Expand the memo above and refresh, or add elements yourself at the next stage.</p> : null}
           {connectionsOnly && !microNodes.length ? <p className="empty-message">No Micro nodes are available yet. Return to Add memo, choose Micro, and add its nodes before reviewing Meso connections.</p> : null}
           {!nodesOnly && surfacedConnections.length > 0 && <ul className="memo-scaffold__connections">{surfacedConnections.map((connection, index) => (
@@ -1001,8 +1020,33 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
 function candidateStepsForScale(scale) {
   if (scale === 'micro') return ['nodes'];
   if (scale === 'meso') return ['edges', 'suggest'];
+  // Macrosphere structures have no connection step: each structure carries a
+  // scope of mapped elements instead of edges.
+  if (scale === 'macrosphere') return ['nodes'];
   return ['nodes', 'edges', 'suggest'];
 }
+
+// The standard institutional categories behind everyday settings — the
+// eco-map instrument move: the categories come from the tool, the names from
+// the student, so the Exosphere never depends on the memo naming them.
+const EXO_INSTITUTION_CATEGORIES = Object.freeze([
+  Object.freeze({ label: 'Workplace or employer', type: 'organization' }),
+  Object.freeze({ label: 'Platform or product owner', type: 'organization' }),
+  Object.freeze({ label: 'Local government', type: 'agency' }),
+  Object.freeze({ label: 'Funder', type: 'organization' }),
+  Object.freeze({ label: 'School or program board', type: 'agency' }),
+  Object.freeze({ label: 'Service agency', type: 'agency' }),
+  Object.freeze({ label: 'Media outlet', type: 'organization' }),
+  Object.freeze({ label: 'Community or faith organization', type: 'organization' }),
+]);
+
+const MACRO_STRUCTURE_KINDS = Object.freeze(['policy', 'law', 'belief', 'event', 'resource']);
+
+const LEVERAGE_TAG_COPY = Object.freeze({
+  stuck: 'Stuck',
+  energy: 'Has energy',
+  ripples: 'Ripples outward',
+});
 
 function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy }) {
   const candidateSteps = useMemo(() => candidateStepsForScale(project.activeScale), [project.activeScale]);
@@ -1010,6 +1054,75 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   useEffect(() => {
     if (!candidateSteps.includes(step)) setStep(candidateSteps[0]);
   }, [candidateSteps, step]);
+  const liveMapNodes = useMemo(() => project.graph.nodes
+    .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired'), [project.graph.nodes]);
+  const liveMapNodeById = useMemo(() => new Map(liveMapNodes.map((node) => [node.id, node])), [liveMapNodes]);
+  // Scope members are the mapped elements a structure conditions — any level
+  // below the Macrosphere; structures never scope each other.
+  const scopeCandidates = useMemo(() => liveMapNodes.filter((node) => node.scale !== 'macrosphere'), [liveMapNodes]);
+  const [institutionDraft, setInstitutionDraft] = useState({ label: '', category: EXO_INSTITUTION_CATEGORIES[0].label, anchor: '', verb: SCALE_VERB_LEXICONS.exosphere[0] });
+  const [structureDraft, setStructureDraft] = useState({ label: '', type: 'policy', deontic: 'shapes' });
+  const addInstitution = () => {
+    const label = institutionDraft.label.trim();
+    if (!label) return toast('Name the institution first.', 'error');
+    const id = stableId('node', label);
+    if (project.candidates.nodes.some((node) => node.id === id)
+      || liveMapNodes.some((node) => node.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())) {
+      return toast('That institution is already on your list or map.', 'error');
+    }
+    const category = EXO_INSTITUTION_CATEGORIES.find((entry) => entry.label === institutionDraft.category);
+    const anchor = liveMapNodeById.get(institutionDraft.anchor);
+    const fingerprint = memoFingerprint(project.submission);
+    update((draft) => {
+      draft.candidates.nodes = withDefaultNodeLayout([...draft.candidates.nodes, {
+        id, label, type: category?.type || 'organization', scale: 'exosphere',
+        status: 'confirmed', claimState: 'student interpretation',
+        evidence: category ? `Named by the student from the “${category.label}” category.` : '',
+        sourceFingerprint: fingerprint, notes: '',
+      }]);
+      if (anchor) {
+        const edgeId = stableId('edge', `${id}:${institutionDraft.verb}:${anchor.id}`);
+        if (!draft.candidates.edges.some((edge) => edge.id === edgeId)) {
+          draft.candidates.edges.push({
+            id: edgeId, source: id, target: anchor.id, sourceLabel: label, targetLabel: anchor.label,
+            verb: institutionDraft.verb, scale: 'exosphere', status: 'confirmed',
+            claimState: 'student interpretation', directed: true, rationale: '', evidence: '',
+            sourceFingerprint: fingerprint, notes: '',
+            annotation: { id: stableId('annotation', `edge:${edgeId}:relationship`), text: '' },
+          });
+        }
+      }
+    }, 'candidate.added', label);
+    setInstitutionDraft((current) => ({ ...current, label: '', anchor: '' }));
+    toast(anchor ? `${label} added with its pathway to ${anchor.label}.` : `${label} added. Trace its pathway at the next step.`);
+  };
+  const addStructure = () => {
+    const label = structureDraft.label.trim();
+    if (!label) return toast('Name the structure first.', 'error');
+    const id = stableId('node', label);
+    if (project.candidates.nodes.some((node) => node.id === id)
+      || liveMapNodes.some((node) => node.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())) {
+      return toast('That structure is already on your list or map.', 'error');
+    }
+    update((draft) => {
+      draft.candidates.nodes = withDefaultNodeLayout([...draft.candidates.nodes, {
+        id, label, type: structureDraft.type, scale: 'macrosphere',
+        status: 'confirmed', claimState: 'student interpretation',
+        evidence: '', sourceFingerprint: memoFingerprint(project.submission), notes: '',
+        deontic: structureDraft.deontic, scopeNodeIds: [],
+      }]);
+    }, 'candidate.added', label);
+    setStructureDraft((current) => ({ ...current, label: '' }));
+    toast(`${label} added. Choose which mapped elements it ${structureDraft.deontic}.`);
+  };
+  const editScope = (id, memberId, include) => update((draft) => {
+    const item = draft.candidates.nodes.find((candidate) => candidate.id === id);
+    if (!item) return;
+    const current = Array.isArray(item.scopeNodeIds) ? item.scopeNodeIds : [];
+    item.scopeNodeIds = include
+      ? (current.includes(memberId) || current.length >= PROJECT_LIMITS.scopeMembers ? current : [...current, memberId])
+      : current.filter((entry) => entry !== memberId);
+  }, 'candidate.scope-edited', id);
   const setStatus = (kind, id, status) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
@@ -1053,21 +1166,17 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     exosphere: {
       nodes: {
         title: 'Choose the institutions',
-        lede: 'These institutions, agencies, and services come from your memo. They sit outside daily settings but shape what happens inside them. Keep, rename, or remove each one — nothing joins the map until you decide.',
+        lede: 'The test for this ring: you are never in the room there, yet a decision made there reaches your map. Some suggestions are inferred from your settings rather than named in your memo — those are marked, and you decide whether they are real. Keep, rename, or remove each one, or add institutions from the categories below.',
       },
       edges: {
-        title: 'Connect them to your map',
-        lede: 'Each connection shows where a decision or resource starts and who it reaches — including nodes already on your map. Edit the wording so it says what you mean, keep what is right, and remove what is not.',
+        title: 'Trace each pathway in',
+        lede: 'An institution earns its place by the pathway it sends into your map: who or what it funds, regulates, employs, or sets rules for. Every pathway lands on something already mapped. Keep what is right, and remove what is not.',
       },
     },
     macrosphere: {
       nodes: {
         title: 'Choose the structures',
-        lede: 'These laws, policies, histories, and beliefs come from your memo. Keep, rename, or remove each one — nothing joins the map until you decide.',
-      },
-      edges: {
-        title: 'Show what they shape',
-        lede: 'Each connection shows how a structure shapes the institutions, settings, and people beneath it. Edit the wording so it says what you mean, keep what is right, and remove what is not.',
+        lede: 'A structure is a pattern with no door — a law, policy, price, or belief that shapes several parts of your map the same way. If you could visit it or it could send you an email, it belongs further in. For each structure you keep, choose how it operates and which mapped elements sit inside its reach.',
       },
     },
   };
@@ -1095,11 +1204,39 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const carriedNodes = project.activeScale === 'meso'
     ? project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.scale === 'micro')
     : [];
+  const structureRow = project.activeScale === 'macrosphere';
+  const exoVerbOptions = (current) => {
+    const lowered = String(current || '').trim().toLocaleLowerCase();
+    return SCALE_VERB_LEXICONS.exosphere.includes(lowered)
+      ? SCALE_VERB_LEXICONS.exosphere
+      : [...(lowered ? [current] : []), ...SCALE_VERB_LEXICONS.exosphere];
+  };
   const candidateRows = (kind) => project.candidates[kind].map((item, index) => <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
     <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
     <div className="candidate-row__main">
-      {kind === 'nodes' ? <div className="candidate-expression"><input aria-label="Node label" maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label="Node type" value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></div> : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><input aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
-      <p><span className="evidence-chip">{item.evidence || 'Evidence unresolved'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
+      {kind === 'nodes'
+        ? <div className="candidate-expression"><input aria-label={structureRow ? 'Structure label' : 'Node label'} maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label={structureRow ? 'Structure kind' : 'Node type'} value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{(structureRow ? MACRO_STRUCTURE_KINDS : NODE_TYPES).map((type) => <option key={type}>{type}</option>)}</select></div>
+        : project.activeScale === 'exosphere'
+          ? <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><select aria-label="Pathway verb" value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)}>{exoVerbOptions(item.verb).map((verb) => <option key={verb}>{verb}</option>)}</select><strong>{item.targetLabel}</strong></div>
+          : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><input aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
+      {kind === 'nodes' && structureRow && <div className="scope-editor" aria-label={`Reach of ${item.label}`}>
+        <div className="scope-editor__mode"><label><span>Operates by</span><select aria-label={`How ${item.label} operates`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>
+        <div className="scope-editor__members">
+          {(item.scopeNodeIds || []).map((memberId) => {
+            const member = liveMapNodeById.get(memberId);
+            if (!member) return null;
+            return <button key={memberId} type="button" className="scope-chip" onClick={() => editScope(item.id, memberId, false)} aria-label={`Remove ${member.label} from the reach of ${item.label}`}>{member.label}<span aria-hidden="true"> ×</span></button>;
+          })}
+          {scopeCandidates.some((node) => !(item.scopeNodeIds || []).includes(node.id))
+            ? <select className="scope-editor__add" aria-label={`Add a mapped element to the reach of ${item.label}`} value="" onChange={(event) => { if (event.target.value) editScope(item.id, event.target.value, true); }}>
+              <option value="">Add element…</option>
+              {scopeCandidates.filter((node) => !(item.scopeNodeIds || []).includes(node.id)).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}
+            </select>
+            : null}
+          {!(item.scopeNodeIds || []).length && <span className="scope-editor__empty">Nothing in its reach yet — add the mapped elements this structure {SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'}.</span>}
+        </div>
+      </div>}
+      <p>{item.basis === 'inference' && <span className="basis-chip">inferred — verify</span>}<span className="evidence-chip">{item.evidence || 'Evidence unresolved'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
       <details className="candidate-note">
         <summary>{item.notes ? 'Annotation added' : 'Annotation'}</summary>
         <Field label="Annotation"><input maxLength={PROJECT_LIMITS.noteText} value={item.notes || ''} onChange={(event) => edit(kind, item.id, 'notes', event.target.value)} /></Field>
@@ -1136,9 +1273,38 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
         <div className="candidate-list">
           {candidateRows(step)}
           {!counts[step].total && <p className="empty-message">{step === 'nodes'
-            ? 'No nodes yet. Open your memo above to add detail and choose “Reread memo,” or add elements yourself on the map — nothing blocks you from continuing.'
+            ? project.activeScale === 'exosphere'
+              ? 'No institutions surfaced yet. Use the categories below to name the institutions behind your mapped settings — the memo does not need to name them.'
+              : project.activeScale === 'macrosphere'
+                ? 'No structures surfaced yet. Name the laws, policies, prices, or beliefs at work below — the memo does not need to name them.'
+                : 'No nodes yet. Open your memo above to add detail and choose “Reread memo,” or add elements yourself on the map — nothing blocks you from continuing.'
             : 'No connections came from your memo yet. Continue to ask the model for suggestions, or add relationships yourself on the map.'}</p>}
         </div>
+        {step === 'nodes' && project.activeScale === 'exosphere' && <section className="elicitation-panel" aria-labelledby="add-institution-title">
+          <p className="eyebrow">Behind each setting</p>
+          <h2 id="add-institution-title">Add an institution</h2>
+          <p className="lede">For each mapped setting, ask: who owns or operates it, who funds it, who employs the people in it, who sets its rules?</p>
+          <div className="elicitation-panel__chips" role="group" aria-label="Institution categories">
+            {EXO_INSTITUTION_CATEGORIES.map((category) => <button key={category.label} type="button" className={institutionDraft.category === category.label ? 'is-active' : ''} onClick={() => setInstitutionDraft((current) => ({ ...current, category: category.label }))}>{category.label}</button>)}
+          </div>
+          <div className="elicitation-panel__form">
+            <Field label="Institution name"><input maxLength={NODE_LABEL_LIMIT} value={institutionDraft.label} placeholder="e.g. Google, District 15 School Board" onChange={(event) => setInstitutionDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
+            <Field label="Pathway"><select aria-label="Pathway verb" value={institutionDraft.verb} onChange={(event) => setInstitutionDraft((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <Field label="Reaches"><select aria-label="Mapped element the pathway reaches" value={institutionDraft.anchor} onChange={(event) => setInstitutionDraft((current) => ({ ...current, anchor: event.target.value }))}><option value="">Choose a mapped element…</option>{liveMapNodes.filter((node) => node.scale !== 'macrosphere').map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
+            <button className="button" type="button" onClick={addInstitution}>Add institution</button>
+          </div>
+        </section>}
+        {step === 'nodes' && project.activeScale === 'macrosphere' && <section className="elicitation-panel" aria-labelledby="add-structure-title">
+          <p className="eyebrow">Patterns with no door</p>
+          <h2 id="add-structure-title">Add a structure</h2>
+          <p className="lede">Name a law, policy, price, or belief that shapes several parts of your map the same way — then choose its reach on the row above.</p>
+          <div className="elicitation-panel__form">
+            <Field label="Structure name"><input maxLength={NODE_LABEL_LIMIT} value={structureDraft.label} placeholder="e.g. Gendered planning norms, App-store sign-in requirements" onChange={(event) => setStructureDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
+            <Field label="Kind"><select value={structureDraft.type} onChange={(event) => setStructureDraft((current) => ({ ...current, type: event.target.value }))}>{MACRO_STRUCTURE_KINDS.map((type) => <option key={type}>{type}</option>)}</select></Field>
+            <Field label="Operates by"><select value={structureDraft.deontic} onChange={(event) => setStructureDraft((current) => ({ ...current, deontic: event.target.value }))}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <button className="button" type="button" onClick={addStructure}>Add structure</button>
+          </div>
+        </section>}
         <div className="button-row candidate-step-actions">
           {counts[step].remaining > 0 && <button className="button button--secondary" type="button" onClick={() => keepAllRemaining(step)}>Keep all {counts[step].remaining} remaining</button>}
           {nextStep && <button className="button" type="button" onClick={() => setStep(nextStep)}>{nextStep === 'edges' ? 'Continue to connections' : 'Continue to more connections'}<Icon name="arrow" /></button>}
@@ -1202,6 +1368,30 @@ function splitMapLabel(value, maximum = 20) {
   });
   if (current) lines.push(current);
   return lines;
+}
+
+// Andrew's monotone-chain convex hull, emitted as a closed path. The visual
+// padding comes from a fat round-joined stroke in CSS (the Bubble-Sets move:
+// a contour over the existing layout, never a rearrangement of it), so one-
+// and two-member scopes render as dots and capsules for free.
+function convexHullPath(points) {
+  const unique = [...new Map(points.map((point) => [`${Math.round(point.x)}:${Math.round(point.y)}`, point])).values()];
+  if (!unique.length) return '';
+  if (unique.length === 1) return `M ${unique[0].x} ${unique[0].y} l 0.01 0`;
+  const sorted = [...unique].sort((left, right) => left.x - right.x || left.y - right.y);
+  const cross = (origin, a, b) => (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+  const lower = [];
+  sorted.forEach((point) => {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+    lower.push(point);
+  });
+  const upper = [];
+  [...sorted].reverse().forEach((point) => {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+    upper.push(point);
+  });
+  const hull = [...lower.slice(0, -1), ...upper.slice(0, -1)];
+  return `M ${hull.map((point) => `${point.x} ${point.y}`).join(' L ')} Z`;
 }
 
 function mapNodeGeometry(label, phoneLayout = false) {
@@ -2001,6 +2191,12 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" /></marker></defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
       {mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} /> : null}
+      <g className="scope-fields" aria-hidden="true">{nodes.filter((node) => node.scale === 'macrosphere' && node.scopeNodeIds?.length).map((node) => {
+        const memberPoints = node.scopeNodeIds.map((memberId) => positions.get(memberId)).filter(Boolean);
+        if (!memberPoints.length) return null;
+        const selected = selection?.kind === 'node' && selection.id === node.id;
+        return <path key={`scope-${node.id}`} data-scope-of={node.id} className={`scope-field ${selected ? 'is-selected' : ''} ${node.visualMuted ? 'is-muted' : ''}`} d={convexHullPath(memberPoints)} />;
+      })}</g>
       <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, layerAnchored, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={layerAnchored ? 'layer-anchor' : 'direct'} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${SCALES[edge.scale]?.label || edge.scale} level relationship`} aria-keyshortcuts="Enter Space" className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
@@ -2020,7 +2216,10 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
         const { position, geometry } = nodeVisuals.get(node.id);
         const selected = selection?.kind === 'node' && selection.id === node.id;
         const evidenceState = node.evidence ? 'evidence recorded' : 'evidence unresolved';
-        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale} level, ${evidenceState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onKeyDown={(event) => keyboardNode(event, node)}>
+        const scopeState = node.scale === 'macrosphere' && node.scopeNodeIds?.length
+          ? `, ${node.deontic || 'shapes'} ${node.scopeNodeIds.length} mapped ${node.scopeNodeIds.length === 1 ? 'element' : 'elements'}`
+          : '';
+        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale} level, ${evidenceState}${scopeState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onKeyDown={(event) => keyboardNode(event, node)}>
           {selected && <rect className="node-selection-ring" x={geometry.ringX} y={geometry.ringY} width={geometry.ringWidth} height={geometry.ringHeight} rx={geometry.ringRadius} />}
           <rect className="node-card" x={geometry.cardX} y={geometry.cardY} width={geometry.cardWidth} height={geometry.cardHeight} rx={geometry.cardRadius} />
           <text className="node-label">{geometry.lines.map((line, lineIndex) => <tspan key={`${node.id}-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
@@ -2044,6 +2243,7 @@ function sameGraphVisuals(previous, next) {
   for (let index = 0; index < previous.nodes.length; index += 1) {
     const a = previous.nodes[index]; const b = next.nodes[index];
     if (a.id !== b.id || a.x !== b.x || a.y !== b.y || a.label !== b.label || a.type !== b.type || a.scale !== b.scale || a.claimState !== b.claimState || Boolean(a.evidence) !== Boolean(b.evidence) || a.visualMuted !== b.visualMuted) return false;
+    if ((a.scopeNodeIds || []).join(',') !== (b.scopeNodeIds || []).join(',') || a.deontic !== b.deontic) return false;
   }
   for (let index = 0; index < previous.edges.length; index += 1) {
     const a = previous.edges[index]; const b = next.edges[index];
@@ -2179,10 +2379,16 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const scaleEdgeIds = useMemo(() => new Set(project.graph.edges
     .filter((edge) => visibleScaleSet.has(edge.scale) && (showRemoved || edge.claimState !== 'retired'))
     .flatMap((edge) => [edge.source, edge.target])), [project.graph.edges, visibleScaleSet, showRemoved]);
+  // A visible structure carries its scope with it: the mapped elements inside
+  // its field stay on screen the way edge endpoints do.
+  const scopeMemberIds = useMemo(() => new Set(project.graph.nodes
+    .filter((node) => node.scale === 'macrosphere' && visibleScaleSet.has('macrosphere')
+      && node.status !== 'rejected' && (showRemoved || node.claimState !== 'retired'))
+    .flatMap((node) => node.scopeNodeIds || [])), [project.graph.nodes, visibleScaleSet, showRemoved]);
   const scaleNodes = useMemo(() => project.graph.nodes.filter((node) => {
-    const scaleMatches = visibleScaleSet.has(node.scale) || scaleEdgeIds.has(node.id);
+    const scaleMatches = visibleScaleSet.has(node.scale) || scaleEdgeIds.has(node.id) || scopeMemberIds.has(node.id);
     return scaleMatches && (showRemoved || node.claimState !== 'retired');
-  }), [project.graph.nodes, visibleScaleSet, scaleEdgeIds, showRemoved]);
+  }), [project.graph.nodes, visibleScaleSet, scaleEdgeIds, scopeMemberIds, showRemoved]);
   const scaleNodeIds = useMemo(() => new Set(scaleNodes.map((node) => node.id)), [scaleNodes]);
   const scaleEdges = useMemo(() => project.graph.edges.filter((edge) => visibleScaleSet.has(edge.scale)
     && scaleNodeIds.has(edge.source)
@@ -2201,8 +2407,16 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       ids.add(edge.source);
       ids.add(edge.target);
     });
+    // Focusing a structure lights its whole field: the structure and every
+    // mapped element inside its reach.
+    if (focus.kind === 'node') {
+      const focusedNode = scaleNodes.find((node) => node.id === focus.id);
+      (focusedNode?.scopeNodeIds || []).forEach((memberId) => {
+        if (scaleNodeIds.has(memberId)) ids.add(memberId);
+      });
+    }
     return ids;
-  }, [focus, focusedEdgeIds, scaleEdges, scaleNodeIds]);
+  }, [focus, focusedEdgeIds, scaleEdges, scaleNodes, scaleNodeIds]);
   const focusActive = focusedNodeIds.size > 0;
   const visibleNodes = useMemo(() => focusActive ? scaleNodes.filter((node) => focusedNodeIds.has(node.id)) : scaleNodes, [focusActive, scaleNodes, focusedNodeIds]);
   const phoneFocusedEdge = phoneLayout && focus?.kind === 'edge' ? scaleEdges.find((edge) => edge.id === focus.id) : null;
@@ -2273,6 +2487,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       && edge.claimState !== 'retired'
       && (visibleScale === 'all' ? project.releasedScales.includes(edge.scale) : edge.scale === visibleScale));
     const endpointIds = new Set(nextScaleEdges.flatMap((edge) => [edge.source, edge.target]));
+    if (visibleScale === 'macrosphere' || (visibleScale === 'all' && project.releasedScales.includes('macrosphere'))) {
+      currentNodes.filter((node) => node.scale === 'macrosphere')
+        .forEach((node) => (node.scopeNodeIds || []).forEach((memberId) => endpointIds.add(memberId)));
+    }
     const nextVisibleNodes = positionedNodes.filter((node) => visibleScale === 'all'
       ? project.releasedScales.includes(node.scale)
       : node.scale === visibleScale || endpointIds.has(node.id));
@@ -2377,6 +2595,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       && edge.claimState !== 'retired'
       && (nextScale === 'all' ? project.releasedScales.includes(edge.scale) : edge.scale === nextScale));
     const endpointIds = new Set(nextEdges.flatMap((edge) => [edge.source, edge.target]));
+    if (nextScale === 'macrosphere' || (nextScale === 'all' && project.releasedScales.includes('macrosphere'))) {
+      project.graph.nodes.filter((node) => node.scale === 'macrosphere' && node.status !== 'rejected' && node.claimState !== 'retired')
+        .forEach((node) => (node.scopeNodeIds || []).forEach((memberId) => endpointIds.add(memberId)));
+    }
     const nextNodes = project.graph.nodes.filter((node) => node.status !== 'rejected'
       && node.claimState !== 'retired'
       && (nextScale === 'all' ? project.releasedScales.includes(node.scale) : node.scale === nextScale || endpointIds.has(node.id)))
@@ -2607,7 +2829,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         {addMode === 'node' && <div className="add-form"><h3>Add a node</h3><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field><div className="field-pair"><Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value }))}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => ({ ...current, scale: event.target.value }))}>{project.releasedScales.filter((scale) => scale !== 'meso').map((scale) => <option key={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field></div><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newNode.evidence} onChange={(event) => setNewNode((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addNode}>Add node</button></div>}
         {addMode === 'edge' && project.activeScale !== 'micro' && <div className="add-form"><h3>Add a relationship</h3><Field label="From"><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{relationshipNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Connection"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} /></Field><Field label="To"><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{relationshipNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-node">{selectedNode ? <>
-          <details className="node-summary"><summary><span>Summary</span><strong>{selectedNode.type}</strong></summary><div className="node-summary__body"><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} onChange={(event) => editNode('label', event.target.value)} /></Field><div className="field-pair"><Field label="Type"><select value={selectedNode.type} onChange={(event) => editNode('type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Level"><select value={selectedNode.scale} disabled={project.activeScale === 'meso'} onChange={(event) => editNode('scale', event.target.value)}>{project.releasedScales.filter((scale) => scale !== 'meso').map((scale) => <option key={scale}>{SCALES[scale].label}</option>)}</select></Field></div><div className="provenance-block"><span>Evidence</span><p>{selectedNode.evidence || 'No evidence added yet.'}</p>{selectedNode.notes && <><span>Annotation</span><p>{selectedNode.notes}</p></>}</div></div></details>
+          <details className="node-summary"><summary><span>Summary</span><strong>{selectedNode.type}</strong></summary><div className="node-summary__body"><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} onChange={(event) => editNode('label', event.target.value)} /></Field><div className="field-pair"><Field label="Type"><select value={selectedNode.type} onChange={(event) => editNode('type', event.target.value)}>{NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Level"><select value={selectedNode.scale} disabled={project.activeScale === 'meso'} onChange={(event) => editNode('scale', event.target.value)}>{project.releasedScales.filter((scale) => scale !== 'meso').map((scale) => <option key={scale}>{SCALES[scale].label}</option>)}</select></Field></div>{selectedNode.scale === 'macrosphere' && <div className="scope-editor" aria-label={`Reach of ${selectedNode.label}`}><div className="scope-editor__mode"><label><span>Operates by</span><select aria-label={`How ${selectedNode.label} operates`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div><div className="scope-editor__members">{(selectedNode.scopeNodeIds || []).map((memberId) => { const member = project.graph.nodes.find((node) => node.id === memberId); if (!member) return null; return <button key={memberId} type="button" className="scope-chip" onClick={() => editNode('scopeNodeIds', (selectedNode.scopeNodeIds || []).filter((entry) => entry !== memberId))} aria-label={`Remove ${member.label} from the reach of ${selectedNode.label}`}>{member.label}<span aria-hidden="true"> ×</span></button>; })}<select className="scope-editor__add" aria-label={`Add a mapped element to the reach of ${selectedNode.label}`} value="" onChange={(event) => { const memberId = event.target.value; if (!memberId) return; const current = selectedNode.scopeNodeIds || []; if (current.includes(memberId) || current.length >= PROJECT_LIMITS.scopeMembers) return; editNode('scopeNodeIds', [...current, memberId]); }}><option value="">Add element…</option>{project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.scale !== 'macrosphere' && !(selectedNode.scopeNodeIds || []).includes(node.id)).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select>{!(selectedNode.scopeNodeIds || []).length && <span className="scope-editor__empty">Nothing in its reach yet.</span>}</div></div>}<div className="provenance-block"><span>Evidence</span><p>{selectedNode.evidence || 'No evidence added yet.'}</p>{selectedNode.notes && <><span>Annotation</span><p>{selectedNode.notes}</p></>}</div></div></details>
           <button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button>
           <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'analytical'} aria-controls="node-analytical-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'analytical' ? null : 'analytical')}><span>Annotation</span><Icon name={annotationDisclosure === 'analytical' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'analytical' && <div id="node-analytical-annotation"><AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Annotation" value={selectedNode.annotations.analytical.text} onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} /></div>}</section>
           <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
@@ -2710,6 +2932,25 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
+    {project.activeScale === 'macrosphere' && <section className="leverage-pass" aria-labelledby="leverage-pass-title">
+      <p className="eyebrow">Find leverage</p>
+      <h2 id="leverage-pass-title">Where could a small change matter most?</h2>
+      <p className="lede">Leverage is a judgment about the finished map, not a connection on it. Tag a handful of elements: where things are stuck, where there is energy for change, and where a change would ripple outward. In systems practice the highest leverage usually sits in the outer rings — the rules, prices, and beliefs.</p>
+      <div className="leverage-list">
+        {project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired').map((node) => <div className="leverage-row" key={node.id}>
+          <span className="leverage-row__label">{node.label}<small> · {SCALES[node.scale]?.label || node.scale}</small></span>
+          <div className="leverage-row__tags" role="group" aria-label={`Leverage tag for ${node.label}`}>
+            {LEVERAGE_TAGS.map((tag) => <button key={tag} type="button" className={node.leverage === tag ? 'is-active' : ''} onClick={() => update((draft) => {
+              const item = draft.graph.nodes.find((candidate) => candidate.id === node.id);
+              if (!item) return;
+              if (item.leverage === tag) delete item.leverage;
+              else item.leverage = tag;
+            }, 'map.leverage-tagged', node.label)}>{LEVERAGE_TAG_COPY[tag]}</button>)}
+          </div>
+        </div>)}
+        {!project.graph.nodes.some((node) => node.status !== 'rejected' && node.claimState !== 'retired') && <p className="empty-message">Nothing on the map yet to tag.</p>}
+      </div>
+    </section>}
     <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export the full map.</h2><p>Choose JSON, CSV, or Markdown.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
@@ -3208,6 +3449,15 @@ function App() {
           evidence: node.evidence || '',
           sourceFingerprint: fingerprint,
           notes: '',
+          ...(node.basis ? { basis: node.basis } : {}),
+          // A structure carries its scope — the mapped elements it conditions
+          // — resolved to durable graph ids the student can edit directly.
+          ...(currentProject.activeScale === 'macrosphere' ? {
+            deontic: node.deontic || 'shapes',
+            scopeNodeIds: (Array.isArray(node.scope) ? node.scope : [])
+              .map((member) => member?.id)
+              .filter((memberId) => liveGraphNodes.has(memberId) && memberId !== id),
+          } : {}),
         });
       });
     extracted.nodes.forEach((node) => {
@@ -3262,7 +3512,16 @@ function App() {
       .map((node) => {
       const prior = priorNodes.get(node.id);
       const scaled = { ...node, scale: currentProject.activeScale };
-      return prior ? { ...scaled, status: prior.status, claimState: prior.claimState, notes: prior.notes || node.notes } : scaled;
+      // A student's decisions and scope edits on a matching item survive a
+      // memo reread; only the model-refreshed evidence and copy update.
+      return prior ? {
+        ...scaled,
+        status: prior.status,
+        claimState: prior.claimState,
+        notes: prior.notes || node.notes,
+        ...(prior.scopeNodeIds !== undefined ? { scopeNodeIds: prior.scopeNodeIds } : {}),
+        ...(prior.deontic !== undefined ? { deontic: prior.deontic } : {}),
+      } : scaled;
       }));
     const edges = [...edgeByKey.values()].map((edge) => {
       const prior = priorEdges.get(edge.id);
@@ -3280,6 +3539,9 @@ function App() {
       return prior ? { ...scaled, status: prior.status, claimState: prior.claimState, notes: prior.notes || edge.notes } : scaled;
     });
     if (currentProject.activeScale === 'micro') return { nodes, edges: [] };
+    // Macrosphere structures reach the map through scopes, never edges: any
+    // extracted or model-proposed connection at this level is scale confusion.
+    if (currentProject.activeScale === 'macrosphere') return { nodes, edges: [] };
     if (currentProject.activeScale === 'meso') {
       const carriedNodeIds = new Set(currentProject.graph.nodes
         .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.scale === 'micro')

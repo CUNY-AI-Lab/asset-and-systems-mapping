@@ -72,7 +72,54 @@ export const RELATION_VOCABULARY = [
   'located in', 'contradicts', 'corroborates',
 ];
 
-export const NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event'];
+// Closed relationship registers for the outer levels. An Exosphere link is a
+// transactional pathway from an institution into the mapped world; the
+// Macrosphere register is deontic — how a structure operates on its scope.
+// Meso keeps the full RELATION_VOCABULARY: everyday transactions between
+// settings the memo-writer participates in.
+export const SCALE_VERB_LEXICONS = Object.freeze({
+  exosphere: Object.freeze([
+    'funds', 'administers', 'regulates', 'employs', 'sets rules for', 'owns',
+    'provides', 'serves', 'refers', 'contracts with', 'informs', 'excludes', 'delays',
+  ]),
+  macrosphere: Object.freeze([
+    'shapes', 'mandates', 'prohibits', 'defines eligibility for', 'prices',
+    'normalizes', 'frames', 'constrains', 'privileges',
+  ]),
+});
+
+const SCALE_VERB_ALIASES = Object.freeze({
+  exosphere: Object.freeze({
+    'pays for': 'funds', finances: 'funds', subsidizes: 'funds',
+    runs: 'administers', operates: 'administers', manages: 'administers',
+    oversees: 'regulates', supervises: 'regulates', governs: 'sets rules for',
+    controls: 'sets rules for', hires: 'employs', staffs: 'employs',
+    notifies: 'informs', supplies: 'provides', delivers: 'provides',
+  }),
+  macrosphere: Object.freeze({
+    requires: 'mandates', obliges: 'mandates', forbids: 'prohibits',
+    bans: 'prohibits', restricts: 'constrains', limits: 'constrains',
+    legitimizes: 'normalizes', favors: 'privileges', influences: 'shapes',
+    affects: 'shapes', defines: 'frames',
+  }),
+});
+
+// Resolves a proposed verb to its canonical register entry for the scale, or
+// null when the verb has no place in that register ("leverages" at the
+// Macrosphere). Scales without a closed register pass verbs through.
+export function scaleLexiconVerb(scale, verb) {
+  const trimmed = String(verb || '').trim();
+  const lexicon = SCALE_VERB_LEXICONS[scale];
+  if (!lexicon) return trimmed || null;
+  if (!trimmed) return null;
+  const lowered = trimmed.toLocaleLowerCase();
+  return lexicon.find((entry) => entry === lowered) || SCALE_VERB_ALIASES[scale]?.[lowered] || null;
+}
+
+export const NODE_BASES = Object.freeze(['memo', 'inference']);
+export const LEVERAGE_TAGS = Object.freeze(['stuck', 'energy', 'ripples']);
+
+export const NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event', 'law', 'belief'];
 export const CLAIM_STATES = ['confirmed', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'];
 
 export const PROJECT_SCHEMA_VERSION = 6;
@@ -99,6 +146,7 @@ export const PROJECT_LIMITS = Object.freeze({
   memoReviewNodes: 20,
   memoReviewConnections: 12,
   memoReviewExample: 1000,
+  scopeMembers: 24,
   noteText: 4_000,
   rationaleText: 8_000,
   eventText: 8_000,
@@ -650,7 +698,8 @@ const DETERMINISTIC_REVIEW_SCALE_LIMITS = Object.freeze({
   micro: Object.freeze({ nodes: 10, connections: 0 }),
   meso: Object.freeze({ nodes: 0, connections: 8 }),
   exosphere: Object.freeze({ nodes: 8, connections: 6 }),
-  macrosphere: Object.freeze({ nodes: 8, connections: 6 }),
+  // Macrosphere structures relate to the map through scopes, never edges.
+  macrosphere: Object.freeze({ nodes: 8, connections: 0 }),
 });
 
 export function deterministicMemoReview(submission, activeScale = 'micro', { carriedNodes = [], carriedConnections = [] } = {}) {
@@ -670,37 +719,48 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       type: node.type,
       scale: activeScale,
       evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
+      // The local reader only ever surfaces what the memo names.
+      ...(activeScale === 'exosphere' || activeScale === 'macrosphere' ? { basis: 'memo' } : {}),
+      // A deterministic reader cannot judge which mapped elements a structure
+      // conditions; the student draws the scope at the next stage.
+      ...(activeScale === 'macrosphere' ? { deontic: 'shapes', scope: [] } : {}),
     }));
   const nodeLabels = new Set(reviewNodes.map((node) => node.label));
   const endpointFor = (label) => {
     const carried = carriedNodeByLabel.get(label.trim().toLocaleLowerCase());
-    if (carried) return { reference: carried.id, label: carried.label };
-    return nodeLabels.has(label) ? { reference: label, label } : null;
+    if (carried) return { reference: carried.id, label: carried.label, carried: true };
+    return nodeLabels.has(label) ? { reference: label, label, carried: false } : null;
   };
-  const connections = activeScale === 'micro' ? [] : edges
+  const connections = (activeScale === 'micro' || activeScale === 'macrosphere') ? [] : edges
     .map((edge) => {
       if (activeScale === 'meso') {
         const carriedSource = carriedNodeByLabel.get(edge.sourceLabel.trim().toLocaleLowerCase());
         const carriedTarget = carriedNodeByLabel.get(edge.targetLabel.trim().toLocaleLowerCase());
         if (!carriedSource || !carriedTarget) return null;
-        return { edge, source: carriedSource, target: carriedTarget };
+        return { edge, source: carriedSource, target: carriedTarget, verb: edge.verb };
       }
       const source = endpointFor(edge.sourceLabel);
       const target = endpointFor(edge.targetLabel);
       if (!source || !target || source.reference === target.reference) return null;
-      return { edge, source: { id: source.reference, label: source.label }, target: { id: target.reference, label: target.label } };
+      // An Exosphere connection is an influence pathway: it must land on the
+      // mapped world (the two-step chain), and its verb must belong to the
+      // institutional register.
+      if (carriedNodes.length && !source.carried && !target.carried) return null;
+      const verb = scaleLexiconVerb(activeScale, edge.verb);
+      if (!verb) return null;
+      return { edge, source: { id: source.reference, label: source.label }, target: { id: target.reference, label: target.label }, verb };
     })
     .filter(Boolean)
     // Relationships already on the student's map are settled; the review only
     // surfaces what this memo pass adds.
-    .filter(({ edge, source, target }) => !carriedConnectionKeys.has(`${source.id}::${edge.verb.trim().toLocaleLowerCase()}::${target.id}`))
+    .filter(({ edge, source, target, verb }) => !carriedConnectionKeys.has(`${source.id}::${(verb || edge.verb).trim().toLocaleLowerCase()}::${target.id}`))
     .slice(0, Math.min(scaleLimits.connections || PROJECT_LIMITS.memoReviewConnections, PROJECT_LIMITS.memoReviewConnections))
-    .map(({ edge, source, target }) => ({
+    .map(({ edge, source, target, verb }) => ({
       source: source.id,
       target: target.id,
       sourceLabel: source.label,
       targetLabel: target.label,
-      verb: edge.verb,
+      verb: verb || edge.verb,
       rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
     }));
   const guidance = activeScale === 'micro'
@@ -708,29 +768,46 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       point: truncateCollapsedText(`The memo names ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'node' : 'nodes'}: ${reviewNodes.map((node) => node.label).join(', ')}.`, PROJECT_LIMITS.memoGuidanceText),
       ...(reviewNodes[0].evidence ? { evidenceExcerpt: truncateCollapsedText(reviewNodes[0].evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
     }] : [])
-    : connections.slice(0, 4).map((connection) => ({
+    : connections.slice(0, 3).map((connection) => ({
       point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
     }));
+  // The outer levels are produced by elicitation, not extraction: the memo
+  // rarely names the institutions and structures behind it, so the review
+  // walks the standard categories the way an eco-map instrument does.
+  if (activeScale === 'exosphere') {
+    const anchors = carriedNodes.slice(0, 3).map((node) => node.label).join(', ');
+    guidance.push({ point: truncateCollapsedText(anchors
+      ? `Behind each mapped setting sits an institution the memo may not name. For ${anchors}: who owns or operates it, who funds it, who employs the people in it, who sets its rules? Add the institutions you can name — the test is that you are never in the room there, yet a decision made there reaches your map.`
+      : 'Name the institutions behind the story: who owns or operates each setting, who funds it, who employs the people in it, who sets its rules? The test is that you are never in the room there, yet a decision made there reaches your map.', PROJECT_LIMITS.memoGuidanceText) });
+  }
+  if (activeScale === 'macrosphere') {
+    guidance.push({ point: truncateCollapsedText('A structure is a pattern with no door: a law, policy, price, or belief that makes several parts of your map behave the same way. If you could visit it or it could send you an email, it belongs further in. After naming a structure, you will choose which mapped elements it shapes.', PROJECT_LIMITS.memoGuidanceText) });
+  }
   if (!guidance.length) {
     guidance.push({ point: activeScale === 'micro'
       ? 'No clearly named people, roles, groups, or settings were found. You can continue and add nodes yourself.'
       : 'No clear connections were found. You can continue and describe them yourself.' });
   }
+  guidance.splice(4);
   const first = connections[0] || null;
   const example = first
     ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
     : null;
-  // Carried map elements count toward readiness at Exosphere and Macrosphere:
-  // a memo that only connects existing elements is still real progress.
+  // Carried map elements count toward readiness at Exosphere; Macrosphere
+  // readiness rests on structures alone (scopes are drawn at the next stage).
   const ready = activeScale === 'meso'
     ? carriedNodes.length >= 2 && connections.length >= 1
     : activeScale === 'micro'
       ? reviewNodes.length >= 2
-      : (reviewNodes.length + carriedNodes.length) >= 2 && connections.length >= 1;
-  const outerNote = reviewNodes.length
-    ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'element' : 'elements'} and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose what belongs in the map.`
-    : `The memo describes ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'} among elements already on your map. Continue to choose which ones belong.`;
+      : activeScale === 'macrosphere'
+        ? reviewNodes.length >= 1
+        : (reviewNodes.length + carriedNodes.length) >= 2 && connections.length >= 1;
+  const outerNote = activeScale === 'macrosphere'
+    ? `The memo names ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'structure' : 'structures'}. Continue to choose which belong, then draw what each one shapes.`
+    : reviewNodes.length
+      ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'institution' : 'institutions'} and ${connections.length} ${connections.length === 1 ? 'pathway' : 'pathways'} into your map. Continue to choose what belongs.`
+      : `The memo describes ${connections.length} ${connections.length === 1 ? 'pathway' : 'pathways'} among elements already on your map. Continue to choose which ones belong.`;
   const readiness = {
     ready,
     note: truncateCollapsedText(ready
@@ -743,7 +820,9 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
         ? 'Fewer than two possible nodes were found. You can continue, or name more people, roles, groups, or settings in the memo.'
         : activeScale === 'meso'
           ? 'No clear connections among the nodes from Micro were found. You can continue, or describe those connections in the memo.'
-          : 'No clear new elements or connections were found. You can continue, or name the institutions, policies, or beliefs at work in the memo.', PROJECT_LIMITS.memoGuidanceText),
+          : activeScale === 'macrosphere'
+            ? 'No named structures were found. You can continue and name the laws, policies, prices, or beliefs at work yourself — the memo does not need to name them.'
+            : 'No named institutions were found. You can continue and add them yourself — for each mapped setting, ask who owns, funds, or sets the rules for it.', PROJECT_LIMITS.memoGuidanceText),
   };
   return { guidance, nodes: reviewNodes, connections, example: activeScale === 'micro' ? null : example, readiness };
 }
@@ -867,7 +946,7 @@ const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'eviden
 const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
-const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', ...EVIDENCE_KEYS];
+const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'leverage', ...EVIDENCE_KEYS];
 const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', ...EVIDENCE_KEYS];
 
 function invalidProject(path, expectation) {
@@ -1014,6 +1093,21 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     validateAnnotation(node.annotations.analytical, `${itemPath}.annotations.analytical`, `node:${node.id}:analytical`, annotationOwners);
     validateAnnotation(node.annotations.evidence, `${itemPath}.annotations.evidence`, `node:${node.id}:evidence`, annotationOwners);
     if (node.sourceFingerprint !== undefined) assertString(node.sourceFingerprint, `${itemPath}.sourceFingerprint`, false, 200);
+    if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${itemPath}.basis`);
+    if (node.deontic !== undefined) assertString(node.deontic, `${itemPath}.deontic`, true, 60);
+    if (node.leverage !== undefined) assertEnum(node.leverage, LEVERAGE_TAGS, `${itemPath}.leverage`);
+    if (node.scopeNodeIds !== undefined) {
+      if (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length > PROJECT_LIMITS.scopeMembers) {
+        invalidProject(`${itemPath}.scopeNodeIds`, `must be an array of no more than ${PROJECT_LIMITS.scopeMembers} node ids`);
+      }
+      const seenScope = new Set();
+      node.scopeNodeIds.forEach((memberId, memberIndex) => {
+        assertString(memberId, `${itemPath}.scopeNodeIds[${memberIndex}]`, false, 200);
+        if (seenScope.has(memberId)) invalidProject(`${itemPath}.scopeNodeIds[${memberIndex}]`, 'must be unique');
+        seenScope.add(memberId);
+        if (memberId === node.id) invalidProject(`${itemPath}.scopeNodeIds[${memberIndex}]`, 'cannot include the structure itself');
+      });
+    }
     validateEvidence(node, itemPath);
   });
   return ids;
@@ -1172,11 +1266,25 @@ function validateMemoReview(review, path) {
   review.nodes.forEach((node, index) => {
     const nodePath = `${path}.nodes[${index}]`;
     assertObject(node, nodePath);
-    assertKnownKeys(node, ['label', 'type', 'scale', 'evidence'], nodePath);
+    assertKnownKeys(node, ['label', 'type', 'scale', 'evidence', 'basis', 'deontic', 'scope'], nodePath);
     assertString(node.label, `${nodePath}.label`, false, 200);
     assertEnum(node.type, NODE_TYPES, `${nodePath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${nodePath}.scale`);
     assertString(node.evidence, `${nodePath}.evidence`, true, PROJECT_LIMITS.memoGuidanceEvidence);
+    if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${nodePath}.basis`);
+    if (node.deontic !== undefined) assertString(node.deontic, `${nodePath}.deontic`, true, 60);
+    if (node.scope !== undefined) {
+      if (!Array.isArray(node.scope) || node.scope.length > PROJECT_LIMITS.scopeMembers) {
+        invalidProject(`${nodePath}.scope`, `must be an array of no more than ${PROJECT_LIMITS.scopeMembers} members`);
+      }
+      node.scope.forEach((member, memberIndex) => {
+        const memberPath = `${nodePath}.scope[${memberIndex}]`;
+        assertObject(member, memberPath);
+        assertKnownKeys(member, ['id', 'label'], memberPath);
+        assertString(member.id, `${memberPath}.id`, false, 200);
+        assertString(member.label, `${memberPath}.label`, false, 200);
+      });
+    }
   });
   if (!Array.isArray(review.connections) || review.connections.length > PROJECT_LIMITS.memoReviewConnections) {
     invalidProject(`${path}.connections`, `must be an array of no more than ${PROJECT_LIMITS.memoReviewConnections} connections`);

@@ -6,6 +6,8 @@ import {
   deterministicMemoReview,
   isDiscreteMicroNodeLabel,
   normalizeMicroNodeLabel,
+  SCALE_VERB_LEXICONS,
+  scaleLexiconVerb,
 } from '../src/domain.js';
 import {
   SYSTEMS_MAPPING_STAGE_IDS,
@@ -99,33 +101,37 @@ const PROJECT_OVERLAY_KEYS = Object.freeze([
   'id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel',
   'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'fingerprint',
 ]);
-const MEMO_REVIEW_NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event'];
+const MEMO_REVIEW_NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event', 'law', 'belief'];
 const MEMO_REVIEW_LIMITS = Object.freeze({
   guidance: 8, nodes: 20, connections: 12, point: 500, evidence: 500,
   label: 200, verb: 100, rationale: 1000, example: 1000, note: 500,
 });
 // Per-level ceilings keep the review focused: a student decides on a handful
 // of strong, concrete items instead of triaging everything the model can find.
+// Macrosphere structures carry a scope (mapped elements they condition)
+// instead of connections.
 const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
   micro: Object.freeze({ nodes: 10, connections: 0 }),
   meso: Object.freeze({ nodes: 0, connections: 8 }),
   exosphere: Object.freeze({ nodes: 8, connections: 6 }),
-  macrosphere: Object.freeze({ nodes: 8, connections: 6 }),
+  macrosphere: Object.freeze({ nodes: 8, connections: 0, scope: 12 }),
 });
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
-  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 8 nodes at Micro, 6 connections at Meso, and 6 new nodes with 5 connections at Exosphere or Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
+  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 8 nodes at Micro, 6 connections at Meso, 6 new institutions with 5 connections at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
   `guidance must be an array of no more than 4 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
-  `nodes must be an array of objects with exactly these keys: label, type, scale, evidence. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node.`,
-  'AT EVERY LEVEL, each node label MUST be exactly one concrete actor, object, institution, policy, or event named in the memo, written as a short noun phrase. A label must never be a sentence, clause, proposition, action, theme, outcome, or explanation; put that material in evidence or guidance. Never invent abstractions such as "Access to Services" or "Community Wellbeing" — name the actual thing the memo names. For the memo clause "Adult Participants face delays when the Accessible Van Program is unavailable," valid labels include "Adult Participants" and "Accessible Van Program"; the whole clause is never a node label. Preserve complete official names even when they are long.',
-  'Level focus for nodes: Micro names people, roles, groups, and face-to-face settings. Exosphere names institutions, agencies, funders, service systems, and decision-making bodies that shape daily life from outside immediate settings. Macrosphere names specific laws, public policies, historical conditions, and named beliefs or narratives. Do not restate lower-level actors as new nodes at a higher level.',
-  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat a carried node in nodes. At Exosphere and Macrosphere, connections may use a carried node\'s exact label as an endpoint to tie new institutions or structures to the existing map.',
+  `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere only. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
+  'AT EVERY LEVEL, each node label MUST be exactly one concrete, nameable actor, object, institution, policy, or event, written as a short noun phrase. A label must never be a sentence, clause, proposition, action, theme, outcome, or explanation; put that material in evidence or guidance. Never invent abstractions such as "Access to Services" or "Community Wellbeing". For the memo clause "Adult Participants face delays when the Accessible Van Program is unavailable," valid labels include "Adult Participants" and "Accessible Van Program"; the whole clause is never a node label. Preserve complete official names even when they are long.',
+  'LEVEL TESTS — assign each item by the memo-writer\'s participation, never by an entity\'s size or fame: Micro is what the person is in the room with (people, roles, groups, face-to-face settings, services they directly use). Exosphere is an institution the person is NEVER in the room with, whose decisions still reach a mapped element — agencies, funders, employers, owners, platform operators, decision-making bodies. Macrosphere is a pattern with no door — a named law, public policy, economic condition, or belief/narrative that shapes several parts of the map the same way; if the person could visit it or it could email them, it belongs further in. A specific event or decision is Exosphere; the climate such events collectively create is Macrosphere. Do not restate lower-level actors as new nodes at a higher level.',
+  'At Micro, propose only what the memo names. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: walk the carried map and ask, for each mapped setting or service, who owns or operates it, who funds it, who employs the people in it, who sets its rules, and what law, price, or belief conditions it. Set basis to "memo" when the memo names the item, or "inference" when you are naming the institution or structure plausibly behind the mapped world; an inferred item must still be one concrete nameable thing, and its evidence must say what to verify.',
+  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat a carried node in nodes. At Exosphere, connections may use a carried node\'s exact label as an endpoint to tie new institutions to the existing map. At Macrosphere, scope entries must use exact labels from carriedNodes.',
   'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
-  'connections must be an array of objects with exactly these keys: source, target, verb, rationale. For Micro, connections MUST be empty. For Meso, nodes MUST be empty and source and target MUST use exact IDs from carriedNodes in the project input. For Exosphere and Macrosphere, source and target must exactly match a label from nodes or a label from carriedNodes. Endpoints must differ; verb is a short plain-language relationship phrase; rationale must point to what in the memo makes the connection evident.',
-  'For Meso, use the human-readable carriedNodes labels—not their IDs—in guidance, rationale, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that walks through ONE evident connection.',
-  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For later levels, ready means the memo supports clear elements and at least one evident connection. Readiness never blocks the student from continuing.',
+  `connections must be an array of objects with exactly these keys: source, target, verb, rationale. For Micro AND Macrosphere, connections MUST be empty. For Meso, nodes MUST be empty and source and target MUST use exact IDs from carriedNodes in the project input; verb is a short plain-language relationship phrase. For Exosphere, source and target must exactly match a label from nodes or a label from carriedNodes, at least one endpoint MUST be a carried node (the pathway must land on the mapped world), endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must point to what makes the connection evident.`,
+  `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact labels from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
+  'For Meso, use the human-readable carriedNodes labels—not their IDs—in guidance, rationale, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that walks through ONE evident connection or structure.',
+  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso and Exosphere, ready means clear elements and at least one evident connection. For Macrosphere, ready means at least one structure with a scope of two or more mapped elements. Readiness never blocks the student from continuing.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
@@ -531,18 +537,58 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       if (!label || seenLabels.has(label.toLocaleLowerCase())) return null;
       if (carriedNodeByLabel.has(label.toLocaleLowerCase())) return null;
       seenLabels.add(label.toLocaleLowerCase());
+      const outerLevel = activeScale === 'exosphere' || activeScale === 'macrosphere';
+      // A Macrosphere structure relates to the map through its scope: the
+      // mapped elements it conditions. Scope members must resolve to carried
+      // nodes at generation time; stored replays trust the resolved pairs.
+      const scope = [];
+      if (activeScale === 'macrosphere') {
+        const seenScope = new Set();
+        (Array.isArray(node.scope) ? node.scope : []).forEach((entry) => {
+          let resolved = null;
+          if (isPlainObject(entry)) {
+            const entryId = collapsedRedirectText(entry.id, MEMO_REVIEW_LIMITS.label);
+            const entryLabel = collapsedRedirectText(entry.label, MEMO_REVIEW_LIMITS.label);
+            if (carriedNodes === null) resolved = entryId ? { id: entryId, label: entryLabel || entryId } : null;
+            else {
+              const carried = carriedNodeById.get(entryId)
+                || carriedNodeByLabel.get((entryLabel || entryId || '').toLocaleLowerCase());
+              resolved = carried ? { id: carried.id, label: carried.label } : null;
+            }
+          } else {
+            const reference = collapsedRedirectText(entry, MEMO_REVIEW_LIMITS.label);
+            if (reference) {
+              if (carriedNodes === null) resolved = { id: reference, label: reference };
+              else {
+                const carried = carriedNodeById.get(reference) || carriedNodeByLabel.get(reference.toLocaleLowerCase());
+                resolved = carried ? { id: carried.id, label: carried.label } : null;
+              }
+            }
+          }
+          if (!resolved || seenScope.has(resolved.id)) return;
+          seenScope.add(resolved.id);
+          scope.push(resolved);
+        });
+      }
       return {
         label,
         type: MEMO_REVIEW_NODE_TYPES.includes(node.type) ? node.type : 'event',
         scale: activeScale,
         evidence: collapsedRedirectText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || '',
+        ...(outerLevel ? { basis: node.basis === 'inference' ? 'inference' : 'memo' } : {}),
+        ...(activeScale === 'macrosphere' ? {
+          deontic: scaleLexiconVerb('macrosphere', node.deontic) || 'shapes',
+          scope: scope.slice(0, scaleLimits.scope || 12),
+        } : {}),
       };
     })
     .filter(Boolean)
     .slice(0, Math.min(scaleLimits.nodes, MEMO_REVIEW_LIMITS.nodes));
   const nodeByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node.label]));
   const seenConnections = new Set();
-  const connections = (activeScale === 'micro' ? [] : (Array.isArray(value.connections) ? value.connections : []))
+  // Macrosphere structures never arrive as connections — their reach is the
+  // scope on each structure node.
+  const connections = ((activeScale === 'micro' || activeScale === 'macrosphere') ? [] : (Array.isArray(value.connections) ? value.connections : []))
     .map((connection) => {
       if (!isPlainObject(connection)) return null;
       const sourceReference = collapsedRedirectText(connection.source, MEMO_REVIEW_LIMITS.label);
@@ -577,21 +623,28 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
         const resolveEndpoint = (reference) => {
           if (!reference) return null;
           const carriedById = carriedNodeById.get(reference);
-          if (carriedById) return { reference: carriedById.id, label: carriedById.label };
+          if (carriedById) return { reference: carriedById.id, label: carriedById.label, carried: true };
           const lower = reference.toLocaleLowerCase();
           const carried = carriedNodeByLabel.get(lower);
-          if (carried) return { reference: carried.id, label: carried.label };
+          if (carried) return { reference: carried.id, label: carried.label, carried: true };
           const proposed = nodeByLower.get(lower);
-          return proposed ? { reference: proposed, label: proposed } : null;
+          return proposed ? { reference: proposed, label: proposed, carried: false } : null;
         };
         const resolvedSource = resolveEndpoint(sourceReference);
         const resolvedTarget = resolveEndpoint(targetReference);
+        // An Exosphere connection is an influence pathway — it must land on
+        // the mapped world (Bronfenbrenner's two-step chain). Two floating
+        // new nodes tied to each other are not a pathway.
+        if (carriedNodeById.size && !resolvedSource?.carried && !resolvedTarget?.carried) return null;
         source = resolvedSource?.reference;
         target = resolvedTarget?.reference;
         sourceLabel = resolvedSource?.label;
         targetLabel = resolvedTarget?.label;
       }
-      const verb = collapsedRedirectText(connection.verb, MEMO_REVIEW_LIMITS.verb);
+      let verb = collapsedRedirectText(connection.verb, MEMO_REVIEW_LIMITS.verb);
+      // The institutional register is closed at generation time; stored
+      // reviews replay whatever verb was resolved when they were generated.
+      if (activeScale === 'exosphere' && carriedNodes !== null && verb) verb = scaleLexiconVerb('exosphere', verb);
       if (!source || !target || source === target || !verb) return null;
       const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
       if (seenConnections.has(key) || carriedConnectionKeys.has(key)) return null;

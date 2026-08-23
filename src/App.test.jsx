@@ -2863,4 +2863,111 @@ describe('Systems Mapping workflow', () => {
       if (priorRevoke === undefined) delete URL.revokeObjectURL; else URL.revokeObjectURL = priorRevoke;
     }
   });
+
+  it('lets students draw a structure’s reach at the Macrosphere and commits the scope, never edges', async () => {
+    const project = makeMapProject('macrosphere');
+    const structureTemplate = project.graph.nodes.find((node) => node.scale === 'macrosphere');
+    const microNodes = project.graph.nodes.filter((node) => node.scale === 'micro');
+    expect(structureTemplate).toBeTruthy();
+    expect(microNodes.length).toBeGreaterThanOrEqual(2);
+    // The structure arrives as a pending candidate; nothing macro is live yet.
+    project.graph.nodes = project.graph.nodes.filter((node) => node.scale !== 'macrosphere');
+    project.graph.edges = project.graph.edges.filter((edge) => edge.scale !== 'macrosphere');
+    project.candidates = {
+      nodes: [{
+        ...structuredClone(structureTemplate),
+        label: 'Universal Pre-K Law',
+        type: 'law',
+        status: 'pending',
+        claimState: 'inference',
+        deontic: 'mandates',
+        scopeNodeIds: [],
+      }],
+      edges: [],
+    };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+    expect(await screen.findByRole('heading', { name: 'Choose the structures' })).toBeVisible();
+    // No connections step exists at this level.
+    expect(screen.queryByRole('tab', { name: /Connections/ })).not.toBeInTheDocument();
+    const reachEditor = screen.getByLabelText('Reach of Universal Pre-K Law');
+    fireEvent.change(within(reachEditor).getByLabelText('How Universal Pre-K Law operates'), { target: { value: 'prohibits' } });
+    const addSelect = within(reachEditor).getByLabelText('Add a mapped element to the reach of Universal Pre-K Law');
+    fireEvent.change(addSelect, { target: { value: microNodes[0].id } });
+    fireEvent.change(addSelect, { target: { value: microNodes[1].id } });
+    expect(within(reachEditor).getByRole('button', { name: `Remove ${microNodes[0].label} from the reach of Universal Pre-K Law` })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    await waitFor(() => {
+      const stored = storedProject();
+      const structure = stored.graph.nodes.find((node) => node.label === 'Universal Pre-K Law');
+      expect(structure).toMatchObject({ scale: 'macrosphere', deontic: 'prohibits' });
+      expect(structure.scopeNodeIds).toEqual([microNodes[0].id, microNodes[1].id]);
+      expect(stored.graph.edges.filter((edge) => edge.scale === 'macrosphere')).toEqual([]);
+    });
+  });
+
+  it('renders a structure’s scope as a field over the mapped elements it conditions', async () => {
+    const project = makeMapProject('macrosphere');
+    const structure = project.graph.nodes.find((node) => node.scale === 'macrosphere');
+    const microNodes = project.graph.nodes.filter((node) => node.scale === 'micro');
+    project.graph.edges = project.graph.edges.filter((edge) => edge.scale !== 'macrosphere');
+    structure.deontic = 'frames';
+    structure.scopeNodeIds = [microNodes[0].id, microNodes[1].id];
+    await resumeSavedProject(project);
+    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
+    const field = document.querySelector('.scope-field');
+    expect(field).toBeTruthy();
+    expect(field.getAttribute('d')).toMatch(/^M /);
+    expect(screen.getByRole('button', { name: new RegExp(`${structure.label}.*frames 2 mapped elements`) })).toBeInTheDocument();
+  });
+
+  it('offers the institutional categories at the Exosphere and records a student-named institution with its pathway', async () => {
+    const project = makeMapProject('exosphere');
+    const microNode = project.graph.nodes.find((node) => node.scale === 'micro');
+    project.graph.nodes = project.graph.nodes.filter((node) => node.scale !== 'exosphere');
+    project.graph.edges = project.graph.edges.filter((edge) => edge.scale !== 'exosphere');
+    project.candidates = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+    expect(await screen.findByRole('heading', { name: 'Choose the institutions' })).toBeVisible();
+    const panel = screen.getByRole('region', { name: 'Add an institution' });
+    fireEvent.click(within(panel).getByRole('button', { name: 'School or program board' }));
+    fireEvent.change(within(panel).getByLabelText('Institution name'), { target: { value: 'District 15 School Board' } });
+    fireEvent.change(within(panel).getByLabelText('Pathway verb'), { target: { value: 'sets rules for' } });
+    fireEvent.change(within(panel).getByLabelText('Mapped element the pathway reaches'), { target: { value: microNode.id } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add institution' }));
+    await waitFor(() => {
+      const stored = storedProject();
+      const institution = stored.candidates.nodes.find((node) => node.label === 'District 15 School Board');
+      expect(institution).toMatchObject({ scale: 'exosphere', type: 'agency', status: 'confirmed' });
+      expect(stored.candidates.edges).toEqual([expect.objectContaining({
+        sourceLabel: 'District 15 School Board',
+        target: microNode.id,
+        verb: 'sets rules for',
+        scale: 'exosphere',
+      })]);
+    });
+  });
+
+  it('runs the find-leverage pass at the Macrosphere and stores the tags', async () => {
+    const project = makeRevisionProject('macrosphere');
+    const firstLive = project.graph.nodes.find((node) => node.status !== 'rejected' && node.claimState !== 'retired');
+    await resumeSavedProject(project);
+    expect(await screen.findByRole('heading', { name: 'Where could a small change matter most?' })).toBeVisible();
+    const row = screen.getByRole('group', { name: `Leverage tag for ${firstLive.label}` });
+    fireEvent.click(within(row).getByRole('button', { name: 'Has energy' }));
+    await waitFor(() => {
+      const stored = storedProject();
+      expect(stored.graph.nodes.find((node) => node.id === firstLive.id).leverage).toBe('energy');
+    });
+    // Tapping the active tag clears it.
+    fireEvent.click(within(row).getByRole('button', { name: 'Has energy' }));
+    await waitFor(() => {
+      expect(storedProject().graph.nodes.find((node) => node.id === firstLive.id).leverage).toBeUndefined();
+    });
+  });
 });

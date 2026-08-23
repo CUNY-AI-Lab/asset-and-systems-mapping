@@ -1,6 +1,26 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-22
+Updated: 2026-08-23
+
+## 2026-08-23 outer-ring grammars candidate
+
+Design authority: the "Outer Rings" research memo (EST codification + mapping-practice grammars). Each ring gets its own representational act: Micro names, Meso links, Exosphere anchors institutions behind the map, Macrosphere shades scopes.
+
+- [x] Codify the level delimiters as testable rules: participation tests in the model contract (LEVEL TESTS block), one-line test copy on every Review screen, and per-level candidate ledes (never-in-the-room test at Exosphere; pattern-with-no-door test at Macrosphere).
+- [x] Close the outer-level verb registers: `SCALE_VERB_LEXICONS` (institutional at Exosphere, deontic at Macrosphere) injected into the model contract, enforced with alias coercion in `normalizeMemoReview` at generation time, surfaced as selects in the UI, and passed through untouched on stored-review replay. "leverages" can no longer appear at any level.
+- [x] Rebuild the Exosphere as elicitation, not extraction: the model walks the carried map by institutional category, may propose institutions the memo never names with `basis: "inference"` marked for verification, and every Exosphere connection must anchor on a carried map element (the two-step chain). The deterministic reader mirrors the category walk in guidance and enforces the same anchor + register.
+- [x] Rebuild the Macrosphere as structures and scopes: macro reviews return structures (`deontic` + `scope` resolved to durable graph ids), connections are forced empty at Macrosphere everywhere (model, deterministic reader, candidates, extraction), and committed structures store `scopeNodeIds` on the graph node (schema + validation + replay).
+- [x] Give students direct control of scopes: tap-to-toggle scope editing on structure candidate rows and in the map inspector, an Add-a-structure panel (kind + deontic), and an Add-an-institution panel with the standard category checklist (workplace, platform owner, local government, funder, school board, service agency, media, community org) that records the institution plus its typed pathway to a chosen anchor.
+- [x] Render scopes as fields: a structure's scope draws as a padded convex-hull contour over its members' existing positions (Bubble-Sets move), the Macrosphere layer shows fields plus their member elements instead of spokes, selecting a structure lights exactly its field, and the aria label reads its deontic + member count.
+- [x] Give "leverage" its real job: a Find-Leverage pass opens Revise & Export at the Macrosphere (tag elements stuck / has energy / ripples outward), tags persist on graph nodes, and the Markdown export gains a Leverage section plus each structure's deontic + reach.
+- [x] Verify the current working tree locally.
+  - Evidence: 253 tests passed with 4 PostgreSQL tests skipped behind their explicit environment guard, including new regressions for the Exosphere register/anchor/basis, Macrosphere scope resolution + forced-empty connections + replay, per-scale lexicon resolution, deterministic elicitation guidance, scope/leverage schema validation, and four new UI flows (structure scope editing + commit, field rendering, institution elicitation, leverage tagging). `npm run build` passed.
+- [x] Verify the full four-level cycle in a real browser against the built bundle.
+  - Evidence: a disposable local SQLite run walked Micro (7 concrete nodes) → Meso (2 relationships) → Exosphere (review surfaced only anchored register pathways plus the category-walk guidance; "Google — sets rules for — Punchbowl" added through the elicitation panel and committed to the exo band) → Macrosphere (review surfaced structures with "reach drawn at the next step" and zero connections; "Gendered planning norms · belief · normalizes" built with a 3-element scope, rendered as a shaded field over Jordan/Sam/Paperless Post with the label on the macro band, selection lit exactly the field) → Find-Leverage (tags stored: Jordan stuck, the structure ripples). Final all-layers map: 9 nodes, 3 edges, 1 field, zero pairwise card/label overlaps, zero app console errors.
+- [ ] Commit, push, and deploy the changed tree (deployment awaiting operator go-ahead).
+- [ ] Merge PR #11 into GitHub `main` (operator action; carried forward).
+
+Known limitation: under the deterministic (offline) runtime, outer-level reviews can re-surface extractor object-phrases the student already rejected at Micro, because rejected candidates leave no durable record. The production DeepSeek runtime is governed by the new contract instead; a rejected-label memory is a candidate follow-up.
 
 ## 2026-08-22 concreteness, progression, and map-legibility candidate
 

@@ -16,6 +16,7 @@ import {
   normalizeMicroNodeLabel,
   parseProject,
   projectFileSlug,
+  scaleLexiconVerb,
   serializePortableProject,
   serializeProject,
   stableId,
@@ -135,6 +136,81 @@ describe('mapping domain', () => {
   it('creates stable identifiers', () => {
     expect(stableId('node', 'Family')).toBe(stableId('node', 'Family'));
     expect(stableId('node', 'Family')).not.toBe(stableId('node', 'School'));
+  });
+
+  it('resolves verbs against the closed outer-level registers', () => {
+    expect(scaleLexiconVerb('exosphere', 'Funds')).toBe('funds');
+    expect(scaleLexiconVerb('exosphere', 'oversees')).toBe('regulates');
+    expect(scaleLexiconVerb('exosphere', 'leverages')).toBeNull();
+    expect(scaleLexiconVerb('macrosphere', 'requires')).toBe('mandates');
+    expect(scaleLexiconVerb('macrosphere', 'leverages')).toBeNull();
+    // Levels without a closed register pass verbs through unchanged.
+    expect(scaleLexiconVerb('meso', 'asks for help from')).toBe('asks for help from');
+  });
+
+  it('anchors deterministic Exosphere pathways to the carried map in the institutional register', () => {
+    const carriedNodes = [{ id: 'node_school_11', label: 'School', type: 'organization' }];
+    const review = deterministicMemoReview({
+      ...createDefaultProject().submission,
+      text: 'City Literacy Alliance funds School. City Literacy Alliance requests Printing Vendor. Filler prose keeps the memo long enough for review.',
+    }, 'exosphere', { carriedNodes });
+    expect(review.connections).toEqual([expect.objectContaining({
+      source: 'City Literacy Alliance',
+      target: 'node_school_11',
+      targetLabel: 'School',
+      verb: 'funds',
+    })]);
+    review.nodes.forEach((node) => expect(node.basis).toBe('memo'));
+    const guidanceText = review.guidance.map(({ point }) => point).join(' ');
+    expect(guidanceText).toContain('who owns or operates it');
+    expect(guidanceText).toContain('School');
+  });
+
+  it('returns deterministic Macrosphere structures with empty connections and student-drawn scopes', () => {
+    const carriedNodes = [{ id: 'node_school_11', label: 'School', type: 'organization' }];
+    const review = deterministicMemoReview({
+      ...createDefaultProject().submission,
+      text: 'Universal Pre-K Law shapes School. The paragraph continues with enough filler prose to satisfy the reader.',
+    }, 'macrosphere', { carriedNodes });
+    expect(review.connections).toEqual([]);
+    expect(review.nodes.length).toBeGreaterThanOrEqual(1);
+    review.nodes.forEach((node) => {
+      expect(node.basis).toBe('memo');
+      expect(node.deontic).toBe('shapes');
+      expect(node.scope).toEqual([]);
+    });
+    expect(review.readiness.ready).toBe(true);
+    expect(review.guidance.map(({ point }) => point).join(' ')).toContain('pattern with no door');
+  });
+
+  it('validates structure scopes and leverage tags on graph nodes', () => {
+    const project = projectWithGraph();
+    const [first, second] = project.graph.nodes;
+    const structure = {
+      id: 'node_structure_1',
+      label: 'Universal Pre-K Law',
+      type: 'law',
+      scale: 'macrosphere',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      notes: '',
+      x: 1600,
+      y: 260,
+      annotations: {
+        analytical: { id: stableId('annotation', 'node:node_structure_1:analytical'), text: '' },
+        evidence: { id: stableId('annotation', 'node:node_structure_1:evidence'), text: '' },
+      },
+      deontic: 'defines eligibility for',
+      scopeNodeIds: [first.id, second.id],
+      leverage: 'ripples',
+    };
+    project.graph.nodes.push(structure);
+    expect(() => validateProject(project)).not.toThrow();
+    structure.scopeNodeIds = [structure.id];
+    expect(() => validateProject(project)).toThrow(/cannot include the structure itself/);
+    structure.scopeNodeIds = [first.id];
+    structure.leverage = 'pivotal';
+    expect(() => validateProject(project)).toThrow(/leverage/);
   });
 
   it('keeps incrementally added nodes from occupying the same map space', () => {
