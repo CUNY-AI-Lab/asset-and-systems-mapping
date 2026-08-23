@@ -11,6 +11,7 @@ import {
   createEvent,
   exportFileName,
   extractCandidates,
+  isDiscreteMicroNodeLabel,
   parseProject,
   serializePortableProject,
   serializeProject,
@@ -59,8 +60,14 @@ const NODE_LABEL_LIMIT = 200;
 const RELATIONSHIP_VERB_LIMIT = 100;
 const FILE_NAME_LIMIT = 255;
 const RELATION_VOCABULARY_TEXT_LIMIT = PROJECT_LIMITS.relationVocabulary * (RELATIONSHIP_VERB_LIMIT + 2);
-const VIEWPORT_LIMITS = { minZoom: 0.25, maxZoom: 2, minPan: -5000, maxPan: 5000 };
+const VIEWPORT_LIMITS = {
+  minZoom: PROJECT_LIMITS.zoomMin,
+  maxZoom: PROJECT_LIMITS.zoomMax,
+  minPan: PROJECT_LIMITS.panMin,
+  maxPan: PROJECT_LIMITS.panMax,
+};
 const ECOLOGY_SCALES = new Set(['exosphere', 'macrosphere']);
+const ECOLOGY_MAP_SCALES = new Set(['meso', 'exosphere', 'macrosphere']);
 
 const STAGES = SYSTEMS_MAPPING_STAGES;
 const TeacherDashboard = lazy(() => import('./TeacherDashboard.jsx'));
@@ -266,7 +273,32 @@ function carriedMicroNodes(project) {
     .map(({ id, label, type }) => ({ id, label, type }));
 }
 
+// Exosphere and Macrosphere reviews carry the whole live map so the model can
+// connect new institutions or structures to it without re-proposing anything
+// the student already decided on.
+function carriedMapNodes(project) {
+  return project.graph.nodes
+    .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
+    .slice(0, 50)
+    .map(({ id, label, type }) => ({ id, label, type }));
+}
+
+function carriedReviewNodes(project) {
+  if (project.activeScale === 'meso') return carriedMicroNodes(project);
+  if (ECOLOGY_SCALES.has(project.activeScale)) return carriedMapNodes(project);
+  return [];
+}
+
+function carriedReviewConnections(project) {
+  return project.graph.edges
+    .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+    .slice(0, 100)
+    .map(({ source, target, verb }) => ({ source, target, verb }));
+}
+
 function preflightEvaluationPayload(project) {
+  const carriedNodes = carriedReviewNodes(project);
+  const carriedConnections = project.activeScale === 'micro' ? [] : carriedReviewConnections(project);
   return {
     projectMetadata: projectMetadataForReview(project),
     activeScale: project.activeScale,
@@ -275,7 +307,8 @@ function preflightEvaluationPayload(project) {
     sourceRecord: sourceRecordForEvaluation(project.submission),
     sourceMaterial: project.submission.text,
     projectOverlay: projectOverlayForEvaluation(project.configs.preflight),
-    ...(project.activeScale === 'meso' ? { carriedNodes: carriedMicroNodes(project) } : {}),
+    ...(project.activeScale === 'meso' || carriedNodes.length ? { carriedNodes } : {}),
+    ...(carriedConnections.length ? { carriedConnections } : {}),
   };
 }
 
@@ -849,6 +882,31 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
   </div>;
 }
 
+// Each level reads and asks for something different; the copy names it so a
+// returning cycle never feels like the same screen with the same words.
+const LEVEL_REVIEW_COPY = Object.freeze({
+  micro: Object.freeze({
+    items: 'the people, roles, groups, and settings',
+    scaffoldTitle: 'Nodes evident in your memo',
+    next: 'Choose nodes',
+  }),
+  meso: Object.freeze({
+    items: 'connections among your Micro nodes',
+    scaffoldTitle: 'Connections evident in your memo',
+    next: 'Choose connections',
+  }),
+  exosphere: Object.freeze({
+    items: 'the institutions, agencies, and services shaping things from outside',
+    scaffoldTitle: 'Institutions evident in your memo',
+    next: 'Choose institutions',
+  }),
+  macrosphere: Object.freeze({
+    items: 'the laws, policies, and beliefs shaping the whole system',
+    scaffoldTitle: 'Structures evident in your memo',
+    next: 'Choose structures',
+  }),
+});
+
 function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }) {
   const review = project.preflight?.memoReview;
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
@@ -857,14 +915,43 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
   const hasMemo = Boolean(project.submission.text.trim());
   const nodesOnly = project.activeScale === 'micro';
   const connectionsOnly = project.activeScale === 'meso';
+  const levelCopy = LEVEL_REVIEW_COPY[project.activeScale] || LEVEL_REVIEW_COPY.micro;
+  const mappedLabels = useMemo(() => new Set(project.graph.nodes
+    .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
+    .map((node) => node.label.trim().toLocaleLowerCase())), [project.graph.nodes]);
+  const mappedEdgeKeys = useMemo(() => {
+    const keys = new Set();
+    project.graph.edges
+      .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+      .forEach((edge) => {
+        const verb = edge.verb.trim().toLocaleLowerCase();
+        keys.add(`${edge.source}::${verb}::${edge.target}`);
+        keys.add(`${edge.sourceLabel.trim().toLocaleLowerCase()}::${verb}::${edge.targetLabel.trim().toLocaleLowerCase()}`);
+      });
+    return keys;
+  }, [project.graph.edges]);
+  const surfacedNodes = review
+    ? review.nodes
+      .filter((node) => isDiscreteMicroNodeLabel(node.label))
+      .filter((node) => nodesOnly || !mappedLabels.has(node.label.trim().toLocaleLowerCase()))
+    : [];
+  // Connections already on the map stay off the review: the model's reading
+  // only surfaces what this level adds.
+  const surfacedConnections = (review?.connections || []).filter((connection) => {
+    const verb = connection.verb.trim().toLocaleLowerCase();
+    if (mappedEdgeKeys.has(`${connection.source}::${verb}::${connection.target}`)) return false;
+    const sourceLabel = (connection.sourceLabel || connection.source).trim().toLocaleLowerCase();
+    const targetLabel = (connection.targetLabel || connection.target).trim().toLocaleLowerCase();
+    return !mappedEdgeKeys.has(`${sourceLabel}::${verb}::${targetLabel}`);
+  });
   const microNodes = connectionsOnly ? carriedMicroNodes(project) : [];
-  const nextLabel = nodesOnly ? 'Choose nodes' : connectionsOnly ? 'Choose connections' : 'Choose nodes and connections';
+  const nextLabel = levelCopy.next;
   return <div className="wide stage-enter">
     <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
     <h1>Review your memo</h1>
     <p className="lede">Check what your memo supports and what remains uncertain.</p>
     <MemoDrawer project={project} update={update} />
-    {!hasMemo && <p className="empty-message">Add memo text above to begin. The model reads the memo and surfaces {nodesOnly ? 'the nodes' : connectionsOnly ? 'connections among your Micro nodes' : 'the nodes and connections'} already evident in it.</p>}
+    {!hasMemo && <p className="empty-message">Add memo text above to begin. The model reads the memo and surfaces {levelCopy.items} already evident in it.</p>}
     {busy && !review && <p className="review-progress" role="status">The model is reading your memo…</p>}
     {review && <>
       <section className={`readiness-banner ${review.readiness.ready && !stale ? 'is-ready' : ''}`} aria-label="Where your memo stands">
@@ -891,12 +978,12 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
         </section>
         <aside className="memo-scaffold" aria-labelledby="memo-scaffold-title">
           <p className="eyebrow">Taking shape</p>
-          <h2 id="memo-scaffold-title">{nodesOnly ? 'Nodes evident in your memo' : connectionsOnly ? 'Connections evident in your memo' : 'Nodes and connections evident in your memo'}</h2>
+          <h2 id="memo-scaffold-title">{levelCopy.scaffoldTitle}</h2>
           {connectionsOnly && microNodes.length > 0 && <div className="connection-node-list" role="region" aria-label="Nodes carried forward from Micro">{microNodes.map((node) => <span key={node.id}>{node.label}</span>)}</div>}
-          {!connectionsOnly && review.nodes.length ? <div className="connection-node-list" aria-label="Nodes evident in the memo">{review.nodes.map((node) => <span key={node.label}>{node.label}</span>)}</div> : null}
-          {!connectionsOnly && !review.nodes.length ? <p className="empty-message">No elements surfaced yet. Expand the memo above and refresh, or add elements yourself at the next stage.</p> : null}
+          {!connectionsOnly && surfacedNodes.length ? <div className="connection-node-list" aria-label="Nodes evident in the memo">{surfacedNodes.map((node) => <span key={node.label}>{node.label}</span>)}</div> : null}
+          {!connectionsOnly && !surfacedNodes.length ? <p className="empty-message">No elements surfaced yet. Expand the memo above and refresh, or add elements yourself at the next stage.</p> : null}
           {connectionsOnly && !microNodes.length ? <p className="empty-message">No Micro nodes are available yet. Return to Add memo, choose Micro, and add its nodes before reviewing Meso connections.</p> : null}
-          {!nodesOnly && review.connections.length > 0 && <ul className="memo-scaffold__connections">{review.connections.map((connection, index) => (
+          {!nodesOnly && surfacedConnections.length > 0 && <ul className="memo-scaffold__connections">{surfacedConnections.map((connection, index) => (
             <li key={stableId('scaffold-edge', `${index}:${connection.source}:${connection.verb}:${connection.target}`)}>
               <span className="memo-scaffold__claim"><strong>{connection.sourceLabel || connection.source}</strong> <em>{connection.verb}</em> <strong>{connection.targetLabel || connection.target}</strong></span>
               {connection.rationale && <small>{connection.rationale}</small>}
@@ -962,6 +1049,28 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       remaining: items.filter((item) => item.status === 'pending').length,
     }];
   }));
+  const levelStepCopy = {
+    exosphere: {
+      nodes: {
+        title: 'Choose the institutions',
+        lede: 'These institutions, agencies, and services come from your memo. They sit outside daily settings but shape what happens inside them. Keep, rename, or remove each one — nothing joins the map until you decide.',
+      },
+      edges: {
+        title: 'Connect them to your map',
+        lede: 'Each connection shows where a decision or resource starts and who it reaches — including nodes already on your map. Edit the wording so it says what you mean, keep what is right, and remove what is not.',
+      },
+    },
+    macrosphere: {
+      nodes: {
+        title: 'Choose the structures',
+        lede: 'These laws, policies, histories, and beliefs come from your memo. Keep, rename, or remove each one — nothing joins the map until you decide.',
+      },
+      edges: {
+        title: 'Show what they shape',
+        lede: 'Each connection shows how a structure shapes the institutions, settings, and people beneath it. Edit the wording so it says what you mean, keep what is right, and remove what is not.',
+      },
+    },
+  };
   const stepCopy = {
     nodes: {
       tab: `Nodes · ${counts.nodes.total}`,
@@ -969,11 +1078,13 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       lede: project.activeScale === 'micro'
         ? 'These nodes come from your memo. Keep, rename, or remove each one. Nothing joins the map until you decide.'
         : 'These nodes come from your memo. Keep, rename, or remove each one — connections come next, and nothing joins the map until you decide.',
+      ...(levelStepCopy[project.activeScale]?.nodes || {}),
     },
     edges: {
       tab: `Connections · ${counts.edges.total}`,
       title: 'Confirm how they connect',
       lede: 'Each connection links two kept nodes with wording from your memo. Edit the wording so it says what you mean, keep what is right, and remove what is not — this is where you describe the connections.',
+      ...(levelStepCopy[project.activeScale]?.edges || {}),
     },
     suggest: {
       tab: 'More connections',
@@ -1116,23 +1227,115 @@ function mapNodeGeometry(label, phoneLayout = false) {
   };
 }
 
-function mapEdgeLabelGeometry(label, phoneLayout = false) {
-  const lines = splitMapLabel(label, phoneLayout ? 18 : 24);
-  const lineHeight = phoneLayout ? 28 : 15;
+function mapEdgeLabelGeometry(label, phoneLayout = false, scale = '') {
+  // Phone labels already render at a readable effective size. The desktop
+  // ecological fit is where ring-anchored callouts need larger type and
+  // geometry — at every level whose relationships live in a band.
+  const emphasizeMeso = ECOLOGY_MAP_SCALES.has(scale) && !phoneLayout;
+  const fontSize = phoneLayout
+    ? 26
+    : (emphasizeMeso ? 24 : 12);
+  const lines = splitMapLabel(label, emphasizeMeso ? (phoneLayout ? 22 : 18) : (phoneLayout ? 18 : 24));
+  const lineHeight = emphasizeMeso ? (phoneLayout ? 34 : 29) : (phoneLayout ? 28 : 15);
   const longestLine = Math.max(...lines.map((line) => line.length));
   const width = clamp(
-    longestLine * (phoneLayout ? 13 : 6.5) + (phoneLayout ? 30 : 24),
-    phoneLayout ? 110 : 64,
-    phoneLayout ? 270 : 200,
+    longestLine * (emphasizeMeso ? (phoneLayout ? 15 : 13) : (phoneLayout ? 13 : 6.5)) + (phoneLayout ? 30 : 24),
+    emphasizeMeso ? (phoneLayout ? 140 : 96) : (phoneLayout ? 110 : 64),
+    emphasizeMeso ? (phoneLayout ? 310 : 280) : (phoneLayout ? 270 : 200),
   );
-  const height = Math.max(phoneLayout ? 44 : 24, lines.length * lineHeight + (phoneLayout ? 32 : 10));
+  const height = Math.max(
+    emphasizeMeso ? (phoneLayout ? 60 : 38) : (phoneLayout ? 44 : 24),
+    lines.length * lineHeight + (emphasizeMeso ? (phoneLayout ? 36 : 18) : (phoneLayout ? 32 : 10)),
+  );
   return {
+    fontSize,
     lines,
     lineHeight,
     width,
     height,
-    startY: -((lines.length - 1) * lineHeight) / 2 + (phoneLayout ? 8 : 4),
+    startY: -((lines.length - 1) * lineHeight) / 2 + (emphasizeMeso ? (phoneLayout ? 10 : 7) : (phoneLayout ? 8 : 4)),
   };
+}
+
+function cardConnectionPoint(from, toward, geometry, padding = 0) {
+  const deltaX = toward.x - from.x;
+  const deltaY = toward.y - from.y;
+  const absoluteX = Math.max(.001, Math.abs(deltaX));
+  const absoluteY = Math.max(.001, Math.abs(deltaY));
+  const factor = Math.min(
+    .48,
+    ((geometry.cardWidth / 2) + padding) / absoluteX,
+    ((geometry.cardHeight / 2) + padding) / absoluteY,
+  );
+  return {
+    x: from.x + deltaX * factor,
+    y: from.y + deltaY * factor,
+  };
+}
+
+function angularDistance(left, right) {
+  const difference = Math.abs(left - right) % (Math.PI * 2);
+  return Math.min(difference, Math.PI * 2 - difference);
+}
+
+// Every relationship callout stays on its band's middle ellipse — the one
+// radius where the largest supported label still fits entirely inside the
+// band — but its angle now follows its own endpoints, so leader lines stay
+// short instead of crossing the whole map. A sweep pushes callouts clockwise
+// past node cards and other callouts already occupying that stretch of band.
+function ecologyCalloutAnchors(edges, nodes, positions, phoneLayout) {
+  const anchors = new Map();
+  const groups = new Map();
+  edges.forEach((edge) => {
+    const band = ECOLOGY_BANDS[edge.scale];
+    if (!band || edge.scale === 'micro') return;
+    const source = positions.get(edge.source);
+    const target = positions.get(edge.target);
+    if (!source || !target) return;
+    const group = groups.get(edge.scale) || [];
+    group.push({ edge, source, target, index: group.length });
+    groups.set(edge.scale, group);
+  });
+  groups.forEach((group, scale) => {
+    const band = ECOLOGY_BANDS[scale];
+    const radiusX = (band.innerRx + band.outerRx) / 2;
+    const radiusY = (band.innerRy + band.outerRy) / 2;
+    const sweepRadius = (radiusX + radiusY) / 2;
+    const occupied = nodes
+      .filter((node) => node.scale === scale && positions.has(node.id))
+      .map((node) => {
+        const position = positions.get(node.id);
+        const geometry = mapNodeGeometry(node.label, phoneLayout);
+        return {
+          center: Math.atan2((position.y - ECOLOGY_CENTER.y) / radiusY, (position.x - ECOLOGY_CENTER.x) / radiusX),
+          half: clamp((geometry.cardWidth / 2 + 26) / sweepRadius, 0.1, 0.8),
+        };
+      });
+    const items = group.map(({ edge, source, target, index }) => {
+      const midX = (source.x + target.x) / 2 - ECOLOGY_CENTER.x;
+      const midY = (source.y + target.y) / 2 - ECOLOGY_CENTER.y;
+      const fallback = group.length === 1
+        ? Math.PI / 2
+        : (-Math.PI / 3) + (index / Math.max(1, group.length - 1)) * (Math.PI * 5 / 3);
+      const preferred = Math.hypot(midX, midY) >= 48 ? Math.atan2(midY / radiusY, midX / radiusX) : fallback;
+      const geometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
+      return { edge, preferred, half: clamp((geometry.width / 2 + 26) / sweepRadius, 0.14, 0.7) };
+    });
+    [...items].sort((left, right) => left.preferred - right.preferred || left.edge.id.localeCompare(right.edge.id)).forEach((item) => {
+      let angle = item.preferred;
+      let attempts = 0;
+      while (occupied.some((zone) => angularDistance(angle, zone.center) < zone.half + item.half) && attempts < 70) {
+        angle += 0.09;
+        attempts += 1;
+      }
+      occupied.push({ center: angle, half: item.half });
+      anchors.set(item.edge.id, {
+        x: Math.round(ECOLOGY_CENTER.x + Math.cos(angle) * radiusX),
+        y: Math.round(ECOLOGY_CENTER.y + Math.sin(angle) * radiusY),
+      });
+    });
+  });
+  return anchors;
 }
 
 function readableZoomFloor(phoneLayout) {
@@ -1363,7 +1566,7 @@ function arrangedPhoneRelationshipPositions(nodes, edge) {
   if (!source || !target) return null;
   const sourceGeometry = mapNodeGeometry(source.label, true);
   const targetGeometry = mapNodeGeometry(target.label, true);
-  const relationshipGeometry = mapEdgeLabelGeometry(edge.verb, true);
+  const relationshipGeometry = mapEdgeLabelGeometry(edge.verb, true, edge.scale);
   const gap = Math.max(relationshipGeometry.height + 28, 96);
   const totalHeight = sourceGeometry.cardHeight + gap + targetGeometry.cardHeight;
   const top = GRAPH_HEIGHT / 2 - totalHeight / 2;
@@ -1746,54 +1949,71 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     position: positions.get(node.id),
     geometry: mapNodeGeometry(node.label, phoneLayout),
   }]));
+  const layerAnchors = mapMode === 'ecology' && !detailMode
+    ? ecologyCalloutAnchors(edges, nodes, positions, phoneLayout)
+    : null;
   const edgeVisuals = edges.map((edge) => {
     const source = nodeVisuals.get(edge.source);
     const target = nodeVisuals.get(edge.target);
     if (!source?.position || !target?.position) return null;
-    const deltaX = target.position.x - source.position.x;
-    const deltaY = target.position.y - source.position.y;
-    const absoluteX = Math.max(.001, Math.abs(deltaX));
-    const absoluteY = Math.max(.001, Math.abs(deltaY));
-    const sourceFactor = Math.min(
-      .45,
-      (source.geometry.cardWidth / 2) / absoluteX,
-      (source.geometry.cardHeight / 2) / absoluteY,
-    );
-    const targetFactor = Math.min(
-      .45,
-      ((target.geometry.cardWidth / 2) + (phoneLayout ? 16 : 10)) / absoluteX,
-      ((target.geometry.cardHeight / 2) + (phoneLayout ? 8 : 5)) / absoluteY,
-    );
+    const labelGeometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
+    const layerAnchor = layerAnchors?.get(edge.id) || null;
+    const sourceToward = layerAnchor || target.position;
+    const targetToward = layerAnchor || source.position;
+    const sourcePoint = cardConnectionPoint(source.position, sourceToward, source.geometry);
+    const targetPoint = cardConnectionPoint(target.position, targetToward, target.geometry, phoneLayout ? 12 : 7);
+    const labelPoint = layerAnchor || {
+      x: (source.position.x + target.position.x) / 2,
+      y: (source.position.y + target.position.y) / 2,
+    };
+    const path = layerAnchor
+      ? `M ${sourcePoint.x} ${sourcePoint.y} L ${layerAnchor.x} ${layerAnchor.y} L ${targetPoint.x} ${targetPoint.y}`
+      : `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
     return {
       edge,
-      x1: source.position.x + deltaX * sourceFactor,
-      y1: source.position.y + deltaY * sourceFactor,
-      x2: target.position.x - deltaX * targetFactor,
-      y2: target.position.y - deltaY * targetFactor,
-      midX: (source.position.x + target.position.x) / 2,
-      midY: (source.position.y + target.position.y) / 2,
+      x1: sourcePoint.x,
+      y1: sourcePoint.y,
+      x2: targetPoint.x,
+      y2: targetPoint.y,
+      midX: labelPoint.x,
+      midY: labelPoint.y,
+      path,
+      layerAnchored: Boolean(layerAnchor),
+      labelGeometry,
       selected: selection?.kind === 'edge' && selection.id === edge.id,
     };
   }).filter(Boolean);
-  return <svg ref={svgRef} tabIndex="-1" className={`graph-canvas graph-canvas--${mapMode} ${detailMode ? 'is-detail-view' : ''} ${panMode ? 'is-panning' : ''}`} data-map-mode={mapMode} role="group" aria-label={`${mapLabel}. ${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}. Choose a node for details.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}`} viewBox={graphViewBox} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)}>
+  return <svg ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${detailMode ? 'is-detail-view' : ''} ${panMode ? 'is-panning' : ''}`} data-map-mode={mapMode} role="group" aria-label={`${mapLabel}. ${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}. Choose a node for details.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}${panMode ? ' Arrow keys pan the map when the canvas itself is focused.' : ''}`} viewBox={graphViewBox} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onKeyDown={(event) => {
+    if (!panMode || event.target !== event.currentTarget) return;
+    const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (!deltas[event.key]) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 120 : 40;
+    const [dx, dy] = deltas[event.key];
+    onViewportChange({
+      ...viewport,
+      panX: viewport.panX + dx * step,
+      panY: viewport.panY + dy * step,
+    });
+    onAnnounce(`Map panned ${event.key.replace('Arrow', '').toLowerCase()}.`);
+  }}>
     <title>Interactive systems map</title>
     <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" /></marker></defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
       {mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} /> : null}
-      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, selected }) => <g key={edge.id} data-graph-id={edge.id} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${SCALES[edge.scale]?.label || edge.scale} level relationship`} aria-keyshortcuts="Enter Space" className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => {
+      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, layerAnchored, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={layerAnchored ? 'layer-anchor' : 'direct'} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${SCALES[edge.scale]?.label || edge.scale} level relationship`} aria-keyshortcuts="Enter Space" className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onSelect('edge', edge.id, true);
       }}>
-        <line className="edge-hit" x1={x1} y1={y1} x2={x2} y2={y2} />
-        {selected && <line className="edge-selection-halo" x1={x1} y1={y1} x2={x2} y2={y2} />}
-        <line className="edge-line" x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
+        <path className="edge-hit" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />
+        {selected && <path className="edge-selection-halo" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />}
+        <path className="edge-line" d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
       </g>)}</g>
-      <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false).map(({ edge, midX, midY, selected }) => {
-        const geometry = mapEdgeLabelGeometry(edge.verb, phoneLayout);
-        return <g key={edge.id} data-edge-id={edge.id} data-full-label={edge.verb} className={`graph-edge-label ${selected ? 'is-selected' : ''}`}>
+      <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false).map(({ edge, midX, midY, labelGeometry: geometry, layerAnchored, selected }) => {
+        return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={layerAnchored ? 'layer-anchor' : 'direct'} data-anchor-x={midX} data-anchor-y={midY} data-full-label={edge.verb} className={`graph-edge-label ${selected ? 'is-selected' : ''}`}>
           <rect className="edge-label-bg" x={midX - (geometry.width / 2)} y={midY - (geometry.height / 2)} width={geometry.width} height={geometry.height} rx={phoneLayout ? 6 : 2} />
-          <text className="edge-label" x={midX}>{geometry.lines.map((line, lineIndex) => <tspan key={`${edge.id}-line-${lineIndex}`} x={midX} y={midY + geometry.startY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
+          <text className="edge-label" style={{ fontSize: geometry.fontSize }} x={midX}>{geometry.lines.map((line, lineIndex) => <tspan key={`${edge.id}-line-${lineIndex}`} x={midX} y={midY + geometry.startY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
         </g>;
       })}</g>
       <g className="nodes">{nodes.map((node) => {
@@ -1827,7 +2047,7 @@ function sameGraphVisuals(previous, next) {
   }
   for (let index = 0; index < previous.edges.length; index += 1) {
     const a = previous.edges[index]; const b = next.edges[index];
-    if (a.id !== b.id || a.source !== b.source || a.target !== b.target || a.verb !== b.verb || a.claimState !== b.claimState || a.sourceLabel !== b.sourceLabel || a.targetLabel !== b.targetLabel || a.showLabel !== b.showLabel || a.visualMuted !== b.visualMuted) return false;
+    if (a.id !== b.id || a.source !== b.source || a.target !== b.target || a.verb !== b.verb || a.scale !== b.scale || a.claimState !== b.claimState || a.sourceLabel !== b.sourceLabel || a.targetLabel !== b.targetLabel || a.showLabel !== b.showLabel || a.visualMuted !== b.visualMuted || a.layerEdgeSlot !== b.layerEdgeSlot || a.layerEdgeCount !== b.layerEdgeCount) return false;
   }
   if (previous.onMoveNode !== next.onMoveNode) return false;
   return true;
@@ -1872,8 +2092,7 @@ function ecologyViewportBounds(layers) {
   }];
 }
 
-function fitViewport(nodes, targetHeight = 440, phoneLayout = false, extraBounds = []) {
-  const minimumZoom = readableZoomFloor(phoneLayout);
+function fitViewport(nodes, targetHeight = 440, phoneLayout = false, extraBounds = [], minimumZoom = VIEWPORT_LIMITS.minZoom) {
   const bounds = [...nodes.map((node) => {
     const geometry = mapNodeGeometry(node.label, phoneLayout);
     return {
@@ -1896,15 +2115,6 @@ function fitViewport(nodes, targetHeight = 440, phoneLayout = false, extraBounds
   };
 }
 
-function centerViewportOnNode(node, phoneLayout = false) {
-  const zoom = Math.max(phoneLayout ? 1.5 : 1, readableZoomFloor(phoneLayout));
-  return {
-    zoom,
-    panX: clamp(GRAPH_WIDTH / 2 - node.x * zoom, VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
-    panY: clamp(GRAPH_HEIGHT / 2 - node.y * zoom, VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
-  };
-}
-
 const INSPECTOR_TABS = ['node', 'relationships', 'map'];
 
 function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave }) {
@@ -1920,6 +2130,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const [annotationDisclosure, setAnnotationDisclosure] = useState('analytical');
   const [panMode, setPanMode] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [addMode, setAddMode] = useState(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
@@ -1928,13 +2139,31 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const [newNode, setNewNode] = useState({ label: '', type: 'organization', scale: project.activeScale, evidence: '', claimState: 'research lead' });
   const [newEdge, setNewEdge] = useState({ source: project.graph.nodes[0]?.id || '', target: project.graph.nodes[1]?.id || '', verb: 'provides', evidence: '', claimState: 'research lead' });
   const canvasWrapRef = useRef(null);
+  const fullscreenToggleRef = useRef(null);
   const inspectorRef = useRef(null);
   const initialLayoutCheckedRef = useRef(false);
   const phoneOverviewViewportKeyRef = useRef('');
   const phoneLayout = usePhoneLayout();
   const previousPhoneLayoutRef = useRef(phoneLayout);
   const ecologyLayers = useMemo(() => SCALE_ORDER.filter((scale) => project.releasedScales.includes(scale)), [project.releasedScales]);
-  const mapMode = ecologyLayers.some((scale) => ECOLOGY_SCALES.has(scale)) ? 'ecology' : 'network';
+  const mapMode = ecologyLayers.some((scale) => ECOLOGY_MAP_SCALES.has(scale)) ? 'ecology' : 'network';
+  useEffect(() => {
+    if (!fullscreen) return undefined;
+    document.body.classList.add('map-fullscreen-open');
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setFullscreen(false);
+      setAnnouncement('Full screen map closed.');
+      window.requestAnimationFrame(() => fullscreenToggleRef.current?.focus());
+    };
+    document.addEventListener('keydown', onKeyDown);
+    window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
+    return () => {
+      document.body.classList.remove('map-fullscreen-open');
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [fullscreen]);
   const fitMapOverview = useCallback((nodes, targetHeight = phoneLayout ? 650 : 440) => fitViewport(
     nodes,
     targetHeight,
@@ -1943,8 +2172,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   ), [ecologyLayers, mapMode, phoneLayout]);
   const readingViewport = useCallback((nodes, layer = visibleScale) => {
     if (mapMode !== 'ecology' || layer === 'all') return fitMapOverview(nodes);
-    const anchor = nodes.find((node) => node.scale === layer) || nodes[0];
-    return anchor ? centerViewportOnNode(anchor, phoneLayout) : fitMapOverview(nodes);
+    return fitViewport(nodes, phoneLayout ? 650 : 540, phoneLayout, ecologyViewportBounds([layer]));
   }, [fitMapOverview, mapMode, phoneLayout, visibleScale]);
   const hasRemovedItems = project.graph.nodes.some((node) => node.claimState === 'retired') || project.graph.edges.some((edge) => edge.claimState === 'retired');
   const visibleScaleSet = useMemo(() => new Set(visibleScale === 'all' ? project.releasedScales : [visibleScale]), [project.releasedScales, visibleScale]);
@@ -2013,9 +2241,24 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const visibleEdges = useMemo(() => {
     const shown = focusActive ? scaleEdges.filter((edge) => focusedEdgeIds.has(edge.id)) : scaleEdges;
     const overview = !focusActive && visibleScale === 'all';
-    const showFocusedLabels = focusActive && (!phoneLayout || focus?.kind === 'edge');
-    return shown.map((edge) => ({ ...edge, showLabel: showFocusedLabels, visualMuted: overview }));
-  }, [focus, focusActive, phoneLayout, scaleEdges, focusedEdgeIds, visibleScale]);
+    const layerLayouts = new Map();
+    scaleEdges.forEach((edge) => {
+      const group = layerLayouts.get(edge.scale) || [];
+      group.push(edge);
+      layerLayouts.set(edge.scale, group);
+    });
+    layerLayouts.forEach((group) => group.sort((left, right) => left.id.localeCompare(right.id)));
+    return shown.map((edge) => {
+      const group = layerLayouts.get(edge.scale) || [edge];
+      return {
+        ...edge,
+        showLabel: visibleScale !== 'all' || focusActive,
+        visualMuted: overview,
+        layerEdgeSlot: group.findIndex((candidate) => candidate.id === edge.id),
+        layerEdgeCount: group.length,
+      };
+    });
+  }, [focusActive, scaleEdges, focusedEdgeIds, visibleScale]);
   useEffect(() => {
     if (initialLayoutCheckedRef.current) return;
     initialLayoutCheckedRef.current = true;
@@ -2034,8 +2277,12 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       ? project.releasedScales.includes(node.scale)
       : node.scale === visibleScale || endpointIds.has(node.id));
     setAutomaticPositions(positions);
-    if (positions) setMapViewport(readingViewport(nextVisibleNodes.length ? nextVisibleNodes : positionedNodes));
-  }, [mapMode, phoneLayout, project.events, project.graph.edges, project.graph.nodes, project.releasedScales, readingViewport, visibleScale]);
+    // An untouched stored viewport (0,0,1) frames the network-layout window,
+    // but in ecology mode it shows an empty corner far from the rings — an
+    // already-clean ecological layout still needs an initial reading fit.
+    const viewportUntouched = project.viewport.panX === 0 && project.viewport.panY === 0 && project.viewport.zoom === 1;
+    if (positions || (viewportUntouched && mapMode === 'ecology')) setMapViewport(readingViewport(nextVisibleNodes.length ? nextVisibleNodes : positionedNodes));
+  }, [mapMode, phoneLayout, project.events, project.graph.edges, project.graph.nodes, project.releasedScales, project.viewport.panX, project.viewport.panY, project.viewport.zoom, readingViewport, visibleScale]);
   useEffect(() => {
     const wasPhoneLayout = previousPhoneLayoutRef.current;
     previousPhoneLayoutRef.current = phoneLayout;
@@ -2057,10 +2304,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const key = `${responsiveScope}:${displayedNodes.map((node) => `${node.id}:${node.x}:${node.y}`).join('|')}`;
     if (phoneOverviewViewportKeyRef.current === key) return;
     phoneOverviewViewportKeyRef.current = key;
-    setMapViewport(fitViewport(displayedNodes, 650, true));
+    setMapViewport(fitViewport(displayedNodes, 650, true, [], readableZoomFloor(true)));
   }, [displayedNodes, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope]);
   useEffect(() => {
-    if (phoneLayout && drawerOpen) setPhoneViewport(fitViewport(displayedNodes.length ? displayedNodes : project.graph.nodes, 240, true));
+    if (phoneLayout && drawerOpen) setPhoneViewport(fitViewport(displayedNodes.length ? displayedNodes : project.graph.nodes, 240, true, [], readableZoomFloor(true)));
     else setPhoneViewport(null);
     // Refit only when the drawer opens or the layout crosses the phone breakpoint.
     // Annotation edits clone graph records but must not reset an in-progress pan/zoom.
@@ -2068,14 +2315,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   }, [phoneLayout, drawerOpen]);
   useEffect(() => {
     if (!phoneRelationshipDetail) return;
-    setMapViewport(fitViewport(displayedNodes, 650, true));
+    setMapViewport(fitViewport(displayedNodes, 650, true, [], readableZoomFloor(true)));
     // Refit when this relationship enters phone detail mode. Annotation edits
     // keep the same mode and must not recenter a student who has already panned.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.id, phoneLayout, phoneRelationshipDetail]);
   useEffect(() => {
     if (!focusedEcologyDetail) return;
-    setMapViewport(fitViewport(displayedNodes, phoneLayout ? 650 : 440, phoneLayout));
+    setMapViewport(fitViewport(displayedNodes, phoneLayout ? 650 : 440, phoneLayout, [], readableZoomFloor(phoneLayout)));
     // The focus identity and breakpoint define this temporary detail layout.
     // Annotation edits must not recenter a student who has already panned it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2090,8 +2337,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const focusedNode = focus?.kind === 'node' ? project.graph.nodes.find((node) => node.id === focus.id) : null;
   const focusedEdge = focus?.kind === 'edge' ? project.graph.edges.find((edge) => edge.id === focus.id) : null;
   const selectedItemRemoved = (selectedNode || selectedEdge)?.claimState === 'retired';
-  const relatedEdges = project.graph.edges
-    .filter((edge) => showRemoved || edge.claimState !== 'retired')
+  const relatedEdges = scaleEdges
     .filter((edge) => selectedNode
       ? edge.source === selectedNode.id || edge.target === selectedNode.id
       : selectedEdge
@@ -2105,7 +2351,6 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       setFocus({ kind, id });
       setLegendOpen(false);
       setCreateMenuOpen(false);
-      setPanMode(false);
       setDrawerOpen(true);
     }
   }, []);
@@ -2144,10 +2389,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setMapViewport(readingViewport(nextNodes, nextScale));
   };
   const moveNode = useCallback((id, x, y, method) => {
+    const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     update((draft) => {
       if (automaticPositions) draft.graph.nodes.forEach((node) => {
         const position = automaticPositions.get(node.id);
-        if (position) Object.assign(node, position);
+        if (position && displayedNodeIds.has(node.id)) Object.assign(node, position);
       });
       if (phoneOverviewPositions) draft.graph.nodes.forEach((node) => {
         const position = phoneOverviewPositions.get(node.id);
@@ -2167,11 +2413,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
   }, [automaticPositions, displayedNodes, logPrototype, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, update]);
   const changeViewport = useCallback((next) => {
-    const minimumZoom = readableZoomFloor(phoneLayout);
     const bounded = {
       panX: clamp(Math.round(next.panX), VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
       panY: clamp(Math.round(next.panY), VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
-      zoom: clamp(Number(next.zoom.toFixed(2)), minimumZoom, VIEWPORT_LIMITS.maxZoom),
+      zoom: clamp(Number(next.zoom.toFixed(2)), VIEWPORT_LIMITS.minZoom, VIEWPORT_LIMITS.maxZoom),
     };
     if (phoneLayout && drawerOpen) setPhoneViewport(bounded);
     if (focusedEcologyPositions || phoneRelationshipPositions) {
@@ -2198,13 +2443,8 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   }, [update, logPrototype, phoneLayout, drawerOpen, focusedEcologyPositions, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
   const zoomBy = (amount) => {
     const requested = phoneLayout && drawerOpen && phoneViewport ? phoneViewport : mapViewport || project.viewport;
-    // Controls operate from the zoom students can actually see. On phones the
-    // readable floor can be higher than a legacy saved viewport, so the first
-    // Zoom in press must advance beyond that floor rather than appear inert.
-    const current = requested.zoom >= readableZoomFloor(phoneLayout)
-      ? requested
-      : { ...requested, zoom: readableZoomFloor(phoneLayout) };
-    const zoom = clamp(current.zoom + amount, readableZoomFloor(phoneLayout), VIEWPORT_LIMITS.maxZoom);
+    const current = requested;
+    const zoom = clamp(current.zoom + amount, VIEWPORT_LIMITS.minZoom, VIEWPORT_LIMITS.maxZoom);
     const mapCenterX = (GRAPH_WIDTH / 2 - current.panX) / current.zoom;
     const mapCenterY = (GRAPH_HEIGHT / 2 - current.panY) / current.zoom;
     changeViewport({ zoom, panX: GRAPH_WIDTH / 2 - mapCenterX * zoom, panY: GRAPH_HEIGHT / 2 - mapCenterY * zoom });
@@ -2213,7 +2453,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const nodes = displayedNodes.length ? displayedNodes : project.graph.nodes;
     const detailLayout = focusedEcologyPositions || phoneRelationshipPositions;
     const nextViewport = detailLayout
-      ? fitViewport(nodes, phoneLayout ? 650 : 440, phoneLayout)
+      ? fitViewport(nodes, phoneLayout ? 650 : 440, phoneLayout, [], readableZoomFloor(phoneLayout))
       : readingViewport(nodes);
     if (phoneOverviewPositions || phoneEcologyPositions || detailLayout) {
       setMapViewport(nextViewport);
@@ -2232,10 +2472,6 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const arrangedNodes = nodes.map((node) => ({ ...node, ...positions.get(node.id) }));
     const nextViewport = readingViewport(arrangedNodes);
     update((draft) => {
-      if (automaticPositions) draft.graph.nodes.forEach((node) => {
-        const position = automaticPositions.get(node.id);
-        if (position) Object.assign(node, position);
-      });
       draft.graph.nodes.forEach((node) => {
         const position = positions.get(node.id);
         if (position) Object.assign(node, position);
@@ -2321,9 +2557,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     toast('Relationship added.');
   };
   const requestedViewport = phoneLayout && drawerOpen && phoneViewport ? phoneViewport : mapViewport || project.viewport;
-  const canvasViewport = requestedViewport.zoom >= readableZoomFloor(phoneLayout)
-    ? requestedViewport
-    : { ...requestedViewport, zoom: readableZoomFloor(phoneLayout) };
+  const canvasViewport = {
+    ...requestedViewport,
+    zoom: clamp(requestedViewport.zoom, VIEWPORT_LIMITS.minZoom, VIEWPORT_LIMITS.maxZoom),
+  };
   const setTab = (tab) => {
     setInspectorTab(tab);
     setAddMode(null);
@@ -2339,14 +2576,22 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const mapLabel = visibleScale === 'all' ? 'All-layers map' : `${SCALES[visibleScale]?.label || visibleScale} map`;
   const focusLabel = focusedNode?.label || (focusedEdge ? `${focusedEdge.sourceLabel} to ${focusedEdge.targetLabel}` : '');
-  return <div className={`map-stage map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''}`}>
+  const toggleFullscreen = () => {
+    setFullscreen((current) => {
+      const next = !current;
+      setAnnouncement(next ? 'Full screen map opened.' : 'Full screen map closed.');
+      if (!next) window.requestAnimationFrame(() => fullscreenToggleRef.current?.focus());
+      return next;
+    });
+  };
+  return <div className={`map-stage map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}>
     <MemoDrawer project={project} update={update} hint="The memo travels with the map. Edit it here whenever the map surfaces something new." />
     <div className="map-toolbar"><h1>Build the map</h1><div className="map-toolbar__controls"><label><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{mapMode === 'ecology' && phoneLayout && visibleScale !== 'all' ? <button className="map-show-all" type="button" onClick={() => changeVisibleScale('all')}>Show all layers</button> : null}{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
     {focusActive ? <div className="map-focus-bar" role="status"><span>Showing connections for <strong>{focusLabel}</strong>.</span><button type="button" onClick={showFullMap}>Show full map</button></div> : <p className="map-overview-hint">Choose a node to see its connections.</p>}
     <div className={`map-layout ${drawerOpen ? 'has-inspector' : ''}`}>
-      <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''}`} aria-label="Map canvas and controls">
+      <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} visibleLayer={visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} panMode={panMode} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
-        <div className="canvas-controls" role="toolbar" aria-label="Map view controls" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}><button type="button" aria-pressed={panMode} className={panMode ? 'is-active' : ''} onClick={() => setPanMode((current) => !current)}>Pan</button><button type="button" aria-label="Zoom out" onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" onClick={() => zoomBy(0.15)}>+</button>{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" onClick={arrangeMap}>Arrange map</button>}<button type="button" onClick={fitMap}>{mapMode === 'ecology' ? 'Center map' : 'Fit map'}</button><button type="button" aria-expanded={legendOpen} onClick={() => setLegendOpen((current) => { const opening = !current; if (opening) { setDrawerOpen(false); setCreateMenuOpen(false); } return opening; })}>Map key</button><button className="phone-inspector-trigger" type="button" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setDrawerOpen(true); }}>Details</button></div>
+        <div className="canvas-controls" role="toolbar" aria-label="Map view controls" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}><button type="button" aria-pressed={panMode} className={panMode ? 'is-active' : ''} onClick={() => setPanMode((current) => !current)}>Pan</button><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= VIEWPORT_LIMITS.minZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button>{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" onClick={arrangeMap}>Arrange map</button>}<button type="button" onClick={fitMap}>{mapMode === 'ecology' ? 'Center map' : 'Fit map'}</button><button type="button" aria-expanded={legendOpen} onClick={() => setLegendOpen((current) => { const opening = !current; if (opening) { setDrawerOpen(false); setCreateMenuOpen(false); } return opening; })}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-pressed={fullscreen} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen map'}</button><button className="phone-inspector-trigger" type="button" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setDrawerOpen(true); }}>Details</button></div>
         {legendOpen && <aside className="map-legend" aria-label="Map key"><div className="map-legend__head"><strong>Map key</strong><button type="button" onClick={() => setLegendOpen(false)} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend /></aside>}
         <div className="sr-only" aria-live="polite">{announcement}</div>
       </section>
@@ -2368,7 +2613,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
         </> : <p className="empty-message">Choose a node on the map to inspect and annotate it.</p>}</div>}
         {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.verb}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence</span><p>{selectedEdge.evidence || 'No evidence added yet.'}</p></div></div></details><button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button><AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
-        {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary"><strong>{project.graph.nodes.length}</strong><span>nodes</span><strong>{project.graph.edges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
+        {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary"><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
       </aside>
     </div>
   </div>;
@@ -2407,10 +2652,23 @@ function revisionEventCopy(event) {
   return { label, detail: showDetail ? event.detail : '' };
 }
 
+function activeLevelGraph(project) {
+  const edges = project.activeScale === 'micro'
+    ? []
+    : project.graph.edges.filter((edge) => edge.scale === project.activeScale && edge.claimState !== 'retired');
+  const endpointIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+  const nodes = project.graph.nodes.filter((node) => node.claimState !== 'retired'
+    && (node.scale === project.activeScale || endpointIds.has(node.id)));
+  return { nodes, edges };
+}
+
 function RevisionStage({ project, update, replaceProject, toast, logPrototype }) {
   const [importError, setImportError] = useState('');
-  const currentNodes = project.graph.nodes.filter((node) => node.claimState !== 'retired').length;
-  const needsEvidence = project.graph.nodes.filter((node) => node.claimState === 'research lead').length + project.graph.edges.filter((edge) => edge.claimState === 'research lead').length;
+  const levelGraph = activeLevelGraph(project);
+  const currentNodes = levelGraph.nodes.length;
+  const currentRelationships = levelGraph.edges.length;
+  const needsEvidence = [...levelGraph.nodes, ...levelGraph.edges].filter((item) => item.claimState === 'research lead').length;
+  const levelLabel = SCALES[project.activeScale]?.label || project.activeScale;
   const onImport = async (event) => {
     const [file] = event.target.files;
     if (!file) return;
@@ -2445,14 +2703,14 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
     <MemoDrawer project={project} update={update} />
     <div className="revision-grid">
       <section>
-        <div className="before-after"><div><span>Memo</span><p>{project.submission.text.split(/[.!?]/).filter((sentence) => sentence.trim()).length} memo statements were available for review.</p></div><Icon name="arrow" size={24} /><div><span>Current map</span><p>{project.graph.nodes.length} nodes and {project.graph.edges.length} relationships are recorded.</p></div></div>
+        <div className="before-after"><div><span>Memo</span><p>{project.submission.text.split(/[.!?]/).filter((sentence) => sentence.trim()).length} memo statements were available for review.</p></div><Icon name="arrow" size={24} /><div aria-label={`Current ${levelLabel} map summary`}><span>Current {levelLabel} map</span><p>{currentNodes} {currentNodes === 1 ? 'node is' : 'nodes are'} recorded{project.activeScale === 'micro' ? '.' : ` with ${currentRelationships} ${currentRelationships === 1 ? 'relationship' : 'relationships'}.`}</p></div></div>
         <Field label="What changed in your explanation?" hint="Optional note for this level cycle"><textarea className="reflection" rows="8" maxLength={PROJECT_LIMITS.promptText} value={project.reflection} onChange={(event) => update((draft) => { draft.reflection = event.target.value; })} onBlur={() => update(() => {}, 'reflection.revised', 'Level-cycle reflection')} placeholder="I first understood… The map now shows… I still need to investigate…" /></Field>
-        <div className="release-summary"><div><strong>{currentNodes}</strong><span>nodes on map</span></div><div><strong>{project.graph.edges.length}</strong><span>relationships</span></div><div><strong>{needsEvidence}</strong><span>items needing evidence</span></div><div><strong>{project.events.length}</strong><span>changes</span></div></div>
+        <div className={`release-summary ${project.activeScale === 'micro' ? 'release-summary--node-only' : ''}`}><div><strong>{currentNodes}</strong><span>nodes on map</span></div>{project.activeScale !== 'micro' && <div><strong>{currentRelationships}</strong><span>relationships</span></div>}<div><strong>{needsEvidence}</strong><span>items needing evidence</span></div><div><strong>{project.events.length}</strong><span>changes</span></div></div>
         <div className="sharing-row"><Field label="Who can receive this copy?"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}{index > maxIndex ? ' · unavailable' : ''}</option>)}</select></Field></div>
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
-    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export a copy.</h2><p>Choose JSON, CSV, or Markdown for a copy of the map.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
+    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export the full map.</h2><p>Choose JSON, CSV, or Markdown.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
 
@@ -2935,25 +3193,35 @@ function App() {
       ? reference
       : nodeIdForLabel(label);
     const nodeById = new Map();
-    (review?.nodes || []).forEach((node) => {
-      const id = nodeIdForLabel(node.label);
-      if (nodeById.has(id)) return;
-      nodeById.set(id, {
-        id,
-        label: node.label,
-        type: node.type,
-        scale: node.scale,
-        status: 'pending',
-        claimState: 'inference',
-        evidence: node.evidence || '',
-        sourceFingerprint: fingerprint,
-        notes: '',
+    (review?.nodes || [])
+      .filter((node) => currentProject.activeScale !== 'micro' || isDiscreteMicroNodeLabel(node.label))
+      .forEach((node) => {
+        const id = nodeIdForLabel(node.label);
+        if (nodeById.has(id)) return;
+        nodeById.set(id, {
+          id,
+          label: node.label,
+          type: node.type,
+          scale: node.scale,
+          status: 'pending',
+          claimState: 'inference',
+          evidence: node.evidence || '',
+          sourceFingerprint: fingerprint,
+          notes: '',
+        });
       });
-    });
     extracted.nodes.forEach((node) => {
+      // The discrete-label rule holds for locally extracted candidates too:
+      // clause-shaped fragments never reach the student's decision list.
+      if (!isDiscreteMicroNodeLabel(node.label)) return;
       if (!nodeById.has(node.id)) nodeById.set(node.id, { ...node, sourceFingerprint: node.sourceFingerprint || fingerprint });
     });
     const edgeKeyOf = (edge) => `${edge.source}::${edge.verb.trim().toLocaleLowerCase()}::${edge.target}`;
+    // A connection that already lives on the map is settled work: it never
+    // returns as a candidate, so a later level cannot re-log or re-scale it.
+    const liveEdgeKeys = new Set(currentProject.graph.edges
+      .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+      .map(edgeKeyOf));
     const edgeByKey = new Map();
     (review?.connections || []).forEach((connection) => {
       const source = nodeIdForReference(connection.source, connection.sourceLabel || connection.source);
@@ -2978,12 +3246,13 @@ function App() {
         notes: '',
         annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' },
       };
-      if (!edgeByKey.has(edgeKeyOf(edge))) edgeByKey.set(edgeKeyOf(edge), edge);
+      const key = edgeKeyOf(edge);
+      if (!liveEdgeKeys.has(key) && !edgeByKey.has(key)) edgeByKey.set(key, edge);
     });
     extracted.edges.forEach((edge) => {
       if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
       const key = edgeKeyOf(edge);
-      if (!edgeByKey.has(key)) edgeByKey.set(key, { ...edge, sourceFingerprint: edge.sourceFingerprint || fingerprint });
+      if (!liveEdgeKeys.has(key) && !edgeByKey.has(key)) edgeByKey.set(key, { ...edge, sourceFingerprint: edge.sourceFingerprint || fingerprint });
     });
     // Decisions already made on matching items survive a reread.
     const priorNodes = new Map(currentProject.candidates.nodes.map((node) => [node.id, node]));
@@ -3088,7 +3357,7 @@ function App() {
       draft.graph.nodes = [...priorNodes.filter((node) => !nodeIds.has(node.id)), ...nextNodes];
       const currentNodes = draft.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired');
       if (mapNodesOverlap(currentNodes)) {
-        const repairedPositions = ECOLOGY_SCALES.has(project.activeScale)
+        const repairedPositions = ECOLOGY_MAP_SCALES.has(project.activeScale)
           ? arrangedEcologyPositions(currentNodes)
           : arrangedMapPositions(currentNodes, new Set(currentNodes.map((node) => node.scale)).size > 1);
         draft.graph.nodes.forEach((node) => {
@@ -3136,28 +3405,48 @@ function App() {
       case 2: commitMapSelections(); break;
       case 3: setStage(4, { completed: true }); break;
       case 4:
+        {
+          const currentScale = project.activeScale;
+          const currentIndex = SCALE_ORDER.indexOf(currentScale);
+          const nextScale = currentIndex >= 0 ? SCALE_ORDER[currentIndex + 1] || null : null;
+        // The memo travels with the project, so the next level opens directly
+        // on Review — the model rereads for the new level instead of walking
+        // the student back through the intake form they already completed.
         update((draft) => {
-          if (!draft.completedScales.includes(draft.activeScale)) draft.completedScales.push(draft.activeScale);
-          draft.stage = 0;
+          if (!draft.completedScales.includes(currentScale)) draft.completedScales.push(currentScale);
+          draft.completedScales = SCALE_ORDER.filter((scale) => draft.completedScales.includes(scale));
+          if (nextScale) {
+            draft.activeScale = nextScale;
+            if (!draft.releasedScales.includes(nextScale)) draft.releasedScales.push(nextScale);
+            draft.releasedScales = SCALE_ORDER.filter((scale) => draft.releasedScales.includes(scale));
+          }
+          draft.stage = 1;
           draft.furthestStage = Math.max(draft.furthestStage || 0, 4);
           draft.preflight = null;
+          draft.candidates = { nodes: [], edges: [] };
           draft.reflection = '';
-        }, 'scale.cycle-completed', SCALES[project.activeScale].label);
+        }, 'scale.cycle-completed', nextScale
+          ? `${SCALES[currentScale].label} completed; ${SCALES[nextScale].label} opened`
+          : `${SCALES[currentScale].label} completed`);
         setConnectionPrompt('');
         setConnectionSuggestions([]);
-        recordStageTransition(4, 0, { completed: true });
-        toast('Cycle saved. Choose where to focus next.');
+        recordStageTransition(4, 1, { completed: true });
+        toast(nextScale
+          ? `${SCALES[currentScale].label} complete. Continue with ${SCALES[nextScale].label}.`
+          : `${SCALES[currentScale].label} complete. Start another ${SCALES[currentScale].label} cycle when you are ready.`);
         break;
+        }
       default: break;
     }
   };
 
   const primaryLabel = (() => {
     if (project.stage === 0) return 'Review memo';
-    if (project.stage === 1) return project.activeScale === 'micro' ? 'Choose nodes' : project.activeScale === 'meso' ? 'Choose connections' : 'Choose nodes and connections';
+    if (project.stage === 1) return (LEVEL_REVIEW_COPY[project.activeScale] || LEVEL_REVIEW_COPY.micro).next;
     if (project.stage === 2) return 'Open map';
     if (project.stage === 3) return 'Revise and export';
-    return 'Start another cycle';
+    const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
+    return nextScale ? `Continue to ${SCALES[nextScale].label}` : `Start another ${SCALES[project.activeScale].label} cycle`;
   })();
 
   const backDisabled = project.stage === 0;

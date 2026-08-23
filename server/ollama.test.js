@@ -10,6 +10,7 @@ import {
 
 const fakeSecret = 'unit-test-key-do-not-use';
 const model = 'gpt-oss:20b';
+const MICRO_NODE_CONTRACT = 'For Micro, each node label MUST be exactly one discrete actor or object named in the memo and written as a noun phrase.';
 
 function config(overrides = {}) {
   return {
@@ -139,6 +140,29 @@ describe('Ollama Cloud suggestion adapter', () => {
     });
 
     expect(captured.messages[2].content).toContain('"inquiry":""');
+  });
+
+  it('delivers the Micro discrete-node contract and active scale to the provider without rewriting them', async () => {
+    let captured;
+    const fetchImpl = vi.fn(async (_url, options) => {
+      captured = JSON.parse(options.body);
+      return jsonResponse(envelope());
+    });
+
+    await requestOllamaSuggestion(input({
+      systemPrompt: `${MICRO_NODE_CONTRACT}\nPreserve complete official names even when they are long.`,
+      activeScale: 'micro',
+      sourceText: 'Adult Participants face delays when the Accessible Van Program is unavailable.',
+    }), config(), { testOnly: { fetchImpl } });
+
+    expect(captured.messages[0]).toEqual({
+      role: 'system',
+      content: `${MICRO_NODE_CONTRACT}\nPreserve complete official names even when they are long.`,
+    });
+    const projectInput = JSON.parse(captured.messages[2].content.split('\n').at(-1));
+    expect(projectInput.activeScale).toBe('micro');
+    expect(projectInput.memoText).toContain('Adult Participants face delays');
+    expect(projectInput).not.toHaveProperty('carriedNodes');
   });
 
   it('passes bounded carried node IDs as project data for Meso review', async () => {

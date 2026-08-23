@@ -153,6 +153,51 @@ function normalizeWhitespace(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+const MICRO_NODE_PREDICATE = /\s+(?:(?:who|that|which)\s+)?(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would|provides?|provided|funds?|funded|regulates?|regulated|administers?|administered|requests?|requested|refers?|referred|serves?|served|qualifies?|qualified|excludes?|excluded|delays?|delayed|enables?|enabled|depends?|depended|coordinates?|coordinated|reports?|reported|measures?|measured|contests?|contested|litigates?|litigated|supersedes?|superseded|shapes?|shaped|contradicts?|contradicted|corroborates?|corroborated|faces?|faced|experiences?|experienced|meets?|met|interacts?|interacted|connects?|connected|receives?|received|uses?|used|attends?|attended|visits?|visited|works?|worked|helps?|helped|offers?|offered|manages?|managed|delivers?|delivered|lives?|lived)\b/i;
+const MICRO_NODE_LEADING_CLAUSE = /^(?:when|where|because|while|although|if|unless|once|after|before)\s+/i;
+const MICRO_NODE_ADDITIONAL_ENTITY = /\b(?:adults?|famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|residents?|children|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|neighbou?rhoods?|programs?|organizations?|agenc(?:y|ies)|offices?|departments?|committees?|services?|supports?|resources?|funding|transportation|access)\b/i;
+const MICRO_NODE_NAMED_ENTITY = /(?:^|\s)(?:the\s+)?(?:[A-Z][A-Za-z0-9'’.-]*)(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9'’.-]*)+/;
+
+function cleanMicroNodeLabel(value) {
+  if (typeof value !== 'string') return null;
+  const label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
+  if (!label || label.length < 2 || label.length > 200 || !/[a-z]/i.test(label)) return null;
+  if (/^(?:it|they|them|this|that|these|those|something|anything)$/i.test(label)) return null;
+  return label;
+}
+
+const MICRO_NODE_AUXILIARY = /^(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would)$/i;
+
+export function normalizeMicroNodeLabel(value) {
+  const label = cleanMicroNodeLabel(value);
+  if (!label) return null;
+  const predicate = MICRO_NODE_PREDICATE.exec(label);
+  if (!predicate) return label;
+  // A verb-shaped FINAL word is part of the name, not a clause: institutional
+  // names like "City Adult Literacy Fund", "Department of Public Works", or
+  // "Annual Reports" end in content nouns the verb list would otherwise eat.
+  // Auxiliaries ("The Center is") and relative clauses ("Navigator who works")
+  // still read as fragments and keep the clause treatment.
+  const matchedWord = predicate[0].trim();
+  if (
+    predicate.index + predicate[0].length >= label.length
+    && !/^(?:who|that|which)\b/i.test(matchedWord)
+    && !MICRO_NODE_AUXILIARY.test(matchedWord)
+  ) return label;
+  const remainder = label.slice(predicate.index + predicate[0].length).trim();
+  if (MICRO_NODE_ADDITIONAL_ENTITY.test(remainder) || MICRO_NODE_NAMED_ENTITY.test(remainder)) return null;
+  let candidate = label.slice(0, predicate.index).trim();
+  const hadLeadingClause = MICRO_NODE_LEADING_CLAUSE.test(candidate);
+  if (hadLeadingClause) candidate = candidate.replace(MICRO_NODE_LEADING_CLAUSE, '').trim();
+  if (hadLeadingClause || predicate) candidate = candidate.replace(/^(?:a|an|the)\s+/i, '').trim();
+  return cleanMicroNodeLabel(candidate);
+}
+
+export function isDiscreteMicroNodeLabel(value) {
+  const label = cleanMicroNodeLabel(value);
+  return Boolean(label && normalizeMicroNodeLabel(label) === label);
+}
+
 function sentenceRecords(text) {
   assertString(text, 'submission.text', true, PROJECT_LIMITS.sourceText);
   const records = [];
@@ -227,7 +272,7 @@ const RELATION_DEFINITIONS = [
   { verb: 'serves', pattern: '\\bserves?\\b' },
   { verb: 'qualifies', pattern: '\\bqualif(?:y|ies)\\b' },
   { verb: 'excludes', pattern: '\\bexcludes?\\b' },
-  { verb: 'delays', pattern: '\\bdelays?\\b' },
+  { verb: 'delays', pattern: '\\bdelays?\\b', nominalAfter: /\b(?:face|faces|faced|experience|experiences|experienced)\s+$/i },
   { verb: 'burdens', pattern: '\\bburdens?\\b' },
   { verb: 'enables', pattern: '\\benables?\\b' },
   { verb: 'measures', pattern: '\\bmeasures?\\b' },
@@ -244,7 +289,11 @@ function relationMatches(sentence) {
     ...definition,
     index: match.index,
     end: match.index + match[0].length,
-  }))).sort((left, right) => left.index - right.index || right.end - right.index - (left.end - left.index));
+  })).filter((match) => !match.nominalAfter?.test(sentence.slice(0, match.index)))
+    // A verb-shaped word with nothing after it is the tail of a name
+    // ("City Adult Literacy Fund."), not a relationship claim.
+    .filter((match) => /[a-z]{2,}/i.test(sentence.slice(match.end))))
+    .sort((left, right) => left.index - right.index || right.end - right.index - (left.end - left.index));
   const nonOverlapping = [];
   matches.forEach((match) => {
     if (!nonOverlapping.some((accepted) => match.index < accepted.end && match.end > accepted.index)) nonOverlapping.push(match);
@@ -268,7 +317,7 @@ function displayLabel(value) {
 }
 
 function plausibleLabel(label) {
-  if (!label || label.length < 2 || label.length > 100 || label.split(/\s+/).length > 12 || !/[a-z]/i.test(label)) return false;
+  if (!label || label.length < 2 || label.length > 200 || label.split(/\s+/).length > 24 || !/[a-z]/i.test(label)) return false;
   if (/\b(?:word|term|verb|phrase|token|list|relational claim)\b/i.test(label)) return false;
   return !/^(?:it|they|them|this|that|these|those|something|anything)$/i.test(label);
 }
@@ -299,7 +348,7 @@ function inferNodeType(label) {
   if (/\b(?:cities|city|counties|county|states?|neighbou?rhoods?|boroughs?|districts?|places?|regions?)\b/i.test(label)) return 'place';
   if (/\b(?:abilit(?:y|ies)|services?|supports?|funding|funds?|resources?|capacit(?:y|ies)|assets?|guidance|programs?|evaluations?|interviews?|eligibility|access)\b/i.test(label)) return 'resource';
   if (/\bfamil(?:y|ies)\b/i.test(label)) return 'family';
-  if (/\b(?:persons?|people|students?|residents?|caregivers?|parents?|children|child|teachers?|workers?)\b/i.test(label)) return 'person';
+  if (/\b(?:adults?|persons?|people|participants?|students?|residents?|caregivers?|parents?|children|child|teachers?|workers?)\b/i.test(label)) return 'person';
   return 'event';
 }
 
@@ -307,13 +356,16 @@ function inferScale(label, fallback = 'meso') {
   if (/\b(?:culture|ideolog(?:y|ies)|capitalism|racism|structural|public narratives?|counter-narratives?|histor(?:y|ies|ical)|rights?|laws?|regulations?)\b/i.test(label)) return 'macrosphere';
   if (/\b(?:states?|cities|city|federal|public systems?|departments?|agenc(?:y|ies)|offices?|funding|funders?|service systems?)\b/i.test(label)) return 'exosphere';
   if (/\b(?:organizations?|schools?|agenc(?:y|ies)|providers?|committees?|programs?|procedures?|institutions?)\b/i.test(label)) return 'meso';
-  if (/\b(?:famil(?:y|ies)|persons?|students?|residents?|experiences?|interviews?|caregivers?|parents?)\b/i.test(label)) return 'micro';
+  if (/\b(?:adults?|famil(?:y|ies)|persons?|participants?|students?|residents?|experiences?|interviews?|caregivers?|parents?)\b/i.test(label)) return 'micro';
   return fallback;
 }
 
 export function extractRelationships(submission) {
   const relationships = [];
   sentenceRecords(submission.text || '').forEach((sentence) => {
+    // A question frames the inquiry; it does not assert actors or claims, so
+    // it never mints nodes or relationships ("How do programs shape access?").
+    if (sentence.excerpt.trim().endsWith('?')) return;
     const matches = relationMatches(sentence.excerpt);
     let previousMatch = null;
     let currentSubject = null;
@@ -481,14 +533,15 @@ function withDefaultEdgeAnnotations(edges) {
 }
 
 const NODE_ONLY_COMMON_NOUN = /\b(?:famil(?:y|ies)|students?|parents?|caregivers?|teachers?|residents?|children|case\s+workers?|social\s+workers?|community\s+members?|classrooms?|schools?|community\s+centers?|clinics?|homes?|neighbou?rhoods?|programs?|organizations?)\b/gi;
-const NODE_ONLY_PROPER_NOUN = /\b(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)(?:\s+(?:(?:of|for|and|the|in|at|on)\s+)?(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)){1,8}\b/g;
+const NODE_ONLY_PROPER_NOUN = /\b(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)){1,16}\b/g;
 const NODE_ONLY_IGNORED_LABEL = /^(?:According to|Course Memo|Memo Sentence|This Memo|The Memo|What Evidence|No Evidence)$/i;
 
 function nodeOnlyLabels(excerpt) {
-  const labels = [
-    ...excerpt.matchAll(NODE_ONLY_PROPER_NOUN),
-    ...excerpt.matchAll(NODE_ONLY_COMMON_NOUN),
-  ].map((match) => displayLabel(match[0]));
+  const properMatches = [...excerpt.matchAll(NODE_ONLY_PROPER_NOUN)];
+  const commonMatches = [...excerpt.matchAll(NODE_ONLY_COMMON_NOUN)].filter((common) => !properMatches.some((proper) => (
+    common.index >= proper.index && common.index + common[0].length <= proper.index + proper[0].length
+  )));
+  const labels = [...properMatches, ...commonMatches].map((match) => displayLabel(match[0]));
   return [...new Map(labels
     .filter((label) => plausibleLabel(label) && !NODE_ONLY_IGNORED_LABEL.test(label))
     .map((label) => [label.toLocaleLowerCase(), label])).values()];
@@ -593,40 +646,69 @@ export function extractCandidates(submission) {
   return { nodes, edges };
 }
 
-export function deterministicMemoReview(submission, activeScale = 'micro', { carriedNodes = [] } = {}) {
+const DETERMINISTIC_REVIEW_SCALE_LIMITS = Object.freeze({
+  micro: Object.freeze({ nodes: 10, connections: 0 }),
+  meso: Object.freeze({ nodes: 0, connections: 8 }),
+  exosphere: Object.freeze({ nodes: 8, connections: 6 }),
+  macrosphere: Object.freeze({ nodes: 8, connections: 6 }),
+});
+
+export function deterministicMemoReview(submission, activeScale = 'micro', { carriedNodes = [], carriedConnections = [] } = {}) {
+  const scaleLimits = DETERMINISTIC_REVIEW_SCALE_LIMITS[activeScale] || DETERMINISTIC_REVIEW_SCALE_LIMITS.micro;
   const { nodes, edges } = extractCandidates(submission);
-  const orderedNodes = [...nodes].sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
-  const reviewNodes = (activeScale === 'meso' ? [] : orderedNodes).slice(0, PROJECT_LIMITS.memoReviewNodes).map((node) => ({
-    label: node.label,
-    type: node.type,
-    scale: activeScale,
-    evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
-  }));
-  const nodeLabels = new Set(reviewNodes.map((node) => node.label));
   const carriedNodeByLabel = new Map(carriedNodes.map((node) => [String(node.label || '').trim().toLocaleLowerCase(), node]));
+  const carriedConnectionKeys = new Set(carriedConnections
+    .map((connection) => `${connection.source}::${String(connection.verb || '').trim().toLocaleLowerCase()}::${connection.target}`));
+  const orderedNodes = [...nodes].sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
+  // Elements already on the student's map never come back as new proposals;
+  // later levels surface only what the memo adds beyond the carried graph.
+  const reviewNodes = (activeScale === 'meso' ? [] : orderedNodes)
+    .filter((node) => !carriedNodeByLabel.has(node.label.trim().toLocaleLowerCase()))
+    .slice(0, Math.min(scaleLimits.nodes, PROJECT_LIMITS.memoReviewNodes))
+    .map((node) => ({
+      label: node.label,
+      type: node.type,
+      scale: activeScale,
+      evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
+    }));
+  const nodeLabels = new Set(reviewNodes.map((node) => node.label));
+  const endpointFor = (label) => {
+    const carried = carriedNodeByLabel.get(label.trim().toLocaleLowerCase());
+    if (carried) return { reference: carried.id, label: carried.label };
+    return nodeLabels.has(label) ? { reference: label, label } : null;
+  };
   const connections = activeScale === 'micro' ? [] : edges
-    .filter((edge) => activeScale === 'meso'
-      ? carriedNodeByLabel.has(edge.sourceLabel.trim().toLocaleLowerCase()) && carriedNodeByLabel.has(edge.targetLabel.trim().toLocaleLowerCase())
-      : nodeLabels.has(edge.sourceLabel) && nodeLabels.has(edge.targetLabel))
-    .slice(0, PROJECT_LIMITS.memoReviewConnections)
     .map((edge) => {
-      const carriedSource = carriedNodeByLabel.get(edge.sourceLabel.trim().toLocaleLowerCase());
-      const carriedTarget = carriedNodeByLabel.get(edge.targetLabel.trim().toLocaleLowerCase());
-      return {
-        source: activeScale === 'meso' ? carriedSource.id : edge.sourceLabel,
-        target: activeScale === 'meso' ? carriedTarget.id : edge.targetLabel,
-        sourceLabel: activeScale === 'meso' ? carriedSource.label : edge.sourceLabel,
-        targetLabel: activeScale === 'meso' ? carriedTarget.label : edge.targetLabel,
-        verb: edge.verb,
-        rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
-      };
-    });
+      if (activeScale === 'meso') {
+        const carriedSource = carriedNodeByLabel.get(edge.sourceLabel.trim().toLocaleLowerCase());
+        const carriedTarget = carriedNodeByLabel.get(edge.targetLabel.trim().toLocaleLowerCase());
+        if (!carriedSource || !carriedTarget) return null;
+        return { edge, source: carriedSource, target: carriedTarget };
+      }
+      const source = endpointFor(edge.sourceLabel);
+      const target = endpointFor(edge.targetLabel);
+      if (!source || !target || source.reference === target.reference) return null;
+      return { edge, source: { id: source.reference, label: source.label }, target: { id: target.reference, label: target.label } };
+    })
+    .filter(Boolean)
+    // Relationships already on the student's map are settled; the review only
+    // surfaces what this memo pass adds.
+    .filter(({ edge, source, target }) => !carriedConnectionKeys.has(`${source.id}::${edge.verb.trim().toLocaleLowerCase()}::${target.id}`))
+    .slice(0, Math.min(scaleLimits.connections || PROJECT_LIMITS.memoReviewConnections, PROJECT_LIMITS.memoReviewConnections))
+    .map(({ edge, source, target }) => ({
+      source: source.id,
+      target: target.id,
+      sourceLabel: source.label,
+      targetLabel: target.label,
+      verb: edge.verb,
+      rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
+    }));
   const guidance = activeScale === 'micro'
-    ? reviewNodes.slice(0, PROJECT_LIMITS.memoGuidanceItems).map((node) => ({
-      point: truncateCollapsedText(`${node.label} could become a Micro node.`, PROJECT_LIMITS.memoGuidanceText),
-      ...(node.evidence ? { evidenceExcerpt: truncateCollapsedText(node.evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
-    }))
-    : connections.slice(0, PROJECT_LIMITS.memoGuidanceItems).map((connection) => ({
+    ? (reviewNodes.length ? [{
+      point: truncateCollapsedText(`The memo names ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'node' : 'nodes'}: ${reviewNodes.map((node) => node.label).join(', ')}.`, PROJECT_LIMITS.memoGuidanceText),
+      ...(reviewNodes[0].evidence ? { evidenceExcerpt: truncateCollapsedText(reviewNodes[0].evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
+    }] : [])
+    : connections.slice(0, 4).map((connection) => ({
       point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
     }));
@@ -639,9 +721,16 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
   const example = first
     ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
     : null;
+  // Carried map elements count toward readiness at Exosphere and Macrosphere:
+  // a memo that only connects existing elements is still real progress.
   const ready = activeScale === 'meso'
     ? carriedNodes.length >= 2 && connections.length >= 1
-    : reviewNodes.length >= 2 && (activeScale === 'micro' || connections.length >= 1);
+    : activeScale === 'micro'
+      ? reviewNodes.length >= 2
+      : (reviewNodes.length + carriedNodes.length) >= 2 && connections.length >= 1;
+  const outerNote = reviewNodes.length
+    ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'element' : 'elements'} and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose what belongs in the map.`
+    : `The memo describes ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'} among elements already on your map. Continue to choose which ones belong.`;
   const readiness = {
     ready,
     note: truncateCollapsedText(ready
@@ -649,12 +738,12 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
         ? `The memo names ${reviewNodes.length} possible nodes. Continue to choose which ones belong in the Micro map.`
         : activeScale === 'meso'
           ? `The memo describes ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'} among nodes carried from Micro. Continue to choose which connections belong in the map.`
-          : `The memo names ${reviewNodes.length} elements and ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'}. Continue to choose what belongs in the map.`
+          : outerNote
       : activeScale === 'micro'
         ? 'Fewer than two possible nodes were found. You can continue, or name more people, roles, groups, or settings in the memo.'
         : activeScale === 'meso'
           ? 'No clear connections among the nodes from Micro were found. You can continue, or describe those connections in the memo.'
-          : 'Fewer than two connected elements were found. You can continue, or describe more connections in the memo.', PROJECT_LIMITS.memoGuidanceText),
+          : 'No clear new elements or connections were found. You can continue, or name the institutions, policies, or beliefs at work in the memo.', PROJECT_LIMITS.memoGuidanceText),
   };
   return { guidance, nodes: reviewNodes, connections, example: activeScale === 'micro' ? null : example, readiness };
 }

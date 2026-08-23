@@ -1,11 +1,45 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-21
+Updated: 2026-08-22
+
+## 2026-08-22 concreteness, progression, and map-legibility candidate
+
+- [x] Enforce the discrete-noun-phrase node rule at every level: clause, theme, and outcome labels are rejected at Micro, Exosphere, and Macrosphere alike, while verb-shaped final words in institutional names ("City Adult Literacy Fund", "Department of Public Works") survive.
+- [x] Make the model selective instead of exhaustive: per-level review ceilings (Micro 10 nodes; Meso 8 connections; Exosphere/Macrosphere 8 new nodes and 6 connections), prompt instructions to prefer fewer well-evidenced items, and a 4-item guidance cap.
+- [x] Carry the live map into Exosphere and Macrosphere reviews (`carriedNodes` + `carriedConnections`): the model never re-proposes mapped elements or relationships, new connections may tie institutions and structures to existing nodes by exact label, and stored reviews replay those endpoints intact.
+- [x] Stop connections from being re-logged at a later level: candidates exclude relationships already on the map, so a Meso edge can never be re-scaled to Exosphere by a later review pass.
+- [x] Skip the repeated intake form: completing a level continues directly at "Review your memo" for the next level and the model rereads automatically; the memo stays editable in the drawer everywhere.
+- [x] Give each level its own language: Exosphere reviews and steps speak in institutions/agencies/services, Macrosphere in laws/policies/beliefs, with matching primary buttons (Choose nodes / connections / institutions / structures).
+- [x] Anchor ring callouts beside their own endpoints with a collision sweep across callouts and node cards, emphasize callout type at every ring level, and stop question sentences from minting theme nodes or edges in the deterministic extractor.
+- [x] Keep the map orientable by default: view controls (including Full screen) float over the canvas, the map screen fits the viewport height on desktop, and an untouched ecology viewport always opens on a centered reading fit.
+- [x] Verify the current working tree locally.
+  - Evidence: 243 tests passed with 4 PostgreSQL tests skipped behind their explicit environment guard, including new regressions for level-wide clause rejection, Exosphere carried-node/connection reviews, and stored-review replay. `pnpm build` passed.
+- [x] Verify the full four-level cycle in a real browser against the built bundle.
+  - Evidence: a disposable local SQLite run at 1440×1000 walked Micro (7 concrete nodes, 0 relationships) → Meso (5 carried-ID connections, callouts anchored beside their endpoints in the annulus) → Exosphere (3 new institutions + 3 connections tying them to the map, none re-proposed) → Macrosphere (4 structures + 3 connections); the cumulative graph held micro 7/0, meso 0/5, exosphere 3/3, macrosphere 4/3 with zero retired items, zero duplicate edges, zero rendered label/card overlaps in the pairwise scan, working full-screen mode, and zero console errors.
+- [x] Commit, push, deploy the changed tree, and record terminal deployment plus live health evidence.
+  - Evidence: commit `5b8f6fc` pushed as PR [#11](https://github.com/CUNY-AI-Lab/systems-mapping/pull/11) (open for merge into `main`). Railway deployment `48e6ea86-3c51-48fc-8629-e9fdc277c7be` reached terminal `SUCCESS`; the PostgreSQL migration reported ready; `/api/health` returned `{"status":"ok"}`; the live root served HTTP 200 with the exact local bundle `index-o0Eb8nT7.js`.
+- [ ] Merge PR #11 into GitHub `main` (operator action; the tarball deployment does not depend on it).
+
+## 2026-08-22 map progression and canvas candidate
+
+- [x] Keep the Micro revise-and-export projection node-only while preserving the complete cumulative graph in full export.
+- [x] Advance completion in order from Micro to Meso to Exosphere to Macrosphere; completing Macrosphere starts another Macrosphere cycle.
+- [x] Place Meso relationship callouts inside the Meso annulus and point them inward to carried Micro endpoints without duplicating or moving those endpoints.
+- [x] Enlarge the map, preserve pointer panning through detail interactions, add focused-canvas arrow-key panning, provide a reversible CSS full-screen mode, and permit zoom down to `0.25`.
+- [x] Verify the current working tree locally.
+  - Evidence: 242 tests passed with 4 PostgreSQL tests skipped behind their explicit environment guard. The final local build emitted `index-BJBuN6w3.js`, `TeacherDashboard-DPrpmbM0.js`, and `index-BZOzcHy4.css`; `git diff --check` passed.
+- [x] Verify the final built bundle in a real browser rather than substituting generated imagery.
+  - Evidence: a disposable local SQLite run in the in-app browser at 1440×1000 and 390×844 showed no Micro relationship count, advanced Micro to Meso and Meso to Exosphere, rendered six complete Meso callouts with zero pairwise label overlaps, computed Meso callout sizes of `24px` on desktop and `26px` on phone, filled the viewport in full-screen without horizontal overflow, reached `0.25` zoom, changed `panX` through arrow-key panning, and produced zero browser warnings or errors.
+- [ ] Commit, push, update GitHub `main`, deploy the changed tree, and record terminal deployment plus live interaction evidence.
+
+This section records local implementation and browser verification only. It does not inherit the GitHub, Railway, hosted-readback, or provider receipts of the 2026-08-21 ecological release below.
 
 ## 2026-08-21 ecological-level candidate
 
 - [x] Use four analytical levels: Micro and Meso in Part 1; Exosphere and Macrosphere in Part 2.
 - [x] Enforce Micro as nodes only and Meso as connections only among the exact carried Micro node IDs, with no new Meso nodes.
+- [x] Enforce one discrete actor or object noun phrase per Micro node and reject clause-like model labels before they appear in review or reach the map.
+  - Evidence: an isolated real-browser Micro cycle using “Adult Participants face delays when the Accessible Van Program is unavailable” surfaced and committed only `Adult Participants` and `Accessible Van Program`, with zero relationships and zero browser warnings or errors.
 - [x] Render Exosphere and Macrosphere as filterable concentric ecological regions without mutating hidden graph records.
 - [x] Keep every stage, level, and map route open regardless of review or evaluation state.
 - [x] Remove the buggy course-wide active-evaluation ceiling while leaving per-session supersession, request/provider bounds, submission queues, and retention purges unchanged.

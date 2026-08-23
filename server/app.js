@@ -2,7 +2,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
-import { deterministicMemoReview } from '../src/domain.js';
+import {
+  deterministicMemoReview,
+  isDiscreteMicroNodeLabel,
+  normalizeMicroNodeLabel,
+} from '../src/domain.js';
 import {
   SYSTEMS_MAPPING_STAGE_IDS,
   SYSTEMS_MAPPING_STAGES,
@@ -100,13 +104,26 @@ const MEMO_REVIEW_LIMITS = Object.freeze({
   guidance: 8, nodes: 20, connections: 12, point: 500, evidence: 500,
   label: 200, verb: 100, rationale: 1000, example: 1000, note: 500,
 });
+// Per-level ceilings keep the review focused: a student decides on a handful
+// of strong, concrete items instead of triaging everything the model can find.
+const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
+  micro: Object.freeze({ nodes: 10, connections: 0 }),
+  meso: Object.freeze({ nodes: 0, connections: 8 }),
+  exosphere: Object.freeze({ nodes: 8, connections: 6 }),
+  macrosphere: Object.freeze({ nodes: 8, connections: 6 }),
+});
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
-  `guidance must be an array of no more than ${MEMO_REVIEW_LIMITS.guidance} objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
-  `nodes must be an array of no more than ${MEMO_REVIEW_LIMITS.nodes} objects with exactly these keys: label, type, scale, evidence. These are the people, groups, places, organizations, policies, resources, datasets, or events evident in the memo. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node.`,
-  `connections must be an array of no more than ${MEMO_REVIEW_LIMITS.connections} objects with exactly these keys: source, target, verb, rationale. For Micro, connections MUST be empty. For Meso, nodes MUST be empty and source and target MUST use exact IDs from carriedNodes in the project input. For Exosphere and Macrosphere, source and target must exactly match labels from nodes. Endpoints must differ; verb is a short plain-language relationship phrase; rationale must point to what in the memo makes the connection evident.`,
+  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 8 nodes at Micro, 6 connections at Meso, and 6 new nodes with 5 connections at Exosphere or Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
+  `guidance must be an array of no more than 4 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
+  `nodes must be an array of objects with exactly these keys: label, type, scale, evidence. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node.`,
+  'AT EVERY LEVEL, each node label MUST be exactly one concrete actor, object, institution, policy, or event named in the memo, written as a short noun phrase. A label must never be a sentence, clause, proposition, action, theme, outcome, or explanation; put that material in evidence or guidance. Never invent abstractions such as "Access to Services" or "Community Wellbeing" — name the actual thing the memo names. For the memo clause "Adult Participants face delays when the Accessible Van Program is unavailable," valid labels include "Adult Participants" and "Accessible Van Program"; the whole clause is never a node label. Preserve complete official names even when they are long.',
+  'Level focus for nodes: Micro names people, roles, groups, and face-to-face settings. Exosphere names institutions, agencies, funders, service systems, and decision-making bodies that shape daily life from outside immediate settings. Macrosphere names specific laws, public policies, historical conditions, and named beliefs or narratives. Do not restate lower-level actors as new nodes at a higher level.',
+  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat a carried node in nodes. At Exosphere and Macrosphere, connections may use a carried node\'s exact label as an endpoint to tie new institutions or structures to the existing map.',
+  'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
+  'connections must be an array of objects with exactly these keys: source, target, verb, rationale. For Micro, connections MUST be empty. For Meso, nodes MUST be empty and source and target MUST use exact IDs from carriedNodes in the project input. For Exosphere and Macrosphere, source and target must exactly match a label from nodes or a label from carriedNodes. Endpoints must differ; verb is a short plain-language relationship phrase; rationale must point to what in the memo makes the connection evident.',
   'For Meso, use the human-readable carriedNodes labels—not their IDs—in guidance, rationale, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that walks through ONE evident connection.',
   'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For later levels, ready means the memo supports clear elements and at least one evident connection. Readiness never blocks the student from continuing.',
   'Do not add any other keys, Markdown, or prose outside the object.',
@@ -475,16 +492,20 @@ function validateBoundedJson(value, name, {
   return value;
 }
 
-function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNodes = null) {
+function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNodes = null, carriedConnections = null) {
   if (!isPlainObject(value)) throw new HttpError(400, `${name} must be an object.`);
   if (!['guidance', 'nodes', 'connections', 'readiness', 'example'].some((key) => Object.hasOwn(value, key))) {
     throw new HttpError(400, `${name} does not follow the memo review contract.`);
   }
   validateBoundedJson(value, name, { maxSerialized: 64_000, maxObjectKeys: 400 });
+  const scaleLimits = MEMO_REVIEW_SCALE_LIMITS[activeScale] || MEMO_REVIEW_SCALE_LIMITS.micro;
   const carriedNodeById = new Map((Array.isArray(carriedNodes) ? carriedNodes : []).map((node) => [node.id, node]));
+  const carriedNodeByLabel = new Map([...carriedNodeById.values()].map((node) => [node.label.trim().toLocaleLowerCase(), node]));
+  const carriedConnectionKeys = new Set((Array.isArray(carriedConnections) ? carriedConnections : [])
+    .map((connection) => `${connection.source}\u0000${connection.verb.trim().toLocaleLowerCase()}\u0000${connection.target}`));
   const humanizeCarriedIds = (input, maximum) => {
     let text = collapsedRedirectText(input, maximum * 2);
-    if (!text || activeScale !== 'meso') return collapsedRedirectText(text, maximum);
+    if (!text || activeScale === 'micro') return collapsedRedirectText(text, maximum);
     [...carriedNodeById.values()]
       .sort((left, right) => right.id.length - left.id.length)
       .forEach((node) => { text = text.split(node.id).join(node.label); });
@@ -501,11 +522,14 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .filter(Boolean)
     .slice(0, MEMO_REVIEW_LIMITS.guidance);
   const seenLabels = new Set();
+  // The discrete-noun-phrase rule applies at every level: a node is a named
+  // actor, object, institution, policy, or event — never a clause or theme.
   const nodes = (activeScale === 'meso' ? [] : (Array.isArray(value.nodes) ? value.nodes : []))
     .map((node) => {
       if (!isPlainObject(node)) return null;
-      const label = collapsedRedirectText(node.label, MEMO_REVIEW_LIMITS.label);
+      const label = isDiscreteMicroNodeLabel(node.label) && normalizeMicroNodeLabel(node.label);
       if (!label || seenLabels.has(label.toLocaleLowerCase())) return null;
+      if (carriedNodeByLabel.has(label.toLocaleLowerCase())) return null;
       seenLabels.add(label.toLocaleLowerCase());
       return {
         label,
@@ -515,7 +539,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       };
     })
     .filter(Boolean)
-    .slice(0, MEMO_REVIEW_LIMITS.nodes);
+    .slice(0, Math.min(scaleLimits.nodes, MEMO_REVIEW_LIMITS.nodes));
   const nodeByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node.label]));
   const seenConnections = new Set();
   const connections = (activeScale === 'micro' ? [] : (Array.isArray(value.connections) ? value.connections : []))
@@ -539,14 +563,38 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
         target = targetReference;
         sourceLabel = collapsedRedirectText(connection.sourceLabel, MEMO_REVIEW_LIMITS.label);
         targetLabel = collapsedRedirectText(connection.targetLabel, MEMO_REVIEW_LIMITS.label);
+      } else if (carriedNodes === null) {
+        // Stored reviews replay without the carried-node context, so trust the
+        // id/label pairs the generation-time validation already resolved.
+        source = sourceReference;
+        target = targetReference;
+        sourceLabel = collapsedRedirectText(connection.sourceLabel, MEMO_REVIEW_LIMITS.label) || sourceReference;
+        targetLabel = collapsedRedirectText(connection.targetLabel, MEMO_REVIEW_LIMITS.label) || targetReference;
       } else {
-        source = nodeByLower.get(sourceReference?.toLocaleLowerCase());
-        target = nodeByLower.get(targetReference?.toLocaleLowerCase());
+        // Exosphere and Macrosphere endpoints may be a newly proposed node's
+        // label or an already-mapped carried node. Carried endpoints keep
+        // their durable graph IDs so the client cannot duplicate them.
+        const resolveEndpoint = (reference) => {
+          if (!reference) return null;
+          const carriedById = carriedNodeById.get(reference);
+          if (carriedById) return { reference: carriedById.id, label: carriedById.label };
+          const lower = reference.toLocaleLowerCase();
+          const carried = carriedNodeByLabel.get(lower);
+          if (carried) return { reference: carried.id, label: carried.label };
+          const proposed = nodeByLower.get(lower);
+          return proposed ? { reference: proposed, label: proposed } : null;
+        };
+        const resolvedSource = resolveEndpoint(sourceReference);
+        const resolvedTarget = resolveEndpoint(targetReference);
+        source = resolvedSource?.reference;
+        target = resolvedTarget?.reference;
+        sourceLabel = resolvedSource?.label;
+        targetLabel = resolvedTarget?.label;
       }
       const verb = collapsedRedirectText(connection.verb, MEMO_REVIEW_LIMITS.verb);
       if (!source || !target || source === target || !verb) return null;
       const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
-      if (seenConnections.has(key)) return null;
+      if (seenConnections.has(key) || carriedConnectionKeys.has(key)) return null;
       seenConnections.add(key);
       return {
         source,
@@ -558,7 +606,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       };
     })
     .filter(Boolean)
-    .slice(0, MEMO_REVIEW_LIMITS.connections);
+    .slice(0, Math.min(scaleLimits.connections || MEMO_REVIEW_LIMITS.connections, MEMO_REVIEW_LIMITS.connections));
   const example = activeScale === 'micro' ? null : humanizeCarriedIds(value.example, MEMO_REVIEW_LIMITS.example) || null;
   const readiness = {
     ready: activeScale === 'micro'
@@ -573,13 +621,13 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections',
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   const hasCarriedNodes = Object.hasOwn(value, 'carriedNodes');
   if (value.activeScale === 'meso' && !hasCarriedNodes) throw new HttpError(400, 'carriedNodes is required for Meso.');
-  if (value.activeScale !== 'meso' && hasCarriedNodes) throw new HttpError(400, 'carriedNodes is supported only for Meso.');
+  if (value.activeScale === 'micro' && hasCarriedNodes) throw new HttpError(400, 'carriedNodes is not supported for Micro.');
   if (hasCarriedNodes && (!Array.isArray(value.carriedNodes) || value.carriedNodes.length > 50)) {
     throw new HttpError(400, 'carriedNodes must contain no more than 50 items.');
   }
@@ -599,6 +647,21 @@ function validatePreflightEvaluationRequest(value) {
       type,
     };
   }) : [];
+  const hasCarriedConnections = Object.hasOwn(value, 'carriedConnections');
+  if (value.activeScale === 'micro' && hasCarriedConnections) throw new HttpError(400, 'carriedConnections is not supported for Micro.');
+  if (hasCarriedConnections && (!Array.isArray(value.carriedConnections) || value.carriedConnections.length > 100)) {
+    throw new HttpError(400, 'carriedConnections must contain no more than 100 items.');
+  }
+  const carriedConnections = hasCarriedConnections ? value.carriedConnections.map((connection, index) => {
+    const connectionName = `carriedConnections[${index}]`;
+    assertOnlyNamedKeys(connection, ['source', 'target', 'verb'], connectionName);
+    requireObjectKeys(connection, ['source', 'target', 'verb'], connectionName);
+    return {
+      source: requireSnapshotText(connection.source, `${connectionName}.source`, { max: 200 }),
+      target: requireSnapshotText(connection.target, `${connectionName}.target`, { max: 200 }),
+      verb: requireSnapshotText(connection.verb, `${connectionName}.verb`, { max: MEMO_REVIEW_LIMITS.verb }),
+    };
+  }) : [];
   const stageId = canonicalStageId(value.stageId);
   if (!SYSTEMS_MAPPING_STAGE_IDS.includes(stageId)) throw new HttpError(400, 'stageId is not supported.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
@@ -615,6 +678,7 @@ function validatePreflightEvaluationRequest(value) {
     projectOverlay,
     customInstructions,
     carriedNodes,
+    carriedConnections,
   };
 }
 
@@ -2061,9 +2125,10 @@ export function createSystemsMappingApp(options = {}) {
             inquiry: input.inquiry,
             sourceMetadata: input.sourceRecord,
             sourceText: input.sourceMaterial,
-            ...(input.activeScale === 'meso' ? { carriedNodes: input.carriedNodes } : {}),
+            ...(input.activeScale === 'meso' || (input.activeScale !== 'micro' && input.carriedNodes.length) ? { carriedNodes: input.carriedNodes } : {}),
+            ...(input.activeScale !== 'micro' && input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
           }, ollamaConfig);
-          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review', input.activeScale === 'meso' ? input.carriedNodes : null);
+          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review', input.activeScale !== 'micro' ? input.carriedNodes : null, input.activeScale !== 'micro' ? input.carriedConnections : null);
           suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
           runtimeMetadata = authoritativeRuntimeMetadata(generated.metadata, {
             provider: suggestionProvider,
@@ -2077,10 +2142,14 @@ export function createSystemsMappingApp(options = {}) {
         }
       } else {
         const review = normalizeMemoReview(
-          deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale, { carriedNodes: input.carriedNodes }),
+          deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale, {
+            carriedNodes: input.carriedNodes,
+            carriedConnections: input.carriedConnections,
+          }),
           input.activeScale,
           'deterministic memo review',
-          input.activeScale === 'meso' ? input.carriedNodes : null,
+          input.activeScale !== 'micro' ? input.carriedNodes : null,
+          input.activeScale !== 'micro' ? input.carriedConnections : null,
         );
         suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
         runtimeMetadata = authoritativeRuntimeMetadata({}, {
