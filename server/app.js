@@ -151,6 +151,7 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact IDs from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
   'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance and readiness text. For Micro and Meso, example must be null. For Exosphere and Macrosphere, example may be a short plain-language paragraph, or null, that explains one institutional connection or broader condition.',
   'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means clear institutions and at least one evident institutional relationship. For Macrosphere, ready means at least one broader condition affects two or more mapped elements. Readiness never blocks the student from continuing.',
+  'FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata: {"guidance":[],"nodes":[],"connections":[],"example":null,"readiness":{"ready":false,"note":"Short plain-language note."}}. Fill the arrays and readiness values under the active-scale rules above. Never add suggestion, review, result, activeScale, scale, confidence, metadata, or any sixth top-level key.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
@@ -245,6 +246,7 @@ class MemoReviewSemanticError extends Error {
     this.code = 'MEMO_REVIEW_SEMANTIC_INVALID';
     this.feedback = [
       'Return a complete replacement JSON object; do not patch or explain the earlier response.',
+      'The replacement must have exactly five top-level keys and no wrapper: guidance, nodes, connections, example, readiness.',
       'Every node label must be one complete, concrete noun phrase for one accepted map element.',
       'Resolve pronouns and coreference to a named or role-resolved element. Omit unresolved references, dates, times, frequencies, schedules, modifiers, quantifiers, action fragments, clauses, and dangling phrases from nodes.',
       'Every relationship endpoint must exactly match an accepted node label or supplied node ID. At Micro, never return a relationship between two immediate settings; that interrelation belongs at Meso.',
