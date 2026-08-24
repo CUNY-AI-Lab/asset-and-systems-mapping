@@ -2376,6 +2376,60 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().viewport).toEqual(durableViewport);
   });
 
+  it.each([
+    ['meso', 'seeks help from'],
+    ['exosphere', 'determines daytime course availability for'],
+  ])('keeps the complete %s relationship label clear of both endpoint cards in desktop detail', async (activeScale, verb) => {
+    const project = makeMapProject(activeScale);
+    const edge = project.graph.edges.find((candidate) => candidate.scale === activeScale);
+    edge.verb = verb;
+    const graphBefore = structuredClone(project.graph);
+    await openMapProject(project);
+
+    const overviewLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
+    expect(overviewLabel).toHaveAttribute('data-edge-route', 'layer-anchor');
+    expect(svgTextLines(overviewLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
+
+    const renderedEdge = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
+    renderedEdge.focus();
+    fireEvent.keyDown(renderedEdge, { key: 'Enter' });
+    const inspector = screen.getByLabelText('Map inspector');
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
+
+    const detailLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
+    const labelBounds = {
+      left: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('x')),
+      top: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('y')),
+      right: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('x')) + Number(detailLabel.querySelector('.edge-label-bg').getAttribute('width')),
+      bottom: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('y')) + Number(detailLabel.querySelector('.edge-label-bg').getAttribute('height')),
+    };
+    const endpointBounds = [edge.source, edge.target].map((nodeId) => {
+      const group = document.querySelector(`.graph-node[data-graph-id="${nodeId}"]`);
+      return translatedRectBounds(group, group.querySelector('.node-card'));
+    });
+
+    expect(detailLabel).toHaveAttribute('data-edge-route', 'focus-callout');
+    expect(svgTextLines(detailLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
+    expect(detailLabel).not.toHaveTextContent('…');
+    endpointBounds.forEach((nodeBounds) => expect(rectsIntersect(labelBounds, nodeBounds)).toBe(false));
+    const view = viewportTransform();
+    expect(labelBounds.left * view.zoom + view.panX).toBeGreaterThanOrEqual(0);
+    expect(labelBounds.right * view.zoom + view.panX).toBeLessThanOrEqual(840);
+    expect(labelBounds.top * view.zoom + view.panY).toBeGreaterThanOrEqual(0);
+    expect(labelBounds.bottom * view.zoom + view.panY).toBeLessThanOrEqual(540);
+    const detailPath = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d');
+    expect(detailPath).toContain(`L ${detailLabel.getAttribute('data-anchor-x')} ${detailLabel.getAttribute('data-anchor-y')} L`);
+    expect(storedProject().graph).toEqual(graphBefore);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
+    await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
+    const restoredLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
+    expect(restoredLabel).toHaveAttribute('data-edge-route', 'layer-anchor');
+    expect(svgTextLines(restoredLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
+    expect(storedProject().graph).toEqual(graphBefore);
+  });
+
   it('opens a relationship with Enter and keeps its complete phone detail in view after Done', async () => {
     installPhoneLayout();
     await openMapProject(makeMapProject('exosphere'));
@@ -2451,6 +2505,24 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort()).toEqual([...focusedNodeIds].sort());
     expect([...document.querySelectorAll('.graph-edge')].map((edge) => edge.getAttribute('data-graph-id')).sort()).toEqual(incident.map((edge) => edge.id).sort());
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(incident.length);
+    const focusedNodeBounds = [...document.querySelectorAll('.graph-node')].map((group) => translatedRectBounds(group, group.querySelector('.node-card')));
+    const focusedLabelBounds = [...document.querySelectorAll('.graph-edge-label')].map((label) => {
+      const background = label.querySelector('.edge-label-bg');
+      const bounds = {
+        left: Number(background.getAttribute('x')),
+        top: Number(background.getAttribute('y')),
+        right: Number(background.getAttribute('x')) + Number(background.getAttribute('width')),
+        bottom: Number(background.getAttribute('y')) + Number(background.getAttribute('height')),
+      };
+      expect(label).toHaveAttribute('data-edge-route', 'focus-callout');
+      expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(label.getAttribute('data-full-label'));
+      expect(label).not.toHaveTextContent('…');
+      focusedNodeBounds.forEach((nodeBounds) => expect(rectsIntersect(bounds, nodeBounds)).toBe(false));
+      return bounds;
+    });
+    focusedLabelBounds.forEach((left, first) => focusedLabelBounds.slice(first + 1).forEach((right) => {
+      expect(rectsIntersect(left, right)).toBe(false);
+    }));
     expect(storedProject().graph).toEqual(graphBefore);
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));

@@ -1609,6 +1609,81 @@ function ecologyBoundsIntersect(left, right) {
   return left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top;
 }
 
+// A focused ecology view temporarily compacts the selected relationship (or a
+// node's one-hop neighborhood) into the reading window. Its band callouts are
+// intentionally absent there, so a center-to-center label can otherwise land
+// underneath either endpoint card. Give every desktop detail relationship a
+// nearby, collision-free bend: the full label sits on the bend and both line
+// segments remain visible as a single source-to-target pathway.
+function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = false) {
+  if (phoneLayout) return new Map();
+  const anchors = new Map();
+  const occupiedLabels = [];
+  const nodeBounds = new Map(nodes.map((node) => {
+    const position = positions.get(node.id);
+    return [node.id, position ? ecologyCardBounds(position, mapNodeGeometry(node.label, false), 10) : null];
+  }));
+  const allNodeBounds = [...nodeBounds.values()].filter(Boolean);
+  const insideMargin = 16;
+  const collisionScore = (bounds) => {
+    const nodeCollisions = allNodeBounds.filter((nodeBoundsEntry) => ecologyBoundsIntersect(bounds, nodeBoundsEntry)).length;
+    const labelCollisions = occupiedLabels.filter((labelBounds) => ecologyBoundsIntersect(bounds, labelBounds)).length;
+    const outside = Math.max(0, insideMargin - bounds.left)
+      + Math.max(0, bounds.right - (GRAPH_WIDTH - insideMargin))
+      + Math.max(0, insideMargin - bounds.top)
+      + Math.max(0, bounds.bottom - (GRAPH_HEIGHT - insideMargin));
+    return nodeCollisions * 1_000_000 + labelCollisions * 100_000 + outside * 10_000;
+  };
+
+  [...edges].sort((left, right) => left.id.localeCompare(right.id)).forEach((edge) => {
+    const source = positions.get(edge.source);
+    const target = positions.get(edge.target);
+    const sourceBounds = nodeBounds.get(edge.source);
+    const targetBounds = nodeBounds.get(edge.target);
+    if (!source || !target || !sourceBounds || !targetBounds) return;
+    const geometry = mapEdgeLabelGeometry(edge.verb, false, edge.scale);
+    const midX = (source.x + target.x) / 2;
+    const midY = (source.y + target.y) / 2;
+    const clearance = 18;
+    const halfWidth = geometry.width / 2;
+    const halfHeight = geometry.height / 2;
+    const deltaX = target.x - source.x;
+    const deltaY = target.y - source.y;
+    const distance = Math.max(1, Math.hypot(deltaX, deltaY));
+    const perpendicular = { x: -deltaY / distance, y: deltaX / distance };
+    const perpendicularOffset = Math.max(70, halfHeight + 44);
+    const candidates = [
+      { x: midX, y: midY },
+      { x: midX, y: Math.min(sourceBounds.top, targetBounds.top) - halfHeight - clearance },
+      { x: midX, y: Math.max(sourceBounds.bottom, targetBounds.bottom) + halfHeight + clearance },
+      { x: Math.min(sourceBounds.left, targetBounds.left) - halfWidth - clearance, y: midY },
+      { x: Math.max(sourceBounds.right, targetBounds.right) + halfWidth + clearance, y: midY },
+      { x: midX + perpendicular.x * perpendicularOffset, y: midY + perpendicular.y * perpendicularOffset },
+      { x: midX - perpendicular.x * perpendicularOffset, y: midY - perpendicular.y * perpendicularOffset },
+      { x: clamp(midX, halfWidth + insideMargin, GRAPH_WIDTH - halfWidth - insideMargin), y: halfHeight + insideMargin },
+      { x: clamp(midX, halfWidth + insideMargin, GRAPH_WIDTH - halfWidth - insideMargin), y: GRAPH_HEIGHT - halfHeight - insideMargin },
+      { x: halfWidth + insideMargin, y: clamp(midY, halfHeight + insideMargin, GRAPH_HEIGHT - halfHeight - insideMargin) },
+      { x: GRAPH_WIDTH - halfWidth - insideMargin, y: clamp(midY, halfHeight + insideMargin, GRAPH_HEIGHT - halfHeight - insideMargin) },
+    ];
+    const ranked = candidates.map((candidate, index) => {
+      const bounds = {
+        left: candidate.x - halfWidth,
+        right: candidate.x + halfWidth,
+        top: candidate.y - halfHeight,
+        bottom: candidate.y + halfHeight,
+      };
+      const pathLength = Math.hypot(candidate.x - source.x, candidate.y - source.y)
+        + Math.hypot(target.x - candidate.x, target.y - candidate.y);
+      return { candidate, bounds, score: collisionScore(bounds) + pathLength + index / 100 };
+    }).sort((left, right) => left.score - right.score);
+    const chosen = ranked[0];
+    if (!chosen) return;
+    occupiedLabels.push(chosen.bounds);
+    anchors.set(edge.id, { x: Math.round(chosen.candidate.x), y: Math.round(chosen.candidate.y) });
+  });
+  return anchors;
+}
+
 function constrainWithinEcologyBand(node, x, y, geometry) {
   const band = ECOLOGY_BANDS[node.scale];
   if (!band) return { x, y };
@@ -2158,22 +2233,27 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   const layerAnchors = mapMode === 'ecology' && !detailMode
     ? ecologyCalloutAnchors(edges, nodes, positions, phoneLayout)
     : null;
+  const focusedCalloutAnchors = mapMode === 'ecology' && detailMode
+    ? focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout)
+    : null;
   const edgeVisuals = edges.map((edge) => {
     const source = nodeVisuals.get(edge.source);
     const target = nodeVisuals.get(edge.target);
     if (!source?.position || !target?.position) return null;
     const labelGeometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
     const layerAnchor = layerAnchors?.get(edge.id) || null;
-    const sourceToward = layerAnchor || target.position;
-    const targetToward = layerAnchor || source.position;
+    const focusedCalloutAnchor = focusedCalloutAnchors?.get(edge.id) || null;
+    const calloutAnchor = layerAnchor || focusedCalloutAnchor;
+    const sourceToward = calloutAnchor || target.position;
+    const targetToward = calloutAnchor || source.position;
     const sourcePoint = cardConnectionPoint(source.position, sourceToward, source.geometry);
     const targetPoint = cardConnectionPoint(target.position, targetToward, target.geometry, phoneLayout ? 12 : 7);
-    const labelPoint = layerAnchor || {
+    const labelPoint = calloutAnchor || {
       x: (source.position.x + target.position.x) / 2,
       y: (source.position.y + target.position.y) / 2,
     };
-    const path = layerAnchor
-      ? `M ${sourcePoint.x} ${sourcePoint.y} L ${layerAnchor.x} ${layerAnchor.y} L ${targetPoint.x} ${targetPoint.y}`
+    const path = calloutAnchor
+      ? `M ${sourcePoint.x} ${sourcePoint.y} L ${calloutAnchor.x} ${calloutAnchor.y} L ${targetPoint.x} ${targetPoint.y}`
       : `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
     return {
       edge,
@@ -2184,7 +2264,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
       midX: labelPoint.x,
       midY: labelPoint.y,
       path,
-      layerAnchored: Boolean(layerAnchor),
+      edgeRoute: layerAnchor ? 'layer-anchor' : focusedCalloutAnchor ? 'focus-callout' : 'direct',
       labelGeometry,
       selected: selection?.kind === 'edge' && selection.id === edge.id,
     };
@@ -2213,7 +2293,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
         const selected = selection?.kind === 'node' && selection.id === node.id;
         return <path key={`scope-${node.id}`} data-scope-of={node.id} className={`scope-field ${selected ? 'is-selected' : ''} ${node.visualMuted ? 'is-muted' : ''}`} d={convexHullPath(memberPoints)} />;
       })}</g>
-      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, layerAnchored, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={layerAnchored ? 'layer-anchor' : 'direct'} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${SCALES[edge.scale]?.label || edge.scale} level relationship`} aria-keyshortcuts="Enter Space" className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => {
+      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}, ${SCALES[edge.scale]?.label || edge.scale} level relationship`} aria-keyshortcuts="Enter Space" className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => { event.stopPropagation(); onSelect('edge', edge.id, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onSelect('edge', edge.id, true);
@@ -2222,8 +2302,8 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
         {selected && <path className="edge-selection-halo" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />}
         <path className="edge-line" d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
       </g>)}</g>
-      <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false).map(({ edge, midX, midY, labelGeometry: geometry, layerAnchored, selected }) => {
-        return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={layerAnchored ? 'layer-anchor' : 'direct'} data-anchor-x={midX} data-anchor-y={midY} data-full-label={edge.verb} className={`graph-edge-label ${selected ? 'is-selected' : ''}`}>
+      <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
+        return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} data-anchor-x={midX} data-anchor-y={midY} data-full-label={edge.verb} className={`graph-edge-label ${selected ? 'is-selected' : ''}`}>
           <rect className="edge-label-bg" x={midX - (geometry.width / 2)} y={midY - (geometry.height / 2)} width={geometry.width} height={geometry.height} rx={phoneLayout ? 6 : 2} />
           <text className="edge-label" style={{ fontSize: geometry.fontSize }} x={midX}>{geometry.lines.map((line, lineIndex) => <tspan key={`${edge.id}-line-${lineIndex}`} x={midX} y={midY + geometry.startY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
         </g>;
