@@ -19,4 +19,10 @@ describe('student-facing copy', () => {
       expect(source, relativePath).not.toMatch(unexplainedMetaphors);
     });
   });
+
+  it('defines each candidate decision in plain language', () => {
+    const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
+    expect(source).toContain('Keep means add this suggestion to the map. Suggestions begin on Keep so you can review them together. Choose Needs more evidence to set one aside, or Remove to leave it off the map.');
+    expect(source).not.toContain('Suggestions start on Keep. They appear together after you open the map. Choose Remove or Needs more evidence for anything that should not be added as shown.');
+  });
 });

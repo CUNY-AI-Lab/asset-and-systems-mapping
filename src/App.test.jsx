@@ -1242,14 +1242,20 @@ describe('Systems Mapping workflow', () => {
       ['Family caregiver', 'person'],
       ['Evening class schedule', 'activity'],
     ];
+    const staleSavedPositions = [
+      { x: -2400, y: -1300 },
+      { x: 3800, y: -900 },
+      { x: 4100, y: 1700 },
+      { x: -1800, y: 2100 },
+      { x: 900, y: 3600 },
+    ];
     const nodes = specifications.map(([label, type], index) => ({
       ...structuredClone(extracted.nodes[index]),
       id: `preview-node-${index + 1}`,
       label,
       type,
       scale: 'micro',
-      x: 390 + (index % 3) * 28,
-      y: 245 + Math.floor(index / 3) * 32,
+      ...staleSavedPositions[index],
       status: 'confirmed',
       claimState: 'student interpretation',
       annotations: {
@@ -1284,8 +1290,11 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
+    const previewSvg = document.querySelector('.connection-preview svg');
     const labels = [...document.querySelectorAll('.connection-preview__label')];
     const cards = [...document.querySelectorAll('.connection-preview__node')].map((node) => translatedRectBounds(node, node.querySelector('rect')));
+    const viewBox = previewSvg.getAttribute('viewBox').split(/\s+/).map(Number);
+    const [viewX, viewY, viewWidth, viewHeight] = viewBox;
     expect(labels).toHaveLength(edges.length);
     labels.forEach((label, index) => {
       const labelBounds = svgRectBounds(label.querySelector('rect'));
@@ -1307,6 +1316,106 @@ describe('Systems Mapping workflow', () => {
       expect(projection).toBeLessThan(1);
     });
     expect(new Set([...document.querySelectorAll('.connection-preview__edge path')].map((path) => path.getAttribute('d')))).toHaveLength(edges.length);
+    const renderedBounds = [...cards, ...labels.map((label) => svgRectBounds(label.querySelector('rect')))];
+    expect(Math.min(...renderedBounds.map(({ left }) => left))).toBeGreaterThanOrEqual(viewX);
+    expect(Math.max(...renderedBounds.map(({ right }) => right))).toBeLessThanOrEqual(viewX + viewWidth);
+    expect(Math.min(...renderedBounds.map(({ top }) => top))).toBeGreaterThanOrEqual(viewY);
+    expect(Math.max(...renderedBounds.map(({ bottom }) => bottom))).toBeLessThanOrEqual(viewY + viewHeight);
+    expect(viewWidth / viewHeight).toBeCloseTo(8 / 5, 4);
+    expect(Math.max(...cards.map(({ right }) => right)) - Math.min(...cards.map(({ left }) => left))).toBeLessThan(2600);
+    expect(viewWidth).toBeLessThan(3200);
+  });
+
+  it('fits a dense connection preview around its content instead of stale canvas coordinates', async () => {
+    const project = createDefaultProject();
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
+    const extracted = extractCandidates(project.submission);
+    const labels = [
+      'Participant A',
+      'Family caregiver',
+      'East 111th Street apartment',
+      'Apartment elevator',
+      'East Harlem community resource room',
+      'Resource coordinator',
+      'Rehabilitation room',
+      'Physical therapist',
+      'Neighborhood grocery internship counter',
+      'Internship supervisor',
+    ];
+    const nodes = labels.map((label, index) => ({
+      ...structuredClone(extracted.nodes[index % extracted.nodes.length]),
+      id: `dense-preview-node-${index + 1}`,
+      label,
+      type: index < 2 || index === 5 || index === 7 || index === 9 ? 'person' : 'setting',
+      scale: 'micro',
+      x: index % 2 ? 5200 + index * 240 : -3400 - index * 180,
+      y: index * 720 - 2400,
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      annotations: {
+        analytical: { id: `dense-preview-node-${index + 1}-analytical`, text: '' },
+        evidence: { id: `dense-preview-node-${index + 1}-evidence`, text: '' },
+      },
+    }));
+    const connectionSpecs = [
+      [1, 3, 'checks before each trip'],
+      [1, 5, 'alerts about elevator outages'],
+      [5, 0, 'supports at the resource room'],
+      [0, 4, 'attends on Tuesdays and Thursdays'],
+      [0, 6, 'attends on Tuesday afternoons'],
+      [7, 0, 'provides physical therapy to'],
+      [0, 8, 'works at the internship counter'],
+      [9, 0, 'supervises assigned tasks for'],
+      [5, 6, 'coordinates the Tuesday schedule with'],
+      [5, 9, 'shares the internship task plan with'],
+      [9, 5, 'returns weekly feedback to'],
+      [1, 9, 'confirms the pickup window with'],
+    ];
+    const edges = connectionSpecs.map(([sourceIndex, targetIndex, verb], index) => ({
+      ...structuredClone(extracted.edges[index % extracted.edges.length]),
+      id: `dense-preview-edge-${index + 1}`,
+      source: nodes[sourceIndex].id,
+      target: nodes[targetIndex].id,
+      sourceLabel: nodes[sourceIndex].label,
+      targetLabel: nodes[targetIndex].label,
+      verb,
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      annotation: { id: `dense-preview-edge-${index + 1}-annotation`, text: '' },
+    }));
+    project.candidates = { nodes, edges };
+    project.graph = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
+    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and ${edges.length} connections` });
+    const previewSvg = preview.querySelector('svg');
+    const viewBox = previewSvg.getAttribute('viewBox').split(/\s+/).map(Number);
+    const [viewX, viewY, viewWidth, viewHeight] = viewBox;
+    const renderedNodes = [...preview.querySelectorAll('.connection-preview__node')];
+    const renderedLabels = [...preview.querySelectorAll('.connection-preview__label')];
+    const bounds = [
+      ...renderedNodes.map((node) => translatedRectBounds(node, node.querySelector('rect'))),
+      ...renderedLabels.map((label) => svgRectBounds(label.querySelector('rect'))),
+    ];
+
+    expect(viewWidth / viewHeight).toBeCloseTo(8 / 5, 4);
+    expect(viewWidth).toBeLessThan(2300);
+    expect(renderedLabels.map((label) => label.getAttribute('data-edge-id'))).toEqual(edges.map(({ id }) => id));
+    expect(Math.min(...bounds.map(({ left }) => left))).toBeGreaterThanOrEqual(viewX);
+    expect(Math.max(...bounds.map(({ right }) => right))).toBeLessThanOrEqual(viewX + viewWidth);
+    expect(Math.min(...bounds.map(({ top }) => top))).toBeGreaterThanOrEqual(viewY);
+    expect(Math.max(...bounds.map(({ bottom }) => bottom))).toBeLessThanOrEqual(viewY + viewHeight);
+    renderedLabels.forEach((label, index) => {
+      const labelBounds = svgRectBounds(label.querySelector('rect'));
+      expect(svgTextLines(label.querySelector('text')).join(' ')).toBe(edges[index].verb);
+      renderedNodes.forEach((node) => expect(rectsIntersect(labelBounds, translatedRectBounds(node, node.querySelector('rect')))).toBe(false));
+      renderedLabels.slice(index + 1).forEach((other) => expect(rectsIntersect(labelBounds, svgRectBounds(other.querySelector('rect')))).toBe(false));
+    });
   });
 
   it('wraps and grows complete model-suggested connection wording while it is edited', async () => {
@@ -2092,6 +2201,57 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(new Set(anchors)).toHaveLength(relationships.length);
     expect(new Set(paths)).toHaveLength(relationships.length);
     expect(rectsIntersect(labelBounds[0], labelBounds[1])).toBe(false);
+  });
+
+  it('keeps a dense Micro overview in its band and opens one clear between-endpoint relationship at a time', async () => {
+    const project = makeDenseFocusedMesoProject(5);
+    const graphBefore = structuredClone(project.graph);
+    await openMapProject(project);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'micro' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
+
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
+    const microRing = document.querySelector('.ecology-layer--micro ellipse');
+    const center = { x: Number(microRing.getAttribute('cx')), y: Number(microRing.getAttribute('cy')) };
+    const radius = { x: Number(microRing.getAttribute('rx')), y: Number(microRing.getAttribute('ry')) };
+    [...document.querySelectorAll('.graph-node')].forEach((node) => {
+      const bounds = translatedRectBounds(node, node.querySelector('.node-card'));
+      [bounds.left, bounds.right].forEach((x) => [bounds.top, bounds.bottom].forEach((y) => {
+        expect(((x - center.x) / radius.x) ** 2 + ((y - center.y) / radius.y) ** 2).toBeLessThanOrEqual(1);
+      }));
+    });
+
+    const inspector = openNodeInspector('node-dense-focus');
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
+    const labels = [...document.querySelectorAll('.graph-edge-label')];
+    expect(labels).toHaveLength(1);
+    const label = labels[0];
+    const edge = project.graph.edges.find((candidate) => candidate.id === label.getAttribute('data-edge-id'));
+    const bounds = svgRectBounds(label.querySelector('.edge-label-bg'));
+    const visibleBounds = transformedRectBounds(bounds);
+    const source = renderedNodePosition(edge.source);
+    const target = renderedNodePosition(edge.target);
+    const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
+    const delta = { x: target.x - source.x, y: target.y - source.y };
+    const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
+    expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
+    expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(edge.verb);
+    [...document.querySelectorAll('.graph-node')].forEach((node) => {
+      expect(rectsIntersect(bounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false);
+    });
+    expect(projection).toBeGreaterThan(0);
+    expect(projection).toBeLessThan(1);
+    expect(visibleBounds.left).toBeGreaterThanOrEqual(0);
+    expect(visibleBounds.right).toBeLessThanOrEqual(840);
+    expect(visibleBounds.top).toBeGreaterThanOrEqual(0);
+    expect(visibleBounds.bottom).toBeLessThanOrEqual(540);
+    expect(storedProject().graph.nodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })))
+      .toEqual(graphBefore.nodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })));
   });
 
   it('requires a named institution for a manually added Exosphere map node', async () => {

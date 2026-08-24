@@ -1379,7 +1379,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     </>}
     <div id="candidate-panel" role={candidateSteps.length > 1 ? 'tabpanel' : undefined} aria-labelledby={candidateSteps.length > 1 ? `candidate-tab-${step}` : undefined}>
       {decisionStep && <>
-        <p className="candidate-progress">{project.instructor.requireStudentConfirmation ? 'Suggestions are off until you choose Keep.' : 'Suggestions start on Keep. They appear together after you open the map. Choose Remove or Needs more evidence for anything that should not be added as shown.'}</p>
+        <p className="candidate-progress">{project.instructor.requireStudentConfirmation ? 'Suggestions are off until you choose Keep.' : 'Keep means add this suggestion to the map. Suggestions begin on Keep so you can review them together. Choose Needs more evidence to set one aside, or Remove to leave it off the map.'}</p>
         {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} decided</p>}
         <div className="candidate-list">
           {candidateRows(step)}
@@ -1959,7 +1959,7 @@ function calloutBounds(anchor, geometry, padding = 0) {
 // Search that corridor in deterministic parallel lanes, reserving every label
 // and routed segment as it is placed. Callers can temporarily spread nodes and
 // retry when a pair is too close to hold the complete, untruncated wording.
-function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = false) {
+function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = false, { allowRouteUnderLabels = false } = {}) {
   const anchors = new Map();
   const bounds = new Map();
   const paths = new Map();
@@ -2006,18 +2006,21 @@ function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = fal
       unplaced.add(edge.id);
       return;
     }
-    const midpoint = distance / 2;
     const alongSpan = Math.max(0, lastAlong - firstAlong);
-    const alongCandidates = [
-      clamp(midpoint, firstAlong, lastAlong),
-      clamp(midpoint - alongSpan * .2, firstAlong, lastAlong),
-      clamp(midpoint + alongSpan * .2, firstAlong, lastAlong),
-      firstAlong,
-      lastAlong,
-    ].filter((value, index, values) => values.findIndex((candidate) => Math.abs(candidate - value) < .5) === index);
+    const midpoint = distance / 2;
+    const alongFractions = allowRouteUnderLabels
+      ? [.5, .35, .65, .2, .8, .1, .9, 0, 1]
+      : [.5, .3, .7, 0, 1];
+    const alongCandidates = alongFractions
+      .map((fraction) => firstAlong + alongSpan * fraction)
+      .map((value) => clamp(value, firstAlong, lastAlong))
+      .filter((value, index, values) => values.findIndex((candidate) => Math.abs(candidate - value) < .5) === index);
     const perpendicularHalf = geometry.width / 2 * Math.abs(perpendicular.x) + geometry.height / 2 * Math.abs(perpendicular.y);
     const laneStep = perpendicularHalf * 2 + (phoneLayout ? 18 : 12);
-    const maximumOffset = Math.max(laneStep, Math.min(phoneLayout ? 300 : 220, distance * .46));
+    const maximumOffset = Math.max(laneStep, Math.min(
+      allowRouteUnderLabels ? (phoneLayout ? 520 : 380) : (phoneLayout ? 300 : 220),
+      distance * .46,
+    ));
     const laneOffsets = [0];
     for (let lane = 1; lane * laneStep <= maximumOffset + .5; lane += 1) {
       laneOffsets.push(lane * laneStep, -lane * laneStep);
@@ -2037,9 +2040,11 @@ function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = fal
         .map(([, candidate]) => candidate);
       const routeBlocked = crossesAny(sourcePoint, anchor, otherNodeBounds)
         || crossesAny(anchor, targetPoint, otherNodeBounds)
-        || crossesAny(sourcePoint, anchor, occupiedLabels)
-        || crossesAny(anchor, targetPoint, occupiedLabels)
-        || occupiedSegments.some(([start, end]) => segmentCrossesBoundsInterior(start, end, paddedLabelBounds));
+        || (!allowRouteUnderLabels && (
+          crossesAny(sourcePoint, anchor, occupiedLabels)
+          || crossesAny(anchor, targetPoint, occupiedLabels)
+          || occupiedSegments.some(([start, end]) => segmentCrossesBoundsInterior(start, end, paddedLabelBounds))
+        ));
       const nodeCollision = [...nodeBounds.values()].filter(Boolean).some((candidate) => ecologyBoundsIntersect(paddedLabelBounds, candidate));
       const labelCollision = occupiedLabels.some((candidate) => ecologyBoundsIntersect(paddedLabelBounds, candidate));
       candidates.push({
@@ -2069,7 +2074,7 @@ function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = fal
   return { anchors, bounds, paths, unplaced };
 }
 
-function expandedConnectionLayout(nodes, edges, phoneLayout = false) {
+function expandedConnectionLayout(nodes, edges, phoneLayout = false, { arrangedOnly = false } = {}) {
   const currentPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
   const arrangedPositions = arrangedMapPositions(
     nodes,
@@ -2077,21 +2082,90 @@ function expandedConnectionLayout(nodes, edges, phoneLayout = false) {
     phoneLayout ? 3 : 5,
     phoneLayout,
   );
-  const bases = mapNodesOverlap(nodes, phoneLayout) ? [arrangedPositions] : [currentPositions, arrangedPositions];
-  let fallback = { positions: bases[0], ...betweenEndpointCalloutLayout(edges, nodes, bases[0], phoneLayout) };
+  // A connection preview is an overview of the decisions on this screen, not
+  // a miniature of a potentially stale saved canvas. Always starting that
+  // preview from the compact arrangement prevents an old pan/layout from
+  // pushing one cluster into a corner and leaving most of the preview empty.
+  const degree = new Map(nodes.map((node) => [node.id, 0]));
+  edges.forEach((edge) => {
+    degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
+    degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
+  });
+  const degreeOrder = [...nodes].sort((left, right) => (
+    (degree.get(right.id) || 0) - (degree.get(left.id) || 0)
+    || left.label.localeCompare(right.label)
+    || left.id.localeCompare(right.id)
+  ));
+  const radialSlots = degreeOrder.flatMap((_, index) => index < Math.ceil(degreeOrder.length / 2)
+    ? [index, index + Math.ceil(degreeOrder.length / 2)].filter((slot) => slot < degreeOrder.length)
+    : []);
+  const radialRadiusX = Math.max(phoneLayout ? 500 : 420, degreeOrder.length * (phoneLayout ? 46 : 36));
+  const radialRadiusY = Math.max(phoneLayout ? 360 : 300, degreeOrder.length * (phoneLayout ? 32 : 24));
+  const radialPositions = new Map(degreeOrder.map((node, index) => {
+    const angle = -Math.PI / 2 + radialSlots[index] / Math.max(1, degreeOrder.length) * Math.PI * 2;
+    return [node.id, {
+      x: Math.round(GRAPH_WIDTH / 2 + Math.cos(angle) * radialRadiusX),
+      y: Math.round(GRAPH_HEIGHT / 2 + Math.sin(angle) * radialRadiusY),
+    }];
+  }));
+  const neighborIds = new Map(nodes.map((node) => [node.id, []]));
+  edges.forEach((edge) => {
+    if (neighborIds.has(edge.source) && neighborIds.has(edge.target)) {
+      neighborIds.get(edge.source).push(edge.target);
+      neighborIds.get(edge.target).push(edge.source);
+    }
+  });
+  const sides = [[], []];
+  const sideById = new Map();
+  degreeOrder.forEach((node, index) => {
+    const neighborSides = (neighborIds.get(node.id) || []).map((id) => sideById.get(id)).filter((side) => side !== undefined);
+    const connectionsToLeft = neighborSides.filter((side) => side === 0).length;
+    const connectionsToRight = neighborSides.length - connectionsToLeft;
+    const side = index === 0
+      ? 0
+      : connectionsToLeft !== connectionsToRight
+        ? (connectionsToLeft > connectionsToRight ? 1 : 0)
+        : (sides[0].length <= sides[1].length ? 0 : 1);
+    sides[side].push(node);
+    sideById.set(node.id, side);
+  });
+  const partitionedPositions = new Map();
+  const columnGap = phoneLayout ? 1080 : 840;
+  const rowPitch = phoneLayout ? 126 : 108;
+  sides.forEach((items, side) => items.forEach((node, index) => partitionedPositions.set(node.id, {
+    x: Math.round(GRAPH_WIDTH / 2 + (side ? 1 : -1) * columnGap / 2),
+    y: Math.round(GRAPH_HEIGHT / 2 + (index - (items.length - 1) / 2) * rowPitch),
+  })));
+  const staggeredGrids = [3, 2].map((maximumColumns) => {
+    const grid = arrangedMapPositions(nodes, false, maximumColumns, phoneLayout);
+    const rows = [...new Set([...grid.values()].map(({ y }) => y))].sort((left, right) => left - right);
+    return new Map([...grid].map(([id, position]) => {
+      const row = rows.indexOf(position.y);
+      return [id, {
+        x: position.x + (row % 2 ? (phoneLayout ? 154 : 134) : 0),
+        y: position.y,
+      }];
+    }));
+  });
+  const previewBases = [partitionedPositions, radialPositions, ...staggeredGrids, arrangedPositions];
+  const bases = arrangedOnly ? previewBases : mapNodesOverlap(nodes, phoneLayout) ? [arrangedPositions] : [currentPositions, arrangedPositions];
+  let fallback = { positions: bases[0], ...betweenEndpointCalloutLayout(edges, nodes, bases[0], phoneLayout, { allowRouteUnderLabels: arrangedOnly }) };
   for (const base of bases) {
     const center = {
       x: [...base.values()].reduce((total, position) => total + position.x, 0) / Math.max(1, base.size),
       y: [...base.values()].reduce((total, position) => total + position.y, 0) / Math.max(1, base.size),
     };
-    for (const factor of [1, 1.15, 1.35, 1.6, 1.9, 2.25, 2.7]) {
+    const expansionFactors = arrangedOnly
+      ? [1, 1.12, 1.25, 1.42, 1.62, 1.85, 2.1, 2.4, 2.75]
+      : [1, 1.15, 1.35, 1.6, 1.9, 2.25, 2.7];
+    for (const factor of expansionFactors) {
       const positions = new Map([...base].map(([id, position]) => [id, {
         x: Math.round(center.x + (position.x - center.x) * factor),
         y: Math.round(center.y + (position.y - center.y) * factor),
       }]));
       const positionedNodes = nodes.map((node) => ({ ...node, ...positions.get(node.id) }));
       if (mapNodesOverlap(positionedNodes, phoneLayout)) continue;
-      const layout = betweenEndpointCalloutLayout(edges, positionedNodes, positions, phoneLayout);
+      const layout = betweenEndpointCalloutLayout(edges, positionedNodes, positions, phoneLayout, { allowRouteUnderLabels: arrangedOnly });
       fallback = layout.anchors.size > fallback.anchors.size ? { positions, ...layout } : fallback;
       if (!layout.unplaced.size) return { positions, ...layout };
     }
@@ -2262,6 +2336,28 @@ function arrangedPhoneRelationshipPositions(nodes, edge) {
   ]);
 }
 
+function arrangedFocusedRelationshipPositions(nodes, edge, phoneLayout = false) {
+  if (!edge) return null;
+  const source = nodes.find((node) => node.id === edge.source);
+  const target = nodes.find((node) => node.id === edge.target);
+  if (!source || !target) return null;
+  if (phoneLayout) return arrangedPhoneRelationshipPositions(nodes, edge);
+  const sourceGeometry = mapNodeGeometry(source.label, false);
+  const targetGeometry = mapNodeGeometry(target.label, false);
+  const relationshipGeometry = mapEdgeLabelGeometry(edge.verb, false, edge.scale);
+  // Detail mode temporarily hides the ecology backdrop, so the two endpoint
+  // cards can use the full canvas. Size the corridor from the complete label
+  // instead of letting a dense overview's compact band layout follow focus.
+  const distance = sourceGeometry.cardWidth / 2
+    + relationshipGeometry.width
+    + targetGeometry.cardWidth / 2
+    + 52;
+  return new Map([
+    [source.id, { x: Math.round(GRAPH_WIDTH / 2 - distance / 2), y: GRAPH_HEIGHT / 2 }],
+    [target.id, { x: Math.round(GRAPH_WIDTH / 2 + distance / 2), y: GRAPH_HEIGHT / 2 }],
+  ]);
+}
+
 function mapNodesOverlap(nodes, phoneLayout = false) {
   for (let first = 0; first < nodes.length; first += 1) {
     for (let second = first + 1; second < nodes.length; second += 1) {
@@ -2314,7 +2410,7 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
     ...edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'),
     ...suggestions.filter((edge) => edge.status !== 'rejected'),
   ].filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
-  const layout = expandedConnectionLayout(nodes, shownEdges);
+  const layout = expandedConnectionLayout(nodes, shownEdges, false, { arrangedOnly: true });
   const previewNodes = nodes.map((node) => ({ ...node, ...(layout.positions.get(node.id) || {}) }));
   const previewNodeById = new Map(previewNodes.map((node) => [node.id, node]));
   const shownEdgeLayouts = shownEdges.flatMap((edge) => {
@@ -2348,8 +2444,14 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
       const rawMaxX = Math.max(...contentBounds.map(({ right }) => right)) + 28;
       const rawMinY = Math.min(...contentBounds.map(({ top }) => top)) - 28;
       const rawMaxY = Math.max(...contentBounds.map(({ bottom }) => bottom)) + 28;
-      const width = Math.max(GRAPH_WIDTH, rawMaxX - rawMinX);
-      const height = Math.max(GRAPH_HEIGHT, rawMaxY - rawMinY);
+      // Match the preview's 8:5 frame instead of padding every graph out to
+      // the main map's fixed 840x540 world. The tight, centered viewBox keeps
+      // all cards and complete labels visible at a useful scale.
+      const targetAspect = 8 / 5;
+      const rawWidth = Math.max(1, rawMaxX - rawMinX);
+      const rawHeight = Math.max(1, rawMaxY - rawMinY);
+      const width = Math.max(rawWidth, rawHeight * targetAspect);
+      const height = Math.max(rawHeight, rawWidth / targetAspect);
       const centerX = (rawMinX + rawMaxX) / 2;
       const centerY = (rawMinY + rawMaxY) / 2;
       return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
@@ -2407,7 +2509,7 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
   const accepted = suggestions.filter((suggestion) => suggestion.status === 'confirmed').length;
   return <section className="connection-stage" aria-label="More connection suggestions">
     <p className="eyebrow">{nodes.length} kept nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
-    <div className="connection-stage__layout">
+    <div className={`connection-stage__layout ${nodes.length > 6 ? 'is-dense' : ''}`}>
       <section className="connection-prompt-panel">
         {nodes.length < 2 && <p className="teacher-message" role="status">Keep at least two nodes and the model can suggest connections between them.</p>}
         <button type="button" className="button" disabled={busy || nodes.length < 2} onClick={onSuggest}>{busy ? 'Generating suggestions…' : suggestions.length ? 'Generate again' : 'Suggest connections'}</button>
@@ -3025,11 +3127,19 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   ), [phoneEcologyCommittedScope, phoneEcologyScope, visibleNodes]);
   const phoneRelationshipPositions = useMemo(() => arrangedPhoneRelationshipPositions(visibleNodes, phoneFocusedEdge), [phoneFocusedEdge, visibleNodes]);
   const phoneRelationshipDetail = Boolean(phoneRelationshipPositions);
+  const focusedRelationshipEdge = focusedEdgeIds.size === 1
+    ? scaleEdges.find((edge) => focusedEdgeIds.has(edge.id))
+    : null;
+  const focusedRelationshipPositions = useMemo(() => (
+    mapMode === 'ecology' && focusActive && visibleNodes.length === 2
+      ? arrangedFocusedRelationshipPositions(visibleNodes, focusedRelationshipEdge, phoneLayout)
+      : null
+  ), [focusActive, focusedRelationshipEdge, mapMode, phoneLayout, visibleNodes]);
   const focusedEcologyPositions = useMemo(() => (
     mapMode === 'ecology' && focusActive && !phoneRelationshipDetail
-      ? arrangedFocusedEcologyPositions(visibleNodes, phoneLayout)
+      ? focusedRelationshipPositions || arrangedFocusedEcologyPositions(visibleNodes, phoneLayout)
       : null
-  ), [focusActive, mapMode, phoneLayout, phoneRelationshipDetail, visibleNodes]);
+  ), [focusActive, focusedRelationshipPositions, mapMode, phoneLayout, phoneRelationshipDetail, visibleNodes]);
   const focusedEcologyDetail = Boolean(focusedEcologyPositions);
   const displayedNodes = useMemo(() => visibleNodes.map((node) => ({
     ...node,
@@ -3042,6 +3152,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const visibleEdges = useMemo(() => {
     const shown = focusActive ? scaleEdges.filter((edge) => focusedEdgeIds.has(edge.id)) : scaleEdges;
     const overview = !focusActive && visibleScale === 'all';
+    const denseMicroOverview = !focusActive
+      && visibleScale === 'micro'
+      && shown.filter((edge) => edge.scale === 'micro').length > 3;
     const layerLayouts = new Map();
     scaleEdges.forEach((edge) => {
       const group = layerLayouts.get(edge.scale) || [];
@@ -3053,7 +3166,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       const group = layerLayouts.get(edge.scale) || [edge];
       return {
         ...edge,
-        showLabel: visibleScale !== 'all' || focusActive,
+        showLabel: (visibleScale !== 'all' || focusActive) && !denseMicroOverview,
         visualMuted: overview,
         layerEdgeSlot: group.findIndex((candidate) => candidate.id === edge.id),
         layerEdgeCount: group.length,
