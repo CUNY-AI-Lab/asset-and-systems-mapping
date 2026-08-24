@@ -105,8 +105,8 @@ const SCALE_VERB_ALIASES = Object.freeze({
 });
 
 // Resolves a proposed verb to its canonical register entry for the scale, or
-// null when the verb has no place in that register ("leverages" at the
-// Macrosphere). Scales without a closed register pass verbs through.
+// null when the verb has no place in that register. Scales without a closed
+// register pass verbs through.
 export function scaleLexiconVerb(scale, verb) {
   const trimmed = String(verb || '').trim();
   const lexicon = SCALE_VERB_LEXICONS[scale];
@@ -117,7 +117,6 @@ export function scaleLexiconVerb(scale, verb) {
 }
 
 export const NODE_BASES = Object.freeze(['memo', 'inference']);
-export const LEVERAGE_TAGS = Object.freeze(['stuck', 'energy', 'ripples']);
 
 export const NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event', 'law', 'belief'];
 export const CLAIM_STATES = ['confirmed', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'];
@@ -946,7 +945,7 @@ const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'eviden
 const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
-const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'leverage', ...EVIDENCE_KEYS];
+const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', ...EVIDENCE_KEYS];
 const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', ...EVIDENCE_KEYS];
 
 function invalidProject(path, expectation) {
@@ -1095,7 +1094,6 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     if (node.sourceFingerprint !== undefined) assertString(node.sourceFingerprint, `${itemPath}.sourceFingerprint`, false, 200);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${itemPath}.basis`);
     if (node.deontic !== undefined) assertString(node.deontic, `${itemPath}.deontic`, true, 60);
-    if (node.leverage !== undefined) assertEnum(node.leverage, LEVERAGE_TAGS, `${itemPath}.leverage`);
     if (node.scopeNodeIds !== undefined) {
       if (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length > PROJECT_LIMITS.scopeMembers) {
         invalidProject(`${itemPath}.scopeNodeIds`, `must be an array of no more than ${PROJECT_LIMITS.scopeMembers} node ids`);
@@ -1766,6 +1764,20 @@ function migrateLegacyProject(project) {
   return finishStageMigration(migrated);
 }
 
+// A short-lived schema-v6 build persisted this retired node tag. Imports strip
+// it before strict validation so those saved projects continue to open, while
+// current project objects cannot write the field back into the schema.
+function discardRetiredNodeTags(project) {
+  ['candidates', 'graph'].forEach((container) => {
+    const nodes = project?.[container]?.nodes;
+    if (!Array.isArray(nodes)) return;
+    nodes.forEach((node) => {
+      if (node && typeof node === 'object' && !Array.isArray(node)) delete node.leverage;
+    });
+  });
+  return project;
+}
+
 function addRedaction(redactions, path, reason) {
   if (!redactions.some((entry) => entry.path === path)) redactions.push({ path, reason });
 }
@@ -2084,5 +2096,5 @@ export function parseProject(value) {
   if (![1, 2, 3, 4, 5, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
     throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, or ${PROJECT_SCHEMA_VERSION}.`);
   }
-  return validateProject(migrateLegacyProject(parsed));
+  return validateProject(discardRetiredNodeTags(migrateLegacyProject(parsed)));
 }

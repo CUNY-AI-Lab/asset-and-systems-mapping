@@ -141,9 +141,9 @@ describe('mapping domain', () => {
   it('resolves verbs against the closed outer-level registers', () => {
     expect(scaleLexiconVerb('exosphere', 'Funds')).toBe('funds');
     expect(scaleLexiconVerb('exosphere', 'oversees')).toBe('regulates');
-    expect(scaleLexiconVerb('exosphere', 'leverages')).toBeNull();
+    expect(scaleLexiconVerb('exosphere', 'synergizes')).toBeNull();
     expect(scaleLexiconVerb('macrosphere', 'requires')).toBe('mandates');
-    expect(scaleLexiconVerb('macrosphere', 'leverages')).toBeNull();
+    expect(scaleLexiconVerb('macrosphere', 'synergizes')).toBeNull();
     // Levels without a closed register pass verbs through unchanged.
     expect(scaleLexiconVerb('meso', 'asks for help from')).toBe('asks for help from');
   });
@@ -183,7 +183,7 @@ describe('mapping domain', () => {
     expect(review.guidance.map(({ point }) => point).join(' ')).toContain('pattern with no door');
   });
 
-  it('validates structure scopes and leverage tags on graph nodes', () => {
+  it('validates structure scopes on graph nodes', () => {
     const project = projectWithGraph();
     const [first, second] = project.graph.nodes;
     const structure = {
@@ -202,15 +202,11 @@ describe('mapping domain', () => {
       },
       deontic: 'defines eligibility for',
       scopeNodeIds: [first.id, second.id],
-      leverage: 'ripples',
     };
     project.graph.nodes.push(structure);
     expect(() => validateProject(project)).not.toThrow();
     structure.scopeNodeIds = [structure.id];
     expect(() => validateProject(project)).toThrow(/cannot include the structure itself/);
-    structure.scopeNodeIds = [first.id];
-    structure.leverage = 'pivotal';
-    expect(() => validateProject(project)).toThrow(/leverage/);
   });
 
   it('keeps incrementally added nodes from occupying the same map space', () => {
@@ -375,6 +371,19 @@ describe('mapping domain', () => {
       id: project.id,
       participantName: 'East Harlem mapping group',
     });
+  });
+
+  it('discards the retired leverage node field when importing saved schema-v6 projects', () => {
+    const savedProject = projectWithGraph();
+    savedProject.candidates.nodes[0].leverage = 'energy';
+    savedProject.graph.nodes[0].leverage = 'ripples';
+
+    expect(() => validateProject(savedProject)).toThrow(/leverage is not an allowed schema field/);
+
+    const restored = parseProject(JSON.stringify(savedProject));
+    expect(restored.candidates.nodes[0]).not.toHaveProperty('leverage');
+    expect(restored.graph.nodes[0]).not.toHaveProperty('leverage');
+    expect(() => validateProject(restored)).not.toThrow();
   });
 
   it('strictly validates and migrates authoritative evaluation provenance without accepting server-internal fields', () => {

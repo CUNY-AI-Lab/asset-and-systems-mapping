@@ -424,7 +424,11 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3
 .map-toolbar .map-removed-toggle { min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 11px; font-weight: 650; letter-spacing: 0; text-transform: none; }
 .map-removed-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--blue); }
 .map-focus-bar { min-height: var(--control-height); display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -4px 0 10px; padding: 7px 8px 7px 12px; border-left: 3px solid var(--teal); background: var(--teal-pale); color: var(--ink); font-size: 12px; line-height: 1.4; }
+.map-focus-bar__summary { display: grid; gap: 2px; }
+.map-focus-bar__summary small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.map-focus-bar__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .map-focus-bar button { min-height: var(--control-height); padding: 0 12px; border: 1px solid var(--teal); background: #fff; color: var(--teal); font-size: 12px; font-weight: 750; }
+.map-focus-bar button:disabled { border-color: var(--line); color: var(--muted); background: #f7f7f7; }
 .map-overview-hint { margin: -7px 0 12px; color: var(--muted); font-size: 12px; }
 .map-layout { min-height: clamp(680px, 72dvh, 900px); display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); background: #fff; }
 .map-layout.has-inspector { grid-template-columns: minmax(0, 1fr) 340px; }
@@ -1216,7 +1220,8 @@ label.button:focus-within {
   .map-toolbar select { min-width: 0; }
   .map-toolbar label { font-size: 11px; }
   .map-show-all { flex: 0 0 auto; min-height: 48px; font-size: 13px; }
-  .map-focus-bar { font-size: 13px; }
+  .map-focus-bar { align-items: stretch; flex-direction: column; font-size: 13px; }
+  .map-focus-bar__actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
   .map-focus-bar button { min-height: 44px; font-size: 13px; }
   .field-pair { grid-template-columns: 1fr; }
   .candidate-row { grid-template-columns: 1fr; gap: 10px; }
@@ -1451,8 +1456,7 @@ body.map-fullscreen-open { overflow: hidden; }
   .map-stage.is-fullscreen .inspector { bottom: 0; max-height: min(54dvh, 520px); }
 }
 
-/* Outer-ring grammars: level tests, elicitation panels, structure scopes,
-   and the find-leverage pass. */
+/* Outer-ring grammars: level tests, elicitation panels, and structure scopes. */
 .level-test { max-width: 720px; margin: -8px 0 20px; padding: 10px 14px; border-left: 3px solid var(--plum); background: var(--plum-pale); color: var(--ink); font-size: 13px; line-height: 1.5; }
 
 .basis-chip { display: inline-block; margin-right: 10px; padding: 2px 8px; border: 1px solid var(--plum); border-radius: 999px; color: var(--plum); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
@@ -1488,13 +1492,3 @@ body.map-fullscreen-open { overflow: hidden; }
 .scope-field { fill: var(--plum); stroke: var(--plum); opacity: .12; stroke-width: 300; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
 .scope-field.is-selected { opacity: .2; }
 .scope-field.is-muted { opacity: .06; }
-
-.leverage-pass { margin: 40px 0; padding: 24px; border: 1px solid var(--ink); border-top: 3px solid var(--teal); background: #fff; }
-.leverage-pass .lede { max-width: 680px; }
-.leverage-list { display: grid; gap: 0; margin-top: 12px; border-top: 1px solid var(--line); }
-.leverage-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.leverage-row__label { font-size: 14px; font-weight: 600; }
-.leverage-row__label small { color: var(--muted); font-weight: 400; }
-.leverage-row__tags { display: flex; gap: 6px; }
-.leverage-row__tags button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; cursor: pointer; }
-.leverage-row__tags button.is-active { border-color: var(--ink); background: var(--ink); color: #fff; }

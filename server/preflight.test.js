@@ -717,8 +717,8 @@ describe('persistent preflight suggestion review queue', () => {
         ],
         connections: [
           { source: 'Google', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-          // "leverages" has no place in any register: the connection drops.
-          { source: 'Google', target: 'Family', verb: 'leverages', rationale: 'Register violation.' },
+          // An off-register verb has no place here, so the connection drops.
+          { source: 'Google', target: 'Family', verb: 'synergizes', rationale: 'Register violation.' },
           // Near-register verbs coerce to their canonical entry.
           { source: 'Google', target: 'School', verb: 'oversees', rationale: 'Alias resolves to regulates.' },
           // A pathway between two floating new nodes never lands on the map.
@@ -769,7 +769,7 @@ describe('persistent preflight suggestion review queue', () => {
             label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
             evidence: 'Verify: who is assumed to plan?', basis: 'inference',
             // Off-register deontic verbs fall back to the neutral entry.
-            deontic: 'leverages',
+            deontic: 'synergizes',
             scope: [{ id: 'node_agency', label: 'Agency' }],
           },
         ],

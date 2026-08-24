@@ -1,6 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LEVERAGE_TAGS,
   NODE_TYPES,
   PROJECT_LIMITS,
   SCALE_ORDER,
@@ -618,11 +617,8 @@ function projectMarkdown(project) {
     return `- **${node.label}** — ${node.type}; level: ${SCALES[node.scale]?.label || node.scale}; evidence: ${node.evidence || 'needs evidence'}${reach}${annotations ? `; ${annotations}` : ''}`;
   });
   const edgeLines = project.graph.edges.map((edge) => `- ${edge.sourceLabel} **${edge.verb}** ${edge.targetLabel} — level: ${SCALES[edge.scale]?.label || edge.scale}; evidence: ${edge.evidence || 'needs evidence'}${edge.annotation?.text ? `; annotation: ${edge.annotation.text}` : ''}`);
-  const leverageLines = project.graph.nodes
-    .filter((node) => node.leverage && node.status !== 'rejected' && node.claimState !== 'retired')
-    .map((node) => `- **${node.label}** — ${LEVERAGE_TAG_COPY[node.leverage] || node.leverage}`);
   const redactionLines = project.portableExport?.redactions?.map((entry) => `- ${entry.path}: ${entry.reason}`).join('\n') || '- None';
-  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n${leverageLines.length ? `## Leverage\n\n${leverageLines.join('\n')}\n\n` : ''}## Reflection\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
+  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Reflection\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
 }
 
 export function graphCsv(project) {
@@ -1041,12 +1037,6 @@ const EXO_INSTITUTION_CATEGORIES = Object.freeze([
 ]);
 
 const MACRO_STRUCTURE_KINDS = Object.freeze(['policy', 'law', 'belief', 'event', 'resource']);
-
-const LEVERAGE_TAG_COPY = Object.freeze({
-  stuck: 'Stuck',
-  energy: 'Has energy',
-  ripples: 'Ripples outward',
-});
 
 function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy }) {
   const candidateSteps = useMemo(() => candidateStepsForScale(project.activeScale), [project.activeScale]);
@@ -1609,6 +1599,29 @@ function ecologyBoundsIntersect(left, right) {
   return left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top;
 }
 
+function segmentCrossesBoundsInterior(start, end, bounds) {
+  const inset = .5;
+  const axes = [
+    [start.x, end.x - start.x, bounds.left + inset, bounds.right - inset],
+    [start.y, end.y - start.y, bounds.top + inset, bounds.bottom - inset],
+  ];
+  let near = 0;
+  let far = 1;
+  for (const [origin, delta, minimum, maximum] of axes) {
+    if (minimum >= maximum) return false;
+    if (Math.abs(delta) < .0001) {
+      if (origin <= minimum || origin >= maximum) return false;
+      continue;
+    }
+    const first = (minimum - origin) / delta;
+    const second = (maximum - origin) / delta;
+    near = Math.max(near, Math.min(first, second));
+    far = Math.min(far, Math.max(first, second));
+    if (near >= far) return false;
+  }
+  return far > 0 && near < 1;
+}
+
 // A focused ecology view temporarily compacts the selected relationship (or a
 // node's one-hop neighborhood) into the reading window. Its band callouts are
 // intentionally absent there, so a center-to-center label can otherwise land
@@ -1625,14 +1638,15 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
   }));
   const allNodeBounds = [...nodeBounds.values()].filter(Boolean);
   const insideMargin = 16;
-  const collisionScore = (bounds) => {
-    const nodeCollisions = allNodeBounds.filter((nodeBoundsEntry) => ecologyBoundsIntersect(bounds, nodeBoundsEntry)).length;
-    const labelCollisions = occupiedLabels.filter((labelBounds) => ecologyBoundsIntersect(bounds, labelBounds)).length;
+  const candidateMetrics = (bounds) => {
+    const padded = { left: bounds.left - 6, right: bounds.right + 6, top: bounds.top - 6, bottom: bounds.bottom + 6 };
+    const nodeCollisions = allNodeBounds.filter((nodeBoundsEntry) => ecologyBoundsIntersect(padded, nodeBoundsEntry)).length;
+    const labelCollisions = occupiedLabels.filter((labelBounds) => ecologyBoundsIntersect(padded, labelBounds)).length;
     const outside = Math.max(0, insideMargin - bounds.left)
       + Math.max(0, bounds.right - (GRAPH_WIDTH - insideMargin))
       + Math.max(0, insideMargin - bounds.top)
       + Math.max(0, bounds.bottom - (GRAPH_HEIGHT - insideMargin));
-    return nodeCollisions * 1_000_000 + labelCollisions * 100_000 + outside * 10_000;
+    return { clear: nodeCollisions === 0 && labelCollisions === 0, outside };
   };
 
   [...edges].sort((left, right) => left.id.localeCompare(right.id)).forEach((edge) => {
@@ -1652,7 +1666,11 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
     const distance = Math.max(1, Math.hypot(deltaX, deltaY));
     const perpendicular = { x: -deltaY / distance, y: deltaX / distance };
     const perpendicularOffset = Math.max(70, halfHeight + 44);
-    const candidates = [
+    const routeIsClear = (candidate) => (
+      !segmentCrossesBoundsInterior(source, candidate, targetBounds)
+      && !segmentCrossesBoundsInterior(candidate, target, sourceBounds)
+    );
+    const localCandidates = [
       { x: midX, y: midY },
       { x: midX, y: Math.min(sourceBounds.top, targetBounds.top) - halfHeight - clearance },
       { x: midX, y: Math.max(sourceBounds.bottom, targetBounds.bottom) + halfHeight + clearance },
@@ -1665,7 +1683,23 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
       { x: halfWidth + insideMargin, y: clamp(midY, halfHeight + insideMargin, GRAPH_HEIGHT - halfHeight - insideMargin) },
       { x: GRAPH_WIDTH - halfWidth - insideMargin, y: clamp(midY, halfHeight + insideMargin, GRAPH_HEIGHT - halfHeight - insideMargin) },
     ];
-    const ranked = candidates.map((candidate, index) => {
+    // Dense one-hop neighborhoods can exhaust the first screenful of slots.
+    // Expand deterministically around the relationship midpoint until a clear
+    // lane appears; these coordinates may leave the nominal 840x540 window,
+    // and the detail viewport explicitly fits their bounds below.
+    const searchRings = Math.min(24, Math.max(8, edges.length * 2));
+    for (let ring = 1; ring <= searchRings; ring += 1) {
+      const radiusX = halfWidth + clearance + ring * 48;
+      const radiusY = halfHeight + clearance + ring * 42;
+      for (let slot = 0; slot < 16; slot += 1) {
+        const angle = (slot / 16) * Math.PI * 2;
+        localCandidates.push({
+          x: midX + Math.cos(angle) * radiusX,
+          y: midY + Math.sin(angle) * radiusY,
+        });
+      }
+    }
+    const ranked = localCandidates.map((candidate, index) => {
       const bounds = {
         left: candidate.x - halfWidth,
         right: candidate.x + halfWidth,
@@ -1674,14 +1708,57 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
       };
       const pathLength = Math.hypot(candidate.x - source.x, candidate.y - source.y)
         + Math.hypot(target.x - candidate.x, target.y - candidate.y);
-      return { candidate, bounds, score: collisionScore(bounds) + pathLength + index / 100 };
+      const metrics = candidateMetrics(bounds);
+      return { candidate, bounds, clear: metrics.clear && routeIsClear(candidate), score: metrics.outside * 10_000 + pathLength + index / 100 };
     }).sort((left, right) => left.score - right.score);
-    const chosen = ranked[0];
-    if (!chosen) return;
+    let chosen = ranked.find((entry) => entry.clear);
+    if (!chosen) {
+      // A final spill lane below every occupied rectangle is guaranteed clear,
+      // even for unusually dense imported maps. Fitting includes this label,
+      // so the student sees the complete relationship instead of a collision.
+      const occupiedBottom = Math.max(...allNodeBounds.map((bounds) => bounds.bottom), ...occupiedLabels.map((bounds) => bounds.bottom));
+      const spillY = occupiedBottom + clearance + halfHeight;
+      const occupiedLeft = Math.min(...allNodeBounds.map((bounds) => bounds.left), ...occupiedLabels.map((bounds) => bounds.left));
+      const occupiedRight = Math.max(...allNodeBounds.map((bounds) => bounds.right), ...occupiedLabels.map((bounds) => bounds.right));
+      const spillCandidates = [
+        { x: midX, y: spillY },
+        { x: occupiedLeft - clearance - halfWidth, y: spillY },
+        { x: occupiedRight + clearance + halfWidth, y: spillY },
+      ];
+      for (let lane = 1; lane <= 24; lane += 1) {
+        spillCandidates.push({ x: midX - lane * (halfWidth + clearance), y: spillY });
+        spillCandidates.push({ x: midX + lane * (halfWidth + clearance), y: spillY });
+      }
+      const candidate = spillCandidates.find(routeIsClear) || spillCandidates.at(-1);
+      chosen = {
+        candidate,
+        bounds: {
+          left: candidate.x - halfWidth,
+          right: candidate.x + halfWidth,
+          top: candidate.y - halfHeight,
+          bottom: candidate.y + halfHeight,
+        },
+      };
+    }
     occupiedLabels.push(chosen.bounds);
     anchors.set(edge.id, { x: Math.round(chosen.candidate.x), y: Math.round(chosen.candidate.y) });
   });
   return anchors;
+}
+
+function focusedEcologyCalloutBounds(edges, nodes, positions, phoneLayout = false) {
+  const anchors = focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout);
+  return edges.flatMap((edge) => {
+    const anchor = anchors.get(edge.id);
+    if (!anchor || edge.showLabel === false) return [];
+    const geometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
+    return [{
+      left: anchor.x - geometry.width / 2,
+      right: anchor.x + geometry.width / 2,
+      top: anchor.y - geometry.height / 2,
+      bottom: anchor.y + geometry.height / 2,
+    }];
+  });
 }
 
 function constrainWithinEcologyBand(node, x, y, geometry) {
@@ -2412,10 +2489,12 @@ function fitViewport(nodes, targetHeight = 440, phoneLayout = false, extraBounds
 }
 
 const INSPECTOR_TABS = ['node', 'relationships', 'map'];
+const FOCUSED_RELATIONSHIPS_PER_PAGE = 1;
 
 function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave }) {
   const [selection, setSelection] = useState(null);
   const [focus, setFocus] = useState(null);
+  const [focusPage, setFocusPage] = useState(0);
   const [visibleScale, setVisibleScale] = useState(() => project.releasedScales.includes(project.activeScale) ? project.activeScale : 'all');
   const [showRemoved, setShowRemoved] = useState(false);
   const [inspectorTab, setInspectorTab] = useState('map');
@@ -2490,11 +2569,25 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     && scaleNodeIds.has(edge.source)
     && scaleNodeIds.has(edge.target)
     && (showRemoved || edge.claimState !== 'retired')), [project.graph.edges, visibleScaleSet, scaleNodeIds, showRemoved]);
+  const focusIncidentEdges = useMemo(() => {
+    if (!focus) return [];
+    if (focus.kind === 'edge') return scaleEdges.filter((edge) => edge.id === focus.id);
+    return scaleEdges.filter((edge) => edge.source === focus.id || edge.target === focus.id);
+  }, [focus, scaleEdges]);
+  const focusPageCount = focus?.kind === 'node'
+    ? Math.max(1, Math.ceil(focusIncidentEdges.length / FOCUSED_RELATIONSHIPS_PER_PAGE))
+    : 1;
+  const activeFocusPage = Math.min(focusPage, focusPageCount - 1);
   const focusedEdgeIds = useMemo(() => {
     if (!focus) return new Set();
-    if (focus.kind === 'edge') return new Set(scaleEdges.some((edge) => edge.id === focus.id) ? [focus.id] : []);
-    return new Set(scaleEdges.filter((edge) => edge.source === focus.id || edge.target === focus.id).map((edge) => edge.id));
-  }, [focus, scaleEdges]);
+    if (focus.kind === 'edge') return new Set(focusIncidentEdges.map((edge) => edge.id));
+    const start = activeFocusPage * FOCUSED_RELATIONSHIPS_PER_PAGE;
+    return new Set(focusIncidentEdges.slice(start, start + FOCUSED_RELATIONSHIPS_PER_PAGE).map((edge) => edge.id));
+  }, [activeFocusPage, focus, focusIncidentEdges]);
+  useEffect(() => {
+    if (focusPage < focusPageCount) return;
+    setFocusPage(Math.max(0, focusPageCount - 1));
+  }, [focusPage, focusPageCount]);
   const focusedNodeIds = useMemo(() => {
     if (!focus) return new Set();
     const ids = new Set(focus.kind === 'node' && scaleNodeIds.has(focus.id) ? [focus.id] : []);
@@ -2505,14 +2598,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     });
     // Focusing a structure lights its whole field: the structure and every
     // mapped element inside its reach.
-    if (focus.kind === 'node') {
+    if (focus.kind === 'node' && focusIncidentEdges.length === 0) {
       const focusedNode = scaleNodes.find((node) => node.id === focus.id);
       (focusedNode?.scopeNodeIds || []).forEach((memberId) => {
         if (scaleNodeIds.has(memberId)) ids.add(memberId);
       });
     }
     return ids;
-  }, [focus, focusedEdgeIds, scaleEdges, scaleNodes, scaleNodeIds]);
+  }, [focus, focusedEdgeIds, focusIncidentEdges.length, scaleEdges, scaleNodes, scaleNodeIds]);
   const focusActive = focusedNodeIds.size > 0;
   const visibleNodes = useMemo(() => focusActive ? scaleNodes.filter((node) => focusedNodeIds.has(node.id)) : scaleNodes, [focusActive, scaleNodes, focusedNodeIds]);
   const phoneFocusedEdge = phoneLayout && focus?.kind === 'edge' ? scaleEdges.find((edge) => edge.id === focus.id) : null;
@@ -2569,6 +2662,22 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       };
     });
   }, [focusActive, scaleEdges, focusedEdgeIds, visibleScale]);
+  const focusedDetailBounds = useMemo(() => {
+    if (!focusedEcologyDetail || phoneLayout) return [];
+    const positions = new Map(displayedNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    return focusedEcologyCalloutBounds(visibleEdges, displayedNodes, positions, false);
+  }, [displayedNodes, focusedEcologyDetail, phoneLayout, visibleEdges]);
+  const focusedGeometryKey = useMemo(() => {
+    if (!focusedEcologyDetail) return '';
+    const relationshipGeometry = focusIncidentEdges.map((edge) => (
+      `${edge.id}:${edge.source}:${edge.verb}:${edge.target}:${edge.sourceLabel}:${edge.targetLabel}:${edge.claimState}`
+    )).join('|');
+    const nodeGeometry = displayedNodes.map((node) => (
+      `${node.id}:${node.label}:${node.scale}:${node.x}:${node.y}:${node.claimState}`
+    )).join('|');
+    return `${focus?.kind || ''}:${focus?.id || ''}:page-${activeFocusPage}:${relationshipGeometry}::${nodeGeometry}`;
+  }, [activeFocusPage, displayedNodes, focus?.id, focus?.kind, focusIncidentEdges, focusedEcologyDetail]);
+  const focusedDetailMinimumZoom = readableZoomFloor(phoneLayout);
   useEffect(() => {
     if (initialLayoutCheckedRef.current) return;
     initialLayoutCheckedRef.current = true;
@@ -2636,11 +2745,17 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   }, [focus?.id, phoneLayout, phoneRelationshipDetail]);
   useEffect(() => {
     if (!focusedEcologyDetail) return;
-    setMapViewport(fitViewport(displayedNodes, phoneLayout ? 650 : 440, phoneLayout, [], readableZoomFloor(phoneLayout)));
+    setMapViewport(fitViewport(
+      displayedNodes,
+      phoneLayout ? 650 : 440,
+      phoneLayout,
+      focusedDetailBounds,
+      focusedDetailMinimumZoom,
+    ));
     // The focus identity and breakpoint define this temporary detail layout.
     // Annotation edits must not recenter a student who has already panned it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus?.id, focus?.kind, focusedEcologyDetail, phoneLayout, visibleScale]);
+  }, [focusedGeometryKey, phoneLayout, visibleScale]);
   useEffect(() => {
     if (!phoneLayout || !drawerOpen) return undefined;
     const frame = window.requestAnimationFrame(() => inspectorRef.current?.querySelector('[role="tab"][aria-selected="true"]')?.focus());
@@ -2663,6 +2778,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAnnotationDisclosure('analytical');
     if (openInspector) {
       setFocus({ kind, id });
+      setFocusPage(0);
       setLegendOpen(false);
       setCreateMenuOpen(false);
       setDrawerOpen(true);
@@ -2679,6 +2795,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const showFullMap = useCallback(() => {
     const restoringTransientDetail = Boolean(focusedEcologyPositions || phoneRelationshipPositions);
     setFocus(null);
+    setFocusPage(0);
     setSelection(null);
     setInspectorTab('map');
     setDrawerOpen(false);
@@ -2701,6 +2818,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       .map((node) => ({ ...node, ...(automaticPositions?.get(node.id) || {}) }));
     setVisibleScale(nextScale);
     setFocus(null);
+    setFocusPage(0);
     setSelection(null);
     setInspectorTab('map');
     setDrawerOpen(false);
@@ -2730,11 +2848,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAutomaticPositions(null);
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
   }, [automaticPositions, displayedNodes, logPrototype, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, update]);
+  const minimumInteractiveZoom = focusedEcologyPositions || phoneRelationshipPositions
+    ? focusedDetailMinimumZoom
+    : VIEWPORT_LIMITS.minZoom;
   const changeViewport = useCallback((next) => {
     const bounded = {
       panX: clamp(Math.round(next.panX), VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
       panY: clamp(Math.round(next.panY), VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
-      zoom: clamp(Number(next.zoom.toFixed(2)), VIEWPORT_LIMITS.minZoom, VIEWPORT_LIMITS.maxZoom),
+      zoom: clamp(Number(next.zoom.toFixed(2)), minimumInteractiveZoom, VIEWPORT_LIMITS.maxZoom),
     };
     if (phoneLayout && drawerOpen) setPhoneViewport(bounded);
     if (focusedEcologyPositions || phoneRelationshipPositions) {
@@ -2758,11 +2879,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (phoneEcologyPositions) setPhoneEcologyCommittedScope(phoneEcologyScope);
     if (phoneOverviewPositions || phoneEcologyPositions) setAutomaticPositions(null);
     logPrototype('viewport_changed');
-  }, [update, logPrototype, phoneLayout, drawerOpen, focusedEcologyPositions, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
+  }, [update, logPrototype, phoneLayout, drawerOpen, focusedEcologyPositions, minimumInteractiveZoom, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
   const zoomBy = (amount) => {
     const requested = phoneLayout && drawerOpen && phoneViewport ? phoneViewport : mapViewport || project.viewport;
     const current = requested;
-    const zoom = clamp(current.zoom + amount, VIEWPORT_LIMITS.minZoom, VIEWPORT_LIMITS.maxZoom);
+    const zoom = clamp(current.zoom + amount, minimumInteractiveZoom, VIEWPORT_LIMITS.maxZoom);
     const mapCenterX = (GRAPH_WIDTH / 2 - current.panX) / current.zoom;
     const mapCenterY = (GRAPH_HEIGHT / 2 - current.panY) / current.zoom;
     changeViewport({ zoom, panX: GRAPH_WIDTH / 2 - mapCenterX * zoom, panY: GRAPH_HEIGHT / 2 - mapCenterY * zoom });
@@ -2771,7 +2892,13 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const nodes = displayedNodes.length ? displayedNodes : project.graph.nodes;
     const detailLayout = focusedEcologyPositions || phoneRelationshipPositions;
     const nextViewport = detailLayout
-      ? fitViewport(nodes, phoneLayout ? 650 : 440, phoneLayout, [], readableZoomFloor(phoneLayout))
+      ? fitViewport(
+        nodes,
+        phoneLayout ? 650 : 440,
+        phoneLayout,
+        focusedEcologyPositions && !phoneLayout ? focusedDetailBounds : [],
+        focusedEcologyPositions ? focusedDetailMinimumZoom : readableZoomFloor(true),
+      )
       : readingViewport(nodes);
     if (phoneOverviewPositions || phoneEcologyPositions || detailLayout) {
       setMapViewport(nextViewport);
@@ -2826,6 +2953,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (removed && !showRemoved) {
       setSelection(null);
       setFocus(null);
+      setFocusPage(0);
       setInspectorTab('map');
       setDrawerOpen(false);
     }
@@ -2877,7 +3005,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const requestedViewport = phoneLayout && drawerOpen && phoneViewport ? phoneViewport : mapViewport || project.viewport;
   const canvasViewport = {
     ...requestedViewport,
-    zoom: clamp(requestedViewport.zoom, VIEWPORT_LIMITS.minZoom, VIEWPORT_LIMITS.maxZoom),
+    zoom: clamp(requestedViewport.zoom, minimumInteractiveZoom, VIEWPORT_LIMITS.maxZoom),
   };
   const setTab = (tab) => {
     setInspectorTab(tab);
@@ -2894,6 +3022,12 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const mapLabel = visibleScale === 'all' ? 'All-layers map' : `${SCALES[visibleScale]?.label || visibleScale} map`;
   const focusLabel = focusedNode?.label || (focusedEdge ? `${focusedEdge.sourceLabel} to ${focusedEdge.targetLabel}` : '');
+  const focusHasRelationshipPages = focus?.kind === 'node' && focusIncidentEdges.length > 0;
+  const changeFocusPage = (nextPage) => {
+    const boundedPage = clamp(nextPage, 0, focusPageCount - 1);
+    setFocusPage(boundedPage);
+    setAnnouncement(`Showing relationship ${boundedPage + 1} of ${focusIncidentEdges.length} for ${focusLabel}.`);
+  };
   const toggleFullscreen = () => {
     setFullscreen((current) => {
       const next = !current;
@@ -2905,11 +3039,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   return <div className={`map-stage map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}>
     <MemoDrawer project={project} update={update} hint="The memo travels with the map. Edit it here whenever the map surfaces something new." />
     <div className="map-toolbar"><h1>Build the map</h1><div className="map-toolbar__controls"><label><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{mapMode === 'ecology' && phoneLayout && visibleScale !== 'all' ? <button className="map-show-all" type="button" onClick={() => changeVisibleScale('all')}>Show all layers</button> : null}{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
-    {focusActive ? <div className="map-focus-bar" role="status"><span>Showing connections for <strong>{focusLabel}</strong>.</span><button type="button" onClick={showFullMap}>Show full map</button></div> : <p className="map-overview-hint">Choose a node to see its connections.</p>}
+    {focusActive ? <div className="map-focus-bar" role="status"><div className="map-focus-bar__summary"><span>Showing connections for <strong>{focusLabel}</strong>.</span>{focusHasRelationshipPages && <small aria-live="polite">Relationship {activeFocusPage + 1} of {focusIncidentEdges.length}</small>}</div><div className="map-focus-bar__actions">{focusHasRelationshipPages && focusPageCount > 1 ? <><button type="button" aria-label="Previous relationship" disabled={activeFocusPage === 0} onClick={() => changeFocusPage(activeFocusPage - 1)}>Previous</button><button type="button" aria-label="Next relationship" disabled={activeFocusPage === focusPageCount - 1} onClick={() => changeFocusPage(activeFocusPage + 1)}>Next</button></> : null}<button type="button" onClick={showFullMap}>Show full map</button></div></div> : <p className="map-overview-hint">Choose a node to see its connections.</p>}
     <div className={`map-layout ${drawerOpen ? 'has-inspector' : ''}`}>
       <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} visibleLayer={visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} panMode={panMode} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
-        <div className="canvas-controls" role="toolbar" aria-label="Map view controls" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}><button type="button" aria-pressed={panMode} className={panMode ? 'is-active' : ''} onClick={() => setPanMode((current) => !current)}>Pan</button><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= VIEWPORT_LIMITS.minZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button>{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" onClick={arrangeMap}>Arrange map</button>}<button type="button" onClick={fitMap}>{mapMode === 'ecology' ? 'Center map' : 'Fit map'}</button><button type="button" aria-expanded={legendOpen} onClick={() => setLegendOpen((current) => { const opening = !current; if (opening) { setDrawerOpen(false); setCreateMenuOpen(false); } return opening; })}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-pressed={fullscreen} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen map'}</button><button className="phone-inspector-trigger" type="button" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setDrawerOpen(true); }}>Details</button></div>
+        <div className="canvas-controls" role="toolbar" aria-label="Map view controls" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}><button type="button" aria-pressed={panMode} className={panMode ? 'is-active' : ''} onClick={() => setPanMode((current) => !current)}>Pan</button><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button>{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" onClick={arrangeMap}>Arrange map</button>}<button type="button" onClick={fitMap}>{mapMode === 'ecology' ? 'Center map' : 'Fit map'}</button><button type="button" aria-expanded={legendOpen} onClick={() => setLegendOpen((current) => { const opening = !current; if (opening) { setDrawerOpen(false); setCreateMenuOpen(false); } return opening; })}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-pressed={fullscreen} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen map'}</button><button className="phone-inspector-trigger" type="button" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setDrawerOpen(true); }}>Details</button></div>
         {legendOpen && <aside className="map-legend" aria-label="Map key"><div className="map-legend__head"><strong>Map key</strong><button type="button" onClick={() => setLegendOpen(false)} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend /></aside>}
         <div className="sr-only" aria-live="polite">{announcement}</div>
       </section>
@@ -3028,25 +3162,6 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
-    {project.activeScale === 'macrosphere' && <section className="leverage-pass" aria-labelledby="leverage-pass-title">
-      <p className="eyebrow">Find leverage</p>
-      <h2 id="leverage-pass-title">Where could a small change matter most?</h2>
-      <p className="lede">Leverage is a judgment about the finished map, not a connection on it. Tag a handful of elements: where things are stuck, where there is energy for change, and where a change would ripple outward. In systems practice the highest leverage usually sits in the outer rings — the rules, prices, and beliefs.</p>
-      <div className="leverage-list">
-        {project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired').map((node) => <div className="leverage-row" key={node.id}>
-          <span className="leverage-row__label">{node.label}<small> · {SCALES[node.scale]?.label || node.scale}</small></span>
-          <div className="leverage-row__tags" role="group" aria-label={`Leverage tag for ${node.label}`}>
-            {LEVERAGE_TAGS.map((tag) => <button key={tag} type="button" className={node.leverage === tag ? 'is-active' : ''} onClick={() => update((draft) => {
-              const item = draft.graph.nodes.find((candidate) => candidate.id === node.id);
-              if (!item) return;
-              if (item.leverage === tag) delete item.leverage;
-              else item.leverage = tag;
-            }, 'map.leverage-tagged', node.label)}>{LEVERAGE_TAG_COPY[tag]}</button>)}
-          </div>
-        </div>)}
-        {!project.graph.nodes.some((node) => node.status !== 'rejected' && node.claimState !== 'retired') && <p className="empty-message">Nothing on the map yet to tag.</p>}
-      </div>
-    </section>}
     <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Export the full map.</h2><p>Choose JSON, CSV, or Markdown.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
