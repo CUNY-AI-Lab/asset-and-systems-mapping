@@ -1964,6 +1964,43 @@ Overall, the posting history documents a working student repeatedly turning to R
     }));
   });
 
+  it('offsets two visible Micro relationships between the same node pair in the network map', async () => {
+    const project = makeMapProject('micro');
+    const baseEdge = structuredClone(project.graph.edges.find((edge) => edge.scale === 'micro'));
+    const endpointIds = new Set([baseEdge.source, baseEdge.target]);
+    const relationships = [
+      { id: 'edge_parallel_documents', verb: 'documents access barriers for' },
+      { id: 'edge_parallel_coordinates', verb: 'coordinates support planning with' },
+    ].map(({ id, verb }) => ({
+      ...structuredClone(baseEdge),
+      id,
+      verb,
+      annotation: { id: `annotation_${id}`, text: '' },
+    }));
+    project.graph = {
+      nodes: project.graph.nodes.filter((node) => endpointIds.has(node.id)),
+      edges: relationships,
+    };
+
+    await openMapProject(project);
+
+    expect(mapCanvas()).toHaveAttribute('data-map-mode', 'network');
+    const labels = relationships.map((edge) => document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`));
+    const paths = relationships.map((edge) => document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d'));
+    const anchors = labels.map((label) => `${label.getAttribute('data-anchor-x')},${label.getAttribute('data-anchor-y')}`);
+    const labelBounds = labels.map((label) => svgRectBounds(label.querySelector('.edge-label-bg')));
+
+    labels.forEach((label, index) => {
+      expect(label).toHaveAttribute('data-edge-route', 'network-callout');
+      expect(label).toHaveAttribute('data-full-label', relationships[index].verb);
+      expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(relationships[index].verb);
+      expect(label).not.toHaveTextContent('…');
+    });
+    expect(new Set(anchors)).toHaveLength(relationships.length);
+    expect(new Set(paths)).toHaveLength(relationships.length);
+    expect(rectsIntersect(labelBounds[0], labelBounds[1])).toBe(false);
+  });
+
   it('requires a named institution for a manually added Exosphere map node', async () => {
     const project = await openMapProject(makeMapProject('exosphere'));
     const initialNodeCount = project.graph.nodes.length;

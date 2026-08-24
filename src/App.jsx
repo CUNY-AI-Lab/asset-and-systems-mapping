@@ -2535,6 +2535,19 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   const focusedCalloutAnchors = mapMode === 'ecology' && detailMode
     ? focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout)
     : null;
+  // Network views can contain multiple direct relationships between the same
+  // two nodes. A raw midpoint puts every verb in the same box, so reuse the
+  // collision-aware callout placement for every visible network label. This
+  // keeps complete verbs apart from cards and from one another without
+  // changing the underlying relationship data.
+  const networkCalloutAnchors = mapMode === 'network' && !detailMode
+    ? focusedEcologyCalloutAnchors(
+      edges.filter((edge) => edge.showLabel !== false),
+      nodes,
+      positions,
+      phoneLayout,
+    )
+    : null;
   const edgeVisuals = edges.map((edge) => {
     const source = nodeVisuals.get(edge.source);
     const target = nodeVisuals.get(edge.target);
@@ -2543,7 +2556,8 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     const layerAnchor = layerAnchors?.get(edge.id) || null;
     const overviewMicroAnchor = overviewMicroAnchors?.get(edge.id) || null;
     const focusedCalloutAnchor = focusedCalloutAnchors?.get(edge.id) || null;
-    const calloutAnchor = layerAnchor || overviewMicroAnchor || focusedCalloutAnchor;
+    const networkCalloutAnchor = networkCalloutAnchors?.get(edge.id) || null;
+    const calloutAnchor = layerAnchor || overviewMicroAnchor || focusedCalloutAnchor || networkCalloutAnchor;
     const sourceToward = calloutAnchor || target.position;
     const targetToward = calloutAnchor || source.position;
     const sourcePoint = cardConnectionPoint(source.position, sourceToward, source.geometry);
@@ -2564,7 +2578,15 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
       midX: labelPoint.x,
       midY: labelPoint.y,
       path,
-      edgeRoute: layerAnchor ? 'layer-anchor' : overviewMicroAnchor ? 'overview-callout' : focusedCalloutAnchor ? 'focus-callout' : 'direct',
+      edgeRoute: layerAnchor
+        ? 'layer-anchor'
+        : overviewMicroAnchor
+          ? 'overview-callout'
+          : focusedCalloutAnchor
+            ? 'focus-callout'
+            : networkCalloutAnchor
+              ? 'network-callout'
+              : 'direct',
       labelGeometry,
       selected: selection?.kind === 'edge' && selection.id === edge.id,
     };
