@@ -21,7 +21,7 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
     id: 'build-map',
     label: 'build map',
     short: 'Map',
-    description: 'Students arrange and annotate map elements. Micro includes direct relationships. Each Meso item names a mesosystem and identifies its included Micro settings without adding a relationship verb. Exosphere includes institutional relationships. Macrosphere shows which mapped elements each broader condition affects.',
+    description: 'Students arrange and annotate map elements. Micro includes direct connections. Each Meso item names how at least two Micro settings relate to one another. Exosphere includes institutional connections. Macrosphere shows which mapped elements each broader condition affects.',
   }),
   Object.freeze({
     id: 'revise-and-export',

@@ -653,6 +653,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .filter(Boolean)
     .slice(0, Math.min(scaleLimits.nodes, MEMO_REVIEW_LIMITS.nodes));
   const nodeByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node.label]));
+  const nodeRecordByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node]));
   const seenConnections = new Set();
   // Meso and Macrosphere never arrive as connections. Meso uses mesosystem
   // scopes; Macrosphere uses structure scopes.
@@ -722,6 +723,14 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       // The institutional register is closed at generation time; stored
       // reviews replay whatever verb was resolved when they were generated.
       if (activeScale === 'exosphere' && carriedNodes !== null && verb) verb = scaleLexiconVerb('exosphere', verb);
+      if (activeScale === 'micro') {
+        const endpointNode = (reference, label) => carriedNodeById.get(reference)
+          || carriedNodeByLabel.get(String(label || reference || '').toLocaleLowerCase())
+          || nodeRecordByLower.get(String(label || reference || '').toLocaleLowerCase());
+        const sourceNode = endpointNode(source, sourceLabel);
+        const targetNode = endpointNode(target, targetLabel);
+        if (MICRO_SETTING_NODE_TYPES.includes(sourceNode?.type) && MICRO_SETTING_NODE_TYPES.includes(targetNode?.type)) return null;
+      }
       if (!source || !target || source === target || !verb
         || containsRetiredSystemsLanguage(sourceLabel) || containsRetiredSystemsLanguage(targetLabel)) return null;
       const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
@@ -848,7 +857,7 @@ function validatePreflightEvaluationRequest(value) {
 function validateConnectionSuggestionRequest(value) {
   assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay']);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
-  if (value.activeScale === 'meso') throw new HttpError(400, 'Meso uses mesosystems formed by Micro settings and does not use relationship verbs.');
+  if (value.activeScale === 'meso') throw new HttpError(400, 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.');
   if (value.activeScale === 'macrosphere') throw new HttpError(400, 'Macrosphere uses structure scopes and does not use relationship edges.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const prompt = requireSnapshotText(value.prompt, 'prompt', { max: 4000 });
@@ -922,6 +931,7 @@ function validateGeneratedConnections(value, nodes, activeScale) {
     if (activeScale === 'micro' && (sourceNode.scale !== 'micro' || targetNode.scale !== 'micro')) {
       throw new HttpError(400, `${name} must connect two Micro elements.`);
     }
+    if (activeScale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(sourceNode.type) && MICRO_SETTING_NODE_TYPES.includes(targetNode.type)) return null;
     if (activeScale === 'exosphere') {
       if (sourceNode.scale !== 'exosphere' && targetNode.scale !== 'exosphere') throw new HttpError(400, `${name} must include an Exosphere institution.`);
       if (sourceNode.scale === 'macrosphere' || targetNode.scale === 'macrosphere') throw new HttpError(400, `${name} must not connect to a Macrosphere item.`);
@@ -937,7 +947,7 @@ function validateGeneratedConnections(value, nodes, activeScale) {
       verb,
       rationale: requireSnapshotText(connection.rationale, `${name}.rationale`, { max: 1000 }),
     };
-  });
+  }).filter(Boolean);
 }
 
 function validatePreflightConsumeRequest(value) {

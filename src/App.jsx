@@ -938,7 +938,7 @@ const LEVEL_REVIEW_COPY = Object.freeze({
     items: 'specific people, roles, groups, activities, objects, immediate settings, and direct relationships',
     scaffoldTitle: 'Suggested Micro elements',
     next: 'Choose nodes',
-    test: 'Each Micro node names one person, role, group, activity, object, or immediate setting. Relationship verbs describe direct relationships among those Micro elements and remain in Micro when you advance.',
+    test: 'Each Micro node names one person, role, group, activity, object, or immediate setting. At Micro, connect these elements with one direct verb. Those connections stay in Micro when you advance.',
   }),
   meso: Object.freeze({
     items: 'mesosystems formed by two or more Micro settings',
@@ -1323,7 +1323,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
           : <div className="candidate-expression"><input aria-label={structureRow ? 'Macrosphere item label' : 'Node label'} maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label={structureRow ? 'Macrosphere item type' : 'Node type'} value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{candidateNodeTypes.map((type) => <option key={type}>{type}</option>)}</select></div>
         : project.activeScale === 'exosphere'
           ? <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><select aria-label="Institutional relationship" value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)}>{exoVerbOptions(item.verb).map((verb) => <option key={verb}>{verb}</option>)}</select><strong>{item.targetLabel}</strong></div>
-          : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><AutoGrowingTextarea className="relationship-verb-editor" aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
+          : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><AutoGrowingTextarea className="relationship-verb-editor" aria-label="Direct connection" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
       {kind === 'nodes' && scopeRow && <div className="scope-editor" aria-label={mesoLinkageRow ? `Micro settings included in ${item.label}` : `Mapped elements affected by ${item.label}`}>
         {structureRow && <div className="scope-editor__mode"><label><span>How it affects mapped elements</span><select aria-label={`How ${item.label} affects mapped elements`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
         <div className="scope-editor__members">
@@ -3267,7 +3267,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
     if (field === 'type' && !isNodeTypeAllowedAtScale(value, selectedNode.scale)) return toast(`That type does not belong at ${SCALES[selectedNode.scale].label}.`, 'error');
     if (field === 'label' && selectedNode.scale === 'micro' && !isDiscreteMicroNodeLabel(value)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
-    if (field === 'label' && selectedNode.scale === 'meso' && !isMesosystemLabel(value)) return toast('Use a clear noun-phrase label for the mesosystem, without a relationship verb.', 'error');
+    if (field === 'label' && selectedNode.scale === 'meso' && !isMesosystemLabel(value)) return toast('Name how at least two Micro settings relate to one another, without adding a directional connection.', 'error');
     if (field === 'label' && selectedNode.scale === 'exosphere' && !isNamedInstitutionLabel(value)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
     if (field === 'label' && selectedNode.scale === 'macrosphere' && labelRepeatsInstitution(value, project.graph.nodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
     if (field === 'scopeNodeIds' && ['meso', 'macrosphere'].includes(selectedNode.scale) && value.length < 2) return toast(selectedNode.scale === 'meso' ? 'A mesosystem must include at least two Micro settings.' : 'A Macrosphere item must affect at least two mapped elements.', 'error');
@@ -3364,8 +3364,8 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const addEdge = () => {
     if (!project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
-    if (project.activeScale === 'meso') return toast('Meso uses mesosystems formed by Micro settings, not relationship verbs.', 'error');
-    if (project.activeScale === 'macrosphere') return toast('Macrosphere items identify affected mapped elements without adding relationship verbs.', 'error');
+    if (project.activeScale === 'meso') return toast('Meso shows how Micro settings relate to one another. Add direct connections at Micro.', 'error');
+    if (project.activeScale === 'macrosphere') return toast('Macrosphere items identify the mapped elements each broader condition affects. Add direct connections at Micro.', 'error');
     if (project.graph.edges.length >= PROJECT_LIMITS.edges) return toast(`This map already contains the maximum ${PROJECT_LIMITS.edges} relationships.`, 'error');
     const source = relationshipSource;
     const target = relationshipTarget;

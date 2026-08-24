@@ -1501,7 +1501,7 @@ describe('Systems Mapping workflow', () => {
       })]);
     });
     fireEvent.click(screen.getByRole('tab', { name: 'Direct relationships · 1' }));
-    const relationshipEditor = screen.getByRole('textbox', { name: 'Relationship verb' });
+    const relationshipEditor = screen.getByRole('textbox', { name: 'Direct connection' });
     fireEvent.change(relationshipEditor, { target: { value: 'refers directly to' } });
     fireEvent.click(within(relationshipEditor.closest('article')).getByRole('button', { name: 'Keep' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
@@ -1707,7 +1707,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose mesosystems' }));
     expect(await screen.findByRole('heading', { name: 'Choose the mesosystems' })).toBeVisible();
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: 'Relationship verb' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Direct connection' })).not.toBeInTheDocument();
     expect(screen.queryByText(/More connections|More direct relationships/)).not.toBeInTheDocument();
     const linkageEditor = screen.getByRole('textbox', { name: 'Mesosystem label' });
     expect(linkageEditor).toHaveValue(linkageLabel);

@@ -11,7 +11,7 @@ export const SCALES = {
     description: 'Direct activities, roles, relationships, and immediate settings.',
     checklist: [
       'Name each person, role, activity, object, and immediate setting as a discrete map element.',
-      'Use a direct relationship verb to show what happens between Micro elements.',
+      'Describe what happens between Micro elements with one direct verb.',
       'Record whose voices you have heard and whose are missing.',
     ],
   },
@@ -22,7 +22,7 @@ export const SCALES = {
     checklist: [
       'Use the exact names of settings already mapped in Micro.',
       'Group two or more settings into each mesosystem.',
-      'Name the mesosystem without adding a relationship verb or direction.',
+      'Name the mesosystem without adding a directional connection.',
     ],
   },
   exosphere: {

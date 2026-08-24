@@ -983,6 +983,42 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(JSON.stringify(reviews)).not.toMatch(/stuck|has energy|ripples? outward|in the room|ring holds|patterns? (?:with no|without)|doorless/i);
   });
 
+  it('removes setting-to-setting connections from a Micro review before the project can save them', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [],
+        nodes: [
+          { label: 'Participant A', type: 'person', scale: 'micro', evidence: 'The memo names Participant A.' },
+          { label: 'Family apartment', type: 'setting', scale: 'micro', evidence: 'Participant A lives in the apartment.' },
+          { label: 'Transition classroom', type: 'setting', scale: 'micro', evidence: 'Participant A attends the classroom.' },
+        ],
+        connections: [
+          { source: 'Family apartment', target: 'Transition classroom', verb: 'coordinates access with', rationale: 'This belongs at Meso.' },
+          { source: 'Participant A', target: 'Transition classroom', verb: 'attends', rationale: 'The memo directly supports attendance.' },
+        ],
+        example: null,
+        readiness: { ready: true, note: 'The memo supports Micro mapping.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'micro-setting-edge-filter.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const review = (await evaluate(studentCookie, submissionBody())).review;
+
+    expect(review.connections).toEqual([expect.objectContaining({
+      sourceLabel: 'Participant A',
+      targetLabel: 'Transition classroom',
+      verb: 'attends',
+    })]);
+  });
+
   it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {
     const localCookie = await grantStudent();
     const unavailable = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: localCookie });
@@ -1040,7 +1076,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const mesoRequest = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: studentCookie });
     expect(mesoRequest.status).toBe(400);
-    expect(await mesoRequest.json()).toEqual({ error: 'Meso uses mesosystems formed by Micro settings and does not use relationship verbs.' });
+    expect(await mesoRequest.json()).toEqual({ error: 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.' });
     const input = ollamaRequest.mock.calls[0][0];
     expect(input.systemPrompt).toContain('[Part 1. Current section. choose map elements]');
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
