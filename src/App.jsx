@@ -944,7 +944,7 @@ const LEVEL_REVIEW_COPY = Object.freeze({
     items: 'mesosystems formed by two or more Micro settings',
     scaffoldTitle: 'Suggested mesosystems',
     next: 'Choose mesosystems',
-    test: 'Meso identifies how two or more Micro settings in which the person participates relate to one another. Give each mesosystem a clear noun-phrase label, such as “home–school coordination,” and select the settings.',
+    test: 'Meso shows how two or more Micro settings in which the person participates relate to one another. Name that connection clearly, such as “coordination between home and school,” and select the settings.',
   }),
   exosphere: Object.freeze({
     items: 'institutions and decision-making bodies that affect mapped elements',
@@ -1091,7 +1091,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const addMesoLinkage = () => {
     const label = mesoDraft.label.trim();
     if (!label) return toast('Name the mesosystem first.', 'error');
-    if (!isMesosystemLabel(label)) return toast('Use a clear noun-phrase label for the mesosystem, without a relationship proposition.', 'error');
+    if (!isMesosystemLabel(label)) return toast('Name the connection between at least two Micro settings without writing a full sentence.', 'error');
     if (!mesoDraft.first || !mesoDraft.second || mesoDraft.first === mesoDraft.second) return toast('Choose two different Micro settings.', 'error');
     const id = stableId('node', label);
     if (project.candidates.nodes.some((node) => node.id === id)
@@ -1187,7 +1187,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     if (kind === 'nodes' && (status === 'confirmed' || status === 'research lead') && containsRetiredSystemsLanguage(current.label)) return toast('Use a direct, conventional name for the map element.', 'error');
     if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
     if (kind === 'nodes' && project.activeScale === 'micro' && (status === 'confirmed' || status === 'research lead') && !isDiscreteMicroNodeLabel(current.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
-    if (kind === 'nodes' && project.activeScale === 'meso' && (status === 'confirmed' || status === 'research lead') && !isMesosystemLabel(current.label)) return toast('Use a clear noun-phrase label for the mesosystem, such as “home–school coordination.”', 'error');
+    if (kind === 'nodes' && project.activeScale === 'meso' && (status === 'confirmed' || status === 'research lead') && !isMesosystemLabel(current.label)) return toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error');
     if (kind === 'nodes' && project.activeScale === 'exosphere' && (status === 'confirmed' || status === 'research lead') && !isNamedInstitutionLabel(current.label)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
     if (kind === 'nodes' && project.activeScale === 'macrosphere' && (status === 'confirmed' || status === 'research lead') && labelRepeatsInstitution(current.label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
     if (kind === 'nodes' && project.activeScale === 'meso' && (status === 'confirmed' || status === 'research lead') && (current.scopeNodeIds || []).length < 2) return toast('Choose at least two Micro settings for this mesosystem.', 'error');
@@ -1202,7 +1202,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (kind === 'nodes' && field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
-    if (kind === 'nodes' && field === 'label' && project.activeScale === 'meso' && !isMesosystemLabel(value)) return toast('Use a clear noun-phrase label for the mesosystem, such as “home–school coordination.”', 'error');
+    if (kind === 'nodes' && field === 'label' && project.activeScale === 'meso' && !isMesosystemLabel(value)) return toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error');
     if (kind === 'nodes' && field === 'label' && project.activeScale === 'macrosphere' && labelRepeatsInstitution(value, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
     if (kind === 'nodes' && field === 'type' && !isNodeTypeAllowedAtScale(value, project.activeScale)) return toast(`That type does not belong at ${SCALES[project.activeScale].label}.`, 'error');
     update((draft) => {
@@ -1252,7 +1252,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     meso: {
       nodes: {
         title: 'Choose the mesosystems',
-        lede: 'Each mesosystem names a supported interrelation among at least two immediate settings in which the person participates. Use a clear noun-phrase label, such as “work–college scheduling conflict,” and choose the settings involved.',
+        lede: 'Each mesosystem shows how at least two immediate settings in which the person participates relate to one another. Give it a clear name and choose the settings involved.',
       },
     },
     exosphere: {
@@ -1319,7 +1319,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     <div className="candidate-row__main">
       {kind === 'nodes'
         ? mesoLinkageRow
-          ? <div className="candidate-expression"><CommitInput aria-label="Mesosystem label" maxLength={NODE_LABEL_LIMIT} value={item.label} validate={isMesosystemLabel} onCommit={(value) => edit(kind, item.id, 'label', value)} onInvalid={() => toast('Use a clear noun-phrase label for the mesosystem, such as “home–school coordination.”', 'error')} /><span>includes</span><strong>{(item.scopeNodeIds || []).length} Micro settings</strong></div>
+          ? <div className="candidate-expression"><CommitInput aria-label="Mesosystem label" maxLength={NODE_LABEL_LIMIT} value={item.label} validate={isMesosystemLabel} onCommit={(value) => edit(kind, item.id, 'label', value)} onInvalid={() => toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error')} /><span>includes</span><strong>{(item.scopeNodeIds || []).length} Micro settings</strong></div>
           : <div className="candidate-expression"><input aria-label={structureRow ? 'Macrosphere item label' : 'Node label'} maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label={structureRow ? 'Macrosphere item type' : 'Node type'} value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{candidateNodeTypes.map((type) => <option key={type}>{type}</option>)}</select></div>
         : project.activeScale === 'exosphere'
           ? <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><select aria-label="Institutional relationship" value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)}>{exoVerbOptions(item.verb).map((verb) => <option key={verb}>{verb}</option>)}</select><strong>{item.targetLabel}</strong></div>
@@ -3465,7 +3465,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
             <summary><span>Summary</span><strong>{selectedNode.type}</strong></summary>
             <div className="node-summary__body">
               <Field label="Label">{selectedNode.scale === 'meso'
-                ? <CommitInput maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={isMesosystemLabel} onCommit={(value) => editNode('label', value)} onInvalid={() => toast('Use a clear noun-phrase label for the mesosystem, such as “home–school coordination.”', 'error')} />
+                ? <CommitInput maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={isMesosystemLabel} onCommit={(value) => editNode('label', value)} onInvalid={() => toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error')} />
                 : selectedNode.scale === 'micro'
                   ? <CommitInput maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={isDiscreteMicroNodeLabel} onCommit={(value) => editNode('label', value)} onInvalid={() => toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error')} />
                   : selectedNode.scale === 'exosphere'
