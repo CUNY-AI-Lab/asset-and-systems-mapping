@@ -1645,6 +1645,17 @@ function readableZoomFloor(phoneLayout) {
   return phoneLayout ? 1.5 : 0.85;
 }
 
+function overviewReadingZoomFloor(layer, phoneLayout) {
+  if (phoneLayout) return readableZoomFloor(true);
+  return {
+    micro: 0.72,
+    meso: 0.58,
+    exosphere: 0.5,
+    macrosphere: 0.42,
+    all: 0.42,
+  }[layer] || 0.58;
+}
+
 function arrangedEcologyPositions(nodes, phoneLayout = false) {
   const positions = new Map();
   SCALE_ORDER.forEach((scale) => {
@@ -1679,10 +1690,29 @@ function arrangedEcologyPositions(nodes, phoneLayout = false) {
       });
       return;
     }
+    if (items.length === 1) {
+      // Keep a sparse outer layer in a visible side field. The generic
+      // one-item sweep resolves to the bottom of the ring, where the card can
+      // sit behind the persistent map controls and appear to be missing.
+      const node = items[0];
+      const baseRx = band.innerRx ? (band.innerRx + band.outerRx) / 2 : band.outerRx * .58;
+      const rawPosition = {
+        x: Math.round(ECOLOGY_CENTER.x + baseRx),
+        y: ECOLOGY_CENTER.y,
+      };
+      positions.set(node.id, constrainToEcologyBand(node, rawPosition.x, rawPosition.y, mapNodeGeometry(node.label, phoneLayout)));
+      return;
+    }
+    const readableSector = items.length <= 6;
+    const sectorSweep = Math.min(1.35, Math.max(.55, (items.length - 1) * .34));
     items.forEach((node, index) => {
-      // Every node gets its own angle. Pairing two radial lanes at the same
-      // angle made long cards overlap, especially on phones.
-      const angle = (-Math.PI / 2) + ((index + .5) / Math.max(1, items.length)) * Math.PI * 2;
+      // Keep each filtered outer layer in a readable right-hand sector. The
+      // whole-ring view remains available through Center map, while the
+      // default view can show the layer's nodes and their inward connections
+      // together instead of scattering them to opposite sides of the ring.
+      const angle = readableSector
+        ? (-sectorSweep / 2) + (index / Math.max(1, items.length - 1)) * sectorSweep
+        : (-Math.PI / 2) + ((index + .5) / items.length) * Math.PI * 2;
       const baseRx = band.innerRx ? (band.innerRx + band.outerRx) / 2 : band.outerRx * .58;
       const baseRy = band.innerRy ? (band.innerRy + band.outerRy) / 2 : band.outerRy * .58;
       const rawPosition = {
@@ -1745,31 +1775,55 @@ function segmentCrossesBoundsInterior(start, end, bounds) {
   return far > 0 && near < 1;
 }
 
-// A focused ecology view temporarily compacts the selected relationship (or a
-// node's one-hop neighborhood) into the reading window. Its band callouts are
-// intentionally absent there, so a center-to-center label can otherwise land
-// underneath either endpoint card. Give every desktop detail relationship a
-// nearby, collision-free bend: the full label sits on the bend and both line
-// segments remain visible as a single source-to-target pathway.
-function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = false) {
-  if (phoneLayout) return new Map();
+// Place a complete relationship label on a nearby, collision-free bend. The
+// same geometry serves compact focus views and Micro overviews, where a raw
+// endpoint midpoint can otherwise land underneath either card.
+function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = false, layoutBounds = null, reservedBounds = [], containsBounds = null) {
+  if (phoneLayout && !layoutBounds) return new Map();
   const anchors = new Map();
-  const occupiedLabels = [];
+  const occupiedLabels = [...reservedBounds];
   const nodeBounds = new Map(nodes.map((node) => {
     const position = positions.get(node.id);
-    return [node.id, position ? ecologyCardBounds(position, mapNodeGeometry(node.label, false), 10) : null];
+    return [node.id, position ? ecologyCardBounds(position, mapNodeGeometry(node.label, phoneLayout), phoneLayout ? 14 : 10) : null];
   }));
   const allNodeBounds = [...nodeBounds.values()].filter(Boolean);
+  const spatialCellSize = 160;
+  const cellsForBounds = (bounds) => {
+    const cells = [];
+    const firstColumn = Math.floor(bounds.left / spatialCellSize);
+    const lastColumn = Math.floor(bounds.right / spatialCellSize);
+    const firstRow = Math.floor(bounds.top / spatialCellSize);
+    const lastRow = Math.floor(bounds.bottom / spatialCellSize);
+    for (let column = firstColumn; column <= lastColumn; column += 1) {
+      for (let row = firstRow; row <= lastRow; row += 1) cells.push(`${column}:${row}`);
+    }
+    return cells;
+  };
+  const insertBounds = (grid, bounds) => cellsForBounds(bounds).forEach((cell) => {
+    const entries = grid.get(cell) || [];
+    entries.push(bounds);
+    grid.set(cell, entries);
+  });
+  const intersectsGrid = (grid, bounds) => {
+    const candidates = new Set(cellsForBounds(bounds).flatMap((cell) => grid.get(cell) || []));
+    return [...candidates].some((entry) => ecologyBoundsIntersect(bounds, entry));
+  };
+  const nodeGrid = new Map();
+  const labelGrid = new Map();
+  allNodeBounds.forEach((bounds) => insertBounds(nodeGrid, bounds));
+  occupiedLabels.forEach((bounds) => insertBounds(labelGrid, bounds));
   const insideMargin = 16;
+  const available = layoutBounds || { left: 0, right: GRAPH_WIDTH, top: 0, bottom: GRAPH_HEIGHT };
   const candidateMetrics = (bounds) => {
     const padded = { left: bounds.left - 6, right: bounds.right + 6, top: bounds.top - 6, bottom: bounds.bottom + 6 };
-    const nodeCollisions = allNodeBounds.filter((nodeBoundsEntry) => ecologyBoundsIntersect(padded, nodeBoundsEntry)).length;
-    const labelCollisions = occupiedLabels.filter((labelBounds) => ecologyBoundsIntersect(padded, labelBounds)).length;
-    const outside = Math.max(0, insideMargin - bounds.left)
-      + Math.max(0, bounds.right - (GRAPH_WIDTH - insideMargin))
-      + Math.max(0, insideMargin - bounds.top)
-      + Math.max(0, bounds.bottom - (GRAPH_HEIGHT - insideMargin));
-    return { clear: nodeCollisions === 0 && labelCollisions === 0, outside };
+    const nodeCollision = intersectsGrid(nodeGrid, padded);
+    const labelCollision = intersectsGrid(labelGrid, padded);
+    const outside = Math.max(0, available.left + insideMargin - bounds.left)
+      + Math.max(0, bounds.right - (available.right - insideMargin))
+      + Math.max(0, available.top + insideMargin - bounds.top)
+      + Math.max(0, bounds.bottom - (available.bottom - insideMargin));
+    const contained = !containsBounds || containsBounds(bounds);
+    return { collisionFree: !nodeCollision && !labelCollision, contained, outside };
   };
 
   [...edges].sort((left, right) => left.id.localeCompare(right.id)).forEach((edge) => {
@@ -1778,7 +1832,7 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
     const sourceBounds = nodeBounds.get(edge.source);
     const targetBounds = nodeBounds.get(edge.target);
     if (!source || !target || !sourceBounds || !targetBounds) return;
-    const geometry = mapEdgeLabelGeometry(edge.verb, false, edge.scale);
+    const geometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
     const midX = (source.x + target.x) / 2;
     const midY = (source.y + target.y) / 2;
     const clearance = 18;
@@ -1801,10 +1855,10 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
       { x: Math.max(sourceBounds.right, targetBounds.right) + halfWidth + clearance, y: midY },
       { x: midX + perpendicular.x * perpendicularOffset, y: midY + perpendicular.y * perpendicularOffset },
       { x: midX - perpendicular.x * perpendicularOffset, y: midY - perpendicular.y * perpendicularOffset },
-      { x: clamp(midX, halfWidth + insideMargin, GRAPH_WIDTH - halfWidth - insideMargin), y: halfHeight + insideMargin },
-      { x: clamp(midX, halfWidth + insideMargin, GRAPH_WIDTH - halfWidth - insideMargin), y: GRAPH_HEIGHT - halfHeight - insideMargin },
-      { x: halfWidth + insideMargin, y: clamp(midY, halfHeight + insideMargin, GRAPH_HEIGHT - halfHeight - insideMargin) },
-      { x: GRAPH_WIDTH - halfWidth - insideMargin, y: clamp(midY, halfHeight + insideMargin, GRAPH_HEIGHT - halfHeight - insideMargin) },
+      { x: clamp(midX, available.left + halfWidth + insideMargin, available.right - halfWidth - insideMargin), y: available.top + halfHeight + insideMargin },
+      { x: clamp(midX, available.left + halfWidth + insideMargin, available.right - halfWidth - insideMargin), y: available.bottom - halfHeight - insideMargin },
+      { x: available.left + halfWidth + insideMargin, y: clamp(midY, available.top + halfHeight + insideMargin, available.bottom - halfHeight - insideMargin) },
+      { x: available.right - halfWidth - insideMargin, y: clamp(midY, available.top + halfHeight + insideMargin, available.bottom - halfHeight - insideMargin) },
     ];
     // Dense one-hop neighborhoods can exhaust the first screenful of slots.
     // Expand deterministically around the relationship midpoint until a clear
@@ -1832,9 +1886,22 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
       const pathLength = Math.hypot(candidate.x - source.x, candidate.y - source.y)
         + Math.hypot(target.x - candidate.x, target.y - candidate.y);
       const metrics = candidateMetrics(bounds);
-      return { candidate, bounds, clear: metrics.clear && routeIsClear(candidate), score: metrics.outside * 10_000 + pathLength + index / 100 };
+      return {
+        candidate,
+        bounds,
+        collisionFree: metrics.collisionFree,
+        contained: metrics.contained,
+        clear: metrics.contained && metrics.collisionFree && routeIsClear(candidate),
+        score: metrics.outside * 10_000 + pathLength + index / 100,
+      };
     }).sort((left, right) => left.score - right.score);
     let chosen = ranked.find((entry) => entry.clear);
+    if (!chosen && containsBounds) {
+      // Prefer keeping the complete label in its own layer even if the leader
+      // has to cross a card. Never trade label/card clearance for containment.
+      chosen = ranked.find((entry) => entry.contained && entry.collisionFree);
+    }
+    if (!chosen) chosen = ranked.find((entry) => entry.collisionFree && routeIsClear(entry.candidate));
     if (!chosen) {
       // A final spill lane below every occupied rectangle is guaranteed clear,
       // even for unusually dense imported maps. Fitting includes this label,
@@ -1864,6 +1931,7 @@ function focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout = fal
       };
     }
     occupiedLabels.push(chosen.bounds);
+    insertBounds(labelGrid, chosen.bounds);
     anchors.set(edge.id, { x: Math.round(chosen.candidate.x), y: Math.round(chosen.candidate.y) });
   });
   return anchors;
@@ -2433,6 +2501,37 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   const layerAnchors = mapMode === 'ecology' && !detailMode
     ? ecologyCalloutAnchors(edges, nodes, positions, phoneLayout)
     : null;
+  const microBand = ECOLOGY_BANDS.micro;
+  const overviewMicroEdges = mapMode === 'ecology' && !detailMode
+    ? edges.filter((edge) => edge.scale === 'micro' && edge.showLabel !== false)
+    : [];
+  const overviewMicroNodes = overviewMicroEdges.length
+    ? nodes.filter((node) => node.scale === 'micro')
+    : [];
+  const overviewMicroAnchors = overviewMicroEdges.length
+    ? focusedEcologyCalloutAnchors(
+      overviewMicroEdges,
+      overviewMicroNodes,
+      positions,
+      phoneLayout,
+      {
+        left: ECOLOGY_CENTER.x - microBand.outerRx,
+        right: ECOLOGY_CENTER.x + microBand.outerRx,
+        top: ECOLOGY_CENTER.y - microBand.outerRy,
+        bottom: ECOLOGY_CENTER.y + microBand.outerRy,
+      },
+      [ecologyLayerLabelBounds('micro')].filter(Boolean),
+      (bounds) => [
+        [bounds.left, bounds.top],
+        [bounds.right, bounds.top],
+        [bounds.left, bounds.bottom],
+        [bounds.right, bounds.bottom],
+      ].every(([x, y]) => (
+        ((x - ECOLOGY_CENTER.x) ** 2) / ((microBand.outerRx - 12) ** 2)
+        + ((y - ECOLOGY_CENTER.y) ** 2) / ((microBand.outerRy - 12) ** 2)
+      ) <= 1),
+    )
+    : null;
   const focusedCalloutAnchors = mapMode === 'ecology' && detailMode
     ? focusedEcologyCalloutAnchors(edges, nodes, positions, phoneLayout)
     : null;
@@ -2442,8 +2541,9 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     if (!source?.position || !target?.position) return null;
     const labelGeometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
     const layerAnchor = layerAnchors?.get(edge.id) || null;
+    const overviewMicroAnchor = overviewMicroAnchors?.get(edge.id) || null;
     const focusedCalloutAnchor = focusedCalloutAnchors?.get(edge.id) || null;
-    const calloutAnchor = layerAnchor || focusedCalloutAnchor;
+    const calloutAnchor = layerAnchor || overviewMicroAnchor || focusedCalloutAnchor;
     const sourceToward = calloutAnchor || target.position;
     const targetToward = calloutAnchor || source.position;
     const sourcePoint = cardConnectionPoint(source.position, sourceToward, source.geometry);
@@ -2464,7 +2564,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
       midX: labelPoint.x,
       midY: labelPoint.y,
       path,
-      edgeRoute: layerAnchor ? 'layer-anchor' : focusedCalloutAnchor ? 'focus-callout' : 'direct',
+      edgeRoute: layerAnchor ? 'layer-anchor' : overviewMicroAnchor ? 'overview-callout' : focusedCalloutAnchor ? 'focus-callout' : 'direct',
       labelGeometry,
       selected: selection?.kind === 'edge' && selection.id === edge.id,
     };
@@ -2630,6 +2730,23 @@ function fitViewport(nodes, targetHeight = 440, phoneLayout = false, extraBounds
   };
 }
 
+function mapContentCenter(nodes, phoneLayout = false) {
+  if (!nodes.length) return { ...ECOLOGY_CENTER };
+  const bounds = nodes.map((node) => {
+    const geometry = mapNodeGeometry(node.label, phoneLayout);
+    return {
+      left: node.x - geometry.cardWidth / 2,
+      right: node.x + geometry.cardWidth / 2,
+      top: node.y - geometry.cardHeight / 2,
+      bottom: node.y + geometry.cardHeight / 2,
+    };
+  });
+  return {
+    x: (Math.min(...bounds.map(({ left }) => left)) + Math.max(...bounds.map(({ right }) => right))) / 2,
+    y: (Math.min(...bounds.map(({ top }) => top)) + Math.max(...bounds.map(({ bottom }) => bottom))) / 2,
+  };
+}
+
 const INSPECTOR_TABS = ['node', 'relationships', 'map'];
 const FOCUSED_RELATIONSHIPS_PER_PAGE = 1;
 
@@ -2688,9 +2805,25 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     mapMode === 'ecology' ? ecologyViewportBounds(ecologyLayers) : [],
   ), [ecologyLayers, mapMode, phoneLayout]);
   const readingViewport = useCallback((nodes, layer = visibleScale) => {
-    if (mapMode !== 'ecology' || layer === 'all') return fitMapOverview(nodes);
-    return fitViewport(nodes, phoneLayout ? 650 : 540, phoneLayout, ecologyViewportBounds([layer]));
-  }, [fitMapOverview, mapMode, phoneLayout, visibleScale]);
+    if (mapMode !== 'ecology') return fitMapOverview(nodes);
+    const layers = layer === 'all' ? ecologyLayers : [layer];
+    const nextViewport = fitViewport(
+      nodes,
+      phoneLayout ? 650 : 540,
+      phoneLayout,
+      ecologyViewportBounds(layers),
+      overviewReadingZoomFloor(layer, phoneLayout),
+    );
+    // Once the readability floor intentionally crops a large ring, center the
+    // view on its actual cards. The student can still pan across the ring or
+    // choose Center map for the literal whole-ring overview.
+    const center = mapContentCenter(nodes, phoneLayout);
+    return {
+      ...nextViewport,
+      panX: clamp(GRAPH_WIDTH / 2 - center.x * nextViewport.zoom, VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
+      panY: clamp(GRAPH_HEIGHT / 2 - center.y * nextViewport.zoom, VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
+    };
+  }, [ecologyLayers, fitMapOverview, mapMode, phoneLayout, visibleScale]);
   const hasRemovedItems = project.graph.nodes.some((node) => node.claimState === 'retired') || project.graph.edges.some((edge) => edge.claimState === 'retired');
   const visibleScaleSet = useMemo(() => new Set(visibleScale === 'all' ? project.releasedScales : [visibleScale]), [project.releasedScales, visibleScale]);
   const scaleEdgeIds = useMemo(() => new Set(project.graph.edges
@@ -2845,11 +2978,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       ? project.releasedScales.includes(node.scale)
       : node.scale === visibleScale || endpointIds.has(node.id));
     setAutomaticPositions(positions);
-    // An untouched stored viewport (0,0,1) frames the network-layout window,
-    // but in ecology mode it shows an empty corner far from the rings — an
-    // already-clean ecological layout still needs an initial reading fit.
-    const viewportUntouched = project.viewport.panX === 0 && project.viewport.panY === 0 && project.viewport.zoom === 1;
-    if (positions || (viewportUntouched && mapMode === 'ecology')) setMapViewport(readingViewport(nextVisibleNodes.length ? nextVisibleNodes : positionedNodes));
+    // Enter every ecological layer on a transient reading view. A single
+    // durable viewport may have been saved while another layer was visible;
+    // reusing it here can open the next layer on an empty corner. Panning or
+    // zooming still commits a new durable viewport through changeViewport.
+    if (positions || mapMode === 'ecology') setMapViewport(readingViewport(nextVisibleNodes.length ? nextVisibleNodes : positionedNodes));
   }, [mapMode, phoneLayout, project.events, project.graph.edges, project.graph.nodes, project.releasedScales, project.viewport.panX, project.viewport.panY, project.viewport.zoom, readingViewport, visibleScale]);
   useEffect(() => {
     const wasPhoneLayout = previousPhoneLayoutRef.current;
@@ -2938,16 +3071,15 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     });
   }, [selection]);
   const showFullMap = useCallback(() => {
-    const restoringTransientDetail = Boolean(focusedEcologyPositions || phoneRelationshipPositions);
     setFocus(null);
     setFocusPage(0);
     setSelection(null);
     setInspectorTab('map');
     setDrawerOpen(false);
     const nodes = scaleNodes.map((node) => ({ ...node, ...(automaticPositions?.get(node.id) || {}) }));
-    setMapViewport(restoringTransientDetail ? null : readingViewport(nodes.length ? nodes : project.graph.nodes));
+    setMapViewport(readingViewport(nodes.length ? nodes : project.graph.nodes));
     window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
-  }, [automaticPositions, focusedEcologyPositions, phoneRelationshipPositions, project.graph.nodes, readingViewport, scaleNodes]);
+  }, [automaticPositions, project.graph.nodes, readingViewport, scaleNodes]);
   const changeVisibleScale = (nextScale) => {
     const nextEdges = project.graph.edges.filter((edge) => edge.status !== 'rejected'
       && edge.claimState !== 'retired'
@@ -3046,7 +3178,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         focusedEcologyPositions && !phoneLayout ? focusedDetailBounds : [],
         focusedEcologyPositions ? focusedDetailMinimumZoom : readableZoomFloor(true),
       )
-      : readingViewport(nodes);
+      : mapMode === 'ecology'
+        ? fitViewport(
+          nodes,
+          phoneLayout ? 650 : 540,
+          phoneLayout,
+          ecologyViewportBounds(visibleScale === 'all' ? ecologyLayers : [visibleScale]),
+        )
+        : fitMapOverview(nodes);
     if (phoneOverviewPositions || phoneEcologyPositions || detailLayout) {
       setMapViewport(nextViewport);
       return;
@@ -3255,12 +3394,20 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAnnouncement(`Showing relationship ${boundedPage + 1} of ${focusIncidentEdges.length} for ${focusLabel}.`);
   };
   const toggleFullscreen = () => {
-    setFullscreen((current) => {
-      const next = !current;
-      setAnnouncement(next ? 'Full screen map opened.' : 'Full screen map closed.');
-      if (!next) window.requestAnimationFrame(() => fullscreenToggleRef.current?.focus());
-      return next;
-    });
+    const next = !fullscreen;
+    setFullscreen(next);
+    setAnnouncement(next ? 'Full screen map opened.' : 'Full screen map closed.');
+    if (next) {
+      const nodes = displayedNodes.length ? displayedNodes : project.graph.nodes;
+      const nextViewport = focusedEcologyPositions
+        ? fitViewport(nodes, phoneLayout ? 650 : 540, phoneLayout, focusedDetailBounds, focusedDetailMinimumZoom)
+        : phoneRelationshipPositions
+          ? fitViewport(nodes, 650, true, [], readableZoomFloor(true))
+          : readingViewport(nodes, visibleScale);
+      setMapViewport(nextViewport);
+    } else {
+      window.requestAnimationFrame(() => fullscreenToggleRef.current?.focus());
+    }
   };
   return <div className={`map-stage map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}>
     <MemoDrawer project={project} update={update} hint="You can edit the memo while reviewing the map. Choose Refresh guidance later if you want the model to review the revised memo." />

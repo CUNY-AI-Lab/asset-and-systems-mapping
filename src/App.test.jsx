@@ -2094,18 +2094,24 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('uses the ecological map when an outer layer is available and centers a readable layer view', async () => {
+  it('replaces a stale durable viewport with a transient readable layer view on entry', async () => {
     const project = makeMapProject('meso');
     project.releasedScales.push('exosphere');
+    project.viewport = { zoom: 0.15, panX: -2400, panY: 1900 };
+    const durableViewport = { ...project.viewport };
     await openMapProject(project);
 
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
-    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
-    await waitFor(() => expect(storedProject().viewport.panX).not.toBe(0));
-    const viewport = storedProject().viewport;
-    expect(viewport.zoom).toBeGreaterThanOrEqual(PROJECT_LIMITS.zoomMin);
-    expect(Math.abs((420 - viewport.panX) / viewport.zoom - 1600)).toBeLessThan(30);
-    expect(Math.abs((270 - viewport.panY) / viewport.zoom - 1200)).toBeLessThan(30);
+    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.58));
+    expect(viewportTransform()).not.toEqual(durableViewport);
+    [...document.querySelectorAll('.graph-node')].forEach((group) => {
+      const bounds = transformedRectBounds(translatedRectBounds(group, group.querySelector('.node-card')));
+      expect(bounds.left, `${group.getAttribute('data-full-label')} clips at the left`).toBeGreaterThanOrEqual(0);
+      expect(bounds.right, `${group.getAttribute('data-full-label')} clips at the right`).toBeLessThanOrEqual(840);
+      expect(bounds.top, `${group.getAttribute('data-full-label')} clips at the top`).toBeGreaterThanOrEqual(0);
+      expect(bounds.bottom, `${group.getAttribute('data-full-label')} clips at the bottom`).toBeLessThanOrEqual(540);
+    });
+    expect(storedProject().viewport).toEqual(durableViewport);
   });
 
   it('toggles the map into full screen, exits with Escape, and cleans up the body state', async () => {
@@ -2167,27 +2173,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('fits the outer ecology ring and every accepted node on canvas in filtered, full-screen, and all-layer views', async () => {
+  it('keeps literal whole-ring fits available while filtered, full-screen, and all-layer reading views keep labels readable', async () => {
     const project = makeMapProject('macrosphere');
     await openMapProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
 
-    const expectCurrentMapOnCanvas = () => {
+    const expectNodesOnCanvas = () => {
       const view = viewportTransform();
       const canvas = { left: 0, right: 840, top: 0, bottom: 540 };
-      const macroLayer = document.querySelector('[data-ecology-layer="macrosphere"] > ellipse');
-      const layerBounds = {
-        left: (Number(macroLayer.getAttribute('cx')) - Number(macroLayer.getAttribute('rx'))) * view.zoom + view.panX,
-        right: (Number(macroLayer.getAttribute('cx')) + Number(macroLayer.getAttribute('rx'))) * view.zoom + view.panX,
-        top: (Number(macroLayer.getAttribute('cy')) - Number(macroLayer.getAttribute('ry'))) * view.zoom + view.panY,
-        bottom: (Number(macroLayer.getAttribute('cy')) + Number(macroLayer.getAttribute('ry'))) * view.zoom + view.panY,
-      };
-      expect(layerBounds.left).toBeGreaterThanOrEqual(canvas.left);
-      expect(layerBounds.right).toBeLessThanOrEqual(canvas.right);
-      expect(layerBounds.top).toBeGreaterThanOrEqual(canvas.top);
-      expect(layerBounds.bottom).toBeLessThanOrEqual(canvas.bottom);
-
       [...document.querySelectorAll('.graph-node')].forEach((group) => {
         const world = translatedRectBounds(group, group.querySelector('.node-card'));
         const bounds = {
@@ -2205,20 +2199,48 @@ Overall, the posting history documents a working student repeatedly turning to R
         expect(group).not.toHaveTextContent('…');
       });
     };
+    const expectOuterRingOnCanvas = () => {
+      const view = viewportTransform();
+      const macroLayer = document.querySelector('[data-ecology-layer="macrosphere"] > ellipse');
+      const layerBounds = {
+        left: (Number(macroLayer.getAttribute('cx')) - Number(macroLayer.getAttribute('rx'))) * view.zoom + view.panX,
+        right: (Number(macroLayer.getAttribute('cx')) + Number(macroLayer.getAttribute('rx'))) * view.zoom + view.panX,
+        top: (Number(macroLayer.getAttribute('cy')) - Number(macroLayer.getAttribute('ry'))) * view.zoom + view.panY,
+        bottom: (Number(macroLayer.getAttribute('cy')) + Number(macroLayer.getAttribute('ry'))) * view.zoom + view.panY,
+      };
+      expect(layerBounds.left).toBeGreaterThanOrEqual(0);
+      expect(layerBounds.right).toBeLessThanOrEqual(840);
+      expect(layerBounds.top).toBeGreaterThanOrEqual(0);
+      expect(layerBounds.bottom).toBeLessThanOrEqual(540);
+    };
 
     fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
     await waitFor(() => expect(viewportTransform().zoom).toBe(0.23));
-    expectCurrentMapOnCanvas();
+    expectOuterRingOnCanvas();
+    expectNodesOnCanvas();
+    const literalFilteredViewport = { ...storedProject().viewport };
 
     fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
     expect(document.querySelector('.map-stage')).toHaveClass('is-fullscreen');
-    expectCurrentMapOnCanvas();
+    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.42));
+    expectNodesOnCanvas();
+    expect(storedProject().viewport).toEqual(literalFilteredViewport);
     fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('all'));
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(2));
     fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
-    await waitFor(() => expect(viewportTransform().zoom).toBe(0.18));
-    expectCurrentMapOnCanvas();
+    await waitFor(() => expect(viewportTransform().zoom).toBe(0.23));
+    expectOuterRingOnCanvas();
+    expectNodesOnCanvas();
+    const literalAllViewport = { ...storedProject().viewport };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
+    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.42));
+    expectNodesOnCanvas();
+    expect(storedProject().viewport).toEqual(literalAllViewport);
   });
 
   it.each([
@@ -2518,7 +2540,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     await waitFor(() => {
       expect(mapCanvas()).not.toHaveClass('is-detail-view');
-      expect(viewportTransform()).toEqual(durableViewport);
+      expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.5);
     });
     const visibleIds = [...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id'));
     expect(durablePositions.filter(({ id }) => visibleIds.includes(id))
@@ -2588,7 +2610,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     await waitFor(() => {
       expect(mapCanvas()).not.toHaveClass('is-detail-view');
-      expect(viewportTransform()).toEqual(durableViewport);
+      expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.5);
     });
     durableGraph.nodes.forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
     expect(document.querySelector('.ecology-layers')).not.toBeNull();
@@ -2609,7 +2631,23 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     const overviewLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    expect(overviewLabel).toHaveAttribute('data-edge-route', 'direct');
+    const expectClearOverviewLabel = (label) => {
+      const labelBounds = svgRectBounds(label.querySelector('.edge-label-bg'));
+      const visibleBounds = transformedRectBounds(labelBounds);
+      expect(label).toHaveAttribute('data-edge-route', 'overview-callout');
+      expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(verb);
+      expect(label).not.toHaveTextContent('…');
+      [...document.querySelectorAll('.graph-node')].forEach((node) => {
+        expect(rectsIntersect(labelBounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false);
+      });
+      expect(visibleBounds.left).toBeGreaterThanOrEqual(0);
+      expect(visibleBounds.right).toBeLessThanOrEqual(840);
+      expect(visibleBounds.top).toBeGreaterThanOrEqual(0);
+      expect(visibleBounds.bottom).toBeLessThanOrEqual(540);
+      const path = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d');
+      expect(path).toContain(`L ${label.getAttribute('data-anchor-x')} ${label.getAttribute('data-anchor-y')} L`);
+    };
+    expectClearOverviewLabel(overviewLabel);
     expect(svgTextLines(overviewLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
 
     const renderedEdge = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
@@ -2653,8 +2691,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
     const restoredLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    expect(restoredLabel).toHaveAttribute('data-edge-route', 'direct');
-    expect(svgTextLines(restoredLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
+    expectClearOverviewLabel(restoredLabel);
     expect(document.querySelectorAll('.graph-node')).toHaveLength(activeGraph.nodes.length);
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(activeGraph.edges.length);
     expect(storedProject().graph).toEqual(graphBefore);
