@@ -440,6 +440,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('Meso is not another place to add actors, organizations, institutions, or services');
     expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node.');
     expect(firstInput.systemPrompt).toContain('Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.');
+    expect(firstInput.systemPrompt).toContain('For Micro and Meso, example must be null.');
     expect(firstInput.systemPrompt).toContain('verb MUST be exactly one of: funds, administers, regulates');
     expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
@@ -767,6 +768,67 @@ describe('persistent preflight suggestion review queue', () => {
     }, { cookie: studentCookie });
     expect(inappropriate.status).toBe(400);
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an otherwise valid East Harlem Meso response when example is not null', async () => {
+    await system.close();
+    const validReview = {
+      guidance: [{
+        point: 'Review how Rosa’s home and peer support group operate as connected immediate settings.',
+        evidenceExcerpt: 'Rosa attends a peer support group, and her household schedules who can help her reach appointments.',
+      }],
+      nodes: [{
+        label: 'Home–peer support coordination',
+        type: 'mesosystem',
+        scale: 'meso',
+        evidence: 'Rosa’s household schedules appointment help, and she participates in a peer support group whose facilitator makes referrals.',
+        scope: ['node_home', 'node_peer_group'],
+      }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports one interrelation between two immediate settings.' },
+    };
+    const invalidReview = {
+      ...validReview,
+      example: 'Rosa’s home and peer support group form one mesosystem.',
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidReview, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validReview, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'meso-east-harlem-microsystems.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const body = submissionBody({
+      activeScale: 'meso',
+      sourceMaterial: 'Rosa’s household schedules who can help her reach appointments. Rosa also attends a peer support group whose facilitator makes referrals.',
+      carriedNodes: [
+        { id: 'node_home', label: 'Rosa’s home', type: 'setting', scale: 'micro' },
+        { id: 'node_peer_group', label: 'Peer support group', type: 'setting', scale: 'micro' },
+      ],
+    });
+
+    const evaluation = await evaluate(studentCookie, body);
+
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('For Micro and Meso, example must be null.');
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('meso example must be null');
+    expect(evaluation.review).toEqual({
+      ...validReview,
+      nodes: [{
+        ...validReview.nodes[0],
+        scope: [
+          { id: 'node_home', label: 'Rosa’s home' },
+          { id: 'node_peer_group', label: 'Peer support group' },
+        ],
+      }],
+    });
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
   it('keeps institutions and institutional guidance out of Meso for the CUNY Reddit memo', async () => {
