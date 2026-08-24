@@ -423,6 +423,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
     expect(firstInput.systemPrompt).toContain('Except at Meso, each node label MUST name exactly one actor, role, group, activity, object, immediate setting, institution, policy, law, condition, or structure');
     expect(firstInput.systemPrompt).toContain('BE SELECTIVE');
+    expect(firstInput.systemPrompt).toContain('no more than 10 nodes and 8 direct relationships at Micro');
     expect(firstInput.systemPrompt).toContain('as a clear noun phrase');
     expect(firstInput.systemPrompt).toContain('A node label must never be a sentence, clause, relationship proposition');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
