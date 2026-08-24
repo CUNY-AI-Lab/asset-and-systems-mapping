@@ -330,7 +330,7 @@ export function isDiscreteMicroNodeLabel(value) {
 // entity-like phrases such as "CUNY administrative systems" from being
 // accepted merely because they contain two words.
 const MESOSYSTEM_RELATION_NOUN = /\b(?:alignment|breakdown|collaboration|communication|conflict|connection|coordination|cooperation|disconnect|exchange|gap|interface|interaction|interrelation|linkage|mesosystem|overlap|pattern|planning|plan|relationship|scheduling|tension|transition)\b/i;
-const MESOSYSTEM_ENTITY_NOUN = /\b(?:administrative systems?|administrators?|agenc(?:y|ies)|bursars?|caregivers?|departments?|employers?|funders?|institutions?|instructors?|offices?|parents?|people|persons?|registrars?|service providers?|students?|supervisors?|teachers?|workers?)\b/i;
+const MESOSYSTEM_ENTITY_NOUN = /\b(?:administrative systems?|administrative units?|administrators?|agenc(?:y|ies)|bursars?|caregivers?|departments?|employers?|funders?|institutions?|instructors?|offices?|organizations?|parents?|people|persons?|programs?|registrars?|service providers?|service systems?|services?|students?|supervisors?|teachers?|workers?)\b/i;
 
 export function isMesosystemLabel(value) {
   const label = cleanMicroNodeLabel(value);

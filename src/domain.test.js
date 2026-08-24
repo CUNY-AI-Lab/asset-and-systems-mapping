@@ -218,6 +218,8 @@ describe('mapping domain', () => {
       'CUNY administrative coordination',
       'Employer institution',
       'Registrar and bursar coordination',
+      'Disability services coordination',
+      'Community organization coordination',
       'teacher–parent meeting pattern',
     ].forEach((label) => expect(isMesosystemLabel(label), label).toBe(false));
   });
