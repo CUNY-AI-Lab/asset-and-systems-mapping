@@ -219,6 +219,7 @@ describe('mapping domain', () => {
 
   it('keeps named institutions at Exosphere and out of Macrosphere', () => {
     expect(isNamedInstitutionLabel('CUNY')).toBe(true);
+    expect(isNamedInstitutionLabel('r/CUNY')).toBe(false);
     expect(isNamedInstitutionLabel('C.U.N.Y.')).toBe(true);
     expect(isNamedInstitutionLabel('Hunter College')).toBe(true);
     expect(isNamedInstitutionLabel('High New York City housing costs')).toBe(false);
@@ -910,6 +911,39 @@ describe('mapping domain', () => {
     });
     expect(migrated.graph.nodes[0].notes).toContain('at least two valid mapped scope members');
     expect(() => validateProject(migrated)).not.toThrow();
+  });
+
+  it('keeps an r/CUNY setting and its valid direct relationship at Micro when parsing a project', () => {
+    const project = createDefaultProject();
+    const student = mappedNode({
+      id: 'node_maria_rivera',
+      label: 'Maria Rivera',
+      type: 'person',
+      scale: 'micro',
+    });
+    const subreddit = mappedNode({
+      id: 'node_r_cuny',
+      label: 'r/CUNY',
+      type: 'setting',
+      scale: 'micro',
+    });
+    const postsIn = mappedEdge({
+      id: 'edge_maria_posts_in_r_cuny',
+      source: student,
+      target: subreddit,
+      verb: 'posts in',
+      scale: 'micro',
+    });
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
+    project.candidates = { nodes: [], edges: [] };
+    project.graph = { nodes: [student, subreddit], edges: [postsIn] };
+
+    const restored = parseProject(JSON.stringify(project));
+
+    expect(restored.graph.nodes.find((node) => node.id === subreddit.id)).toEqual(subreddit);
+    expect(restored.graph.edges.find((edge) => edge.id === postsIn.id)).toEqual(postsIn);
+    expect(restored.releasedScales).toEqual(['micro']);
   });
 
   it('moves a named institution out of legacy Micro and releases Exosphere without changing its identity', () => {

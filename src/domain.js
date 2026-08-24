@@ -142,6 +142,7 @@ export function isNodeTypeAllowedAtScale(type, scale) {
 }
 
 const UNAMBIGUOUS_INSTITUTION_LABEL = /(?:\bc\W*u\W*n\W*y\b|\bMTA\b|\bOPWDD\b|\bACCES-?VR\b|\bNYC\s+(?:DOE|HRA|DSS)\b)/i;
+const SOCIAL_HANDLE_LABEL = /^(?:r|u)\/[A-Za-z0-9_-]+$/i;
 const GENERIC_INSTITUTION_LABEL = /^(?:(?:parent|student|family|youth|community|local|public|private|disability|advocacy|support|service)\s+){1,4}(?:organizations?|programs?|services?|agencies|offices?|institutions?|schools?|clinics?|centers?)$/i;
 const NAMED_INSTITUTION_PATTERN = /^(?:the\s+)?(?:(?:[A-Z][A-Za-z0-9&.'’-]*\s+){1,8}(?:Universit(?:y|ies)|Colleges?|Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?|Corporations?|Organizations?|Associations?|Societ(?:y|ies)|Foundations?|Institutes?|Administrations?|Librar(?:y|ies)|Centers?|Clinics?|Schools?|Hospitals?|Programs?|Services?|Service Providers?|Networks?)\b|(?:Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?)\s+(?:of|for|on)\s+[A-Z][A-Za-z0-9&.'’-]*(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9&.'’-]*){0,10}\b)/;
 
@@ -165,6 +166,10 @@ export function isNamedInstitutionLabel(value) {
   if (typeof value !== 'string') return false;
   const label = value.trim();
   if (!label) return false;
+  // Platform handles name a person or an immediate online setting, even when
+  // the handle contains an institutional acronym (for example `r/CUNY`).
+  // The institution itself (`CUNY`) remains an Exosphere label.
+  if (SOCIAL_HANDLE_LABEL.test(label)) return false;
   if (/\b(?:digital-first|online-only|automated)\b/i.test(label)) return false;
   if (GENERIC_INSTITUTION_LABEL.test(label)) return false;
   if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return true;
@@ -522,6 +527,7 @@ function inferNodeType(label) {
 }
 
 function inferScale(label, fallback = 'micro') {
+  if (SOCIAL_HANDLE_LABEL.test(label)) return fallback;
   if (isNamedInstitutionLabel(label)) return 'exosphere';
   if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return 'exosphere';
   if (/^(?:East Harlem|West Harlem|Central Harlem|The Bronx|Brooklyn|Queens|Manhattan|Staten Island)$/i.test(label)) return 'exosphere';
