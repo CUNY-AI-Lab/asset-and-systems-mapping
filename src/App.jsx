@@ -950,7 +950,7 @@ const LEVEL_REVIEW_COPY = Object.freeze({
     items: 'institutions and decision-making bodies that affect mapped elements',
     scaffoldTitle: 'Suggested Exosphere institutions',
     next: 'Choose institutions',
-    test: 'Exosphere identifies named institutions, agencies, offices, and service systems whose decisions or actions affect mapped elements even when the person does not interact with them directly. CUNY and other named institutions belong here.',
+    test: 'Exosphere identifies named institutions, agencies, offices, and service systems whose decisions or actions affect mapped elements even when the person does not interact with them directly. Keep broader laws, economic conditions, and cultural beliefs for Macrosphere.',
   }),
   macrosphere: Object.freeze({
     items: 'broader laws, policies, economic conditions, and cultural beliefs',
