@@ -1258,7 +1258,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     exosphere: {
       nodes: {
         title: 'Choose the institutions',
-        lede: 'Exosphere includes named institutions, agencies, offices, and service systems whose decisions or actions affect mapped elements even when the person does not interact with them directly. CUNY and other named institutions belong here. Review, rename, remove, or add institutions below.',
+        lede: 'Exosphere includes named institutions, agencies, offices, and service systems whose decisions or actions affect mapped elements even when the person does not interact with them directly. Keep broader laws, economic conditions, and cultural beliefs for Macrosphere. Review, rename, remove, or add institutions below.',
       },
       edges: {
         title: 'Review institutional relationships',

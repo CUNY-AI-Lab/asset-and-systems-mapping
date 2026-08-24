@@ -127,7 +127,7 @@ const SCALE_CONTENT = {
     privacy: 'Use public or appropriately shared evidence. Do not include confidential, identifying, or nonpublic community information.',
     scale_rubric: 'Keep indirect institutions and their decisions distinct from the immediate relationships mapped in Micro and Meso and from the broader structures mapped in Macrosphere.',
     interaction: 'Ask for actual names, exact actions, direction, recipients or eligibility, evidence, and dates. Ask how each outside institution changes what happens in inner layers.',
-    output: 'Return named institution, agency, office, employer, funder, or service-system nodes. Represent funding, eligibility, rule-setting, and service delivery as supported relationships to mapped elements. CUNY and other named institutions belong only in Exosphere.',
+    output: 'Return named institution, agency, office, employer, funder, or service-system nodes. Represent funding, eligibility, rule-setting, and service delivery as supported relationships to mapped elements. Named institutions belong only in Exosphere; broader conditions belong in Macrosphere.',
   },
   macrosphere: {
     purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, and cultural beliefs that affect multiple mapped elements. Named institutions such as CUNY belong in Exosphere.',
