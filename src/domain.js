@@ -325,11 +325,19 @@ export function isDiscreteMicroNodeLabel(value) {
     && !MICRO_NODE_COORDINATED_PEOPLE.test(label));
 }
 
+// A mesosystem label names the interrelation among immediate settings, not an
+// institution, actor, or action. Requiring an explicit relational noun keeps
+// entity-like phrases such as "CUNY administrative systems" from being
+// accepted merely because they contain two words.
+const MESOSYSTEM_RELATION_NOUN = /\b(?:alignment|breakdown|collaboration|communication|conflict|connection|coordination|cooperation|disconnect|exchange|gap|interface|interaction|interrelation|linkage|mesosystem|overlap|pattern|planning|plan|relationship|scheduling|tension|transition)\b/i;
+const MESOSYSTEM_ENTITY_NOUN = /\b(?:administrative systems?|administrators?|agenc(?:y|ies)|bursars?|caregivers?|departments?|employers?|funders?|institutions?|instructors?|offices?|parents?|people|persons?|registrars?|service providers?|students?|supervisors?|teachers?|workers?)\b/i;
+
 export function isMesosystemLabel(value) {
   const label = cleanMicroNodeLabel(value);
   if (!label || normalizeMicroNodeLabel(label) !== label) return false;
   if (/(?:->|→|<-|←)/.test(label)) return false;
-  return label.split(/\s+/).length >= 2;
+  if (isNamedInstitutionLabel(label) || MESOSYSTEM_ENTITY_NOUN.test(label)) return false;
+  return label.split(/\s+/).length >= 2 && MESOSYSTEM_RELATION_NOUN.test(label);
 }
 
 function sentenceRecords(text) {

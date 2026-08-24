@@ -33,7 +33,10 @@ describe('course-setting prompt composition', () => {
     expect(microPrompt).toContain('Preserve a complete official name even when it is long.');
     expect(microPrompt).toContain('Return supported direct connections among proposed or existing Micro nodes');
     expect(mesoPrompt).toContain('Meso returns mesosystem nodes whose scope fields contain two or more exact Micro setting IDs already on the map and an empty connections array.');
-    expect(mesoPrompt).toContain('Each node must use type mesosystem, a neutral noun-phrase label');
+    expect(mesoPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
+    expect(mesoPrompt).toContain('Named universities, employers, offices, agencies, and service systems belong in Exosphere, not Meso.');
+    expect(mesoPrompt).toContain('Each node must use type mesosystem, a neutral noun-phrase label that names the interrelation with a relational noun');
+    expect(mesoPrompt).toContain('Never return an institutional entity as a Meso node.');
     expect(mesoPrompt).toContain('Return an empty connections array.');
   });
 

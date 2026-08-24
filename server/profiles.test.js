@@ -241,11 +241,16 @@ describe('teaching profiles', () => {
 
   it('updates untouched prompt defaults without overwriting instructor-authored module content', () => {
     const legacyMacroPurpose = 'Focus Macro work on agencies, offices, funders, decision-making bodies, laws, beliefs, public narratives, and histories that affect the population.';
+    const previousMesoPurpose = 'Focus Meso work on interrelations among two or more immediate settings already mapped in Micro.';
     const customBuilderPurpose = 'Keep this instructor-authored Exosphere purpose exactly.';
     system.db.prepare(`
       UPDATE prompt_modules SET content = ?, revision = 1, fingerprint = ?
       WHERE id = 'preflight.exosphere.purpose'
     `).run(legacyMacroPurpose, fingerprint(legacyMacroPurpose));
+    system.db.prepare(`
+      UPDATE prompt_modules SET content = ?, revision = 5, fingerprint = ?
+      WHERE id = 'preflight.meso.purpose'
+    `).run(previousMesoPurpose, fingerprint(previousMesoPurpose));
     system.db.prepare(`
       UPDATE prompt_modules SET content = ?, revision = 1, fingerprint = ?
       WHERE id = 'builder.exosphere.purpose'
@@ -254,10 +259,15 @@ describe('teaching profiles', () => {
 
     system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
     const currentDefault = moduleSeeds().find(({ id }) => id === 'preflight.exosphere.purpose');
+    const currentMesoDefault = moduleSeeds().find(({ id }) => id === 'preflight.meso.purpose');
     expect(system.db.prepare(`
       SELECT content, revision, fingerprint FROM prompt_modules
       WHERE id = 'preflight.exosphere.purpose'
     `).get()).toEqual({ content: currentDefault.content, revision: 2, fingerprint: currentDefault.fingerprint });
+    expect(system.db.prepare(`
+      SELECT content, revision, fingerprint FROM prompt_modules
+      WHERE id = 'preflight.meso.purpose'
+    `).get()).toEqual({ content: currentMesoDefault.content, revision: 6, fingerprint: currentMesoDefault.fingerprint });
     expect(system.db.prepare(`
       SELECT content, revision, fingerprint FROM prompt_modules
       WHERE id = 'builder.exosphere.purpose'

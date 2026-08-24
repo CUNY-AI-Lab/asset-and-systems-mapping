@@ -204,8 +204,8 @@ describe('mapping domain', () => {
     [
       'school–clinic information exchange',
       'home–school communication gap',
-      'teacher–parent meeting pattern',
       'work–college coordination breakdown',
+      'Work–online peer support coordination',
       'home–school support plan',
     ].forEach((label) => expect(isMesosystemLabel(label), label).toBe(true));
     [
@@ -214,6 +214,11 @@ describe('mapping domain', () => {
       'School employs Clinic',
       'School and Clinic coordinate care',
       'School → Clinic',
+      'CUNY administrative systems',
+      'CUNY administrative coordination',
+      'Employer institution',
+      'Registrar and bursar coordination',
+      'teacher–parent meeting pattern',
     ].forEach((label) => expect(isMesosystemLabel(label), label).toBe(false));
   });
 

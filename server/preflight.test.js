@@ -428,7 +428,10 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
     expect(firstInput.systemPrompt).toContain('At Meso and Macrosphere, connections MUST be empty');
     expect(firstInput.systemPrompt).toContain('LEVEL TESTS');
-    expect(firstInput.systemPrompt).toContain('Meso identifies an interrelation among two or more of those Micro settings');
+    expect(firstInput.systemPrompt).toContain('Meso identifies only an interrelation among two or more of those Micro settings');
+    expect(firstInput.systemPrompt).toContain('Meso is not another place to add actors, organizations, institutions, or services');
+    expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node.');
+    expect(firstInput.systemPrompt).toContain('Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.');
     expect(firstInput.systemPrompt).toContain('verb MUST be exactly one of: funds, administers, regulates');
     expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
@@ -617,8 +620,8 @@ describe('persistent preflight suggestion review queue', () => {
     expect(evaluation.review.connections).toEqual([]);
     expect(evaluation.review.readiness.ready).toBe(true);
     expect(evaluation.review.guidance[0].point).toBe('Review School and Family as one mesosystem.');
-    expect(evaluation.review.example).toBe('The School and Family settings form one mesosystem.');
-    expect(evaluation.review.readiness.note).toBe('The School and Family mesosystem is supported.');
+    expect(evaluation.review.example).toBeNull();
+    expect(evaluation.review.readiness.note).toBe('The review found 1 possible mesosystem among Micro settings already on the map.');
     expect(JSON.stringify({
       guidance: evaluation.review.guidance,
       example: evaluation.review.example,
@@ -639,6 +642,82 @@ describe('persistent preflight suggestion review queue', () => {
     }, { cookie: studentCookie });
     expect(inappropriate.status).toBe(400);
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps institutions and institutional guidance out of Meso for the CUNY Reddit memo', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [
+          { point: 'Map the CUNY registrar and bursar at the Meso level.' },
+          { point: 'Treat the employer as a Meso-level institution.' },
+        ],
+        nodes: [
+          {
+            label: 'CUNY administrative systems', type: 'mesosystem', scale: 'meso',
+            evidence: 'The memo names graduation processing, billing, and registration.',
+            scope: ['node_reddit', 'node_workplace'],
+          },
+          {
+            label: 'Registrar and bursar coordination', type: 'mesosystem', scale: 'meso',
+            evidence: 'The memo names delayed diplomas and payment plans.',
+            scope: ['node_reddit', 'node_workplace'],
+          },
+          {
+            label: 'Work–online peer support coordination', type: 'mesosystem', scale: 'meso',
+            evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
+            scope: ['node_reddit', 'node_workplace'],
+          },
+        ],
+        connections: [{ source: 'node_reddit', target: 'node_workplace', verb: 'supports', rationale: 'Meso must discard this edge.' }],
+        example: 'The CUNY registrar, bursar, and employer are Meso institutions.',
+        readiness: { ready: true, note: 'Add the registrar, bursar, and employer at Meso.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'meso-cuny-reddit-boundary.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const body = submissionBody({
+      activeScale: 'meso',
+      sourceMaterial: `Brief memo — u/DalekSupreme23
+
+From 2020–2024, this user posted in r/CUNY every calendar year—eight submissions total. They primarily sought peer help navigating CUNY: delayed diplomas, tuition payment plans, COVID testing, course scheduling, instructors, and registration.
+
+Overall, the posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.`,
+      carriedNodes: [
+        { id: 'node_reddit', label: 'r/CUNY', type: 'setting', scale: 'micro' },
+        { id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' },
+      ],
+    });
+    const evaluation = await evaluate(studentCookie, body);
+
+    const systemPrompt = ollamaRequest.mock.calls[0][0].systemPrompt;
+    expect(systemPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
+    expect(systemPrompt).toContain('Named universities, employers, offices, agencies, and service systems belong in Exosphere, not Meso.');
+    expect(evaluation.review.nodes).toEqual([{
+      label: 'Work–online peer support coordination',
+      type: 'mesosystem',
+      scale: 'meso',
+      evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
+      scope: [
+        { id: 'node_reddit', label: 'r/CUNY' },
+        { id: 'node_workplace', label: 'Workplace' },
+      ],
+    }]);
+    expect(evaluation.review.connections).toEqual([]);
+    expect(evaluation.review.guidance).toEqual([{ point: 'Review r/CUNY and Workplace as one mesosystem.' }]);
+    expect(evaluation.review.example).toBeNull();
+    expect(evaluation.review.readiness).toEqual({
+      ready: true,
+      note: 'The review found 1 possible mesosystem among Micro settings already on the map.',
+    });
+    expect(JSON.stringify(evaluation.review)).not.toMatch(/Meso-level institution|add the registrar|CUNY administrative systems|Registrar and bursar coordination/);
   });
 
   it('lets Exosphere reviews tie new institutions to carried map nodes without re-proposing them', async () => {
