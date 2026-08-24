@@ -118,7 +118,7 @@ describe('hardened Systems Mapping server', () => {
 
     const replay = await postJson(system.app, '/api/auth/reset-password', { token, passphrase: 'another valid teacher phrase' });
     expect(replay.status).toBe(401);
-    expect(await json(replay)).toEqual({ error: 'This password reset link is invalid or has expired.' });
+    expect(await json(replay)).toEqual({ error: 'This password reset link is invalid or has expired. Ask the course administrator for a new link.' });
 
     const oldLogin = await postJson(system.app, '/api/auth/login', { userId: 'zach-muhlbauer', passphrase: TEACHER_PASSPHRASE });
     expect(oldLogin.status).toBe(401);
@@ -457,7 +457,7 @@ describe('hardened Systems Mapping server', () => {
       userId: 'zach-muhlbauer', passphrase: 'a different local phrase', bootstrapToken: BOOTSTRAP_TOKEN,
     });
     expect(duplicate.status).toBe(503);
-    expect(await json(duplicate)).toEqual({ error: 'Teacher account claim is unavailable.' });
+    expect(await json(duplicate)).toEqual({ error: 'Teacher account setup is unavailable. Ask the course administrator for a new one-time setup code.' });
     expect(await json(await request(system.app, '/api/auth/accounts')))
       .toEqual({
         teacherAccess: { mode: 'manual', claimEnabled: false },

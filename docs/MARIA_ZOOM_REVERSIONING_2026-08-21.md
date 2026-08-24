@@ -1,5 +1,7 @@
 # Maria Zoom reversioning decisions — 2026-08-21
 
+> **Superseded in part on 2026-08-24.** This file preserves the implementation interpretation made from the supplied Zoom summary. The later direct decision recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md` replaces every node-only Micro rule and every rule that assigns generic relationship edges or verbs to Meso. Under the current contract, Micro includes direct relationships and their verbs; Meso contains noun-labeled linkages among at least two carried Micro settings. The four level names, their order, ecological filters, and the other compatible decisions below remain in force.
+
 ## Source and authority
 
 This record summarizes the Zoom material supplied for the Systems Mapping redesign on 2026-08-21. It is the implementation reference for the reversioned ecological-systems progression.

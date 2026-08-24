@@ -1044,7 +1044,7 @@ label.button:focus-within {
 .graph-node .node-selection-ring { fill: none; stroke: var(--teal); stroke-width: 4; filter: none; }
 .graph-node.is-selected .node-card { fill: #fff; stroke: var(--scale-accent, var(--ink)); }
 .graph-node.is-selected .node-label, .graph-node.is-selected .node-type, .graph-node.is-selected .node-evidence { fill: var(--ink); }
-.node-label { fill: var(--ink); font-size: 14px; font-weight: 750; text-anchor: middle; }
+.node-label { fill: var(--ink); font-size: 16px; font-weight: 750; text-anchor: middle; }
 .node-type { fill: var(--muted); font-size: 7.5px; text-anchor: middle; text-transform: none; }
 .node-evidence { fill: var(--ink); font: 800 8px ui-monospace, monospace; text-anchor: middle; }
 .graph-edge { cursor: pointer; }
@@ -1492,3 +1492,5 @@ body.map-fullscreen-open { overflow: hidden; }
 .scope-field { fill: var(--plum); stroke: var(--plum); opacity: .12; stroke-width: 300; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
 .scope-field.is-selected { opacity: .2; }
 .scope-field.is-muted { opacity: .06; }
+.meso-link-line { stroke: var(--meso); stroke-width: 3; stroke-dasharray: 9 7; opacity: .7; pointer-events: none; }
+.meso-link-line.is-muted { opacity: .28; }

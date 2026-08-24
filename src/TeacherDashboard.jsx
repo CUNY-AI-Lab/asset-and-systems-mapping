@@ -34,8 +34,17 @@ function formatHistoryTime(value) {
 
 function profileStatusLabel(status) {
   if (status === 'active') return 'published';
-  if (status === 'retired') return 'earlier';
+  if (status === 'retired') return 'previous';
   return status;
+}
+
+function eventActionLabel(action) {
+  return ({
+    created: 'Draft created',
+    updated: 'Draft saved',
+    published: 'Published',
+    retired: 'Replaced by a newer version',
+  })[action] || action;
 }
 
 function scaleLabel(scale) {
@@ -50,8 +59,12 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'preflight',
       activeDetail: scale === 'micro'
-        ? 'The model uses these settings to identify possible Micro nodes.'
-        : 'The model uses these settings when it reviews the memo.',
+        ? 'The model uses this section\'s guidance and course material to suggest Micro nodes and direct relationships from the memo.'
+        : scale === 'meso'
+          ? 'The model uses this section\'s guidance and course material to suggest mesosystems that include at least two Micro settings.'
+          : scale === 'exosphere'
+            ? 'The model uses this section\'s guidance and course material to suggest Exosphere nodes and connections to mapped elements.'
+            : 'The model uses this section\'s guidance and course material to suggest Macrosphere items and the mapped elements affected by each item.',
     };
   }
   if (stageId === 'choose-what-to-map') {
@@ -59,16 +72,18 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'builder',
       activeDetail: scale === 'micro'
-        ? 'The model uses these settings when students reread the memo for new node suggestions.'
+        ? 'The model uses this section\'s guidance and course material when students request more Micro nodes or direct relationships from the memo.'
         : scale === 'meso'
-          ? 'The model uses these settings when students reread the memo or ask for connection suggestions.'
-          : 'The model uses these settings when students reread the memo or ask for node and connection suggestions.',
+          ? 'The model uses this section\'s guidance and course material when students request mesosystems that include at least two Micro settings.'
+          : scale === 'exosphere'
+            ? 'The model uses this section\'s guidance and course material when students request more Exosphere nodes or connections to mapped elements.'
+            : 'The model uses this section\'s guidance and course material when students request more Macrosphere items or change which mapped elements they affect.',
     };
   }
   return {
     active: false,
     configKind: 'preflight',
-    inactiveDetail: 'No model request runs here. Changes are saved for course planning.',
+    inactiveDetail: 'The application does not call the model in this section.',
   };
 }
 
@@ -76,7 +91,7 @@ function runtimeEffect(runtime, stageId, scale) {
   const stageUse = stageModelUse(stageId, scale);
   if (!stageUse.active) {
     return {
-      label: 'Course note only in this section.',
+      label: 'Course settings are saved but not sent to the model.',
       detail: stageUse.inactiveDetail,
     };
   }
@@ -87,8 +102,8 @@ function runtimeEffect(runtime, stageId, scale) {
     };
   }
   return {
-    label: 'Offline review is active.',
-    detail: 'These settings are saved, but offline suggestions do not use them.',
+    label: 'Built-in suggestions are active.',
+    detail: 'The console saves this section\'s guidance and course material, but built-in suggestions do not use them.',
   };
 }
 
@@ -151,7 +166,7 @@ function SuggestionReview({ suggestion }) {
   const hard = Array.isArray(suggestion?.hard) ? suggestion.hard : [];
   const scored = Array.isArray(suggestion?.scored) ? suggestion.scored : [];
   const criteria = [...hard, ...scored];
-  if (!suggestion || (!currentReview && !criteria.length)) return <p className="empty-message">No guidance was submitted.</p>;
+  if (!suggestion || (!currentReview && !criteria.length)) return <p className="empty-message">No review details are available.</p>;
 
   const legacyEvidence = uniqueValues(criteria.flatMap((criterion) => [criterion.evidence, criterion.evidenceExcerpt, criterion.evidenceLocator]));
   const legacyFollowUp = uniqueValues(criteria.flatMap((criterion) => [criterion.rationale, criterion.nextAction]));
@@ -169,7 +184,12 @@ function SuggestionReview({ suggestion }) {
     : legacyEvidence;
   const mapIdeas = currentReview
     ? uniqueValues([
-      ...nodes.map((node) => node?.label),
+      ...nodes.map((node) => {
+        const scopeLabels = (Array.isArray(node?.scope) ? node.scope : []).map((member) => readableValue(member?.label || member?.id)).filter(Boolean);
+        if (node?.scale === 'meso' && scopeLabels.length) return `${readableValue(node.label)} includes ${scopeLabels.join('; ')}`;
+        if (node?.scale === 'macrosphere' && scopeLabels.length) return `${readableValue(node.label)} ${readableValue(node.deontic) || 'affects'} ${scopeLabels.join('; ')}`;
+        return node?.label;
+      }),
       ...connections.map((connection) => `${readableValue(connection?.sourceLabel || connection?.source)} ${readableValue(connection?.verb)} ${readableValue(connection?.targetLabel || connection?.target)}`),
     ])
     : legacyFollowUp;
@@ -185,11 +205,11 @@ function SuggestionReview({ suggestion }) {
   return <details className="teacher-model-review">
     <summary>Review details</summary>
     <div className="teacher-model-review__body">
-      <p className="teacher-model-review__note">Use these details as reference. You decide what the student should revisit.</p>
+      <p className="teacher-model-review__note">You decide which suggestions the student should examine next.</p>
       <div className="suggestion-review">
-        {annotation(currentReview ? 'Memo evidence' : 'Evidence excerpts', evidence, 'No supporting memo passage was recorded.')}
-        {annotation(currentReview ? 'Map ideas' : 'Possible follow-up', mapIdeas, 'No map item was suggested.')}
-        {annotation(currentReview ? 'Questions to consider' : 'Open questions', questions, 'No question was suggested.')}
+        {annotation(currentReview ? 'Memo evidence' : 'Evidence excerpts', evidence, 'The review did not cite a memo passage.')}
+        {annotation(currentReview ? 'Map ideas' : 'Possible next step', mapIdeas, 'The review did not suggest a map item.')}
+        {annotation(currentReview ? 'Questions to consider' : 'Open questions', questions, 'The review did not suggest a question.')}
       </div>
     </div>
   </details>;
@@ -215,7 +235,7 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
     const userId = accountId.trim();
     if (!userId) return setMessage({ type: 'error', text: 'Enter the teacher account ID.' });
     if (passphrase.length < 10) return setMessage({ type: 'error', text: 'Use a passphrase with at least 10 characters.' });
-    if (mode === 'claim' && !teacherAccess.claimEnabled) return setMessage({ type: 'error', text: 'Teacher account claiming is disabled for this server start.' });
+    if (mode === 'claim' && !teacherAccess.claimEnabled) return setMessage({ type: 'error', text: 'Teacher account setup is unavailable. Ask the course administrator to restart the course server with a one-time setup code.' });
     if (mode === 'claim' && passphrase !== confirmation) return setMessage({ type: 'error', text: 'The two passphrases do not match.' });
     if (mode === 'claim' && !bootstrapToken) return setMessage({ type: 'error', text: 'Enter the one-time setup code.' });
     setBusy(true);
@@ -248,18 +268,18 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
   return <div className="teacher-access">
     <p className="eyebrow">Teacher Console</p>
     <h1>{mode === 'login' ? 'Sign in to Teacher Console' : 'Set up a teacher account'}</h1>
-    <p className="lede">Use the account ID provided by your school or program.</p>
+    <p className="lede">Enter the account ID provided by your school or program.</p>
     <div className="model-switch teacher-access-switch" role="tablist" aria-label="Teacher Console action">
       <button ref={(node) => node ? accessTabRefs.current.set('login', node) : accessTabRefs.current.delete('login')} id="teacher-access-tab-login" aria-controls="teacher-access-panel" type="button" role="tab" aria-selected={mode === 'login'} tabIndex={mode === 'login' ? 0 : -1} className={mode === 'login' ? 'is-active' : ''} onKeyDown={(event) => moveMode(event, 'login')} onClick={() => setMode('login')}>Sign in</button>
-      <button ref={(node) => node ? accessTabRefs.current.set('claim', node) : accessTabRefs.current.delete('claim')} id="teacher-access-tab-claim" aria-controls="teacher-access-panel" type="button" role="tab" aria-selected={mode === 'claim'} tabIndex={mode === 'claim' ? 0 : -1} className={mode === 'claim' ? 'is-active' : ''} disabled={!teacherAccess.claimEnabled} onKeyDown={(event) => moveMode(event, 'claim')} onClick={() => setMode('claim')}>Claim account</button>
+      <button ref={(node) => node ? accessTabRefs.current.set('claim', node) : accessTabRefs.current.delete('claim')} id="teacher-access-tab-claim" aria-controls="teacher-access-panel" type="button" role="tab" aria-selected={mode === 'claim'} tabIndex={mode === 'claim' ? 0 : -1} className={mode === 'claim' ? 'is-active' : ''} disabled={!teacherAccess.claimEnabled} onKeyDown={(event) => moveMode(event, 'claim')} onClick={() => setMode('claim')}>Set up account</button>
     </div>
-    {!teacherAccess.claimEnabled && <p className="teacher-message">Account setup is currently unavailable. To set up an unclaimed account, restart the service with a temporary setup code. Do not save that code in the project files or browser.</p>}
+    {!teacherAccess.claimEnabled && <p className="teacher-message">Teacher account setup is unavailable. Ask the course administrator to restart the course server with a one-time setup code. Do not save the code in project files or the browser.</p>}
     <form className="access-form" id="teacher-access-panel" role="tabpanel" aria-labelledby={`teacher-access-tab-${mode}`} onSubmit={submit}>
       <label className="field"><span className="field__label">Teacher account ID</span><input maxLength="100" autoComplete="username" value={accountId} onChange={(event) => setAccountId(event.target.value)} /></label>
       <label className="field"><span className="field__label">Passphrase</span><input maxLength="128" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={passphrase} onChange={(event) => setPassphrase(event.target.value)} /></label>
       {mode === 'claim' && <><label className="field"><span className="field__label">Confirm passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label><label className="field"><span className="field__label">One-time setup code</span><input maxLength="256" type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label></>}
       <Message message={message} />
-      <button type="submit" className="button" disabled={busy}>{busy ? 'Working…' : mode === 'login' ? 'Sign in' : 'Claim account'}</button>
+      <button type="submit" className="button" disabled={busy}>{busy ? mode === 'login' ? 'Signing in…' : 'Setting up account…' : mode === 'login' ? 'Sign in' : 'Set up account'}</button>
     </form>
   </div>;
 }
@@ -289,7 +309,7 @@ function PasswordReset({ token, onComplete }) {
   return <div className="teacher-access">
     <p className="eyebrow">Teacher Console</p>
     <h1>Choose a new passphrase</h1>
-    <p className="lede">This link works once. After you save the new passphrase, sign in with your teacher account ID.</p>
+    <p className="lede">This password reset link can be used once. After you save the new passphrase, sign in with your teacher account ID.</p>
     <form className="access-form" onSubmit={submit}>
       <label className="field"><span className="field__label">New passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} /></label>
       <label className="field"><span className="field__label">Confirm new passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
@@ -370,7 +390,7 @@ function ReviewSubmissions() {
     const annotation = instructorAnnotation.trim();
     const question = focusedQuestion.trim();
     if (!decision) return setMessage({ type: 'error', text: 'Choose a feedback type.' });
-    if (!annotation) return setMessage({ type: 'error', text: 'Add a focus for the student before recording feedback.' });
+    if (!annotation) return setMessage({ type: 'error', text: 'Write feedback for the student before recording it.' });
     if (decision === 'revise_and_approve' && !question) return setMessage({ type: 'error', text: 'Add a question for the student before recording this feedback.' });
     setBusy(true);
     setMessage(null);
@@ -387,7 +407,7 @@ function ReviewSubmissions() {
       });
       const events = Array.isArray(result.reviewEvents) ? result.reviewEvents : [];
       setLastDecision({ submission: result.submission, events });
-      setMessage({ type: 'success', text: 'Feedback recorded. The pending queue has been refreshed.' });
+      setMessage({ type: 'success', text: 'Feedback recorded. The submission is no longer waiting for review.' });
       setDecision('');
       setInstructorAnnotation('');
       setFocusedQuestion('');
@@ -396,7 +416,7 @@ function ReviewSubmissions() {
       if (error instanceof ApiError && error.status === 409) {
         const current = error.payload?.details?.current;
         setConflict(current || true);
-        setMessage({ type: 'error', text: 'This submission changed in another session. Your feedback draft remains available.' });
+        setMessage({ type: 'error', text: 'Another session changed this submission after you opened it. Your feedback remains in the form.' });
       } else {
         setMessage({ type: 'error', text: error.message });
       }
@@ -411,10 +431,10 @@ function ReviewSubmissions() {
       setDetail(current);
       if (Array.isArray(conflict.reviewEvents)) setReviewHistory(conflict.reviewEvents);
       setConflict(null);
-      setMessage({ type: 'success', text: `Loaded submission revision ${current.revision}. Your feedback draft remains available.` });
+      setMessage({ type: 'success', text: `Loaded submission revision ${current.revision}. Your feedback remains in the form.` });
     } else {
       setConflict(null);
-      setMessage({ type: 'error', text: 'The current submission could not be loaded. Refresh the queue and try again.' });
+      setMessage({ type: 'error', text: 'The console could not load the current submission. Select Refresh, then try again.' });
     }
   };
 
@@ -444,25 +464,25 @@ function ReviewSubmissions() {
         <h2 id="student-work-heading">Student work</h2>
         {detailLoading && <p className="empty-message">Loading student work…</p>}
         {detailError && <p className="teacher-message teacher-message--error" role="alert">{detailError}</p>}
-        {!detailLoading && !detail && !detailError && <p className="empty-message">Choose a pending submission to review its details.</p>}
+        {!detailLoading && !detail && !detailError && <p className="empty-message">Choose a submission from Waiting for review.</p>}
         {detail && <div className="student-work__body">
           <p className="eyebrow">{submissionContextLabel(detail)}</p>
           {readableValue(detail.projectMetadata?.participantName) ? <section><h3>Student or group</h3><p>{readableValue(detail.projectMetadata.participantName)}</p></section> : null}
-          {detail.inquiry ? <section><h3>Question from earlier work</h3><p>{detail.inquiry}</p></section> : null}
+          {detail.inquiry ? <section><h3>Question from the student's earlier work</h3><p>{detail.inquiry}</p></section> : null}
           <section><h3>Memo</h3><p className="student-work__memo">{readableValue(detail.sourceMaterial) || 'No memo was submitted.'}</p><SuggestionReview suggestion={detail.suggestion} /></section>
           <section><h3>Student note</h3><p>{readableValue(detail.studentAnnotation) || 'No student note was submitted.'}</p></section>
         </div>}
       </section>
 
       <aside className="instructor-response" aria-labelledby="instructor-response-heading">
-        <h2 id="instructor-response-heading">Write to the student.</h2>
+        <h2 id="instructor-response-heading">Write to the student</h2>
         {detail ? <form onSubmit={submitDecision}>
-          <p className="instructor-response__prompt">Name one focus for the student. Students can continue while feedback is pending and decide how to use your response.</p>
-          <label className="field instructor-response__guidance"><span className="field__label">Focus for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
+          <p className="instructor-response__prompt">Give the student one point to consider next. They can continue working while feedback is pending and decide how to use your response.</p>
+          <label className="field instructor-response__guidance"><span className="field__label">Feedback for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
           <fieldset className="review-decision"><legend>Feedback type</legend><div className="review-decision__actions">{REVIEW_DECISIONS.map((item) => <button key={item.id} type="button" aria-pressed={decision === item.id} className={decision === item.id ? 'is-selected' : ''} onClick={() => { setDecision(item.id); setMessage(null); }}>{item.label}</button>)}</div></fieldset>
           {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Question for the student</span><textarea rows="5" maxLength="1000" value={focusedQuestion} onChange={(event) => setFocusedQuestion(event.target.value)} /></label>}
           <Message message={message} />
-          {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Submission conflict actions"><p>The server has a newer revision. Reload it before submitting the preserved draft again.</p><button type="button" className="button button--ghost" onClick={reloadConflict}>Reload current submission</button></div>}
+          {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Submission conflict actions"><p>Select Reload current submission to review the newer version. Your feedback will remain in the form.</p><button type="button" className="button button--ghost" onClick={reloadConflict}>Reload current submission</button></div>}
           <button type="submit" className="button" disabled={busy}>{busy ? 'Recording…' : 'Record feedback'}</button>
         </form> : <Message message={message} />}
         <DecisionHistory events={reviewHistory} />
@@ -600,7 +620,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
       if (current) {
         setConflict(current);
-        setMessage({ type: 'error', text: 'This draft changed in another session. Your unsaved text remains in the editor.' });
+        setMessage({ type: 'error', text: 'Another session saved a newer revision of this draft. Your unsaved text remains in the editor.' });
       } else setMessage({ type: 'error', text: error.message });
     } finally { setBusy(false); }
   };
@@ -632,7 +652,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
     } catch (error) {
       const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
       if (current) setConflict(current);
-      setMessage({ type: 'error', text: current ? 'This draft changed before publication. Your unsaved text remains in the editor.' : error.message });
+      setMessage({ type: 'error', text: current ? 'Another session saved a newer revision before publication. Your unsaved text remains in the editor.' : error.message });
     } finally { setBusy(false); }
   };
 
@@ -659,11 +679,11 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const stageUse = stageModelUse(selectedStageId, previewScale);
   const runtime = runtimeEffect(catalog?.runtime, selectedStageId, previewScale);
   return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
-    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Adapt guidance and course material for this exercise and its relationship to the broader course.</p></div></div>
+    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Set guidance and course material for each section of the exercise.</p></div></div>
     <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
     <Message message={message} />
     <details className="teacher-history teaching-profile-versioning">
-      <summary>Version and history</summary>
+      <summary>Versions and change history</summary>
       <div className="teacher-controls teaching-profile-controls">
         <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
         <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button>
@@ -673,29 +693,29 @@ function TeachingProfiles({ onConfigurationChanged }) {
         <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
         <button type="submit" className="button" disabled={busy}>Create draft</button>
       </form>}
-      {detail && draft && <label className="field"><span className="field__label">Name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
-      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{event.action}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
+      {detail && draft && <label className="field"><span className="field__label">Version name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
+      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{eventActionLabel(event.action)}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
     </details>
     {detail && draft && <div className="teacher-workbench teaching-profile-workbench">
       <div className="teaching-profile-editor">
         <div className="section-heading"><div><h3>{detail.name}</h3></div></div>
-        <p className="field__hint">Adjust one section at a time as the course, assignment, or class session changes.</p>
+        <p className="field__hint">Edit the guidance and course material for one section at a time.</p>
         {selectedPart ? <>
           <div className="teacher-controls teaching-profile-controls" role="group" aria-label="Course section">
             <label><span>Part</span><select aria-label="Part" value={selectedPart.id} onChange={(event) => selectPart(event.target.value)}>{profileParts.map((part) => <option key={part.id} value={part.id}>{part.label}</option>)}</select></label>
             <label><span>Section</span><select aria-label="Section" value={selectedStageId} onChange={(event) => { setSelectedStageId(event.target.value); setPreview(null); }}>{SYSTEMS_MAPPING_STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label>
           </div>
-          <p className="field__hint">This guidance applies to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
-        </> : <p className="teacher-message teacher-message--error" role="alert">This course settings version does not include any parts.</p>}
+          <p className="field__hint">Guidance and course material for this section apply to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
+        </> : <p className="teacher-message teacher-message--error" role="alert">The selected version has no course parts.</p>}
         {selectedPart && <section className="course-stage-editor" aria-labelledby={`course-stage-heading-${selectedStage.id}`}>
           <div><h4 id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.label}</h4><p>{selectedStage.description}</p></div>
-          <label className="field"><span className="field__label">What guidance should students receive in this section?</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
-          <label className="field"><span className="field__label">What course material should support this section?</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
-          <p className="field__hint">Paste a passage or other text for this section.</p>
+          <label className="field"><span className="field__label">Instructor guidance for this section</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
+          <label className="field"><span className="field__label">Course material for this section</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
+          <p className="field__hint">Paste the relevant course passage or reference text.</p>
         </section>}
         {editable && <label className="field"><span className="field__label">Change note</span><input maxLength="500" value={note} onChange={(event) => setNote(event.target.value)} /></label>}
         {dirty && <p className="field__hint">Save this draft before previewing or publishing it.</p>}
-        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>Loading the server revision will replace the draft currently visible above.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
+        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>Select Load server revision {conflict.revision} only if you want to replace the unsaved draft shown in the editor.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
         <div className="teacher-actions">
           {editable && <button type="button" className="button button--secondary" disabled={busy || !dirty} onClick={saveDraft}>Save draft</button>}
           {editable && <button type="button" className="button" disabled={busy || dirty} onClick={publish}>Publish draft</button>}
@@ -705,8 +725,8 @@ function TeachingProfiles({ onConfigurationChanged }) {
         <h3>Preview this section</h3>
         <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${scaleLabel(previewScale)} · ${selectedStage.label}` : ''}</p>
         {selectedPart && <label className="field"><span className="field__label">Preview level</span><select aria-label="Preview level" value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{selectedPart.scaleIds.map((scale) => <option key={scale} value={scale}>{scaleLabel(scale)}</option>)}</select></label>}
-        <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Check saved version</button>
-        {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Guidance</strong><p>{preview.guidance || 'No guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
+        <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Preview saved section</button>
+        {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Instructor guidance</strong><p>{preview.guidance || 'No instructor guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
       </aside>
     </div>}
   </section>;
@@ -729,7 +749,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged }) {
     sectionTabRefs.current.get(next.id)?.focus();
   };
   return <div className="teacher-dashboard">
-    <div className="teacher-dashboard__title"><div><p className="eyebrow">Instructor tools</p><h1>Teacher Console</h1><p className="lede">Review student work and provide feedback to help them refine and develop first drafts of their systems map.</p></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
+    <div className="teacher-dashboard__title"><div><p className="eyebrow">Instructor tools</p><h1>Teacher Console</h1><p className="lede">Review student work and give students feedback on their draft maps.</p></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
@@ -757,6 +777,6 @@ export default function TeacherDashboard({ onConfigurationChanged, resetToken = 
   };
   if (resetToken) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
   if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Teacher Console…</p></div>;
-  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>The Teacher Console is unavailable.</h1><p className="lede">{fatal}. Check the course server, then reopen the console.</p></div>;
+  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>The Teacher Console is unavailable</h1><p className="lede">Check the course server, then reopen the Teacher Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
   return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
 }

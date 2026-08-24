@@ -1,10 +1,23 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 
-## 2026-08-23 outer-ring grammars candidate
+## 2026-08-24 Micro/Meso correction
 
-Design authority: the "Outer Rings" research memo (EST codification + mapping-practice grammars). Each ring gets its own representational act: Micro names, Meso links, Exosphere anchors institutions behind the map, Macrosphere shades scopes.
+Current authority: the direct decision recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md`. Micro owns discrete elements and the verbs for their direct, within-setting relationships. Meso names a mesosystem formed by the interrelation of at least two carried Micro settings and never stores a relationship proposition or verb-bearing edge. The earlier “Micro nodes only / Meso first connections” interpretation is historical.
+
+- [x] Record the corrected definition, its Bronfenbrenner basis, and the provenance of the superseded interpretation without erasing the earlier record.
+- [ ] Verify that Micro model and deterministic reviews can return discrete nodes and valid direct relationships, and that whole clauses cannot become node labels.
+- [ ] Verify that Micro relationships keep `scale: "micro"` through student decisions, map filtering, revision, export, and replay.
+- [ ] Verify that every Meso candidate is a noun-labeled `mesosystem` node scoped to at least two eligible carried Micro settings and that Meso returns, stores, and renders no relationship edge or verb.
+- [ ] Verify that legacy Meso verb edges return to Micro as research leads requiring student review, without invented scopes or silent confirmation.
+- [ ] Run the complete UI/domain/server suites, fresh PostgreSQL integration, production build, dependency audit, leakage scan, and `git diff --check` against the corrected contract.
+- [ ] Run the complete source-built browser journey at desktop and phone sizes, including Micro relationship decisions, Meso linkage scope decisions, filtering, full-screen, pan, zoom, revision/export, and Teacher Console customization.
+- [ ] Commit, push, deploy the corrected tree to Railway, wait for terminal `SUCCESS`, and verify migration, health, access boundaries, exact live assets, logs, and fabricated-memo provider behavior.
+
+## Historical 2026-08-23 outer-ring grammars candidate
+
+This section records a superseded candidate. It attributed design authority to an “Outer Rings” research memo without a source citation and does not govern the current contract. Its checked items and receipts remain provenance only.
 
 - [x] Codify the level delimiters as testable rules: participation tests in the model contract (LEVEL TESTS block), one-line test copy on every Review screen, and per-level candidate ledes (never-in-the-room test at Exosphere; pattern-with-no-door test at Macrosphere).
 - [x] Close the outer-level verb registers: `SCALE_VERB_LEXICONS` (institutional at Exosphere, deontic at Macrosphere) injected into the model contract, enforced with alias coercion in `normalizeMemoReview` at generation time, surfaced as selects in the UI, and passed through untouched on stored-review replay. Arbitrary off-register verbs can no longer appear at any level.
@@ -23,7 +36,9 @@ Design authority: the "Outer Rings" research memo (EST codification + mapping-pr
 
 Known limitation: under the deterministic (offline) runtime, outer-level reviews can re-surface extractor object-phrases the student already rejected at Micro, because rejected candidates leave no durable record. The production DeepSeek runtime is governed by the new contract instead; a rejected-label memory is a candidate follow-up.
 
-## 2026-08-22 concreteness, progression, and map-legibility candidate
+## Historical 2026-08-22 concreteness, progression, and map-legibility candidate
+
+This section records the superseded node-only Micro/generic-edge Meso candidate. Its checked items and receipts do not verify the 2026-08-24 correction.
 
 - [x] Enforce the discrete-noun-phrase node rule at every level: clause, theme, and outcome labels are rejected at Micro, Exosphere, and Macrosphere alike, while verb-shaped final words in institutional names ("City Adult Literacy Fund", "Department of Public Works") survive.
 - [x] Make the model selective instead of exhaustive: per-level review ceilings (Micro 10 nodes; Meso 8 connections; Exosphere/Macrosphere 8 new nodes and 6 connections), prompt instructions to prefer fewer well-evidenced items, and a 4-item guidance cap.
@@ -42,7 +57,9 @@ Known limitation: under the deterministic (offline) runtime, outer-level reviews
 - [x] Merge PR #11 into GitHub `main`.
   - Evidence: merged 2026-08-23 as merge commit `11d228a`, ahead of PR #12.
 
-## 2026-08-22 map progression and canvas candidate
+## Historical 2026-08-22 map progression and canvas candidate
+
+This section records the superseded node-only Micro/generic-edge Meso candidate. Its viewport receipts remain useful, but its Micro/Meso behavior is not current.
 
 - [x] Keep the Micro revise-and-export projection node-only while preserving the complete cumulative graph in full export.
 - [x] Advance completion in order from Micro to Meso to Exosphere to Macrosphere; completing Macrosphere starts another Macrosphere cycle.
@@ -56,7 +73,9 @@ Known limitation: under the deterministic (offline) runtime, outer-level reviews
 
 This section records local implementation and browser verification only. It does not inherit the GitHub, Railway, hosted-readback, or provider receipts of the 2026-08-21 ecological release below.
 
-## 2026-08-21 ecological-level candidate
+## Historical 2026-08-21 ecological-level candidate
+
+This section records the release that introduced the four current level names and the now-superseded node-only Micro/generic-edge Meso behavior.
 
 - [x] Use four analytical levels: Micro and Meso in Part 1; Exosphere and Macrosphere in Part 2.
 - [x] Enforce Micro as nodes only and Meso as connections only among the exact carried Micro node IDs, with no new Meso nodes.
@@ -77,7 +96,7 @@ This section records local implementation and browser verification only. It does
 - [x] Run a live model-provider acceptance after the server reports an enabled provider runtime.
   - Evidence: `ollama-cloud` using `deepseek-v4-flash:0731` returned HTTP 201 and schema-valid fabricated East Harlem reviews for all four levels. Micro returned 7 nodes/0 connections; Meso returned 0 nodes/6 exact-carried-ID connections; Exosphere returned 11/5; Macrosphere returned 8/1. The connection-suggestion route returned 6 exact-ID relationships. Provider-failure log searches and HTTP 5xx both returned zero.
 
-## 2026-08-19 memo review redesign
+## Historical 2026-08-19 memo review redesign
 
 This redesign supersedes the earlier "student-safe redirects" contract. Items in later historical sections that describe at-most-three `{action, evidenceExcerpt}` records, unmet-criteria filtering, a student note for instructor review, or memo edits retiring map items describe the pre-redesign behavior and are retained only as provenance.
 
@@ -95,12 +114,12 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
 
 ## Implemented contract
 
-- [x] Use five direct, verb-led stages throughout: add your memo, review your memo, choose nodes and describe connections, build map, and revise and export.
+- [x] Use five direct stages throughout: add your memo, review your memo, choose map elements, build map, and revise and export.
   - Evidence: current `src/App.jsx`, canonical-stage UI regression, and server prototype-stage contract.
 - [x] Keep the model's full criteria, scores, outcomes, and taxonomy out of the student workflow.
   - Evidence: the student evaluation response contains bounded `review` fields only: `guidance`, `nodes`, `connections`, `example`, and `readiness`. It excludes criteria, scores, prompt text, guardrails, fingerprints, and provider-only output.
 - [x] Ground guidance and suggestions in the memo without adding them automatically.
-  - Evidence: Micro returns nodes only; Meso returns no nodes and may connect only exact carried Micro IDs; every candidate still requires an explicit student decision.
+  - Current contract: Micro may return discrete nodes and direct relationships; Meso may return only noun-labeled setting linkages with at least two carried Micro setting IDs and zero relationship edges. Every candidate still requires an explicit student decision. Current verification is tracked in the 2026-08-24 section above.
 - [x] Make suggestion generation server-authoritative.
   - Evidence: the client sends bounded project details and memo text to `POST /api/preflight/evaluations`; the server selects the effective configuration, validates the level-specific result, and returns the bounded review with sanitized runtime metadata.
 - [x] Keep the retained instructor-review API non-gating and separate from the current student UI.
@@ -181,11 +200,12 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
 
 - [ ] Revoke the credential previously exposed in chat and create a fresh key.
 - [ ] Configure only the rotated key as server-side `OLLAMA_API_KEY`; leave it out of source, browser storage, build output, logs, and exports.
-- [x] Enable Ollama Cloud explicitly and run an acceptance test using fabricated memo text. Provider/model disclosure, valid level-specific schema receipts, exact Meso IDs, and no deterministic fallback were verified live; size rejection and generic failure handling remain covered by automated tests rather than induced against production.
+- [x] Preserve the earlier Ollama Cloud acceptance as historical evidence. Provider/model disclosure, the then-current level schemas, exact carried IDs, and no deterministic fallback were verified live; the run used the superseded node-only Micro/generic-edge Meso contract.
+- [ ] Repeat fabricated-memo Ollama Cloud acceptance for Micro relationships and Meso scoped linkages after the corrected deployment reaches terminal success.
 - [ ] Confirm through the credential owner that the enabled Railway key is the rotated replacement. Live provider requests succeeded, but this verification did not inspect or expose the key value or its rotation history.
 
 ## Release boundary
 
-PR #9, merge commit `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`, and Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` are the current ecological-release receipts. PR #5, commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, Railway deployment `39d38543-20ca-4626-95e6-237ef9213881`, and dirty-working-tree deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remain historical receipts for the preceding Macro/Integration implementation. Credential rotation confirmation and any authenticated production Teacher Console mutation remain separate operator checks; neither blocks the verified student progression and provider release recorded here.
+PR #9, merge commit `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`, and Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` are historical ecological-release receipts for the superseded Micro/Meso contract. PR #5, commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, Railway deployment `39d38543-20ca-4626-95e6-237ef9213881`, and dirty-working-tree deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remain historical receipts for the preceding Macro/Integration implementation. No GitHub, Railway, source-built browser, or live-provider receipt establishes the 2026-08-24 correction yet.
 
-The authority order remains in `docs/SOURCE_LEDGER.md`: the fuller Drive specification governs behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; direct user decisions supersede earlier visual/product choices; and STEM Splitter is an architecture precedent rather than subject-matter authority.
+The authority order remains in `docs/SOURCE_LEDGER.md`: the direct 2026-08-24 correction governs the Micro/Meso boundary; the 2026-08-21 Zoom material governs compatible level names, order, and ecological filters; the fuller Drive specification governs compatible behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; and STEM Splitter is an architecture precedent rather than subject-matter authority.

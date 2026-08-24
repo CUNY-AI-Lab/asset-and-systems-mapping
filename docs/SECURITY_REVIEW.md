@@ -1,16 +1,16 @@
 # Systems Mapping security review
 
-Updated: 2026-08-21
+Updated: 2026-08-24
 
 ## Scope and claim boundary
 
 This review covers the current React application, Node/Hono server, SQLite and PostgreSQL adapters, student class access, teacher authentication, authoritative evaluation, instructor review, import/export, prototype telemetry, and optional Ollama Cloud adapter.
 
-The current active-beta release implements the five-stage ecological-map workflow described in the requirements. Part 1 groups Micro and Meso; Part 2 groups Exosphere and Macrosphere. Micro returns nodes only. Meso returns no new nodes and may connect only the exact carried Micro IDs. No review or evaluation controls stage, level, candidate, or map access.
+The current working contract uses the five-stage ecological-map workflow described in the requirements. Part 1 groups Micro and Meso; Part 2 groups Exosphere and Macrosphere. Micro may return discrete elements and direct relationships with verbs. Meso may return only noun-labeled `mesosystem` linkages scoped to at least two eligible carried Micro settings, with zero relationship edges. No review or evaluation controls stage, level, candidate, or map access.
 
-PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged the ecological tree into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`. Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS` from that clean commit and passed migration, health, hosted access, student-to-teacher API denial, configuration, logout, headers, bundle parity, provider, and no-5xx readback. PR #5 and deployment `39d38543-20ca-4626-95e6-237ef9213881` remain historical evidence for the preceding Macro/Integration tree.
+PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged the earlier ecological tree into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`. Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS` from that clean commit and passed migration, health, hosted access, student-to-teacher API denial, configuration, logout, headers, bundle parity, provider, and no-5xx readback. That deployment implements the superseded node-only Micro/generic-edge Meso contract. PR #5 and deployment `39d38543-20ca-4626-95e6-237ef9213881` remain historical evidence for the preceding Macro/Integration tree.
 
-Earlier local captures remain historical evidence where noted. Current annotated desktop/mobile capture, local verification, GitHub publication, Railway deployment/readback, and fabricated-memo live-provider verification are complete. No authenticated production Teacher Console mutation was performed, and provider-key rotation provenance was not inspected.
+Earlier local captures remain historical evidence where noted. The 2026-08-24 Micro/Meso correction requires new local verification, source-built browser captures, GitHub publication, Railway deployment/readback, and fabricated-memo live-provider verification. No authenticated production Teacher Console mutation was performed, and provider-key rotation provenance was not inspected.
 
 Status terms:
 
@@ -38,8 +38,8 @@ Status terms:
 | SEC-13 — import and export injection | Automated, rendered, and deployed-bundle verified | Schema-owned objects use known-field allowlists; credential/account canaries, invalid references, malformed geometry, policy escalation, and excessive data fail closed. React renders values as text. CSV formula/control/whitespace prefixes are neutralized at the byte boundary. Deployed app, Teacher Console, and CSS hashes matched local production bytes. | Opening exported files still depends on downstream application behavior. |
 | SEC-14 — annotation and redaction leakage | Automated verified | Node, evidence, relationship, and map annotations have stable ownership, limits, and reference validation. Restricted projections redact annotations and prose derived from the memo and retain an explicit manifest. Unknown nested canaries fail before export. | Perform current private/course/CUNY/public browser export receipts with realistic sensitive data. |
 | SEC-15 — prototype telemetry | Automated verified; bounded | Only named events, canonical section numbers, and bounded numeric/boolean metadata are accepted. Memo text, labels, annotations, prompts, capabilities, and identity are outside the schema. Rows and retention are bounded. | The rate bucket is intentionally shared by local students and process-local; heavy use can throttle activity logging without blocking core local project persistence. |
-| SEC-16 — Ollama endpoint/key handling | Automated and live functional path verified | Production reported `ollama-cloud`; fabricated memos returned schema-valid reviews for all four levels through `deepseek-v4-flash:0731`, and connection refinement returned exact-ID relationships. Provider-failure searches and HTTP 5xx were zero. The key remained non-enumerable and was not printed. | The credential owner must still confirm that the enabled key is the rotated replacement for the previously exposed value. |
-| SEC-17 — prompt injection and model output | Bounded | The memo and project details are labeled as untrusted data; an additional system instruction requires JSON only. The server rejects extra keys, invalid endpoints, level-incompatible records, and oversized output. Micro is forced to nodes only; Meso is forced to no new nodes and connections only among carried Micro IDs. | This is schema containment, not proof that a model cannot be influenced. A live adversarial provider suite remains required. |
+| SEC-16 — Ollama endpoint/key handling | Historical live functional path verified; corrected contract pending | The earlier production release reported `ollama-cloud`; fabricated memos returned schema-valid reviews through `deepseek-v4-flash:0731`, and provider-failure searches and HTTP 5xx were zero. The key remained non-enumerable and was not printed. That run used the superseded Micro/Meso schema. | Repeat the fabricated-memo provider run for Micro relationships and Meso scoped linkages. The credential owner must still confirm that the enabled key is the rotated replacement for the previously exposed value. |
+| SEC-17 — prompt injection and model output | Bounded; corrected contract verification pending | The memo and project details are labeled as untrusted data; an additional system instruction requires JSON only. The server rejects extra keys, invalid endpoints, level-incompatible records, and oversized output. Micro permits only discrete nodes and valid direct relationships. Meso permits only noun-labeled `mesosystem` nodes scoped to at least two eligible carried Micro settings and rejects relationship edges or verbs. | This is schema containment, not proof that a model cannot be influenced. Run the corrected automated and live adversarial provider suites. |
 | SEC-18 — memo sharing and storage | Bounded; operational approval pending | The deterministic runtime sends nothing to an outside provider. Provider mode discloses and sends instructor guidance, course material, project instructions, inquiry, level, memo details, and memo text; memo text is capped at 131,072 UTF-8 bytes. The current student interface does not create review submissions. Retained review snapshots keep memo excerpts for 30 or 180 days when that compatibility API is used. | Hosted use requires an explicit institutional decision about memo sensitivity, provider processing, PostgreSQL and backups, and instructor access. Technical opt-in alone is insufficient. |
 
 ## Authentication and authorization boundaries
@@ -72,17 +72,19 @@ The local `.env` intentionally has an empty `OLLAMA_API_KEY`. Railway reported t
 4. verify it never appears in source, bundle, logs, exports, or screenshots;
 5. repeat acceptance when credentials or provider configuration change.
 
-The current release demonstrates live `ollama-cloud` requests with fabricated memos across all four levels and connection refinement. It does not establish the unobservable credential-rotation history.
+The earlier release demonstrated live `ollama-cloud` requests with fabricated memos across all four levels and connection refinement. It does not establish the corrected Micro/Meso schema or the unobservable credential-rotation history.
 
 ## Railway readiness boundary
 
-The code targets a Railway-style service backed by PostgreSQL: startup requires paired `DATABASE_URL`/`PUBLIC_ORIGIN`, explicit public binding and proxy depth, a strong class code, and bounded pool/timeouts. Current hosted verification passed on deployment `51a03b7e-6752-4681-8714-5bbf6106d843`.
+The code targets a Railway-style service backed by PostgreSQL: startup requires paired `DATABASE_URL`/`PUBLIC_ORIGIN`, explicit public binding and proxy depth, a strong class code, and bounded pool/timeouts. The last hosted verification passed on deployment `51a03b7e-6752-4681-8714-5bbf6106d843`; it predates the 2026-08-24 correction.
 
 Railway deployment `39d38543-20ca-4626-95e6-237ef9213881`, uploaded from clean GitHub `main` commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, verified migration, headers, public-demo access, session/configuration readback, logout, and bundle parity for the preceding Macro/Integration tree. It is historical evidence only.
 
-The current GitHub-to-Railway chain is PR #9 → `main` `7f6444147d34a4c62203eb1a3943fcfd6c3f4491` → deployment `51a03b7e-6752-4681-8714-5bbf6106d843`. Dirty working-directory deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remains historical only.
+The last verified GitHub-to-Railway chain is PR #9 → `main` `7f6444147d34a4c62203eb1a3943fcfd6c3f4491` → deployment `51a03b7e-6752-4681-8714-5bbf6106d843`. It is historical evidence for the superseded contract. Dirty working-directory deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remains historical only.
 
 ## Final verification checklist
+
+Checked items below record the 2026-08-21 release and remain historical. They do not close the 2026-08-24 Micro/Meso correction.
 
 - [x] Preserve the earlier production dependency audit: no known vulnerabilities at the time of that run.
 - [x] Preserve the earlier source and application-bundle scan: no credential values; no application-bundle class code, source maps, dangerous HTML sink, teacher identity, review capability, or server prompt. Library-only numeric `101` values were unrelated glyph tables.
@@ -99,4 +101,4 @@ The current GitHub-to-Railway chain is PR #9 → `main` `7f6444147d34a4c62203eb1
 - [x] Run fabricated-memo live-provider acceptance across all four levels and connection refinement without exposing the key.
 - [ ] Confirm with the credential owner that the enabled provider key is the rotated replacement; no credential value was inspected in this release.
 
-The correct status is **five-stage Micro/Meso/Exosphere/Macrosphere release verified locally, captured across desktop and phone sizes, merged through GitHub, deployed to Railway, and exercised through the live provider with fabricated memos; authenticated production Teacher Console mutation and credential-owner rotation confirmation were not performed**.
+The correct status is **the last deployed five-stage release has local, browser, GitHub, Railway, and fabricated-memo provider receipts, but it uses the superseded Micro/Meso schema. The 2026-08-24 Micro relationships and Meso scoped-linkage correction still requires current automated, browser, deployment, and live-provider proof. Authenticated production Teacher Console mutation and credential-owner rotation confirmation were not performed**.

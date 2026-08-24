@@ -117,9 +117,9 @@ function submissionBody(overrides = {}) {
       fingerprint: 'project_overlay_1',
     },
     ...(activeScale === 'meso' ? { carriedNodes: [
-      { id: 'node_school', label: 'School', type: 'organization' },
-      { id: 'node_family', label: 'Family', type: 'family' },
-      { id: 'node_agency', label: 'Agency', type: 'agency' },
+      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
+      { id: 'node_family', label: 'Family', type: 'setting', scale: 'micro' },
+      { id: 'node_agency', label: 'Agency setting', type: 'setting', scale: 'micro' },
     ] } : {}),
     ...overrides,
   };
@@ -132,9 +132,9 @@ function connectionBody(overrides = {}) {
     inquiry: 'How do schools shape family access to services?',
     prompt: 'Families ask schools for help, and schools refer them to agencies.',
     nodes: [
-      { id: 'node_family', label: 'Family', type: 'family' },
-      { id: 'node_school', label: 'School', type: 'organization' },
-      { id: 'node_agency', label: 'Agency', type: 'agency' },
+      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+      { id: 'node_school', label: 'School', type: 'organization', scale: 'micro' },
+      { id: 'node_agency', label: 'Agency', type: 'agency', scale: 'micro' },
     ],
     relationships: [{ source: 'node_school', target: 'node_agency', verb: 'refers to' }],
     projectOverlay: {
@@ -421,14 +421,14 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('MEMO REVIEW JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: guidance, nodes, connections, example, readiness');
     expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
-    expect(firstInput.systemPrompt).toContain('each node label MUST be exactly one concrete, nameable actor, object, institution, policy, or event');
+    expect(firstInput.systemPrompt).toContain('Except at Meso, each node label MUST name exactly one actor, role, group, activity, object, immediate setting, institution, policy, law, condition, or structure');
     expect(firstInput.systemPrompt).toContain('BE SELECTIVE');
-    expect(firstInput.systemPrompt).toContain('written as a short noun phrase');
-    expect(firstInput.systemPrompt).toContain('the whole clause is never a node label');
+    expect(firstInput.systemPrompt).toContain('as a clear noun phrase');
+    expect(firstInput.systemPrompt).toContain('A node label must never be a sentence, clause, relationship proposition');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
-    expect(firstInput.systemPrompt).toContain('For Micro AND Macrosphere, connections MUST be empty');
+    expect(firstInput.systemPrompt).toContain('At Meso and Macrosphere, connections MUST be empty');
     expect(firstInput.systemPrompt).toContain('LEVEL TESTS');
-    expect(firstInput.systemPrompt).toContain('a pattern with no door');
+    expect(firstInput.systemPrompt).toContain('Meso identifies an interrelation among two or more of those Micro settings');
     expect(firstInput.systemPrompt).toContain('verb MUST be exactly one of: funds, administers, regulates');
     expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
@@ -452,9 +452,11 @@ describe('persistent preflight suggestion review queue', () => {
     expect(first.review.nodes).toEqual([
       { label: 'School', type: 'organization', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
-      { label: 'Agency', type: 'event', scale: 'micro', evidence: '' },
     ]);
-    expect(first.review.connections).toEqual([]);
+    expect(first.review.connections).toEqual([{
+      source: 'School', target: 'Family', sourceLabel: 'School', targetLabel: 'Family',
+      verb: 'refers', rationale: 'The memo names the referral directly.',
+    }]);
     expect(first.review.example).toBeNull();
     expect(first.review.readiness).toEqual({
       ready: true,
@@ -532,7 +534,7 @@ describe('persistent preflight suggestion review queue', () => {
           { label: fullClause, type: 'event', scale: 'micro', evidence: fullClause },
           { label: shortClause, type: 'event', scale: 'micro', evidence: fullClause },
           { label: 'Adult Participants', type: 'person', scale: 'micro', evidence: fullClause },
-          { label: 'Accessible Van Program', type: 'resource', scale: 'micro', evidence: fullClause },
+          { label: 'Accessible Van Program', type: 'service', scale: 'micro', evidence: fullClause },
           { label: officialName, type: 'agency', scale: 'micro', evidence: 'The office coordinates access.' },
         ],
         connections: [],
@@ -572,25 +574,24 @@ describe('persistent preflight suggestion review queue', () => {
     // The discrete-label rule now holds at every level: clauses are dropped
     // at Exosphere too, while complete official names always survive.
     expect(exosphere.review.nodes.map(({ label }) => label)).toEqual([
-      'Adult Participants',
       'Accessible Van Program',
       officialName,
     ]);
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('gives Meso review the carried Micro IDs and rejects paraphrased or unknown endpoints', async () => {
+  it('gives Meso review scoped mesosystems and rejects unknown setting IDs', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
       suggestion: {
-        guidance: [{ point: 'node_school refers node_family.' }],
-        nodes: [{ label: 'Paraphrased school team', type: 'organization', scale: 'meso', evidence: 'Must not become a Meso node.' }],
-        connections: [
-          { source: 'node_school', target: 'node_family', verb: 'refers', rationale: 'node_school names the referral to node_family.' },
-          { source: 'Paraphrased school team', target: 'node_family', verb: 'misroutes', rationale: 'A label is not an allowed endpoint.' },
+        guidance: [{ point: 'Review node_school and node_family as one mesosystem.' }],
+        nodes: [
+          { label: 'Family–school coordination', type: 'mesosystem', scale: 'meso', evidence: 'The memo places both settings in the person’s immediate experience.', scope: ['node_school', 'node_family'] },
+          { label: 'Unknown setting mesosystem', type: 'mesosystem', scale: 'meso', evidence: 'Unsupported.', scope: ['node_school', 'node_unknown'] },
         ],
-        example: 'node_school refers node_family.',
-        readiness: { ready: true, note: 'The node_school to node_family connection is supported.' },
+        connections: [{ source: 'node_school', target: 'node_family', verb: 'refers', rationale: 'Meso must discard this edge.' }],
+        example: 'The node_school and node_family settings form one mesosystem.',
+        readiness: { ready: true, note: 'The node_school and node_family mesosystem is supported.' },
       },
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
     }));
@@ -607,25 +608,21 @@ describe('persistent preflight suggestion review queue', () => {
 
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(body.carriedNodes);
-    expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('source and target MUST use exact IDs from carriedNodes');
-    expect(evaluation.review.nodes).toEqual([]);
-    expect(evaluation.review.connections).toEqual([{
-      source: 'node_school',
-      target: 'node_family',
-      sourceLabel: 'School',
-      targetLabel: 'Family',
-      verb: 'refers',
-      rationale: 'School names the referral to Family.',
+    expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('scope containing the exact IDs of 2 or more Micro settings already on the map');
+    expect(evaluation.review.nodes).toEqual([{
+      label: 'Family–school coordination', type: 'mesosystem', scale: 'meso',
+      evidence: 'The memo places both settings in the person’s immediate experience.',
+      scope: [{ id: 'node_school', label: 'School' }, { id: 'node_family', label: 'Family' }],
     }]);
+    expect(evaluation.review.connections).toEqual([]);
     expect(evaluation.review.readiness.ready).toBe(true);
-    expect(evaluation.review.guidance[0].point).toBe('School refers Family.');
-    expect(evaluation.review.example).toBe('School refers Family.');
-    expect(evaluation.review.readiness.note).toBe('The School to Family connection is supported.');
+    expect(evaluation.review.guidance[0].point).toBe('Review School and Family as one mesosystem.');
+    expect(evaluation.review.example).toBe('The School and Family settings form one mesosystem.');
+    expect(evaluation.review.readiness.note).toBe('The School and Family mesosystem is supported.');
     expect(JSON.stringify({
       guidance: evaluation.review.guidance,
       example: evaluation.review.example,
       readiness: evaluation.review.readiness,
-      rationale: evaluation.review.connections[0].rationale,
     })).not.toMatch(/node_(?:school|family)/);
 
     const invalid = await postJson(system.app, '/api/preflight/evaluations', {
@@ -647,22 +644,24 @@ describe('persistent preflight suggestion review queue', () => {
   it('lets Exosphere reviews tie new institutions to carried map nodes without re-proposing them', async () => {
     await system.close();
     const carriedNodes = [
-      { id: 'node_school', label: 'School', type: 'organization' },
-      { id: 'node_family', label: 'Family', type: 'family' },
+      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
+      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
     ];
     const ollamaRequest = vi.fn(async () => ({
       suggestion: {
         guidance: [{ point: 'The memo names an indirect funder.' }],
         nodes: [
           { label: 'School', type: 'organization', scale: 'exosphere', evidence: 'Already mapped; must not repeat.' },
-          { label: 'City Education Fund', type: 'agency', scale: 'exosphere', evidence: 'The fund pays for the program.' },
+          { label: 'City Education Foundation', type: 'agency', scale: 'exosphere', evidence: 'The foundation pays for the program.' },
+          { label: 'CUNY', type: 'institution', scale: 'exosphere', evidence: 'CUNY sets institution-wide rules.' },
         ],
         connections: [
-          { source: 'City Education Fund', target: 'School', verb: 'funds', rationale: 'The fund pays for the program.' },
-          { source: 'City Education Fund', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are rejected.' },
+          { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
+          { source: 'CUNY', target: 'Family', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting families.' },
+          { source: 'City Education Foundation', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are rejected.' },
           { source: 'School', target: 'Family', verb: 'refers', rationale: 'Already mapped; must not repeat.' },
         ],
-        example: 'City Education Fund funds School.',
+        example: 'City Education Foundation funds School.',
         readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
       },
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
@@ -682,15 +681,25 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(carriedNodes);
     expect(ollamaRequest.mock.calls[0][0].carriedConnections).toEqual(carriedConnections);
-    expect(evaluation.review.nodes.map(({ label }) => label)).toEqual(['City Education Fund']);
-    expect(evaluation.review.connections).toEqual([{
-      source: 'City Education Fund',
-      target: 'node_school',
-      sourceLabel: 'City Education Fund',
-      targetLabel: 'School',
-      verb: 'funds',
-      rationale: 'The fund pays for the program.',
-    }]);
+    expect(evaluation.review.nodes.map(({ label }) => label)).toEqual(['City Education Foundation', 'CUNY']);
+    expect(evaluation.review.connections).toEqual([
+      {
+        source: 'City Education Foundation',
+        target: 'node_school',
+        sourceLabel: 'City Education Foundation',
+        targetLabel: 'School',
+        verb: 'funds',
+        rationale: 'The foundation pays for the program.',
+      },
+      {
+        source: 'CUNY',
+        target: 'node_family',
+        sourceLabel: 'CUNY',
+        targetLabel: 'Family',
+        verb: 'sets rules for',
+        rationale: 'CUNY sets institution-wide rules affecting families.',
+      },
+    ]);
 
     // The stored review replays with the same endpoints intact.
     const readBack = await system.app.request('http://127.0.0.1:4177/api/preflight/evaluations/current', {
@@ -705,24 +714,24 @@ describe('persistent preflight suggestion review queue', () => {
   it('holds Exosphere connections to the institutional register, the carried-map anchor, and the basis marker', async () => {
     await system.close();
     const carriedNodes = [
-      { id: 'node_school', label: 'School', type: 'organization' },
-      { id: 'node_family', label: 'Family', type: 'family' },
+      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
+      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
     ];
     const ollamaRequest = vi.fn(async () => ({
       suggestion: {
         guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
         nodes: [
-          { label: 'Google', type: 'organization', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
-          { label: 'Printing Vendor', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.' },
+          { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
+          { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.' },
         ],
         connections: [
-          { source: 'Google', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
+          { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
           // An off-register verb has no place here, so the connection drops.
-          { source: 'Google', target: 'Family', verb: 'synergizes', rationale: 'Register violation.' },
+          { source: 'Google Identity Service', target: 'Family', verb: 'synergizes', rationale: 'Register violation.' },
           // Near-register verbs coerce to their canonical entry.
-          { source: 'Google', target: 'School', verb: 'oversees', rationale: 'Alias resolves to regulates.' },
+          { source: 'Google Identity Service', target: 'School', verb: 'oversees', rationale: 'Alias resolves to regulates.' },
           // A pathway between two floating new nodes never lands on the map.
-          { source: 'Google', target: 'Printing Vendor', verb: 'funds', rationale: 'No carried anchor.' },
+          { source: 'Google Identity Service', target: 'Printing Vendor Corporation', verb: 'funds', rationale: 'No carried anchor.' },
         ],
         example: null,
         readiness: { ready: true, note: 'Pathways land on the map.' },
@@ -739,21 +748,21 @@ describe('persistent preflight suggestion review queue', () => {
     const studentCookie = await grantStudent();
     const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'exosphere', carriedNodes }));
     expect(evaluation.review.nodes).toEqual([
-      { label: 'Google', type: 'organization', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
-      { label: 'Printing Vendor', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
+      { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
+      { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
     ]);
     expect(evaluation.review.connections).toEqual([
-      { source: 'Google', target: 'node_school', sourceLabel: 'Google', targetLabel: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-      { source: 'Google', target: 'node_school', sourceLabel: 'Google', targetLabel: 'School', verb: 'regulates', rationale: 'Alias resolves to regulates.' },
+      { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
+      { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'regulates', rationale: 'Alias resolves to regulates.' },
     ]);
   });
 
   it('returns Macrosphere structures with resolved scopes and deontic verbs, never connections', async () => {
     await system.close();
     const carriedNodes = [
-      { id: 'node_school', label: 'School', type: 'organization' },
-      { id: 'node_family', label: 'Family', type: 'family' },
-      { id: 'node_agency', label: 'Agency', type: 'agency' },
+      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
+      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+      { id: 'node_agency', label: 'Agency', type: 'agency', scale: 'exosphere' },
     ];
     const ollamaRequest = vi.fn(async () => ({
       suggestion: {
@@ -768,9 +777,15 @@ describe('persistent preflight suggestion review queue', () => {
           {
             label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
             evidence: 'Verify: who is assumed to plan?', basis: 'inference',
-            // Off-register deontic verbs fall back to the neutral entry.
+            // A condition with only one affected element is incomplete and drops.
             deontic: 'synergizes',
             scope: [{ id: 'node_agency', label: 'Agency' }],
+          },
+          {
+            label: 'CUNY', type: 'structure', scale: 'macrosphere',
+            evidence: 'CUNY is a named institution and must remain in Exosphere.', basis: 'memo',
+            deontic: 'shapes',
+            scope: ['node_school', 'node_family'],
           },
         ],
         // Any macro connection is scale confusion; the server never passes one through.
@@ -798,12 +813,6 @@ describe('persistent preflight suggestion review queue', () => {
         evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
         deontic: 'defines eligibility for',
         scope: [{ id: 'node_school', label: 'School' }, { id: 'node_family', label: 'Family' }],
-      },
-      {
-        label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
-        evidence: 'Verify: who is assumed to plan?', basis: 'inference',
-        deontic: 'shapes',
-        scope: [{ id: 'node_agency', label: 'Agency' }],
       },
     ]);
 
@@ -861,11 +870,7 @@ describe('persistent preflight suggestion review queue', () => {
 
     expect((await postJson(system.app, '/api/map/connections', connectionBody())).status).toBe(401);
     const studentCookie = await grantStudent();
-    const microRequest = await postJson(system.app, '/api/map/connections', connectionBody({ activeScale: 'micro' }), { cookie: studentCookie });
-    expect(microRequest.status).toBe(400);
-    expect(await microRequest.json()).toEqual({ error: 'Micro uses nodes only. Connection suggestions begin in Meso.' });
-    expect(ollamaRequest).not.toHaveBeenCalled();
-    const body = connectionBody();
+    const body = connectionBody({ activeScale: 'micro' });
     const response = await postJson(system.app, '/api/map/connections', body, { cookie: studentCookie });
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
@@ -877,8 +882,11 @@ describe('persistent preflight suggestion review queue', () => {
       }],
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    const mesoRequest = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: studentCookie });
+    expect(mesoRequest.status).toBe(400);
+    expect(await mesoRequest.json()).toEqual({ error: 'Meso uses mesosystems formed by Micro settings and does not use relationship verbs.' });
     const input = ollamaRequest.mock.calls[0][0];
-    expect(input.systemPrompt).toContain('[Part 1. Current section. choose nodes and describe connections]');
+    expect(input.systemPrompt).toContain('[Part 1. Current section. choose map elements]');
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
     expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);

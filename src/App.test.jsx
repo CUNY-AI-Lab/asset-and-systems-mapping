@@ -90,10 +90,15 @@ function evaluationPayloadFixture(project = createDefaultProject()) {
       revision: config.revision,
       fingerprint: config.fingerprint,
     },
-    ...(project.activeScale === 'meso' ? {
+    ...(['micro', 'meso'].includes(project.activeScale) ? {
       carriedNodes: project.graph.nodes
         .filter((node) => node.scale === 'micro' && node.status !== 'rejected' && node.claimState !== 'retired')
-        .map(({ id, label, type }) => ({ id, label, type })),
+        .map(({ id, label, type, scale }) => ({ id, label, type, scale })),
+    } : {}),
+    ...(project.graph.edges.some((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired') ? {
+      carriedConnections: project.graph.edges
+        .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+        .map(({ source, target, sourceLabel, targetLabel, verb, scale }) => ({ source, target, sourceLabel, targetLabel, verb, scale })),
     } : {}),
   };
 }
@@ -114,7 +119,7 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
     projectOverlay: storedOverlay,
     effectiveFingerprint: 'effective-server-fingerprint',
   };
-  const review = overrides.review || memoReviewFixture();
+  const review = overrides.review || memoReviewFixture(payload.activeScale, payload.carriedNodes || []);
   return {
     id: EVALUATION_ID,
     review: structuredClone(review),
@@ -125,7 +130,45 @@ function evaluationRecord(payload = evaluationPayloadFixture(), overrides = {}) 
   };
 }
 
-function memoReviewFixture() {
+function memoReviewFixture(activeScale = 'micro', carriedNodes = []) {
+  if (activeScale === 'meso') {
+    const scope = carriedNodes.slice(0, 2).map(({ id, label }) => ({ id, label }));
+    const safeScope = scope.length >= 2 ? scope : [
+      { id: 'node_school_setting', label: 'School' },
+      { id: 'node_family_setting', label: 'Family support setting' },
+    ];
+    return {
+      guidance: [{ point: 'The memo supports a linkage between two Micro settings.' }],
+      nodes: [{
+        label: 'School–family coordination',
+        type: 'mesosystem',
+        scale: 'meso',
+        evidence: 'The memo describes coordination between the school and family support setting.',
+        scope: safeScope,
+      }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports one Meso linkage.' },
+    };
+  }
+  if (activeScale === 'exosphere') {
+    return {
+      guidance: [{ point: 'The memo identifies an institution that affects a mapped setting.' }],
+      nodes: [{ label: 'New York State Education Department', type: 'agency', scale: 'exosphere', evidence: 'The memo names the department.' }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports one Exosphere institution.' },
+    };
+  }
+  if (activeScale === 'macrosphere') {
+    return {
+      guidance: [{ point: 'The memo identifies a policy that affects several mapped elements.' }],
+      nodes: [{ label: 'State education policy', type: 'policy', scale: 'macrosphere', evidence: 'The memo describes the policy.', deontic: 'shapes', scope: [] }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports one Macrosphere item.' },
+    };
+  }
   return {
     guidance: [{
       point: 'The memo grounds the referral in a specific handoff.',
@@ -134,8 +177,8 @@ function memoReviewFixture() {
       point: 'Where does the delay enter the referral process?',
     }],
     nodes: [
-      { label: 'School', type: 'organization', scale: 'meso', evidence: 'The school refers the student to the committee.' },
-      { label: 'Committee', type: 'agency', scale: 'meso', evidence: 'The school refers the student to the committee.' },
+      { label: 'School', type: 'organization', scale: 'micro', evidence: 'The school refers the student to the committee.' },
+      { label: 'Committee', type: 'agency', scale: 'micro', evidence: 'The school refers the student to the committee.' },
     ],
     connections: [{ source: 'School', target: 'Committee', verb: 'refers students to', rationale: 'The memo names the referral directly.' }],
     example: 'One evident connection: the school refers students to the committee, because the memo names that handoff directly.',
@@ -203,29 +246,89 @@ async function resumeSavedProject(project = createDefaultProject()) {
   return project;
 }
 
-function makeMapProject(activeScale = 'meso') {
+function makeMapProject(activeScale = 'exosphere') {
   const project = createDefaultProject();
   project.candidates = { nodes: [], edges: [] };
-  project.graph = extractCandidates(project.submission);
-  project.graph.nodes.forEach((node) => {
-    if (node.scale === 'meso') node.scale = 'micro';
-    node.status = 'confirmed';
-    node.claimState = 'student interpretation';
-  });
-  project.graph.edges.forEach((edge) => {
-    if (edge.scale === 'micro') edge.scale = 'meso';
-    edge.status = 'confirmed';
-    edge.claimState = 'student interpretation';
-  });
+  const extracted = extractCandidates(project.submission);
   const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
-  project.releasedScales = levels.slice(0, levels.indexOf(activeScale) + 1);
+  const activeIndex = levels.indexOf(activeScale);
+  project.releasedScales = levels.slice(0, activeIndex + 1);
   project.activeScale = activeScale;
-  if (activeScale === 'macrosphere') {
-    const outerNode = project.graph.nodes.find((node) => node.scale === 'exosphere');
-    const outerEdge = project.graph.edges.find((edge) => edge.scale === 'exosphere');
-    if (outerNode) outerNode.scale = 'macrosphere';
-    if (outerEdge) outerEdge.scale = 'macrosphere';
+  const nodes = extracted.nodes.map((node) => ({
+    ...node,
+    scale: node.scale === 'exosphere' ? 'exosphere' : 'micro',
+    status: 'confirmed',
+    claimState: 'student interpretation',
+  }));
+  const settingCandidates = nodes.filter((node) => node.scale === 'micro' && node.type === 'setting').slice(0, 2);
+  if (activeIndex >= 1 && settingCandidates.length < 2) {
+    const template = structuredClone(settingCandidates[0] || nodes.find((node) => node.scale === 'micro'));
+    const addedSetting = {
+      ...template,
+      id: 'node_family_support_meeting_room',
+      label: 'Family support meeting room',
+      type: 'setting',
+      scale: 'micro',
+      x: 480,
+      y: 420,
+      annotations: {
+        analytical: { id: 'annotation_family_support_meeting_room_analytical', text: '' },
+        evidence: { id: 'annotation_family_support_meeting_room_evidence', text: '' },
+      },
+    };
+    nodes.push(addedSetting);
+    settingCandidates.push(addedSetting);
   }
+  settingCandidates.forEach((node) => { node.type = 'setting'; });
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const edges = extracted.edges.map((edge) => ({
+    ...edge,
+    scale: edge.scale === 'exosphere' ? 'exosphere' : 'micro',
+    sourceLabel: nodeById.get(edge.source)?.label || edge.sourceLabel,
+    targetLabel: nodeById.get(edge.target)?.label || edge.targetLabel,
+    status: 'confirmed',
+    claimState: 'student interpretation',
+  }));
+  const microSettings = nodes.filter((node) => node.scale === 'micro' && node.type === 'setting');
+  if (activeIndex >= 1) {
+    const template = structuredClone(microSettings[0]);
+    nodes.push({
+      ...template,
+      id: 'node_meso_school_family_coordination',
+      label: 'School–family coordination',
+      type: 'mesosystem',
+      scale: 'meso',
+      x: 2360,
+      y: 1200,
+      scopeNodeIds: microSettings.slice(0, 2).map((node) => node.id),
+      annotations: {
+        analytical: { id: 'annotation_meso_coordination_analytical', text: '' },
+        evidence: { id: 'annotation_meso_coordination_evidence', text: '' },
+      },
+    });
+  }
+  if (activeIndex >= 3) {
+    const template = structuredClone(nodes.find((node) => node.scale === 'exosphere') || microSettings[0]);
+    nodes.push({
+      ...template,
+      id: 'node_macro_state_education_policy',
+      label: 'State education policy',
+      type: 'policy',
+      scale: 'macrosphere',
+      x: 2940,
+      y: 1200,
+      deontic: 'shapes',
+      scopeNodeIds: microSettings.slice(0, 2).map((node) => node.id),
+      annotations: {
+        analytical: { id: 'annotation_macro_policy_analytical', text: '' },
+        evidence: { id: 'annotation_macro_policy_evidence', text: '' },
+      },
+    });
+  }
+  project.graph = {
+    nodes: nodes.filter((node) => levels.indexOf(node.scale) <= activeIndex),
+    edges: edges.filter((edge) => levels.indexOf(edge.scale) <= activeIndex),
+  };
   const activeEndpointIds = new Set(project.graph.edges
     .filter((edge) => edge.scale === activeScale)
     .flatMap((edge) => [edge.source, edge.target]));
@@ -247,8 +350,8 @@ function makeRevisionProject(activeScale = 'micro') {
   project.reflection = `Stale ${activeScale} reflection`;
   if (activeScale === 'meso') {
     project.candidates = {
-      nodes: [],
-      edges: [structuredClone(project.graph.edges.find((edge) => edge.scale === 'meso'))],
+      nodes: [structuredClone(project.graph.nodes.find((node) => node.scale === 'meso'))],
+      edges: [],
     };
   } else {
     project.candidates = {
@@ -323,22 +426,27 @@ function makeDenseEcologyOverviewProject() {
       'Care Coordination Partnership',
     ],
     macrosphere: [
-      'State Disability Services Policy',
+      'Statewide disability eligibility rules',
       'Federal Accessibility Standards',
       'Public Benefits Funding Rules',
       'Regional Housing Conditions',
       'National Employment Policy',
-      'Local Transit Coalition',
-      'Family Support Alliance',
+      'Limited regional transit access',
+      'Family caregiving expectations',
     ],
   };
   project.graph.nodes = Object.entries(labelsByScale).flatMap(([scale, labels], scaleIndex) => labels.map((label, index) => ({
     ...template,
     id: `dense-${scale}-${index}`,
     label,
+    type: scale === 'exosphere' ? 'institution' : scale === 'macrosphere' ? 'structure' : template.type,
     scale,
     x: 150 + (index % 3) * 248,
     y: 175 + scaleIndex * 140 + Math.floor(index / 3) * 90,
+    ...(scale === 'macrosphere' ? {
+      deontic: 'shapes',
+      scopeNodeIds: ['dense-micro-0', 'dense-micro-1'],
+    } : {}),
     annotations: {
       analytical: { id: `annotation-dense-${scale}-${index}-analytical`, text: '' },
       evidence: { id: `annotation-dense-${scale}-${index}-evidence`, text: '' },
@@ -371,13 +479,15 @@ function makeCrossLayerEcologyProject() {
 }
 
 function makeDenseFocusedMesoProject(edgeCount = 12) {
-  const project = makeMapProject('meso');
+  const project = makeMapProject('exosphere');
+  project.activeScale = 'micro';
   const nodeTemplate = project.graph.nodes.find((node) => node.scale === 'micro');
-  const edgeTemplate = project.graph.edges.find((edge) => edge.scale === 'meso');
+  const edgeTemplate = project.graph.edges.find((edge) => edge.scale === 'exosphere');
   const focusNode = {
     ...structuredClone(nodeTemplate),
     id: 'node-dense-focus',
     label: 'u/DalekSupreme23',
+    type: 'person',
     x: 420,
     y: 270,
     annotations: {
@@ -389,6 +499,7 @@ function makeDenseFocusedMesoProject(edgeCount = 12) {
     ...structuredClone(nodeTemplate),
     id: `node-dense-neighbor-${index + 1}`,
     label: `Peer support setting ${index + 1}`,
+    type: 'group',
     x: 120 + (index % 4) * 200,
     y: 90 + Math.floor(index / 4) * 150,
     annotations: {
@@ -406,6 +517,7 @@ function makeDenseFocusedMesoProject(edgeCount = 12) {
       sourceLabel: focusNode.label,
       targetLabel: neighbor.label,
       verb: `seeks help from setting ${index + 1}`,
+      scale: 'micro',
       annotation: { id: `annotation-edge-dense-focus-${index + 1}`, text: '' },
     })),
   };
@@ -419,7 +531,7 @@ async function openMapProject(project = makeMapProject()) {
 }
 
 function mapCanvas() {
-  return screen.getByRole('group', { name: /\bmap\. \d+ nodes? and \d+ connections?/i });
+  return screen.getByRole('group', { name: /\bmap\. (?:\d+ nodes? and \d+ connections?|\d+ mesosystems? and \d+ Micro settings?)/i });
 }
 
 function svgTextLines(element) {
@@ -437,7 +549,10 @@ function graphForScale(project, scale = project.activeScale) {
   const scales = new Set(scale === 'all' ? project.releasedScales : [scale]);
   const edges = project.graph.edges.filter((edge) => scales.has(edge.scale) && edge.claimState !== 'retired');
   const endpointIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
-  const nodes = project.graph.nodes.filter((node) => (scales.has(node.scale) || endpointIds.has(node.id)) && node.claimState !== 'retired');
+  const scopeIds = new Set(project.graph.nodes
+    .filter((node) => scales.has(node.scale) && node.claimState !== 'retired')
+    .flatMap((node) => node.scopeNodeIds || []));
+  const nodes = project.graph.nodes.filter((node) => (scales.has(node.scale) || endpointIds.has(node.id) || scopeIds.has(node.id)) && node.claimState !== 'retired');
   return { nodes, edges };
 }
 
@@ -761,20 +876,20 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
     const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
-    ['add your memo', 'review your memo', 'choose nodes and describe connections', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
+    ['add your memo', 'review your memo', 'choose map elements', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await screen.findByRole('region', { name: 'What the model noticed' });
+    const guidance = await screen.findByRole('region', { name: 'Memo review' });
     expect(within(guidance).getAllByRole('article')).toHaveLength(2);
     expect(within(guidance).getByText('The memo grounds the referral in a specific handoff.')).toBeVisible();
     expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
     expect(within(guidance).getByText('The school refers the student to the committee.')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Where your memo stands' })).toHaveTextContent('The memo already supports mapping');
-    const scaffold = screen.getByRole('complementary', { name: 'Nodes evident in your memo' });
+    const scaffold = screen.getByRole('complementary', { name: 'Suggested Micro elements' });
     expect(within(scaffold).getByLabelText('Nodes evident in the memo')).toHaveTextContent('School');
-    expect(within(scaffold).queryByText('refers students to')).not.toBeInTheDocument();
-    expect(within(scaffold).queryByText(/One evident connection: the school refers students to the committee/)).not.toBeInTheDocument();
+    expect(within(scaffold).getByText('refers students to')).toBeVisible();
+    expect(within(scaffold).getByText(/One evident connection: the school refers students to the committee/)).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Return to your memo' })).not.toBeInTheDocument();
     expect(screen.queryByText('Instructor guidance')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Add a note' })).not.toBeInTheDocument();
@@ -798,7 +913,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
 
-    expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'Memo review' })).toBeVisible();
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     expect(JSON.parse(request[1].body).inquiry).toBe('');
   });
@@ -857,22 +972,23 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
   });
 
-  it('shows a Micro-only Revise and Export summary without exposing stored Meso relationships', async () => {
+  it('shows Micro nodes and direct relationships in Revise and Export without exposing Meso linkages as relationships', async () => {
     const project = makeRevisionProject('micro');
     const graphBefore = structuredClone(project.graph);
     const micro = graphForScale(project, 'micro');
-    expect(graphBefore.edges.some((edge) => edge.scale === 'meso')).toBe(true);
+    expect(graphBefore.edges.some((edge) => edge.scale === 'micro')).toBe(true);
+    expect(graphBefore.edges.some((edge) => edge.scale === 'meso')).toBe(false);
 
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Describe your revision. Export a copy.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Review and export your map' })).toBeVisible();
 
     const currentMap = screen.getByLabelText('Current Micro map summary');
     expect(currentMap).toHaveTextContent(`${micro.nodes.length} nodes`);
-    expect(currentMap).not.toHaveTextContent(/relationships?/i);
+    expect(currentMap).toHaveTextContent(`${micro.edges.length} direct relationships`);
     const summary = document.querySelector('.release-summary');
     const relationshipMetric = [...summary.children]
-      .find((item) => item.querySelector('span')?.textContent === 'relationships');
-    expect(relationshipMetric).toBeUndefined();
+      .find((item) => item.querySelector('span')?.textContent === 'direct relationships');
+    expect(relationshipMetric).toHaveTextContent(String(micro.edges.length));
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
@@ -976,8 +1092,9 @@ describe('Systems Mapping workflow', () => {
     const connectionProject = createDefaultProject();
     connectionProject.activeScale = 'exosphere';
     connectionProject.releasedScales = ['micro', 'meso', 'exosphere'];
-    connectionProject.candidates.nodes = extractCandidates(connectionProject.submission).nodes.slice(0, 2).map((node) => ({
+    connectionProject.candidates.nodes = extractCandidates(connectionProject.submission).nodes.slice(0, 2).map((node, index) => ({
       ...node,
+      type: index === 0 ? 'institution' : 'organization',
       scale: 'exosphere',
       status: 'confirmed',
       claimState: 'student interpretation',
@@ -987,7 +1104,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(connectionProject);
     fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
-    expect(screen.getByRole('button', { name: 'Refining map…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Generating suggestions…' })).toBeDisabled();
     const connectionForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' });
     expect(connectionForward).toBeEnabled();
     fireEvent.click(connectionForward);
@@ -1002,9 +1119,8 @@ describe('Systems Mapping workflow', () => {
     project.candidates = { nodes: [], edges: [] };
     await resumeSavedProject(project);
 
-    expect(screen.getByText(/add elements yourself on the map/i)).toBeVisible();
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Describe connections between nodes' })).not.toBeInTheDocument();
+    expect(screen.getByText(/add a node on the map/i)).toBeVisible();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Nodes · 0', 'Direct relationships · 0', 'More direct relationships']);
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -1014,8 +1130,9 @@ describe('Systems Mapping workflow', () => {
     const project = createDefaultProject();
     project.activeScale = 'exosphere';
     project.releasedScales = ['micro', 'meso', 'exosphere'];
-    const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node) => ({
+    const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
       ...node,
+      type: index === 0 ? 'institution' : 'organization',
       scale: 'exosphere',
       status: 'confirmed',
       claimState: 'student interpretation',
@@ -1024,20 +1141,26 @@ describe('Systems Mapping workflow', () => {
     project.graph = { nodes: [], edges: [] };
     project.stage = 2;
     project.furthestStage = 2;
+    connectionSuggestionResponder = (body) => jsonResponse({ connections: [{
+      source: body.nodes[0].id,
+      target: body.nodes[1].id,
+      verb: 'provides',
+      rationale: 'The student described an institutional pathway between these nodes.',
+    }] }, 201);
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
     expect(screen.getByRole('heading', { name: 'Describe connections between nodes' })).toBeVisible();
-    expect(screen.getByText(/add directions if you want the model to focus/i)).toBeVisible();
+    expect(screen.getByText(/Describe a relationship you want the model to examine/i)).toBeVisible();
     const prompt = 'Families rely on schools, but delayed referrals make services harder to reach in this session.';
-    fireEvent.click(screen.getByText('Steer the suggestions (optional)'));
-    expect(screen.getByText(/prompt the custom AI model to formulate new connections/i)).toBeVisible();
+    fireEvent.click(screen.getByText('Describe a relationship (optional)'));
+    expect(screen.getByText(/review and edit every suggestion before adding it to the map/i)).toBeVisible();
     fireEvent.change(screen.getByRole('textbox', { name: /Describe connections between nodes/ }), { target: { value: prompt } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
 
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
-    expect(verb).toHaveValue('supports');
-    expect(screen.getByRole('button', { name: 'Refine map' })).toBeVisible();
+    expect(verb).toHaveValue('provides');
+    expect(screen.getByRole('button', { name: 'Generate again' })).toBeVisible();
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/map/connections' && options.method === 'POST');
     const body = JSON.parse(request[1].body);
     expect(body).toMatchObject({ activeScale: project.activeScale, inquiry: project.inquiry, prompt });
@@ -1046,26 +1169,26 @@ describe('Systems Mapping workflow', () => {
     expect(body.projectOverlay).toMatchObject({ id: project.configs.builder.id, customInstructions: project.configs.builder.customInstructions });
     expect(body.projectOverlay).not.toHaveProperty('fixedPrompt');
 
-    fireEvent.change(verb, { target: { value: 'helps families reach' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    fireEvent.change(verb, { target: { value: 'informs' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
     expect(screen.getByRole('img', { name: /3 nodes and 1 connections/ })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     await waitFor(() => expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ verb: 'helps families reach', status: 'confirmed', claimState: 'student interpretation' }),
+      expect.objectContaining({ verb: 'informs', status: 'confirmed', claimState: 'student interpretation' }),
     ])));
     expect(window.localStorage.getItem(STORAGE_KEY)).not.toContain(prompt);
   });
 
   it('shows complete node and relationship text in the connection preview without ellipses', async () => {
     const project = createDefaultProject();
-    project.activeScale = 'exosphere';
-    project.releasedScales = ['micro', 'meso', 'exosphere'];
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
     const longNodeLabel = 'East Harlem Disability Services coordinates transportation access across neighborhood family programs END NODE';
     const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
     const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
       ...node,
-      scale: 'exosphere',
+      scale: 'micro',
       ...(index === 0 ? { label: longNodeLabel } : {}),
       status: 'confirmed',
       claimState: 'student interpretation',
@@ -1076,8 +1199,8 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 2;
     await resumeSavedProject(project);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
-    fireEvent.click(screen.getByText('Steer the suggestions (optional)'));
+    fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
+    fireEvent.click(screen.getByText('Describe a relationship (optional)'));
     fireEvent.change(screen.getByRole('textbox', { name: /Describe connections between nodes/ }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
@@ -1101,8 +1224,8 @@ describe('Systems Mapping workflow', () => {
       status: 'confirmed',
       claimState: 'student interpretation',
     }));
-    project.activeScale = 'meso';
-    project.releasedScales = ['micro', 'meso'];
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
     project.graph = { nodes, edges: [] };
     project.candidates = { nodes: [], edges: [] };
     project.stage = 2;
@@ -1123,7 +1246,7 @@ describe('Systems Mapping workflow', () => {
     ] }, 201);
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
 
     const firstVerb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
@@ -1154,7 +1277,7 @@ describe('Systems Mapping workflow', () => {
     }, 201);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await screen.findByRole('region', { name: 'What the model noticed' });
+    const guidance = await screen.findByRole('region', { name: 'Memo review' });
     expect(within(guidance).getByText(/returned no guidance this time/)).toBeVisible();
     expect(within(guidance).queryAllByRole('article')).toHaveLength(0);
     expect(guidance.textContent).not.toMatch(/\b(?:pass|complete|met|score|criterion|checklist)\b/i);
@@ -1184,7 +1307,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'Memo review' })).toBeVisible();
 
     const evaluationRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     const evaluationBody = JSON.parse(evaluationRequest[1].body);
@@ -1225,7 +1348,7 @@ describe('Systems Mapping workflow', () => {
     const microNodes = extractCandidates(project.submission).nodes
       .filter((node) => node.scale === 'micro')
       .slice(0, 2)
-      .map((node) => ({ ...node, status: 'confirmed', claimState: 'student interpretation' }));
+      .map((node) => ({ ...node, type: 'setting', status: 'confirmed', claimState: 'student interpretation' }));
     microNodes[0].label = 'Renamed family support participants';
     project.activeScale = 'meso';
     project.releasedScales = ['micro', 'meso'];
@@ -1238,11 +1361,11 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    await screen.findByRole('region', { name: 'What the model noticed' });
+    await screen.findByRole('region', { name: 'Memo review' });
 
     const request = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/preflight/evaluations' && options.method === 'POST');
     const body = JSON.parse(request[1].body);
-    expect(body.carriedNodes).toEqual(microNodes.map(({ id, label, type }) => ({ id, label, type })));
+    expect(body.carriedNodes).toEqual(microNodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })));
     expect(body.carriedNodes[0].id).not.toBe(stableId('node', body.carriedNodes[0].label));
   });
 
@@ -1271,8 +1394,8 @@ describe('Systems Mapping workflow', () => {
     });
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText(/too large for the reported model runtime/i)).toBeVisible();
-    expect(screen.getByText(/131,072 UTF-8 bytes maximum/i)).toBeVisible();
+    expect(await screen.findByText(/This memo is too large to send/i)).toBeVisible();
+    expect(screen.getByText(/Shorten it and try again/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(storedProject().submission.text).toBe(project.submission.text);
   });
@@ -1289,8 +1412,8 @@ describe('Systems Mapping workflow', () => {
     });
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText(/guiding inquiry is too large for the reported model runtime/i)).toBeVisible();
-    expect(screen.getByText(/8,192 UTF-8 bytes maximum/i)).toBeVisible();
+    expect(await screen.findByText(/guiding inquiry is too large to send/i)).toBeVisible();
+    expect(screen.getByText(/Shorten it and try again/i)).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
   });
 
@@ -1322,7 +1445,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     expect(screen.getByRole('region', { name: 'Where your memo stands' })).toBeVisible();
-    expect(screen.queryByText(/Your memo has changed since this guidance was generated/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your memo changed after this guidance was generated/)).not.toBeInTheDocument();
 
     const drawer = document.querySelector('.memo-drawer');
     drawer.open = true;
@@ -1330,8 +1453,8 @@ describe('Systems Mapping workflow', () => {
       target: { value: `${project.submission.text} A later correction adds one more connection.` },
     });
 
-    expect(await screen.findByText(/Your memo has changed since this guidance was generated/)).toBeVisible();
-    expect(screen.getByRole('region', { name: 'What the model noticed' })).toBeVisible();
+    expect(await screen.findByText(/Your memo changed after this guidance was generated/)).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Memo review' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Refresh guidance' })).toBeEnabled();
     screen.getAllByRole('button', { name: 'Choose nodes' }).forEach((button) => expect(button).toBeEnabled());
     await waitFor(() => expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture()));
@@ -1346,7 +1469,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.moduleVersions).toHaveLength(12));
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('region', { name: 'What the model noticed' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'Memo review' })).toBeVisible();
     await waitFor(() => {
       const event = [...storedProject().events].reverse().find((entry) => entry.action === 'preflight.completed');
       expect(event.configurationSnapshot.shared).toMatchObject({ fingerprint: 'preflight-shared-fingerprint', revision: 3 });
@@ -1359,28 +1482,52 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
-  it('keeps Micro node-only even when the provider returns connections', async () => {
+  it('reviews, commits, and summarizes direct Micro relationships with their verbs at Micro', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.queryByText('refers students to')).not.toBeInTheDocument();
+    expect(screen.getByText('refers students to')).toBeVisible();
     fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes' }));
     expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Confirm how they connect' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Describe connections between nodes' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: /Describe connections between nodes/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Direct relationships · 1' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'More direct relationships' })).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.stage).toBe(2);
       expect(stored.candidates.nodes.map(({ label }) => label)).toEqual(expect.arrayContaining(['School', 'Committee']));
       expect(stored.candidates.nodes.every((node) => node.scale === 'micro')).toBe(true);
-      expect(stored.candidates.edges).toEqual([]);
+      expect(stored.candidates.nodes.every((node) => node.status === 'confirmed')).toBe(true);
+      expect(stored.candidates.edges).toEqual([expect.objectContaining({
+        verb: 'refers students to', scale: 'micro', status: 'confirmed', claimState: 'student interpretation',
+      })]);
     });
-    fireEvent.click(screen.getByRole('button', { name: /Keep all/ }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Direct relationships · 1' }));
+    const relationshipEditor = screen.getByRole('textbox', { name: 'Relationship verb' });
+    fireEvent.change(relationshipEditor, { target: { value: 'refers directly to' } });
+    fireEvent.click(within(relationshipEditor.closest('article')).getByRole('button', { name: 'Keep' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
-    expect(storedProject().graph.edges).toEqual([]);
+    expect(storedProject().graph.edges).toEqual([expect.objectContaining({ verb: 'refers directly to', scale: 'micro', status: 'confirmed' })]);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/connections')).toHaveLength(0);
+
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Revise and export' }));
+    expect(await screen.findByRole('heading', { name: 'Review and export your map' })).toBeVisible();
+    expect(screen.getByLabelText('Current Micro map summary')).toHaveTextContent('2 nodes are recorded with 1 direct relationship');
+  });
+
+  it('leaves suggestions off until the student chooses Keep when the teacher requires confirmation', async () => {
+    const project = projectWithMemoReview();
+    project.instructor.requireStudentConfirmation = true;
+    await resumeSavedProject(project);
+
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes' }));
+    expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
+    expect(screen.getByText('Suggestions are off until you choose Keep.')).toBeVisible();
+    await waitFor(() => {
+      const stored = storedProject();
+      expect(stored.candidates.nodes.every((node) => node.status === 'pending')).toBe(true);
+      expect(stored.candidates.edges.every((edge) => edge.status === 'pending')).toBe(true);
+    });
+    screen.getAllByRole('button', { name: 'Keep' }).forEach((button) => expect(button).not.toHaveClass('is-active'));
   });
 
   it('carries only discrete Micro actors and objects from a structured review into the map', async () => {
@@ -1423,7 +1570,6 @@ describe('Systems Mapping workflow', () => {
       expect(storedProject().candidates.edges).toEqual([]);
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Keep all 2 remaining' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     await waitFor(() => {
@@ -1505,7 +1651,6 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toEqual([discreteLabel]);
     expect(screen.queryByDisplayValue(clauseLabel)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Keep all 1 remaining' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     await waitFor(() => {
@@ -1515,27 +1660,32 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelector('.graph-node')).toHaveAttribute('data-full-label', discreteLabel);
   });
 
-  it('reuses exact Micro node IDs for Meso connections without creating duplicate nodes', async () => {
+  it('commits a noun-labeled Meso linkage with exact carried Micro setting IDs and no edges or verb controls', async () => {
     const project = createDefaultProject();
     const microNodes = extractCandidates(project.submission).nodes
       .slice(0, 2)
-      .map((node) => ({ ...node, scale: 'micro', status: 'confirmed', claimState: 'student interpretation' }));
-    microNodes[0].label = 'Renamed family support participants';
-    const [source, target] = microNodes;
-    expect(source.id).not.toBe(stableId('node', source.label));
+      .map((node) => ({ ...node, type: 'setting', scale: 'micro', status: 'confirmed', claimState: 'student interpretation' }));
+    microNodes[0].label = 'Renamed family support setting';
+    const linkageLabel = 'Family–school coordination';
+    expect(microNodes[0].id).not.toBe(stableId('node', microNodes[0].label));
     project.activeScale = 'meso';
     project.releasedScales = ['micro', 'meso'];
     project.graph = { nodes: microNodes, edges: [] };
     project.candidates = { nodes: [], edges: [] };
     project.stage = 1;
     project.furthestStage = 1;
-    const relationshipVerb = 'engaged with for administrative guidance';
     const review = {
-      guidance: [{ point: 'The memo names a connection between the two Micro nodes.' }],
-      nodes: [],
-      connections: [{ source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, verb: relationshipVerb, rationale: 'The memo names this connection directly.' }],
-      example: `${source.label} ${relationshipVerb} ${target.label}.`,
-      readiness: { ready: true, note: 'The memo supports reviewing a Meso connection.' },
+      guidance: [{ point: 'The memo describes coordination between two immediate settings.' }],
+      nodes: [{
+        label: linkageLabel,
+        type: 'mesosystem',
+        scale: 'meso',
+        evidence: 'The memo names coordination between the family and school settings.',
+        scope: microNodes.map(({ id, label }) => ({ id, label })),
+      }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports one Meso linkage.' },
     };
     const evaluation = evaluationRecord(evaluationPayloadFixture(project), { review });
     project.preflight = {
@@ -1551,41 +1701,42 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
 
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Connections evident in your memo' })).toBeVisible();
-    microNodes.forEach((node) => expect(screen.getByRole('region', { name: 'Nodes carried forward from Micro' })).toHaveTextContent(node.label));
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose connections' }));
-    expect(await screen.findByRole('heading', { name: 'Confirm how they connect' })).toBeVisible();
-    const carried = screen.getByRole('region', { name: 'Nodes from Micro' });
+    expect(screen.getByRole('heading', { name: 'Suggested mesosystems' })).toBeVisible();
+    const carried = screen.getByRole('region', { name: 'Micro settings available for mesosystems' });
     microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
-    expect(screen.queryByRole('tab', { name: /Nodes/ })).not.toBeInTheDocument();
-    // A structured model review is complete: the client keeps its exact
-    // carried-ID connection without supplementing it from local extraction.
-    expect(screen.getByRole('tab', { name: 'Connections · 1' })).toBeVisible();
-    expect(screen.getByRole('tab', { name: 'More connections' })).toBeVisible();
-    const relationshipEditor = screen.getByRole('textbox', { name: 'Relationship verb' });
-    expect(relationshipEditor.tagName).toBe('TEXTAREA');
-    expect(relationshipEditor).toHaveClass('relationship-verb-editor');
-    expect(relationshipEditor).toHaveValue(relationshipVerb);
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose mesosystems' }));
+    expect(await screen.findByRole('heading', { name: 'Choose the mesosystems' })).toBeVisible();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Relationship verb' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/More connections|More direct relationships/)).not.toBeInTheDocument();
+    const linkageEditor = screen.getByRole('textbox', { name: 'Mesosystem label' });
+    expect(linkageEditor).toHaveValue(linkageLabel);
+    const scopeEditor = linkageEditor.closest('article');
+    microNodes.forEach((node) => expect(within(scopeEditor).getByRole('button', { name: `Remove ${node.label} from ${linkageLabel}` })).toBeVisible());
     await waitFor(() => {
-      expect(storedProject().candidates.nodes).toEqual([]);
-      expect(storedProject().candidates.edges[0]).toMatchObject({ source: source.id, target: target.id, scale: 'meso' });
+      expect(storedProject().candidates.nodes).toEqual([expect.objectContaining({
+        label: linkageLabel,
+        type: 'mesosystem',
+        scale: 'meso',
+        scopeNodeIds: microNodes.map(({ id }) => id),
+      })]);
+      expect(storedProject().candidates.edges).toEqual([]);
     });
 
-    const connectionRow = screen.getAllByRole('article')[0];
-    fireEvent.click(within(connectionRow).getByRole('button', { name: 'Keep' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
-    await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
-    const suggestionRequest = fetchMock.mock.calls.find(([path, options]) => String(path) === '/api/map/connections' && options.method === 'POST');
-    expect(JSON.parse(suggestionRequest[1].body).nodes.map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
-
+    fireEvent.click(within(screen.getAllByRole('article')[0]).getByRole('button', { name: 'Keep' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
-    expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
-    expect(new Set(storedProject().graph.nodes.map(({ id }) => id)).size).toBe(microNodes.length);
-    expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: source.id, target: target.id, verb: relationshipVerb, scale: 'meso' }),
-    ]));
+    const stored = storedProject();
+    expect(stored.graph.nodes.filter((node) => node.scale === 'micro').map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
+    expect(stored.graph.nodes.find((node) => node.label === linkageLabel)).toMatchObject({
+      type: 'mesosystem',
+      scale: 'meso',
+      scopeNodeIds: microNodes.map(({ id }) => id),
+    });
+    expect(stored.graph.edges).toEqual([]);
+    expect(document.querySelectorAll(`[data-linkage-of="${stableId('node', linkageLabel)}"]`)).toHaveLength(2);
+    expect(document.querySelectorAll('.graph-edge[data-edge-scale="meso"]')).toHaveLength(0);
+    expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(0);
   });
 
   it('keeps an existing Micro node in Micro when an Exosphere memo names it again', async () => {
@@ -1608,11 +1759,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     const review = {
       guidance: [{ point: 'The memo names an indirect institutional influence.' }],
       nodes: [
-        { label: existing.label, type: existing.type, scale: 'exosphere', evidence: 'The memo names the participants.' },
         { label: outerLabel, type: 'agency', scale: 'exosphere', evidence: 'The memo names the department.' },
       ],
-      connections: [{ source: outerLabel, target: existing.label, verb: 'shapes access for', rationale: 'The memo describes the indirect influence.' }],
-      example: `${outerLabel} shapes access for ${existing.label}.`,
+      connections: [{ source: outerLabel, target: existing.label, verb: 'serves', rationale: 'The memo describes the institutional pathway.' }],
+      example: `${outerLabel} serves ${existing.label}.`,
       readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
     };
     const evaluation = evaluationRecord(evaluationPayloadFixture(project), { review });
@@ -1731,12 +1881,12 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
   });
 
-  it('keeps a relationship whose verb is outside the course vocabulary when the student chooses Keep', async () => {
+  it('keeps a direct Micro relationship whose verb is outside the course vocabulary when the student chooses Keep', async () => {
     const project = createDefaultProject();
-    project.activeScale = 'exosphere';
-    project.releasedScales = ['micro', 'meso', 'exosphere'];
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
     const extracted = extractCandidates(project.submission);
-    const nodes = extracted.nodes.slice(0, 2).map((node) => ({ ...node, scale: 'exosphere', status: 'confirmed', claimState: 'student interpretation' }));
+    const nodes = extracted.nodes.slice(0, 2).map((node) => ({ ...node, scale: 'micro', status: 'confirmed', claimState: 'student interpretation' }));
     const edge = {
       ...extracted.edges[0],
       source: nodes[0].id,
@@ -1747,7 +1897,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       status: 'pending',
       claimState: 'inference',
       evidence: 'The memo describes the invitation directly.',
-      scale: 'exosphere',
+      scale: 'micro',
     };
     project.candidates = { nodes, edges: [edge] };
     project.graph = { nodes: [], edges: [] };
@@ -1755,7 +1905,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.furthestStage = 2;
     await resumeSavedProject(project);
 
-    fireEvent.click(screen.getByRole('tab', { name: /Connections · 1/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Direct relationships · 1/ }));
     const row = screen.getAllByRole('article')[0];
     fireEvent.click(within(row).getByRole('button', { name: 'Keep' }));
     expect(within(row).getByRole('button', { name: 'Keep' })).toHaveClass('is-active');
@@ -1793,8 +1943,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(new Set(committed.map(({ x, y }) => `${x},${y}`)).size).toBe(committed.length);
   });
 
-  it('records a manually added relationship in the current scale layer', async () => {
-    const project = await openMapProject();
+  it('records a manually added direct relationship in Micro', async () => {
+    const project = await openMapProject(makeMapProject('micro'));
     const microNodes = project.graph.nodes.filter((node) => node.scale === 'micro');
     const inspector = openMapInspector();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
@@ -1802,25 +1952,52 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
     const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
     fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: microNodes[0].id } });
-    fireEvent.change(within(addForm).getByLabelText('Connection'), { target: { value: 'coordinates with' } });
+    fireEvent.change(within(addForm).getByLabelText('Relationship'), { target: { value: 'coordinates with' } });
     fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: microNodes[1].id } });
-    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The current Meso memo names this relationship.' } });
+    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The Micro memo names this direct relationship.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
     await waitFor(() => expect(storedProject().graph.edges.at(-1)).toMatchObject({
       source: microNodes[0].id,
       target: microNodes[1].id,
-      scale: 'meso',
+      scale: 'micro',
       verb: 'coordinates with',
     }));
   });
 
-  it('limits manual map additions to nodes in Micro and carried-node relationships in Meso', async () => {
+  it('requires a named institution for a manually added Exosphere map node', async () => {
+    const project = await openMapProject(makeMapProject('exosphere'));
+    const initialNodeCount = project.graph.nodes.length;
+    const inspector = openMapInspector();
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
+    const addActions = document.getElementById('inspector-add-actions');
+    fireEvent.click(within(addActions).getByRole('button', { name: 'Node' }));
+    const addForm = screen.getByRole('heading', { name: 'Add a node' }).parentElement;
+    fireEvent.change(within(addForm).getByLabelText('Label'), { target: { value: 'Transportation access' } });
+    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies an institutional pathway.' } });
+    fireEvent.click(within(addForm).getByRole('button', { name: 'Add node' }));
+
+    expect(screen.getByText('Use the full name of an institution, agency, office, or service system.')).toBeVisible();
+    expect(storedProject().graph.nodes).toHaveLength(initialNodeCount);
+
+    fireEvent.change(within(addForm).getByLabelText('Label'), { target: { value: 'East Harlem Disability Services Office' } });
+    fireEvent.click(within(addForm).getByRole('button', { name: 'Add node' }));
+    await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(initialNodeCount + 1));
+    expect(storedProject().graph.nodes.at(-1)).toMatchObject({
+      label: 'East Harlem Disability Services Office',
+      type: 'institution',
+      scale: 'exosphere',
+      status: 'confirmed',
+      claimState: 'research lead',
+    });
+  });
+
+  it('allows manual nodes and direct relationships in Micro but keeps Meso linkage creation in the Choose stage', async () => {
     await openMapProject(makeMapProject('micro'));
     let inspector = openMapInspector();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     let actions = document.getElementById('inspector-add-actions');
     expect(within(actions).getByRole('button', { name: 'Node' })).toBeVisible();
-    expect(within(actions).queryByRole('button', { name: 'Relationship' })).not.toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Relationship' })).toBeVisible();
 
     cleanup();
     const project = await openMapProject(makeMapProject('meso'));
@@ -1828,18 +2005,13 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     actions = document.getElementById('inspector-add-actions');
     expect(within(actions).queryByRole('button', { name: 'Node' })).not.toBeInTheDocument();
-    fireEvent.click(within(actions).getByRole('button', { name: 'Relationship' }));
-    const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
-    const expectedLabels = project.graph.nodes
-      .filter((node) => node.scale === 'micro')
-      .map((node) => node.label);
-    expect(within(within(addForm).getByLabelText('From')).getAllByRole('option').map((option) => option.textContent)).toEqual(expectedLabels);
-    expect(within(within(addForm).getByLabelText('To')).getAllByRole('option').map((option) => option.textContent)).toEqual(expectedLabels);
+    expect(within(actions).queryByRole('button', { name: 'Relationship' })).not.toBeInTheDocument();
   });
 
-  it('places Meso relationship labels in the Meso annulus while their endpoints remain Micro and filters without writes', async () => {
+  it('renders Meso linkage nodes in the Meso annulus with derived bridge lines and no relationship labels', async () => {
     const project = makeMapProject('meso');
     const meso = graphForScale(project, 'meso');
+    const linkage = project.graph.nodes.find((node) => node.scale === 'meso');
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
 
@@ -1847,68 +2019,26 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelector('[data-ecology-layer="meso"]')).toHaveClass('is-visible');
     const renderedNodes = [...document.querySelectorAll('.graph-node')];
     expect(renderedNodes).toHaveLength(meso.nodes.length);
-    renderedNodes.forEach((node) => {
-      expect(node).toHaveClass('graph-node--micro');
-      expect(node).toHaveAttribute('aria-label', expect.stringContaining('Micro level'));
-    });
-
-    const mesoLabels = [...document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"][data-edge-route="layer-anchor"]')];
-    expect(mesoLabels).toHaveLength(meso.edges.length);
-    const mesoLabelBounds = [];
-    mesoLabels.forEach((label) => {
-      const anchorX = Number(label.getAttribute('data-anchor-x'));
-      const anchorY = Number(label.getAttribute('data-anchor-y'));
-      const offsetX = anchorX - 1600;
-      const offsetY = anchorY - 1200;
-      const insideMicro = (offsetX ** 2) / (600 ** 2) + (offsetY ** 2) / (420 ** 2);
-      const insideMeso = (offsetX ** 2) / (910 ** 2) + (offsetY ** 2) / (650 ** 2);
-      expect(insideMicro, `${label.getAttribute('data-full-label')} is still inside Micro`).toBeGreaterThan(1);
-      expect(insideMeso, `${label.getAttribute('data-full-label')} falls outside Meso`).toBeLessThan(1);
-      const edge = document.querySelector(`.graph-edge[data-graph-id="${label.getAttribute('data-edge-id')}"]`);
-      expect(edge).toHaveAttribute('data-edge-route', 'layer-anchor');
-      expect(edge.querySelector('.edge-line').getAttribute('d')).toContain(`L ${anchorX} ${anchorY} L`);
-      const labelText = label.querySelector('.edge-label');
-      expect(labelText).toHaveStyle({ fontSize: '24px' });
-      expect(svgTextLines(labelText).join(' ')).toBe(label.getAttribute('data-full-label'));
-      const background = label.querySelector('.edge-label-bg');
-      expect(Number(background.getAttribute('height'))).toBeGreaterThanOrEqual(38);
-      const bounds = {
-        left: Number(background.getAttribute('x')),
-        top: Number(background.getAttribute('y')),
-        right: Number(background.getAttribute('x')) + Number(background.getAttribute('width')),
-        bottom: Number(background.getAttribute('y')) + Number(background.getAttribute('height')),
-      };
-      mesoLabelBounds.push({ label: label.getAttribute('data-full-label'), bounds });
-      [
-        [bounds.left, bounds.top],
-        [bounds.right, bounds.top],
-        [bounds.left, bounds.bottom],
-        [bounds.right, bounds.bottom],
-      ].forEach(([cornerX, cornerY]) => {
-        const cornerOffsetX = cornerX - 1600;
-        const cornerOffsetY = cornerY - 1200;
-        const cornerInsideMicro = (cornerOffsetX ** 2) / (600 ** 2) + (cornerOffsetY ** 2) / (420 ** 2);
-        const cornerInsideMeso = (cornerOffsetX ** 2) / (910 ** 2) + (cornerOffsetY ** 2) / (650 ** 2);
-        expect(cornerInsideMicro, `${label.getAttribute('data-full-label')} background crosses into Micro`).toBeGreaterThan(1);
-        expect(cornerInsideMeso, `${label.getAttribute('data-full-label')} background leaves Meso`).toBeLessThan(1);
-      });
-    });
-    for (let first = 0; first < mesoLabelBounds.length; first += 1) {
-      for (let second = first + 1; second < mesoLabelBounds.length; second += 1) {
-        expect(
-          rectsIntersect(mesoLabelBounds[first].bounds, mesoLabelBounds[second].bounds),
-          `${mesoLabelBounds[first].label} overlaps ${mesoLabelBounds[second].label}`,
-        ).toBe(false);
-      }
-    }
+    const renderedLinkage = document.querySelector(`.graph-node[data-graph-id="${linkage.id}"]`);
+    expect(renderedLinkage).toHaveClass('graph-node--meso');
+    expect(renderedLinkage).toHaveAttribute('aria-label', expect.stringContaining('Meso level'));
+    expect(svgTextLines(renderedLinkage.querySelector('.node-label')).join(' ')).toBe(linkage.label);
+    const position = renderedNodePosition(linkage.id);
+    const offsetX = position.x - 1600;
+    const offsetY = position.y - 1200;
+    expect((offsetX ** 2) / (600 ** 2) + (offsetY ** 2) / (420 ** 2)).toBeGreaterThan(1);
+    expect((offsetX ** 2) / (910 ** 2) + (offsetY ** 2) / (650 ** 2)).toBeLessThan(1);
+    expect(document.querySelectorAll(`[data-linkage-of="${linkage.id}"]`)).toHaveLength(linkage.scopeNodeIds.length);
+    expect(document.querySelectorAll('.graph-edge[data-edge-scale="meso"]')).toHaveLength(0);
+    expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(0);
 
     const scale = screen.getByRole('combobox', { name: 'Show map layer' });
     fireEvent.change(scale, { target: { value: 'micro' } });
-    expect(document.querySelectorAll('.graph-edge[data-edge-scale="meso"]')).toHaveLength(0);
-    expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(0);
+    expect(document.querySelector(`[data-graph-id="${linkage.id}"]`)).toBeNull();
+    expect(document.querySelectorAll(`[data-linkage-of="${linkage.id}"]`)).toHaveLength(0);
     fireEvent.change(scale, { target: { value: 'meso' } });
-    expect(document.querySelectorAll('.graph-edge[data-edge-scale="meso"]')).toHaveLength(meso.edges.length);
-    expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(meso.edges.length);
+    expect(document.querySelector(`[data-graph-id="${linkage.id}"]`)).toBeVisible();
+    expect(document.querySelectorAll(`[data-linkage-of="${linkage.id}"]`)).toHaveLength(linkage.scopeNodeIds.length);
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
@@ -1941,19 +2071,23 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(outsideInnerBand, `${label.getAttribute('data-full-label')} falls inside an earlier layer`).toBeGreaterThan(1);
       expect(insideOuterBand, `${label.getAttribute('data-full-label')} falls outside ${activeScale}`).toBeLessThan(1);
     });
-    expect(screen.getByText('Choose a node to see its connections.')).toBeVisible();
+    expect(screen.getByText(activeScale === 'exosphere'
+      ? 'Choose a node to see its relationships.'
+      : 'Choose a Macrosphere item to see the mapped elements it affects.')).toBeVisible();
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).toHaveAttribute('inert');
     expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
 
     fireEvent.change(scale, { target: { value: 'meso' } });
     expect(scale).toHaveValue('meso');
-    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Meso map. ${meso.nodes.length} nodes and ${meso.edges.length} ${meso.edges.length === 1 ? 'connection' : 'connections'}.`));
+    const mesosystemCount = meso.nodes.filter((node) => node.scale === 'meso').length;
+    const settingCount = meso.nodes.filter((node) => node.scale === 'micro').length;
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Meso map. ${mesosystemCount} ${mesosystemCount === 1 ? 'mesosystem' : 'mesosystems'} and ${settingCount} Micro ${settingCount === 1 ? 'setting' : 'settings'}.`));
     expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(meso.edges.length);
 
     fireEvent.change(scale, { target: { value: 'all' } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
-    expect(screen.getByText('Choose a node to see its connections.')).toBeVisible();
+    expect(screen.getByText('Choose a node to see its relationships.')).toBeVisible();
     expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(project.releasedScales.length);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(all.edges.length);
@@ -2322,7 +2456,7 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it('keeps the initial automatic desktop fit and a nonzero relationship geometry', async () => {
-    const project = makeMapProject('meso');
+    const project = makeMapProject('exosphere');
     project.events.push(
       { id: 'event-desktop-fit-1', action: 'graph.committed', actor: 'student', at: '2026-08-21T18:00:00.000Z', detail: 'First cycle' },
       { id: 'event-desktop-fit-2', action: 'graph.committed', actor: 'student', at: '2026-08-21T18:05:00.000Z', detail: 'Second cycle' },
@@ -2343,7 +2477,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
   it('refits a desktop-focused relationship when crossing into phone detail and restores the durable desktop map', async () => {
     const resizeTo = installResponsiveLayout();
-    const project = makeMapProject('meso');
+    const project = makeMapProject('exosphere');
     const durablePositions = project.graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
     const durableViewport = { ...project.viewport };
     await openMapProject(project);
@@ -2464,10 +2598,10 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it.each([
-    ['meso', 'seeks help from'],
-    ['exosphere', 'determines daytime course availability for'],
+    ['micro', 'determines daytime course availability for'],
   ])('keeps the complete %s relationship label clear of both endpoint cards in desktop detail', async (activeScale, verb) => {
-    const project = makeMapProject(activeScale);
+    const project = makeMapProject('exosphere');
+    project.activeScale = activeScale;
     const edge = project.graph.edges.find((candidate) => candidate.scale === activeScale);
     const activeGraph = graphForScale(project);
     edge.verb = verb;
@@ -2475,7 +2609,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     const overviewLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    expect(overviewLabel).toHaveAttribute('data-edge-route', 'layer-anchor');
+    expect(overviewLabel).toHaveAttribute('data-edge-route', 'direct');
     expect(svgTextLines(overviewLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
 
     const renderedEdge = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
@@ -2519,7 +2653,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
     const restoredLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    expect(restoredLabel).toHaveAttribute('data-edge-route', 'layer-anchor');
+    expect(restoredLabel).toHaveAttribute('data-edge-route', 'direct');
     expect(svgTextLines(restoredLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
     expect(document.querySelectorAll('.graph-node')).toHaveLength(activeGraph.nodes.length);
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(activeGraph.edges.length);
@@ -2528,7 +2662,8 @@ Overall, the posting history documents a working student repeatedly turning to R
 
   it('fits a maximum-length relationship label inside desktop detail without covering either endpoint', async () => {
     const project = makeMapProject('exosphere');
-    const edge = project.graph.edges.find((candidate) => candidate.scale === 'exosphere');
+    project.activeScale = 'micro';
+    const edge = project.graph.edges.find((candidate) => candidate.scale === 'micro');
     const maximumLengthVerb = 'R'.repeat(100);
     edge.verb = maximumLengthVerb;
     const graphBefore = structuredClone(project.graph);
@@ -2654,7 +2789,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
     const addForm = screen.getByRole('heading', { name: 'Add a relationship' }).parentElement;
     fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: 'node-dense-focus' } });
-    fireEvent.change(within(addForm).getByLabelText('Connection'), { target: { value: 'coordinates new support with' } });
+    fireEvent.change(within(addForm).getByLabelText('Relationship'), { target: { value: 'coordinates new support with' } });
     fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: secondNeighbor.id } });
     fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo documents this additional coordination.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
@@ -2794,7 +2929,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     ['phone', true],
   ])('renders complete map labels with separate, dynamically sized cards on %s', async (_viewport, phone) => {
     if (phone) installPhoneLayout();
-    const project = makeMapProject();
+    const project = makeMapProject('exosphere');
+    project.activeScale = 'micro';
     const active = graphForScale(project);
     const incidentEdge = active.edges[0];
     const sourceNode = project.graph.nodes.find((node) => node.id === incidentEdge.source);
@@ -2826,7 +2962,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
     const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
     const edgeText = renderedEdge.querySelector('.edge-label');
-    expect(edgeText).toHaveStyle({ fontSize: phone ? '26px' : '24px' });
+    expect(edgeText).toHaveStyle({ fontSize: phone ? '26px' : '18px' });
     expect(svgTextLines(edgeText).join(' ')).toBe(longEdgeLabel);
     expect(renderedEdge).not.toHaveTextContent('…');
     expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
@@ -2836,7 +2972,8 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it('preserves every character in maximum-length unbroken map labels', async () => {
-    const project = makeMapProject();
+    const project = makeMapProject('exosphere');
+    project.activeScale = 'micro';
     const active = graphForScale(project);
     const incidentEdge = active.edges[0];
     const sourceNode = project.graph.nodes.find((node) => node.id === incidentEdge.source);
@@ -2871,7 +3008,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
 
-    await waitFor(() => expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.arranged', detail: 'Meso arranged' }));
+    await waitFor(() => expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.arranged', detail: 'Exosphere arranged' }));
     const arranged = storedProject();
     const arrangedVisible = arranged.graph.nodes.filter((node) => visibleIds.has(node.id));
     const arrangedHidden = arranged.graph.nodes.filter((node) => !visibleIds.has(node.id));
@@ -2912,13 +3049,33 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it('keeps candidates and the whole map intact when memo text changes', async () => {
-    const project = createDefaultProject();
-    project.candidates = extractCandidates(project.submission);
-    project.candidates.nodes.forEach((node) => { if (node.scale === 'meso') node.scale = 'micro'; });
-    project.candidates.edges.forEach((edge) => { if (edge.scale === 'micro') edge.scale = 'meso'; });
-    project.graph = structuredClone(project.candidates);
-    project.graph.nodes.forEach((node) => { node.status = 'confirmed'; node.claimState = 'student interpretation'; });
-    project.graph.edges.forEach((edge) => { edge.status = 'confirmed'; edge.claimState = 'student interpretation'; });
+    const project = makeMapProject('exosphere');
+    const template = project.graph.nodes.find((node) => node.scale === 'micro');
+    const candidateNode = {
+      ...structuredClone(template),
+      id: 'node_pending_peer_setting',
+      label: 'Pending peer setting',
+      status: 'pending',
+      claimState: 'inference',
+      annotations: {
+        analytical: { id: 'annotation_pending_peer_setting_analytical', text: '' },
+        evidence: { id: 'annotation_pending_peer_setting_evidence', text: '' },
+      },
+    };
+    const target = project.graph.nodes.find((node) => node.scale === 'micro' && node.id !== template.id);
+    const edgeTemplate = project.graph.edges.find((edge) => edge.scale === 'micro');
+    const candidateEdge = {
+      ...structuredClone(edgeTemplate),
+      id: 'edge_pending_peer_support',
+      source: candidateNode.id,
+      sourceLabel: candidateNode.label,
+      target: target.id,
+      targetLabel: target.label,
+      status: 'pending',
+      claimState: 'inference',
+      annotation: { id: 'annotation_pending_peer_support', text: '' },
+    };
+    project.candidates = { nodes: [candidateNode], edges: [candidateEdge] };
     project.stage = 0;
     project.furthestStage = 0;
     await resumeSavedProject(project);
@@ -3141,7 +3298,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(addDisclosure);
     expect(addDisclosure).toHaveAttribute('aria-expanded', 'true');
     const addActions = document.getElementById('inspector-add-actions');
-    expect(within(addActions).queryByRole('button', { name: 'Node' })).not.toBeInTheDocument();
+    expect(within(addActions).getByRole('button', { name: 'Node' })).toBeVisible();
     expect(within(addActions).getByRole('button', { name: 'Relationship' })).toBeVisible();
     fireEvent.click(addDisclosure);
     expect(addDisclosure).toHaveAttribute('aria-expanded', 'false');
@@ -3223,12 +3380,12 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it('restores stored layout data, viewport, and annotations without mutating them on reload', async () => {
-    const project = makeMapProject('meso');
+    const project = makeMapProject('exosphere');
     project.graph.nodes.forEach((node, index) => {
       node.x = 80 + (index % 4) * 220;
       node.y = 70 + Math.floor(index / 4) * 130;
     });
-    const restoredEdge = project.graph.edges.find((edge) => edge.scale === 'meso');
+    const restoredEdge = project.graph.edges.find((edge) => edge.scale === 'exosphere');
     const restoredNode = project.graph.nodes.find((node) => node.id === restoredEdge.source);
     restoredNode.annotations.analytical.text = 'Restored node annotation';
     restoredEdge.annotation.text = 'Restored relationship annotation';
@@ -3273,7 +3430,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         evidence: { id: `annotation-csv-evidence-${index}`, text: '' },
       },
       label,
-      scale: 'exosphere',
+      scale: 'micro',
       status: 'confirmed',
       claimState: 'confirmed',
     }));
@@ -3286,7 +3443,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       sourceLabel: nodes[0].label,
       targetLabel: nodes[1].label,
       verb: 'documents',
-      scale: 'exosphere',
+      scale: 'micro',
       status: 'confirmed',
       claimState: 'confirmed',
       notes: '',
@@ -3295,7 +3452,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       evidence: 'Memo sentence 1',
       annotation: { id: stableId('annotation', `edge:${edgeId}:relationship`), text: '' },
     }] };
-    project.releasedScales = ['micro', 'exosphere'];
+    project.releasedScales = ['micro'];
     project.events.push({
       id: 'evt_legacy_source_imported',
       action: 'source.imported',
@@ -3345,7 +3502,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(markdown).toContain('## Memo');
       expect(markdown).not.toMatch(/^## Source\b/m);
       expect(markdown).toContain('## Items needing evidence');
-      expect(markdown).toContain(`${nodes[0].label} **documents** ${nodes[1].label} — level: Exosphere; evidence: Memo sentence 1`);
+      expect(markdown).toContain(`${nodes[0].label} **documents** ${nodes[1].label} — level: Micro; evidence: Memo sentence 1`);
       expect(markdown).not.toMatch(/\b(?:student interpretation|inference|contested|research lead|retired|claim_state)\b/i);
     } finally {
       if (priorCreate === undefined) delete URL.createObjectURL; else URL.createObjectURL = priorCreate;
@@ -3377,15 +3534,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 2;
     project.furthestStage = 2;
     await resumeSavedProject(project);
-    expect(await screen.findByRole('heading', { name: 'Choose the structures' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose the Macrosphere items' })).toBeVisible();
     // No connections step exists at this level.
     expect(screen.queryByRole('tab', { name: /Connections/ })).not.toBeInTheDocument();
-    const reachEditor = screen.getByLabelText('Reach of Universal Pre-K Law');
-    fireEvent.change(within(reachEditor).getByLabelText('How Universal Pre-K Law operates'), { target: { value: 'prohibits' } });
-    const addSelect = within(reachEditor).getByLabelText('Add a mapped element to the reach of Universal Pre-K Law');
+    const reachEditor = screen.getByLabelText('Mapped elements affected by Universal Pre-K Law');
+    fireEvent.change(within(reachEditor).getByLabelText('How Universal Pre-K Law affects mapped elements'), { target: { value: 'prohibits' } });
+    const addSelect = within(reachEditor).getByLabelText('Add a mapped element affected by Universal Pre-K Law');
     fireEvent.change(addSelect, { target: { value: microNodes[0].id } });
     fireEvent.change(addSelect, { target: { value: microNodes[1].id } });
-    expect(within(reachEditor).getByRole('button', { name: `Remove ${microNodes[0].label} from the reach of Universal Pre-K Law` })).toBeVisible();
+    expect(within(reachEditor).getByRole('button', { name: `Remove ${microNodes[0].label} from the mapped elements affected by Universal Pre-K Law` })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
@@ -3424,17 +3581,22 @@ Overall, the posting history documents a working student repeatedly turning to R
     await resumeSavedProject(project);
     expect(await screen.findByRole('heading', { name: 'Choose the institutions' })).toBeVisible();
     const panel = screen.getByRole('region', { name: 'Add an institution' });
-    fireEvent.click(within(panel).getByRole('button', { name: 'School or program board' }));
-    fireEvent.change(within(panel).getByLabelText('Institution name'), { target: { value: 'District 15 School Board' } });
-    fireEvent.change(within(panel).getByLabelText('Pathway verb'), { target: { value: 'sets rules for' } });
-    fireEvent.change(within(panel).getByLabelText('Mapped element the pathway reaches'), { target: { value: microNode.id } });
+    fireEvent.change(within(panel).getByLabelText('Institution type'), { target: { value: 'agency' } });
+    fireEvent.change(within(panel).getByLabelText('Institution name'), { target: { value: 'Transportation access' } });
+    fireEvent.change(within(panel).getByLabelText('Mapped element affected by the institution'), { target: { value: microNode.id } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add institution' }));
+    expect(screen.getByText('Use the full name of an institution, agency, office, or service system.')).toBeVisible();
+    expect(storedProject().candidates.nodes).toEqual([]);
+
+    fireEvent.change(within(panel).getByLabelText('Institution name'), { target: { value: 'East Harlem Disability Services Office' } });
+    fireEvent.change(within(panel).getByLabelText('Institutional relationship'), { target: { value: 'sets rules for' } });
     fireEvent.click(within(panel).getByRole('button', { name: 'Add institution' }));
     await waitFor(() => {
       const stored = storedProject();
-      const institution = stored.candidates.nodes.find((node) => node.label === 'District 15 School Board');
+      const institution = stored.candidates.nodes.find((node) => node.label === 'East Harlem Disability Services Office');
       expect(institution).toMatchObject({ scale: 'exosphere', type: 'agency', status: 'confirmed' });
       expect(stored.candidates.edges).toEqual([expect.objectContaining({
-        sourceLabel: 'District 15 School Board',
+        sourceLabel: 'East Harlem Disability Services Office',
         target: microNode.id,
         verb: 'sets rules for',
         scale: 'exosphere',

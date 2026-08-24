@@ -1,45 +1,44 @@
 # Systems Mapping — QA and visual-fidelity report
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 
 ## Candidate status
 
-The current local candidate gives each ring its own representational grammar (the 2026-08-23 outer-rings pass, on top of the 2026-08-22 concreteness pass):
+The direct decision recorded on 2026-08-24 corrects the Micro/Meso contract:
 
-- Level assignment is governed by testable delimiters, printed on every Review screen and enforced in the model contract: Micro is what the memo-writer is in the room with; Meso holds only links between mapped settings; an Exosphere item passes the never-in-the-room test and must trace a pathway into a mapped element; a Macrosphere item is a pattern with no door.
-- Outer-level verbs come from closed registers (institutional at Exosphere: funds, administers, regulates, employs, sets rules for…; deontic at Macrosphere: mandates, prohibits, defines eligibility for, normalizes, frames…). Off-register verbs coerce to a canonical entry or drop at generation time.
-- The Exosphere is produced by elicitation, not extraction: the model walks the carried map by institutional category and may propose institutions the memo never names, marked `basis: "inference"` with verification-oriented evidence; students can also add institutions from a standard category checklist with a typed pathway to a chosen anchor. Every Exosphere connection lands on a carried map element.
-- The Macrosphere holds structures, never edges: each structure carries a deontic verb and a student-editable scope of mapped elements (`scopeNodeIds`), rendered on the map as a shaded convex-hull field over its members. Selecting a structure lights exactly its field; the Macrosphere layer view shows fields plus members instead of spokes.
+- Micro contains discrete people, groups, objects, resources, and immediate settings, together with their direct relationships. The relationship verbs remain Micro records.
+- A whole clause or proposition cannot become a Micro node. The model must identify the relevant actor, object, or setting and represent any supported proposition as a direct Micro relationship.
+- Meso contains noun-labeled linkages among at least two carried Micro settings. It contains no generic relationship edges or verbs.
+- A Meso linkage renders in the Meso region and references its included Micro settings. Any connector line shows membership in the linkage, not a new proposition.
 
-Carried forward from 2026-08-22:
+Still required from the earlier map work:
 
-- Node labels are concrete at every level: one named actor, object, institution, policy, or event per node; clause and theme labels are rejected everywhere, and question sentences never mint nodes or relationships.
-- Reviews are selective: per-level ceilings (Micro 10 nodes; Meso 8 connections; Exosphere/Macrosphere 8 new nodes and 6 connections) and at most 4 guidance points.
-- Exosphere and Macrosphere reviews receive the live map (`carriedNodes` and `carriedConnections`); mapped elements and relationships are never re-proposed, and new connections may tie institutions or structures to existing nodes. A Meso connection can never be re-logged or re-scaled by a later level.
-- Completing a level continues directly at Review for the next level; the intake form is never repeated, and each level speaks its own language (nodes / connections / institutions / structures).
-- Ring callouts anchor beside their own endpoints with a collision sweep across callouts and cards; map view controls float over the canvas; the map screen fits the desktop viewport; an untouched ecology viewport opens centered.
-- Micro generates nodes only.
-- Micro revise and export shows no relationships even when the cumulative project contains later-level connections; full export still preserves the entire graph.
-- Meso carries the same Micro node IDs forward, places relationship callouts inside the Meso annulus, and points inward to those Micro endpoints.
+- Except for the specialized `mesosystem` record, each node names one concrete actor, object, setting, institution, policy, law, condition, or structure. A Meso label names the interrelation among its included settings. Clause labels and question sentences never mint nodes or relationships.
+- Reviews remain selective and bounded.
+- Exosphere and Macrosphere reviews receive the live map (`carriedNodes` and `carriedConnections`); mapped elements and relationships are not re-proposed.
+- Completing a level continues directly at Review for the next level; the intake form is not repeated, and each level uses its own direct terminology.
+- Map labels stay complete and clear of node cards and controls; map view controls remain available over the canvas; the map screen fits the desktop viewport; an untouched ecology viewport opens centered.
+- Micro revise and export shows its Micro nodes and relationships while excluding records assigned to later levels; full export preserves the cumulative graph.
+- Meso carries eligible Micro setting IDs forward and stores each linkage as a `mesosystem` node with at least two valid setting IDs in `scopeNodeIds`.
 - Exosphere replaces Macro.
 - Macrosphere replaces Integration.
-- Exosphere and Macrosphere use filterable concentric ecological regions that contain nodes and connections.
+- Exosphere and Macrosphere use filterable concentric ecological regions. Exosphere may contain supported institutional connections; Macrosphere uses scoped structure nodes and no graph edges.
 - Completing a level advances Micro to Meso to Exosphere to Macrosphere; completing Macrosphere begins another Macrosphere cycle.
 - The larger canvas retains pointer panning, adds focused-canvas arrow-key panning, supports a reversible CSS full-screen view, and zooms out to `0.15`.
 
 The five workflow stages remain repeatable. The current student interface has no instructor-submission field. Retained instructor review stays advisory, and an outstanding evaluation must not block another stage, level, or cycle. Per-session supersession and retention purges remain unchanged and are deferred from redesign.
 
-Current automated, build, and local source-built browser checks are recorded separately from the 2026-08-21 release receipts below. No GitHub publication, Railway deployment, hosted readback, or live-provider claim is made for the 2026-08-22 working tree here.
+The 2026-08-21 and 2026-08-22 receipts below verify earlier builds. They do not verify this corrected Micro/Meso contract. Current automated, source-built browser, GitHub, Railway, and live-provider evidence must be recorded after the correction is complete.
 
-## Current local candidate receipts
+## Historical local candidate receipts — superseded Micro/Meso contract
 
-| Current receipt | Result | Boundary |
+| Historical receipt | Result | Boundary |
 | --- | --- | --- |
-| Ordinary suite | 242 passed; 4 PostgreSQL tests skipped behind their explicit environment guard | Current working tree; guarded tests were not rerun in this frontend pass. |
-| Production build | Passed; emitted `index-BJBuN6w3.js`, `TeacherDashboard-DPrpmbM0.js`, and `index-BZOzcHy4.css` | Local production build, not deployed bundle parity. |
-| Diff integrity | `git diff --check` passed | Local textual integrity only; not rendered or deployed evidence. |
-| Source-built browser run | Real in-app browser against the final local built bundle at 1440×1000 and 390×844: Micro revision had no relationship count and offered **Continue to Meso**; six complete Meso callouts rendered in the Meso annulus with zero pairwise label overlaps; computed callout sizes were `24px` on desktop and `26px` on phone; full-screen filled the viewport without horizontal overflow; zoom reached `0.25`; arrow-key pan changed `panX`; Meso completion selected Exosphere; browser warnings/errors were 0 | Disposable local SQLite only; not generated imagery, GitHub publication, deployment, or live-provider evidence. |
-| Micro discrete-label browser run | The clause “Adult Participants face delays when the Accessible Van Program is unavailable” surfaced and committed exactly `Adult Participants` and `Accessible Van Program`; the Micro map contained 2 nodes and 0 relationships; browser warnings/errors were 0 | Disposable local SQLite and deterministic review only; not hosted-provider or deployment evidence. |
+| Ordinary suite | 242 passed; 4 PostgreSQL tests skipped behind their explicit environment guard | 2026-08-22 working tree; does not test the corrected contract. |
+| Production build | Passed; emitted `index-BJBuN6w3.js`, `TeacherDashboard-DPrpmbM0.js`, and `index-BZOzcHy4.css` | Earlier local production build; not current or deployed bundle parity. |
+| Diff integrity | `git diff --check` passed | Earlier local textual integrity only; not current, rendered, or deployed evidence. |
+| Source-built browser run | The browser showed node-only Micro and generic relationship callouts in Meso, along with working full-screen, zoom, and keyboard pan. | The viewport evidence remains useful, but the Micro/Meso content model is superseded. |
+| Micro discrete-label browser run | The clause “Adult Participants face delays when the Accessible Van Program is unavailable” surfaced `Adult Participants` and `Accessible Van Program` as discrete nodes. | The clause-rejection evidence remains useful; its zero-relationship result is superseded. |
 
 ## 2026-08-21 release receipts
 
@@ -71,14 +70,14 @@ Earlier security, persistence, session, and review receipts remain historical re
 
 | Area | Required proof | Status |
 | --- | --- | --- |
-| Micro model contract | Provider and deterministic paths return one discrete actor/object noun phrase per node and exactly zero connections, examples, or connection prompts; whole clauses are rejected before review or commit. | Verified locally for the current tree; the earlier live receipt predates the discrete-label change |
-| Micro revision projection | Revise and export shows Micro nodes and zero relationships while full export retains the cumulative graph. | Projection verified by automation and browser; cumulative export verified by automation |
-| Meso carry-forward | Meso receives existing Micro node IDs, returns no new nodes, proposes connections only among those IDs, and does not duplicate carried nodes. | Verified locally and live |
-| Meso map placement | Relationship callouts sit in the Meso annulus and point inward to carried Micro endpoints. | Verified locally by automation and browser |
+| Micro model contract | Provider and deterministic paths return one discrete noun phrase per node and may return direct relationships with clear verbs and valid Micro endpoints; whole clauses are rejected as nodes. | Current correction requires new automated and live-provider proof. |
+| Micro revision projection | Revise and export shows Micro nodes and direct relationships while excluding later-level records; full export retains the cumulative graph. | Current correction requires new automation and browser proof. |
+| Meso carry-forward | Meso receives eligible Micro setting IDs and returns noun-labeled `mesosystem` linkage candidates scoped to at least two of those settings, with zero relationship edges. | Current correction requires new automated and live-provider proof. |
+| Meso map placement | Each Meso linkage sits in the Meso region; any lines to included Micro settings indicate scope and carry no relationship verb or proposition label. | Current correction requires new automation and browser proof. |
 | Ordered progression | Completion advances Micro to Meso to Exosphere to Macrosphere; Macrosphere starts another Macrosphere cycle. | Full sequence verified by automation; Micro to Meso and Meso to Exosphere verified in browser |
 | Map viewport | The larger canvas supports reversible CSS full-screen, persistent pointer panning, arrow-key panning, and zoom down to `0.15`. | Verified locally by automation; the historical browser baseline verified full-screen, keyboard pan, and `0.25` zoom |
 | Level migration | `macro` becomes `exosphere`; `integration` becomes `macrosphere` across nodes, relationships, current/completed levels, course settings, and exports without data loss. | Verified locally, including populated PostgreSQL v8→v9 migration |
-| Ecological map | Exosphere and Macrosphere render distinct concentric regions that contain nodes and connections. | Verified in inspected captures |
+| Ecological map | Exosphere and Macrosphere render distinct concentric regions. Exosphere may show supported institutional connections; Macrosphere shows scoped structure nodes without graph edges. | Verified in inspected captures |
 | Filters | Showing all available levels or one level never deletes, rewrites, or repositions hidden graph records. | Verified locally |
 | Labels | Node and connection text stays complete, readable, above lines, and clear of icons at desktop and 320, 390, and 430 px. | Verified in inspected captures |
 | Optional name | A student or group name can be added to a project link and left blank without blocking progress. | Verified locally |
@@ -87,17 +86,17 @@ Earlier security, persistence, session, and review receipts remain historical re
 | Evaluation capacity | Many outstanding evaluations in one course do not trigger a course-wide active-evaluation maximum. | Verified locally |
 | Unchanged behavior | Per-session supersession and retention-purge tests continue to pass without redesign. | Verified locally |
 | Persistence | SQLite and PostgreSQL preserve stable IDs, sphere membership, annotations, positions, and viewport. | Verified locally |
-| Delivery | Changed tree is committed, pushed, deployed, and verified through migration, health, public access/authz, configuration, logout, headers, assets, logs, and live-provider checks. | Not established for the 2026-08-22 local candidate; last established for the 2026-08-21 release |
+| Delivery | Changed tree is committed, pushed, deployed, and verified through migration, health, public access/authz, configuration, logout, headers, assets, logs, and live-provider checks. | Not established for the 2026-08-24 correction; last established for the superseded 2026-08-21 release. |
 
 ## Required rendered journey
 
 Use a disposable database and temporary teacher claim values, never the handoff database.
 
 1. Enter class access and create a project with an optional student or group name.
-2. Add a Micro memo containing an actor, an object, and a proposition joining them. Generate guidance and confirm that only the discrete actor/object noun phrases appear as nodes; the whole clause must not appear.
-3. Keep several Micro nodes. Confirm that no connection prompt, connection candidate, or relationship line appears. At revise and export, confirm that the current-level summary still contains zero relationships while full export retains the cumulative graph.
-4. Complete Micro and confirm automatic advancement to Meso. Confirm that the same node IDs are present, then describe and review proposed connections.
-5. Accept, edit, and reject separate connection suggestions. Confirm that only accepted versions enter the map, each relationship callout sits inside the Meso annulus, and its lines point inward to the carried Micro endpoints.
+2. Add a Micro memo containing an actor, an object or setting, and a proposition joining them. Generate guidance and confirm that the relevant noun phrases appear as separate nodes, the whole clause does not become a node, and the supported proposition appears as a Micro relationship with a clear verb.
+3. Keep, edit, and remove separate Micro node and relationship suggestions. Confirm that accepted relationships enter the Micro map, their verbs remain visible when Micro is filtered, and revise and export includes the current Micro relationships while excluding later-level records.
+4. Complete Micro and confirm automatic advancement to Meso. Confirm that eligible Micro setting IDs carry forward, then review noun-labeled linkage suggestions scoped to at least two settings.
+5. Keep, rename, rescope, and remove separate Meso linkages. Confirm that only accepted linkages enter the Meso region, every linkage retains at least two valid Micro setting IDs, and no Meso relationship candidate, verb callout, or proposition label appears.
 6. Toggle full-screen on and off. Pan by pointer, focus the canvas and pan with the arrow keys, and zoom out to `0.15`; confirm that opening or closing a detail panel does not disable panning.
 7. Complete Meso and confirm automatic advancement to Exosphere. Place nodes and connections inside indirect institutional or environmental spheres.
 8. Complete Exosphere and confirm automatic advancement to Macrosphere. Add broader legal, political, cultural, and economic structures around or across existing spheres. Complete Macrosphere and confirm that another Macrosphere cycle begins.
@@ -124,7 +123,7 @@ The package contains all 15 states at 1440×1000 and 390×844, plus five map/Tea
 
 ## Release boundary
 
-The 2026-08-22 map-interaction candidate is locally tested, built, and checked in a real in-app browser against the final built bundle, but has no GitHub, Railway, hosted, or live-provider receipt. The completed delivery gate below belongs to the 2026-08-21 ecological release:
+The 2026-08-24 Micro/Meso correction has no completed automated, browser, GitHub, Railway, hosted, or live-provider receipt in this document yet. The completed delivery gate below belongs to the superseded 2026-08-21 ecological release:
 
 - [x] full UI, domain, shared-contract, server, SQLite, and fresh PostgreSQL tests;
 - [x] production build, dependency audit, and static leakage scan;
@@ -134,8 +133,8 @@ The 2026-08-22 map-interaction candidate is locally tested, built, and checked i
 - [x] live health, class access, Teacher Console route and authorization boundary, current public configuration, migration, logout, and changed-bundle checks;
 - [x] live-provider runs using fabricated memos for all four levels and connection refinement.
 
-The inspected local browser package establishes responsive browser usability only for the 2026-08-21 release. Its GitHub, Railway, hosted readback, and provider receipts do not establish delivery or live behavior for the 2026-08-22 working tree. No authenticated production Teacher Console mutation was performed.
+The inspected local browser package establishes responsive browser usability only for the 2026-08-21 release. Its GitHub, Railway, hosted readback, and provider receipts do not establish delivery or live behavior for the 2026-08-24 correction. No authenticated production Teacher Console mutation was performed.
 
 ## Source authority
 
-The current authority is the Maria and Zach Zoom material supplied on 2026-08-21 and recorded in `docs/MARIA_ZOOM_REVERSIONING_2026-08-21.md`. The fuller Drive specification governs compatible general behavior. An earlier Gmail search did not locate the summary; that is a historical search boundary, not a current absence claim. See `docs/SOURCE_LEDGER.md`.
+The direct correction supplied on 2026-08-24 and recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md` governs the Micro/Meso boundary. The Maria and Zach Zoom material supplied on 2026-08-21 continues to govern compatible level names, order, and ecological-layer behavior; its node-only Micro/generic-edge Meso interpretation is historical. The fuller Drive specification governs compatible general behavior. See `docs/SOURCE_LEDGER.md`.

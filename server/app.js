@@ -4,7 +4,15 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import {
   deterministicMemoReview,
+  EXOSPHERE_NODE_TYPES,
   isDiscreteMicroNodeLabel,
+  isNamedInstitutionLabel,
+  isMesosystemLabel,
+  isNodeTypeAllowedAtScale,
+  MACROSPHERE_NODE_TYPES,
+  MESOSYSTEM_NODE_TYPE,
+  MICRO_SETTING_NODE_TYPES,
+  NODE_TYPES,
   normalizeMicroNodeLabel,
   SCALE_VERB_LEXICONS,
   scaleLexiconVerb,
@@ -101,7 +109,7 @@ const PROJECT_OVERLAY_KEYS = Object.freeze([
   'id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel',
   'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'fingerprint',
 ]);
-const MEMO_REVIEW_NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event', 'law', 'belief'];
+const MEMO_REVIEW_NODE_TYPES = NODE_TYPES;
 const MEMO_REVIEW_LIMITS = Object.freeze({
   guidance: 8, nodes: 20, connections: 12, point: 500, evidence: 500,
   label: 200, verb: 100, rationale: 1000, example: 1000, note: 500,
@@ -111,8 +119,8 @@ const MEMO_REVIEW_LIMITS = Object.freeze({
 // Macrosphere structures carry a scope (mapped elements they condition)
 // instead of connections.
 const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
-  micro: Object.freeze({ nodes: 10, connections: 0 }),
-  meso: Object.freeze({ nodes: 0, connections: 8 }),
+  micro: Object.freeze({ nodes: 10, connections: 8 }),
+  meso: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
   exosphere: Object.freeze({ nodes: 8, connections: 6 }),
   macrosphere: Object.freeze({ nodes: 8, connections: 0, scope: 12 }),
 });
@@ -120,18 +128,20 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
-  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 8 nodes at Micro, 6 connections at Meso, 6 new institutions with 5 connections at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
+  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 8 nodes and 6 direct relationships at Micro, 6 mesosystems at Meso, 6 new institutions with 5 connections at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
   `guidance must be an array of no more than 4 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
-  `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere only. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
-  'AT EVERY LEVEL, each node label MUST be exactly one concrete, nameable actor, object, institution, policy, or event, written as a short noun phrase. A label must never be a sentence, clause, proposition, action, theme, outcome, or explanation; put that material in evidence or guidance. Never invent abstractions such as "Access to Services" or "Community Wellbeing". For the memo clause "Adult Participants face delays when the Accessible Van Program is unavailable," valid labels include "Adult Participants" and "Accessible Van Program"; the whole clause is never a node label. Preserve complete official names even when they are long.',
-  'LEVEL TESTS — assign each item by the memo-writer\'s participation, never by an entity\'s size or fame: Micro is what the person is in the room with (people, roles, groups, face-to-face settings, services they directly use). Exosphere is an institution the person is NEVER in the room with, whose decisions still reach a mapped element — agencies, funders, employers, owners, platform operators, decision-making bodies. Macrosphere is a pattern with no door — a named law, public policy, economic condition, or belief/narrative that shapes several parts of the map the same way; if the person could visit it or it could email them, it belongs further in. A specific event or decision is Exosphere; the climate such events collectively create is Macrosphere. Do not restate lower-level actors as new nodes at a higher level.',
-  'At Micro, propose only what the memo names. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: walk the carried map and ask, for each mapped setting or service, who owns or operates it, who funds it, who employs the people in it, who sets its rules, and what law, price, or belief conditions it. Set basis to "memo" when the memo names the item, or "inference" when you are naming the institution or structure plausibly behind the mapped world; an inferred item must still be one concrete nameable thing, and its evidence must say what to verify.',
-  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat a carried node in nodes. At Exosphere, connections may use a carried node\'s exact label as an endpoint to tie new institutions to the existing map. At Macrosphere, scope entries must use exact labels from carriedNodes.',
+  `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
+  'Except at Meso, each node label MUST name exactly one actor, role, group, activity, object, immediate setting, institution, policy, law, condition, or structure as a clear noun phrase. A node label must never be a sentence, clause, relationship proposition, outcome, or explanation; put that material in evidence, guidance, or a Micro or Exosphere connection. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
+  'LEVEL TESTS — assign each item by the person\'s participation, never by an entity\'s size or fame. Micro identifies the activities, roles, interpersonal relationships, objects, and immediate settings the person directly encounters. Meso identifies an interrelation among two or more of those Micro settings. Exosphere identifies institutions and decision-making bodies whose actions affect mapped elements even when the person does not interact with them directly. Macrosphere identifies broader laws, policies, economic conditions, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level actors as new nodes at a higher level.',
+  `At Micro, propose only what the memo names. Micro node types must identify discrete elements; activities, social roles, and interpersonal relations belong to one immediate setting, and interpersonal relations are returned as connections rather than collapsed into node labels. Type each home, classroom, workplace, peer group, online community, or other immediate setting in which the person participates as "setting" so it can be used at Meso. Do not type an external institution as a Micro setting merely because its name contains school, college, clinic, or center. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for institutions that act indirectly and broader conditions that shape several mapped elements. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
+  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, each scope entry must use the exact ID of a Micro setting already on the map. At Exosphere, connections may use an existing node\'s exact label as an endpoint to tie new institutions to the existing map. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
   'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
-  `connections must be an array of objects with exactly these keys: source, target, verb, rationale. For Micro AND Macrosphere, connections MUST be empty. For Meso, nodes MUST be empty and source and target MUST use exact IDs from carriedNodes in the project input; verb is a short plain-language relationship phrase. For Exosphere, source and target must exactly match a label from nodes or a label from carriedNodes, at least one endpoint MUST be a carried node (the pathway must land on the mapped world), endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must point to what makes the connection evident.`,
-  `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact labels from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
-  'For Meso, use the human-readable carriedNodes labels—not their IDs—in guidance, rationale, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that walks through ONE evident connection or structure.',
-  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso and Exosphere, ready means clear elements and at least one evident connection. For Macrosphere, ready means at least one structure with a scope of two or more mapped elements. Readiness never blocks the student from continuing.',
+  `connections must be an array of objects with exactly these keys: source, target, verb, rationale. At Micro, source and target must exactly match labels in nodes or exact IDs or labels from carriedNodes, endpoints must differ, and verb must be a short plain-language description of a direct activity, role, or interpersonal relationship. At Meso and Macrosphere, connections MUST be empty. For Exosphere, source and target must exactly match a label from nodes or a label from carriedNodes, at least one endpoint MUST be a carried node, endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must point to what makes the connection evident.`,
+  `At Meso each node must have type "${MESOSYSTEM_NODE_TYPE}", a neutral noun-phrase label with no relationship verb, and a scope containing the exact IDs of 2 or more Micro settings already on the map. A Micro setting must have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. Meso represents the interrelation of those settings and never adds a relationship edge.`,
+  'EXOSPHERE/MACROSPHERE BOUNDARY: a named university, college, agency, office, board, funder, employer, service provider, platform, or other institution belongs at Exosphere. CUNY is an institution and MUST be Exosphere, never Macrosphere. A policy administered by one named institution also remains Exosphere. Macrosphere is reserved for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Never repeat an Exosphere institution as a Macrosphere node, even inside a longer label.',
+  `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact IDs from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
+  'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that explains one mesosystem, institutional connection, or structure.',
+  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means clear institutions and at least one evident institutional relationship. For Macrosphere, ready means at least one broader condition affects two or more mapped elements. Readiness never blocks the student from continuing.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
@@ -143,7 +153,8 @@ const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   'connections must be an array of no more than 12 objects.',
   'Each connection must contain exactly four keys: source, target, verb, rationale.',
   'source and target must be different node IDs from the supplied nodes.',
-  'verb must be a short, plain-language relationship phrase. rationale must briefly connect the suggestion to the student description.',
+  `At Micro, both endpoints must be Micro elements and verb must be a short, plain-language direct relationship. At Exosphere, at least one endpoint must be an Exosphere institution, neither endpoint may be a Macrosphere item, and verb must be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}.`,
+  'rationale must briefly connect the suggestion to the student description.',
   'Do not add confidence scores, evidence claims, Markdown, or prose outside the object.',
 ].join('\n');
 const PROTOTYPE_EVENTS = new Set([
@@ -498,6 +509,33 @@ function validateBoundedJson(value, name, {
   return value;
 }
 
+function normalizedEntityLabel(value) {
+  return String(value || '').normalize('NFKD').replace(/[^A-Za-z0-9]+/g, ' ').trim().toLocaleLowerCase();
+}
+
+function entityLabelAliases(value) {
+  const raw = String(value || '').trim();
+  const aliases = new Set();
+  const normalized = normalizedEntityLabel(raw);
+  if (normalized) aliases.add(normalized);
+  for (const match of raw.matchAll(/\(([A-Z][A-Z0-9-]{1,15})\)/g)) aliases.add(normalizedEntityLabel(match[1]));
+  const words = raw.match(/[A-Za-z0-9]+/g) || [];
+  const significant = words.filter((word) => !/^(?:a|an|and|at|for|in|of|on|the|to|with)$/i.test(word));
+  if (significant.length >= 2 && significant.length <= 8) aliases.add(significant.map((word) => word[0]).join('').toLocaleLowerCase());
+  return [...aliases].filter((alias) => alias.length >= 3);
+}
+
+function macroLabelRepeatsInstitution(label, carriedNodes) {
+  if (isNamedInstitutionLabel(label)) return true;
+  const normalized = normalizedEntityLabel(label);
+  if (!normalized) return false;
+  return (Array.isArray(carriedNodes) ? carriedNodes : [])
+    .filter((node) => ['organization', 'institution', 'agency', 'service'].includes(node.type) || isNamedInstitutionLabel(node.label))
+    .some((node) => entityLabelAliases(node.label).some((alias) => (
+      normalized === alias || normalized.startsWith(`${alias} `) || normalized.endsWith(` ${alias}`) || normalized.includes(` ${alias} `)
+    )));
+}
+
 function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNodes = null, carriedConnections = null) {
   if (!isPlainObject(value)) throw new HttpError(400, `${name} must be an object.`);
   if (!['guidance', 'nodes', 'connections', 'readiness', 'example'].some((key) => Object.hasOwn(value, key))) {
@@ -511,7 +549,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .map((connection) => `${connection.source}\u0000${connection.verb.trim().toLocaleLowerCase()}\u0000${connection.target}`));
   const humanizeCarriedIds = (input, maximum) => {
     let text = collapsedRedirectText(input, maximum * 2);
-    if (!text || activeScale === 'micro') return collapsedRedirectText(text, maximum);
+    if (!text) return collapsedRedirectText(text, maximum);
     [...carriedNodeById.values()]
       .sort((left, right) => right.id.length - left.id.length)
       .forEach((node) => { text = text.split(node.id).join(node.label); });
@@ -528,21 +566,28 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .filter(Boolean)
     .slice(0, MEMO_REVIEW_LIMITS.guidance);
   const seenLabels = new Set();
-  // The discrete-noun-phrase rule applies at every level: a node is a named
-  // actor, object, institution, policy, or event — never a clause or theme.
-  const nodes = (activeScale === 'meso' ? [] : (Array.isArray(value.nodes) ? value.nodes : []))
+  // The discrete-noun-phrase rule applies at every level. Meso is the one
+  // specialized node type: a mesosystem scopes two or more carried Micro
+  // settings and never stores a relationship verb.
+  const nodes = (Array.isArray(value.nodes) ? value.nodes : [])
     .map((node) => {
       if (!isPlainObject(node)) return null;
-      const label = isDiscreteMicroNodeLabel(node.label) && normalizeMicroNodeLabel(node.label);
+      const inputLabel = collapsedRedirectText(node.label, MEMO_REVIEW_LIMITS.label);
+      const normalizedLabel = normalizeMicroNodeLabel(inputLabel);
+      const completeNounPhrase = normalizedLabel && normalizedLabel === inputLabel?.replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
+      const label = activeScale === 'micro'
+        ? (isDiscreteMicroNodeLabel(node.label) && normalizedLabel)
+        : activeScale === 'meso'
+          ? (isMesosystemLabel(node.label) && normalizedLabel)
+          : (completeNounPhrase && normalizedLabel);
       if (!label || seenLabels.has(label.toLocaleLowerCase())) return null;
-      if (carriedNodeByLabel.has(label.toLocaleLowerCase())) return null;
-      seenLabels.add(label.toLocaleLowerCase());
+      if (activeScale !== 'meso' && carriedNodeByLabel.has(label.toLocaleLowerCase())) return null;
       const outerLevel = activeScale === 'exosphere' || activeScale === 'macrosphere';
-      // A Macrosphere structure relates to the map through its scope: the
-      // mapped elements it conditions. Scope members must resolve to carried
-      // nodes at generation time; stored replays trust the resolved pairs.
+      // Meso and Macrosphere both use scopes, for different reasons. A Meso
+      // scope identifies immediate settings in one mesosystem. A Macrosphere
+      // scope identifies mapped elements conditioned by one structure.
       const scope = [];
-      if (activeScale === 'macrosphere') {
+      if (activeScale === 'meso' || activeScale === 'macrosphere') {
         const seenScope = new Set();
         (Array.isArray(node.scope) ? node.scope : []).forEach((entry) => {
           let resolved = null;
@@ -553,7 +598,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
             else {
               const carried = carriedNodeById.get(entryId)
                 || carriedNodeByLabel.get((entryLabel || entryId || '').toLocaleLowerCase());
-              resolved = carried ? { id: carried.id, label: carried.label } : null;
+              resolved = carried ? { id: carried.id, label: carried.label, type: carried.type, scale: carried.scale } : null;
             }
           } else {
             const reference = collapsedRedirectText(entry, MEMO_REVIEW_LIMITS.label);
@@ -561,21 +606,35 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
               if (carriedNodes === null) resolved = { id: reference, label: reference };
               else {
                 const carried = carriedNodeById.get(reference) || carriedNodeByLabel.get(reference.toLocaleLowerCase());
-                resolved = carried ? { id: carried.id, label: carried.label } : null;
+                resolved = carried ? { id: carried.id, label: carried.label, type: carried.type, scale: carried.scale } : null;
               }
             }
           }
+          if (activeScale === 'meso' && carriedNodes !== null && !MICRO_SETTING_NODE_TYPES.includes(resolved?.type)) return;
+          if (activeScale === 'macrosphere' && carriedNodes !== null && resolved?.scale === 'macrosphere') return;
           if (!resolved || seenScope.has(resolved.id)) return;
           seenScope.add(resolved.id);
-          scope.push(resolved);
+          scope.push({ id: resolved.id, label: resolved.label });
         });
       }
+      if (activeScale === 'meso' && scope.length < 2) return null;
+      if (activeScale === 'macrosphere' && scope.length < 2) return null;
+      if (activeScale === 'meso' && !isMesosystemLabel(label)) return null;
+      const type = activeScale === 'meso'
+        ? MESOSYSTEM_NODE_TYPE
+        : (MEMO_REVIEW_NODE_TYPES.includes(node.type) && node.type !== MESOSYSTEM_NODE_TYPE ? node.type : null);
+      if (!type) return null;
+      if (!isNodeTypeAllowedAtScale(type, activeScale)) return null;
+      if (activeScale === 'exosphere' && !isNamedInstitutionLabel(label)) return null;
+      if (activeScale === 'macrosphere' && macroLabelRepeatsInstitution(label, carriedNodes)) return null;
+      seenLabels.add(label.toLocaleLowerCase());
       return {
         label,
-        type: MEMO_REVIEW_NODE_TYPES.includes(node.type) ? node.type : 'event',
+        type,
         scale: activeScale,
         evidence: collapsedRedirectText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || '',
         ...(outerLevel ? { basis: node.basis === 'inference' ? 'inference' : 'memo' } : {}),
+        ...(activeScale === 'meso' ? { scope: scope.slice(0, scaleLimits.scope || 12) } : {}),
         ...(activeScale === 'macrosphere' ? {
           deontic: scaleLexiconVerb('macrosphere', node.deontic) || 'shapes',
           scope: scope.slice(0, scaleLimits.scope || 12),
@@ -586,9 +645,9 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .slice(0, Math.min(scaleLimits.nodes, MEMO_REVIEW_LIMITS.nodes));
   const nodeByLower = new Map(nodes.map((node) => [node.label.toLocaleLowerCase(), node.label]));
   const seenConnections = new Set();
-  // Macrosphere structures never arrive as connections — their reach is the
-  // scope on each structure node.
-  const connections = ((activeScale === 'micro' || activeScale === 'macrosphere') ? [] : (Array.isArray(value.connections) ? value.connections : []))
+  // Meso and Macrosphere never arrive as connections. Meso uses mesosystem
+  // scopes; Macrosphere uses structure scopes.
+  const connections = ((activeScale === 'meso' || activeScale === 'macrosphere') ? [] : (Array.isArray(value.connections) ? value.connections : []))
     .map((connection) => {
       if (!isPlainObject(connection)) return null;
       const sourceReference = collapsedRedirectText(connection.source, MEMO_REVIEW_LIMITS.label);
@@ -597,18 +656,26 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       let target;
       let sourceLabel;
       let targetLabel;
-      if (activeScale === 'meso' && carriedNodes !== null) {
-        const sourceNode = carriedNodeById.get(sourceReference);
-        const targetNode = carriedNodeById.get(targetReference);
-        source = sourceNode?.id;
-        target = targetNode?.id;
-        sourceLabel = sourceNode?.label;
-        targetLabel = targetNode?.label;
-      } else if (activeScale === 'meso') {
+      if (activeScale === 'micro' && carriedNodes === null) {
         source = sourceReference;
         target = targetReference;
-        sourceLabel = collapsedRedirectText(connection.sourceLabel, MEMO_REVIEW_LIMITS.label);
-        targetLabel = collapsedRedirectText(connection.targetLabel, MEMO_REVIEW_LIMITS.label);
+        sourceLabel = collapsedRedirectText(connection.sourceLabel, MEMO_REVIEW_LIMITS.label) || sourceReference;
+        targetLabel = collapsedRedirectText(connection.targetLabel, MEMO_REVIEW_LIMITS.label) || targetReference;
+      } else if (activeScale === 'micro') {
+        const resolveMicroEndpoint = (reference) => {
+          const carriedById = carriedNodeById.get(reference);
+          if (carriedById) return { reference: carriedById.id, label: carriedById.label };
+          const carriedByLabel = carriedNodeByLabel.get(reference.toLocaleLowerCase());
+          if (carriedByLabel) return { reference: carriedByLabel.id, label: carriedByLabel.label };
+          const proposed = nodeByLower.get(reference.toLocaleLowerCase());
+          return proposed ? { reference: proposed, label: proposed } : null;
+        };
+        const resolvedSource = resolveMicroEndpoint(sourceReference);
+        const resolvedTarget = resolveMicroEndpoint(targetReference);
+        source = resolvedSource?.reference;
+        target = resolvedTarget?.reference;
+        sourceLabel = resolvedSource?.label;
+        targetLabel = resolvedTarget?.label;
       } else if (carriedNodes === null) {
         // Stored reviews replay without the carried-node context, so trust the
         // id/label pairs the generation-time validation already resolved.
@@ -623,15 +690,16 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
         const resolveEndpoint = (reference) => {
           if (!reference) return null;
           const carriedById = carriedNodeById.get(reference);
-          if (carriedById) return { reference: carriedById.id, label: carriedById.label, carried: true };
+          if (carriedById) return { reference: carriedById.id, label: carriedById.label, scale: carriedById.scale, carried: true };
           const lower = reference.toLocaleLowerCase();
           const carried = carriedNodeByLabel.get(lower);
-          if (carried) return { reference: carried.id, label: carried.label, carried: true };
+          if (carried) return { reference: carried.id, label: carried.label, scale: carried.scale, carried: true };
           const proposed = nodeByLower.get(lower);
           return proposed ? { reference: proposed, label: proposed, carried: false } : null;
         };
         const resolvedSource = resolveEndpoint(sourceReference);
         const resolvedTarget = resolveEndpoint(targetReference);
+        if (activeScale === 'exosphere' && (resolvedSource?.scale === 'macrosphere' || resolvedTarget?.scale === 'macrosphere')) return null;
         // An Exosphere connection is an influence pathway — it must land on
         // the mapped world (Bronfenbrenner's two-step chain). Two floating
         // new nodes tied to each other are not a pathway.
@@ -661,15 +729,24 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .filter(Boolean)
     .slice(0, Math.min(scaleLimits.connections || MEMO_REVIEW_LIMITS.connections, MEMO_REVIEW_LIMITS.connections));
   const example = activeScale === 'micro' ? null : humanizeCarriedIds(value.example, MEMO_REVIEW_LIMITS.example) || null;
+  const storedLegacyMeso = activeScale === 'meso' && carriedNodes === null && nodes.length === 0;
   const readiness = {
     ready: activeScale === 'micro'
-      ? nodes.length >= 2
+      ? nodes.length + carriedNodeById.size >= 2
       : activeScale === 'meso'
-        ? connections.length >= 1 && isPlainObject(value.readiness) && value.readiness.ready === true
+        ? nodes.length >= 1 && isPlainObject(value.readiness) && value.readiness.ready === true
         : isPlainObject(value.readiness) && value.readiness.ready === true,
-    note: humanizeCarriedIds(isPlainObject(value.readiness) ? value.readiness.note : null, MEMO_REVIEW_LIMITS.note) || '',
+    note: storedLegacyMeso
+      ? 'This earlier Meso review needs to be refreshed. Meso now identifies interrelations among two or more Micro settings.'
+      : humanizeCarriedIds(isPlainObject(value.readiness) ? value.readiness.note : null, MEMO_REVIEW_LIMITS.note) || '',
   };
-  return { guidance, nodes, connections, example, readiness };
+  return {
+    guidance: storedLegacyMeso ? [{ point: 'Refresh this review to identify mesosystems from the settings already mapped in Micro.' }] : guidance,
+    nodes,
+    connections,
+    example: storedLegacyMeso ? null : example,
+    readiness,
+  };
 }
 
 function validatePreflightEvaluationRequest(value) {
@@ -680,28 +757,31 @@ function validatePreflightEvaluationRequest(value) {
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   const hasCarriedNodes = Object.hasOwn(value, 'carriedNodes');
   if (value.activeScale === 'meso' && !hasCarriedNodes) throw new HttpError(400, 'carriedNodes is required for Meso.');
-  if (value.activeScale === 'micro' && hasCarriedNodes) throw new HttpError(400, 'carriedNodes is not supported for Micro.');
   if (hasCarriedNodes && (!Array.isArray(value.carriedNodes) || value.carriedNodes.length > 50)) {
     throw new HttpError(400, 'carriedNodes must contain no more than 50 items.');
   }
   const seenCarriedNodeIds = new Set();
   const carriedNodes = hasCarriedNodes ? value.carriedNodes.map((node, index) => {
     const nodeName = `carriedNodes[${index}]`;
-    assertOnlyNamedKeys(node, ['id', 'label', 'type'], nodeName);
-    requireObjectKeys(node, ['id', 'label', 'type'], nodeName);
+    assertOnlyNamedKeys(node, ['id', 'label', 'type', 'scale'], nodeName);
+    requireObjectKeys(node, ['id', 'label', 'type', 'scale'], nodeName);
     const id = requireSnapshotText(node.id, `${nodeName}.id`, { max: 200 });
     if (seenCarriedNodeIds.has(id)) throw new HttpError(400, `${nodeName}.id must be unique.`);
     seenCarriedNodeIds.add(id);
     const type = requireSnapshotText(node.type, `${nodeName}.type`, { max: 100 });
     if (!MEMO_REVIEW_NODE_TYPES.includes(type)) throw new HttpError(400, `${nodeName}.type is not supported.`);
+    const scale = requireSnapshotText(node.scale, `${nodeName}.scale`, { max: 100 });
+    if (!PREFLIGHT_SCALES.has(scale)) throw new HttpError(400, `${nodeName}.scale is not supported.`);
+    if (value.activeScale === 'meso' && scale !== 'micro') throw new HttpError(400, `${nodeName}.scale must be micro for Meso review.`);
+    if (value.activeScale === 'meso' && !MICRO_SETTING_NODE_TYPES.includes(type)) throw new HttpError(400, `${nodeName}.type must identify an immediate Micro setting for Meso review.`);
     return {
       id,
       label: requireSnapshotText(node.label, `${nodeName}.label`, { max: MEMO_REVIEW_LIMITS.label }),
       type,
+      scale,
     };
   }) : [];
   const hasCarriedConnections = Object.hasOwn(value, 'carriedConnections');
-  if (value.activeScale === 'micro' && hasCarriedConnections) throw new HttpError(400, 'carriedConnections is not supported for Micro.');
   if (hasCarriedConnections && (!Array.isArray(value.carriedConnections) || value.carriedConnections.length > 100)) {
     throw new HttpError(400, 'carriedConnections must contain no more than 100 items.');
   }
@@ -738,7 +818,8 @@ function validatePreflightEvaluationRequest(value) {
 function validateConnectionSuggestionRequest(value) {
   assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay']);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
-  if (value.activeScale === 'micro') throw new HttpError(400, 'Micro uses nodes only. Connection suggestions begin in Meso.');
+  if (value.activeScale === 'meso') throw new HttpError(400, 'Meso uses mesosystems formed by Micro settings and does not use relationship verbs.');
+  if (value.activeScale === 'macrosphere') throw new HttpError(400, 'Macrosphere uses structure scopes and does not use relationship edges.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const prompt = requireSnapshotText(value.prompt, 'prompt', { max: 4000 });
   if (!Array.isArray(value.nodes) || value.nodes.length < 2 || value.nodes.length > 50) {
@@ -746,12 +827,15 @@ function validateConnectionSuggestionRequest(value) {
   }
   const nodes = value.nodes.map((node, index) => {
     const name = `nodes[${index}]`;
-    assertOnlyNamedKeys(node, ['id', 'label', 'type'], name);
-    requireObjectKeys(node, ['id', 'label', 'type'], name);
+    assertOnlyNamedKeys(node, ['id', 'label', 'type', 'scale'], name);
+    requireObjectKeys(node, ['id', 'label', 'type', 'scale'], name);
+    const scale = requireSnapshotText(node.scale, `${name}.scale`, { max: 40 });
+    if (!PREFLIGHT_SCALES.has(scale)) throw new HttpError(400, `${name}.scale is not supported.`);
     return {
       id: requireSnapshotText(node.id, `${name}.id`, { max: 200 }),
       label: requireSnapshotText(node.label, `${name}.label`, { max: 200 }),
       type: requireSnapshotText(node.type, `${name}.type`, { max: 100 }),
+      scale,
     };
   });
   const nodeIds = new Set(nodes.map(({ id }) => id));
@@ -782,7 +866,7 @@ function validateConnectionSuggestionRequest(value) {
   };
 }
 
-function validateGeneratedConnections(value, nodeIds) {
+function validateGeneratedConnections(value, nodes, activeScale) {
   validateBoundedJson(value, 'generated connections', { maxSerialized: 32_000, maxObjectKeys: 80 });
   assertOnlyNamedKeys(value, ['connections'], 'generated connections');
   requireObjectKeys(value, ['connections'], 'generated connections');
@@ -790,15 +874,27 @@ function validateGeneratedConnections(value, nodeIds) {
     throw new HttpError(400, 'generated connections must contain no more than 12 items.');
   }
   const seen = new Set();
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   return value.connections.map((connection, index) => {
     const name = `generated connections.connections[${index}]`;
     assertOnlyNamedKeys(connection, ['source', 'target', 'verb', 'rationale'], name);
     requireObjectKeys(connection, ['source', 'target', 'verb', 'rationale'], name);
     const source = requireSnapshotText(connection.source, `${name}.source`, { max: 200 });
     const target = requireSnapshotText(connection.target, `${name}.target`, { max: 200 });
-    const verb = requireSnapshotText(connection.verb, `${name}.verb`, { max: 100 });
-    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
+    let verb = requireSnapshotText(connection.verb, `${name}.verb`, { max: 100 });
+    const sourceNode = nodeById.get(source);
+    const targetNode = nodeById.get(target);
+    if (!sourceNode || !targetNode || source === target) {
       throw new HttpError(400, `${name} must connect two different supplied nodes.`);
+    }
+    if (activeScale === 'micro' && (sourceNode.scale !== 'micro' || targetNode.scale !== 'micro')) {
+      throw new HttpError(400, `${name} must connect two Micro elements.`);
+    }
+    if (activeScale === 'exosphere') {
+      if (sourceNode.scale !== 'exosphere' && targetNode.scale !== 'exosphere') throw new HttpError(400, `${name} must include an Exosphere institution.`);
+      if (sourceNode.scale === 'macrosphere' || targetNode.scale === 'macrosphere') throw new HttpError(400, `${name} must not connect to a Macrosphere item.`);
+      verb = scaleLexiconVerb('exosphere', verb);
+      if (!verb) throw new HttpError(400, `${name}.verb must use the Exosphere institutional relationship register.`);
     }
     const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
     if (seen.has(key)) throw new HttpError(400, 'generated connections must not contain duplicates.');
@@ -1231,7 +1327,7 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
   if (!systemsMappingStage(effectiveStageId)) throw new HttpError(400, 'stageId is not supported.');
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
   const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
-  if (!teachingProfile) throw new HttpError(503, 'The published course settings are unavailable.');
+  if (!teachingProfile) throw new HttpError(503, 'No course settings are published. Publish a draft in the Teacher Console, then try again.');
   const effectivePrompt = composeEffectivePrompt({
     configKind,
     scale,
@@ -1926,7 +2022,7 @@ export function createSystemsMappingApp(options = {}) {
 
   const registerTeacherFailure = (key) => {
     const failure = teacherLimiter.fail(key);
-    if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many teacher authentication attempts. Try again later.');
+    if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many attempts. Wait a few minutes, then try again.');
     throw new HttpError(401, 'Teacher credentials were not accepted.');
   };
 
@@ -1936,7 +2032,7 @@ export function createSystemsMappingApp(options = {}) {
       return;
     }
     const release = teacherConcurrency.acquire();
-    if (!release) throw tooManyAttempts(1, 'Too many teacher authentication attempts. Try again later.');
+    if (!release) throw tooManyAttempts(1, 'Too many attempts. Wait a few minutes, then try again.');
     try {
       await next();
     } finally {
@@ -1961,8 +2057,8 @@ export function createSystemsMappingApp(options = {}) {
 
   app.post('/api/auth/claim', async (context) => {
     const attemptKey = clientRateKey(context, TEACHER_ATTEMPT_BUCKET, { hostedMode, trustedProxyHops });
-    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many teacher authentication attempts. Try again later.');
-    if (teacherBootstrapToken === null) throw new HttpError(503, 'Teacher account claim is unavailable.');
+    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many attempts. Wait a few minutes, then try again.');
+    if (teacherBootstrapToken === null) throw new HttpError(503, 'Teacher account setup is unavailable. Ask the course administrator for a new one-time setup code.');
     const body = await parseJsonBody(context, AUTH_BODY_LIMIT_BYTES);
     assertOnlyKeys(body, ['userId', 'passphrase', 'bootstrapToken']);
 
@@ -2012,7 +2108,7 @@ export function createSystemsMappingApp(options = {}) {
 
   app.post('/api/auth/login', async (context) => {
     const attemptKey = clientRateKey(context, TEACHER_ATTEMPT_BUCKET, { hostedMode, trustedProxyHops });
-    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many teacher authentication attempts. Try again later.');
+    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many attempts. Wait a few minutes, then try again.');
     const body = await parseJsonBody(context, AUTH_BODY_LIMIT_BYTES);
     assertOnlyKeys(body, ['userId', 'passphrase']);
     let userId;
@@ -2041,19 +2137,19 @@ export function createSystemsMappingApp(options = {}) {
 
   app.post('/api/auth/reset-password', async (context) => {
     const attemptKey = clientRateKey(context, TEACHER_ATTEMPT_BUCKET, { hostedMode, trustedProxyHops });
-    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many teacher authentication attempts. Try again later.');
+    ensureNotBlocked(teacherLimiter, attemptKey, 'Too many attempts. Wait a few minutes, then try again.');
     const body = await parseJsonBody(context, AUTH_BODY_LIMIT_BYTES);
     assertOnlyKeys(body, ['token', 'passphrase']);
     if (!validPasswordResetToken(body.token) || validatePassphrase(body.passphrase)) {
       const failure = teacherLimiter.fail(attemptKey);
-      if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many teacher authentication attempts. Try again later.');
-      throw new HttpError(401, 'This password reset link is invalid or has expired.');
+      if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many attempts. Wait a few minutes, then try again.');
+      throw new HttpError(401, 'This password reset link is invalid or has expired. Ask the course administrator for a new link.');
     }
     const account = await consumePasswordReset(db, body.token, body.passphrase, { now });
     if (!account) {
       const failure = teacherLimiter.fail(attemptKey);
-      if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many teacher authentication attempts. Try again later.');
-      throw new HttpError(401, 'This password reset link is invalid or has expired.');
+      if (failure.blocked) throw tooManyAttempts(failure.retryAfterSeconds, 'Too many attempts. Wait a few minutes, then try again.');
+      throw new HttpError(401, 'This password reset link is invalid or has expired. Ask the course administrator for a new link.');
     }
     teacherLimiter.clear(attemptKey);
     return context.json({ reset: true });
@@ -2178,10 +2274,10 @@ export function createSystemsMappingApp(options = {}) {
             inquiry: input.inquiry,
             sourceMetadata: input.sourceRecord,
             sourceText: input.sourceMaterial,
-            ...(input.activeScale === 'meso' || (input.activeScale !== 'micro' && input.carriedNodes.length) ? { carriedNodes: input.carriedNodes } : {}),
-            ...(input.activeScale !== 'micro' && input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
+            ...(input.activeScale === 'meso' || input.carriedNodes.length ? { carriedNodes: input.carriedNodes } : {}),
+            ...(input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
           }, ollamaConfig);
-          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review', input.activeScale !== 'micro' ? input.carriedNodes : null, input.activeScale !== 'micro' ? input.carriedConnections : null);
+          const review = normalizeMemoReview(generated.suggestion, input.activeScale, 'generated memo review', input.carriedNodes, input.carriedConnections);
           suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
           runtimeMetadata = authoritativeRuntimeMetadata(generated.metadata, {
             provider: suggestionProvider,
@@ -2201,8 +2297,8 @@ export function createSystemsMappingApp(options = {}) {
           }),
           input.activeScale,
           'deterministic memo review',
-          input.activeScale !== 'micro' ? input.carriedNodes : null,
-          input.activeScale !== 'micro' ? input.carriedConnections : null,
+          input.carriedNodes,
+          input.carriedConnections,
         );
         suggestion = { ...review, evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
         runtimeMetadata = authoritativeRuntimeMetadata({}, {
@@ -2281,7 +2377,7 @@ export function createSystemsMappingApp(options = {}) {
           sourceText: input.prompt,
         }, ollamaConfig);
         const existingConnections = new Set(input.relationships.map(({ source, target, verb }) => `${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
-        connections = validateGeneratedConnections(generated.suggestion, new Set(input.nodes.map(({ id }) => id)))
+        connections = validateGeneratedConnections(generated.suggestion, input.nodes, input.activeScale)
           .filter(({ source, target, verb }) => !existingConnections.has(`${source}\u0000${verb.trim().toLocaleLowerCase()}\u0000${target}`));
       } catch (error) {
         console.warn('connection suggestion generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
@@ -2373,9 +2469,9 @@ export function createSystemsMappingApp(options = {}) {
     const student = await currentStudentSession(context, db, now);
     if (!student) throw new HttpError(401, 'Student class access is required.');
     const submissionId = context.req.param('id');
-    if (!validSubmissionId(submissionId)) throw new HttpError(404, 'Preflight submission not found.');
+    if (!validSubmissionId(submissionId)) throw new HttpError(404, 'This review is no longer available. Return to Review your memo and refresh the guidance.');
     const submission = await studentPreflightSubmission(db, submissionId);
-    if (!submission) throw new HttpError(404, 'Preflight submission not found.');
+    if (!submission) throw new HttpError(404, 'This review is no longer available. Return to Review your memo and refresh the guidance.');
     return context.json({ submission });
   });
 
@@ -2464,7 +2560,7 @@ export function createSystemsMappingApp(options = {}) {
 
   app.use('/api/teacher/*', async (context, next) => {
     const session = await currentTeacherSession(context, db, now);
-    if (!session) throw new HttpError(401, 'Teacher authentication is required.');
+    if (!session) throw new HttpError(401, 'Sign in to use the Teacher Console.');
     context.set('teacher', session.user);
     await next();
   });
@@ -2500,15 +2596,15 @@ export function createSystemsMappingApp(options = {}) {
 
   app.get('/api/teacher/preflight-submissions/:id', async (context) => {
     const submissionId = context.req.param('id');
-    if (!validSubmissionId(submissionId)) throw new HttpError(404, 'Preflight submission not found.');
+    if (!validSubmissionId(submissionId)) throw new HttpError(404, 'This submission is no longer available. Select Refresh to update the review queue.');
     const detail = await teacherPreflightDetail(db, submissionId);
-    if (!detail) throw new HttpError(404, 'Preflight submission not found.');
+    if (!detail) throw new HttpError(404, 'This submission is no longer available. Select Refresh to update the review queue.');
     return context.json(detail);
   });
 
   app.post('/api/teacher/preflight-submissions/:id/decision', async (context) => {
     const submissionId = context.req.param('id');
-    if (!validSubmissionId(submissionId)) throw new HttpError(404, 'Preflight submission not found.');
+    if (!validSubmissionId(submissionId)) throw new HttpError(404, 'This submission is no longer available. Select Refresh to update the review queue.');
     const body = await parseJsonBody(context, PREFLIGHT_DECISION_BODY_LIMIT_BYTES);
     assertOnlyKeys(body, ['decision', 'instructorAnnotation', 'focusedQuestion', 'expectedRevision']);
     if (!PREFLIGHT_DECISIONS.has(body.decision)) {
@@ -2531,9 +2627,9 @@ export function createSystemsMappingApp(options = {}) {
     const nextRevision = expectedRevision + 1;
     const status = body.decision === 'reject' ? 'rejected' : 'approved';
     const existing = await teacherPreflightSubmission(db, submissionId);
-    if (!existing) throw new HttpError(404, 'Preflight submission not found.');
+    if (!existing) throw new HttpError(404, 'This submission is no longer available. Select Refresh to update the review queue.');
     if (existing.status !== 'pending' || existing.revision !== expectedRevision) {
-      throw new HttpError(409, 'This preflight submission changed after it was loaded.', { current: existing });
+      throw new HttpError(409, 'Another session changed this submission after you opened it.', { current: existing });
     }
     const update = db.prepare(`
         UPDATE preflight_submissions
@@ -2583,7 +2679,7 @@ export function createSystemsMappingApp(options = {}) {
     const changed = await inTransaction(db, mutate);
     if (!changed) {
       const current = await teacherPreflightSubmission(db, submissionId);
-      throw new HttpError(409, 'This preflight submission changed after it was loaded.', { current });
+      throw new HttpError(409, 'Another session changed this submission after you opened it.', { current });
     }
     return context.json(await teacherPreflightDetail(db, submissionId));
   });
@@ -2607,13 +2703,13 @@ export function createSystemsMappingApp(options = {}) {
     const sourceProfile = body.sourceProfileId === undefined
       ? await activeTeachingProfile(db)
       : await teachingProfileById(db, requireTeachingProfileId(body.sourceProfileId, 'sourceProfileId'));
-    if (!sourceProfile) throw new HttpError(404, 'The course settings you chose were not found.');
+    if (!sourceProfile) throw new HttpError(404, 'That course-settings version is no longer available. Refresh Versions and change history, then choose another version.');
     const profileId = randomBytes(24).toString('base64url');
     const occurredAt = new Date(clockValue(now)).toISOString();
     await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('teaching-profiles');
       const draftCount = (await db.prepare("SELECT COUNT(*) AS count FROM teaching_profiles WHERE status = 'draft'").get()).count;
-      if (Number(draftCount) >= 20) throw new HttpError(409, 'Retire or publish an existing draft before creating another.');
+      if (Number(draftCount) >= 20) throw new HttpError(409, 'The course already has 20 drafts. Publish one draft before creating another.');
       const profileJson = JSON.stringify(sourceProfile.profile);
       await db.prepare(`
         INSERT INTO teaching_profiles
@@ -2644,7 +2740,7 @@ export function createSystemsMappingApp(options = {}) {
   app.get('/api/teacher/profiles/:id', async (context) => {
     const profileId = requireTeachingProfileId(context.req.param('id'));
     const profile = await teachingProfileById(db, profileId);
-    if (!profile) throw new HttpError(404, 'Course settings version not found.');
+    if (!profile) throw new HttpError(404, 'That course-settings version is no longer available. Refresh Versions and change history.');
     return context.json({ profile, events: await teachingProfileEvents(db, profileId) });
   });
 
@@ -2678,10 +2774,10 @@ export function createSystemsMappingApp(options = {}) {
     });
     if (!changed) {
       const current = await teachingProfileById(db, profileId);
-      if (!current) throw new HttpError(404, 'Course settings version not found.');
+      if (!current) throw new HttpError(404, 'That course-settings version is no longer available. Refresh Versions and change history.');
       throw new HttpError(409, current.status === 'draft'
-        ? 'This draft changed after it was loaded.'
-        : 'Only a draft can be edited.', { current });
+        ? 'Another session saved a newer revision of this draft.'
+        : 'This version is published or has been replaced. Create a draft to edit the course settings.', { current });
     }
     return context.json({ profile: await teachingProfileById(db, profileId), events: await teachingProfileEvents(db, profileId) });
   });
@@ -2697,11 +2793,11 @@ export function createSystemsMappingApp(options = {}) {
     await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('teaching-profiles');
       const target = await teachingProfileById(db, profileId);
-      if (!target) throw new HttpError(404, 'Course settings version not found.');
+      if (!target) throw new HttpError(404, 'That course-settings version is no longer available. Refresh Versions and change history.');
       if (target.status !== 'draft' || target.revision !== expectedRevision) {
         throw new HttpError(409, target.status === 'draft'
-          ? 'This draft changed after it was loaded.'
-          : 'Only a draft can be published.', { current: target });
+          ? 'Another session saved a newer revision of this draft.'
+          : 'Only a draft can be published. Create or select a draft, then publish it.', { current: target });
       }
       const active = await activeTeachingProfile(db);
       if (active && active.id !== target.id) {
@@ -2733,14 +2829,14 @@ export function createSystemsMappingApp(options = {}) {
   app.get('/api/teacher/profiles/:id/preview', async (context) => {
     const profileId = requireTeachingProfileId(context.req.param('id'));
     const profile = await teachingProfileById(db, profileId);
-    if (!profile) throw new HttpError(404, 'Course settings version not found.');
+    if (!profile) throw new HttpError(404, 'That course-settings version is no longer available. Refresh Versions and change history.');
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
     const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
     const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId);
     const part = profile.profile.parts.find(({ scaleIds }) => scaleIds.includes(scale));
     const settings = part?.stages?.[stageId];
-    if (!part || !settings) throw new HttpError(400, 'This part, level, and section do not belong together.');
+    if (!part || !settings) throw new HttpError(400, 'The selected part does not include this level and section. Choose a level and section listed under that part.');
     return context.json({
       scale: snapshot.scale,
       stageId: snapshot.stageId,

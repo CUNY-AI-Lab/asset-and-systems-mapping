@@ -225,7 +225,7 @@ describe('TeacherDashboard', () => {
 
   it('defaults to the pending review queue and offers three advisory feedback modes', async () => {
     const fetchMock = await renderAuthenticated();
-    expect(screen.getByText('Review student work and provide feedback to help them refine and develop first drafts of their systems map.')).toBeVisible();
+    expect(screen.getByText('Review student work and give students feedback on their draft maps.')).toBeVisible();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
@@ -240,21 +240,21 @@ describe('TeacherDashboard', () => {
     expect(within(feedbackGroup).getByRole('button', { name: 'Add feedback' })).toBeVisible();
     expect(within(feedbackGroup).getByRole('button', { name: 'Add feedback and a question' })).toBeVisible();
     expect(within(feedbackGroup).getByRole('button', { name: 'Recommend another pass' })).toBeVisible();
-    expect(screen.getByText('Name one focus for the student. Students can continue while feedback is pending and decide how to use your response.')).toBeVisible();
+    expect(screen.getByText('Give the student one point to consider next. They can continue working while feedback is pending and decide how to use your response.')).toBeVisible();
     expect(screen.getByText(submissionDetail.inquiry)).toBeVisible();
     expect(screen.getByText(submissionDetail.studentAnnotation)).toBeVisible();
     const modelReview = screen.getByText('Review details').closest('details');
     expect(modelReview).not.toHaveAttribute('open');
-    expect(screen.getByText('Use these details as reference. You decide what the student should revisit.')).not.toBeVisible();
+    expect(screen.getByText('You decide which suggestions the student should examine next.')).not.toBeVisible();
     fireEvent.click(screen.getByText('Review details'));
     expect(modelReview).toHaveAttribute('open');
     expect(screen.getByRole('heading', { name: 'Memo evidence' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Map ideas' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Questions to consider' })).toBeVisible();
     expect(screen.getAllByText('Prior access shaped who knew which services to request.')).not.toHaveLength(0);
-    expect(screen.getByRole('heading', { name: 'Write to the student.' })).toBeVisible();
-    expect(screen.getByLabelText('Focus for the student')).toBeVisible();
-    expect(screen.getByText(/Name one focus/)).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Write to the student' })).toBeVisible();
+    expect(screen.getByLabelText('Feedback for the student')).toBeVisible();
+    expect(screen.getByText(/Give the student one point/)).toBeVisible();
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/history?limit=60');
   });
@@ -306,7 +306,7 @@ describe('TeacherDashboard', () => {
 
     fireEvent.click(screen.getByText('Review details'));
     expect(screen.getByRole('heading', { name: 'Evidence excerpts' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Possible follow-up' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Possible next step' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Open questions' })).toBeVisible();
     expect(screen.queryByText(/^hold$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/threshold 6/i)).not.toBeInTheDocument();
@@ -357,16 +357,16 @@ describe('TeacherDashboard', () => {
     render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
 
     expect(await screen.findByRole('heading', { name: 'Sign in to Teacher Console' })).toBeVisible();
-    fireEvent.click(screen.getByRole('tab', { name: 'Claim account' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Set up account' }));
     fireEvent.change(screen.getByLabelText('Teacher account ID'), { target: { value: 'local-teacher-id' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'another local phrase' } });
     fireEvent.change(screen.getByLabelText('Confirm passphrase'), { target: { value: 'another local phrase' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Claim account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set up account' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter the one-time setup code.');
     expect(claimBody).toBeNull();
 
     fireEvent.change(screen.getByLabelText('One-time setup code'), { target: { value: 'operator-only-bootstrap-token' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Claim account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set up account' }));
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     expect(claimBody).toEqual({ userId: 'local-teacher-id', passphrase: 'another local phrase', bootstrapToken: 'operator-only-bootstrap-token' });
   });
@@ -376,7 +376,7 @@ describe('TeacherDashboard', () => {
     const feedbackGroup = await waitForSubmission();
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Add a focus for the student before recording feedback.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Write feedback for the student before recording it.');
     expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/decision'))).toBe(false);
   });
 
@@ -412,12 +412,12 @@ describe('TeacherDashboard', () => {
     });
     await renderAuthenticated(fetchMock);
     const feedbackGroup = await waitForSubmission();
-    fireEvent.change(screen.getByLabelText('Focus for the student'), { target: { value: `  ${event.instructorAnnotation}  ` } });
+    fireEvent.change(screen.getByLabelText('Feedback for the student'), { target: { value: `  ${event.instructorAnnotation}  ` } });
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
 
     expect(await screen.findByText('No submissions are waiting for review.')).toBeVisible();
-    expect(screen.getByText('Feedback recorded. The pending queue has been refreshed.')).toBeVisible();
+    expect(screen.getByText('Feedback recorded. The submission is no longer waiting for review.')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Latest feedback' })).toBeVisible();
     expect(screen.getByText(event.instructorAnnotation)).toBeVisible();
     expect(decisionBody).toEqual({ decision: 'approve', instructorAnnotation: event.instructorAnnotation, expectedRevision: 2 });
@@ -439,17 +439,17 @@ describe('TeacherDashboard', () => {
     });
     await renderAuthenticated(fetchMock);
     const feedbackGroup = await waitForSubmission();
-    fireEvent.change(screen.getByLabelText('Focus for the student'), { target: { value: 'Keep the distinction between memo details and your interpretation.' } });
+    fireEvent.change(screen.getByLabelText('Feedback for the student'), { target: { value: 'Keep the distinction between memo details and your interpretation.' } });
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback and a question' }));
     fireEvent.change(screen.getByLabelText('Question for the student'), { target: { value: 'Which advising example best supports this connection?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
 
-    expect(await screen.findByText('This submission changed in another session. Your feedback draft remains available.')).toBeVisible();
-    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between memo details and your interpretation.');
+    expect(await screen.findByText('Another session changed this submission after you opened it. Your feedback remains in the form.')).toBeVisible();
+    expect(screen.getByLabelText('Feedback for the student')).toHaveValue('Keep the distinction between memo details and your interpretation.');
     expect(screen.getByLabelText('Question for the student')).toHaveValue('Which advising example best supports this connection?');
     fireEvent.click(screen.getByRole('button', { name: 'Reload current submission' }));
-    expect(screen.getByText('Loaded submission revision 3. Your feedback draft remains available.')).toBeVisible();
-    expect(screen.getByLabelText('Focus for the student')).toHaveValue('Keep the distinction between memo details and your interpretation.');
+    expect(screen.getByText('Loaded submission revision 3. Your feedback remains in the form.')).toBeVisible();
+    expect(screen.getByLabelText('Feedback for the student')).toHaveValue('Keep the distinction between memo details and your interpretation.');
     expect(screen.getByLabelText('Question for the student')).toHaveValue('Which advising example best supports this connection?');
 
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
@@ -475,50 +475,50 @@ describe('TeacherDashboard', () => {
     expect(guidanceTab).toHaveFocus();
     expect(guidanceTab).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
-    expect(screen.getByText('Adapt guidance and course material for this exercise and its relationship to the broader course.')).toBeVisible();
-    expect(screen.getByRole('note')).toHaveTextContent('Course note only in this section. No model request runs here. Changes are saved for course planning.');
-    const versionDetails = screen.getByText('Version and history').closest('details');
+    expect(screen.getByText('Set guidance and course material for each section of the exercise.')).toBeVisible();
+    expect(screen.getByRole('note')).toHaveTextContent('Course settings are saved but not sent to the model. The application does not call the model in this section.');
+    const versionDetails = screen.getByText('Versions and change history').closest('details');
     expect(versionDetails).not.toHaveAttribute('open');
     expect(screen.getByLabelText('Version')).not.toBeVisible();
     expect(await screen.findByLabelText('Part')).toHaveValue('part-1');
     expect(screen.getByLabelText('Preview level')).toHaveValue('micro');
     expect(within(screen.getByLabelText('Preview level')).getAllByRole('option').map(({ value }) => value)).toEqual(['micro', 'meso']);
-    expect(screen.getByText('This guidance applies to Micro and Meso.')).toBeVisible();
+    expect(screen.getByText('Guidance and course material for this section apply to Micro and Meso.')).toBeVisible();
     expect(screen.getByLabelText('Section')).toHaveValue('add-source');
     expect(within(screen.getByLabelText('Section')).getAllByRole('option')).toHaveLength(5);
     expect(screen.queryByRole('button', { name: 'review your memo' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue(partOneStages['add-source'].guidance);
-    expect(screen.getByLabelText('What course material should support this section?')).toHaveValue(partOneStages['add-source'].materials);
+    expect(screen.getByLabelText('Instructor guidance for this section')).toHaveValue(partOneStages['add-source'].guidance);
+    expect(screen.getByLabelText('Course material for this section')).toHaveValue(partOneStages['add-source'].materials);
     fireEvent.change(await screen.findByLabelText('Section'), { target: { value: 'review-suggestions' } });
-    expect(screen.getByRole('note')).toHaveTextContent('Offline review is active. These settings are saved, but offline suggestions do not use them.');
-    expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue(partOneStages['review-suggestions'].guidance);
-    expect(screen.getByLabelText('What course material should support this section?')).toHaveValue(partOneStages['review-suggestions'].materials);
+    expect(screen.getByRole('note')).toHaveTextContent("Built-in suggestions are active. The console saves this section's guidance and course material, but built-in suggestions do not use them.");
+    expect(screen.getByLabelText('Instructor guidance for this section')).toHaveValue(partOneStages['review-suggestions'].guidance);
+    expect(screen.getByLabelText('Course material for this section')).toHaveValue(partOneStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Part'), { target: { value: 'part-2' } });
     expect(screen.getByLabelText('Preview level')).toHaveValue('exosphere');
     expect(within(screen.getByLabelText('Preview level')).getAllByRole('option').map(({ value }) => value)).toEqual(['exosphere', 'macrosphere']);
-    expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue(partTwoStages['review-suggestions'].guidance);
-    expect(screen.getByLabelText('What course material should support this section?')).toHaveValue(partTwoStages['review-suggestions'].materials);
+    expect(screen.getByLabelText('Instructor guidance for this section')).toHaveValue(partTwoStages['review-suggestions'].guidance);
+    expect(screen.getByLabelText('Course material for this section')).toHaveValue(partTwoStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByRole('heading', { name: 'Preview this section' }).closest('aside');
     expect(previewPanel).toHaveTextContent('Part 2 · Macrosphere · review your memo');
-    fireEvent.click(screen.getByRole('button', { name: 'Check saved version' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();
     expect(screen.getByLabelText('Course guidance sent to the model')).toHaveTextContent('SAVED GUIDANCE FOR THIS SECTION');
     expect(screen.getByLabelText('Course guidance sent to the model')).toHaveTextContent('SAVED COURSE MATERIAL FOR THIS SECTION');
     expect(screen.queryByText('FULL SAVED PROMPT FOR THIS SECTION')).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([path]) => String(path))).toContain('/api/teacher/profiles/systems-mapping-default/preview?configKind=preflight&scale=macrosphere&stageId=review-suggestions');
     fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'choose-what-to-map' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Check saved version' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     await waitFor(() => expect(fetchMock.mock.calls.map(([path]) => String(path))).toContain('/api/teacher/profiles/systems-mapping-default/preview?configKind=builder&scale=macrosphere&stageId=choose-what-to-map'));
-    expect(screen.getByText('Adjust one section at a time as the course, assignment, or class session changes.')).toBeVisible();
+    expect(screen.getByText('Edit the guidance and course material for one section at a time.')).toBeVisible();
     expect(screen.queryByLabelText('Module')).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
 
-    fireEvent.click(screen.getByText('Version and history'));
+    fireEvent.click(screen.getByText('Versions and change history'));
     expect(versionDetails).toHaveAttribute('open');
     expect(screen.getByLabelText('Version')).toBeVisible();
-    expect(screen.getByLabelText('Name')).toBeVisible();
+    expect(screen.getByLabelText('Version name')).toBeVisible();
     expect(screen.getByText('No change history is available.')).toBeVisible();
 
     fireEvent.keyDown(guidanceTab, { key: 'Home' });
@@ -529,7 +529,7 @@ describe('TeacherDashboard', () => {
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
   });
 
-  it('identifies OpenRouter as an active model runtime for model-backed sections', async () => {
+  it('describes model-backed Micro, Meso, and Macrosphere requests without collapsing their jobs', async () => {
     const fetchMock = vi.fn(async (path, options = {}) => {
       if (path === '/api/auth/accounts') return jsonResponse({ teacherAccess });
       if (path === '/api/auth/me') return jsonResponse({ user: teacher });
@@ -548,7 +548,14 @@ describe('TeacherDashboard', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
     fireEvent.change(await screen.findByLabelText('Section'), { target: { value: 'review-suggestions' } });
-    expect(screen.getByRole('note')).toHaveTextContent('Model guidance is active. The model uses these settings to identify possible Micro nodes.');
+    expect(screen.getByRole('note')).toHaveTextContent("Model guidance is active. The model uses this section's guidance and course material to suggest Micro nodes and direct relationships from the memo.");
+    fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'meso' } });
+    expect(screen.getByRole('note')).toHaveTextContent("The model uses this section's guidance and course material to suggest mesosystems that include at least two Micro settings.");
+    fireEvent.change(screen.getByLabelText('Part'), { target: { value: 'part-2' } });
+    fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
+    fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'choose-what-to-map' } });
+    expect(screen.getByRole('note')).toHaveTextContent("The model uses this section's guidance and course material when students request more Macrosphere items or change which mapped elements they affect.");
+    expect(screen.getByRole('note')).not.toHaveTextContent('connections');
   });
 
   it('creates, saves, and publishes selected-section guidance without editing the published version in place', async () => {
@@ -587,21 +594,22 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
-    fireEvent.click(screen.getByText('Version and history'));
+    fireEvent.click(screen.getByText('Versions and change history'));
     fireEvent.click(screen.getByRole('button', { name: 'Create a draft' }));
     fireEvent.change(screen.getByLabelText('Draft name'), { target: { value: 'Evidence guidance' } });
     fireEvent.change(screen.getByLabelText('What do you plan to change?'), { target: { value: 'Focus prompts on relationships' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
 
-    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Evidence guidance'));
+    await waitFor(() => expect(screen.getByLabelText('Version name')).toHaveValue('Evidence guidance'));
     fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'review-suggestions' } });
-    fireEvent.change(screen.getByLabelText('What guidance should students receive in this section?'), { target: { value: 'Return first to evidence that names a relationship.' } });
-    fireEvent.change(screen.getByLabelText('What course material should support this section?'), { target: { value: 'Use the class reading on people, organizations, and connections.' } });
+    fireEvent.change(screen.getByLabelText('Instructor guidance for this section'), { target: { value: 'Return first to evidence that names a relationship.' } });
+    fireEvent.change(screen.getByLabelText('Course material for this section'), { target: { value: 'Use the class reading on people, organizations, and connections.' } });
     expect(screen.getByRole('button', { name: 'Publish draft' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Check saved version' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preview saved section' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Focus the evidence prompt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(await screen.findByText('Draft revision 2 saved.')).toBeVisible();
+    expect(screen.getByText('Draft saved')).toBeVisible();
     const savedBody = requests.find(([path, method]) => path === `/api/teacher/profiles/${draftProfile.id}` && method === 'PUT')?.[2];
     expect(savedBody.profile.parts[0]).toMatchObject({ id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] });
     expect(savedBody.profile.parts[0].stages['review-suggestions']).toEqual({
@@ -615,6 +623,7 @@ describe('TeacherDashboard', () => {
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Publish the evidence guidance' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish draft' }));
     expect(await screen.findByText('Draft published. These course settings are now current.')).toBeVisible();
+    expect(screen.getByText('Published')).toBeVisible();
     expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
     expect(requests.some(([path, method]) => path === '/api/teacher/modules' && method === 'PUT')).toBe(false);
   });
@@ -657,17 +666,17 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     await screen.findByRole('heading', { name: 'Course settings' });
-    fireEvent.click(screen.getByText('Version and history'));
+    fireEvent.click(screen.getByText('Versions and change history'));
     fireEvent.change(screen.getByLabelText('Version', { exact: true }), { target: { value: draftProfile.id } });
-    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Question guidance'));
+    await waitFor(() => expect(screen.getByLabelText('Version name')).toHaveValue('Question guidance'));
     fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'review-suggestions' } });
-    fireEvent.change(screen.getByLabelText('What guidance should students receive in this section?'), { target: { value: 'My unsaved question remains here.' } });
+    fireEvent.change(screen.getByLabelText('Instructor guidance for this section'), { target: { value: 'My unsaved question remains here.' } });
     fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Try another question' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
 
-    expect(await screen.findByText('This draft changed in another session. Your unsaved text remains in the editor.')).toBeVisible();
-    expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue('My unsaved question remains here.');
+    expect(await screen.findByText('Another session saved a newer revision of this draft. Your unsaved text remains in the editor.')).toBeVisible();
+    expect(screen.getByLabelText('Instructor guidance for this section')).toHaveValue('My unsaved question remains here.');
     fireEvent.click(screen.getByRole('button', { name: 'Load server revision 2' }));
-    expect(screen.getByLabelText('What guidance should students receive in this section?')).toHaveValue('Ask the student to name the missing relation.');
+    expect(screen.getByLabelText('Instructor guidance for this section')).toHaveValue('Ask the student to name the missing relation.');
   });
 });

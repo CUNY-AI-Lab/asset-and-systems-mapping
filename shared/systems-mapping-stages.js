@@ -13,15 +13,15 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
   }),
   Object.freeze({
     id: 'choose-what-to-map',
-    label: 'choose nodes and describe connections',
+    label: 'choose map elements',
     short: 'Choose',
-    description: 'Students choose supported map elements. Micro uses nodes only; later levels add and refine connections.',
+    description: 'Students decide which supported map elements to keep. Micro includes discrete actors, objects, activities, roles, groups, and immediate settings, along with direct relationships. Meso includes mesosystems formed by at least two Micro settings and no relationship edges. Exosphere includes institutions and supported institutional actions. Macrosphere includes broader conditions and the mapped elements they affect.',
   }),
   Object.freeze({
     id: 'build-map',
     label: 'build map',
     short: 'Map',
-    description: 'Students arrange and annotate map elements. From Meso onward, they can also work with connections.',
+    description: 'Students arrange and annotate map elements. Micro includes direct relationships. Each Meso item names a mesosystem and identifies its included Micro settings without adding a relationship verb. Exosphere includes institutional relationships. Macrosphere shows which mapped elements each broader condition affects.',
   }),
   Object.freeze({
     id: 'revise-and-export',

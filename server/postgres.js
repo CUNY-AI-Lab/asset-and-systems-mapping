@@ -693,21 +693,28 @@ async function seedPostgres(client) {
   }
 
   for (const module of currentModules) {
-    const legacyFingerprint = LEGACY_DEFAULT_MODULE_FINGERPRINTS[module.id];
-    if (!legacyFingerprint) continue;
+    const legacyFingerprints = LEGACY_DEFAULT_MODULE_FINGERPRINTS[module.id];
+    if (!legacyFingerprints) continue;
+    const acceptedFingerprints = Array.isArray(legacyFingerprints) ? legacyFingerprints : [legacyFingerprints];
+    const current = await client.query(`
+      SELECT revision, fingerprint FROM prompt_modules WHERE id = $1
+    `, [module.id]);
+    const row = current.rows[0];
+    if (!row || !acceptedFingerprints.includes(row.fingerprint)) continue;
+    const nextRevision = Number(row.revision) + 1;
     const upgraded = await client.query(`
       UPDATE prompt_modules
-      SET content = $1, revision = 2, fingerprint = $2, updated_at = $3, updated_by = NULL
-      WHERE id = $4 AND revision = 1 AND fingerprint = $5
+      SET content = $1, revision = $2, fingerprint = $3, updated_at = $4, updated_by = NULL
+      WHERE id = $5 AND revision = $6 AND fingerprint = $7
       RETURNING id
-    `, [module.content, module.fingerprint, now, module.id, legacyFingerprint]);
+    `, [module.content, nextRevision, module.fingerprint, now, module.id, row.revision, row.fingerprint]);
     if (!upgraded.rowCount) continue;
     await client.query(`
       INSERT INTO prompt_module_history
         (module_id, revision, content, fingerprint, change_note, changed_at, changed_by)
-      VALUES ($1, 2, $2, $3, $4, $5, NULL)
+      VALUES ($1, $2, $3, $4, $5, $6, NULL)
       ON CONFLICT (module_id, revision) DO NOTHING
-    `, [module.id, module.content, module.fingerprint, 'Updated default for ecological levels', now]);
+    `, [module.id, nextRevision, module.content, module.fingerprint, 'Updated default scale semantics', now]);
   }
 
   const profileJson = DEFAULT_TEACHING_PROFILE;
@@ -745,10 +752,15 @@ async function upgradeStoredTeachingProfiles(client) {
     const serialized = JSON.stringify(upgraded);
     const profileFingerprint = teachingProfileFingerprint(upgraded);
     if (profileFingerprint === row.fingerprint) continue;
-    await client.query(`
-      UPDATE teaching_profiles SET profile_json = $1::jsonb, fingerprint = $2 WHERE id = $3
-    `, [serialized, profileFingerprint, row.id]);
-    const note = 'Grouped course settings into two parts';
+    const nextRevision = Number(row.revision) + 1;
+    const updated = await client.query(`
+      UPDATE teaching_profiles
+      SET profile_json = $1::jsonb, fingerprint = $2, revision = $3, updated_at = $4, updated_by = NULL
+      WHERE id = $5 AND revision = $6 AND fingerprint = $7
+      RETURNING revision
+    `, [serialized, profileFingerprint, nextRevision, occurredAt, row.id, row.revision, row.fingerprint]);
+    if (!updated.rowCount) continue;
+    const note = 'Updated default scale semantics';
     await client.query(`
       INSERT INTO teaching_profile_events
         (profile_id, action, revision, profile_json, fingerprint, note, actor_id, occurred_at)
@@ -757,7 +769,7 @@ async function upgradeStoredTeachingProfiles(client) {
         SELECT 1 FROM teaching_profile_events
         WHERE profile_id = $1 AND fingerprint = $4 AND note = $5
       )
-    `, [row.id, row.revision, serialized, profileFingerprint, note, occurredAt]);
+    `, [row.id, nextRevision, serialized, profileFingerprint, note, occurredAt]);
   }
 }
 

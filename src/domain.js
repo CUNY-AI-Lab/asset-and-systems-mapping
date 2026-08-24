@@ -7,22 +7,22 @@ export const SCALE_PARTS = SYSTEMS_MAPPING_PARTS;
 export const SCALES = {
   micro: {
     label: 'Micro',
-    prompt: 'Where is your population present, and who interacts with them there?',
-    description: 'Population, named settings, face-to-face roles, and participation.',
+    prompt: 'Which people, roles, activities, objects, and immediate settings does the person directly encounter?',
+    description: 'Direct activities, roles, relationships, and immediate settings.',
     checklist: [
-      'Name every setting, using its real name, and add participation or demographic numbers when available.',
-      'Name who meets your population face to face in each setting.',
+      'Name each person, role, activity, object, and immediate setting as a discrete map element.',
+      'Use a direct relationship verb to show what happens between Micro elements.',
       'Record whose voices you have heard and whose are missing.',
     ],
   },
   meso: {
     label: 'Meso',
-    prompt: 'How do people from Micro connect across settings?',
-    description: 'Connections among the same people and roles used in Micro.',
+    prompt: 'Which two or more Micro settings form a mesosystem?',
+    description: 'Interrelations among two or more immediate settings already mapped in Micro.',
     checklist: [
-      'Use the same names and roles as Micro, spelled the same way.',
-      'Describe direction, strength, how each connection happens, and who keeps it going.',
-      'Name missing connections and add numbers, affected families, or resources when available.',
+      'Use the exact names of settings already mapped in Micro.',
+      'Group two or more settings into each mesosystem.',
+      'Name the mesosystem without adding a relationship verb or direction.',
     ],
   },
   exosphere: {
@@ -37,12 +37,12 @@ export const SCALES = {
   },
   macrosphere: {
     label: 'Macrosphere',
-    prompt: 'Which laws, beliefs, histories, and structures shape the whole system?',
-    description: 'Law, policy, history, culture, ideology, and structural power.',
+    prompt: 'Which broader laws, public policies, economic conditions, histories, and cultural beliefs affect multiple mapped elements?',
+    description: 'Broader conditions that affect more than one part of the map.',
     checklist: [
-      'Name laws, policies, public narratives, beliefs, and historical conditions.',
-      'Show who each structure affects, how it shapes earlier layers, and what evidence supports that connection.',
-      'Include community knowledge, counter-narratives, accountability, and possible change without turning them into individual deficits.',
+      'Name broader laws, public policies, economic conditions, histories, cultural beliefs, and structures.',
+      'Identify at least two mapped elements affected by each item and the evidence supporting that claim.',
+      'Keep named institutions, including CUNY, in Exosphere.',
     ],
   },
 };
@@ -51,7 +51,7 @@ export const HARD_CRITERIA = [
   { id: 'H1', label: 'Memo detail', help: 'The memo includes enough detail to begin mapping.' },
   { id: 'H2', label: 'Sensitivity and permission', help: 'Sensitive material has documented permission or a privacy-safe treatment.' },
   { id: 'H3', label: 'Claims and interpretation', help: 'The student makes clear what the memo says and what they think it means.' },
-  { id: 'H4', label: 'Map elements', help: 'The memo names enough elements for the active level. Micro requires nodes; later levels also examine connections.' },
+  { id: 'H4', label: 'Map elements', help: 'The memo names enough elements for the active level. Each level uses its own map structure.' },
 ];
 
 export const SCORED_CRITERIA = [
@@ -75,9 +75,10 @@ export const RELATION_VOCABULARY = [
 // Closed relationship registers for the outer levels. An Exosphere link is a
 // transactional pathway from an institution into the mapped world; the
 // Macrosphere register is deontic — how a structure operates on its scope.
-// Meso keeps the full RELATION_VOCABULARY: everyday transactions between
-// settings the memo-writer participates in.
+// Meso is represented by scoped mesosystem nodes, not edges, so it has no
+// relationship-verb register. Direct relationship verbs belong to Micro.
 export const SCALE_VERB_LEXICONS = Object.freeze({
+  meso: Object.freeze([]),
   exosphere: Object.freeze([
     'funds', 'administers', 'regulates', 'employs', 'sets rules for', 'owns',
     'provides', 'serves', 'refers', 'contracts with', 'informs', 'excludes', 'delays',
@@ -118,7 +119,70 @@ export function scaleLexiconVerb(scale, verb) {
 
 export const NODE_BASES = Object.freeze(['memo', 'inference']);
 
-export const NODE_TYPES = ['person', 'family', 'organization', 'agency', 'policy', 'resource', 'place', 'dataset', 'event', 'law', 'belief'];
+export const MESOSYSTEM_NODE_TYPE = 'mesosystem';
+// A Meso scope must refer to actual microsystems, not merely to any Micro
+// actor, group, service, or object. Micro settings therefore have an explicit
+// type instead of being guessed from broad entity categories.
+export const MICRO_SETTING_NODE_TYPES = Object.freeze(['setting']);
+export const NODE_TYPES = [
+  'person', 'role', 'group', 'family', 'organization', 'institution', 'agency', 'service',
+  'activity', 'object', 'policy', 'resource', 'place', 'setting', 'dataset',
+  'event', 'law', 'belief', 'economic condition', 'history', 'culture', 'structure', MESOSYSTEM_NODE_TYPE,
+];
+export const MICRO_NODE_TYPES = Object.freeze(['person', 'role', 'group', 'family', 'activity', 'object', 'setting']);
+export const EXOSPHERE_NODE_TYPES = Object.freeze(['organization', 'institution', 'agency', 'service', 'policy']);
+export const MACROSPHERE_NODE_TYPES = Object.freeze(['policy', 'law', 'belief', 'economic condition', 'history', 'culture', 'structure']);
+
+export function isNodeTypeAllowedAtScale(type, scale) {
+  if (scale === 'meso') return type === MESOSYSTEM_NODE_TYPE;
+  if (scale === 'exosphere') return EXOSPHERE_NODE_TYPES.includes(type);
+  if (scale === 'macrosphere') return MACROSPHERE_NODE_TYPES.includes(type);
+  if (scale === 'micro') return MICRO_NODE_TYPES.includes(type);
+  return false;
+}
+
+const UNAMBIGUOUS_INSTITUTION_LABEL = /(?:\bc\W*u\W*n\W*y\b|\bMTA\b|\bOPWDD\b|\bACCES-?VR\b|\bNYC\s+(?:DOE|HRA|DSS)\b)/i;
+const GENERIC_INSTITUTION_LABEL = /^(?:(?:parent|student|family|youth|community|local|public|private|disability|advocacy|support|service)\s+){1,4}(?:organizations?|programs?|services?|agencies|offices?|institutions?|schools?|clinics?|centers?)$/i;
+const NAMED_INSTITUTION_PATTERN = /^(?:the\s+)?(?:(?:[A-Z][A-Za-z0-9&.'’-]*\s+){1,8}(?:Universit(?:y|ies)|Colleges?|Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?|Corporations?|Organizations?|Associations?|Societ(?:y|ies)|Foundations?|Institutes?|Administrations?|Librar(?:y|ies)|Centers?|Clinics?|Schools?|Hospitals?|Programs?|Services?|Service Providers?|Networks?)\b|(?:Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?)\s+(?:of|for|on)\s+[A-Z][A-Za-z0-9&.'’-]*(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9&.'’-]*){0,10}\b)/;
+
+function normalizedEntityLabel(value) {
+  return String(value || '').normalize('NFKD').replace(/[^A-Za-z0-9]+/g, ' ').trim().toLocaleLowerCase();
+}
+
+export function institutionLabelAliases(value) {
+  const raw = String(value || '').trim();
+  const aliases = new Set();
+  const normalized = normalizedEntityLabel(raw);
+  if (normalized) aliases.add(normalized);
+  for (const match of raw.matchAll(/\(([A-Z][A-Z0-9-]{1,15})\)/g)) aliases.add(normalizedEntityLabel(match[1]));
+  const words = raw.match(/[A-Za-z0-9]+/g) || [];
+  const significant = words.filter((word) => !/^(?:a|an|and|at|for|in|of|on|the|to|with)$/i.test(word));
+  if (significant.length >= 2 && significant.length <= 8) aliases.add(significant.map((word) => word[0]).join('').toLocaleLowerCase());
+  return [...aliases].filter((alias) => alias.length >= 3);
+}
+
+export function isNamedInstitutionLabel(value) {
+  if (typeof value !== 'string') return false;
+  const label = value.trim();
+  if (!label) return false;
+  if (/\b(?:digital-first|online-only|automated)\b/i.test(label)) return false;
+  if (GENERIC_INSTITUTION_LABEL.test(label)) return false;
+  if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return true;
+  // Generic phrases such as "school segregation policy" and "program
+  // eligibility rules" name broad conditions, not named institutions. The
+  // generic institutional word is only decisive when it appears in a proper
+  // name with at least one preceding capitalized term.
+  return NAMED_INSTITUTION_PATTERN.test(label);
+}
+
+export function labelRepeatsInstitution(value, institutions) {
+  if (isNamedInstitutionLabel(value)) return true;
+  const normalized = normalizedEntityLabel(value);
+  if (!normalized) return false;
+  return (Array.isArray(institutions) ? institutions : []).some((node) => institutionLabelAliases(node?.label).some((alias) => (
+    normalized === alias || normalized.startsWith(`${alias} `) || normalized.endsWith(` ${alias}`) || normalized.includes(` ${alias} `)
+  )));
+}
 export const CLAIM_STATES = ['confirmed', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'];
 
 export const PROJECT_SCHEMA_VERSION = 6;
@@ -200,16 +264,24 @@ function normalizeWhitespace(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-const MICRO_NODE_PREDICATE = /\s+(?:(?:who|that|which)\s+)?(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would|provides?|provided|funds?|funded|regulates?|regulated|administers?|administered|requests?|requested|refers?|referred|serves?|served|qualifies?|qualified|excludes?|excluded|delays?|delayed|enables?|enabled|depends?|depended|coordinates?|coordinated|reports?|reported|measures?|measured|contests?|contested|litigates?|litigated|supersedes?|superseded|shapes?|shaped|contradicts?|contradicted|corroborates?|corroborated|faces?|faced|experiences?|experienced|meets?|met|interacts?|interacted|connects?|connected|receives?|received|uses?|used|attends?|attended|visits?|visited|works?|worked|helps?|helped|offers?|offered|manages?|managed|delivers?|delivered|lives?|lived)\b/i;
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const MICRO_NODE_PREDICATE = /\s+(?:(?:who|that|which)\s+)?(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would|provides?|provided|funds?|funded|regulates?|regulated|administers?|administered|requests?|requested|refers?|referred|serves?|served|sets?|supports|supported|partners|partnered|shares|shared|employs|employed|supervises|supervised|qualifies?|qualified|excludes?|excluded|delays?|delayed|enables?|enabled|depends?|depended|coordinates?|coordinated|reports?|reported|measures?|measured|contests?|contested|litigates?|litigated|supersedes?|superseded|shapes?|shaped|mandates?|mandated|prohibits?|prohibited|prices?|priced|normalizes?|normalized|frames?|framed|constrains?|constrained|privileges?|privileged|defines?|defined|contradicts?|contradicted|corroborates?|corroborated|faces?|faced|experiences?|experienced|meets?|met|interacts?|interacted|connects?|connected|receives?|received|uses?|used|attends?|attended|visits?|visited|works?|worked|helps?|helped|offers?|offered|manages?|managed|delivers?|delivered|lives?|lived)\b/i;
 const MICRO_NODE_LEADING_CLAUSE = /^(?:when|where|because|while|although|if|unless|once|after|before)\s+/i;
 const MICRO_NODE_ADDITIONAL_ENTITY = /\b(?:adults?|famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|residents?|children|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|neighbou?rhoods?|programs?|organizations?|agenc(?:y|ies)|offices?|departments?|committees?|services?|supports?|resources?|funding|transportation|access)\b/i;
 const MICRO_NODE_NAMED_ENTITY = /(?:^|\s)(?:the\s+)?(?:[A-Z][A-Za-z0-9'’.-]*)(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9'’.-]*)+/;
+const MICRO_NODE_COORDINATED_ENTITY_NOUNS = /\b(?:famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|workplaces?|rooms?|labs?|libraries|groups?|programs?|organizations?|agenc(?:y|ies)|offices?|services?|tablets?|wheelchairs?|schedules?)\b\s+(?:and|&)\s+(?:(?:a|an|the)\s+)?(?:\b(?:famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|workplaces?|rooms?|labs?|libraries|groups?|programs?|organizations?|agenc(?:y|ies)|offices?|services?|tablets?|wheelchairs?|schedules?)\b|[A-Z][A-Za-z0-9'’.-]*(?:\s+[A-Z][A-Za-z0-9'’.-]*){0,3})/i;
+const MICRO_NODE_COORDINATED_PEOPLE = /\b[A-Z][a-z'’]+\s+[A-Z][a-z'’]+\s+(?:and|&)\s+[A-Z][a-z'’]+\s+[A-Z][a-z'’]+\b/;
+const MICRO_NODE_ABSTRACT_LABEL = /^(?:access|data|evidence|eligibility|funding|guidance|resources?|services?|support|uncertainty)$/i;
 
 function cleanMicroNodeLabel(value) {
   if (typeof value !== 'string') return null;
   const label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
   if (!label || label.length < 2 || label.length > 200 || !/[a-z]/i.test(label)) return null;
   if (/^(?:it|they|them|this|that|these|those|something|anything)$/i.test(label)) return null;
+  if (/\b(?:who|that|which)$/i.test(label)) return null;
   return label;
 }
 
@@ -242,7 +314,17 @@ export function normalizeMicroNodeLabel(value) {
 
 export function isDiscreteMicroNodeLabel(value) {
   const label = cleanMicroNodeLabel(value);
-  return Boolean(label && normalizeMicroNodeLabel(label) === label);
+  return Boolean(label && normalizeMicroNodeLabel(label) === label
+    && !MICRO_NODE_ABSTRACT_LABEL.test(label)
+    && !MICRO_NODE_COORDINATED_ENTITY_NOUNS.test(label)
+    && !MICRO_NODE_COORDINATED_PEOPLE.test(label));
+}
+
+export function isMesosystemLabel(value) {
+  const label = cleanMicroNodeLabel(value);
+  if (!label || normalizeMicroNodeLabel(label) !== label) return false;
+  if (/(?:->|→|<-|←)/.test(label)) return false;
+  return label.split(/\s+/).length >= 2;
 }
 
 function sentenceRecords(text) {
@@ -306,6 +388,7 @@ function result(id, status, evidence, rationale, nextAction, hardBlock = false) 
 const RELATION_DEFINITIONS = [
   { verb: 'depends on', pattern: '\\bdepends?\\s+on\\b' },
   { verb: 'coordinates with', pattern: '\\bcoordinates?\\s+with\\b' },
+  { verb: 'works with', pattern: '\\bworks?\\s+with\\b' },
   { verb: 'reports to', pattern: '\\breports?\\s+to\\b' },
   { verb: 'located in', pattern: '\\b(?:is|are|was|were)?\\s*located\\s+in\\b' },
   { verb: 'regulates', pattern: '\\b(?:is|are|was|were)\\s+regulated\\s+by\\b', passive: true },
@@ -317,6 +400,8 @@ const RELATION_DEFINITIONS = [
   { verb: 'requests', pattern: '\\brequests?\\b' },
   { verb: 'refers', pattern: '\\brefers?\\b' },
   { verb: 'serves', pattern: '\\bserves?\\b' },
+  { verb: 'informs', pattern: '\\binforms?\\b' },
+  { verb: 'sets rules for', pattern: '\\bsets?\\s+rules?\\s+for\\b' },
   { verb: 'qualifies', pattern: '\\bqualif(?:y|ies)\\b' },
   { verb: 'excludes', pattern: '\\bexcludes?\\b' },
   { verb: 'delays', pattern: '\\bdelays?\\b', nominalAfter: /\b(?:face|faces|faced|experience|experiences|experienced)\s+$/i },
@@ -326,9 +411,25 @@ const RELATION_DEFINITIONS = [
   { verb: 'contests', pattern: '\\bcontests?\\b' },
   { verb: 'litigates', pattern: '\\blitigates?\\b' },
   { verb: 'supersedes', pattern: '\\bsupersedes?\\b' },
+  { verb: 'defines eligibility for', pattern: '\\bdefines?\\s+eligibility\\s+for\\b' },
+  { verb: 'mandates', pattern: '\\bmandates?\\b' },
+  { verb: 'prohibits', pattern: '\\bprohibits?\\b' },
+  { verb: 'prices', pattern: '\\bprices?\\b' },
+  { verb: 'normalizes', pattern: '\\bnormalizes?\\b' },
+  { verb: 'frames', pattern: '\\bframes?\\b' },
+  { verb: 'constrains', pattern: '\\bconstrains?\\b' },
+  { verb: 'privileges', pattern: '\\bprivileges?\\b' },
   { verb: 'shapes', pattern: '\\bshapes?\\b' },
   { verb: 'contradicts', pattern: '\\bcontradicts?\\b' },
   { verb: 'corroborates', pattern: '\\bcorroborates?\\b' },
+  { verb: 'meets', pattern: '\\bmeets?\\b' },
+  { verb: 'helps', pattern: '\\bhelps?\\b' },
+  { verb: 'reviews', pattern: '\\breviews?\\b' },
+  { verb: 'adjusts', pattern: '\\badjusts?\\b' },
+  { verb: 'uses', pattern: '\\buses?\\b' },
+  { verb: 'attends', pattern: '\\battends?\\b' },
+  { verb: 'visits', pattern: '\\bvisits?\\b' },
+  { verb: 'supervises', pattern: '\\bsupervises?\\b' },
 ];
 
 function relationMatches(sentence) {
@@ -383,28 +484,72 @@ function objectFromSegment(segment, verb) {
   let candidate = segment.split(/[,;:]\s*(?:but|while|whereas|although|however)?/i)[0] || '';
   if (verb === 'refers' && /\bto\b/i.test(candidate)) candidate = candidate.split(/\bto\b/i).at(-1);
   if (verb === 'requests' && /\bfrom\b/i.test(candidate)) candidate = candidate.split(/\bfrom\b/i).at(-1);
+  if (verb === 'informs' && /\babout\b/i.test(candidate)) candidate = candidate.split(/\babout\b/i)[0];
+  const personWithSettingAdjunct = candidate.match(/^\s*([A-Z][\p{L}'’.-]+\s+[A-Z][\p{L}'’.-]+)\s+(?:at|in)\s+(?:the\s+)?[^,;:]+$/u);
+  if (personWithSettingAdjunct) candidate = personWithSettingAdjunct[1];
   const label = displayLabel(candidate);
   return plausibleLabel(label) ? label : null;
 }
 
 function inferNodeType(label) {
+  if (/^u\/[A-Za-z0-9_-]+$/i.test(label)) return 'person';
+  if (/^r\/[A-Za-z0-9_-]+$/i.test(label)) return 'setting';
+  if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return 'institution';
+  if (/\b(?:digital-first|administrative structure|service-delivery structure)\b/i.test(label)) return 'structure';
+  if (/\b(?:ableis[mt]|assumptions?|beliefs?|norms?)\b/i.test(label)) return 'belief';
+  if (/\b(?:acts?|statutes?|ordinances?)\b/i.test(label)) return 'law';
   if (/\b(?:agenc(?:y|ies)|departments?|committees?|authorit(?:y|ies)|administrations?)\b/i.test(label)) return 'agency';
-  if (/\b(?:organizations?|schools?|universit(?:y|ies)|colleges?|providers?|associations?|coalitions?|institutions?)\b/i.test(label)) return 'organization';
+  if (/\b(?:classrooms?|campuses|campus|homes?|workplaces?|consultation rooms?|rooms?|digital labs?|labs?|libraries|peer groups?|peer-support groups?|online forums?|subreddits?)\b/i.test(label)) return 'setting';
+  if (/\b(?:groups?|communities|peers?)\b/i.test(label)) return 'group';
+  if (/\b(?:universit(?:y|ies)|colleges?|authorit(?:y|ies)|offices?|boards?|institutions?)\b/i.test(label)) return 'institution';
+  if (/\b(?:organizations?|schools?|associations?|coalitions?)\b/i.test(label)) return 'organization';
+  if (/\b(?:providers?|services?|programs?|clinics?|centers?)\b/i.test(label)) return 'service';
   if (/\b(?:polic(?:y|ies)|laws?|regulations?|statutes?|ordinances?|rules?)\b/i.test(label)) return 'policy';
-  if (/\b(?:data|datasets?|surveys?|records?|evidence)\b/i.test(label)) return 'dataset';
+  if (/\b(?:data|datasets?|surveys?|records?|reports?|evidence)\b/i.test(label)) return 'dataset';
+  if (/\b(?:costs?|prices?|affordability|unemployment|labor market|housing market|economic pressure)\b/i.test(label)) return 'economic condition';
+  if (/^(?:East Harlem|West Harlem|Central Harlem|The Bronx|Brooklyn|Queens|Manhattan|Staten Island)$/i.test(label)) return 'place';
   if (/\b(?:cities|city|counties|county|states?|neighbou?rhoods?|boroughs?|districts?|places?|regions?)\b/i.test(label)) return 'place';
-  if (/\b(?:abilit(?:y|ies)|services?|supports?|funding|funds?|resources?|capacit(?:y|ies)|assets?|guidance|programs?|evaluations?|interviews?|eligibility|access)\b/i.test(label)) return 'resource';
+  if (/\b(?:histor(?:y|ies|ical)|disinvestment|segregation)\b/i.test(label)) return 'history';
+  if (/\b(?:culture|cultural norms?|public narratives?)\b/i.test(label)) return 'culture';
+  if (/\b(?:registration|testing|scheduling|billing|processing|instruction|teaching|learning|employment|work)\b/i.test(label)) return 'activity';
+  if (/\b(?:diplomas?|forms?|documents?|devices?|computers?|phones?|tablets?|wheelchairs?|schedules?|applications?|plans?|objects?)\b/i.test(label)) return 'object';
+  if (/\b(?:abilit(?:y|ies)|supports?|funding|funds?|resources?|capacit(?:y|ies)|assets?|guidance|evaluations?|interviews?|eligibility|access)\b/i.test(label)) return 'resource';
   if (/\bfamil(?:y|ies)\b/i.test(label)) return 'family';
-  if (/\b(?:adults?|persons?|people|participants?|students?|residents?|caregivers?|parents?|children|child|teachers?|workers?)\b/i.test(label)) return 'person';
+  if (/\b(?:students?|caregivers?|parents?|teachers?|workers?|instructors?|registrars?|advisers?|advisors?)\b/i.test(label)) return 'role';
+  if (/\b(?:adults?|persons?|people|participants?|residents?|children|child)\b/i.test(label)) return 'person';
+  if (/^[A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){1,3}$/u.test(label)) return 'person';
   return 'event';
 }
 
-function inferScale(label, fallback = 'meso') {
-  if (/\b(?:culture|ideolog(?:y|ies)|capitalism|racism|structural|public narratives?|counter-narratives?|histor(?:y|ies|ical)|rights?|laws?|regulations?)\b/i.test(label)) return 'macrosphere';
-  if (/\b(?:states?|cities|city|federal|public systems?|departments?|agenc(?:y|ies)|offices?|funding|funders?|service systems?)\b/i.test(label)) return 'exosphere';
-  if (/\b(?:organizations?|schools?|agenc(?:y|ies)|providers?|committees?|programs?|procedures?|institutions?)\b/i.test(label)) return 'meso';
-  if (/\b(?:adults?|famil(?:y|ies)|persons?|participants?|students?|residents?|experiences?|interviews?|caregivers?|parents?)\b/i.test(label)) return 'micro';
+function inferScale(label, fallback = 'micro') {
+  if (isNamedInstitutionLabel(label)) return 'exosphere';
+  if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return 'exosphere';
+  if (/^(?:East Harlem|West Harlem|Central Harlem|The Bronx|Brooklyn|Queens|Manhattan|Staten Island)$/i.test(label)) return 'exosphere';
+  if (/\b(?:culture|ideolog(?:y|ies)|capitalism|racism|structural|structures?|digital-first|public narratives?|histor(?:y|ies|ical)|rights?|laws?|acts?|regulations?|public polic(?:y|ies)|eligibility rules?|economic conditions?|costs?|ableis[mt]|assumptions?)\b/i.test(label)) return 'macrosphere';
+  if (/\b(?:states?|cities|city|federal|public systems?|departments?|agenc(?:y|ies)|authorit(?:y|ies)|universit(?:y|ies)|colleges?|offices?|boards?|funding|funders?|service systems?|institutions?)\b/i.test(label)) return 'exosphere';
   return fallback;
+}
+
+function extractedNodeClassification(label, fallbackScale) {
+  let type = inferNodeType(label);
+  let scale = inferScale(label, fallbackScale);
+  if (scale === 'micro' && !MICRO_NODE_TYPES.includes(type)) {
+    if (['organization', 'institution', 'agency', 'service'].includes(type)) {
+      if (/\b(?:classrooms?|schools?|campuses?|homes?|workplaces?|consultation rooms?|rooms?|digital labs?|labs?|libraries|peer groups?|online forums?|subreddits?)\b/i.test(label)) type = 'setting';
+      else {
+        scale = 'exosphere';
+        type = EXOSPHERE_NODE_TYPES.includes(type) ? type : 'institution';
+      }
+    } else if (type === 'event') type = 'activity';
+    else type = 'object';
+  }
+  if (scale === 'micro' && !isDiscreteMicroNodeLabel(label)) return null;
+  if (scale === 'exosphere') {
+    if (!isNamedInstitutionLabel(label)) return null;
+    if (!EXOSPHERE_NODE_TYPES.includes(type)) type = 'institution';
+  }
+  if (scale === 'macrosphere' && !MACROSPHERE_NODE_TYPES.includes(type)) return null;
+  return { type, scale };
 }
 
 export function extractRelationships(submission) {
@@ -431,10 +576,14 @@ export function extractRelationships(submission) {
       }
       if (plausibleLabel(sourceLabel) && plausibleLabel(targetLabel) && sourceLabel.toLowerCase() !== targetLabel.toLowerCase()) {
         if (relationships.length >= PROJECT_LIMITS.edges) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.edges} relationship records`);
-        const sourceScale = inferScale(sourceLabel, 'meso');
+        const sourceScale = inferScale(sourceLabel, 'micro');
         const targetScale = inferScale(targetLabel, sourceScale);
-        const scale = targetScale === 'exosphere' || targetScale === 'macrosphere' ? targetScale : sourceScale;
-        relationships.push({ sourceLabel, targetLabel, verb: match.verb, scale, ...evidence });
+        // Direct, verb-bearing relationships live in Micro. Meso is not an
+        // edge layer; it is represented separately by a mesosystem node whose
+        // scope names two or more immediate settings. Outer institutional and
+        // structural relationships retain their own levels.
+        const inferredScale = targetScale === 'exosphere' || targetScale === 'macrosphere' ? targetScale : sourceScale;
+        relationships.push({ sourceLabel, targetLabel, verb: match.verb, scale: inferredScale, ...evidence });
         currentSubject = match.passive ? targetLabel : sourceLabel;
       } else if (subject) {
         currentSubject = subject;
@@ -451,6 +600,9 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
   const mappedNodes = extractCandidates({ ...submission, text }).nodes;
   const hasRelational = relationships.length >= 2;
   const hasMicroNodes = mappedNodes.length >= 2;
+  const mesoSettingMentions = new Set([...text.matchAll(/\b(?:home|classroom|school|campus|workplace|work site|library|lab|clinic|center|peer group|online forum|subreddit)\b/gi)]
+    .map((match) => match[0].toLocaleLowerCase()));
+  const hasMesosystem = MESOSYSTEM_CUE.test(text) && mesoSettingMentions.size >= 2;
   const evidenceBoundary = locateEvidence({ ...submission, text }, /(according|data|interview|memo|reports?|shows?|evidence|testimony|should be checked)/i)
     || (submission.evidenceOwnership ? 'Memo and interpretation are tracked separately' : null);
   const hard = [
@@ -458,8 +610,10 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
     result('H2', !submission.sensitive || submission.consent ? 'met' : 'unmet', submission.sensitive ? 'Sensitivity declaration' : 'Marked non-sensitive', 'Sensitive material needs documented permission or a privacy-safe treatment.', 'Document permission or remove identifying details.', true),
     result('H3', evidenceBoundary ? 'met' : 'unmet', evidenceBoundary, 'At least one important point should name the evidence behind it.', 'Name the evidence behind one important point.', true),
     activeScale === 'micro'
-      ? { ...result('H4', hasMicroNodes ? 'met' : 'unmet', mappedNodes[0]?.evidence || mappedNodes[0]?.evidenceLocator || null, 'Micro begins with at least two clearly named people, roles, groups, or settings.', 'Name at least two people, roles, groups, or settings that belong in the map.', true), nodeCount: mappedNodes.length }
-      : { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'This level needs at least two clear connections between map elements.', 'Add two statements naming what connects and how.', true), relationshipCount: relationships.length },
+      ? { ...result('H4', hasMicroNodes ? 'met' : 'unmet', mappedNodes[0]?.evidence || mappedNodes[0]?.evidenceLocator || null, 'Micro begins with at least two clearly named people, roles, activities, objects, or immediate settings.', 'Name at least two people, roles, activities, objects, or immediate settings that belong in the map.', true), nodeCount: mappedNodes.length }
+      : activeScale === 'meso'
+        ? { ...result('H4', hasMesosystem ? 'met' : 'unmet', hasMesosystem ? 'Memo names an interrelation among immediate settings' : null, 'Meso requires an interrelation among two or more immediate settings already identified in Micro.', 'Name the immediate settings that form a mesosystem and describe their interrelation.', true), mesosystemCount: hasMesosystem ? 1 : 0 }
+        : { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'This level needs at least two clear connections between map elements.', 'Add two statements naming what connects and how.', true), relationshipCount: relationships.length },
   ];
 
   const scalePatterns = {
@@ -580,8 +734,8 @@ function withDefaultEdgeAnnotations(edges) {
 }
 
 const NODE_ONLY_COMMON_NOUN = /\b(?:famil(?:y|ies)|students?|parents?|caregivers?|teachers?|residents?|children|case\s+workers?|social\s+workers?|community\s+members?|classrooms?|schools?|community\s+centers?|clinics?|homes?|neighbou?rhoods?|programs?|organizations?)\b/gi;
-const NODE_ONLY_PROPER_NOUN = /\b(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+)){1,16}\b/g;
-const NODE_ONLY_IGNORED_LABEL = /^(?:According to|Course Memo|Memo Sentence|This Memo|The Memo|What Evidence|No Evidence)$/i;
+const NODE_ONLY_PROPER_NOUN = /\b(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+(?:st|nd|rd|th)?)(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?(?:[A-Z][A-Za-z'’.-]*|[A-Z]{2,}|\d+(?:st|nd|rd|th)?)){1,16}\b/g;
+const NODE_ONLY_IGNORED_LABEL = /^(?:According to|Course Memo|Memo Sentence|This Memo|The Memo|What Evidence|No Evidence|Broader Conditions|Several Parts of the Map At Once|Institutions|One Another)$/i;
 
 function nodeOnlyLabels(excerpt) {
   const properMatches = [...excerpt.matchAll(NODE_ONLY_PROPER_NOUN)];
@@ -596,9 +750,17 @@ function nodeOnlyLabels(excerpt) {
 
 export function extractCandidates(submission) {
   const nodeMap = new Map();
-  const relationships = extractRelationships(submission);
-  relationships.forEach((relationship) => {
-    [relationship.sourceLabel, relationship.targetLabel].forEach((label) => {
+  const rawRelationships = extractRelationships(submission);
+  const relationships = rawRelationships.flatMap((relationship) => {
+    const sourceLabel = normalizeMicroNodeLabel(relationship.sourceLabel);
+    const targetLabel = normalizeMicroNodeLabel(relationship.targetLabel);
+    if (!sourceLabel || !targetLabel || sourceLabel.toLocaleLowerCase() === targetLabel.toLocaleLowerCase()) return [];
+    return [{ ...relationship, sourceLabel, targetLabel }];
+  });
+  rawRelationships.forEach((relationship) => {
+    [relationship.sourceLabel, relationship.targetLabel].forEach((rawLabel) => {
+      const label = normalizeMicroNodeLabel(rawLabel);
+      if (!label) return;
       const key = label.toLowerCase();
       const evidenceRef = {
         evidenceId: relationship.evidenceId,
@@ -608,8 +770,10 @@ export function extractCandidates(submission) {
         evidenceHash: relationship.evidenceHash,
       };
       if (!nodeMap.has(key)) {
+        const classification = extractedNodeClassification(label, relationship.scale);
+        if (!classification) return;
         nodeMap.set(key, {
-          id: stableId('node', label), label, type: inferNodeType(label), scale: inferScale(label, relationship.scale),
+          id: stableId('node', label), label, ...classification,
           status: 'pending', claimState: 'inference', evidence: relationship.evidence,
           ...evidenceRef, evidenceRefs: [evidenceRef], notes: '',
         });
@@ -619,8 +783,11 @@ export function extractCandidates(submission) {
       }
     });
   });
-  if (!nodeMap.size) {
-    sentenceRecords(submission.text || '').forEach((sentence) => {
+  // Node-only sentences and named elements that sit beside a relationship are
+  // still eligible. This pass also prevents a whole clause from becoming a
+  // node merely because another sentence contained a usable relationship.
+  sentenceRecords(submission.text || '').forEach((sentence) => {
+      if (sentence.excerpt.trim().endsWith('?')) return;
       const evidence = evidenceForSentence(submission, sentence);
       const evidenceRef = {
         evidenceId: evidence.evidenceId,
@@ -629,14 +796,15 @@ export function extractCandidates(submission) {
         evidenceExcerpt: evidence.evidenceExcerpt,
         evidenceHash: evidence.evidenceHash,
       };
-      nodeOnlyLabels(sentence.excerpt).forEach((label) => {
+      nodeOnlyLabels(sentence.excerpt).filter(isDiscreteMicroNodeLabel).forEach((label) => {
         const key = label.toLocaleLowerCase();
         if (!nodeMap.has(key)) {
+          const classification = extractedNodeClassification(label, 'micro');
+          if (!classification) return;
           nodeMap.set(key, {
             id: stableId('node', label),
             label,
-            type: inferNodeType(label),
-            scale: inferScale(label, 'micro'),
+            ...classification,
             status: 'pending',
             claimState: 'inference',
             evidence: evidence.evidence,
@@ -647,14 +815,24 @@ export function extractCandidates(submission) {
           return;
         }
         const node = nodeMap.get(key);
+        const nodeOnlyClassification = extractedNodeClassification(label, 'micro');
+        if (nodeOnlyClassification?.type === 'setting') {
+          node.type = 'setting';
+          node.scale = 'micro';
+        }
         if (!node.evidenceRefs.some((item) => item.evidenceId === evidenceRef.evidenceId)) node.evidenceRefs.push(evidenceRef);
       });
     });
-  }
   if (nodeMap.size > PROJECT_LIMITS.nodes) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.nodes} node records`);
-  const nodes = withDefaultNodeLayout([...nodeMap.values()]);
+  const candidateNodes = [...nodeMap.values()];
+  const nodes = withDefaultNodeLayout(candidateNodes.filter((candidate) => {
+    if (candidate.label.trim().split(/\s+/).length !== 1 || ['institution', 'agency', 'organization'].includes(candidate.type)) return true;
+    const token = candidate.label.trim().toLocaleLowerCase();
+    return !candidateNodes.some((other) => other !== candidate && other.label.toLocaleLowerCase().split(/[^a-z0-9]+/).includes(token));
+  }));
   const edgeMap = new Map();
   relationships.forEach((relationship) => {
+    if (!nodeMap.has(relationship.sourceLabel.toLocaleLowerCase()) || !nodeMap.has(relationship.targetLabel.toLocaleLowerCase())) return;
     const semanticKey = `${relationship.sourceLabel.toLowerCase()}:${relationship.verb}:${relationship.targetLabel.toLowerCase()}`;
     const evidenceRef = {
       evidenceId: relationship.evidenceId,
@@ -694,12 +872,65 @@ export function extractCandidates(submission) {
 }
 
 const DETERMINISTIC_REVIEW_SCALE_LIMITS = Object.freeze({
-  micro: Object.freeze({ nodes: 10, connections: 0 }),
-  meso: Object.freeze({ nodes: 0, connections: 8 }),
+  micro: Object.freeze({ nodes: 10, connections: 8 }),
+  meso: Object.freeze({ nodes: 6, connections: 0 }),
   exosphere: Object.freeze({ nodes: 8, connections: 6 }),
   // Macrosphere structures relate to the map through scopes, never edges.
   macrosphere: Object.freeze({ nodes: 8, connections: 0 }),
 });
+
+export function isMicroSettingNode(node) {
+  return Boolean(node && node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type));
+}
+
+function naturalList(values) {
+  if (values.length < 2) return values[0] || '';
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
+}
+
+const MESOSYSTEM_CUE = /\b(coordination|coordinate[sd]?|communication|communicate[sd]?|collaboration|collaborate[sd]?|overlap|conflict|transition|alignment|disconnect|scheduling|planning)\b/i;
+
+function mesosystemCueLabel(match) {
+  const cue = match?.[1]?.toLocaleLowerCase() || 'coordination';
+  if (cue.startsWith('coordinate')) return 'coordination';
+  if (cue.startsWith('communicate')) return 'communication';
+  if (cue.startsWith('collaborate')) return 'collaboration';
+  return cue;
+}
+
+function deterministicMesosystems(submission, carriedNodes, limit) {
+  const settings = carriedNodes.filter(isMicroSettingNode);
+  const candidates = [];
+  sentenceRecords(submission.text || '').forEach((sentence) => {
+    const mentioned = settings.filter((node) => sentence.excerpt.toLocaleLowerCase().includes(String(node.label || '').trim().toLocaleLowerCase()));
+    if (mentioned.length < 2) return;
+    const relationshipText = mentioned.reduce((text, node) => text.replace(new RegExp(escapeRegExp(String(node.label || '').trim()), 'gi'), ' '), sentence.excerpt);
+    const cue = MESOSYSTEM_CUE.exec(relationshipText);
+    if (!cue) return;
+    candidates.push({
+      source: mentioned[0],
+      target: mentioned[1],
+      cue: mesosystemCueLabel(cue),
+      evidence: sentence.excerpt,
+    });
+  });
+  const seen = new Set();
+  return candidates.flatMap(({ source, target, cue, evidence }) => {
+    if (source.id === target.id || !isMicroSettingNode(source) || !isMicroSettingNode(target)) return [];
+    const members = [source, target].sort((left, right) => left.id.localeCompare(right.id));
+    const key = members.map((member) => member.id).join('::');
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{
+      label: `${naturalList(members.map((member) => member.label))} ${cue}`,
+      type: MESOSYSTEM_NODE_TYPE,
+      scale: 'meso',
+      evidence: truncateCollapsedText(evidence, PROJECT_LIMITS.memoGuidanceEvidence),
+      scope: members.map(({ id, label }) => ({ id, label })),
+    }];
+  }).slice(0, Math.min(limit, PROJECT_LIMITS.memoReviewNodes));
+}
 
 export function deterministicMemoReview(submission, activeScale = 'micro', { carriedNodes = [], carriedConnections = [] } = {}) {
   const scaleLimits = DETERMINISTIC_REVIEW_SCALE_LIMITS[activeScale] || DETERMINISTIC_REVIEW_SCALE_LIMITS.micro;
@@ -707,36 +938,59 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
   const carriedNodeByLabel = new Map(carriedNodes.map((node) => [String(node.label || '').trim().toLocaleLowerCase(), node]));
   const carriedConnectionKeys = new Set(carriedConnections
     .map((connection) => `${connection.source}::${String(connection.verb || '').trim().toLocaleLowerCase()}::${connection.target}`));
-  const orderedNodes = [...nodes].sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
+  const activeTypePriority = (node) => {
+    if (activeScale === 'micro') {
+      if (node.type === 'person' && /^(?:adults?|people|persons?|participants?|residents?|children)$/i.test(node.label)) return 1;
+      return { setting: 8, person: 7, role: 6, object: 5, activity: 4, group: 3, family: 2 }[node.type] || 0;
+    }
+    if (activeScale === 'exosphere') return Number(isNamedInstitutionLabel(node.label)) * 20 + ({ institution: 8, agency: 7, organization: 6, service: 5, policy: 4, resource: 3 }[node.type] || 0);
+    if (activeScale === 'macrosphere') return { law: 8, policy: 7, 'economic condition': 6, history: 5, belief: 4, culture: 3, structure: 2 }[node.type] || 0;
+    return 0;
+  };
+  const orderedNodes = [...nodes].sort((left, right) => (
+    Number(right.scale === activeScale) - Number(left.scale === activeScale)
+    || activeTypePriority(right) - activeTypePriority(left)
+  ));
   // Elements already on the student's map never come back as new proposals;
   // later levels surface only what the memo adds beyond the carried graph.
-  const reviewNodes = (activeScale === 'meso' ? [] : orderedNodes)
-    .filter((node) => !carriedNodeByLabel.has(node.label.trim().toLocaleLowerCase()))
-    .slice(0, Math.min(scaleLimits.nodes, PROJECT_LIMITS.memoReviewNodes))
-    .map((node) => ({
-      label: node.label,
-      type: node.type,
-      scale: activeScale,
-      evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
-      // The local reader only ever surfaces what the memo names.
-      ...(activeScale === 'exosphere' || activeScale === 'macrosphere' ? { basis: 'memo' } : {}),
-      // A deterministic reader cannot judge which mapped elements a structure
-      // conditions; the student draws the scope at the next stage.
-      ...(activeScale === 'macrosphere' ? { deontic: 'shapes', scope: [] } : {}),
-    }));
+  const reviewNodes = activeScale === 'meso'
+    ? deterministicMesosystems(submission, carriedNodes, scaleLimits.nodes)
+    : orderedNodes
+      .filter((node) => node.scale === activeScale)
+      .filter((node) => !carriedNodeByLabel.has(node.label.trim().toLocaleLowerCase()))
+      .filter((node) => isNodeTypeAllowedAtScale(node.type, activeScale))
+      .filter((node) => activeScale !== 'micro' || (isDiscreteMicroNodeLabel(node.label) && !NODE_ONLY_IGNORED_LABEL.test(node.label)))
+      .filter((node) => activeScale !== 'exosphere' || isNamedInstitutionLabel(node.label))
+      .filter((node) => activeScale !== 'macrosphere' || !labelRepeatsInstitution(node.label, carriedNodes))
+      .map((node) => ({
+        label: node.label,
+        type: node.type,
+        scale: activeScale,
+        evidence: truncateCollapsedText(node.evidenceExcerpt || node.evidence || '', PROJECT_LIMITS.memoGuidanceEvidence),
+        // The local reader only ever surfaces what the memo names.
+        ...(activeScale === 'exosphere' || activeScale === 'macrosphere' ? { basis: 'memo' } : {}),
+        ...(activeScale === 'macrosphere' ? {
+          deontic: scaleLexiconVerb('macrosphere', relationMatches(String(node.evidenceExcerpt || ''))[0]?.verb) || 'shapes',
+          scope: carriedNodes
+            .filter((member) => member?.scale !== 'macrosphere' && String(node.evidenceExcerpt || '').toLocaleLowerCase().includes(String(member?.label || '').trim().toLocaleLowerCase()))
+            .map(({ id, label }) => ({ id, label })),
+        } : {}),
+      }))
+      .filter((node) => activeScale !== 'macrosphere' || node.scope.length >= 2)
+      .slice(0, Math.min(scaleLimits.nodes, PROJECT_LIMITS.memoReviewNodes));
   const nodeLabels = new Set(reviewNodes.map((node) => node.label));
   const endpointFor = (label) => {
     const carried = carriedNodeByLabel.get(label.trim().toLocaleLowerCase());
     if (carried) return { reference: carried.id, label: carried.label, carried: true };
     return nodeLabels.has(label) ? { reference: label, label, carried: false } : null;
   };
-  const connections = (activeScale === 'micro' || activeScale === 'macrosphere') ? [] : edges
+  const connections = (activeScale === 'meso' || activeScale === 'macrosphere') ? [] : edges
+    .filter((edge) => edge.scale === activeScale)
     .map((edge) => {
-      if (activeScale === 'meso') {
-        const carriedSource = carriedNodeByLabel.get(edge.sourceLabel.trim().toLocaleLowerCase());
-        const carriedTarget = carriedNodeByLabel.get(edge.targetLabel.trim().toLocaleLowerCase());
-        if (!carriedSource || !carriedTarget) return null;
-        return { edge, source: carriedSource, target: carriedTarget, verb: edge.verb };
+      if (activeScale === 'micro') {
+        const sourceNode = nodes.find((node) => node.label === edge.sourceLabel) || carriedNodes.find((node) => node.label === edge.sourceLabel);
+        const targetNode = nodes.find((node) => node.label === edge.targetLabel) || carriedNodes.find((node) => node.label === edge.targetLabel);
+        if (isMicroSettingNode({ ...sourceNode, scale: 'micro' }) && isMicroSettingNode({ ...targetNode, scale: 'micro' })) return null;
       }
       const source = endpointFor(edge.sourceLabel);
       const target = endpointFor(edge.targetLabel);
@@ -744,8 +998,8 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       // An Exosphere connection is an influence pathway: it must land on the
       // mapped world (the two-step chain), and its verb must belong to the
       // institutional register.
-      if (carriedNodes.length && !source.carried && !target.carried) return null;
-      const verb = scaleLexiconVerb(activeScale, edge.verb);
+      if (activeScale === 'exosphere' && carriedNodes.length && !source.carried && !target.carried) return null;
+      const verb = activeScale === 'micro' ? edge.verb : scaleLexiconVerb(activeScale, edge.verb);
       if (!verb) return null;
       return { edge, source: { id: source.reference, label: source.label }, target: { id: target.reference, label: target.label }, verb };
     })
@@ -763,62 +1017,76 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       rationale: truncateCollapsedText(edge.evidenceExcerpt || edge.rationale || '', PROJECT_LIMITS.rationaleText),
     }));
   const guidance = activeScale === 'micro'
-    ? (reviewNodes.length ? [{
+    ? [...(reviewNodes.length ? [{
       point: truncateCollapsedText(`The memo names ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'node' : 'nodes'}: ${reviewNodes.map((node) => node.label).join(', ')}.`, PROJECT_LIMITS.memoGuidanceText),
       ...(reviewNodes[0].evidence ? { evidenceExcerpt: truncateCollapsedText(reviewNodes[0].evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
-    }] : [])
-    : connections.slice(0, 3).map((connection) => ({
+    }] : []), ...connections.slice(0, 3).map((connection) => ({
       point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
-    }));
+    }))]
+    : activeScale === 'meso'
+      ? reviewNodes.slice(0, 3).map((node) => ({
+        point: truncateCollapsedText(`Review ${naturalList(node.scope.map((member) => member.label))} as one mesosystem.`, PROJECT_LIMITS.memoGuidanceText),
+        ...(node.evidence ? { evidenceExcerpt: truncateCollapsedText(node.evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
+      }))
+      : connections.slice(0, 3).map((connection) => ({
+      point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
+      ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
+      }));
   // The outer levels are produced by elicitation, not extraction: the memo
   // rarely names the institutions and structures behind it, so the review
   // walks the standard categories the way an eco-map instrument does.
   if (activeScale === 'exosphere') {
     const anchors = carriedNodes.slice(0, 3).map((node) => node.label).join(', ');
     guidance.push({ point: truncateCollapsedText(anchors
-      ? `Behind each mapped setting sits an institution the memo may not name. For ${anchors}: who owns or operates it, who funds it, who employs the people in it, who sets its rules? Add the institutions you can name — the test is that you are never in the room there, yet a decision made there reaches your map.`
-      : 'Name the institutions behind the story: who owns or operates each setting, who funds it, who employs the people in it, who sets its rules? The test is that you are never in the room there, yet a decision made there reaches your map.', PROJECT_LIMITS.memoGuidanceText) });
+      ? `For ${anchors}, identify the institutions that own or operate the setting, provide funding, employ staff, or set rules. Include an institution only when its decisions affect a mapped element without direct interaction with the person.`
+      : 'Identify the institutions that own or operate each setting, provide funding, employ staff, or set rules. Include an institution only when its decisions affect a mapped element without direct interaction with the person.', PROJECT_LIMITS.memoGuidanceText) });
   }
   if (activeScale === 'macrosphere') {
-    guidance.push({ point: truncateCollapsedText('A structure is a pattern with no door: a law, policy, price, or belief that makes several parts of your map behave the same way. If you could visit it or it could send you an email, it belongs further in. After naming a structure, you will choose which mapped elements it shapes.', PROJECT_LIMITS.memoGuidanceText) });
+    guidance.push({ point: truncateCollapsedText('Identify a broader law, policy, economic condition, or cultural belief only when it shapes multiple parts of the map. After naming the condition, choose the mapped elements it affects.', PROJECT_LIMITS.memoGuidanceText) });
   }
   if (!guidance.length) {
     guidance.push({ point: activeScale === 'micro'
-      ? 'No clearly named people, roles, groups, or settings were found. You can continue and add nodes yourself.'
-      : 'No clear connections were found. You can continue and describe them yourself.' });
+      ? 'No clearly named people, roles, activities, objects, or immediate settings were found. You can continue and add Micro elements yourself.'
+      : activeScale === 'meso'
+        ? 'No interrelation among two or more Micro settings was found. You can continue and identify the settings that form a mesosystem.'
+        : 'No clear connections were found. You can continue and describe them yourself.' });
   }
   guidance.splice(4);
   const first = connections[0] || null;
-  const example = first
-    ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
-    : null;
-  // Carried map elements count toward readiness at Exosphere; Macrosphere
-  // readiness rests on structures alone (scopes are drawn at the next stage).
+  const example = activeScale === 'meso' && reviewNodes[0]
+    ? truncateCollapsedText(`${reviewNodes[0].label} includes ${naturalList(reviewNodes[0].scope.map((member) => member.label))}.`, PROJECT_LIMITS.memoReviewExample)
+    : first
+      ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
+      : null;
+  // Carried map elements count toward readiness at Exosphere. A Macrosphere
+  // item is ready only when the memo supports at least two affected elements.
   const ready = activeScale === 'meso'
-    ? carriedNodes.length >= 2 && connections.length >= 1
+    ? reviewNodes.length >= 1
     : activeScale === 'micro'
-      ? reviewNodes.length >= 2
+      ? reviewNodes.length + carriedNodes.length >= 2
       : activeScale === 'macrosphere'
         ? reviewNodes.length >= 1
         : (reviewNodes.length + carriedNodes.length) >= 2 && connections.length >= 1;
   const outerNote = activeScale === 'macrosphere'
-    ? `The memo names ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'structure' : 'structures'}. Continue to choose which belong, then draw what each one shapes.`
+    ? `The memo names ${reviewNodes.length} possible broader ${reviewNodes.length === 1 ? 'condition' : 'conditions'} and identifies at least two affected mapped elements for each one. Continue to choose which belong.`
     : reviewNodes.length
-      ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'institution' : 'institutions'} and ${connections.length} ${connections.length === 1 ? 'pathway' : 'pathways'} into your map. Continue to choose what belongs.`
-      : `The memo describes ${connections.length} ${connections.length === 1 ? 'pathway' : 'pathways'} among elements already on your map. Continue to choose which ones belong.`;
+      ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'institution' : 'institutions'} and ${connections.length} supported ${connections.length === 1 ? 'connection' : 'connections'} to mapped elements. Continue to choose what belongs.`
+      : `The memo describes ${connections.length} supported institutional ${connections.length === 1 ? 'connection' : 'connections'} to elements already on your map. Continue to choose which ones belong.`;
   const readiness = {
     ready,
     note: truncateCollapsedText(ready
       ? activeScale === 'micro'
-        ? `The memo names ${reviewNodes.length} possible nodes. Continue to choose which ones belong in the Micro map.`
+        ? reviewNodes.length
+          ? `The memo names ${reviewNodes.length} possible nodes. Continue to choose which ones belong in the Micro map.`
+          : 'No new Micro nodes were found. Review any new direct relationships before continuing.'
         : activeScale === 'meso'
-          ? `The memo describes ${connections.length} ${connections.length === 1 ? 'connection' : 'connections'} among nodes carried from Micro. Continue to choose which connections belong in the map.`
+          ? `The review identifies ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'mesosystem' : 'mesosystems'} among settings carried from Micro. Continue to choose which belong in the map.`
           : outerNote
       : activeScale === 'micro'
         ? 'Fewer than two possible nodes were found. You can continue, or name more people, roles, groups, or settings in the memo.'
         : activeScale === 'meso'
-          ? 'No clear connections among the nodes from Micro were found. You can continue, or describe those connections in the memo.'
+          ? 'No interrelation among two or more Micro settings was found. You can continue and identify the settings that form a mesosystem.'
           : activeScale === 'macrosphere'
             ? 'No named structures were found. You can continue and name the laws, policies, prices, or beliefs at work yourself — the memo does not need to name them.'
             : 'No named institutions were found. You can continue and add them yourself — for each mapped setting, ask who owns, funds, or sets the rules for it.', PROJECT_LIMITS.memoGuidanceText),
@@ -841,7 +1109,7 @@ const preflightConfig = {
   id: 'preflight-grounded-v1',
   profileVersion: '1.0.0',
   outputSchemaVersion: 'systems-mapping.preflight-result.v1',
-  label: 'Grounded preflight evaluator',
+  label: 'Grounded suggestion model',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
   fixedPrompt: BASE_GUARDRAILS,
@@ -861,7 +1129,7 @@ const builderConfig = {
   label: 'Map builder',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
-  fixedPrompt: `${BASE_GUARDRAILS}\nPropose only operations appropriate to the active level: nodes only for Micro, connections among carried nodes for Meso, and nodes plus connections for Exosphere and Macrosphere. Never apply an operation without student confirmation.`,
+  fixedPrompt: `${BASE_GUARDRAILS}\nPropose only operations appropriate to the active level. Micro uses discrete nodes and direct relationships among them. Meso uses mesosystem nodes that include two or more Micro settings already on the map and never uses relationship edges or verbs. Exosphere uses named institutions and supported institutional relationships; CUNY belongs here. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two mapped elements, never named institutions. Never add a suggestion to the map until the student continues from review.`,
   customInstructions: 'Use Ecological Systems Theory as an organizing lens. Guide with questions rather than supplying conclusions.',
   contextLimit: 32000,
   confidenceThreshold: 0.72,
@@ -912,7 +1180,7 @@ export function createDefaultProject() {
       evidenceRequired: true,
       maxSharingTier: 'course',
       releaseMode: 'open',
-      requireStudentConfirmation: true,
+      requireStudentConfirmation: false,
       allowResearchLeads: true,
     },
     preflight: null,
@@ -1081,7 +1349,10 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     assertString(node.label, `${itemPath}.label`, false, 200);
     assertEnum(node.type, NODE_TYPES, `${itemPath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${itemPath}.scale`);
-    if (node.scale === 'meso') invalidProject(`${itemPath}.scale`, 'must use Micro for nodes; Meso records relationships between Micro nodes');
+    if (node.scale === 'meso' && node.type !== MESOSYSTEM_NODE_TYPE) invalidProject(`${itemPath}.type`, `must be ${MESOSYSTEM_NODE_TYPE} for a Meso node`);
+    if (node.type === MESOSYSTEM_NODE_TYPE && node.scale !== 'meso') invalidProject(`${itemPath}.scale`, 'must be Meso for a mesosystem node');
+    if (!isNodeTypeAllowedAtScale(node.type, node.scale)) invalidProject(`${itemPath}.type`, `is not allowed at ${SCALES[node.scale]?.label || node.scale}`);
+    if (node.type === MESOSYSTEM_NODE_TYPE && !isMesosystemLabel(node.label)) invalidProject(`${itemPath}.label`, 'must be a noun label without a relationship verb');
     assertEnum(node.status, CANDIDATE_STATUSES, `${itemPath}.status`);
     assertEnum(node.claimState, CLAIM_STATES, `${itemPath}.claimState`);
     assertString(node.notes ?? '', `${itemPath}.notes`, true, PROJECT_LIMITS.noteText);
@@ -1094,6 +1365,8 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     if (node.sourceFingerprint !== undefined) assertString(node.sourceFingerprint, `${itemPath}.sourceFingerprint`, false, 200);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${itemPath}.basis`);
     if (node.deontic !== undefined) assertString(node.deontic, `${itemPath}.deontic`, true, 60);
+    if (node.deontic !== undefined && node.scale !== 'macrosphere') invalidProject(`${itemPath}.deontic`, 'is only allowed on a Macrosphere item');
+    if (node.scopeNodeIds !== undefined && !['meso', 'macrosphere'].includes(node.scale)) invalidProject(`${itemPath}.scopeNodeIds`, 'is only allowed on Meso and Macrosphere items');
     if (node.scopeNodeIds !== undefined) {
       if (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length > PROJECT_LIMITS.scopeMembers) {
         invalidProject(`${itemPath}.scopeNodeIds`, `must be an array of no more than ${PROJECT_LIMITS.scopeMembers} node ids`);
@@ -1106,9 +1379,41 @@ function validateNodeCollection(nodes, path, annotationOwners) {
         if (memberId === node.id) invalidProject(`${itemPath}.scopeNodeIds[${memberIndex}]`, 'cannot include the structure itself');
       });
     }
+    const nodeIsLive = (node.status === 'confirmed' || node.status === 'research lead') && node.claimState !== 'retired';
+    if (nodeIsLive && node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name one discrete Micro element');
+    if (nodeIsLive && node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name an institution, agency, office, or service system');
+    if (nodeIsLive && node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an institution and belongs at Exosphere');
+    if (node.type === MESOSYSTEM_NODE_TYPE && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
+      invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two Micro settings for a mesosystem node');
+    }
+    if (node.scale === 'macrosphere' && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
+      invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two mapped elements for a live Macrosphere item');
+    }
     validateEvidence(node, itemPath);
   });
   return ids;
+}
+
+function validateScopedNodeReferences(nodes, availableNodes, path) {
+  const availableById = new Map(availableNodes.map((node) => [node.id, node]));
+  nodes.forEach((node, index) => {
+    if (!Array.isArray(node.scopeNodeIds)) return;
+    const scopedNodeIsLive = (node.status === 'confirmed' || node.status === 'research lead') && node.claimState !== 'retired';
+    node.scopeNodeIds.forEach((memberId, memberIndex) => {
+      const memberPath = `${path}[${index}].scopeNodeIds[${memberIndex}]`;
+      const member = availableById.get(memberId);
+      if (!member) invalidProject(memberPath, `references unknown node ${memberId}`);
+      if (node.type === MESOSYSTEM_NODE_TYPE) {
+        if (member.scale !== 'micro') invalidProject(memberPath, 'must reference a Micro node');
+        if (!isMicroSettingNode(member)) invalidProject(memberPath, 'must reference an immediate setting mapped in Micro');
+        if (scopedNodeIsLive && (member.status === 'rejected' || member.claimState === 'retired')) invalidProject(memberPath, 'must reference a live Micro setting');
+      }
+      if (node.scale === 'macrosphere') {
+        if (member.scale === 'macrosphere') invalidProject(memberPath, 'must reference an inner mapped element');
+        if (scopedNodeIsLive && (member.status === 'rejected' || member.claimState === 'retired')) invalidProject(memberPath, 'must reference a live mapped element');
+      }
+    });
+  });
 }
 
 function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners) {
@@ -1130,17 +1435,29 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners) {
     if (nodesById.get(edge.target)?.label !== edge.targetLabel) invalidProject(`${itemPath}.targetLabel`, 'does not match its target node');
     assertString(edge.verb, `${itemPath}.verb`, false, 100);
     assertEnum(edge.scale, SCALE_ORDER, `${itemPath}.scale`);
-    if (edge.scale === 'micro') invalidProject(`${itemPath}.scale`, 'must use Meso for relationships; Micro contains nodes only');
+    if (edge.scale === 'meso') invalidProject(`${itemPath}.scale`, 'is not allowed because Meso uses scoped mesosystem nodes without relationship verbs');
+    if (edge.scale === 'macrosphere') invalidProject(`${itemPath}.scale`, 'is not allowed because Macrosphere items use scopes without relationship edges');
     assertEnum(edge.status, CANDIDATE_STATUSES, `${itemPath}.status`);
     assertEnum(edge.claimState, CLAIM_STATES, `${itemPath}.claimState`);
-    if (edge.scale === 'meso') {
+    if (edge.scale === 'micro') {
       const sourceNode = nodesById.get(edge.source);
       const targetNode = nodesById.get(edge.target);
-      if (sourceNode?.scale !== 'micro') invalidProject(`${itemPath}.source`, 'must reference a Micro node for a Meso relationship');
-      if (targetNode?.scale !== 'micro') invalidProject(`${itemPath}.target`, 'must reference a Micro node for a Meso relationship');
+      if (sourceNode?.scale !== 'micro') invalidProject(`${itemPath}.source`, 'must reference a Micro node for a direct Micro relationship');
+      if (targetNode?.scale !== 'micro') invalidProject(`${itemPath}.target`, 'must reference a Micro node for a direct Micro relationship');
       const relationshipIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
       if (relationshipIsLive && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live Micro node');
       if (relationshipIsLive && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live Micro node');
+      if (relationshipIsLive && isMicroSettingNode(sourceNode) && isMicroSettingNode(targetNode)) invalidProject(itemPath, 'must not encode an interrelation between two Micro settings as a Micro relationship');
+    }
+    if (edge.scale === 'exosphere') {
+      const sourceNode = nodesById.get(edge.source);
+      const targetNode = nodesById.get(edge.target);
+      const relationshipIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
+      if (relationshipIsLive && sourceNode?.scale !== 'exosphere' && targetNode?.scale !== 'exosphere') invalidProject(itemPath, 'must include an Exosphere institution');
+      if (relationshipIsLive && (sourceNode?.scale === 'macrosphere' || targetNode?.scale === 'macrosphere')) invalidProject(itemPath, 'must not use a Macrosphere item as an institutional relationship endpoint');
+      if (relationshipIsLive && !scaleLexiconVerb('exosphere', edge.verb)) invalidProject(`${itemPath}.verb`, 'must use an Exosphere institutional relationship');
+      if (relationshipIsLive && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live mapped element');
+      if (relationshipIsLive && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live mapped element');
     }
     assertString(edge.notes ?? '', `${itemPath}.notes`, true, PROJECT_LIMITS.noteText);
     if (edge.directed !== undefined) assertBoolean(edge.directed, `${itemPath}.directed`);
@@ -1268,6 +1585,13 @@ function validateMemoReview(review, path) {
     assertString(node.label, `${nodePath}.label`, false, 200);
     assertEnum(node.type, NODE_TYPES, `${nodePath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${nodePath}.scale`);
+    if (node.scale === 'meso' && node.type !== MESOSYSTEM_NODE_TYPE) invalidProject(`${nodePath}.type`, `must be ${MESOSYSTEM_NODE_TYPE} for a Meso suggestion`);
+    if (node.type === MESOSYSTEM_NODE_TYPE && node.scale !== 'meso') invalidProject(`${nodePath}.scale`, 'must be Meso for a mesosystem suggestion');
+    if (!isNodeTypeAllowedAtScale(node.type, node.scale)) invalidProject(`${nodePath}.type`, `is not allowed at ${SCALES[node.scale]?.label || node.scale}`);
+    if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name one discrete Micro element');
+    if (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name an institution, agency, office, or service system');
+    if (node.type === MESOSYSTEM_NODE_TYPE && !isMesosystemLabel(node.label)) invalidProject(`${nodePath}.label`, 'must be a noun label without a relationship verb');
+    if (node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'names an institution and belongs at Exosphere');
     assertString(node.evidence, `${nodePath}.evidence`, true, PROJECT_LIMITS.memoGuidanceEvidence);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${nodePath}.basis`);
     if (node.deontic !== undefined) assertString(node.deontic, `${nodePath}.deontic`, true, 60);
@@ -1282,6 +1606,12 @@ function validateMemoReview(review, path) {
         assertString(member.id, `${memberPath}.id`, false, 200);
         assertString(member.label, `${memberPath}.label`, false, 200);
       });
+    }
+    if (node.type === MESOSYSTEM_NODE_TYPE && (!Array.isArray(node.scope) || node.scope.length < 2)) {
+      invalidProject(`${nodePath}.scope`, 'must identify at least two Micro settings for a mesosystem suggestion');
+    }
+    if (node.scale === 'macrosphere' && (!Array.isArray(node.scope) || node.scope.length < 2)) {
+      invalidProject(`${nodePath}.scope`, 'must identify at least two mapped elements for a Macrosphere suggestion');
     }
   });
   if (!Array.isArray(review.connections) || review.connections.length > PROJECT_LIMITS.memoReviewConnections) {
@@ -1439,6 +1769,23 @@ function validatePortableExport(portableExport, path) {
   if (portableExport.redacted !== (portableExport.redactions.length > 0)) invalidProject(`${path}.redacted`, 'must match the redaction manifest');
 }
 
+function validateInstitutionSphereBoundary(nodeCollections, reviewNodes = []) {
+  const records = nodeCollections.flatMap(({ nodes, path }) => (Array.isArray(nodes) ? nodes.map((node, index) => ({ node, path: `${path}[${index}]` })) : []));
+  const exosphereInstitutions = records
+    .map(({ node }) => node)
+    .filter((node) => node?.scale === 'exosphere' && node.status !== 'rejected' && node.claimState !== 'retired');
+  records.forEach(({ node, path }) => {
+    if (node?.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions)) {
+      invalidProject(`${path}.label`, 'repeats an Exosphere institution and belongs at Exosphere');
+    }
+  });
+  (Array.isArray(reviewNodes) ? reviewNodes : []).forEach((node, index) => {
+    if (node?.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions)) {
+      invalidProject(`project.preflight.memoReview.nodes[${index}].label`, 'repeats an Exosphere institution and belongs at Exosphere');
+    }
+  });
+}
+
 export function validateProject(project) {
   assertObject(project, 'project');
   assertSafeProjectStructure(project);
@@ -1511,6 +1858,12 @@ export function validateProject(project) {
   assertKnownKeys(project.graph, ['nodes', 'edges'], 'project.graph');
   const candidateNodeIds = validateNodeCollection(project.candidates.nodes, 'project.candidates.nodes', annotationOwners);
   const graphNodeIds = validateNodeCollection(project.graph.nodes, 'project.graph.nodes', annotationOwners);
+  validateInstitutionSphereBoundary([
+    { nodes: project.candidates.nodes, path: 'project.candidates.nodes' },
+    { nodes: project.graph.nodes, path: 'project.graph.nodes' },
+  ], project.preflight?.memoReview?.nodes);
+  validateScopedNodeReferences(project.candidates.nodes, [...project.graph.nodes, ...project.candidates.nodes], 'project.candidates.nodes');
+  validateScopedNodeReferences(project.graph.nodes, project.graph.nodes, 'project.graph.nodes');
   const candidateEdgeNodeIds = new Set([...graphNodeIds, ...candidateNodeIds]);
   const candidateEdgeNodes = [...project.graph.nodes, ...project.candidates.nodes];
   validateEdgeCollection(project.candidates.edges, candidateEdgeNodes, candidateEdgeNodeIds, 'project.candidates.edges', annotationOwners);
@@ -1616,45 +1969,268 @@ function migrateScaleVocabulary(project) {
     rewritten.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
   }
   rewritten.schemaVersion = PROJECT_SCHEMA_VERSION;
-  return rewritten;
+  return migrateScaleTypeSemantics(rewritten);
+}
+
+function appendSemanticMigrationNote(record, note) {
+  const notes = typeof record?.notes === 'string' ? record.notes.trim() : '';
+  if (!record || notes.includes(note)) return;
+  record.notes = notes ? `${notes}\n\n${note}` : note;
+}
+
+function migrateScaleTypeSemantics(project) {
+  const collections = ['candidates', 'graph']
+    .map((container) => project?.[container]?.nodes)
+    .filter(Array.isArray);
+  const allNodes = collections.flat();
+  const nodesById = new Map(allNodes.filter((node) => node && typeof node === 'object' && !Array.isArray(node)).map((node) => [node.id, node]));
+  const scopedSettingIds = new Set(allNodes
+    .filter((node) => node?.scale === 'meso' && node.type === MESOSYSTEM_NODE_TYPE && Array.isArray(node.scopeNodeIds))
+    .flatMap((node) => node.scopeNodeIds));
+  const exosphereInstitutions = allNodes.filter((node) => node?.scale === 'exosphere');
+  const typeMigrationNote = 'Level taxonomy updated. Review this item before relying on its revised type.';
+  const movedInstitutionNote = 'Moved from Macrosphere to Exosphere because this item names an institution rather than a broader law, policy, economic condition, history, belief, or structure.';
+  const movedMicroInstitutionNote = 'Moved from Micro to Exosphere because this item names an institution rather than a person, role, group, activity, object, or immediate setting.';
+  const retiredExosphereNote = 'Retired during migration because an Exosphere item must name an institution, agency, office, or service system. Rename and review it before restoring it.';
+  const retiredMicroNote = 'Retired during migration because a Micro item must name one discrete person, role, group, activity, object, or immediate setting. Rename and review it before restoring it.';
+  const retiredScopeNote = 'Retired during migration because this item needs at least two valid mapped scope members before it can return to the map.';
+
+  allNodes.forEach((node) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    if (scopedSettingIds.has(node.id) && node.scale === 'micro' && node.type !== 'setting' && NODE_TYPES.includes(node.type)) {
+      node.type = 'setting';
+      appendSemanticMigrationNote(node, 'Typed as a Micro setting because an existing mesosystem includes it. Review the setting label and scope.');
+    }
+    if (node.scale === 'micro' && isNamedInstitutionLabel(node.label)) {
+      node.scale = 'exosphere';
+      const inferredType = inferNodeType(node.label);
+      node.type = EXOSPHERE_NODE_TYPES.includes(inferredType) ? inferredType : 'institution';
+      delete node.scopeNodeIds;
+      delete node.deontic;
+      appendSemanticMigrationNote(node, movedMicroInstitutionNote);
+      if (Array.isArray(project.releasedScales) && !project.releasedScales.includes('exosphere')) project.releasedScales.push('exosphere');
+    }
+    if (node.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions)) {
+      const priorScope = Array.isArray(node.scopeNodeIds) && node.scopeNodeIds.length ? node.scopeNodeIds.join(', ') : '';
+      const priorMode = node.deontic || '';
+      node.scale = 'exosphere';
+      const inferredType = inferNodeType(node.label);
+      node.type = EXOSPHERE_NODE_TYPES.includes(inferredType) ? inferredType : 'institution';
+      delete node.scopeNodeIds;
+      delete node.deontic;
+      appendSemanticMigrationNote(node, `${movedInstitutionNote}${priorScope || priorMode ? ` Earlier structural metadata was ${priorMode || 'unspecified'}${priorScope ? ` for ${priorScope}` : ''}.` : ''}`);
+      if (Array.isArray(project.releasedScales) && !project.releasedScales.includes('exosphere')) project.releasedScales.push('exosphere');
+    }
+    if (NODE_TYPES.includes(node.type) && !isNodeTypeAllowedAtScale(node.type, node.scale)) {
+      const inferredType = inferNodeType(node.label);
+      node.type = isNodeTypeAllowedAtScale(inferredType, node.scale)
+        ? inferredType
+        : node.scale === 'micro'
+          ? 'object'
+          : node.scale === 'exosphere'
+            ? 'institution'
+            : node.scale === 'macrosphere'
+              ? 'structure'
+              : MESOSYSTEM_NODE_TYPE;
+      appendSemanticMigrationNote(node, typeMigrationNote);
+    }
+    if (!['meso', 'macrosphere'].includes(node.scale) && Array.isArray(node.scopeNodeIds)) {
+      appendSemanticMigrationNote(node, `Earlier scope members were preserved here for review: ${node.scopeNodeIds.join(', ')}.`);
+      delete node.scopeNodeIds;
+    }
+    if (node.scale !== 'macrosphere' && node.deontic !== undefined) {
+      appendSemanticMigrationNote(node, `Earlier structural action was preserved here for review: ${node.deontic}.`);
+      delete node.deontic;
+    }
+    if (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label) && node.status !== 'rejected' && node.claimState !== 'retired') {
+      node.status = 'rejected';
+      node.claimState = 'retired';
+      appendSemanticMigrationNote(node, retiredExosphereNote);
+    }
+    if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label) && node.status !== 'rejected' && node.claimState !== 'retired') {
+      node.status = 'rejected';
+      node.claimState = 'retired';
+      appendSemanticMigrationNote(node, retiredMicroNote);
+    }
+    if (['meso', 'macrosphere'].includes(node.scale)
+      && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)
+      && node.status !== 'rejected' && node.claimState !== 'retired') {
+      node.status = 'rejected';
+      node.claimState = 'retired';
+      appendSemanticMigrationNote(node, retiredScopeNote);
+    }
+  });
+
+  const migratedNodeById = new Map(allNodes
+    .filter((node) => node && typeof node === 'object' && !Array.isArray(node))
+    .map((node) => [node.id, node]));
+  allNodes.forEach((node) => {
+    if (!node || typeof node !== 'object' || !Array.isArray(node.scopeNodeIds) || !['meso', 'macrosphere'].includes(node.scale)) return;
+    const priorScope = [...node.scopeNodeIds];
+    const seen = new Set();
+    node.scopeNodeIds = priorScope.filter((memberId) => {
+      const member = migratedNodeById.get(memberId);
+      if (!member || memberId === node.id || seen.has(memberId)) return false;
+      if (node.scale === 'meso' && !isMicroSettingNode(member)) return false;
+      if (node.scale === 'macrosphere' && member.scale === 'macrosphere') return false;
+      seen.add(memberId);
+      return true;
+    });
+    const removedMembers = priorScope.filter((memberId) => !node.scopeNodeIds.includes(memberId));
+    if (removedMembers.length) appendSemanticMigrationNote(node, `Removed invalid earlier scope members during migration: ${removedMembers.join(', ')}.`);
+    const live = node.status !== 'rejected' && node.claimState !== 'retired';
+    const hasUnavailableMember = node.scopeNodeIds.some((memberId) => {
+      const member = migratedNodeById.get(memberId);
+      return member?.status === 'rejected' || member?.claimState === 'retired';
+    });
+    if (live && (node.scopeNodeIds.length < 2 || hasUnavailableMember)) {
+      node.status = 'rejected';
+      node.claimState = 'retired';
+      appendSemanticMigrationNote(node, retiredScopeNote);
+    }
+  });
+
+  ['candidates', 'graph'].forEach((container) => {
+    const edges = project?.[container]?.edges;
+    if (!Array.isArray(edges)) return;
+    const containerNodes = new Map([
+      ...(project?.graph?.nodes || []),
+      ...(project?.candidates?.nodes || []),
+    ].map((node) => [node.id, node]));
+    edges.forEach((edge) => {
+      if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
+      const sourceScale = containerNodes.get(edge.source)?.scale;
+      const targetScale = containerNodes.get(edge.target)?.scale;
+      if (edge.scale === 'macrosphere') {
+        edge.scale = 'exosphere';
+        edge.status = 'rejected';
+        edge.claimState = 'retired';
+        appendSemanticMigrationNote(edge, 'Retired during migration because Macrosphere is represented by scoped items rather than relationship edges.');
+      }
+      if (edge.scale === 'micro' && (sourceScale !== 'micro' || targetScale !== 'micro')) {
+        const canBecomeInstitutional = [sourceScale, targetScale].includes('exosphere')
+          && ![sourceScale, targetScale].includes('macrosphere');
+        if (canBecomeInstitutional) {
+          edge.scale = 'exosphere';
+          const canonicalVerb = scaleLexiconVerb('exosphere', edge.verb);
+          if (canonicalVerb) edge.verb = canonicalVerb;
+          else {
+            edge.status = 'rejected';
+            edge.claimState = 'retired';
+          }
+          appendSemanticMigrationNote(edge, 'Reclassified from an earlier cross-level relationship. Review this institutional connection before restoring it.');
+        } else {
+          edge.scale = 'exosphere';
+          edge.status = 'rejected';
+          edge.claimState = 'retired';
+          appendSemanticMigrationNote(edge, 'Retired during migration because its endpoints do not form a valid direct Micro or institutional Exosphere relationship.');
+        }
+      }
+      if (edge.scale === 'exosphere') {
+        const sourceNode = containerNodes.get(edge.source);
+        const targetNode = containerNodes.get(edge.target);
+        const canonicalVerb = scaleLexiconVerb('exosphere', edge.verb);
+        const hasInstitutionEndpoint = sourceNode?.scale === 'exosphere' || targetNode?.scale === 'exosphere';
+        const hasMacroEndpoint = sourceNode?.scale === 'macrosphere' || targetNode?.scale === 'macrosphere';
+        const hasRetiredEndpoint = [sourceNode, targetNode].some((node) => !node || node.status === 'rejected' || node.claimState === 'retired');
+        if (!canonicalVerb || !hasInstitutionEndpoint || hasMacroEndpoint || hasRetiredEndpoint) {
+          edge.status = 'rejected';
+          edge.claimState = 'retired';
+          appendSemanticMigrationNote(edge, 'Retired during migration because it is not a valid institutional Exosphere relationship.');
+        } else {
+          edge.verb = canonicalVerb;
+        }
+      }
+    });
+  });
+
+  // If an earlier Meso item refers to a node that cannot serve as a Micro
+  // setting, keep the referenced record but make the setting role explicit.
+  scopedSettingIds.forEach((id) => {
+    const node = nodesById.get(id);
+    if (node?.scale === 'micro' && NODE_TYPES.includes(node.type)) node.type = 'setting';
+  });
+  const storedReview = project?.preflight?.memoReview;
+  if (storedReview && typeof storedReview === 'object' && !Array.isArray(storedReview)) {
+    const reviewNodes = Array.isArray(storedReview.nodes) ? storedReview.nodes : [];
+    const reviewConnections = Array.isArray(storedReview.connections) ? storedReview.connections : [];
+    const incompatibleNode = reviewNodes.some((node) => (
+      !node || typeof node !== 'object' || Array.isArray(node)
+      || !isNodeTypeAllowedAtScale(node.type, node.scale)
+      || (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
+      || (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label))
+      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || !Array.isArray(node.scope) || node.scope.length < 2))
+      || (node.scale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || !Array.isArray(node.scope) || node.scope.length < 2))
+    ));
+    const reviewScale = reviewNodes[0]?.scale || project.activeScale;
+    const incompatibleConnections = ['meso', 'macrosphere'].includes(reviewScale) && reviewConnections.length > 0;
+    if (incompatibleNode || incompatibleConnections) project.preflight = null;
+  }
+  return project;
 }
 
 function migrateLegacyMappingSemantics(project) {
   let migratedEdge = false;
   let migratedNode = false;
+  let hadLegacyMesoData = false;
+  const migrationNote = 'Migrated from an earlier Meso relationship model. Review this direct relationship in Micro before confirming its level.';
+  const appendMigrationNote = (record) => {
+    const notes = typeof record.notes === 'string' ? record.notes.trim() : '';
+    if (!notes.includes(migrationNote)) record.notes = notes ? `${notes}\n\n${migrationNote}` : migrationNote;
+  };
   ['candidates', 'graph'].forEach((container) => {
     const nodes = project?.[container]?.nodes;
     if (!Array.isArray(nodes)) return;
     nodes.forEach((node) => {
-      if (!node || typeof node !== 'object' || Array.isArray(node) || node.scale !== 'meso') return;
+      if (!node || typeof node !== 'object' || Array.isArray(node) || node.scale !== 'meso' || node.type === MESOSYSTEM_NODE_TYPE) return;
+      hadLegacyMesoData = true;
       node.scale = 'micro';
+      if (node.status !== 'rejected' && node.claimState !== 'retired') {
+        node.status = 'research lead';
+        node.claimState = 'research lead';
+        appendMigrationNote(node);
+      }
       migratedNode = true;
     });
   });
   ['candidates', 'graph'].forEach((container) => {
     const edges = project?.[container]?.edges;
-    const nodesById = new Map((project?.[container]?.nodes || []).map((node) => [node.id, node]));
+    const nodesById = new Map([
+      ...(project?.graph?.nodes || []),
+      ...(project?.candidates?.nodes || []),
+    ].map((node) => [node.id, node]));
     if (!Array.isArray(edges)) return;
     edges.forEach((edge) => {
       if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
-      if (edge.scale === 'micro') {
-        edge.scale = 'meso';
-        migratedEdge = true;
-        return;
-      }
       if (edge.scale !== 'meso') return;
-      const endpointScales = [nodesById.get(edge.source)?.scale, nodesById.get(edge.target)?.scale];
-      const outerEndpoint = ['integration', 'macrosphere', 'macro', 'exosphere']
-        .find((scale) => endpointScales.includes(scale));
-      if (outerEndpoint) edge.scale = outerEndpoint;
+      hadLegacyMesoData = true;
+      edge.scale = 'micro';
+      if (edge.status !== 'rejected' && edge.claimState !== 'retired') {
+        edge.status = 'research lead';
+        edge.claimState = 'research lead';
+        appendMigrationNote(edge);
+      }
+      migratedEdge = true;
     });
   });
-  if (migratedEdge && Array.isArray(project.releasedScales) && !project.releasedScales.includes('meso')) {
+  if (migratedNode && Array.isArray(project.releasedScales) && !project.releasedScales.includes('micro')) {
+    project.releasedScales.unshift('micro');
+  }
+  if (hadLegacyMesoData && Array.isArray(project.releasedScales) && !project.releasedScales.includes('meso')) {
     const microIndex = project.releasedScales.indexOf('micro');
     project.releasedScales.splice(microIndex >= 0 ? microIndex + 1 : project.releasedScales.length, 0, 'meso');
   }
-  if (migratedNode && Array.isArray(project.releasedScales) && !project.releasedScales.includes('micro')) {
-    project.releasedScales.unshift('micro');
+  const reviewScale = project?.preflight?.configurationSnapshot?.activeScale || project?.activeScale;
+  const review = project?.preflight?.memoReview;
+  if (reviewScale === 'meso' && review && typeof review === 'object' && !Array.isArray(review)) {
+    const hadLegacyConnections = Array.isArray(review.connections) && review.connections.length > 0;
+    review.connections = [];
+    review.example = null;
+    review.nodes = (Array.isArray(review.nodes) ? review.nodes : []).filter((node) => node?.type === MESOSYSTEM_NODE_TYPE);
+    if (hadLegacyConnections) {
+      review.guidance = [{ point: 'Earlier Meso relationship suggestions need a new review. Direct relationship verbs now remain in Micro, and Meso identifies interrelations among two or more Micro settings.' }];
+      review.readiness = { ready: review.nodes.length > 0, note: 'Review the Micro settings before choosing a mesosystem.' };
+    }
   }
   return project;
 }
@@ -1709,10 +2285,9 @@ function migrateLegacyProject(project) {
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
   }
   if (project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
-    // Early schema-v6 builds still wrote nodes at Meso and relationships at
-    // Micro. Normalize those records idempotently before strict validation so
-    // an existing local or linked project is repaired without losing IDs,
-    // evidence, annotations, or geometry.
+    // Earlier schema-v6 builds used verb-bearing Meso edges. Preserve those
+    // records as Micro research leads so the student can review their level;
+    // never infer a mesosystem scope from a legacy edge.
     const migrated = cloneProject(project);
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));

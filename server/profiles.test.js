@@ -180,7 +180,7 @@ describe('teaching profiles', () => {
     expect(() => system.db.prepare('DELETE FROM teaching_profile_events WHERE id = 1').run()).toThrow(/append-only/);
   });
 
-  it('moves an earlier course profile into the two-part progression once without rewriting its history', () => {
+  it('atomically upgrades an earlier course profile with a matching revisioned event exactly once', () => {
     const legacyProfile = {
       schemaVersion: 'cuny.teaching-profile.v1',
       focus: 'Keep attention on how institutional actors shape access.',
@@ -202,10 +202,13 @@ describe('teaching profiles', () => {
     system.close();
 
     system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
-    const upgraded = JSON.parse(system.db.prepare(`
-      SELECT profile_json AS profileJson
+    const upgradedRow = system.db.prepare(`
+      SELECT revision, profile_json AS profileJson, fingerprint
       FROM teaching_profiles WHERE id = 'systems-mapping-default'
-    `).get().profileJson);
+    `).get();
+    const upgraded = JSON.parse(upgradedRow.profileJson);
+    expect(upgradedRow.revision).toBe(2);
+    expect(upgradedRow.fingerprint).toBe(fingerprint(upgradedRow.profileJson));
     expect(upgraded.schemaVersion).toBe(COURSE_PROGRESSION_SCHEMA_VERSION);
     expect(upgraded.parts[0].stages['add-source'].guidance).toContain(legacyProfile.focus);
     expect(upgraded.parts[0].stages['add-source'].materials).toContain(legacyProfile.contextAdjustments.micro);
@@ -213,16 +216,27 @@ describe('teaching profiles', () => {
     expect(upgraded.parts[0].stages['add-source'].guidance).toContain(legacyProfile.privacy);
     expect(upgraded.parts[0].stages['review-suggestions'].guidance).toBe(legacyProfile.questions);
     expect(upgraded.parts[1].stages['add-source'].materials).toContain(legacyProfile.contextAdjustments.macro);
-    const eventCount = () => system.db.prepare(`
-      SELECT COUNT(*) AS count FROM teaching_profile_events
+    const upgradeEvents = () => system.db.prepare(`
+      SELECT action, revision, profile_json AS profileJson, fingerprint, note
+      FROM teaching_profile_events
       WHERE profile_id = 'systems-mapping-default'
-        AND note = 'Grouped course settings into two parts'
-    `).get().count;
-    expect(eventCount()).toBe(1);
+        AND note = 'Updated default scale semantics'
+      ORDER BY id
+    `).all();
+    expect(upgradeEvents()).toEqual([{
+      action: 'updated',
+      revision: 2,
+      profileJson: upgradedRow.profileJson,
+      fingerprint: upgradedRow.fingerprint,
+      note: 'Updated default scale semantics',
+    }]);
 
     system.close();
     system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
-    expect(eventCount()).toBe(1);
+    expect(system.db.prepare(`
+      SELECT revision FROM teaching_profiles WHERE id = 'systems-mapping-default'
+    `).get().revision).toBe(2);
+    expect(upgradeEvents()).toHaveLength(1);
   });
 
   it('updates untouched prompt defaults without overwriting instructor-authored module content', () => {
@@ -252,7 +266,7 @@ describe('teaching profiles', () => {
       SELECT COUNT(*) AS count FROM prompt_module_history
       WHERE module_id = 'preflight.exosphere.purpose'
         AND revision = 2
-        AND change_note = 'Updated default for ecological levels'
+        AND change_note = 'Updated default scale semantics'
     `).get().count;
     expect(upgradeHistoryCount()).toBe(1);
 

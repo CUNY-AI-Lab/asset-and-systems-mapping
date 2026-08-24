@@ -812,7 +812,9 @@ function upgradeStoredTeachingProfiles(db) {
   `).all();
   if (!rows.length) return;
   const update = db.prepare(`
-    UPDATE teaching_profiles SET profile_json = ?, fingerprint = ? WHERE id = ?
+    UPDATE teaching_profiles
+    SET profile_json = ?, fingerprint = ?, revision = ?, updated_at = ?, updated_by = NULL
+    WHERE id = ? AND revision = ? AND fingerprint = ?
   `);
   const record = db.prepare(`
     INSERT INTO teaching_profile_events
@@ -830,11 +832,13 @@ function upgradeStoredTeachingProfiles(db) {
       const serialized = JSON.stringify(upgraded);
       const profileFingerprint = teachingProfileFingerprint(upgraded);
       if (profileFingerprint === row.fingerprint) continue;
-      update.run(serialized, profileFingerprint, row.id);
-      const note = 'Grouped course settings into two parts';
+      const nextRevision = row.revision + 1;
+      const updated = update.run(serialized, profileFingerprint, nextRevision, occurredAt, row.id, row.revision, row.fingerprint);
+      if (updated.changes !== 1) continue;
+      const note = 'Updated default scale semantics';
       record.run(
         row.id,
-        row.revision,
+        nextRevision,
         serialized,
         profileFingerprint,
         note,
@@ -888,17 +892,19 @@ function seed(db) {
     `);
     const updateUntouchedModule = db.prepare(`
       UPDATE prompt_modules
-      SET content = ?, revision = 2, fingerprint = ?, updated_at = ?, updated_by = NULL
-      WHERE id = ? AND revision = 1 AND fingerprint = ?
+      SET content = ?, revision = ?, fingerprint = ?, updated_at = ?, updated_by = NULL
+      WHERE id = ? AND revision = ? AND fingerprint = ?
     `);
     for (const module of currentModules) {
-      const legacyFingerprint = LEGACY_DEFAULT_MODULE_FINGERPRINTS[module.id];
-      if (!legacyFingerprint) continue;
+      const legacyFingerprints = LEGACY_DEFAULT_MODULE_FINGERPRINTS[module.id];
+      if (!legacyFingerprints) continue;
+      const acceptedFingerprints = Array.isArray(legacyFingerprints) ? legacyFingerprints : [legacyFingerprints];
       const row = readModule.get(module.id);
-      if (row?.revision !== 1 || row.fingerprint !== legacyFingerprint) continue;
-      const result = updateUntouchedModule.run(module.content, module.fingerprint, now, module.id, legacyFingerprint);
+      if (!row || !acceptedFingerprints.includes(row.fingerprint)) continue;
+      const nextRevision = row.revision + 1;
+      const result = updateUntouchedModule.run(module.content, nextRevision, module.fingerprint, now, module.id, row.revision, row.fingerprint);
       if (result.changes === 1) {
-        insertHistory.run(module.id, 2, module.content, module.fingerprint, 'Updated default for ecological levels', now);
+        insertHistory.run(module.id, nextRevision, module.content, module.fingerprint, 'Updated default scale semantics', now);
       }
     }
 
