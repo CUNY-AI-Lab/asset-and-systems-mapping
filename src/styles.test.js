@@ -23,4 +23,11 @@ describe('map workspace layout contract', () => {
     expect(styles).toContain('.graph-canvas { width: 100%; max-width: 100%; height: 100%; min-height: 0; }');
     expect(styles).toContain('.graph-canvas--ecology { min-height: 0; }');
   });
+
+  it('keeps model-suggested relationship wording wrapped and fully editable', () => {
+    expect(styles).toMatch(/\.relationship-verb-editor\s*\{[^}]*min-height:\s*var\(--control-height\);/s);
+    expect(styles).toMatch(/\.relationship-verb-editor\s*\{[^}]*overflow:\s*hidden;[^}]*resize:\s*vertical;/s);
+    expect(styles).toMatch(/\.relationship-verb-editor\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*pre-wrap;/s);
+    expect(styles).toMatch(/@media \(max-width: 600px\)[\s\S]*\.relationship-verb-editor\s*\{?[^}]*font-size:\s*16px;/);
+  });
 });

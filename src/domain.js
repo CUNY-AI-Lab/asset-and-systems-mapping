@@ -165,7 +165,7 @@ export const PROJECT_LIMITS = Object.freeze({
   coordinateMax: 10_000,
   panMin: -10_000,
   panMax: 10_000,
-  zoomMin: 0.25,
+  zoomMin: 0.15,
   zoomMax: 4,
 });
 

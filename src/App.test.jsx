@@ -8,6 +8,7 @@ import {
   createDefaultProject,
   createPortableProject,
   extractCandidates,
+  PROJECT_LIMITS,
   serializeProject,
   stableId,
   withDefaultNodeLayout,
@@ -1005,6 +1006,56 @@ describe('Systems Mapping workflow', () => {
     expect(Number(previewEdge.querySelector('rect').getAttribute('height'))).toBeGreaterThan(24);
   });
 
+  it('wraps and grows complete model-suggested connection wording while it is edited', async () => {
+    const project = createDefaultProject();
+    const nodes = extractCandidates(project.submission).nodes.slice(0, 2).map((node) => ({
+      ...node,
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    }));
+    project.activeScale = 'meso';
+    project.releasedScales = ['micro', 'meso'];
+    project.graph = { nodes, edges: [] };
+    project.candidates = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    connectionSuggestionResponder = (body) => jsonResponse({ connections: [
+      {
+        source: body.nodes[0].id,
+        target: body.nodes[1].id,
+        verb: 'engaged with for administrative guidance',
+        rationale: 'The memo describes an administrative question.',
+      },
+      {
+        source: body.nodes[1].id,
+        target: body.nodes[0].id,
+        verb: 'turned to when systems were unclear',
+        rationale: 'The memo describes where the student sought help.',
+      },
+    ] }, 201);
+
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('tab', { name: 'More connections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
+
+    const firstVerb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
+    const secondVerb = screen.getByRole('textbox', { name: 'Connection for suggestion 2' });
+    expect(firstVerb).toHaveValue('engaged with for administrative guidance');
+    expect(secondVerb).toHaveValue('turned to when systems were unclear');
+    expect(firstVerb.tagName).toBe('TEXTAREA');
+    expect(firstVerb).toHaveAttribute('rows', '2');
+    expect(firstVerb).toHaveClass('relationship-verb-editor');
+
+    Object.defineProperty(firstVerb, 'scrollHeight', { configurable: true, value: 86 });
+    const revisedVerb = 'engaged with for administrative guidance and registration help';
+    fireEvent.input(firstVerb, { target: { value: revisedVerb } });
+    await waitFor(() => {
+      expect(firstVerb).toHaveValue(revisedVerb);
+      expect(firstVerb).toHaveStyle({ height: '88px' });
+    });
+  });
+
   it('shows the model text verbatim without canned praise when the review is sparse', async () => {
     const project = createDefaultProject();
     project.stage = 1;
@@ -1391,11 +1442,12 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.candidates = { nodes: [], edges: [] };
     project.stage = 1;
     project.furthestStage = 1;
+    const relationshipVerb = 'engaged with for administrative guidance';
     const review = {
       guidance: [{ point: 'The memo names a connection between the two Micro nodes.' }],
       nodes: [],
-      connections: [{ source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, verb: 'coordinates with', rationale: 'The memo names this connection directly.' }],
-      example: `${source.label} coordinates with ${target.label}.`,
+      connections: [{ source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, verb: relationshipVerb, rationale: 'The memo names this connection directly.' }],
+      example: `${source.label} ${relationshipVerb} ${target.label}.`,
       readiness: { ready: true, note: 'The memo supports reviewing a Meso connection.' },
     };
     const evaluation = evaluationRecord(evaluationPayloadFixture(project), { review });
@@ -1423,6 +1475,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     // carried-ID connection without supplementing it from local extraction.
     expect(screen.getByRole('tab', { name: 'Connections · 1' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'More connections' })).toBeVisible();
+    const relationshipEditor = screen.getByRole('textbox', { name: 'Relationship verb' });
+    expect(relationshipEditor.tagName).toBe('TEXTAREA');
+    expect(relationshipEditor).toHaveClass('relationship-verb-editor');
+    expect(relationshipEditor).toHaveValue(relationshipVerb);
     await waitFor(() => {
       expect(storedProject().candidates.nodes).toEqual([]);
       expect(storedProject().candidates.edges[0]).toMatchObject({ source: source.id, target: target.id, scale: 'meso' });
@@ -1441,7 +1497,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
     expect(new Set(storedProject().graph.nodes.map(({ id }) => id)).size).toBe(microNodes.length);
     expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: source.id, target: target.id, verb: 'coordinates with', scale: 'meso' }),
+      expect.objectContaining({ source: source.id, target: target.id, verb: relationshipVerb, scale: 'meso' }),
     ]));
   });
 
@@ -1826,7 +1882,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
     await waitFor(() => expect(storedProject().viewport.panX).not.toBe(0));
     const viewport = storedProject().viewport;
-    expect(viewport.zoom).toBeGreaterThanOrEqual(0.25);
+    expect(viewport.zoom).toBeGreaterThanOrEqual(PROJECT_LIMITS.zoomMin);
     expect(Math.abs((420 - viewport.panX) / viewport.zoom - 1600)).toBeLessThan(30);
     expect(Math.abs((270 - viewport.panY) / viewport.zoom - 1200)).toBeLessThan(30);
   });
@@ -1857,7 +1913,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(screen.getByRole('button', { name: 'Full screen map' })).toHaveFocus();
   });
 
-  it('zooms out to 0.25 and keeps keyboard and pointer panning available at the overview limit', async () => {
+  it('zooms out to 0.15 and keeps keyboard and pointer panning available at the overview limit', async () => {
     const project = makeSixNodeMicroProject();
     project.viewport = { zoom: 1, panX: 0, panY: 0 };
     const graphBefore = structuredClone(project.graph);
@@ -1866,7 +1922,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const zoomOut = screen.getByRole('button', { name: 'Zoom out' });
 
     for (let index = 0; index < 12; index += 1) fireEvent.click(zoomOut);
-    await waitFor(() => expect(viewportTransform().zoom).toBe(0.25));
+    await waitFor(() => expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin));
 
     const pan = screen.getByRole('button', { name: 'Pan' });
     fireEvent.click(pan);
@@ -1885,9 +1941,63 @@ Overall, the posting history documents a working student repeatedly turning to R
       const afterPointerPan = viewportTransform();
       expect(afterPointerPan.panX).not.toBe(beforePointerPan.panX);
       expect(afterPointerPan.panY).not.toBe(beforePointerPan.panY);
-      expect(afterPointerPan.zoom).toBe(0.25);
+      expect(afterPointerPan.zoom).toBe(PROJECT_LIMITS.zoomMin);
     });
     expect(storedProject().graph).toEqual(graphBefore);
+  });
+
+  it('fits the outer ecology ring and every accepted node on canvas in filtered, full-screen, and all-layer views', async () => {
+    const project = makeMapProject('macrosphere');
+    await openMapProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
+
+    const expectCurrentMapOnCanvas = () => {
+      const view = viewportTransform();
+      const canvas = { left: 0, right: 840, top: 0, bottom: 540 };
+      const macroLayer = document.querySelector('[data-ecology-layer="macrosphere"] > ellipse');
+      const layerBounds = {
+        left: (Number(macroLayer.getAttribute('cx')) - Number(macroLayer.getAttribute('rx'))) * view.zoom + view.panX,
+        right: (Number(macroLayer.getAttribute('cx')) + Number(macroLayer.getAttribute('rx'))) * view.zoom + view.panX,
+        top: (Number(macroLayer.getAttribute('cy')) - Number(macroLayer.getAttribute('ry'))) * view.zoom + view.panY,
+        bottom: (Number(macroLayer.getAttribute('cy')) + Number(macroLayer.getAttribute('ry'))) * view.zoom + view.panY,
+      };
+      expect(layerBounds.left).toBeGreaterThanOrEqual(canvas.left);
+      expect(layerBounds.right).toBeLessThanOrEqual(canvas.right);
+      expect(layerBounds.top).toBeGreaterThanOrEqual(canvas.top);
+      expect(layerBounds.bottom).toBeLessThanOrEqual(canvas.bottom);
+
+      [...document.querySelectorAll('.graph-node')].forEach((group) => {
+        const world = translatedRectBounds(group, group.querySelector('.node-card'));
+        const bounds = {
+          left: world.left * view.zoom + view.panX,
+          right: world.right * view.zoom + view.panX,
+          top: world.top * view.zoom + view.panY,
+          bottom: world.bottom * view.zoom + view.panY,
+        };
+        const label = group.getAttribute('data-full-label');
+        expect(bounds.left, `${label} clips at the left`).toBeGreaterThanOrEqual(canvas.left);
+        expect(bounds.right, `${label} clips at the right`).toBeLessThanOrEqual(canvas.right);
+        expect(bounds.top, `${label} clips at the top`).toBeGreaterThanOrEqual(canvas.top);
+        expect(bounds.bottom, `${label} clips at the bottom`).toBeLessThanOrEqual(canvas.bottom);
+        expect(svgTextLines(group.querySelector('.node-label')).join(' ')).toBe(label);
+        expect(group).not.toHaveTextContent('…');
+      });
+    };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
+    await waitFor(() => expect(viewportTransform().zoom).toBe(0.23));
+    expectCurrentMapOnCanvas();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
+    expect(document.querySelector('.map-stage')).toHaveClass('is-fullscreen');
+    expectCurrentMapOnCanvas();
+    fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
+    await waitFor(() => expect(viewportTransform().zoom).toBe(0.18));
+    expectCurrentMapOnCanvas();
   });
 
   it.each([
@@ -2066,7 +2176,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     await waitFor(() => expect(viewportTransform().zoom).toBe(1.5));
     fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
-    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.25));
+    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(PROJECT_LIMITS.zoomMin));
 
     const view = viewportTransform();
     const visible = { left: 0, right: 840, top: -130, bottom: 670 };

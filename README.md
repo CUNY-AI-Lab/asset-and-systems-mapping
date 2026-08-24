@@ -118,7 +118,7 @@ The shared demo code is low-assurance access, not student identity. Hosted cooki
 
 ## Design and map behavior
 
-Black, white, and gray remain dominant. Restrained accents identify Micro, Meso, Exosphere, and Macrosphere. Micro presents nodes without relationship lines, including in revise and export. Meso keeps the carried Micro endpoints in Micro while placing each relationship callout in the Meso annulus with lines pointing inward to those endpoints. Exosphere and Macrosphere use distinct concentric regions that hold graph elements and can be filtered without mutating the graph. The larger map canvas supports persistent pointer or keyboard panning, zooming out to `0.25`, and a CSS full-screen view that can always be exited. Cards keep labels separate from icons and render every character. The UI uses modest editorial typography rather than oversized display copy.
+Black, white, and gray remain dominant. Restrained accents identify Micro, Meso, Exosphere, and Macrosphere. Micro presents nodes without relationship lines, including in revise and export. Meso keeps the carried Micro endpoints in Micro while placing each relationship callout in the Meso annulus with lines pointing inward to those endpoints. Exosphere and Macrosphere use distinct concentric regions that hold graph elements and can be filtered without mutating the graph. The larger map canvas supports persistent pointer or keyboard panning, zooming out to `0.15`, and a CSS full-screen view that can always be exited. Cards keep labels separate from icons and render every character. The UI uses modest editorial typography rather than oversized display copy.
 
 ## Evidence and authority
 

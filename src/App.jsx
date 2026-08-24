@@ -1218,7 +1218,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
         ? <div className="candidate-expression"><input aria-label={structureRow ? 'Structure label' : 'Node label'} maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label={structureRow ? 'Structure kind' : 'Node type'} value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{(structureRow ? MACRO_STRUCTURE_KINDS : NODE_TYPES).map((type) => <option key={type}>{type}</option>)}</select></div>
         : project.activeScale === 'exosphere'
           ? <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><select aria-label="Pathway verb" value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)}>{exoVerbOptions(item.verb).map((verb) => <option key={verb}>{verb}</option>)}</select><strong>{item.targetLabel}</strong></div>
-          : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><input aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
+          : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><AutoGrowingTextarea className="relationship-verb-editor" aria-label="Relationship verb" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
       {kind === 'nodes' && structureRow && <div className="scope-editor" aria-label={`Reach of ${item.label}`}>
         <div className="scope-editor__mode"><label><span>Operates by</span><select aria-label={`How ${item.label} operates`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>
         <div className="scope-editor__members">
@@ -1875,6 +1875,22 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
   </div>;
 }
 
+function AutoGrowingTextarea({ value, onChange, ...props }) {
+  const textareaRef = useRef(null);
+  const fitContent = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(44, textarea.scrollHeight + 2)}px`;
+  }, []);
+
+  useEffect(() => {
+    fitContent();
+  }, [fitContent, value]);
+
+  return <textarea {...props} ref={textareaRef} rows="2" value={value} onInput={fitContent} onChange={onChange} />;
+}
+
 function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
   const nodes = nodesForConnectionPrompt(project);
   const nodeIds = new Set(nodes.map((node) => node.id));
@@ -1911,7 +1927,7 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
         <div className="candidate-row__main">
           <div className="candidate-expression candidate-expression--edge connection-expression">
             <select aria-label={`Starting node for suggestion ${index + 1}`} value={item.source} onChange={(event) => onEdit(item.id, 'source', event.target.value)}>{nodes.filter((node) => node.id !== item.target).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select>
-            <input aria-label={`Connection for suggestion ${index + 1}`} maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => onEdit(item.id, 'verb', event.target.value)} />
+            <AutoGrowingTextarea className="relationship-verb-editor" aria-label={`Connection for suggestion ${index + 1}`} maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => onEdit(item.id, 'verb', event.target.value)} />
             <select aria-label={`Ending node for suggestion ${index + 1}`} value={item.target} onChange={(event) => onEdit(item.id, 'target', event.target.value)}>{nodes.filter((node) => node.id !== item.source).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select>
           </div>
           <p>{item.rationale}</p>

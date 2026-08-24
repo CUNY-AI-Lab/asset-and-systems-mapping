@@ -796,6 +796,10 @@ describe('mapping domain', () => {
     const outOfRangeViewport = projectWithGraph();
     outOfRangeViewport.viewport.zoom = PROJECT_LIMITS.zoomMax + 0.01;
     expect(() => parseProject(JSON.stringify(outOfRangeViewport))).toThrow(/viewport\.zoom must be a finite number/);
+
+    const underRangeViewport = projectWithGraph();
+    underRangeViewport.viewport.zoom = PROJECT_LIMITS.zoomMin - 0.01;
+    expect(() => parseProject(JSON.stringify(underRangeViewport))).toThrow(/viewport\.zoom must be a finite number/);
   });
 
   it('enforces source, collection, evidence, annotation, metadata, and nesting limits', () => {

@@ -26,7 +26,7 @@ Carried forward from 2026-08-22:
 - Macrosphere replaces Integration.
 - Exosphere and Macrosphere use filterable concentric ecological regions that contain nodes and connections.
 - Completing a level advances Micro to Meso to Exosphere to Macrosphere; completing Macrosphere begins another Macrosphere cycle.
-- The larger canvas retains pointer panning, adds focused-canvas arrow-key panning, supports a reversible CSS full-screen view, and zooms out to `0.25`.
+- The larger canvas retains pointer panning, adds focused-canvas arrow-key panning, supports a reversible CSS full-screen view, and zooms out to `0.15`.
 
 The five workflow stages remain repeatable. The current student interface has no instructor-submission field. Retained instructor review stays advisory, and an outstanding evaluation must not block another stage, level, or cycle. Per-session supersession and retention purges remain unchanged and are deferred from redesign.
 
@@ -77,7 +77,7 @@ Earlier security, persistence, session, and review receipts remain historical re
 | Meso carry-forward | Meso receives existing Micro node IDs, returns no new nodes, proposes connections only among those IDs, and does not duplicate carried nodes. | Verified locally and live |
 | Meso map placement | Relationship callouts sit in the Meso annulus and point inward to carried Micro endpoints. | Verified locally by automation and browser |
 | Ordered progression | Completion advances Micro to Meso to Exosphere to Macrosphere; Macrosphere starts another Macrosphere cycle. | Full sequence verified by automation; Micro to Meso and Meso to Exosphere verified in browser |
-| Map viewport | The larger canvas supports reversible CSS full-screen, persistent pointer panning, arrow-key panning, and zoom down to `0.25`. | Verified locally by automation; full-screen, keyboard pan, and `0.25` zoom also verified in browser |
+| Map viewport | The larger canvas supports reversible CSS full-screen, persistent pointer panning, arrow-key panning, and zoom down to `0.15`. | Verified locally by automation; the historical browser baseline verified full-screen, keyboard pan, and `0.25` zoom |
 | Level migration | `macro` becomes `exosphere`; `integration` becomes `macrosphere` across nodes, relationships, current/completed levels, course settings, and exports without data loss. | Verified locally, including populated PostgreSQL v8→v9 migration |
 | Ecological map | Exosphere and Macrosphere render distinct concentric regions that contain nodes and connections. | Verified in inspected captures |
 | Filters | Showing all available levels or one level never deletes, rewrites, or repositions hidden graph records. | Verified locally |
@@ -99,7 +99,7 @@ Use a disposable database and temporary teacher claim values, never the handoff 
 3. Keep several Micro nodes. Confirm that no connection prompt, connection candidate, or relationship line appears. At revise and export, confirm that the current-level summary still contains zero relationships while full export retains the cumulative graph.
 4. Complete Micro and confirm automatic advancement to Meso. Confirm that the same node IDs are present, then describe and review proposed connections.
 5. Accept, edit, and reject separate connection suggestions. Confirm that only accepted versions enter the map, each relationship callout sits inside the Meso annulus, and its lines point inward to the carried Micro endpoints.
-6. Toggle full-screen on and off. Pan by pointer, focus the canvas and pan with the arrow keys, and zoom out to `0.25`; confirm that opening or closing a detail panel does not disable panning.
+6. Toggle full-screen on and off. Pan by pointer, focus the canvas and pan with the arrow keys, and zoom out to `0.15`; confirm that opening or closing a detail panel does not disable panning.
 7. Complete Meso and confirm automatic advancement to Exosphere. Place nodes and connections inside indirect institutional or environmental spheres.
 8. Complete Exosphere and confirm automatic advancement to Macrosphere. Add broader legal, political, cultural, and economic structures around or across existing spheres. Complete Macrosphere and confirm that another Macrosphere cycle begins.
 9. Filter to each level and back to all available levels. Confirm that hidden records are unchanged and that records appear in their assigned spheres.
