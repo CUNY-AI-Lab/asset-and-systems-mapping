@@ -177,11 +177,11 @@ function memoReviewFixture(activeScale = 'micro', carriedNodes = []) {
       point: 'Where does the delay enter the referral process?',
     }],
     nodes: [
-      { label: 'School', type: 'organization', scale: 'micro', evidence: 'The school refers the student to the committee.' },
-      { label: 'Committee', type: 'agency', scale: 'micro', evidence: 'The school refers the student to the committee.' },
+      { label: 'School', type: 'setting', scale: 'micro', evidence: 'The school refers the student to the committee.' },
+      { label: 'Committee', type: 'group', scale: 'micro', evidence: 'The school refers the student to the committee.' },
     ],
-    connections: [{ source: 'School', target: 'Committee', verb: 'refers students to', rationale: 'The memo names the referral directly.' }],
-    example: 'One evident connection: the school refers students to the committee, because the memo names that handoff directly.',
+    connections: [{ source: 'School', target: 'Committee', sourceLabel: 'School', targetLabel: 'Committee', verb: 'refers students to', rationale: 'The memo names the referral directly.' }],
+    example: null,
     readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and connections.' },
   };
 }
@@ -361,6 +361,20 @@ function makeRevisionProject(activeScale = 'micro') {
     };
   }
   const evaluation = evaluationRecord(evaluationPayloadFixture(project));
+  if (activeScale === 'micro') {
+    evaluation.review.nodes = project.graph.nodes
+      .filter((node) => node.scale === 'micro')
+      .slice(0, 2)
+      .map(({ label, type, scale, evidence }) => ({ label, type, scale, evidence }));
+    evaluation.review.connections = [];
+    evaluation.review.example = null;
+  }
+  if (activeScale === 'macrosphere') {
+    evaluation.review.nodes[0].scope = project.graph.nodes
+      .filter((node) => node.scale !== 'macrosphere')
+      .slice(0, 2)
+      .map(({ id, label }) => ({ id, label }));
+  }
   project.preflight = {
     memoReview: structuredClone(evaluation.review),
     configurationSnapshot: structuredClone(evaluation.configSnapshot),
@@ -1741,7 +1755,7 @@ describe('Systems Mapping workflow', () => {
       guidance: [{ point: 'The memo names participants and a transportation program.' }],
       nodes: [
         { label: 'Adult Participants', type: 'person', scale: 'micro', evidence: project.submission.text },
-        { label: 'Accessible Van Program', type: 'resource', scale: 'micro', evidence: project.submission.text },
+        { label: 'Accessible van', type: 'object', scale: 'micro', evidence: project.submission.text },
       ],
       connections: [],
       example: null,
@@ -1764,7 +1778,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes' }));
     expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
 
-    const expectedLabels = ['Adult Participants', 'Accessible Van Program'];
+    const expectedLabels = ['Adult Participants', 'Accessible van'];
     expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toEqual(expectedLabels);
     await waitFor(() => {
       expect(storedProject().candidates.nodes.map(({ label }) => label)).toEqual(expectedLabels);
@@ -1797,7 +1811,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       guidance: [{ point: 'The memo names the student and the peer setting they use directly.' }],
       nodes: [
         { label: 'u/DalekSupreme23', type: 'person', scale: 'micro', evidence: 'This user posted in r/CUNY every calendar year.' },
-        { label: 'CUNY students on r/CUNY', type: 'organization', scale: 'micro', evidence: 'They primarily sought peer help navigating CUNY.' },
+        { label: 'Reddit peer group', type: 'group', scale: 'micro', evidence: 'They primarily sought peer help navigating CUNY.' },
       ],
       connections: [],
       example: null,
@@ -1830,36 +1844,34 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
   });
 
-  it('never renders or commits a clause-like Micro node from a stored model review', async () => {
-    const project = projectWithMemoReview();
+  it('rejects the entire memo review instead of filtering out a clause-like Micro node', async () => {
+    const project = createDefaultProject();
     const clauseLabel = 'Adult Participants face delays when the Accessible Van Program is unavailable.';
-    const discreteLabel = 'Accessible Van Program';
+    const discreteLabel = 'Accessible van';
     project.submission.text = 'transportation access is delayed.';
-    project.preflight.sourceFingerprint = stableId('src', project.submission.text);
-    project.preflight.memoReview.nodes = [
-      { label: clauseLabel, type: 'event', scale: 'micro', evidence: clauseLabel },
-      { label: discreteLabel, type: 'resource', scale: 'micro', evidence: clauseLabel },
-    ];
-    project.preflight.memoReview.connections = [];
-    project.preflight.memoReview.example = null;
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = (body) => jsonResponse({
+      evaluation: evaluationRecord(body, {
+        review: {
+          guidance: [{ point: 'The memo names a transportation issue.' }],
+          nodes: [
+            { label: clauseLabel, type: 'event', scale: 'micro', evidence: clauseLabel },
+            { label: discreteLabel, type: 'object', scale: 'micro', evidence: clauseLabel },
+          ],
+          connections: [],
+          example: null,
+          readiness: { ready: false, note: 'Review the proposed elements.' },
+        },
+      }),
+    }, 201);
 
     await resumeSavedProject(project);
-    const surfacedNodes = screen.getByLabelText('Nodes evident in the memo');
-    expect(within(surfacedNodes).queryByText(clauseLabel)).not.toBeInTheDocument();
-    expect(within(surfacedNodes).getByText(discreteLabel)).toBeVisible();
-
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes' }));
-    expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
-    expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toEqual([discreteLabel]);
-    expect(screen.queryByDisplayValue(clauseLabel)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
-    expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
-    await waitFor(() => {
-      expect(storedProject().graph.nodes.map(({ label }) => label)).toEqual([discreteLabel]);
-      expect(storedProject().graph.edges).toEqual([]);
-    });
-    expect(document.querySelector('.graph-node')).toHaveAttribute('data-full-label', discreteLabel);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByText('The classroom server returned guidance with unusable map items. Generate the guidance again.')).toBeVisible();
+    expect(storedProject().preflight).toBeNull();
+    expect(screen.queryByText(clauseLabel)).not.toBeInTheDocument();
+    expect(screen.queryByText(discreteLabel)).not.toBeInTheDocument();
   });
 
   it('commits a noun-labeled Meso linkage with exact carried Micro setting IDs and no edges or verb controls', async () => {

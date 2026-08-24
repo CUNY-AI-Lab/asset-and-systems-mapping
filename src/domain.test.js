@@ -22,6 +22,7 @@ import {
   isNamedInstitutionLabel,
   isObviousLowerLevelMacroLabel,
   labelRepeatsInstitution,
+  normalizeMapElementLabel,
   normalizeMicroNodeLabel,
   parseProject,
   projectFileSlug,
@@ -201,6 +202,26 @@ describe('mapping domain', () => {
     expect(scaleLexiconVerb('macrosphere', 'synergizes')).toBeNull();
     expect(scaleLexiconVerb('micro', 'asks for help from')).toBe('asks for help from');
     expect(scaleLexiconVerb('meso', 'asks for help from')).toBeNull();
+  });
+
+  it('keeps references, temporal facts, actions, and incomplete phrases out of Micro labels', () => {
+    [
+      'he', 'she', 'they', 'him', 'her', 'them', 'his', 'hers', 'their', 'theirs',
+      'it', 'its', 'we', 'us', 'our', 'ours', 'I', 'me', 'my', 'mine', 'you',
+      'your', 'yours', 'this', 'that', 'these', 'those',
+      'Monday', 'Tuesdays', 'September', 'March', '3:30 PM', '9 to 5',
+      'Every Tuesday', 'Twice a week', 'Weekday mornings', 'Home Attendant’s Hours',
+      'Marisol Either', 'Peer Support Group At a', 'Center near',
+    ].forEach((label) => expect(normalizeMapElementLabel(label, { micro: true }), label).toBeNull());
+
+    ['Rosa Works', 'Group Meets', 'Marcus Facilitates', 'Center Supports']
+      .forEach((label) => expect(isDiscreteMicroNodeLabel(label), label).toBe(false));
+
+    ['Tuesday Night Clinic', 'Tuesday peer support group', 'Department of Public Works', 'Published Case Reports']
+      .forEach((label) => expect(isDiscreteMicroNodeLabel(label), label).toBe(true));
+    expect(normalizeMapElementLabel('Unpredictable work schedules')).toBe('Unpredictable work schedules');
+    expect(normalizeMapElementLabel('Marisol Both', { micro: true })).toBe('Marisol');
+    expect(isDiscreteMicroNodeLabel('Marisol Both')).toBe(false);
   });
 
   it('accepts Meso noun phrases and rejects relationship propositions', () => {
@@ -478,6 +499,21 @@ describe('mapping domain', () => {
     expect(candidates.nodes.some((node) => /Ability to Secure Services/.test(node.label))).toBe(false);
     expect(candidates.nodes.some((node) => node.label === 'Interviews')).toBe(false);
     expect(candidates.nodes.find((node) => node.label === 'Published Case Reports')).toBeDefined();
+  });
+
+  it('resolves a distributive subject without creating pronoun or quantifier-artifact nodes', () => {
+    const project = createDefaultProject();
+    const candidates = extractCandidates({
+      ...project.submission,
+      text: 'Danny and Marisol both attend BMCC.',
+    });
+
+    expect(candidates.nodes.map(({ label }) => label)).toEqual(expect.arrayContaining(['Danny', 'Marisol', 'BMCC']));
+    expect(candidates.nodes.map(({ label }) => label)).not.toEqual(expect.arrayContaining(['He', 'Marisol Both', 'Danny and Marisol', 'Both']));
+    expect(candidates.edges.map(({ sourceLabel, targetLabel, verb }) => ({ sourceLabel, targetLabel, verb }))).toEqual([
+      { sourceLabel: 'Danny', targetLabel: 'BMCC', verb: 'attends' },
+      { sourceLabel: 'Marisol', targetLabel: 'BMCC', verb: 'attends' },
+    ]);
   });
 
   it('does not turn a generic organization reference into an institutional endpoint', () => {
@@ -1010,7 +1046,7 @@ describe('mapping domain', () => {
     expect(() => validateProject(migrated)).not.toThrow();
   });
 
-  it('reclassifies obvious lower-level Macrosphere records and retires clause labels during migration', () => {
+  it('reclassifies lower-level roles but retires schedules and clause labels during migration', () => {
     const legacy = createDefaultProject();
     legacy.activeScale = 'macrosphere';
     legacy.releasedScales = [...SCALE_ORDER];
@@ -1047,14 +1083,13 @@ describe('mapping domain', () => {
       label: 'Center Aide', type: 'role', scale: 'micro', status: 'confirmed', claimState: 'student interpretation',
     });
     expect(migrated.graph.nodes.find(({ id }) => id === 'node_attendant_hours')).toMatchObject({
-      label: 'Home Attendant’s Hours', type: 'object', scale: 'micro', status: 'confirmed', claimState: 'student interpretation',
+      label: 'Home Attendant’s Hours', type: 'policy', scale: 'macrosphere', status: 'rejected', claimState: 'retired',
     });
-    ['node_center_aide', 'node_attendant_hours'].forEach((id) => {
-      const node = migrated.graph.nodes.find((item) => item.id === id);
-      expect(node).not.toHaveProperty('scopeNodeIds');
-      expect(node).not.toHaveProperty('deontic');
-      expect(node.notes).toContain('Moved from Macrosphere to Micro');
-    });
+    const centerAide = migrated.graph.nodes.find(({ id }) => id === 'node_center_aide');
+    expect(centerAide).not.toHaveProperty('scopeNodeIds');
+    expect(centerAide).not.toHaveProperty('deontic');
+    expect(centerAide.notes).toContain('Moved from Macrosphere to Micro');
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_attendant_hours').notes).toContain('Retired during migration');
     expect(migrated.graph.nodes.find(({ id }) => id === 'node_marcus_clause')).toMatchObject({
       scale: 'macrosphere', status: 'rejected', claimState: 'retired',
     });
@@ -1098,6 +1133,34 @@ describe('mapping domain', () => {
     expect(restored.graph.nodes.find((node) => node.id === subreddit.id)).toEqual(subreddit);
     expect(restored.graph.edges.find((edge) => edge.id === postsIn.id)).toEqual(postsIn);
     expect(restored.releasedScales).toEqual(['micro']);
+  });
+
+  it('preserves and retires malformed legacy Micro labels and every relationship that depends on them', () => {
+    const project = createDefaultProject();
+    const marisolBoth = mappedNode({ id: 'node_marisol_both', label: 'Marisol Both', type: 'person', scale: 'micro' });
+    const pronoun = mappedNode({ id: 'node_pronoun', label: 'He', type: 'person', scale: 'micro' });
+    const weekday = mappedNode({ id: 'node_weekday', label: 'Tuesdays', type: 'activity', scale: 'micro' });
+    const home = mappedNode({ id: 'node_home', label: 'Family home', type: 'setting', scale: 'micro' });
+    const classroom = mappedNode({ id: 'node_classroom_legacy', label: 'Transition classroom', type: 'setting', scale: 'micro' });
+    project.graph.nodes = [marisolBoth, pronoun, weekday, home, classroom];
+    project.graph.edges = [
+      mappedEdge({ id: 'edge_quantifier', source: marisolBoth, target: classroom, verb: 'attends', scale: 'micro' }),
+      mappedEdge({ id: 'edge_pronoun', source: pronoun, target: home, verb: 'lives near', scale: 'micro' }),
+      mappedEdge({ id: 'edge_weekday', source: weekday, target: classroom, verb: 'occurs in', scale: 'micro' }),
+      mappedEdge({ id: 'edge_settings', source: home, target: classroom, verb: 'coordinates with', scale: 'micro' }),
+    ];
+
+    const migrated = parseProject(JSON.stringify(project));
+    ['node_marisol_both', 'node_pronoun', 'node_weekday'].forEach((id) => {
+      const node = migrated.graph.nodes.find((item) => item.id === id);
+      expect(node).toMatchObject({ status: 'rejected', claimState: 'retired' });
+    });
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_marisol_both').label).toBe('Marisol Both');
+    expect(migrated.graph.edges).toHaveLength(4);
+    migrated.graph.edges.forEach((edge) => expect(edge).toMatchObject({ status: 'rejected', claimState: 'retired' }));
+    expect(migrated.graph.edges.find(({ id }) => id === 'edge_settings').notes).toContain('belongs in a scoped Meso item');
+    expect(() => validateProject(migrated)).not.toThrow();
+    expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
   it('moves a named institution out of legacy Micro and releases Exosphere without changing its identity', () => {

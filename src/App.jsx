@@ -23,6 +23,7 @@ import {
   isNodeTypeAllowedAtScale,
   isObviousLowerLevelMacroLabel,
   labelRepeatsInstitution,
+  normalizeMapElementLabel,
   parseProject,
   serializePortableProject,
   serializeProject,
@@ -82,6 +83,7 @@ const ECOLOGY_SCALES = new Set(['exosphere', 'macrosphere']);
 const ECOLOGY_MAP_SCALES = new Set(['meso', 'exosphere', 'macrosphere']);
 const MICRO_SETTING_NODE_TYPE_SET = new Set(MICRO_SETTING_NODE_TYPES);
 const LOWER_LEVEL_MACRO_MESSAGE = 'That label names an immediate person, role, activity, or schedule. Add it at Micro instead.';
+const isCanonicalMapElementLabel = (value, scale) => normalizeMapElementLabel(value, { micro: scale === 'micro' }) === String(value || '').trim();
 
 const STAGES = SYSTEMS_MAPPING_STAGES;
 const TeacherDashboard = lazy(() => import('./TeacherDashboard.jsx'));
@@ -117,7 +119,7 @@ function loadProject() {
     } catch (error) {
       return {
         project: createDefaultProject(),
-        loadError: `The previous browser workspace could not be validated: ${error.message}`,
+        loadError: 'The previous browser workspace could not be opened safely. Download its recovery copy before starting again.',
         recovery: saved,
         hasSavedProject: false,
         persistenceBlocked: true,
@@ -406,12 +408,16 @@ function normalizeConnectionSuggestions(response, project) {
       throw new Error('The classroom server returned an invalid connection.');
     }
     if (project.activeScale === 'micro' && (source.scale !== 'micro' || target.scale !== 'micro')) throw new Error('The classroom server returned a connection outside Micro.');
+    if (project.activeScale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(source.type) && MICRO_SETTING_NODE_TYPE_SET.has(target.type)) throw new Error('The classroom server returned a setting interrelation as a Micro relationship. Generate the suggestions again.');
     if (project.activeScale === 'exosphere' && source.scale !== 'exosphere' && target.scale !== 'exosphere') throw new Error('The classroom server returned a connection without an Exosphere institution.');
     if (project.activeScale === 'exosphere' && (source.scale === 'macrosphere' || target.scale === 'macrosphere')) throw new Error('The classroom server returned a connection to a Macrosphere item.');
-    const verb = project.activeScale === 'exosphere' ? scaleLexiconVerb('exosphere', connection.verb) : connection.verb.trim();
-    if (!verb) throw new Error('The classroom server returned a relationship that does not belong at this level.');
+    const verb = connection.verb;
+    if (verb.trim() !== verb || (project.activeScale === 'exosphere' && !SCALE_VERB_LEXICONS.exosphere.includes(verb))) {
+      throw new Error('The classroom server returned a relationship that does not belong at this level.');
+    }
     const key = `${source.id}\u0000${verb.toLocaleLowerCase()}\u0000${target.id}`;
     if (seen.has(key)) throw new Error('The classroom server returned duplicate connection suggestions.');
+    if (existingConnections.has(key)) throw new Error('The classroom server returned a connection that is already on the map.');
     seen.add(key);
     const id = stableId('edge', `${source.id}:${verb}:${target.id}:${index}`);
     return {
@@ -426,16 +432,78 @@ function normalizeConnectionSuggestions(response, project) {
       claimState: project.instructor.requireStudentConfirmation ? 'inference' : 'student interpretation',
       notes: '',
       directed: true,
-      rationale: connection.rationale.trim(),
+      rationale: connection.rationale,
       annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' },
     };
-  }).filter(({ source, target, verb }) => !existingConnections.has(`${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`));
+  });
 }
 
 function authoritativeEvaluationKey(project) {
   const payload = preflightEvaluationPayload(project);
   const { clientUpdatedAt: _clientUpdatedAt, stage: _stage, furthestStage: _furthestStage, ...stableMetadata } = payload.projectMetadata;
   return stableId('evaluation-request', JSON.stringify({ ...payload, projectMetadata: stableMetadata }));
+}
+
+function assertAtomicMemoReview(review, project) {
+  const fail = () => { throw new Error('The classroom server returned guidance with unusable map items. Generate the guidance again.'); };
+  if (!review || typeof review !== 'object' || Array.isArray(review)
+    || Object.keys(review).sort().join(',') !== ['connections', 'example', 'guidance', 'nodes', 'readiness'].join(',')
+    || !Array.isArray(review.nodes) || !Array.isArray(review.connections)) fail();
+  const liveNodes = project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired');
+  const liveById = new Map(liveNodes.map((node) => [node.id, node]));
+  const liveByLabel = new Map(liveNodes.map((node) => [node.label.toLocaleLowerCase(), node]));
+  const proposedByLabel = new Map();
+  const nodeKeys = {
+    micro: ['evidence', 'label', 'scale', 'type'],
+    meso: ['evidence', 'label', 'scale', 'scope', 'type'],
+    exosphere: ['basis', 'evidence', 'label', 'scale', 'type'],
+    macrosphere: ['basis', 'deontic', 'evidence', 'label', 'scale', 'scope', 'type'],
+  }[project.activeScale];
+  review.nodes.forEach((node) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)
+      || Object.keys(node).sort().join(',') !== nodeKeys.join(',')
+      || typeof node.label !== 'string' || node.scale !== project.activeScale
+      || (project.activeScale === 'macrosphere' && !SCALE_VERB_LEXICONS.macrosphere.includes(node.deontic))
+      || proposedByLabel.has(node.label.toLocaleLowerCase()) || liveByLabel.has(node.label.toLocaleLowerCase())) fail();
+    proposedByLabel.set(node.label.toLocaleLowerCase(), node);
+    if (['meso', 'macrosphere'].includes(project.activeScale)) {
+      if (!Array.isArray(node.scope) || node.scope.length < 2) fail();
+      const scopeIds = new Set();
+      node.scope.forEach((member) => {
+        const carried = member && liveById.get(member.id);
+        if (!carried || carried.label !== member.label || scopeIds.has(member.id)
+          || (project.activeScale === 'meso' && (carried.scale !== 'micro' || !MICRO_SETTING_NODE_TYPE_SET.has(carried.type)))
+          || (project.activeScale === 'macrosphere' && carried.scale === 'macrosphere')) fail();
+        scopeIds.add(member.id);
+      });
+    }
+  });
+  if (['micro', 'meso'].includes(project.activeScale) && review.example !== null) fail();
+  if (['meso', 'macrosphere'].includes(project.activeScale) && review.connections.length) fail();
+  const existingConnections = new Set(project.graph.edges
+    .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
+    .map((edge) => `${edge.source}\u0000${edge.verb.toLocaleLowerCase()}\u0000${edge.target}`));
+  const seenConnections = new Set();
+  const resolve = (reference) => liveById.get(reference)
+    || liveByLabel.get(String(reference || '').toLocaleLowerCase())
+    || proposedByLabel.get(String(reference || '').toLocaleLowerCase());
+  review.connections.forEach((connection) => {
+    if (!connection || typeof connection !== 'object' || Array.isArray(connection)
+      || Object.keys(connection).sort().join(',') !== ['rationale', 'source', 'sourceLabel', 'target', 'targetLabel', 'verb'].join(',')) fail();
+    const source = resolve(connection.source);
+    const target = resolve(connection.target);
+    if (!source || !target || source === target || source.label !== connection.sourceLabel || target.label !== connection.targetLabel) fail();
+    if (project.activeScale === 'micro' && (source.scale !== 'micro' || target.scale !== 'micro'
+      || (MICRO_SETTING_NODE_TYPE_SET.has(source.type) && MICRO_SETTING_NODE_TYPE_SET.has(target.type)))) fail();
+    if (project.activeScale === 'exosphere' && (!SCALE_VERB_LEXICONS.exosphere.includes(connection.verb)
+      || (source.scale !== 'exosphere' && target.scale !== 'exosphere')
+      || source.scale === 'macrosphere' || target.scale === 'macrosphere')) fail();
+    const sourceReference = liveById.has(connection.source) ? connection.source : source.label;
+    const targetReference = liveById.has(connection.target) ? connection.target : target.label;
+    const key = `${sourceReference}\u0000${connection.verb.toLocaleLowerCase()}\u0000${targetReference}`;
+    if (seenConnections.has(key) || existingConnections.has(key)) fail();
+    seenConnections.add(key);
+  });
 }
 
 function normalizePreflightEvaluation(evaluation, project) {
@@ -448,6 +516,7 @@ function normalizePreflightEvaluation(evaluation, project) {
   if (!evaluation.review || typeof evaluation.review !== 'object' || Array.isArray(evaluation.review) || !evaluation.configSnapshot || !evaluation.runtime) {
     throw new Error('The classroom server returned an incomplete memo review.');
   }
+  assertAtomicMemoReview(evaluation.review, project);
   const preflight = {
     memoReview: structuredClone(evaluation.review),
     configurationSnapshot: structuredClone(evaluation.configSnapshot),
@@ -461,7 +530,11 @@ function normalizePreflightEvaluation(evaluation, project) {
   };
   const candidate = structuredClone(project);
   candidate.preflight = preflight;
-  validateProject(candidate);
+  try {
+    validateProject(candidate);
+  } catch {
+    throw new Error('The classroom server returned guidance with unusable map items. Generate the guidance again.');
+  }
   return preflight;
 }
 
@@ -971,34 +1044,8 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue }
   const nodesOnly = project.activeScale === 'meso' || project.activeScale === 'macrosphere';
   const mesoLinkages = project.activeScale === 'meso';
   const levelCopy = LEVEL_REVIEW_COPY[project.activeScale] || LEVEL_REVIEW_COPY.micro;
-  const mappedLabels = useMemo(() => new Set(project.graph.nodes
-    .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
-    .map((node) => node.label.trim().toLocaleLowerCase())), [project.graph.nodes]);
-  const mappedEdgeKeys = useMemo(() => {
-    const keys = new Set();
-    project.graph.edges
-      .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
-      .forEach((edge) => {
-        const verb = edge.verb.trim().toLocaleLowerCase();
-        keys.add(`${edge.source}::${verb}::${edge.target}`);
-        keys.add(`${edge.sourceLabel.trim().toLocaleLowerCase()}::${verb}::${edge.targetLabel.trim().toLocaleLowerCase()}`);
-      });
-    return keys;
-  }, [project.graph.edges]);
-  const surfacedNodes = review
-    ? review.nodes
-      .filter((node) => project.activeScale !== 'micro' || isDiscreteMicroNodeLabel(node.label))
-      .filter((node) => !mappedLabels.has(node.label.trim().toLocaleLowerCase()))
-    : [];
-  // Connections already on the map stay off the review: the model's reading
-  // only surfaces what this level adds.
-  const surfacedConnections = (review?.connections || []).filter((connection) => {
-    const verb = connection.verb.trim().toLocaleLowerCase();
-    if (mappedEdgeKeys.has(`${connection.source}::${verb}::${connection.target}`)) return false;
-    const sourceLabel = (connection.sourceLabel || connection.source).trim().toLocaleLowerCase();
-    const targetLabel = (connection.targetLabel || connection.target).trim().toLocaleLowerCase();
-    return !mappedEdgeKeys.has(`${sourceLabel}::${verb}::${targetLabel}`);
-  });
+  const surfacedNodes = review?.nodes || [];
+  const surfacedConnections = review?.connections || [];
   const microSettings = mesoLinkages ? carriedMicroNodes(project).filter((node) => MICRO_SETTING_NODE_TYPE_SET.has(node.type)) : [];
   const nextLabel = levelCopy.next;
   return <div className="wide stage-enter">
@@ -1147,6 +1194,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const addStructure = () => {
     const label = structureDraft.label.trim();
     if (!label) return toast('Name the Macrosphere item first.', 'error');
+    if (!isCanonicalMapElementLabel(label, 'macrosphere')) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
     if (containsRetiredSystemsLanguage(label)) return toast('Use a direct, conventional name for the broader condition.', 'error');
     if (isObviousLowerLevelMacroLabel(label)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
     if (labelRepeatsInstitution(label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
@@ -1186,6 +1234,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (status === 'research lead' && !project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
+    if (kind === 'nodes' && (status === 'confirmed' || status === 'research lead') && !isCanonicalMapElementLabel(current.label, project.activeScale)) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
     if (kind === 'nodes' && (status === 'confirmed' || status === 'research lead') && containsRetiredSystemsLanguage(current.label)) return toast('Use a direct, conventional name for the map element.', 'error');
     if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
     if (kind === 'nodes' && project.activeScale === 'micro' && (status === 'confirmed' || status === 'research lead') && !isDiscreteMicroNodeLabel(current.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
@@ -1204,10 +1253,6 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const edit = (kind, id, field, value) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
-    if (kind === 'nodes' && field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
-    if (kind === 'nodes' && field === 'label' && project.activeScale === 'meso' && !isMesosystemLabel(value)) return toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error');
-    if (kind === 'nodes' && field === 'label' && project.activeScale === 'macrosphere' && isObviousLowerLevelMacroLabel(value)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
-    if (kind === 'nodes' && field === 'label' && project.activeScale === 'macrosphere' && labelRepeatsInstitution(value, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
     if (kind === 'nodes' && field === 'type' && !isNodeTypeAllowedAtScale(value, project.activeScale)) return toast(`That type does not belong at ${SCALES[project.activeScale].label}.`, 'error');
     update((draft) => {
       const item = draft.candidates[kind].find((candidate) => candidate.id === id);
@@ -1232,19 +1277,28 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       }
     });
   };
-  const keepAllRemaining = (kind) => update((draft) => {
-    draft.candidates[kind].forEach((item) => {
-      if (item.status !== 'pending') return;
-      if (draft.instructor.evidenceRequired && !item.evidence) return;
-      if (draft.activeScale === 'micro' && kind === 'nodes' && !isDiscreteMicroNodeLabel(item.label)) return;
-      if (draft.activeScale === 'exosphere' && kind === 'nodes' && !isNamedInstitutionLabel(item.label)) return;
-      if (draft.activeScale === 'macrosphere' && kind === 'nodes' && isObviousLowerLevelMacroLabel(item.label)) return;
-      if (draft.activeScale === 'macrosphere' && kind === 'nodes' && labelRepeatsInstitution(item.label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return;
-      if (['meso', 'macrosphere'].includes(draft.activeScale) && kind === 'nodes' && (item.scopeNodeIds || []).length < 2) return;
-      item.status = 'confirmed';
-      item.claimState = 'student interpretation';
-    });
-  }, 'candidates.batch-confirmed', kind === 'nodes' ? 'Remaining nodes kept' : 'Remaining connections kept');
+  const keepAllRemaining = (kind) => {
+    const remaining = project.candidates[kind].filter((item) => item.status === 'pending');
+    const invalid = remaining.find((item) => (
+      (project.instructor.evidenceRequired && !item.evidence)
+      || (kind === 'nodes' && (!isCanonicalMapElementLabel(item.label, project.activeScale)
+        || containsRetiredSystemsLanguage(item.label)
+        || (project.activeScale === 'micro' && !isDiscreteMicroNodeLabel(item.label))
+        || (project.activeScale === 'meso' && !isMesosystemLabel(item.label))
+        || (project.activeScale === 'exosphere' && !isNamedInstitutionLabel(item.label))
+        || (project.activeScale === 'macrosphere' && (isObviousLowerLevelMacroLabel(item.label)
+          || labelRepeatsInstitution(item.label, liveMapNodes.filter((node) => node.scale === 'exosphere'))))
+        || (['meso', 'macrosphere'].includes(project.activeScale) && (item.scopeNodeIds || []).length < 2)))
+    ));
+    if (invalid) return toast('Review the remaining items individually before keeping all of them.', 'error');
+    update((draft) => {
+      draft.candidates[kind].forEach((item) => {
+        if (item.status !== 'pending') return;
+        item.status = 'confirmed';
+        item.claimState = 'student interpretation';
+      });
+    }, 'candidates.batch-confirmed', kind === 'nodes' ? 'Remaining nodes kept' : 'Remaining connections kept');
+  };
   const counts = Object.fromEntries(['nodes', 'edges'].map((kind) => {
     const items = project.candidates[kind];
     return [kind, {
@@ -3513,6 +3567,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const editNode = (field, value) => {
     if (!selectedNode) return;
     if (field === 'scale') return toast('A node’s level is fixed after it is mapped. Remove it and add it at the correct level instead.', 'error');
+    if (field === 'label' && !isCanonicalMapElementLabel(value, selectedNode.scale)) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
     if (field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
     if (field === 'type' && !isNodeTypeAllowedAtScale(value, selectedNode.scale)) return toast(`That type does not belong at ${SCALES[selectedNode.scale].label}.`, 'error');
     if (field === 'label' && selectedNode.scale === 'micro' && !isDiscreteMicroNodeLabel(value)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
@@ -3551,6 +3606,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (!removed && selection.kind === 'node' && selectedNode?.scale === 'micro' && !isDiscreteMicroNodeLabel(selectedNode.label)) {
       return toast('Name one specific person, role, group, activity, object, or immediate setting before returning it to the map.', 'error');
     }
+    if (!removed && selection.kind === 'node' && !isCanonicalMapElementLabel(selectedNode?.label, selectedNode?.scale)) {
+      return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
+    }
     if (!removed && selection.kind === 'node' && selectedNode?.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(selectedNode.label)) {
       return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
     }
@@ -3562,6 +3620,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       const sourceNode = endpointById.get(edge.source);
       const targetNode = endpointById.get(edge.target);
       if (edge.scale === 'micro' && (sourceNode?.scale !== 'micro' || targetNode?.scale !== 'micro')) return toast('A Micro relationship must connect two Micro elements.', 'error');
+      if (edge.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(sourceNode?.type) && MICRO_SETTING_NODE_TYPE_SET.has(targetNode?.type)) return toast('An interrelation between two immediate settings belongs at Meso, not in Micro relationships.', 'error');
       if (edge.scale === 'exosphere' && ((sourceNode?.scale !== 'exosphere' && targetNode?.scale !== 'exosphere') || [sourceNode?.scale, targetNode?.scale].includes('macrosphere') || !scaleLexiconVerb('exosphere', edge.verb))) return toast('This relationship must include an Exosphere institution and use an institutional action before it can return to the map.', 'error');
     }
     update((draft) => {
@@ -3596,6 +3655,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (project.activeScale === 'macrosphere') return toast('Add Macrosphere items from the Choose stage so each one identifies the mapped elements it affects.', 'error');
     if (project.graph.nodes.length >= PROJECT_LIMITS.nodes) return toast(`This map already contains the maximum ${PROJECT_LIMITS.nodes} nodes.`, 'error');
     if (!newNode.label.trim()) return toast('Name the node before adding it.', 'error');
+    if (!isCanonicalMapElementLabel(newNode.label, newNode.scale)) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
     if (containsRetiredSystemsLanguage(newNode.label)) return toast('Use a direct, conventional name for the map element.', 'error');
     if (!isNodeTypeAllowedAtScale(newNode.type, newNode.scale) || ['meso', 'macrosphere'].includes(newNode.scale)) return toast('Choose a type and level that belong together.', 'error');
     if (newNode.scale === 'micro' && !isDiscreteMicroNodeLabel(newNode.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
@@ -3624,6 +3684,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const target = relationshipTarget;
     if (!source || !target || source.id === target.id) return toast('Choose two different nodes.', 'error');
     if (!newEdge.verb.trim()) return toast('Describe the connection before adding the relationship.', 'error');
+    if (project.activeScale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(source.type) && MICRO_SETTING_NODE_TYPE_SET.has(target.type)) return toast('An interrelation between two immediate settings belongs at Meso, not in Micro relationships.', 'error');
     if (project.activeScale === 'exosphere' && source.scale !== 'exosphere' && target.scale !== 'exosphere') return toast('An Exosphere relationship must include an Exosphere institution.', 'error');
     if (project.activeScale === 'exosphere' && (source.scale === 'macrosphere' || target.scale === 'macrosphere')) return toast('Connect the institution to an inner mapped element, not a Macrosphere item.', 'error');
     const canonicalVerb = project.activeScale === 'exosphere' ? scaleLexiconVerb('exosphere', newEdge.verb) : newEdge.verb.trim();
@@ -3821,7 +3882,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype })
       replaceProject(imported, file.name);
       setImportError('');
       toast('Project imported and validated.');
-    } catch (error) { setImportError(error.message); toast(error.message, 'error'); }
+    } catch { const message = 'This project file could not be opened safely. The current map was preserved.'; setImportError(message); toast(message, 'error'); }
     event.target.value = '';
   };
   const tiers = ['private', 'course', 'CUNY', 'public'];
@@ -4025,8 +4086,8 @@ function App() {
     let serialized;
     try {
       serialized = serializeProject(snapshot);
-    } catch (error) {
-      setSaveState((current) => ({ ...current, status: 'validation', message: `Complete the current required field to save: ${error.message}` }));
+    } catch {
+      setSaveState((current) => ({ ...current, status: 'validation', message: 'Complete or remove the current invalid map item before saving.' }));
       return false;
     }
     try {
@@ -4347,15 +4408,23 @@ function App() {
     const nodeIdForReference = (reference, label = reference) => liveGraphNodes.has(reference)
       ? reference
       : nodeIdForLabel(label);
+    const invalidReview = () => { throw new Error('The classroom server returned guidance with unusable map items. Generate the guidance again.'); };
     const nodeById = new Map();
-    (review?.nodes || [])
-      .filter((node) => currentProject.activeScale !== 'micro' || isDiscreteMicroNodeLabel(node.label))
-      .filter((node) => isNodeTypeAllowedAtScale(node.type, currentProject.activeScale))
-      .filter((node) => currentProject.activeScale !== 'macrosphere' || !isObviousLowerLevelMacroLabel(node.label))
-      .filter((node) => currentProject.activeScale !== 'macrosphere' || !labelRepeatsInstitution(node.label, [...liveGraphNodes.values()].filter((entry) => entry.scale === 'exosphere')))
-      .forEach((node) => {
+    (review?.nodes || []).forEach((node) => {
+        if (node.scale !== currentProject.activeScale
+          || !isCanonicalMapElementLabel(node.label, currentProject.activeScale)
+          || !isNodeTypeAllowedAtScale(node.type, currentProject.activeScale)
+          || (currentProject.activeScale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
+          || (currentProject.activeScale === 'macrosphere' && (isObviousLowerLevelMacroLabel(node.label)
+            || labelRepeatsInstitution(node.label, [...liveGraphNodes.values()].filter((entry) => entry.scale === 'exosphere'))))) invalidReview();
         const id = nodeIdForLabel(node.label);
-        if (nodeById.has(id)) return;
+        if (nodeById.has(id) || liveGraphNodes.has(id)) invalidReview();
+        const scopeMembers = Array.isArray(node.scope) ? node.scope : [];
+        const scopeNodeIds = scopeMembers.map((member) => member?.id);
+        if (['meso', 'macrosphere'].includes(currentProject.activeScale)
+          && (scopeNodeIds.length < 2 || scopeNodeIds.some((memberId) => !liveGraphNodes.has(memberId) || memberId === id)
+            || new Set(scopeNodeIds).size !== scopeNodeIds.length
+            || scopeMembers.some((member) => liveGraphNodes.get(member?.id)?.label !== member?.label))) invalidReview();
         nodeById.set(id, {
           id,
           label: node.label,
@@ -4370,10 +4439,8 @@ function App() {
           // Meso linkages and Macrosphere items carry their mapped members as
           // durable graph ids the student can edit directly.
           ...(['meso', 'macrosphere'].includes(currentProject.activeScale) ? {
-            ...(currentProject.activeScale === 'macrosphere' ? { deontic: node.deontic || 'shapes' } : {}),
-            scopeNodeIds: (Array.isArray(node.scope) ? node.scope : [])
-              .map((member) => member?.id)
-              .filter((memberId) => liveGraphNodes.has(memberId) && memberId !== id),
+            ...(currentProject.activeScale === 'macrosphere' ? { deontic: node.deontic } : {}),
+            scopeNodeIds,
           } : {}),
         });
       });
@@ -4397,14 +4464,15 @@ function App() {
       const source = nodeIdForReference(connection.source, connection.sourceLabel || connection.source);
       const target = nodeIdForReference(connection.target, connection.targetLabel || connection.target);
       const availableNodes = new Map([...liveGraphNodes, ...nodeById]);
-      if (!availableNodes.has(source) || !availableNodes.has(target) || source === target) return;
+      if (!availableNodes.has(source) || !availableNodes.has(target) || source === target) invalidReview();
+      if (connection.sourceLabel !== availableNodes.get(source).label || connection.targetLabel !== availableNodes.get(target).label) invalidReview();
       const id = stableId('edge', `${connection.source}:${connection.verb}:${connection.target}`);
       const edge = {
         id,
         source,
         target,
-        sourceLabel: availableNodes.get(source).label,
-        targetLabel: availableNodes.get(target).label,
+        sourceLabel: connection.sourceLabel,
+        targetLabel: connection.targetLabel,
         verb: connection.verb,
         scale: currentProject.activeScale,
         status: 'pending',
@@ -4417,7 +4485,8 @@ function App() {
         annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' },
       };
       const key = edgeKeyOf(edge);
-      if (!liveEdgeKeys.has(key) && !edgeByKey.has(key)) edgeByKey.set(key, edge);
+      if (liveEdgeKeys.has(key) || edgeByKey.has(key)) invalidReview();
+      edgeByKey.set(key, edge);
     });
     extracted.edges.forEach((edge) => {
       if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
@@ -4427,9 +4496,7 @@ function App() {
     // Decisions already made on matching items survive a reread.
     const priorNodes = new Map(currentProject.candidates.nodes.map((node) => [node.id, node]));
     const priorEdges = new Map(currentProject.candidates.edges.map((edge) => [edge.id, edge]));
-    const nodes = withDefaultNodeLayout([...nodeById.values()]
-      .filter((node) => currentProject.activeScale === 'micro' || !liveGraphNodes.has(node.id))
-      .map((node) => {
+    const nodes = withDefaultNodeLayout([...nodeById.values()].map((node) => {
       const prior = priorNodes.get(node.id);
       const scaled = { ...node, scale: currentProject.activeScale };
       // A student's decisions and scope edits on a matching item survive a
@@ -4459,8 +4526,10 @@ function App() {
       return prior ? { ...scaled, status: prior.status, claimState: prior.claimState, notes: prior.notes || edge.notes } : scaled;
     });
     // Meso linkages and Macrosphere items use scoped nodes, never verb edges.
-    if (currentProject.activeScale === 'meso') return { nodes, edges: [] };
-    if (currentProject.activeScale === 'macrosphere') return { nodes, edges: [] };
+    if (currentProject.activeScale === 'meso' || currentProject.activeScale === 'macrosphere') {
+      if (edges.length) invalidReview();
+      return { nodes, edges: [] };
+    }
     return { nodes, edges };
   };
 
@@ -4481,7 +4550,13 @@ function App() {
   };
 
   const prepareCandidates = () => {
-    const candidates = applyConfirmationDefaults(buildCandidatesFromProject(project), project);
+    let candidates;
+    try {
+      candidates = applyConfirmationDefaults(buildCandidatesFromProject(project), project);
+    } catch {
+      toast('The guidance could not be used as returned. Generate it again; the current map was preserved.', 'error');
+      return false;
+    }
     const snapshot = configurationSnapshot(project, 'builder');
     update((draft) => { draft.candidates = candidates; draft.stage = 2; draft.furthestStage = Math.max(draft.furthestStage || 0, 2); }, 'candidates.generated', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { configurationSnapshot: snapshot, sourceFingerprint: memoFingerprint(project.submission) });
     recordStageTransition(project.stage, 2, { completed: true });
@@ -4495,12 +4570,19 @@ function App() {
             ? 'Institutions and relationships from your memo are ready for review.'
             : 'Macrosphere items from your memo are ready for review.'
       : 'The review did not suggest any items. Add an item yourself, or revise the memo and choose “Reread memo.”');
+    return true;
   };
 
   const refreshCandidatesFromMemo = async () => {
-    await generateSuggestions();
+    if (!await generateSuggestions()) return;
     const current = projectRef.current;
-    const candidates = applyConfirmationDefaults(buildCandidatesFromProject(current), current);
+    let candidates;
+    try {
+      candidates = applyConfirmationDefaults(buildCandidatesFromProject(current), current);
+    } catch {
+      toast('The refreshed guidance could not be used as returned. The current suggestions were preserved.', 'error');
+      return;
+    }
     update((draft) => { draft.candidates = candidates; }, 'candidates.refreshed', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { sourceFingerprint: memoFingerprint(current.submission) });
     toast(candidates.nodes.length + candidates.edges.length ? 'Suggestions refreshed from your memo.' : 'The revised review did not suggest any items. You can add an item yourself.');
   };

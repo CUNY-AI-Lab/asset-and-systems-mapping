@@ -284,4 +284,47 @@ describe('teaching profiles', () => {
     system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
     expect(upgradeHistoryCount()).toBe(1);
   });
+
+  it('advances every untouched production Micro prompt module to the entity-resolution contract', () => {
+    const previousMicroContent = {
+      purpose: 'Focus Micro work on the activities, roles, interpersonal relationships, objects, and immediate settings the person directly encounters.',
+      evidence: 'Use a specific noun phrase for each person, role, activity, object, or immediate setting. Use a direct relationship verb only when the memo supports what happens between two Micro elements. Show which voices are represented or missing and use community research or other data when available.',
+      scale_rubric: 'Micro work should show the immediate settings and direct activities, roles, and interpersonal relationships in which the person participates.',
+      output: 'Return Micro nodes for exactly one discrete actor or object each, including a person, role, activity, object, or immediate setting. Write each label as a noun phrase, not a sentence, clause, proposition, action, relationship, finding, or explanation. Preserve a complete official name even when it is long. Return supported direct connections among proposed or existing Micro nodes with concise relationship verbs.',
+    };
+    const moduleIds = [];
+    for (const configKind of ['preflight', 'builder']) {
+      for (const [moduleKey, content] of Object.entries(previousMicroContent)) {
+        const id = `${configKind}.micro.${moduleKey}`;
+        moduleIds.push(id);
+        system.db.prepare(`
+          UPDATE prompt_modules SET content = ?, revision = 7, fingerprint = ?
+          WHERE id = ?
+        `).run(content, fingerprint(content), id);
+      }
+    }
+    system.close();
+
+    system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
+    const currentById = new Map(moduleSeeds().map((module) => [module.id, module]));
+    for (const id of moduleIds) {
+      const current = currentById.get(id);
+      expect(system.db.prepare(`
+        SELECT content, revision, fingerprint FROM prompt_modules WHERE id = ?
+      `).get(id)).toEqual({ content: current.content, revision: 8, fingerprint: current.fingerprint });
+      expect(system.db.prepare(`
+        SELECT COUNT(*) AS count FROM prompt_module_history
+        WHERE module_id = ? AND revision = 8 AND change_note = 'Updated default scale semantics'
+      `).get(id).count).toBe(1);
+    }
+
+    system.close();
+    system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
+    for (const id of moduleIds) {
+      expect(system.db.prepare(`
+        SELECT COUNT(*) AS count FROM prompt_module_history
+        WHERE module_id = ? AND revision = 8 AND change_note = 'Updated default scale semantics'
+      `).get(id).count).toBe(1);
+    }
+  });
 });

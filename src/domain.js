@@ -295,45 +295,113 @@ function normalizeWhitespace(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+// Node labels identify bounded map elements. References, dates, and timetable
+// fragments belong in evidence; letting them become nodes produces unstable
+// endpoints that cannot survive a reread of the memo.
+const MAP_ELEMENT_STANDALONE_REFERENCE = /^(?:he|she|they|him|her|them|his|hers|their|theirs|it|its|we|us|our|ours|i|me|my|mine|you|your|yours|this|that|these|those)$/i;
+const MAP_ELEMENT_REFERENCE_TOKEN = /\b(?:he|she|they|him|her|them|his|hers|their|theirs|it|its|we|us|our|ours|i|me|my|mine|you|your|yours|this|that|these|those)\b/i;
+const MAP_ELEMENT_DANGLING_ARTIFACT = /(?:^|\s)(?:a|also|an|and|at|before|between|but|by|during|either|for|from|in|into|near|neither|of|on|or|over|respectively|the|through|to|too|under|with|without)$/i;
+const MAP_ELEMENT_LEADING_QUANTIFIER = /^(?:all|both|each|either|every|few|many|neither|other|several|some)\b/i;
+const MAP_ELEMENT_ENTITY_HEAD = /\b(?:association|board|bureau|center|centre|church|class|classroom|clinic|coalition|college|committee|community|council|department|family|foundation|group|hospital|institute|institution|journal|lab|library|magazine|network|newspaper|office|organization|person|platform|program|school|service|society|student|team|university|workplace)\b/i;
+const MAP_ELEMENT_SCHEDULE_HEAD = /\b(?:availability|appointments?|hours?|schedules?|shifts?|workdays?|workweeks?)$/i;
+const MAP_ELEMENT_ACTION_START = /^(?:administer(?:s|ed|ing)?|attend(?:s|ed|ing)?|connect(?:s|ed|ing)?|coordinate(?:s|d|ing)?|deliver(?:s|ed|ing)?|facilitat(?:e|es|ed|ing)|fund(?:s|ed|ing)?|help(?:s|ed|ing)?|manage(?:s|d|ing)?|offer(?:s|ed|ing)?|provide(?:s|d|ing)?|receive(?:s|d|ing)?|refer(?:s|red|ring)?|request(?:s|ed|ing)?|serve(?:s|d|ing)?|support(?:s|ed|ing)?|supervis(?:e|es|ed|ing)|use(?:s|d|ing)?|visit(?:s|ed|ing)?|work(?:s|ed|ing)?)\b/i;
+const MAP_ELEMENT_WEEKDAY = /^(?:mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|mons?|tues?|weds?|thurs?|fris?|sats?|suns?)$/i;
+const MAP_ELEMENT_MONTH = /^(?:januarys?|februarys?|march(?:es)?|aprils?|mays?|junes?|julys?|augusts?|septembers?|octobers?|novembers?|decembers?|jans?|febs?|mars?|aprs?|juns?|juls?|augs?|septs?|octs?|novs?|decs?)$/i;
+const MAP_ELEMENT_TEMPORAL_ATOM = /^(?:days?|weeks?|months?|years?|hours?|minutes?|mornings?|afternoons?|evenings?|nights?|noon|midnight|dawn|dusk|weekdays?|weekends?|semesters?|terms?|spring|summer|fall|autumn|winter|daily|weekly|biweekly|fortnightly|monthly|quarterly|annually|yearly|hourly|nightly)$/i;
+const MAP_ELEMENT_TEMPORAL_CONNECTOR = /^(?:a|about|after|an|and|around|at|before|between|during|each|every|from|on|once|other|per|the|through|thru|till|times?|to|twice|until)$/i;
+const MAP_ELEMENT_CLOCK_TOKEN = /^(?:(?:[01]?\d|2[0-3])(?::[0-5]\d)?(?:a\.?m\.?|p\.?m\.?)?|(?:[1-9]|1[0-2])(?::[0-5]\d)?|a\.?m\.?|p\.?m\.?)$/i;
+
+function isTemporalOnlyMapElementLabel(label, rejectScheduleHead = false) {
+  if (rejectScheduleHead && MAP_ELEMENT_SCHEDULE_HEAD.test(label)) return true;
+  // A named setting can legitimately contain a day or time word: “Tuesday
+  // Night Clinic” and “Tuesday peer support group” remain map elements.
+  if (MAP_ELEMENT_ENTITY_HEAD.test(label)) return false;
+  const tokens = label
+    .replace(/[\u2013\u2014/,-]/g, ' ')
+    .replace(/\b(\d+)(?:st|nd|rd|th)\b/gi, '$1')
+    .split(/\s+/)
+    .filter(Boolean);
+  let sawTemporal = false;
+  let numericTokens = 0;
+  let rangeConnector = false;
+  for (const token of tokens) {
+    if (MAP_ELEMENT_WEEKDAY.test(token) || MAP_ELEMENT_MONTH.test(token) || MAP_ELEMENT_TEMPORAL_ATOM.test(token)) {
+      sawTemporal = true;
+      continue;
+    }
+    if (MAP_ELEMENT_CLOCK_TOKEN.test(token)) {
+      sawTemporal = true;
+      continue;
+    }
+    if (/^\d{1,4}$/.test(token)) {
+      numericTokens += 1;
+      continue;
+    }
+    if (MAP_ELEMENT_TEMPORAL_CONNECTOR.test(token)) {
+      if (/^(?:to|through|thru|until|till)$/i.test(token)) rangeConnector = true;
+      continue;
+    }
+    return false;
+  }
+  return sawTemporal || (numericTokens >= 2 && rangeConnector);
+}
+
+export function normalizeMapElementLabel(value, { micro = false } = {}) {
+  if (typeof value !== 'string') return null;
+  let label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
+  if (!label || label.length < 2 || label.length > 200 || !/[a-z]/i.test(label)) return null;
+  if (containsRetiredSystemsLanguage(label)) return null;
+  // “both” is a distributive quantifier, not part of the actor's name. This
+  // cleanup is deterministic and happens before label de-duplication.
+  if (/\s+both$/i.test(label)) label = label.replace(/\s+both$/i, '').trim();
+  if (!label || MAP_ELEMENT_STANDALONE_REFERENCE.test(label)) return null;
+  if (MAP_ELEMENT_REFERENCE_TOKEN.test(label) && !isNamedInstitutionLabel(label)) return null;
+  if (MAP_ELEMENT_DANGLING_ARTIFACT.test(label) || MAP_ELEMENT_LEADING_QUANTIFIER.test(label)) return null;
+  if (isTemporalOnlyMapElementLabel(label, micro)) return null;
+  // A verb-shaped first token joined into a compound can be a noun modifier
+  // (for example, a work–school mesosystem label), not a finite predicate.
+  if (MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)) return null;
+  return label;
+}
+
 function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const MICRO_NODE_PREDICATE = /\s+(?:(?:who|that|which)\s+)?(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would|provides?|provided|funds?|funded|regulates?|regulated|administers?|administered|requests?|requested|refers?|referred|serves?|served|sets?|supports|supported|partners|partnered|shares|shared|employs|employed|supervises|supervised|qualifies?|qualified|excludes?|excluded|delays?|delayed|enables?|enabled|depends?|depended|coordinates?|coordinated|reports?|reported|measures?|measured|contests?|contested|litigates?|litigated|supersedes?|superseded|shapes?|shaped|mandates?|mandated|prohibits?|prohibited|prices?|priced|normalizes?|normalized|frames?|framed|constrains?|constrained|privileges?|privileged|defines?|defined|contradicts?|contradicted|corroborates?|corroborated|faces?|faced|experiences?|experienced|meets?|met|interacts?|interacted|connects?|connected|receives?|received|uses?|used|attends?|attended|visits?|visited|works?|worked|helps?|helped|offers?|offered|manages?|managed|delivers?|delivered|lives?|lived)\b/i;
+const MICRO_NODE_PREDICATE = /\s+(?:(?:who|that|which)\s+)?(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would|provides?|provided|facilitat(?:e|es|ed)|funds?|funded|regulates?|regulated|administers?|administered|requests?|requested|refers?|referred|serves?|served|sets?|supports|supported|partners|partnered|shares|shared|employs|employed|supervises|supervised|qualifies?|qualified|excludes?|excluded|delays?|delayed|enables?|enabled|depends?|depended|coordinates?|coordinated|reports?|reported|measures?|measured|contests?|contested|litigates?|litigated|supersedes?|superseded|shapes?|shaped|mandates?|mandated|prohibits?|prohibited|prices?|priced|normalizes?|normalized|frames?|framed|constrains?|constrained|privileges?|privileged|defines?|defined|contradicts?|contradicted|corroborates?|corroborated|faces?|faced|experiences?|experienced|meets?|met|interacts?|interacted|connects?|connected|receives?|received|uses?|used|attends?|attended|visits?|visited|works?|worked|helps?|helped|offers?|offered|manages?|managed|delivers?|delivered|lives?|lived)\b/i;
 const MICRO_NODE_LEADING_CLAUSE = /^(?:when|where|because|while|although|if|unless|once|after|before)\s+/i;
 const MICRO_NODE_ADDITIONAL_ENTITY = /\b(?:adults?|famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|residents?|children|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|neighbou?rhoods?|programs?|organizations?|agenc(?:y|ies)|offices?|departments?|committees?|services?|supports?|resources?|funding|transportation|access)\b/i;
 const MICRO_NODE_NAMED_ENTITY = /(?:^|\s)(?:the\s+)?(?:[A-Z][A-Za-z0-9'’.-]*)(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9'’.-]*)+/;
 const MICRO_NODE_COORDINATED_ENTITY_NOUNS = /\b(?:famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|workplaces?|rooms?|labs?|libraries|groups?|programs?|organizations?|agenc(?:y|ies)|offices?|services?|tablets?|wheelchairs?|schedules?)\b\s+(?:and|&)\s+(?:(?:a|an|the)\s+)?(?:\b(?:famil(?:y|ies)|people|persons?|participants?|students?|parents?|caregivers?|teachers?|workers?|navigators?|classrooms?|schools?|centers?|clinics?|homes?|workplaces?|rooms?|labs?|libraries|groups?|programs?|organizations?|agenc(?:y|ies)|offices?|services?|tablets?|wheelchairs?|schedules?)\b|[A-Z][A-Za-z0-9'’.-]*(?:\s+[A-Z][A-Za-z0-9'’.-]*){0,3})/i;
-const MICRO_NODE_COORDINATED_PEOPLE = /\b[A-Z][a-z'’]+\s+[A-Z][a-z'’]+\s+(?:and|&)\s+[A-Z][a-z'’]+\s+[A-Z][a-z'’]+\b/;
+const MICRO_NODE_COORDINATED_PEOPLE = /^(?:[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){0,2})\s+(?:and|&)\s+(?:[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){0,2})$/u;
 const MICRO_NODE_ABSTRACT_LABEL = /^(?:access|data|evidence|eligibility|funding|guidance|resources?|services?|support|uncertainty)$/i;
 
 function cleanMicroNodeLabel(value) {
-  if (typeof value !== 'string') return null;
-  const label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
-  if (!label || label.length < 2 || label.length > 200 || !/[a-z]/i.test(label)) return null;
-  if (containsRetiredSystemsLanguage(label)) return null;
-  if (/^(?:it|they|them|this|that|these|those|something|anything)$/i.test(label)) return null;
+  const label = normalizeMapElementLabel(value, { micro: true });
+  if (!label) return null;
+  if (/^(?:something|anything)$/i.test(label)) return null;
   if (/\b(?:who|that|which)$/i.test(label)) return null;
   return label;
 }
 
 const MICRO_NODE_AUXILIARY = /^(?:am|is|are|was|were|be|been|has|have|had|do|does|did|can|could|may|might|must|shall|should|will|would)$/i;
+const MICRO_NODE_FINAL_CONTENT_NAME = /^(?:(?:(?:annual|case|daily|financial|monthly|progress|published|quarterly|research|status|weekly)\s+){1,3}reports?|(?:[A-Z][\p{L}0-9&.'’-]*\s+){0,8}(?:community|education|literacy|public|relief|scholarship|student)\s+fund|(?:[A-Z][\p{L}0-9&.'’-]*\s+){0,8}(?:department|bureau|office|ministry)\s+(?:of\s+)?(?:[A-Z][\p{L}0-9&.'’-]*\s+){0,6}works)$/iu;
 
 export function normalizeMicroNodeLabel(value) {
   const label = cleanMicroNodeLabel(value);
   if (!label) return null;
   const predicate = MICRO_NODE_PREDICATE.exec(label);
   if (!predicate) return label;
-  // A verb-shaped FINAL word is part of the name, not a clause: institutional
-  // names like "City Adult Literacy Fund", "Department of Public Works", or
-  // "Annual Reports" end in content nouns the verb list would otherwise eat.
-  // Auxiliaries ("The Center is") and relative clauses ("Navigator who works")
-  // still read as fragments and keep the clause treatment.
+  // A small closed set of explicit content-name forms may end in a word that
+  // is also a verb ("Department of Public Works", "Annual Reports"). Do not
+  // generalize that exception to actor-plus-predicate fragments such as
+  // "Rosa Works", "Group Meets", or "Center Supports".
   const matchedWord = predicate[0].trim();
   if (
     predicate.index + predicate[0].length >= label.length
     && !/^(?:who|that|which)\b/i.test(matchedWord)
     && !MICRO_NODE_AUXILIARY.test(matchedWord)
+    && MICRO_NODE_FINAL_CONTENT_NAME.test(label)
   ) return label;
   const remainder = label.slice(predicate.index + predicate[0].length).trim();
   if (MICRO_NODE_ADDITIONAL_ENTITY.test(remainder) || MICRO_NODE_NAMED_ENTITY.test(remainder)) return null;
@@ -346,7 +414,8 @@ export function normalizeMicroNodeLabel(value) {
 
 export function isDiscreteMicroNodeLabel(value) {
   const label = cleanMicroNodeLabel(value);
-  return Boolean(label && normalizeMicroNodeLabel(label) === label
+  return Boolean(label && label === normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '')
+    && normalizeMicroNodeLabel(label) === label
     && !MICRO_NODE_ABSTRACT_LABEL.test(label)
     && !MICRO_NODE_COORDINATED_ENTITY_NOUNS.test(label)
     && !MICRO_NODE_COORDINATED_PEOPLE.test(label));
@@ -520,7 +589,7 @@ function displayLabel(value) {
   let label = normalizeWhitespace(value)
     .replace(/^(?:how|why|what|when|where)\s+(?:do|does|did|can|could|should|would|will|may|might|are|is|were|was)\s+/i, '')
     .replace(/^(?:and|or|but|while|whereas|although|because|that|which|who)\s+/i, '')
-    .replace(/^(?:a|an|the|its|their|his|her|our|this|these|those)\s+/i, '')
+    .replace(/^(?:a|an|the|its|their|his|her|my|our|your|this|these|those)\s+/i, '')
     .replace(/\s+(?:and|or|but|which|that|who|is|are|was|were|may|might|can|could|should|would)$/i, '')
     .replace(/^[.!?,;:\-\s]+|[.!?,;:\-\s]+$/g, '');
   if (/^families$/i.test(label)) label = 'Family';
@@ -534,7 +603,19 @@ function displayLabel(value) {
 function plausibleLabel(label) {
   if (!label || label.length < 2 || label.length > 200 || label.split(/\s+/).length > 24 || !/[a-z]/i.test(label)) return false;
   if (/\b(?:word|term|verb|phrase|token|list|relational claim)\b/i.test(label)) return false;
-  return !/^(?:it|they|them|this|that|these|those|something|anything)$/i.test(label);
+  return Boolean(normalizeMapElementLabel(label)) && !/^(?:something|anything)$/i.test(label);
+}
+
+function subjectsFromPrefix(prefix, fallback) {
+  const clauses = prefix.split(/[,;:]\s*|\b(?:but|while|whereas|although|however)\b/i);
+  const candidate = (clauses.at(-1) || '').trim();
+  const distributed = candidate.match(/^(.+?)\s+(?:and|&)\s+(.+?)\s+both$/i);
+  if (distributed) {
+    const labels = distributed.slice(1).map((part) => normalizeMicroNodeLabel(displayLabel(part))).filter(Boolean);
+    if (labels.length === 2 && labels[0].toLocaleLowerCase() !== labels[1].toLocaleLowerCase()) return labels;
+  }
+  const subject = subjectFromPrefix(prefix, fallback);
+  return subject ? [subject] : [];
 }
 
 function subjectFromPrefix(prefix, fallback) {
@@ -584,6 +665,7 @@ function inferNodeType(label) {
   if (/\bfamil(?:y|ies)\b/i.test(label)) return 'family';
   if (/\b(?:students?|caregivers?|parents?|teachers?|workers?|instructors?|registrars?|advisers?|advisors?)\b/i.test(label)) return 'role';
   if (/\b(?:adults?|persons?|people|participants?|residents?|children|child)\b/i.test(label)) return 'person';
+  if (/^(?![A-Z]{2,}$)[A-Z][\p{L}'’-]{2,}$/u.test(label)) return 'person';
   if (/^[A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){1,3}$/u.test(label)) return 'person';
   return 'event';
 }
@@ -631,18 +713,22 @@ export function extractRelationships(submission) {
     let currentSubject = null;
     matches.forEach((match, index) => {
       const prefix = sentence.excerpt.slice(previousMatch?.end || 0, match.index);
-      const subject = subjectFromPrefix(prefix, currentSubject);
+      const subjects = subjectsFromPrefix(prefix, currentSubject);
       const nextMatch = matches[index + 1];
       const rawObject = sentence.excerpt.slice(match.end, nextMatch?.index ?? sentence.excerpt.length);
       const object = objectFromSegment(rawObject, match.verb);
       const evidence = evidenceForSentence(submission, sentence);
-      let sourceLabel = subject;
-      let targetLabel = object;
-      if (match.passive && subject && object) {
-        sourceLabel = object;
-        targetLabel = subject;
-      }
-      if (plausibleLabel(sourceLabel) && plausibleLabel(targetLabel) && sourceLabel.toLowerCase() !== targetLabel.toLowerCase()) {
+      const normalizedObject = normalizeMicroNodeLabel(object);
+      let acceptedSubject = null;
+      subjects.forEach((subject) => {
+        const normalizedSubject = normalizeMicroNodeLabel(subject);
+        let sourceLabel = normalizedSubject;
+        let targetLabel = normalizedObject;
+        if (match.passive && normalizedSubject && normalizedObject) {
+          sourceLabel = normalizedObject;
+          targetLabel = normalizedSubject;
+        }
+        if (!sourceLabel || !targetLabel || sourceLabel.toLocaleLowerCase() === targetLabel.toLocaleLowerCase()) return;
         if (relationships.length >= PROJECT_LIMITS.edges) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.edges} relationship records`);
         const sourceScale = inferScale(sourceLabel, 'micro');
         const targetScale = inferScale(targetLabel, sourceScale);
@@ -652,10 +738,9 @@ export function extractRelationships(submission) {
         // structural relationships retain their own levels.
         const inferredScale = targetScale === 'exosphere' || targetScale === 'macrosphere' ? targetScale : sourceScale;
         relationships.push({ sourceLabel, targetLabel, verb: match.verb, scale: inferredScale, ...evidence });
-        currentSubject = match.passive ? targetLabel : sourceLabel;
-      } else if (subject) {
-        currentSubject = subject;
-      }
+        acceptedSubject = normalizedSubject;
+      });
+      if (acceptedSubject) currentSubject = acceptedSubject;
       previousMatch = match;
     });
   });
@@ -898,9 +983,12 @@ export function extractCandidates(submission) {
     const token = candidate.label.trim().toLocaleLowerCase();
     return !candidateNodes.some((other) => other !== candidate && other.label.toLocaleLowerCase().split(/[^a-z0-9]+/).includes(token));
   }));
+  const finalNodeIds = new Set(nodes.map((node) => node.id));
   const edgeMap = new Map();
   relationships.forEach((relationship) => {
-    if (!nodeMap.has(relationship.sourceLabel.toLocaleLowerCase()) || !nodeMap.has(relationship.targetLabel.toLocaleLowerCase())) return;
+    const sourceId = stableId('node', relationship.sourceLabel);
+    const targetId = stableId('node', relationship.targetLabel);
+    if (!finalNodeIds.has(sourceId) || !finalNodeIds.has(targetId)) return;
     const semanticKey = `${relationship.sourceLabel.toLowerCase()}:${relationship.verb}:${relationship.targetLabel.toLowerCase()}`;
     const evidenceRef = {
       evidenceId: relationship.evidenceId,
@@ -912,8 +1000,8 @@ export function extractCandidates(submission) {
     if (!edgeMap.has(semanticKey)) {
       edgeMap.set(semanticKey, {
         id: stableId('edge', `${relationship.sourceLabel}:${relationship.verb}:${relationship.targetLabel}`),
-        source: stableId('node', relationship.sourceLabel),
-        target: stableId('node', relationship.targetLabel),
+        source: sourceId,
+        target: targetId,
         sourceLabel: relationship.sourceLabel,
         targetLabel: relationship.targetLabel,
         verb: relationship.verb,
@@ -1449,7 +1537,10 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     }
     const nodeIsLive = (node.status === 'confirmed' || node.status === 'research lead') && node.claimState !== 'retired';
     if (nodeIsLive && containsRetiredSystemsLanguage(node.label)) invalidProject(`${itemPath}.label`, 'must use a literal, conventional name for the map element');
+    const canonicalLabel = normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' });
+    if (nodeIsLive && canonicalLabel !== node.label) invalidProject(`${itemPath}.label`, 'must name a complete, concrete map element rather than a reference, modifier, action fragment, or time expression');
     if (nodeIsLive && node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name one discrete Micro element');
+    if (nodeIsLive && node.scale === 'micro' && isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an institution and belongs at Exosphere');
     if (nodeIsLive && node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name an institution, agency, office, or service system');
     if (nodeIsLive && node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an institution and belongs at Exosphere');
     if (nodeIsLive && node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an immediate person, role, activity, or schedule and belongs at Micro');
@@ -1654,6 +1745,7 @@ function validateMemoReview(review, path) {
     assertObject(node, nodePath);
     assertKnownKeys(node, ['label', 'type', 'scale', 'evidence', 'basis', 'deontic', 'scope'], nodePath);
     assertString(node.label, `${nodePath}.label`, false, 200);
+    if (normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label) invalidProject(`${nodePath}.label`, 'must name a complete, concrete map element rather than a reference, modifier, action fragment, or time expression');
     if (containsRetiredSystemsLanguage(node.label)) invalidProject(`${nodePath}.label`, 'must use a literal, conventional name for the map element');
     assertEnum(node.type, NODE_TYPES, `${nodePath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${nodePath}.scale`);
@@ -1661,6 +1753,7 @@ function validateMemoReview(review, path) {
     if (node.type === MESOSYSTEM_NODE_TYPE && node.scale !== 'meso') invalidProject(`${nodePath}.scale`, 'must be Meso for a mesosystem suggestion');
     if (!isNodeTypeAllowedAtScale(node.type, node.scale)) invalidProject(`${nodePath}.type`, `is not allowed at ${SCALES[node.scale]?.label || node.scale}`);
     if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name one discrete Micro element');
+    if (node.scale === 'micro' && isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'names an institution and belongs at Exosphere');
     if (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name an institution, agency, office, or service system');
     if (node.type === MESOSYSTEM_NODE_TYPE && !isMesosystemLabel(node.label)) invalidProject(`${nodePath}.label`, 'must be a noun label without a relationship verb');
     if (node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'names an institution and belongs at Exosphere');
@@ -1699,6 +1792,10 @@ function validateMemoReview(review, path) {
     assertString(connection.target, `${connectionPath}.target`, false, 200);
     if (connection.sourceLabel !== undefined) assertString(connection.sourceLabel, `${connectionPath}.sourceLabel`, false, 200);
     if (connection.targetLabel !== undefined) assertString(connection.targetLabel, `${connectionPath}.targetLabel`, false, 200);
+    const sourceEndpointLabel = connection.sourceLabel || connection.source;
+    const targetEndpointLabel = connection.targetLabel || connection.target;
+    if (normalizeMapElementLabel(sourceEndpointLabel, { micro: true }) !== sourceEndpointLabel) invalidProject(`${connectionPath}.sourceLabel`, 'must resolve to a complete, concrete map element');
+    if (normalizeMapElementLabel(targetEndpointLabel, { micro: true }) !== targetEndpointLabel) invalidProject(`${connectionPath}.targetLabel`, 'must resolve to a complete, concrete map element');
     if (containsRetiredSystemsLanguage(connection.sourceLabel)) invalidProject(`${connectionPath}.sourceLabel`, 'must use a literal, conventional name for the map element');
     if (containsRetiredSystemsLanguage(connection.targetLabel)) invalidProject(`${connectionPath}.targetLabel`, 'must use a literal, conventional name for the map element');
     if (connection.source === connection.target) invalidProject(`${connectionPath}.target`, 'must differ from source');
@@ -2075,11 +2172,19 @@ function migrateScaleTypeSemantics(project) {
   const retiredLowerLevelClauseNote = 'Retired during migration because this Macrosphere label is a clause about an immediate actor rather than the name of a broader condition. Rename and review it before restoring it.';
   const retiredExosphereNote = 'Retired during migration because an Exosphere item must name an institution, agency, office, or service system. Rename and review it before restoring it.';
   const retiredMicroNote = 'Retired during migration because a Micro item must name one discrete person, role, group, activity, object, or immediate setting. Rename and review it before restoring it.';
+  const retiredReferenceOrTimeNote = 'Retired during migration because the label is a reference, modifier, action fragment, or time expression rather than a complete map element.';
   const retiredScopeNote = 'Retired during migration because this item needs at least two valid mapped scope members before it can return to the map.';
   const retiredInterfaceLanguageNote = 'Retired during migration because the label uses an earlier interface category instead of naming a map element directly.';
 
   allNodes.forEach((node) => {
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    const canonicalLabel = normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' });
+    const hasKnownMacroLevelMismatch = node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label);
+    if (canonicalLabel !== node.label && !hasKnownMacroLevelMismatch && node.status !== 'rejected' && node.claimState !== 'retired') {
+      node.status = 'rejected';
+      node.claimState = 'retired';
+      appendSemanticMigrationNote(node, retiredReferenceOrTimeNote);
+    }
     if (containsRetiredSystemsLanguage(node.label) && node.status !== 'rejected' && node.claimState !== 'retired') {
       node.status = 'rejected';
       node.claimState = 'retired';
@@ -2205,8 +2310,22 @@ function migrateScaleTypeSemantics(project) {
     ].map((node) => [node.id, node]));
     edges.forEach((edge) => {
       if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
-      const sourceScale = containerNodes.get(edge.source)?.scale;
-      const targetScale = containerNodes.get(edge.target)?.scale;
+      const sourceNode = containerNodes.get(edge.source);
+      const targetNode = containerNodes.get(edge.target);
+      const sourceScale = sourceNode?.scale;
+      const targetScale = targetNode?.scale;
+      const edgeIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
+      const unavailableEndpoint = [sourceNode, targetNode].some((node) => !node || node.status === 'rejected' || node.claimState === 'retired');
+      if (edgeIsLive && unavailableEndpoint) {
+        edge.status = 'rejected';
+        edge.claimState = 'retired';
+        appendSemanticMigrationNote(edge, 'Retired during migration because a relationship endpoint is not a live, concrete map element.');
+      }
+      if (edgeIsLive && edge.scale === 'micro' && isMicroSettingNode(sourceNode) && isMicroSettingNode(targetNode)) {
+        edge.status = 'rejected';
+        edge.claimState = 'retired';
+        appendSemanticMigrationNote(edge, 'Retired during migration because an interrelation between two Micro settings belongs in a scoped Meso item, not a direct Micro relationship.');
+      }
       if (edge.scale === 'macrosphere') {
         edge.scale = 'exosphere';
         edge.status = 'rejected';
@@ -2233,8 +2352,6 @@ function migrateScaleTypeSemantics(project) {
         }
       }
       if (edge.scale === 'exosphere') {
-        const sourceNode = containerNodes.get(edge.source);
-        const targetNode = containerNodes.get(edge.target);
         const canonicalVerb = scaleLexiconVerb('exosphere', edge.verb);
         const hasInstitutionEndpoint = sourceNode?.scale === 'exosphere' || targetNode?.scale === 'exosphere';
         const hasMacroEndpoint = sourceNode?.scale === 'macrosphere' || targetNode?.scale === 'macrosphere';
@@ -2263,14 +2380,23 @@ function migrateScaleTypeSemantics(project) {
     const incompatibleNode = reviewNodes.some((node) => (
       !node || typeof node !== 'object' || Array.isArray(node)
       || containsRetiredSystemsLanguage(node.label)
+      || normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label
       || !isNodeTypeAllowedAtScale(node.type, node.scale)
       || (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
       || (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label))
       || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || isObviousLowerLevelMacroLabel(node.label) || !Array.isArray(node.scope) || node.scope.length < 2))
       || (node.scale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || !Array.isArray(node.scope) || node.scope.length < 2))
     ));
-    const reviewScale = reviewNodes[0]?.scale || project.activeScale;
-    const incompatibleConnections = ['meso', 'macrosphere'].includes(reviewScale) && reviewConnections.length > 0;
+    const reviewScale = project?.preflight?.configurationSnapshot?.activeScale
+      || reviewNodes[0]?.scale
+      || project.activeScale;
+    const incompatibleConnections = (['meso', 'macrosphere'].includes(reviewScale) && reviewConnections.length > 0)
+      || reviewConnections.some((connection) => {
+        const sourceLabel = connection?.sourceLabel || connection?.source;
+        const targetLabel = connection?.targetLabel || connection?.target;
+        return normalizeMapElementLabel(sourceLabel, { micro: reviewScale === 'micro' }) !== sourceLabel
+          || normalizeMapElementLabel(targetLabel, { micro: reviewScale === 'micro' }) !== targetLabel;
+      });
     const incompatibleProse = (Array.isArray(storedReview.guidance) ? storedReview.guidance : [])
       .some((item) => containsRetiredSystemsLanguage(item?.point))
       || containsRetiredSystemsLanguage(storedReview.example)

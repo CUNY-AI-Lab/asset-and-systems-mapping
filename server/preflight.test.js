@@ -46,29 +46,31 @@ function memoReviewFixture() {
   return {
     guidance: [
       {
-        point: `  The memo   already grounds the referral. ${'x'.repeat(1100)}  `,
-        evidenceExcerpt: `  Memo   sentence one. ${'y'.repeat(4100)}  `,
+        point: 'The memo already grounds the referral.',
+        evidenceExcerpt: 'A school refers a family to an agency.',
       },
       { point: 'Ask one question about a specific passage in the memo.' },
     ],
     nodes: [
-      { label: '  School  ', type: 'organization', scale: 'meso', evidence: 'A school refers a family to an agency.' },
+      { label: 'School', type: 'setting', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
-      { label: 'family', type: 'family', scale: 'micro', evidence: 'duplicate label must be dropped' },
-      { label: 'Agency', type: 'not-a-type', scale: 'not-a-scale', evidence: '' },
     ],
     connections: [
-      { source: 'School', target: 'Family', verb: '  refers  ', rationale: 'The memo names the referral directly.' },
-      { source: 'School', target: 'School', verb: 'loops', rationale: 'self loops must be dropped' },
-      { source: 'School', target: 'Unknown Node', verb: 'points', rationale: 'unknown endpoints must be dropped' },
+      { source: 'School', target: 'Family', verb: 'refers', rationale: 'The memo names the referral directly.' },
     ],
-    example: 'One evident connection: School refers Family, because the memo names the referral directly.',
-    readiness: { ready: true, note: '  The memo   already supports mapping. Continue to choose nodes.  ' },
+    example: null,
+    readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes.' },
   };
 }
 
 function sparseMemoReviewFixture() {
-  return { guidance: [], nodes: [], connections: [], example: null, readiness: { ready: false, note: '' } };
+  return {
+    guidance: [],
+    nodes: [],
+    connections: [],
+    example: null,
+    readiness: { ready: false, note: 'No grounded suggestions are available yet.' },
+  };
 }
 
 function submissionBody(overrides = {}) {
@@ -304,6 +306,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(JSON.stringify(evaluation)).not.toMatch(/"(?:hard|scored|status|score|outcome)"/);
     expect(JSON.stringify(evaluation.review)).not.toMatch(/\b[HC][1-8]\b/);
     const expected = { ...expectedReview };
+    expected.generationContract = 'atomic-v1';
     expected.evaluatedAt = evaluation.createdAt;
     expected.configurationSnapshot = evaluation.configSnapshot;
     expect(evaluation.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
@@ -421,15 +424,18 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('MEMO REVIEW JSON CONTRACT');
     expect(firstInput.systemPrompt).toContain('exactly these keys: guidance, nodes, connections, example, readiness');
     expect(firstInput.systemPrompt).toContain('Do not score, grade, or rate the memo');
-    expect(firstInput.systemPrompt).toContain('Except at Meso, each node label MUST name exactly one actor, role, group, activity, object, immediate setting, institution, policy, law, condition, or structure');
+    expect(firstInput.systemPrompt).toContain('shortest complete memo-supported referring expression');
+    expect(firstInput.systemPrompt).toContain('Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo');
+    expect(firstInput.systemPrompt).toContain('Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments');
     expect(firstInput.systemPrompt).toContain('BE SELECTIVE');
     expect(firstInput.systemPrompt).toContain('no more than 10 nodes and 8 direct relationships at Micro');
-    expect(firstInput.systemPrompt).toContain('as a clear noun phrase');
-    expect(firstInput.systemPrompt).toContain('A node label must never be a sentence, clause, relationship proposition');
+    expect(firstInput.systemPrompt).toContain('A named activity must still be a complete noun phrase');
+    expect(firstInput.systemPrompt).toContain('A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting');
+    expect(firstInput.systemPrompt).toContain('only setting-to-setting interrelations are excluded from Micro and belong at Meso');
     expect(firstInput.systemPrompt).toContain('Use literal, conventional instructional language throughout');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
     expect(firstInput.systemPrompt).toContain('At Meso and Macrosphere, connections MUST be empty');
-    expect(firstInput.systemPrompt).toContain('LEVEL TESTS');
+    expect(firstInput.systemPrompt).toContain('SCALE BOUNDARIES');
     expect(firstInput.systemPrompt).toContain('Meso identifies only an interrelation among two or more of those Micro settings');
     expect(firstInput.systemPrompt).toContain('Meso is not another place to add actors, organizations, institutions, or services');
     expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node.');
@@ -455,7 +461,7 @@ describe('persistent preflight suggestion review queue', () => {
       point: 'Ask one question about a specific passage in the memo.',
     });
     expect(first.review.nodes).toEqual([
-      { label: 'School', type: 'organization', scale: 'micro', evidence: 'A school refers a family to an agency.' },
+      { label: 'School', type: 'setting', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
     ]);
     expect(first.review.connections).toEqual([{
@@ -493,10 +499,13 @@ describe('persistent preflight suggestion review queue', () => {
     expect(sparse.review).toEqual(sparseMemoReviewFixture());
     expect(sparse).not.toHaveProperty('suggestion');
 
-    ollamaRequest.mockResolvedValueOnce({
+    const invalidProviderReview = {
       suggestion: { hard: [], scored: [], fabricatedProviderField: 'must fail closed' },
       metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    });
+    };
+    ollamaRequest
+      .mockResolvedValueOnce(invalidProviderReview)
+      .mockResolvedValueOnce(invalidProviderReview);
     const { studentAnnotation: _annotation, ...thirdBody } = submissionBody({
       projectMetadata: { projectId: 'malformed_provider_result', title: 'Must not persist' },
     });
@@ -516,7 +525,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(await oversized.json()).toEqual({
       error: 'The memo must contain no more than 131072 UTF-8 bytes for this suggestion runtime.',
     });
-    expect(ollamaRequest).toHaveBeenCalledTimes(4);
+    expect(ollamaRequest).toHaveBeenCalledTimes(5);
 
     const serializedDatabase = JSON.stringify([
       ...system.db.prepare('SELECT * FROM preflight_evaluations').all(),
@@ -527,17 +536,138 @@ describe('persistent preflight suggestion review queue', () => {
     expect(serializedDatabase).not.toContain('fresh-test-only-server-key');
   });
 
-  it('drops provider clause labels at every level without guessing, while preserving discrete labels and official names', async () => {
+  it('atomically retries the Rosa memo regression and stores only the fully valid replacement review', async () => {
+    await system.close();
+    const invalidReview = {
+      guidance: [{ point: 'The memo names attendance at a college.' }],
+      nodes: [
+        { label: 'He', type: 'person', scale: 'micro', evidence: 'He attends BMCC.' },
+        { label: 'Marisol Both', type: 'person', scale: 'micro', evidence: 'Danny and Marisol both attend BMCC.' },
+        { label: 'Tuesdays', type: 'activity', scale: 'micro', evidence: 'They attend on Tuesdays.' },
+        { label: 'BMCC', type: 'setting', scale: 'micro', evidence: 'Danny and Marisol both attend BMCC.' },
+        { label: 'Student Lounge', type: 'setting', scale: 'micro', evidence: 'The student lounge is on campus.' },
+      ],
+      connections: [
+        { source: 'He', target: 'BMCC', verb: 'attends', rationale: 'The pronoun is unresolved.' },
+        { source: 'She', target: 'BMCC', verb: 'attends', rationale: 'The endpoint was not proposed.' },
+        { source: 'BMCC', target: 'Student Lounge', verb: 'contains', rationale: 'Two settings belong at Meso.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'The response needs a complete semantic repair.' },
+    };
+    const validReview = {
+      guidance: [{ point: 'The memo directly names two people; the named college belongs in the institutional level.' }],
+      nodes: [
+        { label: 'Danny', type: 'person', scale: 'micro', evidence: 'Danny and Marisol both attend BMCC.' },
+        { label: 'Marisol', type: 'person', scale: 'micro', evidence: 'Danny and Marisol both attend BMCC.' },
+      ],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports two concrete Micro people.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({
+        suggestion: invalidReview,
+        metadata: { provider: 'ollama-cloud', model: 'server-model', evalCount: 1 },
+      })
+      .mockResolvedValueOnce({
+        suggestion: validReview,
+        metadata: { provider: 'ollama-cloud', model: 'server-model', evalCount: 2 },
+      });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'atomic-rosa-regression.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const evaluation = await evaluate(studentCookie, submissionBody({
+      sourceMaterial: 'Danny and Marisol both attend BMCC.',
+      projectMetadata: { projectId: 'rosa_micro_regression', title: 'Rosa memo review' },
+    }));
+
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    const firstPrompt = ollamaRequest.mock.calls[0][0].systemPrompt;
+    const correctivePrompt = ollamaRequest.mock.calls[1][0].systemPrompt;
+    expect(firstPrompt).toContain('shortest complete memo-supported referring expression');
+    expect(firstPrompt).toContain('Resolve every pronoun or coreference');
+    expect(firstPrompt).toContain('dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments');
+    expect(firstPrompt).toContain('A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting');
+    expect(firstPrompt).toContain('only setting-to-setting interrelations are excluded from Micro and belong at Meso');
+    expect(firstPrompt).toContain('short plain active verb phrase for a concrete action or exchange');
+    expect(firstPrompt).toContain('vague collaboration, or generic planning');
+    expect(firstPrompt).not.toMatch(/\b(?:Rosa|Danny|Marisol|BMCC|Tuesdays)\b/);
+    expect(correctivePrompt).toContain('CORRECTIVE RETRY');
+    expect(correctivePrompt).toContain('Return a complete replacement JSON object');
+    expect(correctivePrompt).toContain('Resolve pronouns and coreference to a named or role-resolved element');
+    expect(correctivePrompt).toContain('dates, times, frequencies, schedules, modifiers, quantifiers, action fragments');
+    expect(correctivePrompt).not.toMatch(/\b(?:Rosa|Danny|Marisol|BMCC|Tuesdays)\b/);
+    expect(evaluation.review.nodes).toEqual(validReview.nodes);
+    expect(evaluation.review.connections).toEqual([]);
+    expect(evaluation.runtime.evalCount).toBe(2);
+    const storedRows = system.db.prepare('SELECT suggestion_json AS suggestion FROM preflight_evaluations').all();
+    expect(storedRows).toHaveLength(1);
+    expect(JSON.parse(storedRows[0].suggestion)).toMatchObject(evaluation.review);
+    expect(storedRows[0].suggestion).not.toMatch(/\b(?:He|Marisol Both|Tuesdays|Student Lounge|She)\b/);
+  });
+
+  it('returns a generic 502 and persists nothing when the corrective provider retry is still invalid', async () => {
+    await system.close();
+    const invalidReview = {
+      guidance: [],
+      nodes: [{ label: 'Tuesdays', type: 'activity', scale: 'micro', evidence: 'The memo names a Tuesday schedule.' }],
+      connections: [],
+      example: null,
+      readiness: { ready: false, note: 'The response contains only a schedule detail.' },
+    };
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: invalidReview,
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'atomic-invalid-retry.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
+      sourceMaterial: 'The meeting happens on Tuesdays.',
+      projectMetadata: { projectId: 'invalid_retry', title: 'Invalid retry' },
+    });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('rejects an invalid deterministic review without persisting an empty replacement', async () => {
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
+      sourceMaterial: 'Danny and Marisol both attend BMCC on Tuesdays.',
+      projectMetadata: { projectId: 'invalid_deterministic', title: 'Invalid deterministic review' },
+    });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('rejects a provider response atomically when any proposed node is a clause or wrong-level entity', async () => {
     await system.close();
     const fullClause = 'Adult Participants face delays when the Accessible Van Program is unavailable.';
-    const shortClause = 'Adult Participants face delays';
     const officialName = 'New York State Office for People with Developmental Disabilities and Community-Based Access Coordination';
     const ollamaRequest = vi.fn(async () => ({
       suggestion: {
         guidance: [],
         nodes: [
           { label: fullClause, type: 'event', scale: 'micro', evidence: fullClause },
-          { label: shortClause, type: 'event', scale: 'micro', evidence: fullClause },
           { label: 'Adult Participants', type: 'person', scale: 'micro', evidence: fullClause },
           { label: 'Accessible Van Program', type: 'service', scale: 'micro', evidence: fullClause },
           { label: officialName, type: 'agency', scale: 'micro', evidence: 'The office coordinates access.' },
@@ -556,50 +686,42 @@ describe('persistent preflight suggestion review queue', () => {
       ollamaRequest,
     });
     const studentCookie = await grantStudent();
-    const micro = await evaluate(studentCookie, submissionBody({ sourceMaterial: fullClause }));
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({ sourceMaterial: fullClause });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
 
-    expect(micro.review.nodes.map(({ label }) => label)).toEqual([
-      'Adult Participants',
-      'Accessible Van Program',
-      officialName,
-    ]);
-    expect(micro.review.nodes[0].evidence).toBe(fullClause);
-    expect(micro.review.nodes.map(({ label }) => label)).not.toEqual(expect.arrayContaining([fullClause, shortClause]));
-    expect(micro.review.readiness.ready).toBe(true);
-    const storedMicro = JSON.parse(system.db.prepare(`
-      SELECT suggestion_json AS suggestion FROM preflight_evaluations WHERE id = ?
-    `).get(micro.id).suggestion);
-    expect(storedMicro.nodes).toEqual(micro.review.nodes);
-
-    const exosphere = await evaluate(studentCookie, submissionBody({
-      activeScale: 'exosphere',
-      projectMetadata: { projectId: 'outer_label_contract', title: 'Outer level remains unchanged' },
-      sourceMaterial: fullClause,
-    }));
-    // The discrete-label rule now holds at every level: clauses are dropped
-    // at Exosphere too, while complete official names always survive.
-    expect(exosphere.review.nodes.map(({ label }) => label)).toEqual([
-      'Accessible Van Program',
-      officialName,
-    ]);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
   it('gives Meso review scoped mesosystems and rejects unknown setting IDs', async () => {
     await system.close();
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [{ point: 'Review node_school and node_family as one mesosystem.' }],
-        nodes: [
-          { label: 'Family–school coordination', type: 'mesosystem', scale: 'meso', evidence: 'The memo places both settings in the person’s immediate experience.', scope: ['node_school', 'node_family'] },
-          { label: 'Unknown setting mesosystem', type: 'mesosystem', scale: 'meso', evidence: 'Unsupported.', scope: ['node_school', 'node_unknown'] },
-        ],
-        connections: [{ source: 'node_school', target: 'node_family', verb: 'refers', rationale: 'Meso must discard this edge.' }],
-        example: 'The node_school and node_family settings form one mesosystem.',
-        readiness: { ready: true, note: 'The node_school and node_family mesosystem is supported.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      guidance: [{ point: 'Review node_school and node_family as one mesosystem.' }],
+      nodes: [
+        { label: 'Family–school coordination', type: 'mesosystem', scale: 'meso', evidence: 'The memo places both settings in the person’s immediate experience.', scope: ['node_school', 'node_family'] },
+        { label: 'Unknown setting mesosystem', type: 'mesosystem', scale: 'meso', evidence: 'Unsupported.', scope: ['node_school', 'node_unknown'] },
+      ],
+      connections: [{ source: 'node_school', target: 'node_family', verb: 'refers', rationale: 'Meso must not return an edge.' }],
+      example: 'The node_school and node_family settings form one mesosystem.',
+      readiness: { ready: true, note: 'The node_school and node_family mesosystem is supported.' },
+    };
+    const validSuggestion = {
+      guidance: [],
+      nodes: [{
+        label: 'Family–school coordination', type: 'mesosystem', scale: 'meso',
+        evidence: 'The memo places both settings in the person’s immediate experience.',
+        scope: ['node_school', 'node_family'],
+      }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The family and school settings form one supported mesosystem.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'meso-carried-nodes.sqlite'),
       now: () => currentTime,
@@ -611,8 +733,9 @@ describe('persistent preflight suggestion review queue', () => {
     const body = submissionBody({ activeScale: 'meso' });
     const evaluation = await evaluate(studentCookie, body);
 
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(body.carriedNodes);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('scope containing the exact IDs of 2 or more Micro settings already on the map');
     expect(evaluation.review.nodes).toEqual([{
       label: 'Family–school coordination', type: 'mesosystem', scale: 'meso',
@@ -621,9 +744,9 @@ describe('persistent preflight suggestion review queue', () => {
     }]);
     expect(evaluation.review.connections).toEqual([]);
     expect(evaluation.review.readiness.ready).toBe(true);
-    expect(evaluation.review.guidance[0].point).toBe('Review School and Family as one mesosystem.');
+    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
     expect(evaluation.review.example).toBeNull();
-    expect(evaluation.review.readiness.note).toBe('The review found 1 possible mesosystem among Micro settings already on the map.');
+    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
     expect(JSON.stringify({
       guidance: evaluation.review.guidance,
       example: evaluation.review.example,
@@ -636,47 +759,58 @@ describe('persistent preflight suggestion review queue', () => {
       carriedNodes: [{ ...body.carriedNodes[0], unexpected: true }],
     }, { cookie: studentCookie });
     expect(invalid.status).toBe(400);
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
 
     const inappropriate = await postJson(system.app, '/api/preflight/evaluations', {
       ...submissionBody(),
       carriedNodes: body.carriedNodes,
     }, { cookie: studentCookie });
     expect(inappropriate.status).toBe(400);
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
   });
 
   it('keeps institutions and institutional guidance out of Meso for the CUNY Reddit memo', async () => {
     await system.close();
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [
-          { point: 'Map the CUNY registrar and bursar at the Meso level.' },
-          { point: 'Treat the employer as a Meso-level institution.' },
-        ],
-        nodes: [
-          {
-            label: 'CUNY administrative systems', type: 'mesosystem', scale: 'meso',
-            evidence: 'The memo names graduation processing, billing, and registration.',
-            scope: ['node_reddit', 'node_workplace'],
-          },
-          {
-            label: 'Registrar and bursar coordination', type: 'mesosystem', scale: 'meso',
-            evidence: 'The memo names delayed diplomas and payment plans.',
-            scope: ['node_reddit', 'node_workplace'],
-          },
-          {
-            label: 'Work–online peer support coordination', type: 'mesosystem', scale: 'meso',
-            evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
-            scope: ['node_reddit', 'node_workplace'],
-          },
-        ],
-        connections: [{ source: 'node_reddit', target: 'node_workplace', verb: 'supports', rationale: 'Meso must discard this edge.' }],
-        example: 'The CUNY registrar, bursar, and employer are Meso institutions.',
-        readiness: { ready: true, note: 'Add the registrar, bursar, and employer at Meso.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      guidance: [
+        { point: 'Map the CUNY registrar and bursar at the Meso level.' },
+        { point: 'Treat the employer as a Meso-level institution.' },
+      ],
+      nodes: [
+        {
+          label: 'CUNY administrative systems', type: 'mesosystem', scale: 'meso',
+          evidence: 'The memo names graduation processing, billing, and registration.',
+          scope: ['node_reddit', 'node_workplace'],
+        },
+        {
+          label: 'Registrar and bursar coordination', type: 'mesosystem', scale: 'meso',
+          evidence: 'The memo names delayed diplomas and payment plans.',
+          scope: ['node_reddit', 'node_workplace'],
+        },
+        {
+          label: 'Work–online peer support coordination', type: 'mesosystem', scale: 'meso',
+          evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
+          scope: ['node_reddit', 'node_workplace'],
+        },
+      ],
+      connections: [{ source: 'node_reddit', target: 'node_workplace', verb: 'supports', rationale: 'Meso must not return an edge.' }],
+      example: 'The CUNY registrar, bursar, and employer are Meso institutions.',
+      readiness: { ready: true, note: 'Add the registrar, bursar, and employer at Meso.' },
+    };
+    const validSuggestion = {
+      guidance: [],
+      nodes: [{
+        label: 'Work–online peer support coordination', type: 'mesosystem', scale: 'meso',
+        evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
+        scope: ['node_reddit', 'node_workplace'],
+      }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The two immediate settings form one supported mesosystem.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'meso-cuny-reddit-boundary.sqlite'),
       now: () => currentTime,
@@ -700,6 +834,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     const evaluation = await evaluate(studentCookie, body);
 
     const systemPrompt = ollamaRequest.mock.calls[0][0].systemPrompt;
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(systemPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
     expect(systemPrompt).toContain('Named universities, employers, offices, agencies, and service systems belong in Exosphere, not Meso.');
     expect(evaluation.review.nodes).toEqual([{
@@ -713,12 +849,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       ],
     }]);
     expect(evaluation.review.connections).toEqual([]);
-    expect(evaluation.review.guidance).toEqual([{ point: 'Review r/CUNY and Workplace as one mesosystem.' }]);
+    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
     expect(evaluation.review.example).toBeNull();
-    expect(evaluation.review.readiness).toEqual({
-      ready: true,
-      note: 'The review found 1 possible mesosystem among Micro settings already on the map.',
-    });
+    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
     expect(JSON.stringify(evaluation.review)).not.toMatch(/Meso-level institution|add the registrar|CUNY administrative systems|Registrar and bursar coordination/);
   });
 
@@ -728,25 +861,38 @@ Overall, the posting history documents a working student repeatedly turning to R
       { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
       { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
     ];
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [{ point: 'The memo names an indirect funder.' }],
-        nodes: [
-          { label: 'School', type: 'organization', scale: 'exosphere', evidence: 'Already mapped; must not repeat.' },
-          { label: 'City Education Foundation', type: 'agency', scale: 'exosphere', evidence: 'The foundation pays for the program.' },
-          { label: 'CUNY', type: 'institution', scale: 'exosphere', evidence: 'CUNY sets institution-wide rules.' },
-        ],
-        connections: [
-          { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
-          { source: 'CUNY', target: 'Family', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting families.' },
-          { source: 'City Education Foundation', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are rejected.' },
-          { source: 'School', target: 'Family', verb: 'refers', rationale: 'Already mapped; must not repeat.' },
-        ],
-        example: 'City Education Foundation funds School.',
-        readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      guidance: [{ point: 'The memo names an indirect funder.' }],
+      nodes: [
+        { label: 'School', type: 'organization', scale: 'exosphere', evidence: 'Already mapped; must not repeat.' },
+        { label: 'City Education Foundation', type: 'agency', scale: 'exosphere', evidence: 'The foundation pays for the program.' },
+        { label: 'CUNY', type: 'institution', scale: 'exosphere', evidence: 'CUNY sets institution-wide rules.' },
+      ],
+      connections: [
+        { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
+        { source: 'CUNY', target: 'Family', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting families.' },
+        { source: 'City Education Foundation', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are invalid.' },
+        { source: 'School', target: 'Family', verb: 'refers', rationale: 'Already mapped; must not repeat.' },
+      ],
+      example: 'City Education Foundation funds School.',
+      readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
+    };
+    const validSuggestion = {
+      guidance: [{ point: 'The memo names an indirect funder and a university system.' }],
+      nodes: [
+        { label: 'City Education Foundation', type: 'agency', scale: 'exosphere', evidence: 'The foundation pays for the program.', basis: 'memo' },
+        { label: 'CUNY', type: 'institution', scale: 'exosphere', evidence: 'CUNY sets institution-wide rules.', basis: 'memo' },
+      ],
+      connections: [
+        { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
+        { source: 'CUNY', target: 'Family', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting families.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports two institutional relationships.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'exosphere-carried-nodes.sqlite'),
       now: () => currentTime,
@@ -759,9 +905,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     const body = submissionBody({ activeScale: 'exosphere', carriedNodes, carriedConnections });
     const evaluation = await evaluate(studentCookie, body);
 
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(carriedNodes);
     expect(ollamaRequest.mock.calls[0][0].carriedConnections).toEqual(carriedConnections);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(evaluation.review.nodes.map(({ label }) => label)).toEqual(['City Education Foundation', 'CUNY']);
     expect(evaluation.review.connections).toEqual([
       {
@@ -798,27 +945,37 @@ Overall, the posting history documents a working student repeatedly turning to R
       { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
       { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
     ];
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
-        nodes: [
-          { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
-          { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.' },
-        ],
-        connections: [
-          { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-          // An off-register verb has no place here, so the connection drops.
-          { source: 'Google Identity Service', target: 'Family', verb: 'synergizes', rationale: 'Register violation.' },
-          // Near-register verbs coerce to their canonical entry.
-          { source: 'Google Identity Service', target: 'School', verb: 'oversees', rationale: 'Alias resolves to regulates.' },
-          // A pathway between two floating new nodes never lands on the map.
-          { source: 'Google Identity Service', target: 'Printing Vendor Corporation', verb: 'funds', rationale: 'No carried anchor.' },
-        ],
-        example: null,
-        readiness: { ready: true, note: 'Pathways land on the map.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
+      nodes: [
+        { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
+        { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.' },
+      ],
+      connections: [
+        { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
+        { source: 'Google Identity Service', target: 'Family', verb: 'synergizes', rationale: 'Register violation.' },
+        { source: 'Google Identity Service', target: 'School', verb: 'oversees', rationale: 'An alias must not be coerced.' },
+        { source: 'Google Identity Service', target: 'Printing Vendor Corporation', verb: 'funds', rationale: 'No carried anchor.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'Pathways land on the map.' },
+    };
+    const validSuggestion = {
+      guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
+      nodes: [
+        { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
+        { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
+      ],
+      connections: [
+        { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
+        { source: 'Google Identity Service', target: 'School', verb: 'regulates', rationale: 'The institution regulates access to the portal.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'Both pathways use the exact institutional register.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'exosphere-register.sqlite'),
       now: () => currentTime,
@@ -828,13 +985,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
     const studentCookie = await grantStudent();
     const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'exosphere', carriedNodes }));
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(evaluation.review.nodes).toEqual([
       { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
       { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
     ]);
     expect(evaluation.review.connections).toEqual([
       { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-      { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'regulates', rationale: 'Alias resolves to regulates.' },
+      { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'regulates', rationale: 'The institution regulates access to the portal.' },
     ]);
   });
 
@@ -845,39 +1004,48 @@ Overall, the posting history documents a working student repeatedly turning to R
       { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
       { id: 'node_agency', label: 'Agency', type: 'agency', scale: 'exosphere' },
     ];
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [{ point: 'One structure conditions several mapped elements.' }],
-        nodes: [
-          {
-            label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
-            evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
-            deontic: 'defines eligibility for',
-            scope: ['School', 'node_family', 'Unknown Thing', 'School'],
-          },
-          {
-            label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
-            evidence: 'Verify: who is assumed to plan?', basis: 'inference',
-            // A condition with only one affected element is incomplete and drops.
-            deontic: 'synergizes',
-            scope: [{ id: 'node_agency', label: 'Agency' }],
-          },
-          {
-            label: 'CUNY', type: 'structure', scale: 'macrosphere',
-            evidence: 'CUNY is a named institution and must remain in Exosphere.', basis: 'memo',
-            deontic: 'shapes',
-            scope: ['node_school', 'node_family'],
-          },
-        ],
-        // Any macro connection is scale confusion; the server never passes one through.
-        connections: [
-          { source: 'Universal Pre-K Law', target: 'School', verb: 'shapes', rationale: 'Must be dropped.' },
-        ],
-        example: null,
-        readiness: { ready: true, note: 'One structure has a scope.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      guidance: [{ point: 'One structure conditions several mapped elements.' }],
+      nodes: [
+        {
+          label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
+          evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
+          deontic: 'defines eligibility for',
+          scope: ['School', 'node_family', 'Unknown Thing', 'School'],
+        },
+        {
+          label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
+          evidence: 'Verify: who is assumed to plan?', basis: 'inference',
+          deontic: 'synergizes',
+          scope: [{ id: 'node_agency', label: 'Agency' }],
+        },
+        {
+          label: 'CUNY', type: 'structure', scale: 'macrosphere',
+          evidence: 'CUNY is a named institution and must remain in Exosphere.', basis: 'memo',
+          deontic: 'shapes',
+          scope: ['node_school', 'node_family'],
+        },
+      ],
+      connections: [
+        { source: 'Universal Pre-K Law', target: 'School', verb: 'shapes', rationale: 'Macrosphere must not return an edge.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'One structure has a scope.' },
+    };
+    const validSuggestion = {
+      guidance: [{ point: 'One law defines eligibility across two mapped elements.' }],
+      nodes: [{
+        label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
+        evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
+        deontic: 'defines eligibility for', scope: ['node_school', 'node_family'],
+      }],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'One broader law affects two mapped elements.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'macrosphere-scopes.sqlite'),
       now: () => currentTime,
@@ -887,6 +1055,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
     const studentCookie = await grantStudent();
     const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'macrosphere', carriedNodes }));
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(evaluation.review.connections).toEqual([]);
     expect(evaluation.review.nodes).toEqual([
       {
@@ -896,6 +1066,8 @@ Overall, the posting history documents a working student repeatedly turning to R
         scope: [{ id: 'node_school', label: 'School' }, { id: 'node_family', label: 'Family' }],
       },
     ]);
+    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
+    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
 
     // The stored review replays scope pairs without carried context.
     const readBack = await system.app.request('http://127.0.0.1:4177/api/preflight/evaluations/current', {
@@ -908,7 +1080,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
   });
 
-  it('filters obvious Micro-shaped labels from Macrosphere while preserving broader conditions', async () => {
+  it('retries the whole Macrosphere response instead of filtering lower-level labels', async () => {
     await system.close();
     const carriedNodes = [
       { id: 'node_student', label: 'Working student', type: 'role', scale: 'micro' },
@@ -916,24 +1088,35 @@ Overall, the posting history documents a working student repeatedly turning to R
       { id: 'node_cuny', label: 'CUNY', type: 'institution', scale: 'exosphere' },
     ];
     const scope = ['node_student', 'node_workplace'];
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [{ point: 'Provider prose is replaced by validated Macrosphere guidance.' }],
-        nodes: [
-          { label: 'Marcus Facilitates It', type: 'structure', scale: 'macrosphere', evidence: 'Marcus facilitates the workshop.', basis: 'memo', deontic: 'shapes', scope },
-          { label: 'Center Aide', type: 'structure', scale: 'macrosphere', evidence: 'A center aide helps the student.', basis: 'memo', deontic: 'shapes', scope },
-          { label: 'Home Attendant’s Hours', type: 'policy', scale: 'macrosphere', evidence: 'The attendant works limited hours.', basis: 'memo', deontic: 'constrains', scope },
-          { label: 'CUNY', type: 'structure', scale: 'macrosphere', evidence: 'A named institution stays at Exosphere.', basis: 'memo', deontic: 'shapes', scope },
-          { label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere', evidence: 'High costs constrain home and work.', basis: 'memo', deontic: 'prices', scope },
-          { label: 'Ableist expectations about work and independence', type: 'belief', scale: 'macrosphere', evidence: 'The memo describes expectations about independence.', basis: 'memo', deontic: 'normalizes', scope },
-          { label: 'Unpredictable work schedules', type: 'economic condition', scale: 'macrosphere', evidence: 'Unpredictable schedules constrain several settings.', basis: 'memo', deontic: 'constrains', scope },
-        ],
-        connections: [],
-        example: null,
-        readiness: { ready: true, note: 'Provider readiness prose.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      guidance: [{ point: 'Provider prose is replaced by validated Macrosphere guidance.' }],
+      nodes: [
+        { label: 'Marcus Facilitates It', type: 'structure', scale: 'macrosphere', evidence: 'Marcus facilitates the workshop.', basis: 'memo', deontic: 'shapes', scope },
+        { label: 'Center Aide', type: 'structure', scale: 'macrosphere', evidence: 'A center aide helps the student.', basis: 'memo', deontic: 'shapes', scope },
+        { label: 'Home Attendant’s Hours', type: 'policy', scale: 'macrosphere', evidence: 'The attendant works limited hours.', basis: 'memo', deontic: 'constrains', scope },
+        { label: 'CUNY', type: 'structure', scale: 'macrosphere', evidence: 'A named institution stays at Exosphere.', basis: 'memo', deontic: 'shapes', scope },
+        { label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere', evidence: 'High costs constrain home and work.', basis: 'memo', deontic: 'prices', scope },
+        { label: 'Ableist expectations about work and independence', type: 'belief', scale: 'macrosphere', evidence: 'The memo describes expectations about independence.', basis: 'memo', deontic: 'normalizes', scope },
+        { label: 'Unpredictable work schedules', type: 'economic condition', scale: 'macrosphere', evidence: 'Unpredictable schedules constrain several settings.', basis: 'memo', deontic: 'constrains', scope },
+      ],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'Provider readiness prose.' },
+    };
+    const validSuggestion = {
+      guidance: [{ point: 'Review the broader conditions that affect the working student and workplace.' }],
+      nodes: [
+        { label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere', evidence: 'High costs constrain home and work.', basis: 'memo', deontic: 'prices', scope },
+        { label: 'Ableist expectations about work and independence', type: 'belief', scale: 'macrosphere', evidence: 'The memo describes expectations about independence.', basis: 'memo', deontic: 'normalizes', scope },
+        { label: 'Unpredictable work schedules', type: 'economic condition', scale: 'macrosphere', evidence: 'Unpredictable schedules constrain several settings.', basis: 'memo', deontic: 'constrains', scope },
+      ],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'Three broader conditions affect two mapped elements.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'macrosphere-lower-level-filter.sqlite'),
       now: () => currentTime,
@@ -945,20 +1128,19 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'macrosphere', carriedNodes }));
 
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(evaluation.review.nodes.map(({ label }) => label)).toEqual([
       'High housing and transportation costs',
       'Ableist expectations about work and independence',
       'Unpredictable work schedules',
     ]);
     expect(JSON.stringify(evaluation.review)).not.toMatch(/Marcus Facilitates It|Center Aide|Home Attendant’s Hours|CUNY/);
-    expect(evaluation.review.guidance).toEqual([
-      { point: 'Review the effects of High housing and transportation costs on Working student and Workplace.' },
-      { point: 'Review the effects of Ableist expectations about work and independence on Working student and Workplace.' },
-      { point: 'Review the effects of Unpredictable work schedules on Working student and Workplace.' },
-    ]);
+    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
+    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
   });
 
-  it('removes retired interface language from generated labels and student-facing review prose at every level', async () => {
+  it('rejects an entire provider response when any generated field uses retired interface language', async () => {
     await system.close();
     const carriedNodes = [
       { id: 'node_classroom', label: 'Classroom', type: 'setting', scale: 'micro' },
@@ -1013,46 +1195,50 @@ Overall, the posting history documents a working student repeatedly turning to R
       ollamaRequest,
     });
     const studentCookie = await grantStudent();
-    const reviews = {};
     for (const activeScale of ['micro', 'meso', 'exosphere', 'macrosphere']) {
-      reviews[activeScale] = (await evaluate(studentCookie, submissionBody({
+      const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
         activeScale,
         ...(activeScale === 'micro' ? {} : { carriedNodes }),
-      }))).review;
+      });
+      const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
     }
 
-    expect(reviews.micro.nodes.map(({ label }) => label)).toEqual(['Maya Rivera', 'Classroom']);
-    expect(reviews.meso.nodes.map(({ label }) => label)).toEqual(['classroom–workplace transition planning']);
-    expect(reviews.exosphere.nodes.map(({ label }) => label)).toEqual(['East Harlem Disability Services Office']);
-    expect(reviews.macrosphere.nodes.map(({ label }) => label)).toEqual(['Inaccessible transit policy']);
-    expect(reviews.micro.guidance).toEqual([{ point: 'Review the supported people, settings, and conditions.' }]);
-    expect(reviews.exosphere.example).toBeNull();
-    expect(reviews.macrosphere.example).toBeNull();
-    expect(reviews.micro.readiness.note).toBe('');
-    expect(reviews.exosphere.readiness.note).toBe('');
-    expect(reviews.macrosphere.readiness.note).toBe('The review found 1 possible Macrosphere condition affecting at least two mapped elements.');
-    expect(JSON.stringify(reviews)).not.toMatch(/stuck|has energy|ripples? outward|in the room|ring holds|test for this ring|visit it|email you|belongs further in|patterns? (?:with no|without)|doorless/i);
+    expect(ollamaRequest).toHaveBeenCalledTimes(8);
+    expect(ollamaRequest.mock.calls.filter(([input]) => input.systemPrompt.includes('CORRECTIVE RETRY'))).toHaveLength(4);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
-  it('removes setting-to-setting connections from a Micro review before the project can save them', async () => {
+  it('retries a Micro review containing a setting-to-setting edge before anything can be stored', async () => {
     await system.close();
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        guidance: [],
-        nodes: [
-          { label: 'Participant A', type: 'person', scale: 'micro', evidence: 'The memo names Participant A.' },
-          { label: 'Family apartment', type: 'setting', scale: 'micro', evidence: 'Participant A lives in the apartment.' },
-          { label: 'Transition classroom', type: 'setting', scale: 'micro', evidence: 'Participant A attends the classroom.' },
-        ],
-        connections: [
-          { source: 'Family apartment', target: 'Transition classroom', verb: 'coordinates access with', rationale: 'This belongs at Meso.' },
-          { source: 'Participant A', target: 'Transition classroom', verb: 'attends', rationale: 'The memo directly supports attendance.' },
-        ],
-        example: null,
-        readiness: { ready: true, note: 'The memo supports Micro mapping.' },
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const nodes = [
+      { label: 'Maya Rivera', type: 'person', scale: 'micro', evidence: 'The memo names Maya Rivera.' },
+      { label: 'Family apartment', type: 'setting', scale: 'micro', evidence: 'Maya Rivera lives in the apartment.' },
+      { label: 'Transition classroom', type: 'setting', scale: 'micro', evidence: 'Maya Rivera attends the classroom.' },
+    ];
+    const invalidSuggestion = {
+      guidance: [],
+      nodes,
+      connections: [
+        { source: 'Family apartment', target: 'Transition classroom', verb: 'coordinates access with', rationale: 'This belongs at Meso.' },
+        { source: 'Maya Rivera', target: 'Transition classroom', verb: 'attends', rationale: 'The memo directly supports attendance.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports Micro mapping.' },
+    };
+    const validSuggestion = {
+      guidance: [],
+      nodes,
+      connections: [
+        { source: 'Maya Rivera', target: 'Transition classroom', verb: 'attends', rationale: 'The memo directly supports attendance.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports Micro mapping.' },
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'micro-setting-edge-filter.sqlite'),
       now: () => currentTime,
@@ -1061,13 +1247,19 @@ Overall, the posting history documents a working student repeatedly turning to R
       ollamaRequest,
     });
     const studentCookie = await grantStudent();
-    const review = (await evaluate(studentCookie, submissionBody())).review;
+    const evaluation = await evaluate(studentCookie, submissionBody());
+    const review = evaluation.review;
 
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(review.connections).toEqual([expect.objectContaining({
-      sourceLabel: 'Participant A',
+      sourceLabel: 'Maya Rivera',
       targetLabel: 'Transition classroom',
       verb: 'attends',
     })]);
+    const stored = system.db.prepare('SELECT suggestion_json AS suggestion FROM preflight_evaluations WHERE id = ?')
+      .get(evaluation.id).suggestion;
+    expect(stored).not.toContain('coordinates access with');
   });
 
   it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {
@@ -1077,22 +1269,38 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(await unavailable.json()).toEqual({ error: 'Connection suggestions are not available for this class.' });
 
     await system.close();
-    const ollamaRequest = vi.fn(async () => ({
-      suggestion: {
-        connections: [{
-          source: 'node_school',
-          target: 'node_agency',
-          verb: 'refers to',
-          rationale: 'The student already described this connection.',
-        }, {
-          source: 'node_family',
-          target: 'node_school',
-          verb: 'asks for help from',
-          rationale: 'The student says families ask schools for help.',
-        }],
-      },
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    }));
+    const invalidSuggestion = {
+      connections: [{
+        source: 'node_school',
+        target: 'node_center',
+        verb: 'coordinates with',
+        rationale: 'This is an invalid setting-to-setting edge.',
+      }, {
+        source: 'node_family',
+        target: 'node_school',
+        verb: 'asks for help from',
+        rationale: 'This relationship already exists.',
+      }, {
+        source: 'node_counselor',
+        target: 'node_school',
+        verb: 'helps families at',
+        rationale: 'The student says the counselor helps families at school.',
+      }],
+    };
+    const validSuggestion = {
+      connections: [{
+        source: 'node_counselor',
+        target: 'node_school',
+        verb: 'helps families at',
+        rationale: 'The student says the counselor helps families at school.',
+      }],
+    };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({
+        suggestion: validSuggestion,
+        metadata: { provider: 'ollama-cloud', model: 'server-model' },
+      });
     system = createSystemsMappingApp({
       dbPath: join(tempDirectory, 'connection-suggestions.sqlite'),
       now: () => currentTime,
@@ -1113,18 +1321,28 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     expect((await postJson(system.app, '/api/map/connections', connectionBody())).status).toBe(401);
     const studentCookie = await grantStudent();
-    const body = connectionBody({ activeScale: 'micro' });
+    const body = connectionBody({
+      activeScale: 'micro',
+      nodes: [
+        { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+        { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
+        { id: 'node_center', label: 'Center', type: 'setting', scale: 'micro' },
+        { id: 'node_counselor', label: 'Counselor', type: 'role', scale: 'micro' },
+      ],
+      relationships: [{ source: 'node_family', target: 'node_school', verb: 'asks for help from' }],
+    });
     const response = await postJson(system.app, '/api/map/connections', body, { cookie: studentCookie });
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
       connections: [{
-        source: 'node_family',
+        source: 'node_counselor',
         target: 'node_school',
-        verb: 'asks for help from',
-        rationale: 'The student says families ask schools for help.',
+        verb: 'helps families at',
+        rationale: 'The student says the counselor helps families at school.',
       }],
     });
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     const mesoRequest = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: studentCookie });
     expect(mesoRequest.status).toBe(400);
     expect(await mesoRequest.json()).toEqual({ error: 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.' });
