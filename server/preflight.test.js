@@ -1001,6 +1001,54 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
   });
 
+  it('accepts a complete Exosphere response with official service, acronym, benefit, and brand names without filtering it', async () => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'node_rosa', label: 'Rosa', type: 'person', scale: 'micro' },
+      { id: 'node_marisol', label: 'Marisol', type: 'person', scale: 'micro' },
+      { id: 'node_home', label: 'Rosa’s home', type: 'setting', scale: 'micro' },
+    ];
+    const suggestion = {
+      guidance: [{ point: 'The memo names four institutions whose decisions shape the mapped household.' }],
+      nodes: [
+        { label: 'Access-A-Ride', type: 'service', scale: 'exosphere', evidence: 'Access-A-Ride requires booking a day ahead.', basis: 'memo' },
+        { label: 'BMCC', type: 'institution', scale: 'exosphere', evidence: 'Danny and Marisol both attend BMCC.', basis: 'memo' },
+        { label: 'Medicaid', type: 'service', scale: 'exosphere', evidence: 'Carla helped Rosa appeal a Medicaid recertification lapse.', basis: 'memo' },
+        { label: 'ConEd', type: 'organization', scale: 'exosphere', evidence: 'Denise watches for ConEd shutoff notices.', basis: 'memo' },
+      ],
+      connections: [
+        { source: 'Access-A-Ride', target: 'Rosa', verb: 'serves', rationale: 'The service schedules Rosa’s rides.' },
+        { source: 'BMCC', target: 'Marisol', verb: 'sets rules for', rationale: 'BMCC registration blocks determine Marisol’s availability.' },
+        { source: 'Medicaid', target: 'Rosa', verb: 'sets rules for', rationale: 'Medicaid recertification rules affect Rosa’s coverage.' },
+        { source: 'ConEd', target: 'Rosa’s home', verb: 'serves', rationale: 'ConEd sends shutoff notices to the household.' },
+      ],
+      example: null,
+      readiness: { ready: true, note: 'Four institutional pathways connect directly to the existing map.' },
+    };
+    const ollamaRequest = vi.fn().mockResolvedValue({
+      suggestion,
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'exosphere-official-names.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'exosphere', carriedNodes }));
+
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(evaluation.review.nodes).toEqual(suggestion.nodes);
+    expect(evaluation.review.connections).toHaveLength(suggestion.connections.length);
+    expect(evaluation.review.connections.map(({ sourceLabel, targetLabel, verb, rationale }) => ({ source: sourceLabel, target: targetLabel, verb, rationale })))
+      .toEqual(suggestion.connections);
+    expect(evaluation.review.guidance).toEqual(suggestion.guidance);
+    expect(evaluation.review.readiness).toEqual(suggestion.readiness);
+  });
+
   it('holds Exosphere connections to the institutional register, the carried-map anchor, and the basis marker', async () => {
     await system.close();
     const carriedNodes = [

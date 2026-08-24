@@ -142,6 +142,13 @@ export function isNodeTypeAllowedAtScale(type, scale) {
 }
 
 const UNAMBIGUOUS_INSTITUTION_LABEL = /(?:\bc\W*u\W*n\W*y\b|\bMTA\b|\bOPWDD\b|\bACCES-?VR\b|\bNYC\s+(?:DOE|HRA|DSS)\b)/i;
+const OFFICIAL_INSTITUTION_ACRONYM = /^(?=[A-Z0-9.-]{3,16}$)(?=.*[B-DF-HJ-NP-TV-Z]{2})[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*$/;
+const OFFICIAL_PUBLIC_BENEFIT_PROGRAM = /^(?:Medicaid|Medicare|Social Security|Supplemental Security Income|Social Security Disability Insurance|SNAP|TANF|WIC|Section 8)$/i;
+const HYPHENATED_SERVICE_BRAND = /^(?=.{4,80}$)(?:[A-Z][A-Za-z0-9&.'’]*)(?:-[A-Z][A-Za-z0-9&.'’]*)+$/;
+const SERVICE_BRAND_SIGNAL = /(?:^|-)(?:Access|Ride|Care|Aid|Health|Housing|Benefits?|Transit|Transportation|Mobility|Paratransit|Legal|Food|Support|Services?)(?:-|$)/i;
+const MIXED_CASE_ORGANIZATION_BRAND = /^[A-Z][a-z]{2,}[A-Z][a-z]{1,4}$/;
+const INSTITUTION_SCOPED_POLICY = /^(.+?)\s+(?:(?:[A-Za-z][A-Za-z-]*\s+){0,4})(?:polic(?:y|ies)|rules?|requirements?|offices?|divisions?|contracts?|schedules?|blocks?|holds?|programs?|services?)$/i;
+const GENERIC_INSTITUTION_HEAD = /^(?:agency|board|center|clinic|college|committee|council|department|hospital|institution|office|organization|program|school|service|university)$/i;
 const SOCIAL_HANDLE_LABEL = /^(?:r|u)\/[A-Za-z0-9_-]+$/i;
 const GENERIC_INSTITUTION_LABEL = /^(?:(?:parent|student|family|youth|community|local|public|private|disability|advocacy|support|service)\s+){1,4}(?:organizations?|programs?|services?|agencies|offices?|institutions?|schools?|clinics?|centers?)$/i;
 const NAMED_INSTITUTION_PATTERN = /^(?:the\s+)?(?:(?:[A-Z][A-Za-z0-9&.'’-]*\s+){1,8}(?:Universit(?:y|ies)|Colleges?|Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?|Corporations?|Organizations?|Associations?|Societ(?:y|ies)|Foundations?|Institutes?|Administrations?|Librar(?:y|ies)|Centers?|Clinics?|Schools?|Hospitals?|Programs?|Services?|Service Providers?|Networks?)\b|(?:Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?)\s+(?:of|for|on)\s+[A-Z][A-Za-z0-9&.'’-]*(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9&.'’-]*){0,10}\b)/;
@@ -197,8 +204,14 @@ export function isNamedInstitutionLabel(value) {
   // The institution itself (`CUNY`) remains an Exosphere label.
   if (SOCIAL_HANDLE_LABEL.test(label)) return false;
   if (/\b(?:digital-first|online-only|automated)\b/i.test(label)) return false;
+  if (isTemporalOnlyMapElementLabel(label, true) || GENERIC_INSTITUTION_HEAD.test(label)) return false;
   if (GENERIC_INSTITUTION_LABEL.test(label)) return false;
   if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return true;
+  if (OFFICIAL_INSTITUTION_ACRONYM.test(label) || OFFICIAL_PUBLIC_BENEFIT_PROGRAM.test(label)) return true;
+  if (HYPHENATED_SERVICE_BRAND.test(label) && SERVICE_BRAND_SIGNAL.test(label)) return true;
+  if (MIXED_CASE_ORGANIZATION_BRAND.test(label)) return true;
+  const institutionScopedPolicy = label.match(INSTITUTION_SCOPED_POLICY);
+  if (institutionScopedPolicy && isNamedInstitutionLabel(institutionScopedPolicy[1])) return true;
   // Generic phrases such as "school segregation policy" and "program
   // eligibility rules" name broad conditions, not named institutions. The
   // generic institutional word is only decisive when it appears in a proper
@@ -737,7 +750,15 @@ export function extractRelationships(submission) {
         // scope names two or more immediate settings. Outer institutional and
         // structural relationships retain their own levels.
         const inferredScale = targetScale === 'exosphere' || targetScale === 'macrosphere' ? targetScale : sourceScale;
-        relationships.push({ sourceLabel, targetLabel, verb: match.verb, scale: inferredScale, ...evidence });
+        relationships.push({
+          sourceLabel,
+          targetLabel,
+          sourceScale,
+          targetScale,
+          verb: match.verb,
+          scale: inferredScale,
+          ...evidence,
+        });
         acceptedSubject = normalizedSubject;
       });
       if (acceptedSubject) currentSubject = acceptedSubject;
@@ -911,7 +932,10 @@ export function extractCandidates(submission) {
     return [{ ...relationship, sourceLabel, targetLabel }];
   });
   rawRelationships.forEach((relationship) => {
-    [relationship.sourceLabel, relationship.targetLabel].forEach((rawLabel) => {
+    [
+      [relationship.sourceLabel, relationship.sourceScale],
+      [relationship.targetLabel, relationship.targetScale],
+    ].forEach(([rawLabel, endpointScale]) => {
       const label = normalizeMicroNodeLabel(rawLabel);
       if (!label) return;
       const key = label.toLowerCase();
@@ -923,7 +947,9 @@ export function extractCandidates(submission) {
         evidenceHash: relationship.evidenceHash,
       };
       if (!nodeMap.has(key)) {
-        const classification = extractedNodeClassification(label, relationship.scale);
+        // A cross-scale relationship keeps each endpoint in its own sphere:
+        // an institutional target must not pull its Micro actors outward.
+        const classification = extractedNodeClassification(label, endpointScale || relationship.scale);
         if (!classification) return;
         nodeMap.set(key, {
           id: stableId('node', label), label, ...classification,

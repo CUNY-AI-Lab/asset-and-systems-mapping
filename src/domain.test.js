@@ -298,6 +298,15 @@ describe('mapping domain', () => {
     expect(isNamedInstitutionLabel('r/CUNY')).toBe(false);
     expect(isNamedInstitutionLabel('C.U.N.Y.')).toBe(true);
     expect(isNamedInstitutionLabel('Hunter College')).toBe(true);
+    expect(isNamedInstitutionLabel('BMCC')).toBe(true);
+    expect(isNamedInstitutionLabel('Access-A-Ride')).toBe(true);
+    expect(isNamedInstitutionLabel('Medicaid')).toBe(true);
+    expect(isNamedInstitutionLabel('ConEd')).toBe(true);
+    expect(isNamedInstitutionLabel('Medicaid recertification rules')).toBe(true);
+    expect(isNamedInstitutionLabel('home care agency')).toBe(false);
+    expect(isNamedInstitutionLabel('legal services office')).toBe(false);
+    expect(isNamedInstitutionLabel('TUESDAYS')).toBe(false);
+    expect(isNamedInstitutionLabel('SCHOOL')).toBe(false);
     expect(isNamedInstitutionLabel('High New York City housing costs')).toBe(false);
     expect(labelRepeatsInstitution('CUNY affordability policy', [{ label: 'CUNY', type: 'institution' }])).toBe(true);
     expect(labelRepeatsInstitution('High New York City housing costs', [{ label: 'CUNY', type: 'institution' }])).toBe(false);
