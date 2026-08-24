@@ -2703,7 +2703,12 @@ export function createSystemsMappingApp(options = {}) {
           });
         } catch (error) {
           // Code-only server log; provider bodies and memo content never land in logs.
-          console.warn('memo review generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
+          console.warn(
+            'memo review generation failed:',
+            error?.code ?? error?.name ?? 'unknown',
+            error?.status ?? '',
+            error instanceof MemoReviewSemanticError ? error.message : '',
+          );
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
         }
       } else {
