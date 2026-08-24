@@ -441,6 +441,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node.');
     expect(firstInput.systemPrompt).toContain('Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.');
     expect(firstInput.systemPrompt).toContain('For Micro and Meso, example must be null.');
+    expect(firstInput.systemPrompt).toContain('A generic category is not an Exosphere node');
     expect(firstInput.systemPrompt).toContain('verb MUST be exactly one of: funds, administers, regulates');
     expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
