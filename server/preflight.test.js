@@ -908,6 +908,56 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
   });
 
+  it('filters obvious Micro-shaped labels from Macrosphere while preserving broader conditions', async () => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'node_student', label: 'Working student', type: 'role', scale: 'micro' },
+      { id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' },
+      { id: 'node_cuny', label: 'CUNY', type: 'institution', scale: 'exosphere' },
+    ];
+    const scope = ['node_student', 'node_workplace'];
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [{ point: 'Provider prose is replaced by validated Macrosphere guidance.' }],
+        nodes: [
+          { label: 'Marcus Facilitates It', type: 'structure', scale: 'macrosphere', evidence: 'Marcus facilitates the workshop.', basis: 'memo', deontic: 'shapes', scope },
+          { label: 'Center Aide', type: 'structure', scale: 'macrosphere', evidence: 'A center aide helps the student.', basis: 'memo', deontic: 'shapes', scope },
+          { label: 'Home Attendant’s Hours', type: 'policy', scale: 'macrosphere', evidence: 'The attendant works limited hours.', basis: 'memo', deontic: 'constrains', scope },
+          { label: 'CUNY', type: 'structure', scale: 'macrosphere', evidence: 'A named institution stays at Exosphere.', basis: 'memo', deontic: 'shapes', scope },
+          { label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere', evidence: 'High costs constrain home and work.', basis: 'memo', deontic: 'prices', scope },
+          { label: 'Ableist expectations about work and independence', type: 'belief', scale: 'macrosphere', evidence: 'The memo describes expectations about independence.', basis: 'memo', deontic: 'normalizes', scope },
+          { label: 'Unpredictable work schedules', type: 'economic condition', scale: 'macrosphere', evidence: 'Unpredictable schedules constrain several settings.', basis: 'memo', deontic: 'constrains', scope },
+        ],
+        connections: [],
+        example: null,
+        readiness: { ready: true, note: 'Provider readiness prose.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'macrosphere-lower-level-filter.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'macrosphere', carriedNodes }));
+
+    expect(evaluation.review.nodes.map(({ label }) => label)).toEqual([
+      'High housing and transportation costs',
+      'Ableist expectations about work and independence',
+      'Unpredictable work schedules',
+    ]);
+    expect(JSON.stringify(evaluation.review)).not.toMatch(/Marcus Facilitates It|Center Aide|Home Attendant’s Hours|CUNY/);
+    expect(evaluation.review.guidance).toEqual([
+      { point: 'Review the effects of High housing and transportation costs on Working student and Workplace.' },
+      { point: 'Review the effects of Ableist expectations about work and independence on Working student and Workplace.' },
+      { point: 'Review the effects of Unpredictable work schedules on Working student and Workplace.' },
+    ]);
+  });
+
   it('removes retired interface language from generated labels and student-facing review prose at every level', async () => {
     await system.close();
     const carriedNodes = [
@@ -945,6 +995,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       suggestion: {
         guidance: [
           { point: 'Ripples outward across the map.' },
+          { point: 'The test for this ring: a pattern with no door. If you could visit it or it could email you, it belongs further in.' },
           { point: 'Review the supported people, settings, and conditions.' },
         ],
         nodes: suggestions[activeScale].nodes,
@@ -979,8 +1030,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(reviews.macrosphere.example).toBeNull();
     expect(reviews.micro.readiness.note).toBe('');
     expect(reviews.exosphere.readiness.note).toBe('');
-    expect(reviews.macrosphere.readiness.note).toBe('');
-    expect(JSON.stringify(reviews)).not.toMatch(/stuck|has energy|ripples? outward|in the room|ring holds|patterns? (?:with no|without)|doorless/i);
+    expect(reviews.macrosphere.readiness.note).toBe('The review found 1 possible Macrosphere condition affecting at least two mapped elements.');
+    expect(JSON.stringify(reviews)).not.toMatch(/stuck|has energy|ripples? outward|in the room|ring holds|test for this ring|visit it|email you|belongs further in|patterns? (?:with no|without)|doorless/i);
   });
 
   it('removes setting-to-setting connections from a Micro review before the project can save them', async () => {

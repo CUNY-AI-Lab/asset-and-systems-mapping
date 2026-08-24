@@ -922,13 +922,9 @@ describe('Systems Mapping workflow', () => {
     const project = createDefaultProject();
     await resumeSavedProject(project);
 
-    const scale = screen.getByRole('combobox', { name: 'Level' });
-    fireEvent.change(scale, { target: { value: 'exosphere' } });
-    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'exosphere', releasedScales: ['micro', 'exosphere'] }));
-
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
-    expect(screen.getByRole('group', { name: /Exosphere map\. 0 nodes and 0 connections/ })).toBeVisible();
+    expect(screen.getByRole('group', { name: /Micro map\. 0 nodes and 0 connections/ })).toBeVisible();
     expect(storedProject().stage).toBe(0);
     expect(storedProject().furthestStage).toBe(project.furthestStage);
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back to Memo' }));
@@ -937,25 +933,18 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().furthestStage).toBe(project.furthestStage);
   });
 
-  it('groups the four scale options under concise Part 1 and Part 2 labels', async () => {
+  it('starts every new map at Micro instead of offering a scale picker', async () => {
     await resumeSavedProject(createDefaultProject());
 
-    const scale = screen.getByRole('combobox', { name: 'Level' });
-    const groups = scale.querySelectorAll('optgroup');
-    expect([...groups].map((group) => group.label)).toEqual(['Part 1', 'Part 2']);
-    expect([...groups[0].querySelectorAll('option')].map((option) => option.value)).toEqual(['micro', 'meso']);
-    expect([...groups[1].querySelectorAll('option')].map((option) => option.value)).toEqual(['exosphere', 'macrosphere']);
-
-    fireEvent.change(scale, { target: { value: 'macrosphere' } });
-    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'macrosphere' }));
-    expect(screen.queryByText('Where is your population present, and who interacts with them there?')).not.toBeInTheDocument();
-    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
+    expect(screen.getByText('Add a memo to begin with Micro. The map then advances to Meso, Exosphere, and Macrosphere.')).toBeVisible();
+    expect(storedProject()).toMatchObject({ activeScale: 'micro', releasedScales: ['micro'], completedScales: [] });
   });
 
   it('keeps the memo intake limited to fields students need', async () => {
     await resumeSavedProject(createDefaultProject());
 
-    expect(screen.getByRole('combobox', { name: 'Level' })).toBeVisible();
+    expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /Memo text/ })).toBeVisible();
@@ -970,6 +959,30 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(privacy);
     expect(screen.getByRole('checkbox', { name: /private or identifying information/i })).toBeVisible();
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
+  });
+
+  it('clears the prior map and restarts at Micro when the memo is replaced', async () => {
+    const project = makeMapProject('macrosphere');
+    project.stage = 1;
+    project.furthestStage = 4;
+    project.preflight = null;
+    const previousNodeCount = project.graph.nodes.length;
+    expect(previousNodeCount).toBeGreaterThan(0);
+    await resumeSavedProject(project);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Memo text/ }), { target: { value: 'A different memo begins a separate systems map progression.' } });
+
+    await waitFor(() => expect(storedProject()).toMatchObject({
+      activeScale: 'micro',
+      releasedScales: ['micro'],
+      completedScales: [],
+      stage: 0,
+      furthestStage: 0,
+      preflight: null,
+      candidates: { nodes: [], edges: [] },
+      graph: { nodes: [], edges: [] },
+    }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
   });
 
   it('shows Micro nodes and direct relationships in Revise and Export without exposing Meso linkages as relationships', async () => {
@@ -1184,11 +1197,12 @@ describe('Systems Mapping workflow', () => {
     const project = createDefaultProject();
     project.activeScale = 'micro';
     project.releasedScales = ['micro'];
-    const longNodeLabel = 'East Harlem Disability Services coordinates transportation access across neighborhood family programs END NODE';
+    const longNodeLabel = 'East Harlem community resource room with transportation and family program materials END NODE';
     const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
     const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
       ...node,
       scale: 'micro',
+      type: 'setting',
       ...(index === 0 ? { label: longNodeLabel } : {}),
       status: 'confirmed',
       claimState: 'student interpretation',
@@ -1214,6 +1228,85 @@ describe('Systems Mapping workflow', () => {
     expect(previewEdge).not.toHaveTextContent('…');
     expect(Number(previewNode.querySelector('rect').getAttribute('height'))).toBeGreaterThan(72);
     expect(Number(previewEdge.querySelector('rect').getAttribute('height'))).toBeGreaterThan(24);
+  });
+
+  it('routes five kept preview connections in separate lanes between their endpoint cards', async () => {
+    const project = createDefaultProject();
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
+    const extracted = extractCandidates(project.submission);
+    const specifications = [
+      ['Rosa', 'person'],
+      ['Peer support group', 'group'],
+      ['College advising office', 'setting'],
+      ['Family caregiver', 'person'],
+      ['Evening class schedule', 'activity'],
+    ];
+    const nodes = specifications.map(([label, type], index) => ({
+      ...structuredClone(extracted.nodes[index]),
+      id: `preview-node-${index + 1}`,
+      label,
+      type,
+      scale: 'micro',
+      x: 390 + (index % 3) * 28,
+      y: 245 + Math.floor(index / 3) * 32,
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      annotations: {
+        analytical: { id: `preview-node-${index + 1}-analytical`, text: '' },
+        evidence: { id: `preview-node-${index + 1}-evidence`, text: '' },
+      },
+    }));
+    const connections = [
+      [0, 1, 'asks for advice from'],
+      [0, 2, 'coordinates enrollment with'],
+      [1, 3, 'shares support resources with'],
+      [2, 4, 'determines course options for'],
+      [3, 4, 'adjusts caregiving around'],
+    ];
+    const edges = connections.map(([sourceIndex, targetIndex, verb], index) => ({
+      ...structuredClone(extracted.edges[index % extracted.edges.length]),
+      id: `preview-edge-${index + 1}`,
+      source: nodes[sourceIndex].id,
+      target: nodes[targetIndex].id,
+      sourceLabel: nodes[sourceIndex].label,
+      targetLabel: nodes[targetIndex].label,
+      verb,
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      annotation: { id: `preview-edge-${index + 1}-annotation`, text: '' },
+    }));
+    project.candidates = { nodes, edges };
+    project.graph = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
+    const labels = [...document.querySelectorAll('.connection-preview__label')];
+    const cards = [...document.querySelectorAll('.connection-preview__node')].map((node) => translatedRectBounds(node, node.querySelector('rect')));
+    expect(labels).toHaveLength(edges.length);
+    labels.forEach((label, index) => {
+      const labelBounds = svgRectBounds(label.querySelector('rect'));
+      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
+      expect(svgTextLines(label.querySelector('text')).join(' ')).toBe(edges[index].verb);
+      cards.forEach((cardBounds) => expect(rectsIntersect(labelBounds, cardBounds)).toBe(false));
+      labels.slice(index + 1).forEach((other) => expect(rectsIntersect(labelBounds, svgRectBounds(other.querySelector('rect')))).toBe(false));
+      const positionFor = (nodeId) => {
+        const transform = document.querySelector(`.connection-preview__node[data-node-id="${nodeId}"]`).getAttribute('transform');
+        const match = transform.match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
+        return { x: Number(match[1]), y: Number(match[2]) };
+      };
+      const source = positionFor(label.getAttribute('data-source-id'));
+      const target = positionFor(label.getAttribute('data-target-id'));
+      const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
+      const delta = { x: target.x - source.x, y: target.y - source.y };
+      const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
+      expect(projection).toBeGreaterThan(0);
+      expect(projection).toBeLessThan(1);
+    });
+    expect(new Set([...document.querySelectorAll('.connection-preview__edge path')].map((path) => path.getAttribute('d')))).toHaveLength(edges.length);
   });
 
   it('wraps and grows complete model-suggested connection wording while it is edited', async () => {
@@ -1991,7 +2084,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const labelBounds = labels.map((label) => svgRectBounds(label.querySelector('.edge-label-bg')));
 
     labels.forEach((label, index) => {
-      expect(label).toHaveAttribute('data-edge-route', 'network-callout');
+      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
       expect(label).toHaveAttribute('data-full-label', relationships[index].verb);
       expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(relationships[index].verb);
       expect(label).not.toHaveTextContent('…');
@@ -2053,6 +2146,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
+    const scale = screen.getByRole('combobox', { name: 'Show map layer' });
+    expect(scale).toHaveValue('all');
+    fireEvent.change(scale, { target: { value: 'meso' } });
     expect(document.querySelector('[data-ecology-layer="meso"]')).toHaveClass('is-visible');
     const renderedNodes = [...document.querySelectorAll('.graph-node')];
     expect(renderedNodes).toHaveLength(meso.nodes.length);
@@ -2069,7 +2165,6 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelectorAll('.graph-edge[data-edge-scale="meso"]')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(0);
 
-    const scale = screen.getByRole('combobox', { name: 'Show map layer' });
     fireEvent.change(scale, { target: { value: 'micro' } });
     expect(document.querySelector(`[data-graph-id="${linkage.id}"]`)).toBeNull();
     expect(document.querySelectorAll(`[data-linkage-of="${linkage.id}"]`)).toHaveLength(0);
@@ -2088,25 +2183,30 @@ Overall, the posting history documents a working student repeatedly turning to R
     const all = graphForScale(project, 'all');
     const inspector = screen.getByLabelText('Map inspector');
 
-    expect(scale).toHaveValue(project.activeScale);
+    expect(scale).toHaveValue('all');
     expect(within(scale).getAllByRole('option').map((option) => option.value)).toEqual([...project.releasedScales, 'all']);
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
+    fireEvent.change(scale, { target: { value: activeScale } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`${activeScale === 'exosphere' ? 'Exosphere' : 'Macrosphere'} map. ${active.nodes.length} nodes and ${active.edges.length} ${active.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(project.releasedScales.length);
     expect(document.querySelector(`[data-ecology-layer="${activeScale}"]`)).toHaveClass('is-visible');
     expect(document.querySelectorAll('[data-ecology-layer].is-muted')).toHaveLength(project.releasedScales.length - 1);
-    const activeLabels = [...document.querySelectorAll(`.graph-edge-label[data-edge-scale="${activeScale}"][data-edge-route="layer-anchor"]`)];
+    const activeLabels = [...document.querySelectorAll(`.graph-edge-label[data-edge-scale="${activeScale}"][data-edge-route="between-endpoints"]`)];
     expect(activeLabels).toHaveLength(active.edges.length);
-    const band = activeScale === 'exosphere'
-      ? { innerRx: 910, innerRy: 650, outerRx: 1220, outerRy: 880 }
-      : { innerRx: 1220, innerRy: 880, outerRx: 1540, outerRy: 1140 };
     activeLabels.forEach((label) => {
-      const offsetX = Number(label.getAttribute('data-anchor-x')) - 1600;
-      const offsetY = Number(label.getAttribute('data-anchor-y')) - 1200;
-      const outsideInnerBand = (offsetX ** 2) / (band.innerRx ** 2) + (offsetY ** 2) / (band.innerRy ** 2);
-      const insideOuterBand = (offsetX ** 2) / (band.outerRx ** 2) + (offsetY ** 2) / (band.outerRy ** 2);
-      expect(outsideInnerBand, `${label.getAttribute('data-full-label')} falls inside an earlier layer`).toBeGreaterThan(1);
-      expect(insideOuterBand, `${label.getAttribute('data-full-label')} falls outside ${activeScale}`).toBeLessThan(1);
+      const edge = project.graph.edges.find((candidate) => candidate.id === label.getAttribute('data-edge-id'));
+      const source = renderedNodePosition(edge.source);
+      const target = renderedNodePosition(edge.target);
+      const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
+      const delta = { x: target.x - source.x, y: target.y - source.y };
+      const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
+      expect(projection, `${label.getAttribute('data-full-label')} is not between its endpoints`).toBeGreaterThan(0);
+      expect(projection, `${label.getAttribute('data-full-label')} is not between its endpoints`).toBeLessThan(1);
+      const labelBounds = svgRectBounds(label.querySelector('.edge-label-bg'));
+      [...document.querySelectorAll('.graph-node')].forEach((node) => {
+        expect(rectsIntersect(labelBounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false);
+      });
     });
     expect(screen.getByText(activeScale === 'exosphere'
       ? 'Choose a node to see its relationships.'
@@ -2131,7 +2231,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('replaces a stale durable viewport with a transient readable layer view on entry', async () => {
+  it('opens a progressed map on a transient cumulative all-layers fit without changing the saved viewport', async () => {
     const project = makeMapProject('meso');
     project.releasedScales.push('exosphere');
     project.viewport = { zoom: 0.15, panX: -2400, panY: 1900 };
@@ -2139,7 +2239,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
-    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.58));
+    expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('all');
+    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThan(PROJECT_LIMITS.zoomMin));
     expect(viewportTransform()).not.toEqual(durableViewport);
     [...document.querySelectorAll('.graph-node')].forEach((group) => {
       const bounds = transformedRectBounds(translatedRectBounds(group, group.querySelector('.node-card')));
@@ -2148,6 +2249,18 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(bounds.top, `${group.getAttribute('data-full-label')} clips at the top`).toBeGreaterThanOrEqual(0);
       expect(bounds.bottom, `${group.getAttribute('data-full-label')} clips at the bottom`).toBeLessThanOrEqual(540);
     });
+    const outerLayer = document.querySelector('[data-ecology-layer="exosphere"] > ellipse');
+    const view = viewportTransform();
+    const layerBounds = {
+      left: (Number(outerLayer.getAttribute('cx')) - Number(outerLayer.getAttribute('rx'))) * view.zoom + view.panX,
+      right: (Number(outerLayer.getAttribute('cx')) + Number(outerLayer.getAttribute('rx'))) * view.zoom + view.panX,
+      top: (Number(outerLayer.getAttribute('cy')) - Number(outerLayer.getAttribute('ry'))) * view.zoom + view.panY,
+      bottom: (Number(outerLayer.getAttribute('cy')) + Number(outerLayer.getAttribute('ry'))) * view.zoom + view.panY,
+    };
+    expect(layerBounds.left).toBeGreaterThanOrEqual(0);
+    expect(layerBounds.right).toBeLessThanOrEqual(840);
+    expect(layerBounds.top).toBeGreaterThanOrEqual(0);
+    expect(layerBounds.bottom).toBeLessThanOrEqual(540);
     expect(storedProject().viewport).toEqual(durableViewport);
   });
 
@@ -2210,7 +2323,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('keeps literal whole-ring fits available while filtered, full-screen, and all-layer reading views keep labels readable', async () => {
+  it('keeps literal whole-ring fits in normal and full-screen map views', async () => {
     const project = makeMapProject('macrosphere');
     await openMapProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
@@ -2252,14 +2365,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
 
     fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
-    await waitFor(() => expect(viewportTransform().zoom).toBe(0.23));
+    await waitFor(() => expect(viewportTransform().zoom).toBeCloseTo(0.23, 2));
     expectOuterRingOnCanvas();
     expectNodesOnCanvas();
     const literalFilteredViewport = { ...storedProject().viewport };
 
     fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
     expect(document.querySelector('.map-stage')).toHaveClass('is-fullscreen');
-    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.42));
+    await waitFor(() => expect(viewportTransform().zoom).toBeCloseTo(0.23, 2));
+    expectOuterRingOnCanvas();
     expectNodesOnCanvas();
     expect(storedProject().viewport).toEqual(literalFilteredViewport);
     fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
@@ -2269,13 +2383,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(2));
     fireEvent.click(screen.getByRole('button', { name: 'Center map' }));
-    await waitFor(() => expect(viewportTransform().zoom).toBe(0.23));
+    await waitFor(() => expect(viewportTransform().zoom).toBeCloseTo(0.23, 2));
     expectOuterRingOnCanvas();
     expectNodesOnCanvas();
     const literalAllViewport = { ...storedProject().viewport };
 
     fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
-    await waitFor(() => expect(viewportTransform().zoom).toBeGreaterThanOrEqual(0.42));
+    await waitFor(() => expect(viewportTransform().zoom).toBeCloseTo(0.23, 2));
+    expectOuterRingOnCanvas();
     expectNodesOnCanvas();
     expect(storedProject().viewport).toEqual(literalAllViewport);
   });
@@ -2671,7 +2786,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const expectClearOverviewLabel = (label) => {
       const labelBounds = svgRectBounds(label.querySelector('.edge-label-bg'));
       const visibleBounds = transformedRectBounds(labelBounds);
-      expect(label).toHaveAttribute('data-edge-route', 'overview-callout');
+      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
       expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(verb);
       expect(label).not.toHaveTextContent('…');
       [...document.querySelectorAll('.graph-node')].forEach((node) => {
@@ -2706,7 +2821,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       return translatedRectBounds(group, group.querySelector('.node-card'));
     });
 
-    expect(detailLabel).toHaveAttribute('data-edge-route', 'focus-callout');
+    expect(detailLabel).toHaveAttribute('data-edge-route', 'between-endpoints');
     expect(svgTextLines(detailLabel.querySelector('.edge-label')).join(' ')).toBe(verb);
     expect(detailLabel).not.toHaveTextContent('…');
     expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort())
@@ -2754,7 +2869,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       const detailLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
       const labelBounds = svgRectBounds(detailLabel.querySelector('.edge-label-bg'));
       const visibleBounds = transformedRectBounds(labelBounds);
-      expect(detailLabel).toHaveAttribute('data-edge-route', 'focus-callout');
+      expect(detailLabel).toHaveAttribute('data-edge-route', 'between-endpoints');
       expect(svgTextLines(detailLabel.querySelector('.edge-label')).join('')).toBe(maximumLengthVerb);
       expect(detailLabel.getAttribute('data-full-label')).toBe(maximumLengthVerb);
       expect(detailLabel).not.toHaveTextContent('…');
@@ -2802,7 +2917,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         .toEqual([edge.source, edge.target].sort());
       const bounds = svgRectBounds(label.querySelector('.edge-label-bg'));
       const visibleBounds = transformedRectBounds(bounds);
-      expect(label).toHaveAttribute('data-edge-route', 'focus-callout');
+      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
       expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(edge.verb);
       expect(label).not.toHaveTextContent('…');
       [...document.querySelectorAll('.graph-node')].forEach((node) => {
@@ -2974,7 +3089,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         right: Number(background.getAttribute('x')) + Number(background.getAttribute('width')),
         bottom: Number(background.getAttribute('y')) + Number(background.getAttribute('height')),
       };
-      expect(label).toHaveAttribute('data-edge-route', 'focus-callout');
+      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
       expect(svgTextLines(label.querySelector('.edge-label')).join(' ')).toBe(label.getAttribute('data-full-label'));
       expect(label).not.toHaveTextContent('…');
       focusedNodeBounds.forEach((nodeBounds) => expect(rectsIntersect(bounds, nodeBounds)).toBe(false));
@@ -3008,7 +3123,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const active = graphForScale(project);
     const incidentEdge = active.edges[0];
     const sourceNode = project.graph.nodes.find((node) => node.id === incidentEdge.source);
-    const longNodeLabel = 'East Harlem Disability Services coordinates transportation access across neighborhood family programs END NODE';
+    const longNodeLabel = 'East Harlem community resource room with transportation and family program materials END NODE';
     const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
     sourceNode.label = longNodeLabel;
     incidentEdge.verb = longEdgeLabel;
@@ -3627,6 +3742,38 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(structure.scopeNodeIds).toEqual([microNodes[0].id, microNodes[1].id]);
       expect(stored.graph.edges.filter((edge) => edge.scale === 'macrosphere')).toEqual([]);
     });
+  });
+
+  it('rejects immediate actors and schedules from the Macrosphere form while allowing a broader schedule condition', async () => {
+    const project = makeMapProject('macrosphere');
+    project.graph.nodes = project.graph.nodes.filter((node) => node.scale !== 'macrosphere');
+    project.graph.edges = project.graph.edges.filter((edge) => edge.scale !== 'macrosphere');
+    project.candidates = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    const section = screen.getByRole('heading', { name: 'Add a Macrosphere item' }).closest('section');
+    const labelInput = within(section).getByRole('textbox', { name: 'Name' });
+    const addButton = within(section).getByRole('button', { name: 'Add Macrosphere item' });
+    for (const label of ['Marcus Facilitates It', 'Center Aide', 'Home Attendant’s Hours']) {
+      fireEvent.change(labelInput, { target: { value: label } });
+      fireEvent.click(addButton);
+      expect(screen.getByText('That label names an immediate person, role, activity, or schedule. Add it at Micro instead.')).toBeVisible();
+      expect(storedProject().candidates.nodes).toEqual([]);
+    }
+
+    fireEvent.change(labelInput, { target: { value: 'Unpredictable work schedules' } });
+    fireEvent.click(addButton);
+    await waitFor(() => expect(storedProject().candidates.nodes).toEqual([
+      expect.objectContaining({
+        label: 'Unpredictable work schedules',
+        type: 'policy',
+        scale: 'macrosphere',
+        status: 'pending',
+        claimState: 'inference',
+      }),
+    ]));
   });
 
   it('renders a structure’s scope as a field over the mapped elements it conditions', async () => {

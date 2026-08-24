@@ -7,6 +7,7 @@ import {
   deterministicMemoReview,
   EXOSPHERE_NODE_TYPES,
   isDiscreteMicroNodeLabel,
+  isObviousLowerLevelMacroLabel,
   isNamedInstitutionLabel,
   isMesosystemLabel,
   isNodeTypeAllowedAtScale,
@@ -134,14 +135,15 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
   'Except at Meso, each node label MUST name exactly one actor, role, group, activity, object, immediate setting, institution, policy, law, condition, or structure as a clear noun phrase. A node label must never be a sentence, clause, relationship proposition, outcome, or explanation; put that material in evidence, guidance, or a Micro or Exosphere connection. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
   'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
-  'LEVEL TESTS — assign each item by the person\'s participation, never by an entity\'s size or fame. Micro identifies the activities, roles, interpersonal relationships, objects, and immediate settings the person directly encounters. Meso identifies only an interrelation among two or more of those Micro settings in which the person participates; Meso is not another place to add actors, organizations, institutions, or services. Exosphere identifies institutions and decision-making bodies whose actions affect mapped elements even when the person does not interact with them directly. Macrosphere identifies broader laws, policies, economic conditions, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level actors as new nodes at a higher level.',
+  'Keep every suggestion and every sentence of guidance within the active scale. At Macrosphere, discuss only validated broader conditions and the mapped elements they affect; do not discuss missing institutions or institutional connections. At Exosphere, discuss only named institutions and their supported actions. At Meso, discuss only interrelations among Micro settings. At Micro, discuss only discrete immediate elements and direct relationships.',
+  'SCALE BOUNDARIES — assign each item by the person\'s participation, never by an entity\'s size or fame. Micro identifies the activities, roles, interpersonal relationships, objects, and immediate settings the person directly encounters. Meso identifies only an interrelation among two or more of those Micro settings in which the person participates; Meso is not another place to add actors, organizations, institutions, or services. Exosphere identifies institutions and decision-making bodies whose actions affect mapped elements even when the person does not interact with them directly. Macrosphere identifies broader laws, policies, economic conditions, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level actors as new nodes at a higher level.',
   `At Micro, propose only what the memo names. Micro node types must identify discrete elements; activities, social roles, and interpersonal relations belong to one immediate setting, and interpersonal relations are returned as connections rather than collapsed into node labels. Type each home, classroom, workplace, peer group, online community, or other immediate setting in which the person participates as "setting" so it can be used at Meso. Do not type an external institution as a Micro setting merely because its name contains school, college, clinic, or center. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for institutions that act indirectly and broader conditions that shape several mapped elements. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
   'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, each scope entry must use the exact ID of a Micro setting already on the map. At Exosphere, connections may use an existing node\'s exact label as an endpoint to tie new institutions to the existing map. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
   'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
   `connections must be an array of objects with exactly these keys: source, target, verb, rationale. At Micro, source and target must exactly match labels in nodes or exact IDs or labels from carriedNodes, endpoints must differ, and verb must be a short plain-language description of a direct activity, role, or interpersonal relationship. At Meso and Macrosphere, connections MUST be empty. For Exosphere, source and target must exactly match a label from nodes or a label from carriedNodes, at least one endpoint MUST be a carried node, endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must point to what makes the connection evident.`,
   `At Meso each node must have type "${MESOSYSTEM_NODE_TYPE}", a neutral noun-phrase label that names the interrelation with a relational noun such as "coordination", "communication", "overlap", "conflict", or "transition", and a scope containing the exact IDs of 2 or more Micro settings already on the map. A Micro setting must have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. Meso represents the interrelation of those settings and never adds a relationship edge or verb. Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node. A named institution or administrative unit belongs at Exosphere; a specific person directly encountered may belong at Micro, but neither belongs at Meso.`,
   'At Meso, guidance, example, and readiness text may discuss only the proposed interrelations and the human-readable labels of their scoped Micro settings. Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.',
-  'EXOSPHERE/MACROSPHERE BOUNDARY: a named university, college, agency, office, board, funder, employer, service provider, platform, or other institution belongs at Exosphere. CUNY is an institution and MUST be Exosphere, never Macrosphere. A policy administered by one named institution also remains Exosphere. Macrosphere is reserved for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Never repeat an Exosphere institution as a Macrosphere node, even inside a longer label.',
+  'EXOSPHERE/MACROSPHERE BOUNDARY: a named university, college, agency, office, board, funder, employer, service provider, platform, or other institution belongs at Exosphere. A policy administered by one named institution also remains Exosphere. Macrosphere is reserved for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Never repeat an Exosphere institution as a Macrosphere node, even inside a longer label.',
   `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact IDs from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
   'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance, example, and readiness text. For Micro, example must be null. For later levels, example may be a short plain-language paragraph, or null, that explains one mesosystem, institutional connection, or structure.',
   'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means clear institutions and at least one evident institutional relationship. For Macrosphere, ready means at least one broader condition affects two or more mapped elements. Readiness never blocks the student from continuing.',
@@ -582,13 +584,16 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .map((node) => {
       if (!isPlainObject(node)) return null;
       const inputLabel = collapsedRedirectText(node.label, MEMO_REVIEW_LIMITS.label);
+      const literalLabel = inputLabel?.replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
       const normalizedLabel = normalizeMicroNodeLabel(inputLabel);
-      const completeNounPhrase = normalizedLabel && normalizedLabel === inputLabel?.replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
+      const completeNounPhrase = normalizedLabel && normalizedLabel === literalLabel;
       const label = activeScale === 'micro'
         ? (isDiscreteMicroNodeLabel(node.label) && normalizedLabel)
         : activeScale === 'meso'
           ? (isMesosystemLabel(node.label) && normalizedLabel)
-          : (completeNounPhrase && normalizedLabel);
+          : activeScale === 'macrosphere'
+            ? (!containsRetiredSystemsLanguage(literalLabel) && !isObviousLowerLevelMacroLabel(literalLabel) && literalLabel)
+            : (completeNounPhrase && normalizedLabel);
       if (!label || seenLabels.has(label.toLocaleLowerCase())) return null;
       if (activeScale !== 'meso' && carriedNodeByLabel.has(label.toLocaleLowerCase())) return null;
       const outerLevel = activeScale === 'exosphere' || activeScale === 'macrosphere';
@@ -635,7 +640,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       if (!type) return null;
       if (!isNodeTypeAllowedAtScale(type, activeScale)) return null;
       if (activeScale === 'exosphere' && !isNamedInstitutionLabel(label)) return null;
-      if (activeScale === 'macrosphere' && macroLabelRepeatsInstitution(label, carriedNodes)) return null;
+      if (activeScale === 'macrosphere' && (containsRetiredSystemsLanguage(label) || macroLabelRepeatsInstitution(label, carriedNodes) || isObviousLowerLevelMacroLabel(label))) return null;
       seenLabels.add(label.toLocaleLowerCase());
       return {
         label,
@@ -755,7 +760,11 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     ? nodes.map((node) => ({
       point: `Review whether ${naturalLanguageList(node.scope.map(({ label }) => label))} form one mesosystem.`,
     })).slice(0, MEMO_REVIEW_LIMITS.guidance)
-    : guidance;
+    : activeScale === 'macrosphere'
+      ? nodes.map((node) => ({
+        point: `Review the effects of ${node.label} on ${naturalLanguageList(node.scope.map(({ label }) => label))}.`,
+      })).slice(0, MEMO_REVIEW_LIMITS.guidance)
+      : guidance;
   const providerExample = humanizeCarriedIds(value.example, MEMO_REVIEW_LIMITS.example);
   const example = activeScale === 'micro' || activeScale === 'meso' || containsRetiredSystemsLanguage(providerExample)
     ? null
@@ -767,6 +776,13 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     readinessNote = nodes.length > 0
       ? `The review found ${nodes.length} possible ${nodes.length === 1 ? 'mesosystem' : 'mesosystems'} among Micro settings already on the map.`
       : 'No supported interrelation among two or more Micro settings was found. You can continue and identify the settings that form a mesosystem.';
+  }
+  if (activeScale === 'macrosphere') {
+    readinessNote = nodes.length > 0
+      ? nodes.length === 1
+        ? 'The review found 1 possible Macrosphere condition affecting at least two mapped elements.'
+        : `The review found ${nodes.length} possible Macrosphere conditions, each affecting at least two mapped elements.`
+      : 'No supported Macrosphere condition affecting at least two mapped elements was found. You can revise the memo or continue without adding one.';
   }
   if (storedLegacyMeso) readinessNote = 'This earlier Meso review needs to be refreshed. Meso now identifies interrelations among two or more Micro settings.';
   const readiness = {

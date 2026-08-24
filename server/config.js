@@ -130,7 +130,7 @@ const SCALE_CONTENT = {
     output: 'Return named institution, agency, office, employer, funder, or service-system nodes. Represent funding, eligibility, rule-setting, and service delivery as supported relationships to mapped elements. Named institutions belong only in Exosphere; broader conditions belong in Macrosphere.',
   },
   macrosphere: {
-    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, and cultural beliefs that affect multiple mapped elements. Named institutions such as CUNY belong in Exosphere.',
+    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, and cultural beliefs that affect multiple mapped elements. Named institutions belong in Exosphere.',
     evidence: 'For each Macrosphere item, identify at least two affected mapped elements and state what evidence supports the claim. Add dates when time matters.',
     privacy: 'Do not include confidential, identifying, or nonpublic community information anywhere in the map or final work.',
     scale_rubric: 'Show how a broad law, public policy, economic condition, history, or cultural belief affects at least two mapped elements. Named institutions and their decisions belong in Exosphere.',
@@ -236,15 +236,15 @@ const PART_ONE_STAGES = {
 
 const PART_TWO_STAGES = {
   'add-source': {
-    guidance: 'Ask the student to prepare a 500–600 word memo for the active outer level. Exosphere names institutions, agencies, offices, service systems, and their indirect actions. Macrosphere names broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. Named institutions such as CUNY belong only in Exosphere.',
+    guidance: 'Ask the student to prepare a 500–600 word memo for the active outer level. Exosphere names institutions, agencies, offices, service systems, and their indirect actions. Macrosphere names broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. Named institutions belong only in Exosphere.',
     materials: '',
   },
   'review-suggestions': {
-    guidance: 'For Exosphere, check actual institutional names, actions, resource paths, recipients, evidence, and dates. For Macrosphere, check which mapped elements each broader law, public policy, economic condition, history, cultural belief, or structure affects and what evidence supports the claim. Keep named institutions such as CUNY in Exosphere.',
+    guidance: 'For Exosphere, check actual institutional names, actions, resource paths, recipients, evidence, and dates. For Macrosphere, check which mapped elements each broader law, public policy, economic condition, history, cultural belief, or structure affects and what evidence supports the claim. Keep named institutions in Exosphere.',
     materials: '',
   },
   'choose-what-to-map': {
-    guidance: `Ask the student to choose supported map elements for the active outer level. Exosphere includes named institutions and supported institutional relationships. Macrosphere includes broader conditions and the mapped elements they affect, with no relationship edges. Keep named institutions such as CUNY out of Macrosphere. Add an annotation when evidence is incomplete.
+    guidance: `Ask the student to choose supported map elements for the active outer level. Exosphere includes named institutions and supported institutional relationships. Macrosphere includes broader conditions and the mapped elements they affect, with no relationship edges. Keep named institutions out of Macrosphere. Add an annotation when evidence is incomplete.
 
 ${CONNECTION_GUIDANCE}`,
     materials: '',

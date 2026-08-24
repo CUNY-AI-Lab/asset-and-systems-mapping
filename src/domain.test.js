@@ -20,6 +20,7 @@ import {
   isDiscreteMicroNodeLabel,
   isMesosystemLabel,
   isNamedInstitutionLabel,
+  isObviousLowerLevelMacroLabel,
   labelRepeatsInstitution,
   normalizeMicroNodeLabel,
   parseProject,
@@ -240,6 +241,10 @@ describe('mapping domain', () => {
       'Patterns without a door',
       'Doorless pattern',
       'No-door pattern',
+      'The test for this ring',
+      'If you could visit it',
+      'It could email you',
+      'It belongs further in',
     ].forEach((label) => {
       expect(containsRetiredSystemsLanguage(label), label).toBe(true);
       expect(isDiscreteMicroNodeLabel(label), label).toBe(false);
@@ -286,6 +291,48 @@ describe('mapping domain', () => {
       scopeNodeIds: scope.map(({ id }) => id),
     }])[0]);
     expect(() => validateProject(project)).toThrow(/names an institution and belongs at Exosphere/);
+  });
+
+  it('keeps immediate actors and schedules out of Macrosphere without excluding broader conditions', () => {
+    [
+      'Marcus Facilitates It',
+      'Center Aide',
+      'Home Attendant’s Hours',
+      'Working student',
+      'Social worker',
+      'Maria Rivera helps family',
+      'Home attendant schedule',
+      'Therapy appointments',
+    ].forEach((label) => expect(isObviousLowerLevelMacroLabel(label), label).toBe(true));
+
+    [
+      'Americans with Disabilities Act',
+      'Medicaid eligibility and recertification policy',
+      'HCBS waiver rules',
+      'High housing and transportation costs',
+      'Digital-first benefits administration',
+      'Ableist expectations about work and independence',
+      'Infrastructure inequality',
+      'History of segregated disability services',
+      'Unpredictable work schedules',
+      'Student debt',
+    ].forEach((label) => expect(isObviousLowerLevelMacroLabel(label), label).toBe(false));
+
+    const project = createDefaultProject();
+    const student = mappedNode({ id: 'node_student', label: 'Working student', type: 'role', scale: 'micro' });
+    const workplace = mappedNode({ id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' });
+    project.releasedScales = [...SCALE_ORDER];
+    project.graph.nodes = [student, workplace, mappedNode({
+      id: 'node_bad_macro',
+      label: 'Center Aide',
+      type: 'structure',
+      scale: 'macrosphere',
+      scopeNodeIds: [student.id, workplace.id],
+      deontic: 'shapes',
+    })];
+    project.graph.edges = [];
+
+    expect(() => validateProject(project)).toThrow(/belongs at Micro/);
   });
 
   it('anchors deterministic Exosphere pathways to the carried map in the institutional register', () => {
@@ -961,6 +1008,63 @@ describe('mapping domain', () => {
     });
     expect(migrated.graph.nodes[0].notes).toContain('at least two valid mapped scope members');
     expect(() => validateProject(migrated)).not.toThrow();
+  });
+
+  it('reclassifies obvious lower-level Macrosphere records and retires clause labels during migration', () => {
+    const legacy = createDefaultProject();
+    legacy.activeScale = 'macrosphere';
+    legacy.releasedScales = [...SCALE_ORDER];
+    const student = mappedNode({ id: 'node_working_student', label: 'Working student', type: 'role', scale: 'micro' });
+    const workplace = mappedNode({ id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' });
+    const scopeNodeIds = [student.id, workplace.id];
+    legacy.graph.nodes = [
+      student,
+      workplace,
+      mappedNode({ id: 'node_cuny', label: 'CUNY', type: 'institution', scale: 'exosphere' }),
+      mappedNode({
+        id: 'node_center_aide', label: 'Center Aide', type: 'structure', scale: 'macrosphere',
+        scopeNodeIds, deontic: 'shapes',
+      }),
+      mappedNode({
+        id: 'node_attendant_hours', label: 'Home Attendant’s Hours', type: 'policy', scale: 'macrosphere',
+        scopeNodeIds, deontic: 'constrains',
+      }),
+      mappedNode({
+        id: 'node_marcus_clause', label: 'Marcus Facilitates It', type: 'structure', scale: 'macrosphere',
+        scopeNodeIds, deontic: 'shapes',
+      }),
+      mappedNode({
+        id: 'node_transport_costs', label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere',
+        scopeNodeIds, deontic: 'prices',
+      }),
+    ];
+    legacy.graph.edges = [];
+
+    expect(() => validateProject(legacy)).toThrow(/belongs at Micro/);
+
+    const migrated = parseProject(JSON.stringify(legacy));
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_center_aide')).toMatchObject({
+      label: 'Center Aide', type: 'role', scale: 'micro', status: 'confirmed', claimState: 'student interpretation',
+    });
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_attendant_hours')).toMatchObject({
+      label: 'Home Attendant’s Hours', type: 'object', scale: 'micro', status: 'confirmed', claimState: 'student interpretation',
+    });
+    ['node_center_aide', 'node_attendant_hours'].forEach((id) => {
+      const node = migrated.graph.nodes.find((item) => item.id === id);
+      expect(node).not.toHaveProperty('scopeNodeIds');
+      expect(node).not.toHaveProperty('deontic');
+      expect(node.notes).toContain('Moved from Macrosphere to Micro');
+    });
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_marcus_clause')).toMatchObject({
+      scale: 'macrosphere', status: 'rejected', claimState: 'retired',
+    });
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_marcus_clause').notes).toContain('clause about an immediate actor');
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_cuny')).toMatchObject({ type: 'institution', scale: 'exosphere' });
+    expect(migrated.graph.nodes.find(({ id }) => id === 'node_transport_costs')).toMatchObject({
+      type: 'economic condition', scale: 'macrosphere', status: 'confirmed', claimState: 'student interpretation',
+    });
+    expect(() => validateProject(migrated)).not.toThrow();
+    expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
   it('keeps an r/CUNY setting and its valid direct relationship at Micro when parsing a project', () => {

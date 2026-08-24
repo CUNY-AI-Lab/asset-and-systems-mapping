@@ -42,7 +42,7 @@ export const SCALES = {
     checklist: [
       'Name broader laws, public policies, economic conditions, histories, cultural beliefs, and structures.',
       'Identify at least two mapped elements affected by each item and the evidence supporting that claim.',
-      'Keep named institutions, including CUNY, in Exosphere.',
+      'Keep named institutions in Exosphere.',
     ],
   },
 };
@@ -159,6 +159,10 @@ const RETIRED_SYSTEMS_LANGUAGE = Object.freeze([
   /\b(?:never|not)\s+in\s+the\s+room\b/i,
   /\b(?:this|that|the)\s+ring\s+(?:holds?|contains?|shows?|includes?)\b/i,
   /\b(?:patterns?\s+(?:(?:with\s+no|without)\s+(?:a\s+)?doors?|(?:that\s+)?(?:has|have)\s+no\s+doors?)|(?:doorless|no[\s–—-]?door)\s+patterns?)\b/i,
+  /\b(?:the\s+)?test\s+for\s+(?:this|that|the)\s+ring\b/i,
+  /\bif\s+you\s+could\s+visit\s+it\b/i,
+  /\b(?:it\s+)?could\s+(?:e[ -]?mail|message|contact)\s+you\b/i,
+  /\bbelongs?\s+(?:farther|further)\s+in\b/i,
 ]);
 
 export function containsRetiredSystemsLanguage(value) {
@@ -346,6 +350,33 @@ export function isDiscreteMicroNodeLabel(value) {
     && !MICRO_NODE_ABSTRACT_LABEL.test(label)
     && !MICRO_NODE_COORDINATED_ENTITY_NOUNS.test(label)
     && !MICRO_NODE_COORDINATED_PEOPLE.test(label));
+}
+
+// A model-assigned Macrosphere type is not enough to make a lower-level item
+// into a broad condition. These deliberately narrow patterns catch forms that
+// are unambiguously about an immediate actor or timetable while leaving broad
+// conditions such as "Student debt" and "Unpredictable work schedules"
+// available for review.
+const LOWER_LEVEL_MACRO_ROLE_LABEL = /^(?:(?:working|home|center|school|community|care|case|service|support|peer|personal|family|student|teacher|classroom|workplace)\s+){0,3}(?:aides?|attendants?|caregivers?|counselors?|employees?|facilitators?|instructors?|librarians?|managers?|navigators?|parents?|participants?|people|persons?|residents?|social\s+workers?|students?|supervisors?|teachers?|therapists?|workers?)$/i;
+const LOWER_LEVEL_MACRO_POSSESSIVE_SCHEDULE = /^(?:[\p{L}0-9.'’-]+(?:\s+[\p{L}0-9.'’-]+){0,3})['’]s\s+(?:availability|appointments?|hours?|schedules?|shifts?|workdays?|workweeks?)$/iu;
+const LOWER_LEVEL_MACRO_ROLE_SCHEDULE = /^(?:(?:home|center|school|community|care|case|service|support|peer|personal)\s+){0,2}(?:aides?|attendants?|caregivers?|counselors?|employees?|facilitators?|instructors?|navigators?|students?|teachers?|therapists?|workers?)\s+(?:availability|appointments?|hours?|schedules?|shifts?|workdays?|workweeks?)$/i;
+const LOWER_LEVEL_MACRO_IMMEDIATE_SCHEDULE = /^(?:care|class|course|home|service|therapy|workplace)\s+(?:appointments?|hours?|schedules?|shifts?)$/i;
+const LOWER_LEVEL_MACRO_CLAUSE = /\S+\s+(?:am|are|can|could|did|does|facilitat(?:e|es|ed)|funds?|had|has|have|helps?|is|manages?|may|meets?|might|must|offers?|provides?|receives?|refers?|requests?|serves?|shall|should|supervises?|supports?|uses?|visits?|was|were|will|would)\s+\S+/i;
+
+function obviousLowerLevelMacroKind(value) {
+  if (typeof value !== 'string') return null;
+  const label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
+  if (!label) return null;
+  if (LOWER_LEVEL_MACRO_POSSESSIVE_SCHEDULE.test(label)
+    || LOWER_LEVEL_MACRO_ROLE_SCHEDULE.test(label)
+    || LOWER_LEVEL_MACRO_IMMEDIATE_SCHEDULE.test(label)) return 'schedule';
+  if (LOWER_LEVEL_MACRO_ROLE_LABEL.test(label)) return 'role';
+  if (LOWER_LEVEL_MACRO_CLAUSE.test(label)) return 'clause';
+  return null;
+}
+
+export function isObviousLowerLevelMacroLabel(value) {
+  return obviousLowerLevelMacroKind(value) !== null;
 }
 
 // A mesosystem label names the interrelation among immediate settings, not an
@@ -998,7 +1029,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       .filter((node) => isNodeTypeAllowedAtScale(node.type, activeScale))
       .filter((node) => activeScale !== 'micro' || (isDiscreteMicroNodeLabel(node.label) && !NODE_ONLY_IGNORED_LABEL.test(node.label)))
       .filter((node) => activeScale !== 'exosphere' || isNamedInstitutionLabel(node.label))
-      .filter((node) => activeScale !== 'macrosphere' || !labelRepeatsInstitution(node.label, carriedNodes))
+      .filter((node) => activeScale !== 'macrosphere' || (!labelRepeatsInstitution(node.label, carriedNodes) && !isObviousLowerLevelMacroLabel(node.label)))
       .map((node) => ({
         label: node.label,
         type: node.type,
@@ -1166,7 +1197,7 @@ const builderConfig = {
   label: 'Map builder',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
-  fixedPrompt: `${BASE_GUARDRAILS}\nPropose only operations appropriate to the active level. Micro uses discrete nodes and direct relationships among them. Meso uses mesosystem nodes that include two or more Micro settings already on the map and never uses relationship edges or verbs. Exosphere uses named institutions and supported institutional relationships; CUNY belongs here. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two mapped elements, never named institutions. Never add a suggestion to the map until the student continues from review.`,
+  fixedPrompt: `${BASE_GUARDRAILS}\nPropose only operations appropriate to the active level. Micro uses discrete nodes and direct relationships among them. Meso uses mesosystem nodes that include two or more Micro settings already on the map and never uses relationship edges or verbs. Exosphere uses named institutions and supported institutional relationships. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two mapped elements, never named institutions. Never add a suggestion to the map until the student continues from review.`,
   customInstructions: 'Use Ecological Systems Theory as an organizing lens. Guide with questions rather than supplying conclusions.',
   contextLimit: 32000,
   confidenceThreshold: 0.72,
@@ -1421,6 +1452,7 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     if (nodeIsLive && node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name one discrete Micro element');
     if (nodeIsLive && node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name an institution, agency, office, or service system');
     if (nodeIsLive && node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an institution and belongs at Exosphere');
+    if (nodeIsLive && node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an immediate person, role, activity, or schedule and belongs at Micro');
     if (node.type === MESOSYSTEM_NODE_TYPE && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
       invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two Micro settings for a mesosystem node');
     }
@@ -1632,6 +1664,7 @@ function validateMemoReview(review, path) {
     if (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name an institution, agency, office, or service system');
     if (node.type === MESOSYSTEM_NODE_TYPE && !isMesosystemLabel(node.label)) invalidProject(`${nodePath}.label`, 'must be a noun label without a relationship verb');
     if (node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'names an institution and belongs at Exosphere');
+    if (node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) invalidProject(`${nodePath}.label`, 'names an immediate person, role, activity, or schedule and belongs at Micro');
     assertString(node.evidence, `${nodePath}.evidence`, true, PROJECT_LIMITS.memoGuidanceEvidence);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${nodePath}.basis`);
     if (node.deontic !== undefined) assertString(node.deontic, `${nodePath}.deontic`, true, 60);
@@ -2038,6 +2071,8 @@ function migrateScaleTypeSemantics(project) {
   const typeMigrationNote = 'Level taxonomy updated. Review this item before relying on its revised type.';
   const movedInstitutionNote = 'Moved from Macrosphere to Exosphere because this item names an institution rather than a broader law, policy, economic condition, history, belief, or structure.';
   const movedMicroInstitutionNote = 'Moved from Micro to Exosphere because this item names an institution rather than a person, role, group, activity, object, or immediate setting.';
+  const movedLowerLevelNote = 'Moved from Macrosphere to Micro because this item names an immediate person, role, activity, or schedule rather than a broader condition.';
+  const retiredLowerLevelClauseNote = 'Retired during migration because this Macrosphere label is a clause about an immediate actor rather than the name of a broader condition. Rename and review it before restoring it.';
   const retiredExosphereNote = 'Retired during migration because an Exosphere item must name an institution, agency, office, or service system. Rename and review it before restoring it.';
   const retiredMicroNote = 'Retired during migration because a Micro item must name one discrete person, role, group, activity, object, or immediate setting. Rename and review it before restoring it.';
   const retiredScopeNote = 'Retired during migration because this item needs at least two valid mapped scope members before it can return to the map.';
@@ -2073,6 +2108,24 @@ function migrateScaleTypeSemantics(project) {
       delete node.deontic;
       appendSemanticMigrationNote(node, `${movedInstitutionNote}${priorScope || priorMode ? ` Earlier structural metadata was ${priorMode || 'unspecified'}${priorScope ? ` for ${priorScope}` : ''}.` : ''}`);
       if (Array.isArray(project.releasedScales) && !project.releasedScales.includes('exosphere')) project.releasedScales.push('exosphere');
+    }
+    if (node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) {
+      const mismatchKind = obviousLowerLevelMacroKind(node.label);
+      const canMoveToMicro = mismatchKind !== 'clause' && isDiscreteMicroNodeLabel(node.label);
+      if (canMoveToMicro) {
+        const priorScope = Array.isArray(node.scopeNodeIds) && node.scopeNodeIds.length ? node.scopeNodeIds.join(', ') : '';
+        const priorMode = node.deontic || '';
+        node.scale = 'micro';
+        node.type = mismatchKind === 'schedule' ? 'object' : 'role';
+        delete node.scopeNodeIds;
+        delete node.deontic;
+        appendSemanticMigrationNote(node, `${movedLowerLevelNote}${priorScope || priorMode ? ` Earlier structural metadata was ${priorMode || 'unspecified'}${priorScope ? ` for ${priorScope}` : ''}.` : ''}`);
+        if (Array.isArray(project.releasedScales) && !project.releasedScales.includes('micro')) project.releasedScales.unshift('micro');
+      } else if (node.status !== 'rejected' && node.claimState !== 'retired') {
+        node.status = 'rejected';
+        node.claimState = 'retired';
+        appendSemanticMigrationNote(node, retiredLowerLevelClauseNote);
+      }
     }
     if (NODE_TYPES.includes(node.type) && !isNodeTypeAllowedAtScale(node.type, node.scale)) {
       const inferredType = inferNodeType(node.label);
@@ -2213,7 +2266,7 @@ function migrateScaleTypeSemantics(project) {
       || !isNodeTypeAllowedAtScale(node.type, node.scale)
       || (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
       || (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label))
-      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || !Array.isArray(node.scope) || node.scope.length < 2))
+      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || isObviousLowerLevelMacroLabel(node.label) || !Array.isArray(node.scope) || node.scope.length < 2))
       || (node.scale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || !Array.isArray(node.scope) || node.scope.length < 2))
     ));
     const reviewScale = reviewNodes[0]?.scale || project.activeScale;
