@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import {
+  containsRetiredSystemsLanguage,
   deterministicMemoReview,
   EXOSPHERE_NODE_TYPES,
   isDiscreteMicroNodeLabel,
@@ -132,6 +133,7 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   `guidance must be an array of no more than 4 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
   `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
   'Except at Meso, each node label MUST name exactly one actor, role, group, activity, object, immediate setting, institution, policy, law, condition, or structure as a clear noun phrase. A node label must never be a sentence, clause, relationship proposition, outcome, or explanation; put that material in evidence, guidance, or a Micro or Exosphere connection. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
+  'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
   'LEVEL TESTS — assign each item by the person\'s participation, never by an entity\'s size or fame. Micro identifies the activities, roles, interpersonal relationships, objects, and immediate settings the person directly encounters. Meso identifies only an interrelation among two or more of those Micro settings in which the person participates; Meso is not another place to add actors, organizations, institutions, or services. Exosphere identifies institutions and decision-making bodies whose actions affect mapped elements even when the person does not interact with them directly. Macrosphere identifies broader laws, policies, economic conditions, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level actors as new nodes at a higher level.',
   `At Micro, propose only what the memo names. Micro node types must identify discrete elements; activities, social roles, and interpersonal relations belong to one immediate setting, and interpersonal relations are returned as connections rather than collapsed into node labels. Type each home, classroom, workplace, peer group, online community, or other immediate setting in which the person participates as "setting" so it can be used at Meso. Do not type an external institution as a Micro setting merely because its name contains school, college, clinic, or center. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for institutions that act indirectly and broader conditions that shape several mapped elements. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
   'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, each scope entry must use the exact ID of a Micro setting already on the map. At Exosphere, connections may use an existing node\'s exact label as an endpoint to tie new institutions to the existing map. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
@@ -566,7 +568,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     .map((item) => {
       if (!isPlainObject(item)) return null;
       const point = humanizeCarriedIds(item.point, MEMO_REVIEW_LIMITS.point);
-      if (!point) return null;
+      if (!point || containsRetiredSystemsLanguage(point)) return null;
       const evidenceExcerpt = humanizeCarriedIds(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence);
       return { point, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) };
     })
@@ -619,7 +621,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
           }
           if (activeScale === 'meso' && carriedNodes !== null && !MICRO_SETTING_NODE_TYPES.includes(resolved?.type)) return;
           if (activeScale === 'macrosphere' && carriedNodes !== null && resolved?.scale === 'macrosphere') return;
-          if (!resolved || seenScope.has(resolved.id)) return;
+          if (!resolved || containsRetiredSystemsLanguage(resolved.label) || seenScope.has(resolved.id)) return;
           seenScope.add(resolved.id);
           scope.push({ id: resolved.id, label: resolved.label });
         });
@@ -720,7 +722,8 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       // The institutional register is closed at generation time; stored
       // reviews replay whatever verb was resolved when they were generated.
       if (activeScale === 'exosphere' && carriedNodes !== null && verb) verb = scaleLexiconVerb('exosphere', verb);
-      if (!source || !target || source === target || !verb) return null;
+      if (!source || !target || source === target || !verb
+        || containsRetiredSystemsLanguage(sourceLabel) || containsRetiredSystemsLanguage(targetLabel)) return null;
       const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
       if (seenConnections.has(key) || carriedConnectionKeys.has(key)) return null;
       seenConnections.add(key);
@@ -741,14 +744,16 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
   // other institutions at Meso even when it returns a malformed explanation.
   const studentGuidance = activeScale === 'meso'
     ? nodes.map((node) => ({
-      point: `Review ${naturalLanguageList(node.scope.map(({ label }) => label))} as one mesosystem.`,
+      point: `Review whether ${naturalLanguageList(node.scope.map(({ label }) => label))} form one mesosystem.`,
     })).slice(0, MEMO_REVIEW_LIMITS.guidance)
     : guidance;
-  const example = activeScale === 'micro' || activeScale === 'meso'
+  const providerExample = humanizeCarriedIds(value.example, MEMO_REVIEW_LIMITS.example);
+  const example = activeScale === 'micro' || activeScale === 'meso' || containsRetiredSystemsLanguage(providerExample)
     ? null
-    : humanizeCarriedIds(value.example, MEMO_REVIEW_LIMITS.example) || null;
+    : providerExample || null;
   const storedLegacyMeso = activeScale === 'meso' && carriedNodes === null && nodes.length === 0;
   let readinessNote = humanizeCarriedIds(isPlainObject(value.readiness) ? value.readiness.note : null, MEMO_REVIEW_LIMITS.note) || '';
+  if (containsRetiredSystemsLanguage(readinessNote)) readinessNote = '';
   if (activeScale === 'meso') {
     readinessNote = nodes.length > 0
       ? `The review found ${nodes.length} possible ${nodes.length === 1 ? 'mesosystem' : 'mesosystems'} among Micro settings already on the map.`
@@ -797,9 +802,11 @@ function validatePreflightEvaluationRequest(value) {
     if (!PREFLIGHT_SCALES.has(scale)) throw new HttpError(400, `${nodeName}.scale is not supported.`);
     if (value.activeScale === 'meso' && scale !== 'micro') throw new HttpError(400, `${nodeName}.scale must be micro for Meso review.`);
     if (value.activeScale === 'meso' && !MICRO_SETTING_NODE_TYPES.includes(type)) throw new HttpError(400, `${nodeName}.type must identify an immediate Micro setting for Meso review.`);
+    const label = requireSnapshotText(node.label, `${nodeName}.label`, { max: MEMO_REVIEW_LIMITS.label });
+    if (containsRetiredSystemsLanguage(label)) throw new HttpError(400, `${nodeName}.label must name the map element directly.`);
     return {
       id,
-      label: requireSnapshotText(node.label, `${nodeName}.label`, { max: MEMO_REVIEW_LIMITS.label }),
+      label,
       type,
       scale,
     };
@@ -854,9 +861,11 @@ function validateConnectionSuggestionRequest(value) {
     requireObjectKeys(node, ['id', 'label', 'type', 'scale'], name);
     const scale = requireSnapshotText(node.scale, `${name}.scale`, { max: 40 });
     if (!PREFLIGHT_SCALES.has(scale)) throw new HttpError(400, `${name}.scale is not supported.`);
+    const label = requireSnapshotText(node.label, `${name}.label`, { max: 200 });
+    if (containsRetiredSystemsLanguage(label)) throw new HttpError(400, `${name}.label must name the map element directly.`);
     return {
       id: requireSnapshotText(node.id, `${name}.id`, { max: 200 }),
-      label: requireSnapshotText(node.label, `${name}.label`, { max: 200 }),
+      label,
       type: requireSnapshotText(node.type, `${name}.type`, { max: 100 }),
       scale,
     };

@@ -426,6 +426,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('no more than 10 nodes and 8 direct relationships at Micro');
     expect(firstInput.systemPrompt).toContain('as a clear noun phrase');
     expect(firstInput.systemPrompt).toContain('A node label must never be a sentence, clause, relationship proposition');
+    expect(firstInput.systemPrompt).toContain('Use literal, conventional instructional language throughout');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
     expect(firstInput.systemPrompt).toContain('At Meso and Macrosphere, connections MUST be empty');
     expect(firstInput.systemPrompt).toContain('LEVEL TESTS');
@@ -905,6 +906,81 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(stored.review.nodes).toEqual(evaluation.review.nodes);
       expect(stored.review.connections).toEqual([]);
     }
+  });
+
+  it('removes retired interface language from generated labels and student-facing review prose at every level', async () => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'node_classroom', label: 'Classroom', type: 'setting', scale: 'micro' },
+      { id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' },
+    ];
+    const suggestions = {
+      micro: {
+        nodes: [
+          { label: 'Has energy', type: 'person', scale: 'micro', evidence: 'Discard this category.' },
+          { label: 'Maya Rivera', type: 'person', scale: 'micro', evidence: 'The memo names Maya.' },
+          { label: 'Classroom', type: 'setting', scale: 'micro', evidence: 'The memo names a classroom.' },
+        ],
+      },
+      meso: {
+        nodes: [
+          { label: 'Pattern with no door', type: 'mesosystem', scale: 'meso', evidence: 'Discard this category.', scope: ['node_classroom', 'node_workplace'] },
+          { label: 'classroom–workplace transition planning', type: 'mesosystem', scale: 'meso', evidence: 'The memo connects both settings through transition planning.', scope: ['node_classroom', 'node_workplace'] },
+        ],
+      },
+      exosphere: {
+        nodes: [
+          { label: 'This Ring Holds Services Office', type: 'institution', scale: 'exosphere', evidence: 'Discard this category.', basis: 'inference' },
+          { label: 'East Harlem Disability Services Office', type: 'institution', scale: 'exosphere', evidence: 'The memo names the office.', basis: 'memo' },
+        ],
+      },
+      macrosphere: {
+        nodes: [
+          { label: 'Patterns without a door', type: 'structure', scale: 'macrosphere', evidence: 'Discard this category.', basis: 'inference', deontic: 'shapes', scope: ['node_classroom', 'node_workplace'] },
+          { label: 'Inaccessible transit policy', type: 'policy', scale: 'macrosphere', evidence: 'The memo describes a transit barrier.', basis: 'memo', deontic: 'constrains', scope: ['node_classroom', 'node_workplace'] },
+        ],
+      },
+    };
+    const ollamaRequest = vi.fn(async ({ activeScale }) => ({
+      suggestion: {
+        guidance: [
+          { point: 'Ripples outward across the map.' },
+          { point: 'Review the supported people, settings, and conditions.' },
+        ],
+        nodes: suggestions[activeScale].nodes,
+        connections: [],
+        example: 'This ring holds the relevant items.',
+        readiness: { ready: true, note: 'Never in the room, but still influential.' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'retired-interface-language.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const reviews = {};
+    for (const activeScale of ['micro', 'meso', 'exosphere', 'macrosphere']) {
+      reviews[activeScale] = (await evaluate(studentCookie, submissionBody({
+        activeScale,
+        ...(activeScale === 'micro' ? {} : { carriedNodes }),
+      }))).review;
+    }
+
+    expect(reviews.micro.nodes.map(({ label }) => label)).toEqual(['Maya Rivera', 'Classroom']);
+    expect(reviews.meso.nodes.map(({ label }) => label)).toEqual(['classroom–workplace transition planning']);
+    expect(reviews.exosphere.nodes.map(({ label }) => label)).toEqual(['East Harlem Disability Services Office']);
+    expect(reviews.macrosphere.nodes.map(({ label }) => label)).toEqual(['Inaccessible transit policy']);
+    expect(reviews.micro.guidance).toEqual([{ point: 'Review the supported people, settings, and conditions.' }]);
+    expect(reviews.exosphere.example).toBeNull();
+    expect(reviews.macrosphere.example).toBeNull();
+    expect(reviews.micro.readiness.note).toBe('');
+    expect(reviews.exosphere.readiness.note).toBe('');
+    expect(reviews.macrosphere.readiness.note).toBe('');
+    expect(JSON.stringify(reviews)).not.toMatch(/stuck|has energy|ripples? outward|in the room|ring holds|patterns? (?:with no|without)|doorless/i);
   });
 
   it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {

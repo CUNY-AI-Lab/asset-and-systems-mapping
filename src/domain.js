@@ -146,6 +146,27 @@ const SOCIAL_HANDLE_LABEL = /^(?:r|u)\/[A-Za-z0-9_-]+$/i;
 const GENERIC_INSTITUTION_LABEL = /^(?:(?:parent|student|family|youth|community|local|public|private|disability|advocacy|support|service)\s+){1,4}(?:organizations?|programs?|services?|agencies|offices?|institutions?|schools?|clinics?|centers?)$/i;
 const NAMED_INSTITUTION_PATTERN = /^(?:the\s+)?(?:(?:[A-Z][A-Za-z0-9&.'’-]*\s+){1,8}(?:Universit(?:y|ies)|Colleges?|Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?|Corporations?|Organizations?|Associations?|Societ(?:y|ies)|Foundations?|Institutes?|Administrations?|Librar(?:y|ies)|Centers?|Clinics?|Schools?|Hospitals?|Programs?|Services?|Service Providers?|Networks?)\b|(?:Offices?|Departments?|Committees?|Agenc(?:y|ies)|Authorit(?:y|ies)|Boards?|Bureaus?|Commissions?|Councils?)\s+(?:of|for|on)\s+[A-Z][A-Za-z0-9&.'’-]*(?:\s+(?:(?:of|for|and|the|in|at|on|with)\s+)?[A-Z][A-Za-z0-9&.'’-]*){0,10}\b)/;
 
+// Earlier interface drafts used figurative category names that do not name a
+// map element or give a student a clear instruction. Keep close variants out
+// of model suggestions and editable labels without excluding ordinary terms
+// such as "energy costs", "meeting room", or "transition planning".
+const RETIRED_SYSTEMS_LANGUAGE = Object.freeze([
+  /\bstuck\b/i,
+  /\b(?:has|have|had|having)\s+(?:some\s+)?energy\b/i,
+  /\benergy\s+for\s+change\b/i,
+  /\bripples?\s+(?:out|outward)\b/i,
+  /\bin\s+the\s+room\s+with\b/i,
+  /\b(?:never|not)\s+in\s+the\s+room\b/i,
+  /\b(?:this|that|the)\s+ring\s+(?:holds?|contains?|shows?|includes?)\b/i,
+  /\b(?:patterns?\s+(?:(?:with\s+no|without)\s+(?:a\s+)?doors?|(?:that\s+)?(?:has|have)\s+no\s+doors?)|(?:doorless|no[\s–—-]?door)\s+patterns?)\b/i,
+]);
+
+export function containsRetiredSystemsLanguage(value) {
+  if (typeof value !== 'string') return false;
+  const text = value.replace(/\s+/g, ' ').trim();
+  return Boolean(text && RETIRED_SYSTEMS_LANGUAGE.some((pattern) => pattern.test(text)));
+}
+
 function normalizedEntityLabel(value) {
   return String(value || '').normalize('NFKD').replace(/[^A-Za-z0-9]+/g, ' ').trim().toLocaleLowerCase();
 }
@@ -166,6 +187,7 @@ export function isNamedInstitutionLabel(value) {
   if (typeof value !== 'string') return false;
   const label = value.trim();
   if (!label) return false;
+  if (containsRetiredSystemsLanguage(label)) return false;
   // Platform handles name a person or an immediate online setting, even when
   // the handle contains an institutional acronym (for example `r/CUNY`).
   // The institution itself (`CUNY`) remains an Exosphere label.
@@ -285,6 +307,7 @@ function cleanMicroNodeLabel(value) {
   if (typeof value !== 'string') return null;
   const label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
   if (!label || label.length < 2 || label.length > 200 || !/[a-z]/i.test(label)) return null;
+  if (containsRetiredSystemsLanguage(label)) return null;
   if (/^(?:it|they|them|this|that|these|those|something|anything)$/i.test(label)) return null;
   if (/\b(?:who|that|which)$/i.test(label)) return null;
   return label;
@@ -1394,6 +1417,7 @@ function validateNodeCollection(nodes, path, annotationOwners) {
       });
     }
     const nodeIsLive = (node.status === 'confirmed' || node.status === 'research lead') && node.claimState !== 'retired';
+    if (nodeIsLive && containsRetiredSystemsLanguage(node.label)) invalidProject(`${itemPath}.label`, 'must use a literal, conventional name for the map element');
     if (nodeIsLive && node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name one discrete Micro element');
     if (nodeIsLive && node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name an institution, agency, office, or service system');
     if (nodeIsLive && node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an institution and belongs at Exosphere');
@@ -1587,6 +1611,7 @@ function validateMemoReview(review, path) {
     assertObject(item, itemPath);
     assertKnownKeys(item, ['point', 'evidenceExcerpt'], itemPath);
     assertString(item.point, `${itemPath}.point`, false, PROJECT_LIMITS.memoGuidanceText);
+    if (containsRetiredSystemsLanguage(item.point)) invalidProject(`${itemPath}.point`, 'must use literal, conventional instructional language');
     if (item.evidenceExcerpt !== undefined) assertString(item.evidenceExcerpt, `${itemPath}.evidenceExcerpt`, false, PROJECT_LIMITS.memoGuidanceEvidence);
   });
   if (!Array.isArray(review.nodes) || review.nodes.length > PROJECT_LIMITS.memoReviewNodes) {
@@ -1597,6 +1622,7 @@ function validateMemoReview(review, path) {
     assertObject(node, nodePath);
     assertKnownKeys(node, ['label', 'type', 'scale', 'evidence', 'basis', 'deontic', 'scope'], nodePath);
     assertString(node.label, `${nodePath}.label`, false, 200);
+    if (containsRetiredSystemsLanguage(node.label)) invalidProject(`${nodePath}.label`, 'must use a literal, conventional name for the map element');
     assertEnum(node.type, NODE_TYPES, `${nodePath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${nodePath}.scale`);
     if (node.scale === 'meso' && node.type !== MESOSYSTEM_NODE_TYPE) invalidProject(`${nodePath}.type`, `must be ${MESOSYSTEM_NODE_TYPE} for a Meso suggestion`);
@@ -1619,6 +1645,7 @@ function validateMemoReview(review, path) {
         assertKnownKeys(member, ['id', 'label'], memberPath);
         assertString(member.id, `${memberPath}.id`, false, 200);
         assertString(member.label, `${memberPath}.label`, false, 200);
+        if (containsRetiredSystemsLanguage(member.label)) invalidProject(`${memberPath}.label`, 'must use a literal, conventional name for the map element');
       });
     }
     if (node.type === MESOSYSTEM_NODE_TYPE && (!Array.isArray(node.scope) || node.scope.length < 2)) {
@@ -1639,15 +1666,21 @@ function validateMemoReview(review, path) {
     assertString(connection.target, `${connectionPath}.target`, false, 200);
     if (connection.sourceLabel !== undefined) assertString(connection.sourceLabel, `${connectionPath}.sourceLabel`, false, 200);
     if (connection.targetLabel !== undefined) assertString(connection.targetLabel, `${connectionPath}.targetLabel`, false, 200);
+    if (containsRetiredSystemsLanguage(connection.sourceLabel)) invalidProject(`${connectionPath}.sourceLabel`, 'must use a literal, conventional name for the map element');
+    if (containsRetiredSystemsLanguage(connection.targetLabel)) invalidProject(`${connectionPath}.targetLabel`, 'must use a literal, conventional name for the map element');
     if (connection.source === connection.target) invalidProject(`${connectionPath}.target`, 'must differ from source');
     assertString(connection.verb, `${connectionPath}.verb`, false, 100);
     assertString(connection.rationale, `${connectionPath}.rationale`, true, PROJECT_LIMITS.rationaleText);
   });
-  if (review.example !== null) assertString(review.example, `${path}.example`, false, PROJECT_LIMITS.memoReviewExample);
+  if (review.example !== null) {
+    assertString(review.example, `${path}.example`, false, PROJECT_LIMITS.memoReviewExample);
+    if (containsRetiredSystemsLanguage(review.example)) invalidProject(`${path}.example`, 'must use literal, conventional instructional language');
+  }
   assertObject(review.readiness, `${path}.readiness`);
   assertKnownKeys(review.readiness, ['ready', 'note'], `${path}.readiness`);
   assertBoolean(review.readiness.ready, `${path}.readiness.ready`);
   assertString(review.readiness.note, `${path}.readiness.note`, true, PROJECT_LIMITS.memoGuidanceText);
+  if (containsRetiredSystemsLanguage(review.readiness.note)) invalidProject(`${path}.readiness.note`, 'must use literal, conventional instructional language');
 }
 
 function validateStudentPreflight(preflight, path) {
@@ -2008,9 +2041,15 @@ function migrateScaleTypeSemantics(project) {
   const retiredExosphereNote = 'Retired during migration because an Exosphere item must name an institution, agency, office, or service system. Rename and review it before restoring it.';
   const retiredMicroNote = 'Retired during migration because a Micro item must name one discrete person, role, group, activity, object, or immediate setting. Rename and review it before restoring it.';
   const retiredScopeNote = 'Retired during migration because this item needs at least two valid mapped scope members before it can return to the map.';
+  const retiredInterfaceLanguageNote = 'Retired during migration because the label uses an earlier interface category instead of naming a map element directly.';
 
   allNodes.forEach((node) => {
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    if (containsRetiredSystemsLanguage(node.label) && node.status !== 'rejected' && node.claimState !== 'retired') {
+      node.status = 'rejected';
+      node.claimState = 'retired';
+      appendSemanticMigrationNote(node, retiredInterfaceLanguageNote);
+    }
     if (scopedSettingIds.has(node.id) && node.scale === 'micro' && node.type !== 'setting' && NODE_TYPES.includes(node.type)) {
       node.type = 'setting';
       appendSemanticMigrationNote(node, 'Typed as a Micro setting because an existing mesosystem includes it. Review the setting label and scope.');
@@ -2170,6 +2209,7 @@ function migrateScaleTypeSemantics(project) {
     const reviewConnections = Array.isArray(storedReview.connections) ? storedReview.connections : [];
     const incompatibleNode = reviewNodes.some((node) => (
       !node || typeof node !== 'object' || Array.isArray(node)
+      || containsRetiredSystemsLanguage(node.label)
       || !isNodeTypeAllowedAtScale(node.type, node.scale)
       || (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
       || (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label))
@@ -2178,7 +2218,11 @@ function migrateScaleTypeSemantics(project) {
     ));
     const reviewScale = reviewNodes[0]?.scale || project.activeScale;
     const incompatibleConnections = ['meso', 'macrosphere'].includes(reviewScale) && reviewConnections.length > 0;
-    if (incompatibleNode || incompatibleConnections) project.preflight = null;
+    const incompatibleProse = (Array.isArray(storedReview.guidance) ? storedReview.guidance : [])
+      .some((item) => containsRetiredSystemsLanguage(item?.point))
+      || containsRetiredSystemsLanguage(storedReview.example)
+      || containsRetiredSystemsLanguage(storedReview.readiness?.note);
+    if (incompatibleNode || incompatibleConnections || incompatibleProse) project.preflight = null;
   }
   return project;
 }

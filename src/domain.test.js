@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  containsRetiredSystemsLanguage,
   DEFAULT_VIEWPORT,
   EXOSPHERE_NODE_TYPES,
   MACROSPHERE_NODE_TYPES,
@@ -7,6 +8,7 @@ import {
   PROJECT_LIMITS,
   PROJECT_SCHEMA_VERSION,
   RELATION_VOCABULARY,
+  SCALE_ORDER,
   configFingerprint,
   createDefaultProject,
   createEvent,
@@ -207,6 +209,7 @@ describe('mapping domain', () => {
       'work–college coordination breakdown',
       'Work–online peer support coordination',
       'home–school support plan',
+      'classroom–workplace transition planning',
     ].forEach((label) => expect(isMesosystemLabel(label), label).toBe(true));
     [
       'School partners with Clinic',
@@ -222,6 +225,46 @@ describe('mapping domain', () => {
       'Community organization coordination',
       'teacher–parent meeting pattern',
     ].forEach((label) => expect(isMesosystemLabel(label), label).toBe(false));
+  });
+
+  it('rejects retired interface metaphors without excluding conventional map labels', () => {
+    [
+      'Stuck',
+      'Has energy',
+      'Energy for change',
+      'Ripples outward',
+      'In the room with family',
+      'Never in the room',
+      'This ring holds services',
+      'Pattern with no door',
+      'Patterns without a door',
+      'Doorless pattern',
+      'No-door pattern',
+    ].forEach((label) => {
+      expect(containsRetiredSystemsLanguage(label), label).toBe(true);
+      expect(isDiscreteMicroNodeLabel(label), label).toBe(false);
+      expect(isMesosystemLabel(label), label).toBe(false);
+    });
+
+    expect(containsRetiredSystemsLanguage('classroom–workplace transition planning')).toBe(false);
+    expect(isMesosystemLabel('classroom–workplace transition planning')).toBe(true);
+    expect(containsRetiredSystemsLanguage('Energy costs')).toBe(false);
+    expect(containsRetiredSystemsLanguage('Family support meeting room')).toBe(false);
+
+    const project = createDefaultProject();
+    const classroom = mappedNode({ id: 'node_classroom', label: 'Classroom', type: 'setting', scale: 'micro' });
+    const workplace = mappedNode({ id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' });
+    const structure = mappedNode({
+      id: 'node_retired_phrase',
+      label: 'Patterns with no door',
+      type: 'structure',
+      scale: 'macrosphere',
+      scopeNodeIds: [classroom.id, workplace.id],
+      deontic: 'shapes',
+    });
+    project.releasedScales = [...SCALE_ORDER];
+    project.graph.nodes = [classroom, workplace, structure];
+    expect(() => validateProject(project)).toThrow(/must use a literal, conventional name/);
   });
 
   it('keeps named institutions at Exosphere and out of Macrosphere', () => {

@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  containsRetiredSystemsLanguage,
   EXOSPHERE_NODE_TYPES,
   MACROSPHERE_NODE_TYPES,
   NODE_TYPES,
@@ -1145,6 +1146,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const addStructure = () => {
     const label = structureDraft.label.trim();
     if (!label) return toast('Name the Macrosphere item first.', 'error');
+    if (containsRetiredSystemsLanguage(label)) return toast('Use a direct, conventional name for the broader condition.', 'error');
     if (labelRepeatsInstitution(label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
     const id = stableId('node', label);
     if (project.candidates.nodes.some((node) => node.id === id)
@@ -1182,6 +1184,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (status === 'research lead' && !project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
+    if (kind === 'nodes' && (status === 'confirmed' || status === 'research lead') && containsRetiredSystemsLanguage(current.label)) return toast('Use a direct, conventional name for the map element.', 'error');
     if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
     if (kind === 'nodes' && project.activeScale === 'micro' && (status === 'confirmed' || status === 'research lead') && !isDiscreteMicroNodeLabel(current.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (kind === 'nodes' && project.activeScale === 'meso' && (status === 'confirmed' || status === 'research lead') && !isMesosystemLabel(current.label)) return toast('Use a clear noun-phrase label for the mesosystem, such as “home–school coordination.”', 'error');
@@ -1198,6 +1201,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const edit = (kind, id, field, value) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
+    if (kind === 'nodes' && field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
     if (kind === 'nodes' && field === 'label' && project.activeScale === 'meso' && !isMesosystemLabel(value)) return toast('Use a clear noun-phrase label for the mesosystem, such as “home–school coordination.”', 'error');
     if (kind === 'nodes' && field === 'label' && project.activeScale === 'macrosphere' && labelRepeatsInstitution(value, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exosphere instead.', 'error');
     if (kind === 'nodes' && field === 'type' && !isNodeTypeAllowedAtScale(value, project.activeScale)) return toast(`That type does not belong at ${SCALES[project.activeScale].label}.`, 'error');
@@ -1387,7 +1391,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
         {step === 'nodes' && project.activeScale === 'meso' && <section className="elicitation-panel" aria-labelledby="add-meso-linkage-title">
           <p className="eyebrow">Mesosystems</p>
           <h2 id="add-meso-linkage-title">Add a mesosystem</h2>
-          <p className="lede">Name a supported interrelation among at least two Micro settings in which the person participates, then select those settings.</p>
+          <p className="lede">Name how at least two Micro settings relate to one another, then select those settings.</p>
           <div className="elicitation-panel__form">
             <Field label="Mesosystem name"><input maxLength={NODE_LABEL_LIMIT} value={mesoDraft.label} placeholder="e.g. Work–college scheduling conflict" onChange={(event) => setMesoDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
             <Field label="First Micro setting"><select value={mesoDraft.first} onChange={(event) => setMesoDraft((current) => ({ ...current, first: event.target.value }))}><option value="">Choose a Micro setting…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
@@ -3260,6 +3264,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const editNode = (field, value) => {
     if (!selectedNode) return;
     if (field === 'scale') return toast('A node’s level is fixed after it is mapped. Remove it and add it at the correct level instead.', 'error');
+    if (field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
     if (field === 'type' && !isNodeTypeAllowedAtScale(value, selectedNode.scale)) return toast(`That type does not belong at ${SCALES[selectedNode.scale].label}.`, 'error');
     if (field === 'label' && selectedNode.scale === 'micro' && !isDiscreteMicroNodeLabel(value)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (field === 'label' && selectedNode.scale === 'meso' && !isMesosystemLabel(value)) return toast('Use a clear noun-phrase label for the mesosystem, without a relationship verb.', 'error');
@@ -3280,6 +3285,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const setSelectedRemoved = (removed) => {
     if (!selection) return;
+    if (!removed && selection.kind === 'node' && containsRetiredSystemsLanguage(selectedNode?.label)) return toast('Rename this item with a direct, conventional name before returning it to the map.', 'error');
     if (!removed && selection.kind === 'node' && ['meso', 'macrosphere'].includes(selectedNode?.scale)) {
       const memberById = new Map(project.graph.nodes.map((node) => [node.id, node]));
       const membersAreAvailable = (selectedNode.scopeNodeIds || []).length >= 2 && selectedNode.scopeNodeIds.every((id) => {
@@ -3337,6 +3343,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (project.activeScale === 'macrosphere') return toast('Add Macrosphere items from the Choose stage so each one identifies the mapped elements it affects.', 'error');
     if (project.graph.nodes.length >= PROJECT_LIMITS.nodes) return toast(`This map already contains the maximum ${PROJECT_LIMITS.nodes} nodes.`, 'error');
     if (!newNode.label.trim()) return toast('Name the node before adding it.', 'error');
+    if (containsRetiredSystemsLanguage(newNode.label)) return toast('Use a direct, conventional name for the map element.', 'error');
     if (!isNodeTypeAllowedAtScale(newNode.type, newNode.scale) || ['meso', 'macrosphere'].includes(newNode.scale)) return toast('Choose a type and level that belong together.', 'error');
     if (newNode.scale === 'micro' && !isDiscreteMicroNodeLabel(newNode.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (newNode.scale === 'exosphere' && !isNamedInstitutionLabel(newNode.label)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
@@ -3406,7 +3413,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     : INSPECTOR_TABS;
   const focusHasRelationshipPages = focus?.kind === 'node' && focusIncidentEdges.length > 0;
   const mapOverviewHint = visibleScale === 'meso'
-    ? 'Choose a mesosystem to see its included Micro settings.'
+    ? 'Choose a mesosystem to see the Micro settings it includes.'
     : visibleScale === 'macrosphere'
       ? 'Choose a Macrosphere item to see the mapped elements it affects.'
       : 'Choose a node to see its relationships.';
