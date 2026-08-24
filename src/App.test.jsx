@@ -1245,14 +1245,17 @@ describe('Systems Mapping workflow', () => {
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/connections')).toHaveLength(0);
   });
 
-  it('carries only discrete Micro actors and objects from a proposition into review and the map', async () => {
+  it('carries only discrete Micro actors and objects from a structured review into the map', async () => {
     const project = createDefaultProject();
     project.submission.text = 'Adult Participants face delays when the Accessible Van Program is unavailable.';
     project.stage = 1;
     project.furthestStage = 1;
     const review = {
       guidance: [{ point: 'The memo names participants and a transportation program.' }],
-      nodes: [],
+      nodes: [
+        { label: 'Adult Participants', type: 'person', scale: 'micro', evidence: project.submission.text },
+        { label: 'Accessible Van Program', type: 'resource', scale: 'micro', evidence: project.submission.text },
+      ],
       connections: [],
       example: null,
       readiness: { ready: false, note: 'Choose the actors and objects that belong in Micro.' },
@@ -1290,6 +1293,55 @@ describe('Systems Mapping workflow', () => {
       expect(storedProject().graph.edges).toEqual([]);
     });
     expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-full-label'))).toEqual(expectedLabels);
+  });
+
+  it('uses the scale-aware model review as the complete Micro candidate set', async () => {
+    const project = createDefaultProject();
+    project.submission.text = `Brief memo — u/DalekSupreme23
+
+From 2020–2024, this user posted in r/CUNY every calendar year—eight submissions total. They primarily sought peer help navigating CUNY: delayed diplomas, tuition payment plans, COVID testing, course scheduling, instructors, and registration.
+
+* Exosphere: Strong coverage of administrative systems that shape student life—graduation processing, billing, testing requirements, registration, and limited course availability.
+* Macrosphere: Their 2023 account connects CUNY’s affordability/flexibility promise to broader economic pressures: employment is necessary, yet daytime scheduling makes completing a degree difficult.
+
+Overall, the posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.`;
+    project.stage = 1;
+    project.furthestStage = 1;
+    const review = {
+      guidance: [{ point: 'The memo names the student and the peer setting they use directly.' }],
+      nodes: [
+        { label: 'u/DalekSupreme23', type: 'person', scale: 'micro', evidence: 'This user posted in r/CUNY every calendar year.' },
+        { label: 'CUNY students on r/CUNY', type: 'organization', scale: 'micro', evidence: 'They primarily sought peer help navigating CUNY.' },
+      ],
+      connections: [],
+      example: null,
+      readiness: { ready: true, note: 'The memo supports two Micro nodes.' },
+    };
+    const evaluation = evaluationRecord(evaluationPayloadFixture(project), { review });
+    project.preflight = {
+      memoReview: structuredClone(evaluation.review),
+      configurationSnapshot: structuredClone(evaluation.configSnapshot),
+      evaluation: {
+        evaluationId: evaluation.id,
+        runtime: evaluation.runtime,
+        createdAt: evaluation.createdAt,
+        expiresAt: evaluation.expiresAt,
+      },
+      sourceFingerprint: stableId('src', project.submission.text),
+    };
+
+    await resumeSavedProject(project);
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose nodes' }));
+    expect(await screen.findByRole('heading', { name: 'Choose your nodes' })).toBeVisible();
+
+    const expectedLabels = review.nodes.map(({ label }) => label);
+    expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toEqual(expectedLabels);
+    expect(screen.queryByDisplayValue('Strong Coverage of Administrative Systems')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Student Life—graduation Processing')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(storedProject().candidates.nodes.map(({ label }) => label)).toEqual(expectedLabels);
+      expect(storedProject().candidates.edges).toEqual([]);
+    });
   });
 
   it('never renders or commits a clause-like Micro node from a stored model review', async () => {
@@ -1367,9 +1419,9 @@ describe('Systems Mapping workflow', () => {
     const carried = screen.getByRole('region', { name: 'Nodes from Micro' });
     microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
     expect(screen.queryByRole('tab', { name: /Nodes/ })).not.toBeInTheDocument();
-    // The review's carried-ID connection plus the locally extracted
-    // Family-requests-School relationship between the same carried nodes.
-    expect(screen.getByRole('tab', { name: 'Connections · 2' })).toBeVisible();
+    // A structured model review is complete: the client keeps its exact
+    // carried-ID connection without supplementing it from local extraction.
+    expect(screen.getByRole('tab', { name: 'Connections · 1' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'More connections' })).toBeVisible();
     await waitFor(() => {
       expect(storedProject().candidates.nodes).toEqual([]);

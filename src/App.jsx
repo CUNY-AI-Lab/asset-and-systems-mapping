@@ -3419,8 +3419,13 @@ function App() {
   }, [project.stage, project.id, project.submission.fingerprint, project.activeScale, project.preflight, accessState.status, workspaceStarted, reviewBusy]);
 
   const buildCandidatesFromProject = (currentProject) => {
-    const extracted = extractCandidates(currentProject.submission);
     const review = currentProject.preflight?.memoReview;
+    // A structured review is the model's scale-aware reading of the memo and
+    // is the candidate source of truth. The local extractor cannot reliably
+    // distinguish prose under an explicitly named outer-scale heading, so
+    // merging it here can leak Exosphere or Macrosphere language into Micro.
+    // Keep extraction as an offline/no-review fallback only.
+    const extracted = review ? { nodes: [], edges: [] } : extractCandidates(currentProject.submission);
     const fingerprint = memoFingerprint(currentProject.submission);
     const liveGraphNodes = new Map(currentProject.graph.nodes
       .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
