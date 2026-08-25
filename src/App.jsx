@@ -47,16 +47,22 @@ import {
   suggestMapConnections,
   updateProjectLink,
 } from './api.js';
+import {
+  LEGACY_STORAGE_KEYS,
+  PROJECT_BODY_PREFIX,
+  PROJECT_LIBRARY_KEY,
+  STORAGE_KEY,
+  loadLibraryProject,
+  loadDurableProject,
+  loadProjectLibrary,
+  loadStoredLink,
+  mirrorActiveLink,
+  reconcileActiveProject,
+  rememberStoredLink,
+  saveProjectToLibrary,
+  summarizeProject,
+} from './projectLibrary.js';
 
-const STORAGE_KEY = 'systems-mapping-studio.project.v6';
-const LEGACY_STORAGE_KEYS = [
-  'systems-mapping-studio.project.v5',
-  'systems-mapping-studio.project.v4',
-  'systems-mapping-studio.project.v3',
-  'systems-mapping-studio.project.v2',
-  'systems-mapping-studio.project.v1',
-];
-const LINK_STORAGE_KEY = 'systems-mapping-studio.link.v1';
 const LINK_PATH_PATTERN = /^\/p\/([A-Za-z0-9_-]{20,64})\/?$/;
 const LINK_SYNC_DEBOUNCE_MS = 4000;
 const MAX_MEMO_BYTES = 5 * 1024 * 1024;
@@ -108,8 +114,9 @@ function loadProject() {
       return { project: createDefaultProject(), loadError: null, recovery: null, hasSavedProject: false, persistenceBlocked: false, sourceKey: null };
     }
     try {
+      const parsedProject = parseProject(saved);
       return {
-        project: parseProject(saved),
+        project: reconcileActiveProject(window.localStorage, parsedProject),
         loadError: null,
         recovery: null,
         hasSavedProject: true,
@@ -135,27 +142,6 @@ function loadProject() {
       persistenceBlocked: true,
       sourceKey: null,
     };
-  }
-}
-
-function loadStoredLink() {
-  try {
-    const raw = window.localStorage.getItem(LINK_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (typeof parsed?.token !== 'string' || typeof parsed?.projectId !== 'string') return null;
-    return { token: parsed.token, projectId: parsed.projectId };
-  } catch {
-    return null;
-  }
-}
-
-function storeLink(link) {
-  try {
-    if (link) window.localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(link));
-    else window.localStorage.removeItem(LINK_STORAGE_KEY);
-  } catch {
-    // The link still works for this visit even when browser storage is unavailable.
   }
 }
 
@@ -540,14 +526,16 @@ function normalizePreflightEvaluation(evaluation, project) {
 
 function createBlankProject() {
   const project = createDefaultProject();
-  project.id = `project_${Date.now().toString(36)}`;
+  const nonce = globalThis.crypto?.randomUUID?.().replaceAll('-', '')
+    || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  project.id = `project_${nonce}`;
   project.mapAnnotation = { id: stableId('annotation', `${project.id}:map`), text: '' };
   project.title = 'Untitled systems map';
   project.inquiry = '';
   project.stage = 0;
   project.furthestStage = 0;
   project.submission = {
-    id: `submission_${Date.now().toString(36)}`,
+    id: `submission_${nonce}`,
     title: '',
     author: '',
     date: '',
@@ -704,24 +692,44 @@ function ClassAccessScreen({ state, onSubmit, onTeacher }) {
   </AccessFrame>;
 }
 
-function ResumeScreen({ project, hasSavedProject, saveState, onResume, onStart, onTeacher, onEndAccess, onRecovery, linkNotice = null }) {
-  const memoCount = hasSavedProject && (project.submission?.text?.trim() || project.submission?.title?.trim()) ? 1 : 0;
+function projectSavedLabel(updatedAt) {
+  const date = new Date(updatedAt);
+  if (Number.isNaN(date.getTime())) return 'Saved on this device';
+  return `Saved ${date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function ProjectsScreen({ projects, activeProjectId, saveState, onOpen, onStart, onTeacher, onEndAccess, onRecovery, linkNotice = null }) {
   return <AccessFrame onTeacher={onTeacher}>
     <main className="resume-main" id="workspace">
       <p className="eyebrow">Class workspace open</p>
-      <h1>{hasSavedProject ? 'Keep working on your map.' : 'Start a systems map.'}</h1>
-      <h2>{hasSavedProject ? project.title : 'A new project'}</h2>
-      <div className="resume-meta" aria-label="Saved project summary">
-        <span><i className="resume-stage-mark" /><strong>{coursePartForScale(project).label} · {SCALES[project.activeScale].label}</strong></span>
-        <span>Stage · {STAGES[project.stage].short}</span>
-        <span><Icon name="history" />{memoCount} {memoCount === 1 ? 'memo' : 'memos'}</span>
+      <div className="projects-heading">
+        <div>
+          <h1>Your projects</h1>
+          <p>Continue a saved map or start a new one.</p>
+        </div>
+        {projects.length > 0 && <button type="button" className="button" onClick={onStart}><Icon name="plus" />New project</button>}
       </div>
       {linkNotice && <p className="access-message access-message--error" role="alert">{linkNotice}</p>}
       {saveState.status === 'error' && <button type="button" className="recovery-notice" onClick={onRecovery}><strong>Local recovery needs attention</strong><span>{saveState.message}</span></button>}
-      <div className="resume-actions">
-        <button type="button" className="button access-primary" onClick={hasSavedProject ? onResume : onStart}>{hasSavedProject ? 'Continue' : 'Start'}</button>
-        {hasSavedProject && <button type="button" className="resume-secondary" onClick={onStart}>Start another project</button>}
-      </div>
+      {projects.length ? <div className="project-list" aria-label="Saved projects">
+        {projects.map((savedProject) => <article className={`project-card${savedProject.id === activeProjectId ? ' is-current' : ''}`} aria-label={savedProject.title} key={savedProject.id}>
+          <div className="project-card__copy">
+            <div className="project-card__title"><h2>{savedProject.title}</h2>{savedProject.id === activeProjectId && <span>Current</span>}</div>
+            {savedProject.participantName && <p className="project-card__participant">{savedProject.participantName}</p>}
+            <div className="project-card__meta">
+              <span><strong>{SCALES[savedProject.activeScale]?.label || savedProject.activeScale}</strong></span>
+              <span>{STAGES[savedProject.stage]?.short || 'Add memo'}</span>
+              <span><Icon name="history" />{savedProject.memoCount} {savedProject.memoCount === 1 ? 'memo' : 'memos'}</span>
+              <span>{projectSavedLabel(savedProject.updatedAt)}</span>
+            </div>
+          </div>
+          <button type="button" className="button button--secondary project-card__open" onClick={() => onOpen(savedProject)}>Open project</button>
+        </article>)}
+      </div> : <section className="projects-empty">
+        <h2>No saved projects yet</h2>
+        <p>Start a project to add your memo and build a map.</p>
+        <button type="button" className="button" onClick={onStart}>Start new project</button>
+      </section>}
       <div className="access-session-line"><button type="button" onClick={onEndAccess}>End class access</button></div>
     </main>
   </AccessFrame>;
@@ -3934,7 +3942,7 @@ function InstructorPanel({ project, update, toast, onNewProject }) {
     <div className="settings-section"><p className="eyebrow">Privacy and publication</p><Field label="Maximum sharing tier"><select value={project.instructor.maxSharingTier} onChange={(event) => set('maxSharingTier', event.target.value)}><option>private</option><option>course</option><option>CUNY</option><option>public</option></select></Field><label className="check-row"><input type="checkbox" checked={project.instructor.allowResearchLeads} onChange={(event) => set('allowResearchLeads', event.target.checked)} /><span><strong>Allow items needing more evidence</strong><small>Keep these items visually distinct.</small></span></label></div>
     <div className="settings-section"><p className="eyebrow">Map levels</p><div className="release-controls">{SCALE_ORDER.map((scale) => { const open = project.releasedScales.includes(scale); return <button key={scale} className={open ? 'is-open' : ''} disabled={open} onClick={() => release(scale)}>{open ? <Icon name="check" size={15} /> : <Icon name="plus" size={15} />}{SCALES[scale].label}</button>; })}</div></div>
     <div className="settings-section"><p className="eyebrow">Model settings</p><dl className="config-summary"><div><dt>Suggestion model</dt><dd>{project.configs.preflight.label} · v{project.configs.preflight.revision}</dd></div><div><dt>Graph builder</dt><dd>{project.configs.builder.label} · v{project.configs.builder.revision}</dd></div><div><dt>Runtime</dt><dd>{suggestionRuntimeLabel(project.preflight?.evaluation?.runtime)}</dd></div></dl><button type="button" className="button button--secondary" onClick={() => toast('Open “Review your memo,” then “Model setup,” to edit either model setup.')}>Where to edit</button></div>
-    <div className="settings-section"><p className="eyebrow">Project data</p><p className="privacy-note">Create a separate local project without changing the model presets. Export the current project first if you need to retain it.</p><button type="button" className="button button--secondary" onClick={onNewProject}>New project…</button></div>
+    <div className="settings-section"><p className="eyebrow">Project data</p><p className="privacy-note">Start a separate project without changing this one. Your current project stays available from Projects.</p><button type="button" className="button button--secondary" onClick={onNewProject}>New project…</button></div>
   </div>;
 }
 
@@ -3961,6 +3969,7 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
 function App() {
   const [initialLoad] = useState(loadProject);
   const [project, setProject] = useState(initialLoad.project);
+  const [projectRecords, setProjectRecords] = useState(() => loadProjectLibrary(window.localStorage, initialLoad.project, initialLoad.hasSavedProject));
   const [modal, setModal] = useState(null);
   const [toastState, setToastState] = useState(null);
   const [passwordResetToken, setPasswordResetToken] = useState(() => {
@@ -3985,14 +3994,16 @@ function App() {
     recovery: initialLoad.recovery,
     savedRevision: 0,
   });
-  const [link, setLink] = useState(loadStoredLink);
+  const [link, setLink] = useState(() => loadStoredLink(window.localStorage, initialLoad.project.id));
   const [linkStatus, setLinkStatus] = useState('idle');
   const [linkMessage, setLinkMessage] = useState(null);
   const toastTimer = useRef(null);
   const persistTimer = useRef(null);
   const linkSyncTimer = useRef(null);
   const linkLoadAttemptedRef = useRef(false);
+  const projectActivationGenerationRef = useRef(0);
   const linkRef = useRef(link);
+  const projectRecordsRef = useRef(projectRecords);
   const pendingAnnotationsRef = useRef(new Map());
   const prototypeLogNoticeRef = useRef({ sequence: 0, lastFailure: 0 });
   const accessGenerationRef = useRef(0);
@@ -4001,8 +4012,13 @@ function App() {
   const connectionPromptRef = useRef(connectionPrompt);
   const workspaceRef = useRef(null);
   projectRef.current = project;
+  projectRecordsRef.current = projectRecords;
   connectionPromptRef.current = connectionPrompt;
   linkRef.current = link;
+  const commitProjectRecords = useCallback((records) => {
+    projectRecordsRef.current = records;
+    setProjectRecords(records);
+  }, []);
   const toast = useCallback((message, type = 'success') => {
     window.clearTimeout(toastTimer.current);
     setToastState({ message, type });
@@ -4091,7 +4107,8 @@ function App() {
       return false;
     }
     try {
-      window.localStorage.setItem(STORAGE_KEY, serialized);
+      const records = saveProjectToLibrary(window.localStorage, snapshot, projectRecordsRef.current, { makeActive: true });
+      commitProjectRecords(records);
       setHasSavedProject(true);
       setSaveState((current) => ({ ...current, status: 'saved', message: 'Project saved on this device', savedRevision: (current.savedRevision || 0) + 1 }));
       return true;
@@ -4100,7 +4117,7 @@ function App() {
       setSaveState((current) => ({ ...current, status: 'error', message: `Local save failed: ${error.message}`, recovery: current.recovery || serialized }));
       return false;
     }
-  }, [workspaceStarted, persistenceBlocked]);
+  }, [commitProjectRecords, workspaceStarted, persistenceBlocked]);
 
   const flushPersistence = useCallback(() => {
     window.clearTimeout(persistTimer.current);
@@ -4132,24 +4149,39 @@ function App() {
 
   useEffect(() => {
     const onStorage = (event) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) return;
-      try {
-        const incoming = parseProject(event.newValue);
-        setHasSavedProject(true);
-        setProject((current) => Date.parse(incoming.updatedAt || 0) > Date.parse(current.updatedAt || 0) ? incoming : current);
-      } catch {
-        setPersistenceBlocked(true);
-        setSaveState((current) => ({ ...current, status: 'error', message: 'Another browser session wrote an invalid project. The current workspace was preserved.', recovery: event.newValue }));
+      if (event.key === STORAGE_KEY && event.newValue) {
+        try {
+          const incoming = parseProject(event.newValue);
+          setHasSavedProject(true);
+          if (incoming.id === projectRef.current.id && Date.parse(incoming.updatedAt || 0) > Date.parse(projectRef.current.updatedAt || 0)) {
+            projectRef.current = incoming;
+            setProject(incoming);
+          }
+          commitProjectRecords(loadProjectLibrary(window.localStorage, projectRef.current, true));
+        } catch {
+          setPersistenceBlocked(true);
+          setSaveState((current) => ({ ...current, status: 'error', message: 'Another browser session wrote an invalid project. The current workspace was preserved.', recovery: event.newValue }));
+        }
+        return;
+      }
+      if (event.key === PROJECT_LIBRARY_KEY || event.key?.startsWith(PROJECT_BODY_PREFIX)) {
+        const reconciled = reconcileActiveProject(window.localStorage, projectRef.current);
+        if (reconciled !== projectRef.current) {
+          projectRef.current = reconciled;
+          setProject(reconciled);
+        }
+        commitProjectRecords(loadProjectLibrary(window.localStorage, reconciled, true));
       }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [commitProjectRecords]);
   useEffect(() => {
     if (workspaceStarted || teacherOpen) workspaceRef.current?.focus();
   }, [project.stage, teacherOpen, workspaceStarted, mapPreviewOpen]);
 
   const refreshPublicConfigurations = useCallback(async () => {
+    const projectId = project.id;
     const scale = project.activeScale;
     const stageId = STAGES[project.stage]?.id || 'add-source';
     try {
@@ -4158,7 +4190,7 @@ function App() {
         getPublicConfiguration('builder', scale, stageId),
       ]);
       setProject((current) => {
-        if (current.activeScale !== scale) return current;
+        if (current.id !== projectId || current.activeScale !== scale || STAGES[current.stage]?.id !== stageId) return current;
         if (current.teacherGovernance?.preflight?.fingerprint === preflight.fingerprint && current.teacherGovernance?.builder?.fingerprint === builder.fingerprint) return current;
         const next = structuredClone(current);
         next.teacherGovernance = { preflight, builder, refreshedAt: new Date().toISOString() };
@@ -4169,7 +4201,7 @@ function App() {
     } catch {
       return false;
     }
-  }, [project.activeScale, project.stage]);
+  }, [project.id, project.activeScale, project.stage]);
   useEffect(() => {
     if (workspaceStarted && accessState.status === 'granted') refreshPublicConfigurations();
   }, [workspaceStarted, accessState.status, refreshPublicConfigurations]);
@@ -4735,20 +4767,100 @@ function App() {
   // Model requests are optional background work. They may guard their own
   // duplicate-request controls, but never block the student's next stage.
   const canPrimary = true;
-  const replaceProject = useCallback((imported, fileName = 'Imported project') => {
-    const next = structuredClone(imported);
-    next.updatedAt = new Date().toISOString();
-    next.events = [...(next.events || []), createEvent('project.imported', fileName)].slice(-500);
+  const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
+    projectActivationGenerationRef.current += 1;
+    window.clearTimeout(persistTimer.current);
+    window.clearTimeout(linkSyncTimer.current);
+    pendingAnnotationsRef.current.clear();
+    projectRef.current = next;
+    commitProjectRecords(records);
     setProject(next);
     setReviewBusy(null);
     setConnectionBusy(false);
     setConnectionPrompt('');
     setConnectionSuggestions([]);
     setMapPreviewOpen(false);
+    setHasSavedProject(true);
+    setWorkspaceStarted(openWorkspace);
+    setPendingNewProject(false);
+    setModal(null);
+    setSaveState((current) => ({ ...current, status: 'saved', message: 'Project saved on this device', savedRevision: (current.savedRevision || 0) + 1 }));
+    const nextLink = loadStoredLink(window.localStorage, next.id);
+    linkRef.current = nextLink;
+    setLink(nextLink);
+    mirrorActiveLink(window.localStorage, nextLink);
+    setLinkStatus(nextLink ? 'synced' : 'idle');
+    setLinkMessage(null);
+    const pathToken = urlLinkToken();
+    if (pathToken && pathToken !== nextLink?.token) window.history.replaceState(null, '', '/');
+  }, [commitProjectRecords]);
+
+  const archiveCurrentProject = useCallback(({ allowSavedFallback = false } = {}) => {
+    window.clearTimeout(persistTimer.current);
+    window.clearTimeout(linkSyncTimer.current);
+    const committed = commitPendingAnnotations();
+    const snapshot = committed.project;
+    if (!hasSavedProject && !workspaceStarted) return { snapshot, records: projectRecordsRef.current };
+    try {
+      const records = saveProjectToLibrary(window.localStorage, snapshot, projectRecordsRef.current);
+      if (linkRef.current?.projectId === snapshot.id) rememberStoredLink(window.localStorage, linkRef.current);
+      commitProjectRecords(records);
+      setHasSavedProject(true);
+      return { snapshot, records };
+    } catch (error) {
+      try {
+        serializeProject(snapshot);
+      } catch {
+        if (allowSavedFallback && hasSavedProject) {
+          const durableProject = loadDurableProject(window.localStorage, snapshot.id);
+          if (durableProject) {
+            try {
+              const records = saveProjectToLibrary(window.localStorage, durableProject, projectRecordsRef.current);
+              let recovery = null;
+              try {
+                recovery = JSON.stringify(snapshot);
+                window.localStorage.setItem(`systems-mapping-studio.recovery.${Date.now()}`, recovery);
+              } catch {
+                // The last valid project is still preserved even if the invalid draft cannot be copied.
+              }
+              commitProjectRecords(records);
+              return { snapshot, records, usedSavedFallback: true, recovery };
+            } catch {
+              // Fall through to the blocking validation message below.
+            }
+          }
+        }
+        setSaveState((current) => ({ ...current, status: 'validation', message: 'Complete or remove the current invalid map item before switching projects.' }));
+        toast('Complete or remove the current invalid map item before switching projects.', 'error');
+        return null;
+      }
+      setPersistenceBlocked(true);
+      setSaveState((current) => ({ ...current, status: 'error', message: `Local save failed: ${error.message}`, recovery: current.recovery || serializeProject(snapshot) }));
+      toast('The current project could not be saved, so it remains open.', 'error');
+      return null;
+    }
+  }, [commitPendingAnnotations, commitProjectRecords, hasSavedProject, toast, workspaceStarted]);
+
+  const replaceProject = useCallback((imported, fileName = 'Imported project') => {
+    const next = structuredClone(imported);
+    next.updatedAt = new Date().toISOString();
+    next.events = [...(next.events || []), createEvent('project.imported', fileName)].slice(-500);
+    const previous = archiveCurrentProject();
+    if (!previous) return false;
+    let records;
+    try {
+      records = saveProjectToLibrary(window.localStorage, next, previous.records, { makeActive: true });
+    } catch (error) {
+      setPersistenceBlocked(true);
+      setSaveState((current) => ({ ...current, status: 'error', message: `The imported project could not be saved: ${error.message}` }));
+      toast('The imported project could not be saved. The current project remains open.', 'error');
+      return false;
+    }
+    activateProject(next, records);
     logPrototype('project_imported', { stageIndex: next.stage, nodeCount: next.graph.nodes.length, edgeCount: next.graph.edges.length }, STAGES[next.stage].label);
-    logPrototype('stage_viewed', { fromStage: projectRef.current.stage, toStage: next.stage }, STAGES[next.stage].label);
-    if (urlLinkToken() && linkRef.current?.projectId !== next.id) window.history.replaceState(null, '', '/');
-  }, [logPrototype]);
+    logPrototype('stage_viewed', { fromStage: previous.snapshot.stage, toStage: next.stage }, STAGES[next.stage].label);
+    return true;
+  }, [activateProject, archiveCurrentProject, logPrototype, toast]);
 
   const syncLinkNow = useCallback(async () => {
     const activeLink = linkRef.current;
@@ -4763,10 +4875,12 @@ function App() {
     setLinkStatus('syncing');
     try {
       await updateProjectLink(activeLink.token, serialized);
+      if (linkRef.current?.token !== activeLink.token || projectRef.current.id !== snapshot.id) return false;
       setLinkStatus('synced');
       setLinkMessage(null);
       return true;
     } catch (error) {
+      if (linkRef.current?.token !== activeLink.token || projectRef.current.id !== snapshot.id) return false;
       setLinkStatus('error');
       setLinkMessage(describeLinkError(error));
       return false;
@@ -4785,25 +4899,39 @@ function App() {
     linkLoadAttemptedRef.current = true;
     const token = urlLinkToken();
     if (!token) return;
+    let active = true;
+    const activationGeneration = projectActivationGenerationRef.current;
     fetchProjectLink(token).then((result) => {
+      if (!active || activationGeneration !== projectActivationGenerationRef.current || urlLinkToken() !== token) return;
       const incoming = parseProject(result.project);
       const nextLink = { token, projectId: incoming.id };
-      setLink(nextLink);
-      linkRef.current = nextLink;
-      storeLink(nextLink);
+      rememberStoredLink(window.localStorage, nextLink);
       const local = projectRef.current;
       if (local.id !== incoming.id || Date.parse(incoming.updatedAt || 0) > Date.parse(local.updatedAt || 0)) {
-        replaceProject(incoming, 'Project link');
-        setHasSavedProject(true);
+        if (!replaceProject(incoming, 'Project link')) {
+          const currentLink = loadStoredLink(window.localStorage, projectRef.current.id);
+          linkRef.current = currentLink;
+          setLink(currentLink);
+          setLinkStatus('error');
+          setLinkMessage('The linked project could not replace the current workspace because the current project was not saved.');
+          return;
+        }
+      } else {
+        setLink(nextLink);
+        linkRef.current = nextLink;
+        mirrorActiveLink(window.localStorage, nextLink);
       }
+      setHasSavedProject(true);
       setLinkStatus('synced');
       setLinkMessage(null);
     }).catch((error) => {
+      if (!active || activationGeneration !== projectActivationGenerationRef.current || urlLinkToken() !== token) return;
       setLinkStatus('error');
       setLinkMessage(error instanceof ApiError
         ? describeLinkError(error)
         : `The linked project could not be loaded: ${error.message}`);
     });
+    return () => { active = false; };
   }, [accessState.status, replaceProject]);
 
   const createLink = useCallback(async () => {
@@ -4821,13 +4949,15 @@ function App() {
     try {
       const result = await createProjectLink(serialized);
       const nextLink = { token: result.token, projectId: snapshot.id };
+      rememberStoredLink(window.localStorage, nextLink);
+      if (projectRef.current.id !== snapshot.id) return;
       setLink(nextLink);
       linkRef.current = nextLink;
-      storeLink(nextLink);
       setLinkStatus('synced');
       window.history.replaceState(null, '', `/p/${result.token}`);
       toast('Project link created.');
     } catch (error) {
+      if (projectRef.current.id !== snapshot.id) return;
       setLinkStatus('error');
       const message = describeLinkError(error);
       setLinkMessage(message);
@@ -4912,44 +5042,82 @@ function App() {
     setAccessState({ status: 'required', access: null, message: 'Enter your class code to continue.', kind: 'info' });
   };
 
-  const resumeProject = () => {
-    setMapPreviewOpen(false);
-    setWorkspaceStarted(true);
-    logPrototype('project_resumed', { stageIndex: project.stage, nodeCount: project.graph.nodes.length, edgeCount: project.graph.edges.length }, STAGES[project.stage].label);
+  const startBlankProject = () => {
+    const previous = archiveCurrentProject({ allowSavedFallback: true });
+    if (!previous) return;
+    const blank = createBlankProject();
+    let records;
+    try {
+      records = saveProjectToLibrary(window.localStorage, blank, previous.records, { makeActive: true });
+    } catch (error) {
+      setPersistenceBlocked(true);
+      setSaveState((current) => ({ ...current, status: 'error', message: `The new project could not be saved: ${error.message}` }));
+      toast('The new project was not started because it could not be saved on this device.', 'error');
+      return;
+    }
+    activateProject(blank, records);
+    logPrototype('project_started', { stageIndex: 0, nodeCount: 0, edgeCount: 0 }, STAGES[0].label);
+    logPrototype('stage_viewed', { fromStage: previous.snapshot.stage, toStage: 0 }, STAGES[0].label);
+    toast(previous.usedSavedFallback
+      ? 'New project started. The previous project remains at its last valid save; incomplete edits were not added.'
+      : 'New project started. Your previous project is still saved.');
   };
 
-  const startBlankProject = () => {
-    const fromStage = projectRef.current.stage;
-    const blank = createBlankProject();
-    setProject(blank);
-    setReviewBusy(null);
-    setConnectionPrompt('');
-    setConnectionSuggestions([]);
-    setConnectionBusy(false);
-    setMapPreviewOpen(false);
-    setHasSavedProject(false);
-    setWorkspaceStarted(true);
-    setPendingNewProject(false);
-    setModal(null);
-    if (urlLinkToken()) window.history.replaceState(null, '', '/');
-    logPrototype('project_started', { stageIndex: 0, nodeCount: 0, edgeCount: 0 }, STAGES[0].label);
-    logPrototype('stage_viewed', { fromStage, toStage: 0 }, STAGES[0].label);
-    toast('Blank project created.');
+  const openSavedProject = (record) => {
+    let target;
+    try {
+      target = record.id === projectRef.current.id
+        ? reconcileActiveProject(window.localStorage, projectRef.current)
+        : loadLibraryProject(window.localStorage, record);
+    } catch (error) {
+      toast(error.message, 'error');
+      return;
+    }
+    if (record.id === projectRef.current.id) {
+      try {
+        const records = saveProjectToLibrary(window.localStorage, target, projectRecordsRef.current, { makeActive: true });
+        activateProject(target, records);
+      } catch (error) {
+        // The existing singleton is already the durable copy. Let the student
+        // open it even when catalog migration is temporarily unavailable.
+        activateProject(target, projectRecordsRef.current);
+        setPersistenceBlocked(true);
+        setSaveState((current) => ({ ...current, status: 'error', message: `Local save failed: ${error.message}`, recovery: current.recovery || null }));
+      }
+      logPrototype('project_resumed', { stageIndex: target.stage, nodeCount: target.graph.nodes.length, edgeCount: target.graph.edges.length }, STAGES[target.stage].label);
+      return;
+    }
+    const previous = archiveCurrentProject();
+    if (!previous) return;
+    let records;
+    try {
+      records = saveProjectToLibrary(window.localStorage, target, previous.records, { makeActive: true });
+    } catch (error) {
+      setPersistenceBlocked(true);
+      setSaveState((current) => ({ ...current, status: 'error', message: `The selected project could not be opened: ${error.message}` }));
+      toast('The selected project could not be opened. The current project remains available.', 'error');
+      return;
+    }
+    activateProject(target, records);
+    logPrototype('project_resumed', { stageIndex: target.stage, nodeCount: target.graph.nodes.length, edgeCount: target.graph.edges.length }, STAGES[target.stage].label);
   };
 
   const requestNewProject = () => {
     setPendingNewProject(true);
     if (persistenceBlocked) setModal('storage');
-    else if (hasSavedProject) setModal('new-project');
+    else if (projectRecords.length || hasSavedProject || workspaceStarted) setModal('new-project');
     else startBlankProject();
   };
 
   const continueInMemory = () => {
-    if (pendingNewProject) startBlankProject();
-    else {
-      setWorkspaceStarted(true);
+    if (pendingNewProject) {
+      setPendingNewProject(false);
       setModal(null);
+      toast('Starting another project requires browser storage so the current one can stay saved.', 'error');
+      return;
     }
+    setWorkspaceStarted(true);
+    setModal(null);
     setSaveState((current) => ({ ...current, status: 'error', message: 'Changes are not being saved. Download a copy before closing this page.' }));
   };
 
@@ -4994,19 +5162,19 @@ function App() {
   if (accessState.status !== 'granted') return <ClassAccessScreen state={accessState} onSubmit={submitClassCode} onTeacher={() => setTeacherOpen(true)} />;
 
   if (!workspaceStarted) return <>
-    <ResumeScreen project={project} hasSavedProject={hasSavedProject} saveState={saveState} onResume={resumeProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} linkNotice={linkStatus === 'error' ? linkMessage : null} />
+    <ProjectsScreen projects={projectRecords} activeProjectId={hasSavedProject ? project.id : null} saveState={saveState} onOpen={openSavedProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} linkNotice={linkStatus === 'error' ? linkMessage : null} />
     {recoveryModal}
-    <Modal open={modal === 'new-project'} title="Start another project" onClose={() => { setPendingNewProject(false); setModal(null); }}>
-      <div className="confirm-panel"><p>This replaces the current workspace with a blank project. Export the current project first if you need a separate copy.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start another project</button></div></div>
+    <Modal open={modal === 'new-project'} title="Start a new project?" onClose={() => { setPendingNewProject(false); setModal(null); }}>
+      <div className="confirm-panel"><p>Your current project will stay saved on this device. You can return to it from Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start new project</button></div></div>
     </Modal>
   </>;
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
+      <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
       <div className="header-actions">
         {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <span className="save-state save-state--error"><i />Complete the current field to save</span> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
-        <button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" onClick={() => { setMapPreviewOpen(false); setTeacherOpen(true); }}><Icon name="settings" />Teacher Console</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
+        <button className="text-button" type="button" onClick={() => { flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />Projects</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" onClick={() => { setMapPreviewOpen(false); setTeacherOpen(true); }}><Icon name="settings" />Teacher Console</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
       </div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
@@ -5016,10 +5184,9 @@ function App() {
       <ol className="stage-menu">{STAGES.map((stage, index) => {
         return <li key={stage.id}><button className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><strong>{stage.label}</strong>{index === project.stage ? <em>Current</em> : null}</button></li>;
       })}</ol>
-      <button className="button button--ghost" type="button" onClick={requestNewProject}>Start another project</button>
     </Modal>
-    <Modal open={modal === 'new-project'} title="Start a new project" onClose={() => setModal(null)}>
-      <div className="confirm-panel"><p>This replaces the current workspace with a blank project. It does not delete any JSON, CSV, or Markdown files you already exported.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start blank project</button></div></div>
+    <Modal open={modal === 'new-project'} title="Start a new project?" onClose={() => { setPendingNewProject(false); setModal(null); }}>
+      <div className="confirm-panel"><p>Your current project will stay saved on this device. You can return to it from Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start new project</button></div></div>
     </Modal>
     <Modal open={modal === 'project-link'} title="Project link" onClose={() => setModal(null)}>
       <div className="confirm-panel">

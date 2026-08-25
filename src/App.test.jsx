@@ -234,15 +234,22 @@ function storedProject() {
 }
 
 async function showResumeScreen() {
-  expect(await screen.findByRole('heading', { name: /Keep working on your map|Start a systems map/ })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+}
+
+function openProjectFromList(title = null) {
+  const card = title
+    ? screen.getByRole('article', { name: title })
+    : screen.getAllByRole('article')[0];
+  fireEvent.click(within(card).getByRole('button', { name: 'Open project' }));
 }
 
 async function resumeSavedProject(project = createDefaultProject()) {
   seedProject(project);
   render(<App />);
   await showResumeScreen();
-  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Keep working on your map.' })).not.toBeInTheDocument());
+  openProjectFromList(project.title);
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Your projects' })).not.toBeInTheDocument());
   return project;
 }
 
@@ -788,9 +795,9 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
-    expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Review');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(within(screen.getByRole('article', { name: project.title })).getByText('Review')).toBeVisible();
+    openProjectFromList(project.title);
     expect(await screen.findByRole('heading', { name: 'Review your memo' })).toBeVisible();
 
     const attempts = fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/access');
@@ -812,11 +819,11 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(input, { target: { value: hostedCode } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Part 1 · Micro');
+    expect(within(screen.getByRole('article', { name: 'NYC systems and assets map' })).getByText('Micro')).toBeVisible();
     expect(screen.queryByText(/instructor reviews submitted work/i)).not.toBeInTheDocument();
     const request = fetchMock.mock.calls.find(([path]) => String(path) === '/api/student/access');
     expect(JSON.parse(request[1].body)).toEqual({ code: hostedCode });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList('NYC systems and assets map');
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
@@ -827,12 +834,72 @@ describe('Systems Mapping workflow', () => {
   it('starts a blank project only after a granted session and explicit start action', async () => {
     render(<App />);
     await showResumeScreen();
-    expect(screen.getByRole('heading', { name: 'Start a systems map.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'No saved projects yet' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Add your memo' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start new project' }));
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByText('Untitled systems map', { selector: '.brand small' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
+  });
+
+  it('starts a new project without deleting the saved project and can reopen the earlier work', async () => {
+    const earlierProject = createDefaultProject();
+    earlierProject.title = 'East Harlem disability resources';
+    earlierProject.submission.title = 'Rosa access memo';
+    earlierProject.submission.text = 'Rosa coordinates appointments with her family, home attendant, peer group, and benefits counselor.';
+    seedProject(earlierProject);
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    const earlierProjectCard = screen.getByRole('article', { name: earlierProject.title });
+    expect(within(earlierProjectCard).getByRole('button', { name: 'Open project' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    const confirmation = await screen.findByRole('dialog', { name: 'Start a new project?' });
+    expect(within(confirmation).getByText('Your current project will stay saved on this device. You can return to it from Projects.')).toBeVisible();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Start new project' }));
+
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Untitled systems map');
+    expect(screen.getByRole('textbox', { name: /Memo text/ })).toHaveValue('');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(screen.getByRole('article', { name: 'Untitled systems map' })).toBeVisible();
+
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, PERSIST_DEBOUNCE_MS + 30)); });
+    cleanup();
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+
+    const savedEarlierProject = screen.getByRole('article', { name: earlierProject.title });
+    fireEvent.click(within(savedEarlierProject).getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(earlierProject.title);
+    expect(screen.getByRole('textbox', { name: /Memo text/ })).toHaveValue(earlierProject.submission.text);
+  });
+
+  it('offers a legacy singleton project from the project list before migrating it to current storage', async () => {
+    const legacy = createDefaultProject();
+    legacy.schemaVersion = 5;
+    legacy.title = 'Legacy East Harlem map';
+    legacy.submission.text = 'A legacy memo that must remain available.';
+    delete legacy.participantName;
+    window.localStorage.setItem(LEGACY_V5_STORAGE_KEY, JSON.stringify(legacy));
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    const legacyProjectCard = screen.getByRole('article', { name: legacy.title });
+    fireEvent.click(within(legacyProjectCard).getByRole('button', { name: 'Open project' }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(legacy.title);
+    expect(screen.getByRole('textbox', { name: /Memo text/ })).toHaveValue(legacy.submission.text);
+    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 6, title: legacy.title, participantName: '' }));
   });
 
   it('loads the v5 browser workspace as legacy data and persists it under the v6 key', async () => {
@@ -844,7 +911,7 @@ describe('Systems Mapping workflow', () => {
     render(<App />);
     await showResumeScreen();
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList(legacy.title);
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 6, participantName: '' }));
   });
@@ -858,8 +925,8 @@ describe('Systems Mapping workflow', () => {
 
     render(<App />);
     for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
-    expect(screen.getByRole('heading', { name: 'Keep working on your map.' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('heading', { name: 'Your projects' })).toBeVisible();
+    openProjectFromList(project.title);
     expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
 
     act(() => vi.advanceTimersByTime(59_999));
@@ -1071,7 +1138,7 @@ describe('Systems Mapping workflow', () => {
     cleanup();
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList('NYC systems and assets map');
     expect(await screen.findByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('East Harlem mapping group');
   });
 
@@ -1553,8 +1620,8 @@ describe('Systems Mapping workflow', () => {
     cleanup();
     render(<App />);
     await showResumeScreen();
-    expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Review');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(within(screen.getByRole('article', { name: project.title })).getByText('Review')).toBeVisible();
+    openProjectFromList(project.title);
     expect(await screen.findByRole('region', { name: 'Where your memo stands' })).toBeVisible();
     expect(screen.getByText('The memo already supports mapping. Continue to choose nodes and connections.')).toBeVisible();
   });
@@ -2025,7 +2092,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList('NYC systems and assets map');
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     await waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(2));
     expect(screen.queryByRole('heading', { name: 'Enter your class code' })).not.toBeInTheDocument();
@@ -2041,7 +2108,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     prototypeResponder = () => jsonResponse({ error: 'Expired prototype event session.' }, 401);
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList('NYC systems and assets map');
     expect(await screen.findByRole('heading', { name: 'Enter your class code' })).toBeVisible();
     expect(screen.getByRole('alert')).toHaveTextContent('Enter your class code to continue');
     expect(sessionReads).toBeGreaterThanOrEqual(2);
@@ -2065,7 +2132,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList(project.title);
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     const recovery = await screen.findByRole('button', { name: 'Save needs attention' });
     fireEvent.click(recovery);
@@ -3226,7 +3293,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     cleanup();
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList('NYC systems and assets map');
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
 
@@ -3478,11 +3545,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openProjectFromList(project.title);
     expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
     const field = selectAnnotationTarget(target);
     fireEvent.change(field, { target: { value: `${target} unsaved annotation` } });
-    expect(annotationStatus(field)).toHaveTextContent('Saving…');
+    expect(annotationStatus(field)).toHaveTextContent(/Saving…|Local save failed: Quota exceeded/);
     await waitFor(() => expect(annotationStatus(field)).toHaveTextContent('Local save failed: Quota exceeded'));
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)).id).toBe(project.id);
   });
@@ -3757,8 +3824,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     const assertRestored = async () => {
       render(<App />);
       await showResumeScreen();
-      expect(screen.getByLabelText('Saved project summary')).toHaveTextContent('Stage · Map');
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      expect(within(screen.getByRole('article', { name: project.title })).getByText('Map')).toBeVisible();
+      openProjectFromList(project.title);
       expect(await screen.findByRole('heading', { name: 'Build the map' })).toBeVisible();
       const renderedNode = document.querySelector(`[data-graph-id="${restoredNode.id}"]`);
       expect(svgTextLines(renderedNode.querySelector('.node-label')).join(' ')).toBe(restoredNode.label);
