@@ -1016,22 +1016,22 @@ const LEVEL_REVIEW_COPY = Object.freeze({
   micro: Object.freeze({
     items: 'specific people, roles, groups, activities, objects, immediate settings, and direct relationships',
     scaffoldTitle: 'Suggested Micro elements',
-    next: 'Choose nodes',
+    next: 'Choose Micro-level items',
   }),
   meso: Object.freeze({
     items: 'mesosystems formed by two or more Micro settings',
     scaffoldTitle: 'Suggested mesosystems',
-    next: 'Choose mesosystems',
+    next: 'Choose Meso-level items',
   }),
   exosphere: Object.freeze({
     items: 'institutions and decision-making bodies that affect mapped elements',
     scaffoldTitle: 'Suggested Exosphere institutions',
-    next: 'Choose institutions',
+    next: 'Choose Exosphere-level items',
   }),
   macrosphere: Object.freeze({
     items: 'broader laws, policies, economic conditions, and cultural beliefs',
     scaffoldTitle: 'Suggested Macrosphere conditions',
-    next: 'Choose Macrosphere items',
+    next: 'Choose Macrosphere-level items',
   }),
 });
 
@@ -1310,13 +1310,13 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const levelStepCopy = {
     meso: {
       nodes: {
-        title: 'Choose the mesosystems',
+        title: 'Choose Meso-level items',
         lede: 'Each mesosystem shows how at least two immediate settings in which the person participates relate to one another. Give it a clear name and choose the settings involved.',
       },
     },
     exosphere: {
       nodes: {
-        title: 'Choose the institutions',
+        title: 'Choose Exosphere-level items',
         lede: 'Exosphere includes named institutions, agencies, offices, and service systems whose decisions or actions affect mapped elements even when the person does not interact with them directly. Keep broader laws, economic conditions, and cultural beliefs for Macrosphere. Review, rename, remove, or add institutions below.',
       },
       edges: {
@@ -1326,7 +1326,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     },
     macrosphere: {
       nodes: {
-        title: 'Choose the Macrosphere items',
+        title: 'Choose Macrosphere-level items',
         lede: 'Macrosphere includes broader laws, public policies, economic conditions, histories, and cultural beliefs that affect at least two mapped elements. Keep named institutions in Exosphere.',
       },
     },
@@ -1334,7 +1334,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const stepCopy = {
     nodes: {
       tab: `Nodes · ${counts.nodes.total}`,
-      title: 'Choose your nodes',
+      title: 'Choose Micro-level items',
       lede: project.activeScale === 'micro'
         ? 'Each suggested Micro node should name one person, role, group, activity, object, or immediate setting. Review the label and type, then keep, rename, or remove it. The application adds the nodes you keep.'
         : 'Review the label and type of each suggested node, then keep, rename, or remove it. The application adds the nodes you keep.',
@@ -1416,7 +1416,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const stepIndex = candidateSteps.indexOf(step);
   const nextStep = candidateSteps[stepIndex + 1] || null;
   return <div className="wide stage-enter">
-    <p className="eyebrow">{project.activeScale === 'meso' ? 'Choose mesosystems' : project.activeScale === 'macrosphere' ? 'Choose Macrosphere items' : 'Choose nodes and describe relationships'} · step {stepIndex + 1} of {candidateSteps.length}</p>
+    <p className="eyebrow">{LEVEL_REVIEW_COPY[project.activeScale]?.next || LEVEL_REVIEW_COPY.micro.next} · step {stepIndex + 1} of {candidateSteps.length}</p>
     <div className="stage-title-row"><div><h1>{stepCopy[step].title}</h1><p className="lede">{stepCopy[step].lede}</p></div></div>
     {candidateSteps.length > 1 && <div className="subnav candidate-steps" role="tablist" aria-label="Choose map elements">
       {candidateSteps.map((id) => <button key={id} id={`candidate-tab-${id}`} role="tab" aria-controls="candidate-panel" aria-selected={step === id} tabIndex={step === id ? 0 : -1} data-composite-value={id} className={step === id ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, candidateSteps, step, setStep)} onClick={() => setStep(id)}>{stepCopy[id].tab}</button>)}
