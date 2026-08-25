@@ -1993,7 +1993,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
 
     await resumeSavedProject(project);
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Exosphere-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Exo-level items' }));
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.candidates.nodes.some((node) => node.id === existing.id)).toBe(false);
@@ -3895,7 +3895,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 2;
     project.furthestStage = 2;
     await resumeSavedProject(project);
-    expect(await screen.findByRole('heading', { name: 'Choose Macrosphere-level items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose Macro-level items' })).toBeVisible();
     // No connections step exists at this level.
     expect(screen.queryByRole('tab', { name: /Connections/ })).not.toBeInTheDocument();
     const reachEditor = screen.getByLabelText('Mapped elements affected by Universal Pre-K Law');
@@ -3972,7 +3972,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 2;
     project.furthestStage = 2;
     await resumeSavedProject(project);
-    expect(await screen.findByRole('heading', { name: 'Choose Exosphere-level items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Choose Exo-level items' })).toBeVisible();
     const panel = screen.getByRole('region', { name: 'Add an institution' });
     fireEvent.change(within(panel).getByLabelText('Institution type'), { target: { value: 'agency' } });
     fireEvent.change(within(panel).getByLabelText('Institution name'), { target: { value: 'Transportation access' } });

@@ -1026,12 +1026,12 @@ const LEVEL_REVIEW_COPY = Object.freeze({
   exosphere: Object.freeze({
     items: 'institutions and decision-making bodies that affect mapped elements',
     scaffoldTitle: 'Suggested Exosphere institutions',
-    next: 'Choose Exosphere-level items',
+    next: 'Choose Exo-level items',
   }),
   macrosphere: Object.freeze({
     items: 'broader laws, policies, economic conditions, and cultural beliefs',
     scaffoldTitle: 'Suggested Macrosphere conditions',
-    next: 'Choose Macrosphere-level items',
+    next: 'Choose Macro-level items',
   }),
 });
 
@@ -1316,7 +1316,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     },
     exosphere: {
       nodes: {
-        title: 'Choose Exosphere-level items',
+        title: 'Choose Exo-level items',
         lede: 'Exosphere includes named institutions, agencies, offices, and service systems whose decisions or actions affect mapped elements even when the person does not interact with them directly. Keep broader laws, economic conditions, and cultural beliefs for Macrosphere. Review, rename, remove, or add institutions below.',
       },
       edges: {
@@ -1326,7 +1326,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     },
     macrosphere: {
       nodes: {
-        title: 'Choose Macrosphere-level items',
+        title: 'Choose Macro-level items',
         lede: 'Macrosphere includes broader laws, public policies, economic conditions, histories, and cultural beliefs that affect at least two mapped elements. Keep named institutions in Exosphere.',
       },
     },
