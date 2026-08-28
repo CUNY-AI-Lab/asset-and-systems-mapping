@@ -6,6 +6,7 @@ import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 
 const studentCopySources = [
   './App.jsx',
+  './MapListView.jsx',
   './domain.js',
   '../server/app.js',
   '../server/config.js',
@@ -47,5 +48,27 @@ describe('student-facing copy', () => {
     expect(systemsMappingLevelTitle('macrosphere')).toBe('Macro-level');
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').description).toMatch(/at least two immediate settings.*without adding a directional relationship/i);
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one mapped element/i);
+  });
+
+  it('keeps student headings free of standalone articles', () => {
+    const appSource = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
+    const listSource = readFileSync(fileURLToPath(new URL(studentCopySources[1], import.meta.url)), 'utf8');
+    const visibleSource = `${appSource}\n${listSource}`;
+    [
+      'Describe a direct relationship',
+      'Describe a decision pathway',
+      'Add a mesosystem',
+      'Add an institution',
+      'Add a Macro-level condition',
+      'Map as a list',
+      'Build the map',
+      'Add a node',
+      'Add a relationship',
+      'Export the full map',
+      'Start a new project?',
+      'Work at a released level',
+      'Start a new map from this memo?',
+      'Delete the server copy?',
+    ].forEach((heading) => expect(visibleSource).not.toContain(heading));
   });
 });

@@ -31,6 +31,23 @@ This ledger records the student-facing copy revision. The source commit remains 
 | Save failure | Internal schema text could appear in the header or transient toast. | `Save needs attention` persists until resolved; the dialog gives a recovery step and puts technical detail behind a disclosure. |
 | Instructor review | Default course prose could imply that current student work would be reviewed in Teacher Console. | No instructor-review promise or student submission field appears in the current student journey. |
 
+## Article-free headings
+
+- `Describe a direct relationship` → `Direct relationship`
+- `Describe a decision pathway` → `Decision pathway`
+- `Add a mesosystem` → `New mesosystem`
+- `Add an institution` → `New institution`
+- `Add a Macro-level condition` → `New Macro-level condition`
+- `Map as a list` → `Map list`
+- `Build the map` → `Build map`
+- `Add a node` → `New node`
+- `Add a relationship` → `New relationship`
+- `Export the full map` → `Full map export`
+- `Start a new project?` → `Start new project?`
+- `Work at a released level` → `Choose work level`
+- `Start a new map from this memo?` → `Start new map from this memo?`
+- `Delete the server copy?` → `Delete server copy?`
+
 ## Retired language check
 
 The student interface contains none of the following retired category or explanatory language:
