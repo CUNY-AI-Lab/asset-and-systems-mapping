@@ -357,7 +357,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     });
     try {
       await second.ready;
-      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(9);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(10);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count).toBe(2);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_modules').get()).count).toBe(60);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_module_history').get()).count).toBe(60);
@@ -463,9 +463,12 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       runtime: { provider: 'deterministic', model: 'STEM Splitter' },
       review: {
         nodes: expect.any(Array),
-        connections: [],
+        connections: expect.any(Array),
       },
     });
+    expect(hostedCapability.review.connections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceLabel: 'Agency', targetLabel: 'Guidance to the Family', verb: 'provides' }),
+    ]));
     expect(Object.keys(hostedCapability.review).sort()).toEqual([
       'connections', 'example', 'guidance', 'nodes', 'readiness',
     ]);

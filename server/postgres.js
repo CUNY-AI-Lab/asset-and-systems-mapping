@@ -375,6 +375,9 @@ const POSTGRES_SCHEMA_SQL = `
     created_session_ref TEXT NOT NULL CHECK(length(created_session_ref) = 16),
     created_at BIGINT NOT NULL,
     updated_at BIGINT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+    expires_at BIGINT CHECK(expires_at IS NULL OR expires_at > created_at),
+    revoked_at BIGINT CHECK(revoked_at IS NULL OR revoked_at >= created_at),
     CONSTRAINT saved_projects_update_order CHECK (updated_at >= created_at)
   );
 
@@ -474,7 +477,7 @@ function normalizeRow(row) {
       const numeric = Number(value);
       if (Number.isSafeInteger(numeric) && [
         'id', 'count', 'rowCount', 'correlationCount', 'oldestAt', 'newestAt',
-        'createdAt', 'expiresAt', 'recordedAt', 'revision', 'stage',
+        'createdAt', 'expiresAt', 'revokedAt', 'recordedAt', 'revision', 'stage',
         'updatedAt', 'reviewedAt', 'decidedAt', 'fromRevision', 'toRevision', 'sessionCount',
       ].includes(key)) return [key, numeric];
     }
@@ -515,6 +518,66 @@ function migratedJsonDocument(value) {
 
 function serializedJsonDocument(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+async function migrateSavedProjectMetadata(client) {
+  const applied = await client.query('SELECT version FROM schema_migrations WHERE version = 10');
+  if (applied.rows.length) return;
+
+  await client.query(`
+    ALTER TABLE saved_projects
+      ADD COLUMN IF NOT EXISTS revision INTEGER,
+      ADD COLUMN IF NOT EXISTS expires_at BIGINT,
+      ADD COLUMN IF NOT EXISTS revoked_at BIGINT
+  `);
+  await client.query(`UPDATE saved_projects SET revision = 1 WHERE revision IS NULL`);
+  await client.query(`
+    ALTER TABLE saved_projects
+      ALTER COLUMN revision SET DEFAULT 1,
+      ALTER COLUMN revision SET NOT NULL
+  `);
+  await client.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'saved_projects_revision_valid'
+          AND conrelid = 'saved_projects'::regclass
+      ) THEN
+        ALTER TABLE saved_projects
+          ADD CONSTRAINT saved_projects_revision_valid CHECK(revision >= 1);
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'saved_projects_expiry_order'
+          AND conrelid = 'saved_projects'::regclass
+      ) THEN
+        ALTER TABLE saved_projects
+          ADD CONSTRAINT saved_projects_expiry_order
+            CHECK(expires_at IS NULL OR expires_at > created_at);
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'saved_projects_revocation_order'
+          AND conrelid = 'saved_projects'::regclass
+      ) THEN
+        ALTER TABLE saved_projects
+          ADD CONSTRAINT saved_projects_revocation_order
+            CHECK(revoked_at IS NULL OR revoked_at >= created_at);
+      END IF;
+    END
+    $$
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS saved_projects_expiry_idx
+      ON saved_projects(expires_at) WHERE expires_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS saved_projects_revoked_idx
+      ON saved_projects(revoked_at) WHERE revoked_at IS NOT NULL
+  `);
+  await client.query(`
+    INSERT INTO schema_migrations (version) VALUES (10)
+    ON CONFLICT (version) DO NOTHING
+  `);
 }
 
 async function migrateEcologicalScaleIds(client) {
@@ -781,6 +844,7 @@ async function initializePostgres(database) {
     await client.query(`SET LOCAL statement_timeout = '${database.statementTimeoutMs}ms'`);
     await client.query(`SET LOCAL idle_in_transaction_session_timeout = '${database.transactionIdleTimeoutMs}ms'`);
     await client.query(POSTGRES_SCHEMA_SQL);
+    await migrateSavedProjectMetadata(client);
     await migrateEcologicalScaleIds(client);
     await seedPostgres(client);
     await upgradeStoredTeachingProfiles(client);

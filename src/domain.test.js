@@ -5,10 +5,12 @@ import {
   EXOSPHERE_NODE_TYPES,
   MACROSPHERE_NODE_TYPES,
   MICRO_NODE_TYPES,
+  MICRO_SETTING_NODE_TYPES,
   PROJECT_LIMITS,
   PROJECT_SCHEMA_VERSION,
   RELATION_VOCABULARY,
   SCALE_ORDER,
+  SCALES,
   configFingerprint,
   createDefaultProject,
   createEvent,
@@ -18,6 +20,8 @@ import {
   exportFileName,
   extractCandidates,
   isDiscreteMicroNodeLabel,
+  isExosphereDecisionPathway,
+  isInstitutionScopedPolicyLabel,
   isMesosystemLabel,
   isNamedInstitutionLabel,
   isObviousLowerLevelMacroLabel,
@@ -146,17 +150,101 @@ function mappedEdge({ id, source, target, verb, scale = 'exosphere' }) {
 }
 
 describe('mapping domain', () => {
-  it('keeps the scale type allowlists explicit and non-overlapping where the model differs', () => {
-    expect(MICRO_NODE_TYPES).toEqual(['person', 'role', 'group', 'family', 'activity', 'object', 'setting']);
-    expect(EXOSPHERE_NODE_TYPES).toEqual(['organization', 'institution', 'agency', 'service', 'policy']);
-    expect(MACROSPHERE_NODE_TYPES).toEqual(['policy', 'law', 'belief', 'economic condition', 'history', 'culture', 'structure']);
-    expect(MICRO_NODE_TYPES).not.toContain('organization');
-    expect(MICRO_NODE_TYPES).not.toContain('agency');
-    expect(MICRO_NODE_TYPES).not.toContain('service');
-    expect(MICRO_NODE_TYPES).not.toContain('resource');
+  it('uses normalized student-facing level titles without changing internal IDs', () => {
+    expect(SCALE_ORDER).toEqual(['micro', 'meso', 'exosphere', 'macrosphere']);
+    expect(Object.fromEntries(SCALE_ORDER.map((scale) => [scale, SCALES[scale].label]))).toEqual({
+      micro: 'Micro-level',
+      meso: 'Meso-level',
+      exosphere: 'Exo-level',
+      macrosphere: 'Macro-level',
+    });
   });
 
-  it('defaults suggestions to Keep unless the teacher requires individual confirmation', () => {
+  it('keeps entity kind separate from ecological placement', () => {
+    expect(MICRO_NODE_TYPES).toEqual([
+      'person', 'role', 'group', 'family', 'organization', 'institution', 'agency',
+      'service', 'activity', 'object', 'resource', 'place', 'setting',
+    ]);
+    expect(EXOSPHERE_NODE_TYPES).toEqual(['organization', 'institution', 'agency', 'service', 'policy']);
+    expect(MACROSPHERE_NODE_TYPES).toEqual(['policy', 'law', 'belief', 'economic condition', 'history', 'culture', 'structure']);
+    expect(MICRO_NODE_TYPES).toEqual(expect.arrayContaining(['organization', 'institution', 'agency', 'service', 'resource']));
+    expect(MICRO_SETTING_NODE_TYPES).toEqual(expect.arrayContaining(['setting', 'place', 'organization', 'institution', 'agency', 'service']));
+    expect(EXOSPHERE_NODE_TYPES).toContain('policy');
+    expect(MACROSPHERE_NODE_TYPES).toContain('policy');
+  });
+
+  it('keeps a directly participated institution and resource at Micro with direct verbs', () => {
+    const project = createDefaultProject();
+    const student = mappedNode({ id: 'node_student', label: 'Marisol', type: 'person', scale: 'micro' });
+    const college = mappedNode({ id: 'node_college', label: 'BMCC', type: 'institution', scale: 'micro' });
+    const transitPass = mappedNode({ id: 'node_pass', label: 'Transit pass', type: 'resource', scale: 'micro' });
+    project.graph.nodes = [student, college, transitPass];
+    project.graph.edges = [
+      mappedEdge({ id: 'edge_attends', source: student, target: college, verb: 'attends', scale: 'micro' }),
+      mappedEdge({ id: 'edge_uses', source: student, target: transitPass, verb: 'uses', scale: 'micro' }),
+    ];
+    expect(() => validateProject(project)).not.toThrow();
+
+    const review = deterministicMemoReview({
+      ...project.submission,
+      text: 'Marisol attends BMCC. Marisol uses a transit pass.',
+    }, 'micro');
+    expect(review.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'BMCC', type: 'institution', scale: 'micro' }),
+    ]));
+    expect(review.connections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: 'BMCC', verb: 'attends' }),
+    ]));
+    expect(review.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Transit Pass', type: 'resource', scale: 'micro' }),
+    ]));
+  });
+
+  it('places the same institution by participation at Micro or an outside decision pathway at Exo', () => {
+    const project = createDefaultProject();
+    const directReview = deterministicMemoReview({
+      ...project.submission,
+      text: 'Marisol attends BMCC.',
+    }, 'micro');
+    expect(directReview.nodes).toContainEqual(expect.objectContaining({
+      label: 'BMCC', type: 'institution', scale: 'micro',
+    }));
+    expect(directReview.connections).toContainEqual(expect.objectContaining({
+      source: 'Marisol', target: 'BMCC', verb: 'attends',
+    }));
+
+    const directServiceReview = deterministicMemoReview({
+      ...project.submission,
+      text: 'East Harlem Disability Services serves Rosa.',
+    }, 'micro');
+    expect(directServiceReview.nodes).toContainEqual(expect.objectContaining({
+      label: 'East Harlem Disability Services', type: 'service', scale: 'micro',
+    }));
+    expect(directServiceReview.connections).toContainEqual(expect.objectContaining({
+      source: 'East Harlem Disability Services', target: 'Rosa', verb: 'serves',
+    }));
+
+    const carriedClassroom = {
+      id: 'node_bmcc_classroom',
+      label: 'BMCC classroom',
+      type: 'setting',
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    };
+    const outsideDecisionReview = deterministicMemoReview({
+      ...project.submission,
+      text: 'BMCC sets rules for BMCC classroom.',
+    }, 'exosphere', { carriedNodes: [carriedClassroom] });
+    expect(outsideDecisionReview.nodes).toContainEqual(expect.objectContaining({
+      label: 'BMCC', type: 'institution', scale: 'exosphere',
+    }));
+    expect(outsideDecisionReview.connections).toContainEqual(expect.objectContaining({
+      source: 'BMCC', target: carriedClassroom.id, verb: 'sets rules for',
+    }));
+  });
+
+  it('keeps the legacy confirmation flag schema-compatible without changing student decision ownership', () => {
     const project = createDefaultProject();
     expect(project.instructor.requireStudentConfirmation).toBe(false);
     project.instructor.requireStudentConfirmation = true;
@@ -293,7 +381,7 @@ describe('mapping domain', () => {
     expect(() => validateProject(project)).toThrow(/must use a literal, conventional name/);
   });
 
-  it('keeps named institutions at Exosphere and out of Macrosphere', () => {
+  it('keeps concrete institutions out of Macrosphere and distinguishes institution-owned rules from broad policy', () => {
     expect(isNamedInstitutionLabel('CUNY')).toBe(true);
     expect(isNamedInstitutionLabel('r/CUNY')).toBe(false);
     expect(isNamedInstitutionLabel('C.U.N.Y.')).toBe(true);
@@ -303,6 +391,9 @@ describe('mapping domain', () => {
     expect(isNamedInstitutionLabel('Medicaid')).toBe(true);
     expect(isNamedInstitutionLabel('ConEd')).toBe(true);
     expect(isNamedInstitutionLabel('Medicaid recertification rules')).toBe(true);
+    expect(isInstitutionScopedPolicyLabel('Medicaid recertification rules')).toBe(true);
+    expect(isInstitutionScopedPolicyLabel('BMCC registration rules')).toBe(true);
+    expect(isInstitutionScopedPolicyLabel('school segregation policy')).toBe(false);
     expect(isNamedInstitutionLabel('home care agency')).toBe(false);
     expect(isNamedInstitutionLabel('legal services office')).toBe(false);
     expect(isNamedInstitutionLabel('TUESDAYS')).toBe(false);
@@ -320,7 +411,7 @@ describe('mapping domain', () => {
       status: 'confirmed', claimState: 'student interpretation', notes: '', deontic: 'shapes',
       scopeNodeIds: scope.map(({ id }) => id),
     }])[0]);
-    expect(() => validateProject(project)).toThrow(/names an institution and belongs at Exosphere/);
+    expect(() => validateProject(project)).toThrow(/must be placed at Micro or Exosphere according to participation/);
   });
 
   it('keeps immediate actors and schedules out of Macrosphere without excluding broader conditions', () => {
@@ -374,12 +465,13 @@ describe('mapping domain', () => {
     expect(review.connections).toEqual([expect.objectContaining({
       source: 'New York City Education Department',
       target: 'node_school_11',
-      targetLabel: 'School',
       verb: 'funds',
     })]);
+    expect(Object.keys(review.connections[0]).sort()).toEqual(['rationale', 'source', 'target', 'verb']);
     review.nodes.forEach((node) => expect(node.basis).toBe('memo'));
     const guidanceText = review.guidance.map(({ point }) => point).join(' ');
-    expect(guidanceText).toContain('own or operate the setting');
+    expect(guidanceText).toContain('outside offices or decision-making bodies');
+    expect(guidanceText).toContain('participates in directly remains in Micro');
     expect(guidanceText).toContain('School');
   });
 
@@ -502,7 +594,7 @@ describe('mapping domain', () => {
     expect(project.graph.nodes).toHaveLength(0);
     expect(candidates.edges.every((edge) => RELATION_VOCABULARY.includes(edge.verb))).toBe(true);
     expect(candidates.edges.every((edge) => edge.evidenceExcerpt && edge.evidenceHash === stableId('evh', edge.evidenceExcerpt))).toBe(true);
-    expect(candidates.nodes.find((node) => node.label === 'Parent Advocacy Organizations')).toMatchObject({ type: 'organization', scale: 'exosphere' });
+    expect(candidates.nodes.find((node) => node.label === 'Parent Advocacy Organizations')).toMatchObject({ type: 'organization', scale: 'micro' });
     // The memo's framing question never mints theme nodes; only declarative
     // sentences about actual actors and objects produce candidates.
     expect(candidates.nodes.some((node) => /Ability to Secure Services/.test(node.label))).toBe(false);
@@ -514,11 +606,14 @@ describe('mapping domain', () => {
     const project = createDefaultProject();
     const candidates = extractCandidates({
       ...project.submission,
-      text: 'Danny and Marisol both attend BMCC.',
+      text: 'Danny and Marisol both attend BMCC on Tuesdays.',
     });
 
     expect(candidates.nodes.map(({ label }) => label)).toEqual(expect.arrayContaining(['Danny', 'Marisol', 'BMCC']));
-    expect(candidates.nodes.map(({ label }) => label)).not.toEqual(expect.arrayContaining(['He', 'Marisol Both', 'Danny and Marisol', 'Both']));
+    ['He', 'Marisol Both', 'Danny and Marisol', 'Both', 'Tuesdays', 'BMCC on Tuesdays'].forEach((label) => {
+      expect(candidates.nodes.map((node) => node.label)).not.toContain(label);
+    });
+    expect(candidates.nodes.find(({ label }) => label === 'BMCC')).toMatchObject({ type: 'institution', scale: 'micro' });
     expect(candidates.edges.map(({ sourceLabel, targetLabel, verb }) => ({ sourceLabel, targetLabel, verb }))).toEqual([
       { sourceLabel: 'Danny', targetLabel: 'BMCC', verb: 'attends' },
       { sourceLabel: 'Marisol', targetLabel: 'BMCC', verb: 'attends' },
@@ -529,16 +624,18 @@ describe('mapping domain', () => {
     const project = createDefaultProject();
     const text = 'How does the organization shape policy in Queens? The organization provides support and enables capacity. According to a source, however, results may be uncertain and should be checked.';
     const submission = { ...project.submission, text };
-    expect(evaluateSubmission(submission, 'exosphere', 6).outcome).toBe('pass');
+    expect(evaluateSubmission(submission, 'exosphere', 6).outcome).toBe('hold');
     const candidates = extractCandidates(submission);
     expect(candidates.nodes.length).toBeGreaterThan(0);
     expect(candidates.edges).toEqual([]);
-    expect(candidates.nodes.map(({ label }) => label)).toEqual(['Support', 'Capacity']);
+    expect(candidates.nodes).toEqual([
+      expect.objectContaining({ label: 'Organization', type: 'organization', scale: 'micro' }),
+    ]);
     // The question sentence frames the inquiry without asserting a claim.
     expect(candidates.edges.map((edge) => edge.verb)).not.toContain('shapes');
   });
 
-  it('extracts named Micro actors and settings from a node-only memo', () => {
+  it('extracts Micro actors and generic settings but does not place a bare institution name', () => {
     const project = createDefaultProject();
     const text = 'East Harlem Disability Services. Families. Students. Teachers. P.S. 146. The community center. According to the course memo, these are the people and settings to examine.';
     const submission = { ...project.submission, text };
@@ -546,21 +643,22 @@ describe('mapping domain', () => {
     const labels = candidates.nodes.map(({ label }) => label);
 
     expect(candidates.edges).toEqual([]);
-    expect(labels).toEqual(expect.arrayContaining(['East Harlem Disability Services', 'Family', 'Students', 'Teachers', 'Community Center']));
+    expect(labels).toEqual(expect.arrayContaining(['Family', 'Students', 'Teachers', 'Community Center']));
+    expect(labels).not.toContain('East Harlem Disability Services');
     expect(candidates.nodes.every((node) => node.evidenceExcerpt && node.evidenceHash === stableId('evh', node.evidenceExcerpt))).toBe(true);
     const result = evaluateSubmission(submission, 'micro', 6);
     expect(result.hard.find((item) => item.id === 'H4')).toMatchObject({ status: 'met', nodeCount: expect.any(Number) });
   });
 
-  it('keeps nominal delays out of relationships and keeps a named service out of the Micro review', () => {
+  it('keeps nominal delays and institution names without participation evidence out of Micro', () => {
     const project = createDefaultProject();
     const text = 'Adult Participants face delays when the Accessible Van Program is unavailable.';
     const submission = { ...project.submission, text };
     const candidates = extractCandidates(submission);
 
     expect(candidates.edges).toEqual([]);
-    expect(candidates.nodes.map(({ label }) => label)).toEqual(['Adult Participants', 'Accessible Van Program']);
-    expect(candidates.nodes.map(({ type }) => type)).toEqual(['person', 'service']);
+    expect(candidates.nodes.map(({ label }) => label)).toEqual(['Adult Participants']);
+    expect(candidates.nodes.map(({ type }) => type)).toEqual(['person']);
     expect(deterministicMemoReview(submission, 'micro').nodes.map(({ label }) => label))
       .toEqual(['Adult Participants']);
   });
@@ -1172,12 +1270,12 @@ describe('mapping domain', () => {
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
-  it('moves a named institution out of legacy Micro and releases Exosphere without changing its identity', () => {
+  it('preserves a directly participated institution stored at Micro', () => {
     const legacy = createDefaultProject();
     legacy.graph.nodes = [mappedNode({
       id: 'node_cuny_legacy_micro',
       label: 'CUNY',
-      type: 'setting',
+      type: 'institution',
       scale: 'micro',
     })];
 
@@ -1186,21 +1284,60 @@ describe('mapping domain', () => {
       id: 'node_cuny_legacy_micro',
       label: 'CUNY',
       type: 'institution',
-      scale: 'exosphere',
+      scale: 'micro',
       status: 'confirmed',
       claimState: 'student interpretation',
     });
-    expect(migrated.graph.nodes[0].notes).toContain('Moved from Micro to Exosphere');
-    expect(migrated.releasedScales).toEqual(['micro', 'exosphere']);
+    expect(migrated.graph.nodes[0].notes).toBe('');
+    expect(migrated.releasedScales).toEqual(['micro']);
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
-  it('canonicalizes valid legacy institutional edges and retires invalid Exosphere endpoints', () => {
+  it('accepts only Exo-to-Micro-setting pathways while keeping invalid pending suggestions reviewable', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'exosphere';
+    project.releasedScales = ['micro', 'meso', 'exosphere'];
+    project.candidates = { nodes: [], edges: [] };
+    const home = mappedNode({ id: 'node_home_setting', label: 'Home setting', type: 'setting', scale: 'micro' });
+    const school = mappedNode({ id: 'node_school_setting', label: 'School setting', type: 'setting', scale: 'micro' });
+    const agency = mappedNode({ id: 'node_city_access_office', label: 'New York City Access Office', type: 'agency', scale: 'exosphere' });
+    const department = mappedNode({ id: 'node_state_access_department', label: 'New York State Access Department', type: 'agency', scale: 'exosphere' });
+    const mesosystem = mappedNode({
+      id: 'node_home_school_coordination',
+      label: 'Home–school coordination',
+      type: 'mesosystem',
+      scale: 'meso',
+      scopeNodeIds: [home.id, school.id],
+    });
+    project.graph.nodes = [home, school, agency, department, mesosystem];
+    project.graph.edges = [mappedEdge({ id: 'edge_valid_exo_micro', source: agency, target: home, verb: 'sets rules for' })];
+
+    expect(isExosphereDecisionPathway(agency, home)).toBe(true);
+    expect(isExosphereDecisionPathway(home, agency)).toBe(false);
+    expect(isExosphereDecisionPathway(agency, department)).toBe(false);
+    expect(isExosphereDecisionPathway(agency, mesosystem)).toBe(false);
+    expect(() => validateProject(project)).not.toThrow();
+
+    for (const [target, label] of [[department, 'Exo'], [mesosystem, 'Meso']]) {
+      const invalid = structuredClone(project);
+      invalid.graph.edges = [mappedEdge({ id: `edge_invalid_${label}`, source: agency, target, verb: 'funds' })];
+      expect(() => validateProject(invalid)).toThrow(/exactly one outside Exosphere decision setting and one carried Micro setting/);
+
+      const reviewable = mappedEdge({ id: `edge_pending_${label}`, source: agency, target, verb: 'funds' });
+      reviewable.status = 'pending';
+      reviewable.claimState = 'inference';
+      invalid.graph.edges = [];
+      invalid.candidates.edges = [reviewable];
+      expect(() => validateProject(invalid)).not.toThrow();
+    }
+  });
+
+  it('canonicalizes valid legacy institutional edges and returns invalid Exosphere endpoints for review', () => {
     const legacy = createDefaultProject();
     legacy.activeScale = 'exosphere';
     legacy.releasedScales = ['micro', 'exosphere', 'macrosphere'];
     const person = mappedNode({ id: 'node_maya', label: 'Maya Rivera', type: 'person', scale: 'micro' });
-    const form = mappedNode({ id: 'node_form', label: 'Accommodation Form', type: 'object', scale: 'micro' });
+    const form = mappedNode({ id: 'node_form', label: 'Accommodation support setting', type: 'setting', scale: 'micro' });
     const institution = mappedNode({
       id: 'node_access_office',
       label: 'New York City Disability Services Office',
@@ -1218,6 +1355,7 @@ describe('mapping domain', () => {
     legacy.graph.nodes = [person, form, institution, condition];
     legacy.graph.edges = [
       mappedEdge({ id: 'edge_canonical', source: institution, target: form, verb: 'oversees' }),
+      mappedEdge({ id: 'edge_reverse', source: form, target: institution, verb: 'funds' }),
       mappedEdge({ id: 'edge_without_institution', source: person, target: form, verb: 'funds' }),
       mappedEdge({ id: 'edge_macro_endpoint', source: institution, target: condition, verb: 'funds' }),
     ];
@@ -1228,10 +1366,19 @@ describe('mapping domain', () => {
       status: 'confirmed',
       claimState: 'student interpretation',
     });
+    expect(migrated.graph.edges.find(({ id }) => id === 'edge_reverse')).toMatchObject({
+      source: institution.id,
+      target: form.id,
+      sourceLabel: institution.label,
+      targetLabel: form.label,
+      status: 'confirmed',
+    });
+    expect(migrated.graph.edges.find(({ id }) => id === 'edge_reverse').notes).toContain('Reoriented during migration');
+    expect(migrated.graph.edges.map(({ id }) => id)).toEqual(['edge_canonical', 'edge_reverse']);
     ['edge_without_institution', 'edge_macro_endpoint'].forEach((id) => {
-      const edge = migrated.graph.edges.find((item) => item.id === id);
-      expect(edge).toMatchObject({ status: 'rejected', claimState: 'retired' });
-      expect(edge.notes).toContain('not a valid institutional Exosphere relationship');
+      const edge = migrated.candidates.edges.find((item) => item.id === id);
+      expect(edge).toMatchObject({ status: 'pending', claimState: 'inference' });
+      expect(edge.notes).toContain('Choose valid endpoints or remove this suggestion');
     });
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });

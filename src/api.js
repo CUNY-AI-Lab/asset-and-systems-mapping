@@ -8,11 +8,12 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest(path, options = {}) {
+  const { body, headers: suppliedHeaders, ...requestOptions } = options;
   const response = await fetch(path, {
     credentials: 'same-origin',
-    headers: options.body ? { 'Content-Type': 'application/json', ...(options.headers || {}) } : options.headers,
-    ...options,
-    body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
+    ...requestOptions,
+    headers: body ? { 'Content-Type': 'application/json', ...(suppliedHeaders || {}) } : suppliedHeaders,
+    body: body && typeof body !== 'string' ? JSON.stringify(body) : body,
   });
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : null;
@@ -57,8 +58,36 @@ export function fetchProjectLink(token) {
   return apiRequest(`/api/projects/${encodeURIComponent(token)}`);
 }
 
-export function updateProjectLink(token, project) {
-  return apiRequest(`/api/projects/${encodeURIComponent(token)}`, { method: 'PUT', body: { project } });
+function expectedRevisionRequest(expectedRevision, body = {}) {
+  if (expectedRevision === undefined || expectedRevision === null) return { body };
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
+    throw new TypeError('expectedRevision must be a positive integer.');
+  }
+  return {
+    headers: { 'If-Match': `"${expectedRevision}"` },
+    body: { ...body, expectedRevision },
+  };
+}
+
+export function updateProjectLink(token, project, expectedRevision) {
+  return apiRequest(`/api/projects/${encodeURIComponent(token)}`, {
+    method: 'PUT',
+    ...expectedRevisionRequest(expectedRevision, { project }),
+  });
+}
+
+export function revokeProjectLink(token, expectedRevision) {
+  return apiRequest(`/api/projects/${encodeURIComponent(token)}/revoke`, {
+    method: 'POST',
+    ...expectedRevisionRequest(expectedRevision),
+  });
+}
+
+export function deleteProjectLink(token, expectedRevision) {
+  return apiRequest(`/api/projects/${encodeURIComponent(token)}`, {
+    method: 'DELETE',
+    ...expectedRevisionRequest(expectedRevision),
+  });
 }
 
 export function recordPrototypeEvent(event, stage, metadata = undefined) {

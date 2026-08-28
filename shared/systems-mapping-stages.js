@@ -3,31 +3,31 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
     id: 'add-source',
     label: 'add your memo',
     short: 'Memo',
-    description: 'Students choose a level and add the memo they will use to begin the map.',
+    description: 'Students add one memo. It stays with the project through all four levels.',
   }),
   Object.freeze({
     id: 'review-suggestions',
     label: 'review your memo',
     short: 'Review',
-    description: 'Students check what the memo supports and what remains uncertain.',
+    description: 'Students check what the memo supports and mark what remains uncertain.',
   }),
   Object.freeze({
     id: 'choose-what-to-map',
     label: 'choose map elements',
     short: 'Choose',
-    description: 'Students decide which supported map elements to keep. Micro includes discrete actors, objects, activities, roles, groups, and immediate settings, along with direct relationships. Meso includes mesosystems formed by at least two Micro settings and no relationship edges. Exosphere includes institutions and supported institutional actions. Macrosphere includes broader conditions and the mapped elements they affect.',
+    description: 'Students choose supported items for the current level and check how they relate.',
   }),
   Object.freeze({
     id: 'build-map',
     label: 'build map',
     short: 'Map',
-    description: 'Students arrange and annotate map elements. Micro includes direct connections. Each Meso item names how at least two Micro settings relate to one another. Exosphere includes institutional connections. Macrosphere shows which mapped elements each broader condition affects.',
+    description: 'Students arrange the map, check how its items relate, and add evidence or notes.',
   }),
   Object.freeze({
     id: 'revise-and-export',
     label: 'revise and export',
     short: 'Revision',
-    description: 'Students reconsider claims, record what changed, and decide what can be shared.',
+    description: 'Students record what changed, note open questions, and prepare an export.',
   }),
 ]);
 

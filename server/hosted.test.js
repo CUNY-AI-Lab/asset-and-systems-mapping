@@ -173,6 +173,13 @@ describe('hosted runtime guardrails', () => {
           connections: expect.any(Array),
         }),
       });
+      expect(evaluation.review.connections).toHaveLength(1);
+      expect(evaluation.review.connections[0]).toMatchObject({
+        source: 'Agency',
+        target: 'Guidance to the Family',
+        verb: 'provides',
+        rationale: 'The agency provides guidance to the family.',
+      });
       expect(evaluation).not.toHaveProperty('suggestion');
       expect(evaluation.configSnapshot.projectOverlay).not.toHaveProperty('customInstructions');
       const submitted = await postJson(system, '/api/preflight/submissions', {

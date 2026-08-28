@@ -28,15 +28,17 @@ describe('course-setting prompt composition', () => {
       expect(prompt).toContain('Return only the memo-review object required by the application: guidance, nodes, connections, example, and readiness.');
     }
     expect(microPrompt).toContain('Micro returns nodes plus supported direct connections.');
-    expect(microPrompt).toContain('exactly one discrete actor or object each');
-    expect(microPrompt).toContain('Write each label as a noun phrase, not a sentence, clause, proposition, action, relationship, finding, or explanation.');
-    expect(microPrompt).toContain('Preserve a complete official name even when it is long.');
-    expect(microPrompt).toContain('Return supported direct connections among proposed or existing Micro nodes');
+    expect(microPrompt).toContain('exactly one bounded person, role, group, named activity, tangible object, resource, or immediate setting');
+    expect(microPrompt).toContain('Never use dates, times, schedules, frequency phrases, modifiers, quantifiers, actions, clauses, or fragments as nodes');
+    expect(microPrompt).toContain('Preserve the entity kind of a directly participated organization, institution, agency, or service while assigning it to Micro.');
+    expect(microPrompt).toContain('each direct relationship must use a short plain active verb phrase');
+    expect(microPrompt).toContain('entity kind alone never determines a level');
     expect(mesoPrompt).toContain('Meso returns mesosystem nodes whose scope fields contain two or more exact Micro setting IDs already on the map and an empty connections array.');
     expect(mesoPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
-    expect(mesoPrompt).toContain('Named universities, employers, offices, agencies, and service systems belong in Exosphere, not Meso.');
-    expect(mesoPrompt).toContain('Each node must use type mesosystem, a neutral noun-phrase label that names the interrelation with a relational noun');
-    expect(mesoPrompt).toContain('Never return an institutional entity as a Meso node.');
+    expect(mesoPrompt).toContain('An organization, institution, agency, or service already mapped as a directly participated Micro setting may be included by its stable ID');
+    expect(mesoPrompt).toContain('Each node must use type mesosystem, a short conventional label grounded in the memo and the selected Micro settings');
+    expect(mesoPrompt).toContain('Do not add a directional relationship');
+    expect(mesoPrompt).toContain('never return an institutional entity as a Meso node.');
     expect(mesoPrompt).toContain('Return an empty connections array.');
   });
 

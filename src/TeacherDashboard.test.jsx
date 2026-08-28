@@ -14,7 +14,7 @@ const teacherAccess = { mode: 'manual', claimEnabled: true };
 const teacher = { id: 'local-teacher-id', displayName: 'Server Returned Teacher' };
 
 const partOneStages = {
-  'add-source': { guidance: 'Ask the student to choose one level and point to specific passages in the memo.', materials: 'Excerpt from the course guide.' },
+  'add-source': { guidance: 'Ask the student to identify the memo passages they will use first.', materials: 'Excerpt from the course guide.' },
   'review-suggestions': { guidance: 'Ask one focused question without completing the analysis.', materials: 'Course reading on relationships.' },
   'choose-what-to-map': { guidance: 'Ask the student to choose people, groups, and connections supported by the memo.', materials: '' },
   'build-map': { guidance: 'Ask what each relationship does.', materials: '' },
@@ -225,15 +225,15 @@ describe('TeacherDashboard', () => {
 
   it('defaults to the pending review queue and offers three advisory feedback modes', async () => {
     const fetchMock = await renderAuthenticated();
-    expect(screen.getByText('Review student work and give students feedback on their draft maps.')).toBeVisible();
+    expect(screen.getByText('Manage course settings and any review records already available.')).toBeVisible();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     expect(reviewTab).toHaveAttribute('tabindex', '0');
     expect(guidanceTab).toHaveAttribute('tabindex', '-1');
-    expect(screen.getByRole('heading', { name: 'Waiting for review' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Available review records' })).toBeVisible();
     expect(await screen.findByRole('button', { name: /East Harlem Disability Services team/ })).toHaveAttribute('aria-current', 'true');
-    expect(screen.getAllByText('Part 1 · Meso')).not.toHaveLength(0);
+    expect(screen.getAllByText('Part 1 · Meso-level')).not.toHaveLength(0);
 
     const feedbackGroup = await waitForSubmission();
     expect(within(feedbackGroup).getAllByRole('button')).toHaveLength(3);
@@ -337,6 +337,8 @@ describe('TeacherDashboard', () => {
 
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     expect(loginBody).toEqual({ userId: 'local-teacher-id', passphrase: 'a locally chosen phrase' });
+    expect(await screen.findByText('No review records are available. The current student workflow does not send work to this queue.')).toBeVisible();
+    expect(screen.queryByText(/send your work here|submit your map for review/i)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([path]) => path)).toContain('/api/teacher/preflight-submissions?status=pending');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
   });
@@ -416,8 +418,8 @@ describe('TeacherDashboard', () => {
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
 
-    expect(await screen.findByText('No submissions are waiting for review.')).toBeVisible();
-    expect(screen.getByText('Feedback recorded. The submission is no longer waiting for review.')).toBeVisible();
+    expect(await screen.findByText('No review records are available. The current student workflow does not send work to this queue.')).toBeVisible();
+    expect(screen.getByText('Feedback recorded. This review record is no longer pending.')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Latest feedback' })).toBeVisible();
     expect(screen.getByText(event.instructorAnnotation)).toBeVisible();
     expect(decisionBody).toEqual({ decision: 'approve', instructorAnnotation: event.instructorAnnotation, expectedRevision: 2 });
@@ -483,7 +485,7 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByLabelText('Part')).toHaveValue('part-1');
     expect(screen.getByLabelText('Preview level')).toHaveValue('micro');
     expect(within(screen.getByLabelText('Preview level')).getAllByRole('option').map(({ value }) => value)).toEqual(['micro', 'meso']);
-    expect(screen.getByText('Guidance and course material for this section apply to Micro and Meso.')).toBeVisible();
+    expect(screen.getByText('Guidance and course material for this section apply to Micro-level and Meso-level.')).toBeVisible();
     expect(screen.getByLabelText('Section')).toHaveValue('add-source');
     expect(within(screen.getByLabelText('Section')).getAllByRole('option')).toHaveLength(5);
     expect(screen.queryByRole('button', { name: 'review your memo' })).not.toBeInTheDocument();
@@ -500,7 +502,8 @@ describe('TeacherDashboard', () => {
     expect(screen.getByLabelText('Course material for this section')).toHaveValue(partTwoStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByRole('heading', { name: 'Preview this section' }).closest('aside');
-    expect(previewPanel).toHaveTextContent('Part 2 · Macrosphere · review your memo');
+    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · review your memo');
+    expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one mapped element.');
     fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();
     expect(screen.getByLabelText('Course guidance sent to the model')).toHaveTextContent('SAVED GUIDANCE FOR THIS SECTION');
@@ -529,7 +532,7 @@ describe('TeacherDashboard', () => {
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
   });
 
-  it('describes model-backed Micro, Meso, and Macrosphere requests without collapsing their jobs', async () => {
+  it('describes model-backed level requests without collapsing their jobs', async () => {
     const fetchMock = vi.fn(async (path, options = {}) => {
       if (path === '/api/auth/accounts') return jsonResponse({ teacherAccess });
       if (path === '/api/auth/me') return jsonResponse({ user: teacher });
@@ -548,13 +551,13 @@ describe('TeacherDashboard', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
     fireEvent.change(await screen.findByLabelText('Section'), { target: { value: 'review-suggestions' } });
-    expect(screen.getByRole('note')).toHaveTextContent("Model guidance is active. The model uses this section's guidance and course material to suggest Micro nodes and direct relationships from the memo.");
+    expect(screen.getByRole('note')).toHaveTextContent("Model guidance is active. The model uses this section's guidance and course material to suggest Micro-level elements and direct relationships from the memo.");
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'meso' } });
-    expect(screen.getByRole('note')).toHaveTextContent("The model uses this section's guidance and course material to suggest mesosystems that include at least two Micro settings.");
+    expect(screen.getByRole('note')).toHaveTextContent("The model uses this section's guidance and course material to suggest Meso-level linkages across at least two Micro-level settings.");
     fireEvent.change(screen.getByLabelText('Part'), { target: { value: 'part-2' } });
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'choose-what-to-map' } });
-    expect(screen.getByRole('note')).toHaveTextContent("The model uses this section's guidance and course material when students request more Macrosphere items or change which mapped elements they affect.");
+    expect(screen.getByRole('note')).toHaveTextContent("The model uses this section's guidance and course material when students request more Macro-level conditions or change which mapped elements they affect.");
     expect(screen.getByRole('note')).not.toHaveTextContent('connections');
   });
 
@@ -602,7 +605,11 @@ describe('TeacherDashboard', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Version name')).toHaveValue('Evidence guidance'));
     fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'review-suggestions' } });
-    fireEvent.change(screen.getByLabelText('Instructor guidance for this section'), { target: { value: 'Return first to evidence that names a relationship.' } });
+    const guidanceField = screen.getByLabelText('Instructor guidance for this section');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Micro-level note' }));
+    expect(guidanceField).toHaveValue(`${partOneStages['review-suggestions'].guidance}\n\nMicro-level: `);
+    expect(screen.getByText('Optional level notes can focus a question or course example. Fixed level definitions and map rules stay unchanged.')).toBeVisible();
+    fireEvent.change(guidanceField, { target: { value: 'Return first to evidence that names a relationship.\n\nMicro-level: Ask the student to name the direct action.' } });
     fireEvent.change(screen.getByLabelText('Course material for this section'), { target: { value: 'Use the class reading on people, organizations, and connections.' } });
     expect(screen.getByRole('button', { name: 'Publish draft' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Preview saved section' })).toBeDisabled();
@@ -613,7 +620,7 @@ describe('TeacherDashboard', () => {
     const savedBody = requests.find(([path, method]) => path === `/api/teacher/profiles/${draftProfile.id}` && method === 'PUT')?.[2];
     expect(savedBody.profile.parts[0]).toMatchObject({ id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] });
     expect(savedBody.profile.parts[0].stages['review-suggestions']).toEqual({
-      guidance: 'Return first to evidence that names a relationship.',
+      guidance: 'Return first to evidence that names a relationship.\n\nMicro-level: Ask the student to name the direct action.',
       materials: 'Use the class reading on people, organizations, and connections.',
     });
     expect(savedBody.profile.parts[1]).toEqual(profileValue.parts[1]);

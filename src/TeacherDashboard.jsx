@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ApiError, apiRequest, resetTeacherPassword } from './api.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
+import { systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 
 const DASHBOARD_SECTIONS = [
   { id: 'reviews', label: 'Review submissions' },
@@ -48,9 +49,15 @@ function eventActionLabel(action) {
 }
 
 function scaleLabel(scale) {
-  return typeof scale === 'string' && scale
-    ? `${scale[0].toUpperCase()}${scale.slice(1)}`
-    : '';
+  if (typeof scale !== 'string' || !scale) return '';
+  return systemsMappingLevelTitle(scale) || `${scale[0].toUpperCase()}${scale.slice(1)}`;
+}
+
+function appendLevelNote(value, scale) {
+  const title = scaleLabel(scale);
+  if (!title) return value;
+  const current = String(value || '').trimEnd();
+  return `${current}${current ? '\n\n' : ''}${title}: `;
 }
 
 function stageModelUse(stageId, scale) {
@@ -59,12 +66,12 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'preflight',
       activeDetail: scale === 'micro'
-        ? 'The model uses this section\'s guidance and course material to suggest Micro nodes and direct relationships from the memo.'
+        ? 'The model uses this section\'s guidance and course material to suggest Micro-level elements and direct relationships from the memo.'
         : scale === 'meso'
-          ? 'The model uses this section\'s guidance and course material to suggest mesosystems that include at least two Micro settings.'
+          ? 'The model uses this section\'s guidance and course material to suggest Meso-level linkages across at least two Micro-level settings.'
           : scale === 'exosphere'
-            ? 'The model uses this section\'s guidance and course material to suggest Exosphere nodes and connections to mapped elements.'
-            : 'The model uses this section\'s guidance and course material to suggest Macrosphere items and the mapped elements affected by each item.',
+            ? 'The model uses this section\'s guidance and course material to suggest Exo-level institutions and supported institutional relationships.'
+            : 'The model uses this section\'s guidance and course material to suggest Macro-level conditions and the mapped elements they affect.',
     };
   }
   if (stageId === 'choose-what-to-map') {
@@ -72,12 +79,12 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'builder',
       activeDetail: scale === 'micro'
-        ? 'The model uses this section\'s guidance and course material when students request more Micro nodes or direct relationships from the memo.'
+        ? 'The model uses this section\'s guidance and course material when students request more Micro-level elements or direct relationships from the memo.'
         : scale === 'meso'
-          ? 'The model uses this section\'s guidance and course material when students request mesosystems that include at least two Micro settings.'
+          ? 'The model uses this section\'s guidance and course material when students request more Meso-level linkages across Micro-level settings.'
           : scale === 'exosphere'
-            ? 'The model uses this section\'s guidance and course material when students request more Exosphere nodes or connections to mapped elements.'
-            : 'The model uses this section\'s guidance and course material when students request more Macrosphere items or change which mapped elements they affect.',
+            ? 'The model uses this section\'s guidance and course material when students request more Exo-level institutions or institutional relationships.'
+            : 'The model uses this section\'s guidance and course material when students request more Macro-level conditions or change which mapped elements they affect.',
     };
   }
   return {
@@ -407,7 +414,7 @@ function ReviewSubmissions() {
       });
       const events = Array.isArray(result.reviewEvents) ? result.reviewEvents : [];
       setLastDecision({ submission: result.submission, events });
-      setMessage({ type: 'success', text: 'Feedback recorded. The submission is no longer waiting for review.' });
+      setMessage({ type: 'success', text: 'Feedback recorded. This review record is no longer pending.' });
       setDecision('');
       setInstructorAnnotation('');
       setFocusedQuestion('');
@@ -447,10 +454,10 @@ function ReviewSubmissions() {
   return <section className="review-submissions" aria-labelledby="review-submissions-heading">
     <div className="teacher-review-grid">
       <aside className="submission-queue" aria-labelledby="review-submissions-heading">
-        <div className="section-heading"><div><p className="eyebrow">Review submissions</p><h2 id="review-submissions-heading">Waiting for review</h2></div><button type="button" className="button button--ghost" disabled={queueLoading} onClick={() => loadQueue()}>{queueLoading ? 'Refreshing…' : 'Refresh'}</button></div>
+        <div className="section-heading"><div><p className="eyebrow">Review submissions</p><h2 id="review-submissions-heading">Available review records</h2></div><button type="button" className="button button--ghost" disabled={queueLoading} onClick={() => loadQueue()}>{queueLoading ? 'Refreshing…' : 'Refresh'}</button></div>
         {queueError && <p className="teacher-message teacher-message--error" role="alert">{queueError}</p>}
         {queueLoading && !submissions.length ? <p className="empty-message">Loading pending submissions…</p> : null}
-        {!queueLoading && !submissions.length && !queueError ? <p className="empty-message">No submissions are waiting for review.</p> : null}
+        {!queueLoading && !submissions.length && !queueError ? <p className="empty-message">No review records are available. The current student workflow does not send work to this queue.</p> : null}
         {submissions.length ? <ol className="submission-queue__list">{submissions.map((submission, index) => <li key={submission.id}>
           <button type="button" className={selectedId === submission.id ? 'is-selected' : ''} aria-current={selectedId === submission.id ? 'true' : undefined} onClick={() => selectSubmission(submission.id)}>
             <strong>{submissionLabel(submission, index)}</strong>
@@ -464,7 +471,7 @@ function ReviewSubmissions() {
         <h2 id="student-work-heading">Student work</h2>
         {detailLoading && <p className="empty-message">Loading student work…</p>}
         {detailError && <p className="teacher-message teacher-message--error" role="alert">{detailError}</p>}
-        {!detailLoading && !detail && !detailError && <p className="empty-message">Choose a submission from Waiting for review.</p>}
+        {!detailLoading && !detail && !detailError && <p className="empty-message">Choose an available review record.</p>}
         {detail && <div className="student-work__body">
           <p className="eyebrow">{submissionContextLabel(detail)}</p>
           {readableValue(detail.projectMetadata?.participantName) ? <section><h3>Student or group</h3><p>{readableValue(detail.projectMetadata.participantName)}</p></section> : null}
@@ -678,6 +685,9 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const selectedStageSettings = selectedPart?.stages?.[selectedStage.id] || { guidance: '', materials: '' };
   const stageUse = stageModelUse(selectedStageId, previewScale);
   const runtime = runtimeEffect(catalog?.runtime, selectedStageId, previewScale);
+  const previewLevel = systemsMappingLevel(previewScale);
+  const levelNotePrefix = `${scaleLabel(previewScale)}: `;
+  const canAppendLevelNote = editable && selectedStageSettings.guidance.length + levelNotePrefix.length + 2 <= 2500;
   return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
     <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Set guidance and course material for each section of the exercise.</p></div></div>
     <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
@@ -710,6 +720,8 @@ function TeachingProfiles({ onConfigurationChanged }) {
         {selectedPart && <section className="course-stage-editor" aria-labelledby={`course-stage-heading-${selectedStage.id}`}>
           <div><h4 id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.label}</h4><p>{selectedStage.description}</p></div>
           <label className="field"><span className="field__label">Instructor guidance for this section</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
+          {editable && <div className="button-row"><button type="button" className="button button--ghost" disabled={!canAppendLevelNote} onClick={() => changeStage('guidance', appendLevelNote(selectedStageSettings.guidance, previewScale))}>Add {scaleLabel(previewScale)} note</button></div>}
+          <p className="field__hint">Optional level notes can focus a question or course example. Fixed level definitions and map rules stay unchanged.</p>
           <label className="field"><span className="field__label">Course material for this section</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
           <p className="field__hint">Paste the relevant course passage or reference text.</p>
         </section>}
@@ -724,6 +736,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       <aside className="teaching-profile-preview">
         <h3>Preview this section</h3>
         <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${scaleLabel(previewScale)} · ${selectedStage.label}` : ''}</p>
+        {previewLevel && <p className="field__hint">{previewLevel.description}</p>}
         {selectedPart && <label className="field"><span className="field__label">Preview level</span><select aria-label="Preview level" value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{selectedPart.scaleIds.map((scale) => <option key={scale} value={scale}>{scaleLabel(scale)}</option>)}</select></label>}
         <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Preview saved section</button>
         {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Instructor guidance</strong><p>{preview.guidance || 'No instructor guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
@@ -749,7 +762,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged }) {
     sectionTabRefs.current.get(next.id)?.focus();
   };
   return <div className="teacher-dashboard">
-    <div className="teacher-dashboard__title"><div><p className="eyebrow">Instructor tools</p><h1>Teacher Console</h1><p className="lede">Review student work and give students feedback on their draft maps.</p></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
+    <div className="teacher-dashboard__title"><div><p className="eyebrow">Instructor tools</p><h1>Teacher Console</h1><p className="lede">Manage course settings and any review records already available.</p></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}

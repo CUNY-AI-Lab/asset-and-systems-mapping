@@ -30,4 +30,10 @@ describe('map workspace layout contract', () => {
     expect(styles).toMatch(/\.relationship-verb-editor\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*pre-wrap;/s);
     expect(styles).toMatch(/@media \(max-width: 600px\)[\s\S]*\.relationship-verb-editor\s*\{?[^}]*font-size:\s*16px;/);
   });
+
+  it('keeps student guidance and map controls at a readable text floor', () => {
+    expect(styles).toMatch(/\/\* Student-facing reading floor\.[\s\S]*\.memo-guidance blockquote,[\s\S]*font-size:\s*13px;/);
+    expect(styles).toMatch(/\.candidate-actions button,[\s\S]*\.inspector-tabs button\s*\{[^}]*font-size:\s*14px;/s);
+    expect(styles).toMatch(/\.map-stage\.is-fullscreen \.inspector\s*\{[^}]*max-height:\s*min\(42dvh, 430px\);/s);
+  });
 });

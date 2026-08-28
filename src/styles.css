@@ -419,6 +419,11 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3
 .map-toolbar { align-items: flex-end; margin-bottom: 14px; }
 .map-toolbar h1 { margin: 0; font-size: clamp(26px, 3vw, 32px); }
 .map-toolbar__controls { display: flex; align-items: end; gap: 10px; }
+.map-presentation-toggle { min-height: 44px; display: inline-grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ink); background: #fff; }
+.map-presentation-toggle button { min-width: 74px; min-height: 42px; padding: 0 12px; border: 0; background: #fff; color: var(--ink); font-size: 14px; font-weight: 750; }
+.map-presentation-toggle button + button { border-left: 1px solid var(--ink); }
+.map-presentation-toggle button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.map-presentation-toggle button:focus-visible { position: relative; z-index: 1; outline: 3px solid var(--teal); outline-offset: -3px; }
 .map-toolbar label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .map-toolbar select { min-width: 150px; padding: 0 10px; color: var(--ink); font-size: 13px; font-weight: 650; text-transform: none; }
 .map-show-all { min-height: 44px; padding: 0 12px; border: 1px solid var(--teal); background: #fff; color: var(--teal); font-size: 12px; font-weight: 750; }
@@ -545,8 +550,14 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3
 .project-link-summary div { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); background: var(--paper, #fafafa); }
 .project-link-summary dt { color: var(--muted); font-size: 12px; font-weight: 700; }
 .project-link-summary dd { margin: 0; overflow-wrap: anywhere; font-size: 14px; }
+.project-link-summary--metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .confirm-panel p.project-link-status { font-family: var(--body); font-size: 13px; color: var(--muted); }
 .confirm-panel p.project-link-status--error { color: var(--bad); }
+.project-link-management { display: flex; flex-wrap: wrap; gap: 16px; padding-top: 4px; border-top: 1px solid var(--line); }
+.project-link-management button { min-height: 40px; padding: 0; border: 0; color: var(--muted); background: transparent; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.technical-details { padding: 12px 14px; border: 1px solid var(--line); background: var(--paper, #fafafa); }
+.technical-details summary { cursor: pointer; font-size: 13px; font-weight: 750; }
+.technical-details code { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .release-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .release-controls button { min-height: var(--control-height); display: flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--line); background: #fff; font-size: 12px; font-weight: 700; line-height: 1.3; }
 .release-controls button.is-open { color: var(--good); background: var(--good-pale); border-color: #c8c8c8; }
@@ -1001,6 +1012,7 @@ label.button:focus-within {
 .projects-heading h1 { margin: 0 0 8px; font-size: clamp(32px, 4.5vw, 42px); }
 .projects-heading p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.5; }
 .projects-heading .button { flex: 0 0 auto; min-height: 48px; }
+.projects-storage-note { max-width: 700px; margin: -10px 0 24px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .project-list { display: grid; gap: 12px; }
 .project-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; padding: 20px; border: 1px solid var(--line); background: #fff; }
 .project-card.is-current { border-left: 5px solid var(--teal); padding-left: 16px; }
@@ -1231,7 +1243,9 @@ label.button:focus-within {
   .button { padding: 0 13px; }
   .stage-title-row, .section-heading, .map-toolbar { display: grid; }
   .outcome { width: 100%; min-height: 78px; grid-template-columns: auto auto auto; gap: 9px; }
-  .map-toolbar__controls { width: 100%; }
+  .map-toolbar__controls { width: 100%; flex-wrap: wrap; }
+  .map-presentation-toggle { flex: 0 0 auto; }
+  .map-presentation-toggle button { min-width: 64px; min-height: 46px; padding: 0 10px; }
   .map-toolbar__controls label { flex: 1; }
   .map-toolbar select { min-width: 0; }
   .map-toolbar label { font-size: 11px; }
@@ -1515,3 +1529,61 @@ body.map-fullscreen-open { overflow: hidden; }
 .scope-field.is-muted { opacity: .06; }
 .meso-link-line { stroke: var(--meso); stroke-width: 3; stroke-dasharray: 9 7; opacity: .7; pointer-events: none; }
 .meso-link-line.is-muted { opacity: .28; }
+
+/* Student-facing reading floor. The map and review workflow contain the
+   analytical substance of the assignment, so supporting text must remain
+   legible without zooming even when it is visually secondary. */
+.privacy-note,
+.disclosure-button small,
+.field__hint,
+.check-row small,
+.criterion-row p,
+.criterion-row small,
+.next-action,
+.candidate-row__main > p,
+.candidate-note > summary,
+.candidate-progress,
+.connection-hint > summary,
+.map-focus-bar,
+.map-focus-bar__summary small,
+.map-overview-hint,
+.inspector details summary,
+.history-panel > summary,
+.history-panel > summary strong,
+.timeline strong,
+.timeline p,
+.timeline small,
+.memo-drawer__title small,
+.readiness-banner__stale,
+.memo-guidance blockquote,
+.memo-scaffold__claim,
+.memo-scaffold__connections small,
+.memo-scaffold__example p:last-child,
+.scope-editor__empty {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.field__label,
+.check-row strong,
+.candidate-actions button,
+.release-controls button,
+.map-toolbar select,
+.map-focus-bar button,
+.inspector-done,
+.inspector-add-menu > button,
+.inspector-add-menu > div button,
+.inspector-tabs button {
+  font-size: 14px;
+}
+
+.tag,
+.release-summary span {
+  font-size: 11px;
+}
+
+@media (max-width: 600px) {
+  .map-stage.is-fullscreen .inspector {
+    max-height: min(42dvh, 430px);
+  }
+}

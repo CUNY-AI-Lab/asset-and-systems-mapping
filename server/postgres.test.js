@@ -81,7 +81,11 @@ describe('PostgreSQL persistence adapter', () => {
     expect(migration).toContain('pg_column_size(source_record_json) <= 32768');
     expect(migration).toContain('pg_column_size(config_snapshot_json) <= 131072');
     expect(migration).toContain('pg_column_size(runtime_metadata_json) <= 8192');
+    expect(migration).toContain('revision INTEGER NOT NULL DEFAULT 1');
+    expect(migration).toContain('expires_at BIGINT');
+    expect(migration).toContain('revoked_at BIGINT');
     expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(5\)/.test(text))).toBe(true);
+    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(10\)/.test(text))).toBe(true);
     expect(fake.calls.at(-1)?.text).toBe('COMMIT');
     await database.close();
   });

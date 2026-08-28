@@ -436,9 +436,11 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
     expect(firstInput.systemPrompt).toContain('At Meso and Macrosphere, connections MUST be empty');
     expect(firstInput.systemPrompt).toContain('SCALE BOUNDARIES');
-    expect(firstInput.systemPrompt).toContain('Meso identifies only an interrelation among two or more of those Micro settings');
-    expect(firstInput.systemPrompt).toContain('Meso is not another place to add actors, organizations, institutions, or services');
-    expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node.');
+    expect(firstInput.systemPrompt).toContain('Meso identifies only a noun-labeled interrelation among two or more of those Micro settings');
+    expect(firstInput.systemPrompt).toContain('it is not another place to add entities or directional connections');
+    expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other entity as a new Meso node.');
+    expect(firstInput.systemPrompt).toContain('A named organization, institution, agency, or service remains at Micro when the person participates there directly.');
+    expect(firstInput.systemPrompt).toContain('Exosphere identifies outside decision settings whose actions reach an immediate Micro setting');
     expect(firstInput.systemPrompt).toContain('Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.');
     expect(firstInput.systemPrompt).toContain('For Micro and Meso, example must be null.');
     expect(firstInput.systemPrompt).toContain('A generic category is not an Exosphere node');
@@ -649,7 +651,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
-  it('rejects an invalid deterministic review without persisting an empty replacement', async () => {
+  it('keeps time qualifiers out of deterministic Micro nodes while preserving the supported setting and relationships', async () => {
     const studentCookie = await grantStudent();
     const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
       sourceMaterial: 'Danny and Marisol both attend BMCC on Tuesdays.',
@@ -657,9 +659,20 @@ describe('persistent preflight suggestion review queue', () => {
     });
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
 
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
-    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+    expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.nodes).toHaveLength(3);
+    expect(evaluation.review.nodes.map(({ label, type, scale }) => ({ label, type, scale }))).toEqual(expect.arrayContaining([
+      { label: 'Danny', type: 'person', scale: 'micro' },
+      { label: 'Marisol', type: 'person', scale: 'micro' },
+      { label: 'BMCC', type: 'institution', scale: 'micro' },
+    ]));
+    expect(evaluation.review.nodes.map((node) => node.label)).not.toContain('Tuesdays');
+    expect(evaluation.review.connections).toMatchObject([
+      { sourceLabel: 'Danny', targetLabel: 'BMCC', verb: 'attends' },
+      { sourceLabel: 'Marisol', targetLabel: 'BMCC', verb: 'attends' },
+    ]);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
   it('rejects a provider response atomically when any proposed node is a clause or wrong-level entity', async () => {
@@ -901,7 +914,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(systemPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
-    expect(systemPrompt).toContain('Named universities, employers, offices, agencies, and service systems belong in Exosphere, not Meso.');
+    expect(systemPrompt).toContain('An organization, institution, agency, or service already mapped as a directly participated Micro setting may appear only through its exact scope ID.');
     expect(evaluation.review.nodes).toEqual([{
       label: 'Work–online peer support coordination',
       type: 'mesosystem',
@@ -934,7 +947,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       ],
       connections: [
         { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
-        { source: 'CUNY', target: 'Family', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting families.' },
+        { source: 'CUNY', target: 'School', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting the school setting.' },
         { source: 'City Education Foundation', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are invalid.' },
         { source: 'School', target: 'Family', verb: 'refers', rationale: 'Already mapped; must not repeat.' },
       ],
@@ -949,7 +962,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       ],
       connections: [
         { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
-        { source: 'CUNY', target: 'Family', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting families.' },
+        { source: 'CUNY', target: 'School', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting the school setting.' },
       ],
       example: null,
       readiness: { ready: true, note: 'The memo supports two institutional relationships.' },
@@ -985,11 +998,11 @@ Overall, the posting history documents a working student repeatedly turning to R
       },
       {
         source: 'CUNY',
-        target: 'node_family',
+        target: 'node_school',
         sourceLabel: 'CUNY',
-        targetLabel: 'Family',
+        targetLabel: 'School',
         verb: 'sets rules for',
-        rationale: 'CUNY sets institution-wide rules affecting families.',
+        rationale: 'CUNY sets institution-wide rules affecting the school setting.',
       },
     ]);
 
@@ -1003,26 +1016,25 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
   });
 
-  it('accepts a complete Exosphere response with official service, acronym, benefit, and brand names without filtering it', async () => {
+  it('accepts named outside decision settings when each pathway reaches an immediate Micro setting', async () => {
     await system.close();
     const carriedNodes = [
-      { id: 'node_rosa', label: 'Rosa', type: 'person', scale: 'micro' },
-      { id: 'node_marisol', label: 'Marisol', type: 'person', scale: 'micro' },
       { id: 'node_home', label: 'Rosa’s home', type: 'setting', scale: 'micro' },
+      { id: 'node_bmcc_classroom', label: 'BMCC classroom', type: 'setting', scale: 'micro' },
     ];
     const suggestion = {
       guidance: [{ point: 'The memo names four institutions whose decisions shape the mapped household.' }],
       nodes: [
-        { label: 'Access-A-Ride', type: 'service', scale: 'exosphere', evidence: 'Access-A-Ride requires booking a day ahead.', basis: 'memo' },
-        { label: 'BMCC', type: 'institution', scale: 'exosphere', evidence: 'Danny and Marisol both attend BMCC.', basis: 'memo' },
-        { label: 'Medicaid', type: 'service', scale: 'exosphere', evidence: 'Carla helped Rosa appeal a Medicaid recertification lapse.', basis: 'memo' },
-        { label: 'ConEd', type: 'organization', scale: 'exosphere', evidence: 'Denise watches for ConEd shutoff notices.', basis: 'memo' },
+        { label: 'MTA Access-A-Ride Scheduling Office', type: 'agency', scale: 'exosphere', evidence: 'The scheduling office requires booking a day ahead.', basis: 'memo' },
+        { label: 'BMCC Registration Office', type: 'institution', scale: 'exosphere', evidence: 'The registration office sets course-registration blocks.', basis: 'memo' },
+        { label: 'New York State Medicaid Office', type: 'agency', scale: 'exosphere', evidence: 'The state office administers Medicaid recertification.', basis: 'memo' },
+        { label: 'ConEd Billing Office', type: 'organization', scale: 'exosphere', evidence: 'The billing office issues shutoff notices.', basis: 'memo' },
       ],
       connections: [
-        { source: 'Access-A-Ride', target: 'Rosa', verb: 'serves', rationale: 'The service schedules Rosa’s rides.' },
-        { source: 'BMCC', target: 'Marisol', verb: 'sets rules for', rationale: 'BMCC registration blocks determine Marisol’s availability.' },
-        { source: 'Medicaid', target: 'Rosa', verb: 'sets rules for', rationale: 'Medicaid recertification rules affect Rosa’s coverage.' },
-        { source: 'ConEd', target: 'Rosa’s home', verb: 'serves', rationale: 'ConEd sends shutoff notices to the household.' },
+        { source: 'MTA Access-A-Ride Scheduling Office', target: 'Rosa’s home', verb: 'delays', rationale: 'Booking decisions delay departure from the home setting.' },
+        { source: 'BMCC Registration Office', target: 'BMCC classroom', verb: 'sets rules for', rationale: 'Registration blocks determine access to the classroom setting.' },
+        { source: 'New York State Medicaid Office', target: 'Rosa’s home', verb: 'administers', rationale: 'Recertification decisions change services available in the home.' },
+        { source: 'ConEd Billing Office', target: 'Rosa’s home', verb: 'informs', rationale: 'The billing office sends shutoff notices to the household.' },
       ],
       example: null,
       readiness: { ready: true, note: 'Four institutional pathways connect directly to the existing map.' },
@@ -1081,6 +1093,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       connections: [
         { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
         { source: 'Google Identity Service', target: 'School', verb: 'regulates', rationale: 'The institution regulates access to the portal.' },
+        { source: 'Printing Vendor Corporation', target: 'School', verb: 'provides', rationale: 'The vendor provides printed materials used in the school setting.' },
       ],
       example: null,
       readiness: { ready: true, note: 'Both pathways use the exact institutional register.' },
@@ -1106,6 +1119,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(evaluation.review.connections).toEqual([
       { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
       { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'regulates', rationale: 'The institution regulates access to the portal.' },
+      { source: 'Printing Vendor Corporation', target: 'node_school', sourceLabel: 'Printing Vendor Corporation', targetLabel: 'School', verb: 'provides', rationale: 'The vendor provides printed materials used in the school setting.' },
     ]);
   });
 

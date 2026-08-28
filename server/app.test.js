@@ -15,6 +15,7 @@ const TEACHER_PASSPHRASE = 'locally chosen phrase';
 const JSON_HEADERS = { 'content-type': 'application/json' };
 const RETENTION_DAYS = { evaluation: 1, pending: 30, decided: 180 };
 const SUGGESTION_RUNTIME = { provider: 'deterministic', model: 'STEM Splitter' };
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 function request(app, path, options = {}) {
   return app.request(`${BASE_URL}${path}`, options);
@@ -39,6 +40,15 @@ function postJson(app, path, body, { cookie, headers, ...options } = {}) {
 function putJson(app, path, body, { cookie, headers, ...options } = {}) {
   return browserRequest(app, path, {
     method: 'PUT',
+    ...options,
+    headers: { ...JSON_HEADERS, ...(cookie ? { cookie } : {}), ...(headers || {}) },
+    body: JSON.stringify(body),
+  });
+}
+
+function deleteJson(app, path, body, { cookie, headers, ...options } = {}) {
+  return browserRequest(app, path, {
+    method: 'DELETE',
     ...options,
     headers: { ...JSON_HEADERS, ...(cookie ? { cookie } : {}), ...(headers || {}) },
     body: JSON.stringify(body),
@@ -733,9 +743,13 @@ describe('hardened Systems Mapping server', () => {
 
     const created = await postJson(system.app, '/api/projects', { project: projectJson }, { cookie: studentCookie });
     expect(created.status).toBe(201);
-    const { token, updatedAt } = await json(created);
+    const { token, revision, updatedAt, expiresAt, revokedAt } = await json(created);
     expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(revision).toBe(1);
     expect(updatedAt).toBe(currentTime);
+    expect(expiresAt).toBe(currentTime + NINETY_DAYS_MS);
+    expect(revokedAt).toBeNull();
+    expect(created.headers.get('etag')).toBe('"1"');
     const storedHash = system.db.prepare('SELECT token_hash AS hash FROM saved_projects').get().hash;
     expect(storedHash).toBe(createHash('sha256').update(token).digest('hex'));
     expect(storedHash).not.toBe(token);
@@ -743,17 +757,35 @@ describe('hardened Systems Mapping server', () => {
     expect((await request(system.app, `/api/projects/${token}`)).status).toBe(401);
     const fetched = await request(system.app, `/api/projects/${token}`, { headers: { cookie: studentCookie } });
     expect(fetched.status).toBe(200);
-    expect(await json(fetched)).toEqual({ projectId: 'proj_1', project: projectJson, updatedAt: currentTime });
+    expect(await json(fetched)).toEqual({
+      projectId: 'proj_1',
+      project: projectJson,
+      revision: 1,
+      updatedAt: currentTime,
+      expiresAt,
+      revokedAt: null,
+    });
+    expect(fetched.headers.get('etag')).toBe('"1"');
 
     currentTime += 5000;
     const revised = JSON.stringify({ id: 'proj_1', schemaVersion: 5, title: 'Phishing memo map', updatedAt: '2026-08-20T01:00:00.000Z', stage: 2 });
-    const updated = await putJson(system.app, `/api/projects/${token}`, { project: revised }, { cookie: studentCookie });
+    const updated = await putJson(system.app, `/api/projects/${token}`, {
+      project: revised,
+      expectedRevision: 1,
+    }, { cookie: studentCookie, headers: { 'if-match': '"1"' } });
     expect(updated.status).toBe(200);
-    expect((await json(updated)).updatedAt).toBe(currentTime);
+    expect(await json(updated)).toEqual({
+      revision: 2,
+      updatedAt: currentTime,
+      expiresAt,
+      revokedAt: null,
+    });
+    expect(updated.headers.get('etag')).toBe('"2"');
     expect((await json(await request(system.app, `/api/projects/${token}`, { headers: { cookie: studentCookie } }))).project).toBe(revised);
 
     const mismatched = await putJson(system.app, `/api/projects/${token}`, {
       project: JSON.stringify({ id: 'proj_other', schemaVersion: 5 }),
+      expectedRevision: 2,
     }, { cookie: studentCookie });
     expect(mismatched.status).toBe(409);
 
@@ -767,6 +799,149 @@ describe('hardened Systems Mapping server', () => {
     expect(missingId.status).toBe(400);
     const extraKey = await postJson(system.app, '/api/projects', { project: projectJson, extra: true }, { cookie: studentCookie });
     expect(extraKey.status).toBe(400);
+  });
+
+  it('prevents two student sessions from silently overwriting the same project revision', async () => {
+    const firstCookie = await grantStudent();
+    const secondCookie = await grantStudent();
+    const original = JSON.stringify({ id: 'proj_conflict', schemaVersion: 5, title: 'Original' });
+    const created = await json(await postJson(system.app, '/api/projects', { project: original }, { cookie: firstCookie }));
+
+    const firstRead = await json(await request(system.app, `/api/projects/${created.token}`, { headers: { cookie: firstCookie } }));
+    const secondRead = await json(await request(system.app, `/api/projects/${created.token}`, { headers: { cookie: secondCookie } }));
+    expect(firstRead.revision).toBe(1);
+    expect(secondRead.revision).toBe(1);
+
+    currentTime += 1000;
+    const firstRevision = JSON.stringify({ id: 'proj_conflict', schemaVersion: 5, title: 'First session' });
+    const firstSave = await putJson(system.app, `/api/projects/${created.token}`, {
+      project: firstRevision,
+      expectedRevision: firstRead.revision,
+    }, { cookie: firstCookie, headers: { 'if-match': '"1"' } });
+    expect(firstSave.status).toBe(200);
+    expect((await json(firstSave)).revision).toBe(2);
+
+    const secondRevision = JSON.stringify({ id: 'proj_conflict', schemaVersion: 5, title: 'Second session' });
+    const staleSave = await putJson(system.app, `/api/projects/${created.token}`, {
+      project: secondRevision,
+      expectedRevision: secondRead.revision,
+    }, { cookie: secondCookie, headers: { 'if-match': '"1"' } });
+    expect(staleSave.status).toBe(409);
+    expect(await json(staleSave)).toMatchObject({
+      error: expect.stringContaining('changed in another session'),
+      details: { revision: 2, updatedAt: currentTime },
+    });
+
+    const finalProject = await json(await request(system.app, `/api/projects/${created.token}`, {
+      headers: { cookie: secondCookie },
+    }));
+    expect(finalProject.project).toBe(firstRevision);
+    expect(finalProject.revision).toBe(2);
+  });
+
+  it('expires project links with 410 and reclaims their capacity for a new link', async () => {
+    system.close();
+    system = createSystemsMappingApp({
+      dbPath: databasePath,
+      now: () => currentTime,
+      studentSessionTtlMs: 60_000,
+      savedProjectTtlMs: 1000,
+      savedProjectMaxTotal: 1,
+    });
+    const studentCookie = await grantStudent();
+    const first = await json(await postJson(system.app, '/api/projects', {
+      project: JSON.stringify({ id: 'proj_expiring', schemaVersion: 5 }),
+    }, { cookie: studentCookie }));
+    expect(first.expiresAt).toBe(currentTime + 1000);
+
+    currentTime += 1001;
+    const expired = await request(system.app, `/api/projects/${first.token}`, { headers: { cookie: studentCookie } });
+    expect(expired.status).toBe(410);
+    expect(await json(expired)).toEqual({ error: 'This project link has expired.' });
+
+    const replacement = await postJson(system.app, '/api/projects', {
+      project: JSON.stringify({ id: 'proj_replacement', schemaVersion: 5 }),
+    }, { cookie: studentCookie });
+    expect(replacement.status).toBe(201);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM saved_projects').get().count).toBe(1);
+  });
+
+  it('revokes a link, returns 410 thereafter, and permits explicit deletion', async () => {
+    const studentCookie = await grantStudent();
+    const project = JSON.stringify({ id: 'proj_revoke', schemaVersion: 5 });
+    const created = await json(await postJson(system.app, '/api/projects', { project }, { cookie: studentCookie }));
+
+    currentTime += 500;
+    const revoked = await postJson(system.app, `/api/projects/${created.token}/revoke`, {
+      expectedRevision: 1,
+    }, { cookie: studentCookie, headers: { 'if-match': '"1"' } });
+    expect(revoked.status).toBe(200);
+    expect(await json(revoked)).toEqual({
+      projectId: 'proj_revoke',
+      revision: 2,
+      updatedAt: currentTime,
+      expiresAt: created.expiresAt,
+      revokedAt: currentTime,
+    });
+
+    const unavailable = await request(system.app, `/api/projects/${created.token}`, { headers: { cookie: studentCookie } });
+    expect(unavailable.status).toBe(410);
+    expect(await json(unavailable)).toEqual({ error: 'This project link has been revoked.' });
+
+    const deleteResponse = await deleteJson(system.app, `/api/projects/${created.token}`, {
+      expectedRevision: 2,
+    }, { cookie: studentCookie, headers: { 'if-match': '"2"' } });
+    expect(deleteResponse.status).toBe(200);
+    expect(await json(deleteResponse)).toMatchObject({
+      deleted: true,
+      projectId: 'proj_revoke',
+      revision: 2,
+      revokedAt: currentTime,
+    });
+    expect((await request(system.app, `/api/projects/${created.token}`, { headers: { cookie: studentCookie } })).status).toBe(404);
+  });
+
+  it('requires one consistent optimistic revision for every link mutation', async () => {
+    const studentCookie = await grantStudent();
+    const project = JSON.stringify({ id: 'proj_revision_required', schemaVersion: 5 });
+    const created = await json(await postJson(system.app, '/api/projects', { project }, { cookie: studentCookie }));
+    const revised = JSON.stringify({ id: 'proj_revision_required', schemaVersion: 5, title: 'Should not save' });
+
+    const missingRevision = await putJson(system.app, `/api/projects/${created.token}`, { project: revised }, { cookie: studentCookie });
+    expect(missingRevision.status).toBe(400);
+    const mismatchedHeader = await putJson(system.app, `/api/projects/${created.token}`, {
+      project: revised,
+      expectedRevision: 1,
+    }, { cookie: studentCookie, headers: { 'if-match': '"2"' } });
+    expect(mismatchedHeader.status).toBe(400);
+
+    const fetched = await json(await request(system.app, `/api/projects/${created.token}`, { headers: { cookie: studentCookie } }));
+    expect(fetched.project).toBe(project);
+    expect(fetched.revision).toBe(1);
+  });
+
+  it('keeps legacy project links without an expiry available', async () => {
+    const token = 'legacy_project_token_123456789';
+    const project = JSON.stringify({ id: 'proj_legacy_link', schemaVersion: 5 });
+    system.db.prepare(`
+      INSERT INTO saved_projects (
+        token_hash, project_id, project_json, created_session_ref,
+        created_at, updated_at, revision, expires_at, revoked_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, NULL, NULL)
+    `).run(
+      createHash('sha256').update(token).digest('hex'),
+      'proj_legacy_link',
+      project,
+      'a'.repeat(16),
+      currentTime,
+      currentTime,
+    );
+
+    currentTime += NINETY_DAYS_MS + 1;
+    const laterStudentCookie = await grantStudent();
+    const fetched = await request(system.app, `/api/projects/${token}`, { headers: { cookie: laterStudentCookie } });
+    expect(fetched.status).toBe(200);
+    expect(await json(fetched)).toMatchObject({ project, revision: 1, expiresAt: null, revokedAt: null });
   });
 
   it('keeps saved project links available to later class sessions and rate-limits link creation', async () => {

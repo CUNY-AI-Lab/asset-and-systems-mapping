@@ -13,6 +13,25 @@ export const PROJECT_BODY_PREFIX = 'systems-mapping-studio.project-body.v1.';
 export const LINK_STORAGE_KEY = 'systems-mapping-studio.link.v1';
 export const LINKS_STORAGE_KEY = 'systems-mapping-studio.links.v2';
 
+function safeLinkTimestamp(value) {
+  if (Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value === 'string' && value.length <= 64 && Number.isFinite(Date.parse(value))) return value;
+  return undefined;
+}
+
+function normalizeStoredLink(link) {
+  if (!link || typeof link !== 'object') return null;
+  if (typeof link.token !== 'string' || !link.token || link.token.length > 512) return null;
+  if (typeof link.projectId !== 'string' || !link.projectId || link.projectId.length > 200) return null;
+  const normalized = { token: link.token, projectId: link.projectId };
+  if (Number.isSafeInteger(link.revision) && link.revision >= 1) normalized.revision = link.revision;
+  for (const key of ['updatedAt', 'expiresAt', 'revokedAt', 'lastSyncedAt']) {
+    const timestamp = safeLinkTimestamp(link[key]);
+    if (timestamp !== undefined) normalized[key] = timestamp;
+  }
+  return normalized;
+}
+
 function projectBodyKey(projectId) {
   let encodedId = '';
   for (let index = 0; index < projectId.length; index += 1) {
@@ -224,9 +243,10 @@ function readStoredLinks(storage) {
     const raw = storage.getItem(LINKS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.version === 1 && parsed.links && typeof parsed.links === 'object') {
+      if ([1, 2].includes(parsed?.version) && parsed.links && typeof parsed.links === 'object') {
         Object.values(parsed.links).forEach((link) => {
-          if (typeof link?.token === 'string' && typeof link?.projectId === 'string') links[link.projectId] = link;
+          const normalized = normalizeStoredLink(link);
+          if (normalized) links[normalized.projectId] = normalized;
         });
       }
     }
@@ -236,9 +256,9 @@ function readStoredLinks(storage) {
   try {
     const legacyRaw = storage.getItem(LINK_STORAGE_KEY);
     if (legacyRaw) {
-      const legacy = JSON.parse(legacyRaw);
-      if (typeof legacy?.token === 'string' && typeof legacy?.projectId === 'string' && !links[legacy.projectId]) {
-        links[legacy.projectId] = { token: legacy.token, projectId: legacy.projectId };
+      const legacy = normalizeStoredLink(JSON.parse(legacyRaw));
+      if (legacy && !links[legacy.projectId]) {
+        links[legacy.projectId] = legacy;
       }
     }
   } catch {
@@ -255,9 +275,11 @@ export function loadStoredLink(storage, projectId) {
 export function rememberStoredLink(storage, link) {
   try {
     const links = readStoredLinks(storage);
-    links[link.projectId] = { token: link.token, projectId: link.projectId };
-    storage.setItem(LINKS_STORAGE_KEY, JSON.stringify({ version: 1, links }));
-    storage.setItem(LINK_STORAGE_KEY, JSON.stringify(link));
+    const normalized = normalizeStoredLink({ ...links[link?.projectId], ...link });
+    if (!normalized) return;
+    links[normalized.projectId] = normalized;
+    storage.setItem(LINKS_STORAGE_KEY, JSON.stringify({ version: 2, links }));
+    storage.setItem(LINK_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // The link still works for this visit even when browser storage is unavailable.
   }
@@ -265,9 +287,22 @@ export function rememberStoredLink(storage, link) {
 
 export function mirrorActiveLink(storage, link) {
   try {
-    if (link) storage.setItem(LINK_STORAGE_KEY, JSON.stringify(link));
+    const normalized = normalizeStoredLink(link);
+    if (normalized) storage.setItem(LINK_STORAGE_KEY, JSON.stringify(normalized));
     else storage.removeItem(LINK_STORAGE_KEY);
   } catch {
     // The active association remains in memory for this visit.
+  }
+}
+
+export function forgetStoredLink(storage, projectId) {
+  try {
+    const links = readStoredLinks(storage);
+    delete links[projectId];
+    storage.setItem(LINKS_STORAGE_KEY, JSON.stringify({ version: 2, links }));
+    const active = normalizeStoredLink(JSON.parse(storage.getItem(LINK_STORAGE_KEY) || 'null'));
+    if (active?.projectId === projectId) storage.removeItem(LINK_STORAGE_KEY);
+  } catch {
+    // An unavailable registry must not interrupt the rest of the project workflow.
   }
 }

@@ -4,6 +4,7 @@ import {
   LINKS_STORAGE_KEY,
   LINK_STORAGE_KEY,
   STORAGE_KEY,
+  forgetStoredLink,
   loadLibraryProject,
   loadProjectLibrary,
   loadStoredLink,
@@ -156,5 +157,53 @@ describe('local project library', () => {
     window.localStorage.setItem(LINKS_STORAGE_KEY, '{bad json');
     window.localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(link));
     expect(loadStoredLink(window.localStorage, link.projectId)).toEqual(link);
+  });
+
+  it('persists sync, revision, expiry, and revocation metadata per project link', () => {
+    const link = {
+      projectId: 'project_metadata',
+      token: 'metadata_project_token_123',
+      revision: 4,
+      updatedAt: 1_787_956_800_000,
+      expiresAt: '2026-09-27T12:00:00.000Z',
+      lastSyncedAt: '2026-08-28T12:00:00.000Z',
+    };
+    rememberStoredLink(window.localStorage, link);
+    rememberStoredLink(window.localStorage, {
+      projectId: link.projectId,
+      token: link.token,
+      revision: 5,
+      revokedAt: 1_787_956_900_000,
+    });
+
+    expect(loadStoredLink(window.localStorage, link.projectId)).toEqual({
+      ...link,
+      revision: 5,
+      revokedAt: 1_787_956_900_000,
+    });
+    expect(JSON.parse(window.localStorage.getItem(LINKS_STORAGE_KEY)).version).toBe(2);
+  });
+
+  it('drops malformed link metadata and can forget only the selected project link', () => {
+    const first = {
+      projectId: 'project_first',
+      token: 'first_project_token_12345',
+      revision: -4,
+      expiresAt: { unsafe: true },
+    };
+    const second = { projectId: 'project_second', token: 'second_project_token_1234', revision: 2 };
+    rememberStoredLink(window.localStorage, first);
+    rememberStoredLink(window.localStorage, second);
+    mirrorActiveLink(window.localStorage, first);
+
+    expect(loadStoredLink(window.localStorage, first.projectId)).toEqual({
+      projectId: first.projectId,
+      token: first.token,
+    });
+    forgetStoredLink(window.localStorage, first.projectId);
+
+    expect(loadStoredLink(window.localStorage, first.projectId)).toBeNull();
+    expect(loadStoredLink(window.localStorage, second.projectId)).toEqual(second);
+    expect(window.localStorage.getItem(LINK_STORAGE_KEY)).toBeNull();
   });
 });

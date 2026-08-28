@@ -454,7 +454,10 @@ function migrate(db) {
       ),
       created_session_ref TEXT NOT NULL CHECK(length(created_session_ref) = 16),
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL CHECK(updated_at >= created_at)
+      updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+      expires_at INTEGER CHECK(expires_at IS NULL OR expires_at > created_at),
+      revoked_at INTEGER CHECK(revoked_at IS NULL OR revoked_at >= created_at)
     ) STRICT;
 
     CREATE INDEX IF NOT EXISTS saved_projects_updated_idx ON saved_projects(updated_at DESC);
@@ -541,8 +544,39 @@ function migrate(db) {
       ))
     `);
   }
+  migrateSavedProjectMetadata(db);
   migrateEcologicalScaleIds(db);
   upgradeStoredTeachingProfiles(db);
+}
+
+function migrateSavedProjectMetadata(db) {
+  const columns = new Set(db.prepare('PRAGMA table_info(saved_projects)').all().map(({ name }) => name));
+  inTransaction(db, () => {
+    if (!columns.has('revision')) {
+      db.exec(`
+        ALTER TABLE saved_projects ADD COLUMN revision INTEGER NOT NULL DEFAULT 1
+          CHECK(revision >= 1)
+      `);
+    }
+    if (!columns.has('expires_at')) {
+      db.exec(`
+        ALTER TABLE saved_projects ADD COLUMN expires_at INTEGER
+          CHECK(expires_at IS NULL OR expires_at > created_at)
+      `);
+    }
+    if (!columns.has('revoked_at')) {
+      db.exec(`
+        ALTER TABLE saved_projects ADD COLUMN revoked_at INTEGER
+          CHECK(revoked_at IS NULL OR revoked_at >= created_at)
+      `);
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS saved_projects_expiry_idx
+        ON saved_projects(expires_at) WHERE expires_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS saved_projects_revoked_idx
+        ON saved_projects(revoked_at) WHERE revoked_at IS NOT NULL;
+    `);
+  });
 }
 
 function migrateEcologicalScaleIds(db) {

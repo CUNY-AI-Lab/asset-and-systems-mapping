@@ -90,50 +90,50 @@ const GLOBAL_CONTENT = {
     purpose: 'Review the student memo and prepare grounded suggestions the student can use while building a systems map. Keep the review encouraging, specific, and based only on the memo.',
     evidence: 'Point each suggestion to a passage in the memo. If the memo does not support something, ask a plain-language question instead of inventing an answer. Keep what the memo says separate from the student’s interpretation.',
     privacy: 'Require a documented permission or a privacy-safe treatment for sensitive material. Do not disclose names or identifying details that are not necessary to the analysis.',
-    scale_rubric: 'Use the active level to decide what to suggest. Micro returns discrete elements and direct relationships among them. Meso returns mesosystem nodes that each identify an interrelation among two or more Micro settings already on the map. Exosphere returns institutions and supported institutional actions. Macrosphere returns broader conditions and the mapped elements they affect.',
+    scale_rubric: 'Use the focal person’s participation and the pathway of effect to decide placement; entity kind alone never determines a level. Micro returns immediate settings, their discrete elements and resources, and direct relationships. Meso returns mesosystem nodes that each identify an interrelation among two or more Micro settings already on the map. Exosphere returns outside decision settings and supported pathways into an immediate setting. Macrosphere returns broader conditions and the mapped elements they affect.',
     interaction: 'Offer no more than three plain-language suggestions or questions. Help the student strengthen what is already in the memo and continue to the map; do not tell the student that progress is blocked.',
     output: 'Return only the memo-review object required by the application: guidance, nodes, connections, example, and readiness. Micro returns nodes plus supported direct connections. Meso returns mesosystem nodes whose scope fields contain two or more exact Micro setting IDs already on the map and an empty connections array. Readiness is a short, non-blocking note.',
   },
   builder: {
-    purpose: 'Suggest map elements and level-appropriate relationships that the memo supports. Suggestions begin on Keep unless the teacher requires students to confirm each one.',
+    purpose: 'Suggest map elements and level-appropriate connections that the memo supports. Every suggestion begins off the map and requires a student decision.',
     evidence: 'Attach a locatable evidence passage to every proposed node and relationship. Keep the student’s interpretation visible and do not turn an unsupported possibility into a confirmed claim.',
     privacy: 'Carry the project sharing tier and sensitivity treatment into every candidate. Do not place unnecessary identifying details in labels, notes, exports, or graph operations.',
-    scale_rubric: 'Use the active level as a filter on one durable graph. Preserve stable identifiers for elements already on the map. Micro adds discrete elements and their direct relationships. Meso adds mesosystem nodes for interrelations among two or more Micro settings already on the map and adds no relationship edges. Exosphere adds institutions and supported institutional actions. Macrosphere adds broader conditions and the mapped elements they affect.',
-    interaction: 'Guide with questions rather than supplying conclusions. Present candidates for the student to keep, revise, remove, merge, contest, or mark as needing more evidence.',
+    scale_rubric: 'Use the active level as a filter on one durable graph. Preserve stable identifiers for elements already on the map. Place an entity by the focal person’s participation and the pathway of effect, not by whether it is an institution or service. Micro adds immediate settings, their discrete elements and resources, and direct relationships. Meso adds mesosystem nodes for interrelations among two or more Micro settings already on the map and adds no relationship edges. Exosphere adds outside decision settings and supported pathways into a Micro setting. Macrosphere adds broader conditions and the mapped elements they affect.',
+    interaction: 'Guide with questions rather than supplying conclusions. Let the student add a suggestion to the map, set it aside for more evidence, edit it, or remove it.',
     output: 'Return schema-valid node and edge operations with stable identifiers, type, scale, claim state, evidence locator, confidence, and notes. Allowed operations are add, revise, merge, contest, retire, and mark as research lead.',
   },
 };
 
 const SCALE_CONTENT = {
   micro: {
-    purpose: 'Focus Micro work on bounded people, roles, groups, named activities, tangible objects, and immediate settings the person directly encounters. Resolve references to a supported named or role-resolved element instead of turning pronouns, modifiers, dates, times, or schedule fragments into nodes.',
-    evidence: 'Use the shortest complete memo-supported referring expression for each person, role, group, named activity, tangible object, or immediate setting. Keep locations, dates, times, frequencies, schedules, quantifiers, modifiers, actions, relationships, and explanations in evidence rather than lengthening a node label. Use a short plain active relationship only when the memo supports a concrete action or exchange that matters between two accepted Micro elements. Mere co-presence, co-residence, vague collaboration, and generic planning are not relationships unless the memo makes the tie analytically consequential and names what passes between the endpoints. An interrelation between two settings belongs at Meso.',
+    purpose: 'Focus Micro work on the immediate settings in which the focal person participates, including bounded people, roles, groups, named activities, tangible objects, resources, organizations, institutions, agencies, and services encountered there. Resolve references to a supported named or role-resolved element instead of turning pronouns, modifiers, dates, times, or schedule fragments into nodes.',
+    evidence: 'Use the shortest complete memo-supported referring expression for each person, role, group, named activity, tangible object, resource, or immediate setting. Keep locations, dates, times, frequencies, schedules, quantifiers, modifiers, actions, relationships, and explanations in evidence rather than lengthening a node label. Use a short plain active relationship only when the memo supports a concrete action or exchange that matters between two accepted Micro elements. Mere co-presence, co-residence, vague collaboration, and generic planning are not relationships unless the memo makes the tie analytically consequential and names what passes between the endpoints. An interrelation between two settings belongs at Meso.',
     privacy: 'Use role descriptions instead of personal names when a name is not needed. Do not include confidential, identifying, or nonpublic community information.',
-    scale_rubric: 'Micro work should show bounded immediate elements and direct, evidence-backed relationships from a person, role, or group to another accepted person, role, group, immediate setting, named activity, or tangible object. A node cannot be an unresolved reference, time or schedule phrase, action verb, modifier, quantifier, clause, or fragment. Named institutions and service systems belong at Exosphere; interrelations between immediate settings belong at Meso.',
+    scale_rubric: 'Micro work should show bounded immediate elements and direct, evidence-backed relationships among accepted people, roles, groups, settings, activities, objects, and resources. A named institution, organization, agency, or service remains at Micro when the focal person participates in it directly; it belongs at Exosphere only when the relevant decision occurs outside the person’s immediate settings. A node cannot be an unresolved reference, time or schedule phrase, action verb, modifier, quantifier, clause, or fragment. Interrelations between immediate settings belong at Meso.',
     interaction: 'Ask the student to review each direct relationship and keep their interpretation separate from the evidence they use.',
-    output: 'Return one complete Micro response whose nodes each use the shortest complete memo-supported referring expression for exactly one bounded person, role, group, named activity, tangible object, or immediate setting. Resolve pronouns and coreference to a supported named or role-resolved label; omit an element when its referent is ambiguous. Never use dates, times, schedules, frequency phrases, modifiers, quantifiers, actions, clauses, or fragments as nodes, and never lengthen a node label with location, action, relationship, or explanatory material that belongs in evidence. Every relationship endpoint must exactly match an accepted node label or supplied node ID, and each direct relationship must use a short plain active verb phrase for a concrete, consequential, evidence-backed action or exchange. Return no setting-to-setting Micro relationship.',
+    output: 'Return one complete Micro response whose nodes each use the shortest complete memo-supported referring expression for exactly one bounded person, role, group, named activity, tangible object, resource, or immediate setting. Preserve the entity kind of a directly participated organization, institution, agency, or service while assigning it to Micro. Resolve pronouns and coreference to a supported named or role-resolved label; omit an element when its referent is ambiguous. Never use dates, times, schedules, frequency phrases, modifiers, quantifiers, actions, clauses, or fragments as nodes, and never lengthen a node label with location, action, relationship, or explanatory material that belongs in evidence. Every relationship endpoint must exactly match an accepted node label or supplied node ID, and each direct relationship must use a short plain active verb phrase for a concrete, consequential, evidence-backed action or exchange. Return no setting-to-setting Micro relationship.',
   },
   meso: {
     purpose: 'Focus Meso work only on interrelations among two or more immediate settings already mapped in Micro and in which the person participates. Meso does not add actors, organizations, institutions, services, or institutional actions.',
     evidence: 'Identify each setting by its exact Micro ID and label already on the map. Support why the settings belong in one mesosystem without adding a directional relationship verb.',
     privacy: 'Use roles or de-identified descriptions when personal details are not needed. Do not include confidential, identifying, or nonpublic community information.',
-    scale_rubric: 'Meso work should identify mesosystems formed by the interrelation of two or more Micro settings in which the person participates. It does not add an actor, institution, service, policy, administrative system, or relationship edge. Named universities, employers, offices, agencies, and service systems belong in Exosphere, not Meso.',
+    scale_rubric: 'Meso work should identify mesosystems formed by the interrelation of two or more Micro settings in which the person participates. It does not add an actor, institution, service, policy, administrative system, or relationship edge. An organization, institution, agency, or service already mapped as a directly participated Micro setting may be included by its stable ID; Meso does not duplicate it as a new item.',
     interaction: 'Ask which immediate settings belong in the same mesosystem and what evidence supports grouping them.',
-    output: 'Return Meso nodes only. Each node must use type mesosystem, a neutral noun-phrase label that names the interrelation with a relational noun such as coordination, communication, overlap, conflict, or transition, and a scope field containing at least two exact Micro setting IDs already on the map. Never return an institutional entity as a Meso node. Return an empty connections array.',
+    output: 'Return Meso nodes only. Each node must use type mesosystem, a short conventional label grounded in the memo and the selected Micro settings, and a scope field containing at least two exact Micro setting IDs already on the map. Do not add a directional relationship, and never return an institutional entity as a Meso node. Return an empty connections array.',
   },
   exosphere: {
-    purpose: 'Focus Exosphere work on institutions, agencies, offices, funders, service systems, and decisions that shape the population indirectly.',
-    evidence: 'Name each institution or decision-making body. Trace important resource, funding, service, and decision paths: what moves, where it starts and goes, who receives it or qualifies, and what evidence supports the path.',
+    purpose: 'Focus Exosphere work on outside decision settings whose actions change what happens in an immediate setting even though the focal person does not participate in the decision setting.',
+    evidence: 'Name each outside office, agency, funder, service system, or decision-making body and connect it to an immediate Micro setting it affects. Trace what resource, funding, rule, service, or decision moves through that path and what evidence supports it.',
     privacy: 'Use public or appropriately shared evidence. Do not include confidential, identifying, or nonpublic community information.',
-    scale_rubric: 'Keep indirect institutions and their decisions distinct from the immediate relationships mapped in Micro and Meso and from the broader structures mapped in Macrosphere.',
+    scale_rubric: 'Classify by participation and effect, not entity kind: a named institution the focal person participates in directly remains at Micro; an outside decision setting belongs at Exosphere only when a supported pathway reaches an immediate Micro setting. An operational rule owned by that named decision setting may remain at Exosphere, while broader laws and public policies belong at Macrosphere.',
     interaction: 'Ask for actual names, exact actions, direction, recipients or eligibility, evidence, and dates. Ask how each outside institution changes what happens in inner layers.',
-    output: 'Return named institution, agency, office, employer, funder, or service-system nodes. Represent funding, eligibility, rule-setting, and service delivery as supported relationships to mapped elements. Named institutions belong only in Exosphere; broader conditions belong in Macrosphere.',
+    output: 'Return named outside institution, agency, office, employer, funder, or service-system nodes only when each one has a supported relationship to an immediate Micro setting. Represent funding, eligibility, rule-setting, and service delivery as that decision pathway. Do not move a directly participated institution or service out of Micro merely because of its entity kind. A rule explicitly owned by the named outside decision setting may remain at Exosphere; a broader condition belongs at Macrosphere.',
   },
   macrosphere: {
-    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, and cultural beliefs that affect multiple mapped elements. Named institutions belong in Exosphere.',
+    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. A concrete institution belongs at Micro or Exosphere according to participation, not at Macrosphere.',
     evidence: 'For each Macrosphere item, identify at least two affected mapped elements and state what evidence supports the claim. Add dates when time matters.',
     privacy: 'Do not include confidential, identifying, or nonpublic community information anywhere in the map or final work.',
-    scale_rubric: 'Show how a broad law, public policy, economic condition, history, or cultural belief affects at least two mapped elements. Named institutions and their decisions belong in Exosphere.',
+    scale_rubric: 'Show how a broad law, public policy, economic condition, history, or cultural belief affects at least two mapped elements. Keep an institution-specific operational rule with its named Exosphere decision setting; place a broader law or public policy at Macrosphere.',
     interaction: 'Ask which mapped elements each broader condition affects, how the student knows, and what evidence supports the claim.',
     output: 'Return Macrosphere nodes for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Each node uses a scope field containing at least two affected mapped element IDs. Return no relationship edge.',
   },
@@ -195,7 +195,7 @@ export const LEGACY_DEFAULT_MODULE_FINGERPRINTS = Object.freeze({
   'builder.macrosphere.output': Object.freeze(['ee5655b0fe41f27495dbd96bc9a09dd4e7b17f8866416134e037161e29069eea', '8b2803b6e5c4e3a854cd77da9c512ffc86ef6a314c96b66437aadeb68c8d8d46']),
 });
 
-const CONNECTION_GUIDANCE = 'Ask the student to describe connections between nodes in their own words. Use those words to propose new connections for the student to review, edit, keep, or remove.';
+const CONNECTION_GUIDANCE = 'Ask the student to describe connections between map elements in their own words. Use those words to propose connections that remain off the map until the student adds them.';
 
 const EMPTY_STAGE_SETTINGS = Object.freeze({ guidance: '', materials: '' });
 
@@ -213,48 +213,48 @@ const DEFAULT_CONNECTION_STAGE = Object.freeze({
 
 const PART_ONE_STAGES = {
   'add-source': {
-    guidance: 'Ask the student to prepare a 500–600 word memo. For Micro, name discrete people, roles, activities, objects, and immediate settings and state any direct relationships with clear verbs. For Meso, identify which two or more Micro settings form each mesosystem.',
+    guidance: 'Use a memo with enough detail to identify the focal person, the map question, the time period, and the map boundary. Micro-level names immediate settings, their relevant elements, and direct connections. Meso-level identifies linkages among two or more Micro-level settings.',
     materials: '',
   },
   'review-suggestions': {
-    guidance: 'Point the student back to supporting memo passages. Micro review returns discrete elements and direct relationships. Meso review returns mesosystems that each include two or more Micro settings already on the map and no relationship edges.',
+    guidance: 'Point the student back to supporting memo passages. Micro-level guidance may suggest discrete elements and direct connections. Meso-level guidance may suggest linkages among two or more Micro-level settings already on the map, with no directional connections.',
     materials: '',
   },
   'choose-what-to-map': {
-    guidance: 'For Micro, ask the student to keep, rename, or remove discrete elements and to review, edit, keep, or remove direct relationships among them. For Meso, ask the student to keep, rename, or remove mesosystems and review the two or more Micro settings included in each one. Do not add relationship verbs at Meso. Require a supporting passage or data point for anything the student keeps.',
+    guidance: 'At Micro-level, let the student add, edit, set aside, or remove discrete elements and direct connections. At Meso-level, use the same choices for each proposed linkage and show the Micro-level settings it includes. Require supporting evidence for anything added to the map.',
     materials: '',
   },
   'build-map': {
-    guidance: 'For Micro, arrange the chosen elements and their direct relationships. For Meso, place each mesosystem in the Meso layer and show the Micro settings it includes without adding a relationship edge or verb. Preserve uncertainty in an annotation.',
+    guidance: 'At Micro-level, arrange the chosen elements and their direct connections. At Meso-level, place each mesosystem in its own region and show the Micro-level settings it includes without adding a directional connection. Record uncertainty in an annotation.',
     materials: '',
   },
   'revise-and-export': {
-    guidance: 'Make the current Micro or Meso draft available for instructor review without blocking continued work. Ask the student to revisit weak or contested direct relationships in Micro and unsupported setting groupings in Meso, keep evidence separate from interpretation, and record what changed after feedback.',
+    guidance: 'Ask the student to revisit weak or contested Micro-level connections and unsupported Meso-level linkages, distinguish evidence from interpretation, and record what changed before exporting.',
     materials: '',
   },
 };
 
 const PART_TWO_STAGES = {
   'add-source': {
-    guidance: 'Ask the student to prepare a 500–600 word memo for the active outer level. Exosphere names institutions, agencies, offices, service systems, and their indirect actions. Macrosphere names broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. Named institutions belong only in Exosphere.',
+    guidance: 'Use the project memo to continue into the active outer level. Exo-level names outside decision settings and traces how their actions reach a Micro-level setting. Macro-level names broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. Place a concrete institution according to the focal person’s participation.',
     materials: '',
   },
   'review-suggestions': {
-    guidance: 'For Exosphere, check actual institutional names, actions, resource paths, recipients, evidence, and dates. For Macrosphere, check which mapped elements each broader law, public policy, economic condition, history, cultural belief, or structure affects and what evidence supports the claim. Keep named institutions in Exosphere.',
+    guidance: 'At Exo-level, check the full name of each outside decision setting and the pathway into a Micro-level setting. At Macro-level, check which mapped elements each broader condition affects and what evidence supports the claim.',
     materials: '',
   },
   'choose-what-to-map': {
-    guidance: `Ask the student to choose supported map elements for the active outer level. Exosphere includes named institutions and supported institutional relationships. Macrosphere includes broader conditions and the mapped elements they affect, with no relationship edges. Keep named institutions out of Macrosphere. Add an annotation when evidence is incomplete.
+    guidance: `Ask the student to choose supported map elements for the active outer level. Exo-level includes named outside decision settings and supported pathways into Micro-level settings. Macro-level includes broader conditions and the mapped elements they affect, with no directional connections. Place concrete institutions at Micro-level or Exo-level according to participation. Add an annotation when evidence is incomplete.
 
 ${CONNECTION_GUIDANCE}`,
     materials: '',
   },
   'build-map': {
-    guidance: 'Place Exosphere and Macrosphere work in nested ecological layers around Micro and Meso. Show Exosphere institutional relationships and the mapped elements affected by each Macrosphere item. Keep every layer filterable without removing or changing map records.',
+    guidance: 'Place Exo-level and Macro-level work in distinct regions around the earlier levels. Show each Exo-level pathway into a Micro-level setting and the mapped elements affected by each Macro-level item. Filtering a level must not remove or change map records.',
     materials: '',
   },
   'revise-and-export': {
-    guidance: 'Make the current Exosphere or Macrosphere draft available for instructor feedback without blocking continued work. Ask the student to record corrections, check missing voices and unsupported claims, and confirm that no confidential, identifying, or nonpublic community information appears in the submission.',
+    guidance: 'Ask the student to record corrections, check missing voices and unsupported claims, and remove confidential or identifying community information before exporting.',
     materials: '',
   },
 };
@@ -317,15 +317,15 @@ export const DEFAULT_TEACHING_PROFILE = Object.freeze(normalizeCourseProgression
 function genericProgressionStages() {
   return {
     'add-source': {
-      guidance: 'Ask the student to choose one level and add the memo they will use to begin the map. Keep this step brief and do not ask for extra publication details.',
+      guidance: 'Add the memo once at Micro-level. Reuse it as the project advances through Meso-level, Exo-level, and Macro-level. Keep this step brief and do not ask for extra publication details.',
       materials: '',
     },
     'review-suggestions': {
-      guidance: "Point the student to memo passages that name people, organizations, resources, policies, or relationships. Ask no more than three questions that return the student to the memo. Carry the instructor's response forward without adding a competing interpretation or recasting the instructor's question.",
+      guidance: 'Point the student to memo passages that name people, organizations, resources, policies, or relationships. Ask no more than three questions that return the student to the memo. Carry any course guidance forward without adding a competing interpretation or recasting its question.',
       materials: '',
     },
     'choose-what-to-map': {
-      guidance: `Ask the student to review each proposed node and relationship and choose Keep, Needs more evidence, or Remove. Require a passage from the memo for anything they keep.\n\n${CONNECTION_GUIDANCE}`,
+      guidance: `Ask the student to review each proposed map element or connection and choose Add to map, Set aside for more evidence, or Remove. Require a passage from the memo for anything added.\n\n${CONNECTION_GUIDANCE}`,
       materials: '',
     },
     'build-map': {

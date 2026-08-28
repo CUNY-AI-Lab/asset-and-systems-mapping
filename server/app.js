@@ -66,6 +66,7 @@ const DEFAULT_PREFLIGHT_EVALUATION_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PREFLIGHT_PENDING_RETENTION_DAYS = 30;
 const DEFAULT_PREFLIGHT_DECIDED_RETENTION_DAYS = 180;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_SAVED_PROJECT_TTL_MS = 90 * DAY_MS;
 const DEFAULT_CLASS_CODE = '101';
 const UNRECORDED_INQUIRY = '[not collected]';
 const JSON_BODY_LIMIT_BYTES = 64 * 1024;
@@ -132,25 +133,25 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
-  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 10 nodes and 8 direct relationships at Micro, 6 mesosystems at Meso, 6 new institutions with 5 connections at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
+  'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 10 nodes and 8 direct relationships at Micro, 6 mesosystems at Meso, 6 new outside decision settings with 5 pathways at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
   `guidance must be an array of no more than 4 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
   `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
   'Except at Meso, each node label MUST be the shortest complete memo-supported referring expression for exactly one accepted map element. Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo; if the referent is not unambiguous, omit it. Never attach location, schedule, action, relationship, or explanatory material merely to make a label longer; keep those details in evidence, and emit a separately supported setting only when it is independently relevant. Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments, relationship propositions, outcomes, or explanations as node labels. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
   'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
-  'Keep every suggestion and every sentence of guidance within the active scale. At Macrosphere, discuss only validated broader conditions and the mapped elements they affect; do not discuss missing institutions or institutional connections. At Exosphere, discuss only named institutions and their supported actions. At Meso, discuss only interrelations among Micro settings. At Micro, discuss only discrete immediate elements and direct relationships.',
-  'SCALE BOUNDARIES — assign each item by the person\'s participation, never by an entity\'s size or fame. Micro identifies the activities, roles, interpersonal relationships, objects, and immediate settings the person directly encounters. Meso identifies only an interrelation among two or more of those Micro settings in which the person participates; Meso is not another place to add actors, organizations, institutions, or services. Exosphere identifies institutions and decision-making bodies whose actions affect mapped elements even when the person does not interact with them directly. Macrosphere identifies broader laws, policies, economic conditions, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level actors as new nodes at a higher level.',
-  `At Micro, propose only bounded people, roles, groups, immediate settings, named activities, or tangible objects that the memo supports. A named activity must still be a complete noun phrase, never the action verb or a sentence fragment. Type each home, classroom, workplace, peer group, online community, or other immediate setting in which the person participates as "setting" so it can be used at Meso. Keep named institutions and service systems at Exosphere; do not type one as a Micro setting merely because its name contains school, college, clinic, or center. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for institutions that act indirectly and broader conditions that shape several mapped elements. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
-  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, each scope entry must use the exact ID of a Micro setting already on the map. At Exosphere, connections may use an existing node\'s exact label as an endpoint to tie new institutions to the existing map. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
+  'Keep every suggestion and every sentence of guidance within the active scale. At Macrosphere, discuss only validated broader conditions and the mapped elements they affect; do not discuss missing institutions or outside decision pathways. At Exosphere, discuss only named outside decision settings and their supported pathways into immediate settings. At Meso, discuss only interrelations among Micro settings. At Micro, discuss only discrete immediate elements and direct relationships.',
+  'SCALE BOUNDARIES — assign each item by the focal person\'s participation and the pathway of effect, never by entity kind, size, or fame. Micro identifies immediate settings the person participates in, their people, roles, activities, objects, and resources, and direct interactions. A named organization, institution, agency, or service remains at Micro when the person participates there directly. Meso identifies only a noun-labeled interrelation among two or more of those Micro settings; it is not another place to add entities or directional connections. Exosphere identifies outside decision settings whose actions reach an immediate Micro setting even though the person does not participate in the decision setting. Macrosphere identifies broader laws, public policies, economic conditions, histories, structures, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level items at a higher level.',
+  `At Micro, propose only bounded people, roles, groups, immediate settings, named activities, tangible objects, or resources that the memo supports. Preserve an organization, institution, agency, or service as its actual entity type while assigning it to Micro when the focal person participates there. A named activity must still be a complete noun phrase, never the action verb or a sentence fragment. A Micro setting used at Meso may have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for outside decision settings that act indirectly and broader conditions that shape several mapped elements. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
+  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, each scope entry must use the exact ID of a Micro setting already on the map. At Exosphere, connections may use an existing Micro setting\'s exact label as the endpoint of an outside decision pathway. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
   'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
-  `connections must be an array of objects with exactly these keys: source, target, verb, rationale. At Micro, source and target must exactly match accepted node labels or exact supplied node IDs, endpoints must differ, and the rationale must point to direct evidence for a relationship among a person, role, group, setting, named activity, or object. A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting; only setting-to-setting interrelations are excluded from Micro and belong at Meso. Never turn a schedule fact, unresolved coreference fragment, or invented noun phrase into a Micro connection. At Meso and Macrosphere, connections MUST be empty. For Exosphere, source and target must exactly match a label from nodes or a label from carriedNodes, at least one endpoint MUST be a carried node, endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must point to what makes the connection evident.`,
+  `connections must be an array of objects with exactly these keys: source, target, verb, rationale. At Micro, source and target must exactly match accepted node labels or exact supplied node IDs, endpoints must differ, and the rationale must point to direct evidence for a relationship among accepted Micro elements, including resources and directly participated institutions or services. A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting; only setting-to-setting interrelations are excluded from Micro and belong at Meso. Never turn a schedule fact, unresolved coreference fragment, or invented noun phrase into a Micro connection. At Meso and Macrosphere, connections MUST be empty. For Exosphere, every connection MUST join one proposed outside decision setting to one carried Micro setting, endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must identify the supported decision or resource pathway.`,
   'At Micro, use a short plain active verb phrase for a concrete action or exchange that matters to the mapped situation. Do not use mere co-residence or co-presence, vague collaboration, or generic planning as a relationship unless the memo makes that tie analytically consequential and names what passes between the endpoints.',
-  `At Meso each node must have type "${MESOSYSTEM_NODE_TYPE}", a neutral noun-phrase label that names the interrelation with a relational noun such as "coordination", "communication", "overlap", "conflict", or "transition", and a scope containing the exact IDs of 2 or more Micro settings already on the map. A Micro setting must have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. Meso represents the interrelation of those settings and never adds a relationship edge or verb. Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other institutional entity as a Meso node. A named institution or administrative unit belongs at Exosphere; a specific person directly encountered may belong at Micro, but neither belongs at Meso.`,
+  `At Meso each node must have type "${MESOSYSTEM_NODE_TYPE}", a neutral noun-phrase label that names the interrelation with a relational noun such as "coordination", "communication", "overlap", "conflict", or "transition", and a scope containing the exact IDs of 2 or more Micro settings already on the map. A Micro setting may have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. Meso represents the interrelation of those settings and never adds a directional connection. Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other entity as a new Meso node. An organization, institution, agency, or service already mapped as a directly participated Micro setting may appear only through its exact scope ID.`,
   'At Meso, guidance and readiness text may discuss only the proposed interrelations and the human-readable labels of their scoped Micro settings. Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.',
-  'EXOSPHERE/MACROSPHERE BOUNDARY: a named university, college, agency, office, board, funder, employer, service provider, platform, or other institution belongs at Exosphere. A policy administered by one named institution also remains Exosphere. Macrosphere is reserved for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Never repeat an Exosphere institution as a Macrosphere node, even inside a longer label.',
-  `EXOSPHERE FINAL CHECK: every node label must be a specific proper name, official acronym, named service, named public-benefit program, or policy explicitly scoped to a named institution. A generic category is not an Exosphere node: omit labels such as "home care agency", "legal services office", "scheduling office", "union", "employer", "benefits office", "service system", or an unnamed hospital, college, clinic, center, program, or agency. An inferred node must still supply a specific proper name and mark basis "inference"; otherwise raise the gap only in guidance. Choose node type only from: ${EXOSPHERE_NODE_TYPES.join(', ')}. Every Exosphere connection must join one proposed Exosphere institution to one carried map element, never two newly proposed institutions, and must use exactly one allowed Exosphere verb. Use human-readable labels rather than node IDs in guidance, rationale, readiness, and example text.`,
+  'EXOSPHERE/MACROSPHERE BOUNDARY: Exosphere is a relational placement, not an institution category. Place a concrete institution or service at Micro when the focal person participates there; place it at Exosphere only when its relevant decisions occur outside the immediate settings and a supported pathway reaches a Micro setting. An operational rule explicitly owned by that named outside decision setting may remain at Exosphere. Macrosphere is reserved for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Never repeat a concrete institution as a Macrosphere condition.',
+  `EXOSPHERE FINAL CHECK: every node label must be a specific proper name, official acronym, named service, named public-benefit program, or operational rule explicitly scoped to a named outside decision setting. A generic category is not an Exosphere node: omit labels such as "home care agency", "legal services office", "scheduling office", "union", "employer", "benefits office", "service system", or an unnamed hospital, college, clinic, center, program, or agency. An inferred node must still supply a specific proper name and mark basis "inference"; otherwise raise the gap only in guidance. Choose node type only from: ${EXOSPHERE_NODE_TYPES.join(', ')}. Every proposed Exosphere node must have one connection to one carried Micro setting, never another proposed or carried outer-level item, and must use exactly one allowed Exosphere verb. Use human-readable labels rather than node IDs in guidance, rationale, readiness, and example text.`,
   `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact IDs from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
-  'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance and readiness text. For Micro and Meso, example must be null. For Exosphere and Macrosphere, example may be a short plain-language paragraph, or null, that explains one institutional connection or broader condition.',
-  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means clear institutions and at least one evident institutional relationship. For Macrosphere, ready means at least one broader condition affects two or more mapped elements. Readiness never blocks the student from continuing.',
+  'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance and readiness text. For Micro and Meso, example must be null. For Exosphere and Macrosphere, example may be a short plain-language paragraph, or null, that explains one outside decision pathway or broader condition.',
+  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means at least one named outside decision setting has an evident pathway to a carried Micro setting. For Macrosphere, ready means at least one broader condition affects two or more mapped elements. Readiness never blocks the student from continuing.',
   'FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata: {"guidance":[],"nodes":[],"connections":[],"example":null,"readiness":{"ready":false,"note":"Short plain-language note."}}. Fill the arrays and readiness values under the active-scale rules above. Never add suggestion, review, result, activeScale, scale, confidence, metadata, or any sixth top-level key.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
@@ -163,7 +164,7 @@ const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   'connections must be an array of no more than 12 objects.',
   'Each connection must contain exactly four keys: source, target, verb, rationale.',
   'source and target must be different node IDs from the supplied nodes.',
-  `At Micro, both endpoints must be accepted Micro elements and verb must name a direct relationship among a person, role, group, setting, named activity, or object. Direct actor-to-setting relationships are valid; never return a Micro connection between two settings, because their interrelation belongs at Meso. Never turn a schedule fact or unresolved coreference into a relationship. At Exosphere, at least one endpoint must be an Exosphere institution, neither endpoint may be a Macrosphere item, and verb must be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}.`,
+  `At Micro, both endpoints must be accepted Micro elements and verb must name a direct relationship among people, roles, groups, settings, activities, objects, resources, or directly participated institutions and services. Direct actor-to-setting relationships are valid; never return a Micro connection between two settings, because their interrelation belongs at Meso. Never turn a schedule fact or unresolved coreference into a relationship. At Exosphere, one endpoint must be an outside Exosphere decision setting and the other an immediate Micro setting, and verb must be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}.`,
   'At Micro, use a short plain active verb phrase for a concrete action or exchange that matters to the mapped situation. Do not use mere co-residence or co-presence, vague collaboration, or generic planning unless the student description makes that tie analytically consequential and names what passes between the endpoints.',
   'rationale must quote or closely paraphrase the exact student-description evidence for the relationship.',
   'Do not add confidence scores, evidence claims, Markdown, or prose outside the object.',
@@ -354,8 +355,25 @@ async function parseJsonBody(context, maxBytes = JSON_BODY_LIMIT_BYTES) {
   }
 }
 
-function parseSavedProjectPayload(body) {
-  assertOnlyKeys(body, ['project']);
+function expectedSavedProjectRevision(body, context) {
+  assertOnlyKeys(body, ['expectedRevision']);
+  const expectedRevision = requireInteger(body.expectedRevision, 'expectedRevision', 1, Number.MAX_SAFE_INTEGER);
+  const ifMatch = context.req.header('if-match');
+  if (ifMatch !== undefined) {
+    const match = /^"([1-9]\d*)"$/.exec(ifMatch.trim());
+    const headerRevision = match ? Number(match[1]) : NaN;
+    if (!Number.isSafeInteger(headerRevision)) {
+      throw new HttpError(400, 'If-Match must contain one quoted positive project revision.');
+    }
+    if (headerRevision !== expectedRevision) {
+      throw new HttpError(400, 'If-Match must match expectedRevision.');
+    }
+  }
+  return expectedRevision;
+}
+
+function parseSavedProjectPayload(body, context = null) {
+  assertOnlyKeys(body, context ? ['project', 'expectedRevision'] : ['project']);
   if (typeof body.project !== 'string' || body.project.length < 2 || body.project.length > SAVED_PROJECT_JSON_LIMIT) {
     throw new HttpError(400, `project must be serialized JSON of 2 to ${SAVED_PROJECT_JSON_LIMIT} characters.`);
   }
@@ -369,7 +387,41 @@ function parseSavedProjectPayload(body) {
   if (typeof parsed.id !== 'string' || parsed.id.length < 1 || parsed.id.length > 200) {
     throw new HttpError(400, 'project.id must be a string of 1 to 200 characters.');
   }
-  return { serialized: body.project, projectId: parsed.id };
+  return {
+    serialized: body.project,
+    projectId: parsed.id,
+    ...(context ? { expectedRevision: expectedSavedProjectRevision({ expectedRevision: body.expectedRevision }, context) } : {}),
+  };
+}
+
+function savedProjectMetadata(row) {
+  return {
+    revision: row.revision,
+    updatedAt: row.updatedAt,
+    expiresAt: row.expiresAt ?? null,
+    revokedAt: row.revokedAt ?? null,
+  };
+}
+
+function assertSavedProjectActive(row, currentTime) {
+  if (row.revokedAt !== null && row.revokedAt !== undefined) {
+    throw new HttpError(410, 'This project link has been revoked.');
+  }
+  if (row.expiresAt !== null && row.expiresAt !== undefined && row.expiresAt <= currentTime) {
+    throw new HttpError(410, 'This project link has expired.');
+  }
+}
+
+function staleSavedProjectError(row) {
+  return new HttpError(
+    409,
+    'This project link changed in another session. Refresh it before saving again.',
+    savedProjectMetadata(row),
+  );
+}
+
+function setSavedProjectEtag(context, revision) {
+  context.header('ETag', `"${revision}"`);
 }
 
 function requireString(value, name, { min = 1, max = 20_000 } = {}) {
@@ -650,7 +702,6 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     if (node.scale !== activeScale) throw new MemoReviewSemanticError(`nodes[${index}].scale does not match the active scale.`);
     if (!isNodeTypeAllowedAtScale(node.type, activeScale)) throw new MemoReviewSemanticError(`nodes[${index}].type does not belong at ${activeScale}.`);
     if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is a reference, action, clause, fragment, or non-entity Micro label.`);
-    if (activeScale === 'micro' && isNamedInstitutionLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label names an institution that belongs at Exosphere.`);
     if (activeScale === 'meso' && (!isMesosystemLabel(label) || node.type !== MESOSYSTEM_NODE_TYPE)) throw new MemoReviewSemanticError(`nodes[${index}] is not a scoped mesosystem.`);
     if (activeScale === 'exosphere' && !isNamedInstitutionLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is not a named institution or service system.`);
     if (activeScale === 'macrosphere' && (isNamedInstitutionLabel(label) || isObviousLowerLevelMacroLabel(label))) throw new MemoReviewSemanticError(`nodes[${index}].label does not name a broader condition.`);
@@ -697,6 +748,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     .map((connection) => `${connection.source}\u0000${String(connection.verb || '').trim().toLocaleLowerCase()}\u0000${connection.target}`));
   const seenConnections = new Set();
   const expectedConnections = [];
+  const connectedProposedExosphereLabels = new Set();
   value.connections.forEach((connection, index) => {
     if (!hasExactKeys(connection, ['source', 'target', 'verb', 'rationale'])) throw new MemoReviewSemanticError(`connections[${index}] does not use the exact relationship fields.`);
     const sourceResolution = resolveEndpoint(connection.source);
@@ -719,13 +771,18 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       if (!SCALE_VERB_LEXICONS.exosphere.includes(verb)) {
         throw new MemoReviewSemanticError(`connections[${index}].verb must use the exact Exosphere register.`);
       }
-      if (!sourceResolution.carried && !targetResolution.carried) {
-        throw new MemoReviewSemanticError(`connections[${index}] must include a supplied carried endpoint.`);
+      const sourceIsDecisionSetting = sourceNode.scale === 'exosphere';
+      const targetIsDecisionSetting = targetNode.scale === 'exosphere';
+      const sourceIsImmediateSetting = sourceResolution.carried
+        && sourceNode.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(sourceNode.type);
+      const targetIsImmediateSetting = targetResolution.carried
+        && targetNode.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(targetNode.type);
+      if (!((sourceIsDecisionSetting && targetIsImmediateSetting)
+        || (targetIsDecisionSetting && sourceIsImmediateSetting))) {
+        throw new MemoReviewSemanticError(`connections[${index}] must connect one outside decision setting to one supplied Micro setting.`);
       }
-      if (sourceNode.scale === 'macrosphere' || targetNode.scale === 'macrosphere'
-        || (sourceNode.scale !== 'exosphere' && targetNode.scale !== 'exosphere')) {
-        throw new MemoReviewSemanticError(`connections[${index}] is not an institutional Exosphere relationship.`);
-      }
+      if (sourceIsDecisionSetting && !sourceResolution.carried) connectedProposedExosphereLabels.add(sourceResolution.label);
+      if (targetIsDecisionSetting && !targetResolution.carried) connectedProposedExosphereLabels.add(targetResolution.label);
     }
     const key = `${sourceResolution.reference}\u0000${verb.toLocaleLowerCase()}\u0000${targetResolution.reference}`;
     if (seenConnections.has(key) || carriedConnectionKeys.has(key)) throw new MemoReviewSemanticError(`connections[${index}] repeats a relationship.`);
@@ -739,6 +796,13 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       rationale,
     });
   });
+  if (activeScale === 'exosphere') {
+    value.nodes.forEach((node, index) => {
+      if (!connectedProposedExosphereLabels.has(node.label)) {
+        throw new MemoReviewSemanticError(`nodes[${index}] must have a supported pathway to a supplied Micro setting.`);
+      }
+    });
+  }
 
   const normalizedReview = normalizeMemoReview(value, activeScale, 'generated memo review', carriedNodes, carriedConnections);
   // normalizeMemoReview also replays older stored reviews, where Meso and
@@ -949,20 +1013,25 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
         const resolveEndpoint = (reference) => {
           if (!reference) return null;
           const carriedById = carriedNodeById.get(reference);
-          if (carriedById) return { reference: carriedById.id, label: carriedById.label, scale: carriedById.scale, carried: true };
+          if (carriedById) return { reference: carriedById.id, label: carriedById.label, scale: carriedById.scale, type: carriedById.type, carried: true };
           const lower = reference.toLocaleLowerCase();
           const carried = carriedNodeByLabel.get(lower);
-          if (carried) return { reference: carried.id, label: carried.label, scale: carried.scale, carried: true };
-          const proposed = nodeByLower.get(lower);
-          return proposed ? { reference: proposed, label: proposed, carried: false } : null;
+          if (carried) return { reference: carried.id, label: carried.label, scale: carried.scale, type: carried.type, carried: true };
+          const proposed = nodeRecordByLower.get(lower);
+          return proposed ? { reference: proposed.label, label: proposed.label, scale: proposed.scale, type: proposed.type, carried: false } : null;
         };
         const resolvedSource = resolveEndpoint(sourceReference);
         const resolvedTarget = resolveEndpoint(targetReference);
-        if (activeScale === 'exosphere' && (resolvedSource?.scale === 'macrosphere' || resolvedTarget?.scale === 'macrosphere')) return null;
-        // An Exosphere connection is an influence pathway — it must land on
-        // the mapped world (Bronfenbrenner's two-step chain). Two floating
-        // new nodes tied to each other are not a pathway.
-        if (carriedNodeById.size && !resolvedSource?.carried && !resolvedTarget?.carried) return null;
+        if (activeScale === 'exosphere') {
+          const sourceIsDecisionSetting = resolvedSource?.scale === 'exosphere';
+          const targetIsDecisionSetting = resolvedTarget?.scale === 'exosphere';
+          const sourceIsImmediateSetting = resolvedSource?.carried && resolvedSource.scale === 'micro'
+            && MICRO_SETTING_NODE_TYPES.includes(resolvedSource.type);
+          const targetIsImmediateSetting = resolvedTarget?.carried && resolvedTarget.scale === 'micro'
+            && MICRO_SETTING_NODE_TYPES.includes(resolvedTarget.type);
+          if (!((sourceIsDecisionSetting && targetIsImmediateSetting)
+            || (targetIsDecisionSetting && sourceIsImmediateSetting))) return null;
+        }
         source = resolvedSource?.reference;
         target = resolvedTarget?.reference;
         sourceLabel = resolvedSource?.label;
@@ -1200,9 +1269,12 @@ function validateGeneratedConnections(value, nodes, activeScale) {
       throw new HttpError(400, `${name} is a setting-to-setting interrelation and belongs at Meso.`);
     }
     if (activeScale === 'exosphere') {
-      if (sourceNode.scale !== 'exosphere' && targetNode.scale !== 'exosphere') throw new HttpError(400, `${name} must include an Exosphere institution.`);
-      if (sourceNode.scale === 'macrosphere' || targetNode.scale === 'macrosphere') throw new HttpError(400, `${name} must not connect to a Macrosphere item.`);
-      if (!SCALE_VERB_LEXICONS.exosphere.includes(verb)) throw new HttpError(400, `${name}.verb must use the exact Exosphere institutional relationship register.`);
+      const endpointScales = new Set([sourceNode.scale, targetNode.scale]);
+      const microNode = sourceNode.scale === 'micro' ? sourceNode : targetNode.scale === 'micro' ? targetNode : null;
+      if (!(endpointScales.has('exosphere') && microNode && MICRO_SETTING_NODE_TYPES.includes(microNode.type))) {
+        throw new HttpError(400, `${name} must connect one outside Exosphere decision setting to one immediate Micro setting.`);
+      }
+      if (!SCALE_VERB_LEXICONS.exosphere.includes(verb)) throw new HttpError(400, `${name}.verb must use the exact Exosphere decision-path register.`);
     }
     const key = `${source}\u0000${verb.toLocaleLowerCase()}\u0000${target}`;
     if (seen.has(key)) throw new HttpError(400, 'generated connections must not contain duplicates.');
@@ -1329,7 +1401,7 @@ function storedAtomicMemoReview(value, activeScale) {
       if (seenLabels.has(lower)) fail();
       seenLabels.add(lower);
       nodeByReference.set(node.label, node);
-      if (activeScale === 'micro' && (!isDiscreteMicroNodeLabel(node.label) || isNamedInstitutionLabel(node.label))) fail();
+      if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) fail();
       if (activeScale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || !isMesosystemLabel(node.label))) fail();
       if (activeScale === 'exosphere' && (!isNamedInstitutionLabel(node.label) || !['memo', 'inference'].includes(node.basis))) fail();
       if (activeScale === 'macrosphere' && (isNamedInstitutionLabel(node.label)
@@ -2201,6 +2273,12 @@ export function createSystemsMappingApp(options = {}) {
     DEFAULT_PREFLIGHT_SUBMISSION_WINDOW_MS,
   );
   const savedProjectMaxTotal = positiveInteger(options.savedProjectMaxTotal, 'savedProjectMaxTotal', 5000, { max: 1_000_000 });
+  const savedProjectTtlMs = positiveInteger(
+    options.savedProjectTtlMs,
+    'savedProjectTtlMs',
+    DEFAULT_SAVED_PROJECT_TTL_MS,
+    { min: 1000, max: 3650 * DAY_MS },
+  );
   const preflightSubmissionLimit = positiveInteger(options.preflightSubmissionLimit, 'preflightSubmissionLimit', 5, { max: 100 });
   const preflightSubmissionWindowMs = positiveInteger(
     options.preflightSubmissionWindowMs,
@@ -2955,17 +3033,40 @@ export function createSystemsMappingApp(options = {}) {
     const { serialized, projectId } = parseSavedProjectPayload(body);
     const token = randomBytes(24).toString('base64url');
     const savedAt = clockValue(now);
+    const expiresAt = savedAt + savedProjectTtlMs;
     await inTransaction(db, async () => {
+      await db.advisoryTransactionLock?.('saved-projects:capacity');
+      await db.prepare(`
+        DELETE FROM saved_projects
+        WHERE expires_at IS NOT NULL AND expires_at <= ?
+      `).run(savedAt);
       const total = await db.prepare('SELECT COUNT(*) AS count FROM saved_projects').get();
       if ((total?.count ?? 0) >= savedProjectMaxTotal) {
         throw new HttpError(507, 'The class workspace cannot store more project links right now.');
       }
       await db.prepare(`
-        INSERT INTO saved_projects (token_hash, project_id, project_json, created_session_ref, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(createHash('sha256').update(token).digest('hex'), projectId, serialized, student.sessionRef, savedAt, savedAt);
+        INSERT INTO saved_projects (
+          token_hash, project_id, project_json, created_session_ref,
+          created_at, updated_at, revision, expires_at, revoked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL)
+      `).run(
+        createHash('sha256').update(token).digest('hex'),
+        projectId,
+        serialized,
+        student.sessionRef,
+        savedAt,
+        savedAt,
+        expiresAt,
+      );
     });
-    return context.json({ token, updatedAt: savedAt }, 201);
+    setSavedProjectEtag(context, 1);
+    return context.json({
+      token,
+      revision: 1,
+      updatedAt: savedAt,
+      expiresAt,
+      revokedAt: null,
+    }, 201);
   });
 
   app.get('/api/projects/:token', async (context) => {
@@ -2974,11 +3075,14 @@ export function createSystemsMappingApp(options = {}) {
     const token = context.req.param('token');
     if (!SAVED_PROJECT_TOKEN_PATTERN.test(token)) throw new HttpError(404, 'Project link not found.');
     const row = await db.prepare(`
-      SELECT project_id AS projectId, project_json AS project, updated_at AS updatedAt
+      SELECT project_id AS projectId, project_json AS project,
+        revision, updated_at AS updatedAt, expires_at AS expiresAt, revoked_at AS revokedAt
       FROM saved_projects WHERE token_hash = ?
     `).get(createHash('sha256').update(token).digest('hex'));
     if (!row) throw new HttpError(404, 'Project link not found.');
-    return context.json({ projectId: row.projectId, project: row.project, updatedAt: row.updatedAt });
+    assertSavedProjectActive(row, clockValue(now));
+    setSavedProjectEtag(context, row.revision);
+    return context.json({ projectId: row.projectId, project: row.project, ...savedProjectMetadata(row) });
   });
 
   app.put('/api/projects/:token', async (context) => {
@@ -2989,19 +3093,134 @@ export function createSystemsMappingApp(options = {}) {
     const rate = savedProjectWriteLimiter.take(student.sessionRef);
     if (!rate.allowed) throw tooManyAttempts(rate.retryAfterSeconds, 'Project sync limit reached. Try again later.');
     const body = await parseJsonBody(context, SAVED_PROJECT_BODY_LIMIT_BYTES);
-    const { serialized, projectId } = parseSavedProjectPayload(body);
+    const { serialized, projectId, expectedRevision } = parseSavedProjectPayload(body, context);
     const tokenHash = createHash('sha256').update(token).digest('hex');
-    const updatedAt = clockValue(now);
-    await inTransaction(db, async () => {
-      const row = await db.prepare('SELECT project_id AS projectId FROM saved_projects WHERE token_hash = ?').get(tokenHash);
+    const requestedAt = clockValue(now);
+    const metadata = await inTransaction(db, async () => {
+      await db.advisoryTransactionLock?.(`saved-project:${tokenHash}`);
+      const row = await db.prepare(`
+        SELECT project_id AS projectId, revision, updated_at AS updatedAt,
+          expires_at AS expiresAt, revoked_at AS revokedAt
+        FROM saved_projects WHERE token_hash = ?
+      `).get(tokenHash);
       if (!row) throw new HttpError(404, 'Project link not found.');
+      assertSavedProjectActive(row, requestedAt);
       if (row.projectId !== projectId) {
         throw new HttpError(409, 'This link belongs to a different project. Create a new link for this project.');
       }
-      await db.prepare('UPDATE saved_projects SET project_json = ?, updated_at = ? WHERE token_hash = ?')
-        .run(serialized, updatedAt, tokenHash);
+      if (row.revision !== expectedRevision) throw staleSavedProjectError(row);
+      const updatedAt = Math.max(requestedAt, row.updatedAt);
+      const updated = await db.prepare(`
+        UPDATE saved_projects
+        SET project_json = ?, updated_at = ?, revision = revision + 1
+        WHERE token_hash = ? AND project_id = ? AND revision = ?
+          AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
+      `).run(serialized, updatedAt, tokenHash, projectId, expectedRevision, requestedAt);
+      if (updated.changes !== 1) {
+        const current = await db.prepare(`
+          SELECT revision, updated_at AS updatedAt,
+            expires_at AS expiresAt, revoked_at AS revokedAt
+          FROM saved_projects WHERE token_hash = ?
+        `).get(tokenHash);
+        if (!current) throw new HttpError(404, 'Project link not found.');
+        assertSavedProjectActive(current, requestedAt);
+        throw staleSavedProjectError(current);
+      }
+      return {
+        revision: expectedRevision + 1,
+        updatedAt,
+        expiresAt: row.expiresAt ?? null,
+        revokedAt: null,
+      };
     });
-    return context.json({ updatedAt });
+    setSavedProjectEtag(context, metadata.revision);
+    return context.json(metadata);
+  });
+
+  app.post('/api/projects/:token/revoke', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    const token = context.req.param('token');
+    if (!SAVED_PROJECT_TOKEN_PATTERN.test(token)) throw new HttpError(404, 'Project link not found.');
+    const rate = savedProjectWriteLimiter.take(student.sessionRef);
+    if (!rate.allowed) throw tooManyAttempts(rate.retryAfterSeconds, 'Project sync limit reached. Try again later.');
+    const body = await parseJsonBody(context, AUTH_BODY_LIMIT_BYTES);
+    const expectedRevision = expectedSavedProjectRevision(body, context);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const requestedAt = clockValue(now);
+    const result = await inTransaction(db, async () => {
+      await db.advisoryTransactionLock?.(`saved-project:${tokenHash}`);
+      const row = await db.prepare(`
+        SELECT project_id AS projectId, revision, updated_at AS updatedAt,
+          expires_at AS expiresAt, revoked_at AS revokedAt
+        FROM saved_projects WHERE token_hash = ?
+      `).get(tokenHash);
+      if (!row) throw new HttpError(404, 'Project link not found.');
+      assertSavedProjectActive(row, requestedAt);
+      if (row.revision !== expectedRevision) throw staleSavedProjectError(row);
+      const revokedAt = Math.max(requestedAt, row.updatedAt);
+      const revoked = await db.prepare(`
+        UPDATE saved_projects
+        SET revoked_at = ?, updated_at = ?, revision = revision + 1
+        WHERE token_hash = ? AND revision = ? AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > ?)
+      `).run(revokedAt, revokedAt, tokenHash, expectedRevision, requestedAt);
+      if (revoked.changes !== 1) {
+        const current = await db.prepare(`
+          SELECT revision, updated_at AS updatedAt,
+            expires_at AS expiresAt, revoked_at AS revokedAt
+          FROM saved_projects WHERE token_hash = ?
+        `).get(tokenHash);
+        if (!current) throw new HttpError(404, 'Project link not found.');
+        assertSavedProjectActive(current, requestedAt);
+        throw staleSavedProjectError(current);
+      }
+      return {
+        projectId: row.projectId,
+        revision: expectedRevision + 1,
+        updatedAt: revokedAt,
+        expiresAt: row.expiresAt ?? null,
+        revokedAt,
+      };
+    });
+    setSavedProjectEtag(context, result.revision);
+    return context.json(result);
+  });
+
+  app.delete('/api/projects/:token', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    const token = context.req.param('token');
+    if (!SAVED_PROJECT_TOKEN_PATTERN.test(token)) throw new HttpError(404, 'Project link not found.');
+    const rate = savedProjectWriteLimiter.take(student.sessionRef);
+    if (!rate.allowed) throw tooManyAttempts(rate.retryAfterSeconds, 'Project sync limit reached. Try again later.');
+    const body = await parseJsonBody(context, AUTH_BODY_LIMIT_BYTES);
+    const expectedRevision = expectedSavedProjectRevision(body, context);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const deleted = await inTransaction(db, async () => {
+      await db.advisoryTransactionLock?.(`saved-project:${tokenHash}`);
+      const row = await db.prepare(`
+        SELECT project_id AS projectId, revision, updated_at AS updatedAt,
+          expires_at AS expiresAt, revoked_at AS revokedAt
+        FROM saved_projects WHERE token_hash = ?
+      `).get(tokenHash);
+      if (!row) throw new HttpError(404, 'Project link not found.');
+      if (row.revision !== expectedRevision) throw staleSavedProjectError(row);
+      const removed = await db.prepare(`
+        DELETE FROM saved_projects WHERE token_hash = ? AND revision = ?
+      `).run(tokenHash, expectedRevision);
+      if (removed.changes !== 1) {
+        const current = await db.prepare(`
+          SELECT revision, updated_at AS updatedAt,
+            expires_at AS expiresAt, revoked_at AS revokedAt
+          FROM saved_projects WHERE token_hash = ?
+        `).get(tokenHash);
+        if (!current) throw new HttpError(404, 'Project link not found.');
+        throw staleSavedProjectError(current);
+      }
+      return { deleted: true, projectId: row.projectId, ...savedProjectMetadata(row) };
+    });
+    return context.json(deleted);
   });
 
   app.use('/api/teacher/*', async (context, next) => {
