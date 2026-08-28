@@ -9,6 +9,7 @@ import {
   createPortableProject,
   extractCandidates,
   MICRO_SETTING_NODE_TYPES,
+  parseProject,
   PROJECT_LIMITS,
   serializeProject,
   stableId,
@@ -2176,6 +2177,26 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
+  it.each([
+    ['exosphere', 'Exo-level'],
+    ['macrosphere', 'Macro-level'],
+  ])('does not rescale extracted Micro items when continuing without model at %s', async (scale, levelLabel) => {
+    const project = makeMapProject(scale);
+    const graphBefore = structuredClone(project.graph);
+    project.preflight = null;
+    project.candidates = { nodes: [], edges: [] };
+    project.stage = 1;
+    project.furthestStage = 1;
+
+    await resumeSavedProject(project);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue without model' }));
+    expect(await screen.findByRole('heading', { name: `Choose ${levelLabel} items` })).toBeVisible();
+    await waitFor(() => {
+      expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
+      expect(storedProject().graph).toEqual(graphBefore);
+    });
+  });
+
   it('reviews, commits, and summarizes direct Micro relationships with their verbs at Micro', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
@@ -2510,6 +2531,99 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(committed.graph.edges, committed.events.slice(-3).map((event) => `${event.action}: ${event.detail}`).join('\n')).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: stableId('node', outerLabel), target: existing.id, scale: 'exosphere' }),
     ]));
+  });
+
+  it('preserves renamed Micro nodes and their Meso scope when Exo candidate ids collide', async () => {
+    const project = makeMapProject('exosphere');
+    const mesosystem = project.graph.nodes.find((node) => node.scale === 'meso');
+    const scopedMicroNodes = mesosystem.scopeNodeIds.map((id) => project.graph.nodes.find((node) => node.id === id));
+    scopedMicroNodes[0].label = 'Metropolitan Hospital clinic';
+    scopedMicroNodes[1].label = 'East Harlem Disability Services center';
+    const targetTemplate = structuredClone(scopedMicroNodes[0]);
+    const pathwayTarget = {
+      ...targetTemplate,
+      id: 'node_community_food_pantry_a',
+      label: 'Community Food Pantry Alpha',
+      x: targetTemplate.x + 180,
+      y: targetTemplate.y + 180,
+      annotations: {
+        analytical: { id: 'annotation_community_food_pantry_a_analytical', text: '' },
+        evidence: { id: 'annotation_community_food_pantry_a_evidence', text: '' },
+      },
+    };
+    project.graph.nodes.push(pathwayTarget);
+    project.graph.edges.forEach((edge) => {
+      if (edge.source === scopedMicroNodes[0].id) edge.sourceLabel = scopedMicroNodes[0].label;
+      if (edge.target === scopedMicroNodes[0].id) edge.targetLabel = scopedMicroNodes[0].label;
+      if (edge.source === scopedMicroNodes[1].id) edge.sourceLabel = scopedMicroNodes[1].label;
+      if (edge.target === scopedMicroNodes[1].id) edge.targetLabel = scopedMicroNodes[1].label;
+    });
+    const pendingCollision = {
+      ...structuredClone(scopedMicroNodes[0]),
+      label: 'New York City Clinic Administration Office',
+      type: 'agency',
+      scale: 'exosphere',
+      status: 'pending',
+      claimState: 'inference',
+    };
+    const acceptedCollision = {
+      ...structuredClone(scopedMicroNodes[1]),
+      label: 'New York State Disability Services Office',
+      type: 'agency',
+      scale: 'exosphere',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    };
+    const pathwayId = 'edge_exo_collision_to_food_pantry';
+    project.candidates = {
+      nodes: [pendingCollision, acceptedCollision],
+      edges: [{
+        id: pathwayId,
+        source: acceptedCollision.id,
+        target: pathwayTarget.id,
+        sourceLabel: acceptedCollision.label,
+        targetLabel: pathwayTarget.label,
+        verb: 'sets rules for',
+        scale: 'exosphere',
+        status: 'confirmed',
+        claimState: 'student interpretation',
+        notes: '',
+        directed: true,
+        rationale: 'The office sets rules for the pantry setting.',
+        evidence: 'Memo sentence 4',
+        annotation: { id: 'annotation_edge_exo_collision_to_food_pantry', text: '' },
+      }],
+    };
+    project.stage = 2;
+    project.furthestStage = 2;
+
+    expect(() => parseProject(serializeProject(project))).not.toThrow();
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+
+    const stored = storedProject();
+    scopedMicroNodes.forEach((node) => expect(stored.graph.nodes.find((item) => item.id === node.id)).toMatchObject({
+      label: node.label,
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+    }));
+    expect(stored.graph.nodes.find((node) => node.id === mesosystem.id)).toMatchObject({
+      scale: 'meso',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      scopeNodeIds: mesosystem.scopeNodeIds,
+    });
+    const committedInstitution = stored.graph.nodes.find((node) => node.label === acceptedCollision.label);
+    expect(committedInstitution).toMatchObject({ scale: 'exosphere', status: 'confirmed' });
+    expect(committedInstitution.id).not.toBe(acceptedCollision.id);
+    expect(stored.graph.nodes.some((node) => node.label === pendingCollision.label)).toBe(false);
+    expect(stored.graph.edges.find((edge) => edge.verb === 'sets rules for' && edge.target === pathwayTarget.id)).toMatchObject({
+      source: committedInstitution.id,
+      scale: 'exosphere',
+      status: 'confirmed',
+    });
   });
 
   it('keeps a newly valid class grant active when a stale prototype 401 reads back a valid session', async () => {

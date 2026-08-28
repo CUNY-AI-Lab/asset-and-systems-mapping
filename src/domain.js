@@ -2388,10 +2388,13 @@ function migrateScaleTypeSemantics(project) {
     const edges = project?.[container]?.edges;
     if (!Array.isArray(edges)) return;
     const graphEdgesReturnedForReview = new Set();
-    const containerNodes = new Map([
-      ...(project?.graph?.nodes || []),
-      ...(project?.candidates?.nodes || []),
-    ].map((node) => [node.id, node]));
+    // A candidate may reuse the stable id of a renamed carried node. Graph
+    // relationships must resolve graph identities first; candidate
+    // relationships may resolve the candidate identity first.
+    const containerNodes = new Map((container === 'graph'
+      ? [...(project?.candidates?.nodes || []), ...(project?.graph?.nodes || [])]
+      : [...(project?.graph?.nodes || []), ...(project?.candidates?.nodes || [])])
+      .map((node) => [node.id, node]));
     edges.forEach((edge) => {
       if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
       const sourceNode = containerNodes.get(edge.source);

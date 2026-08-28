@@ -4805,7 +4805,14 @@ function App() {
     const review = storedReview || (currentProject.activeScale === 'meso'
       ? deterministicMemoReview(currentProject.submission, 'meso', { carriedNodes: [...liveGraphNodes.values()], carriedConnections: currentProject.graph.edges })
       : null);
-    const extracted = review ? { nodes: [], edges: [] } : extractCandidates(currentProject.submission);
+    // The generic extractor only knows how to identify discrete Micro actors,
+    // objects, settings, and direct relationships. Re-scaling that output at
+    // Exo or Macro can turn carried Micro work into an outer-level candidate
+    // with the same stable id. Outside Micro, no server review means no
+    // automatic suggestions (Meso keeps its scale-aware deterministic review).
+    const extracted = review || currentProject.activeScale !== 'micro'
+      ? { nodes: [], edges: [] }
+      : extractCandidates(currentProject.submission);
     const liveGraphNodeIdsByLabel = new Map([...liveGraphNodes.values()]
       .map((node) => [node.label.trim().toLocaleLowerCase(), node.id]));
     const nodeIdForLabel = (label) => currentProject.activeScale !== 'micro'
@@ -5006,29 +5013,91 @@ function App() {
       && isObviousLowerLevelMacroLabel(item.label)
     ));
     if (lowerLevelMacroCandidate) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
-    const acceptedNodes = project.candidates.nodes.filter((item) => item.scale === project.activeScale && (item.status === 'confirmed' || item.status === 'research lead'));
+    const reviewedScaleNodes = project.candidates.nodes.filter((item) => item.scale === project.activeScale);
+    const graphNodeById = new Map(project.graph.nodes.map((node) => [node.id, node]));
+    const reservedNodeIds = new Set(project.graph.nodes.map((node) => node.id));
+    const committedNodeIdByCandidateId = new Map();
+    reviewedScaleNodes.forEach((candidate) => {
+      const sameIdGraphNode = graphNodeById.get(candidate.id);
+      if (!sameIdGraphNode || sameIdGraphNode.scale === project.activeScale) {
+        committedNodeIdByCandidateId.set(candidate.id, candidate.id);
+        reservedNodeIds.add(candidate.id);
+        return;
+      }
+      const priorMatchingNode = project.graph.nodes.find((node) => (
+        node.scale === project.activeScale
+        && node.label.trim().toLocaleLowerCase() === candidate.label.trim().toLocaleLowerCase()
+      ));
+      if (priorMatchingNode) {
+        committedNodeIdByCandidateId.set(candidate.id, priorMatchingNode.id);
+        reservedNodeIds.add(priorMatchingNode.id);
+        return;
+      }
+      let attempt = 0;
+      let replacementId;
+      do {
+        replacementId = stableId('node', `${project.activeScale}:${candidate.label}:${attempt}`);
+        attempt += 1;
+      } while (reservedNodeIds.has(replacementId));
+      committedNodeIdByCandidateId.set(candidate.id, replacementId);
+      reservedNodeIds.add(replacementId);
+    });
+    const rekeyNode = (node) => {
+      const id = committedNodeIdByCandidateId.get(node.id) || node.id;
+      if (id === node.id) return node;
+      return {
+        ...node,
+        id,
+        annotations: {
+          analytical: { id: stableId('annotation', `node:${id}:analytical`), text: node.annotations?.analytical?.text || '' },
+          evidence: { id: stableId('annotation', `node:${id}:evidence`), text: node.annotations?.evidence?.text || '' },
+        },
+      };
+    };
+    const rekeyEdge = (edge) => {
+      const source = committedNodeIdByCandidateId.get(edge.source) || edge.source;
+      const target = committedNodeIdByCandidateId.get(edge.target) || edge.target;
+      if (source === edge.source && target === edge.target) return edge;
+      const id = stableId('edge', `${source}:${edge.verb}:${target}`);
+      return {
+        ...edge,
+        id,
+        source,
+        target,
+        annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: edge.annotation?.text || '' },
+      };
+    };
+    const acceptedNodes = reviewedScaleNodes
+      .filter((item) => item.status === 'confirmed' || item.status === 'research lead')
+      .map(rekeyNode);
     const acceptedNodeIds = new Set(acceptedNodes.map((node) => node.id));
     const liveGraphNodeIds = new Set(project.graph.nodes
       .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
       .map((node) => node.id));
     const endpointIds = new Set([...liveGraphNodeIds, ...acceptedNodeIds]);
     const relationshipsAllowed = project.activeScale === 'micro' || project.activeScale === 'exosphere';
+    const reviewedScaleEdges = project.candidates.edges
+      .filter((item) => item.scale === project.activeScale)
+      .map(rekeyEdge);
+    const rekeyedConnectionSuggestions = connectionSuggestions.map(rekeyEdge);
     if (project.activeScale === 'exosphere') {
       const nodeById = new Map([...project.graph.nodes, ...acceptedNodes].map((node) => [node.id, node]));
       const carriedMicroNodeIds = new Set(project.graph.nodes
         .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type))
         .map((node) => node.id));
-      const invalidAcceptedPathway = [...project.candidates.edges, ...connectionSuggestions].find((edge) => (
+      const invalidAcceptedPathway = [...reviewedScaleEdges, ...rekeyedConnectionSuggestions].find((edge) => (
         edge.scale === 'exosphere'
         && (edge.status === 'confirmed' || edge.status === 'research lead')
         && !isOrientedExospherePathway(nodeById.get(edge.source), nodeById.get(edge.target), carriedMicroNodeIds)
       ));
       if (invalidAcceptedPathway) return toast('Repair or remove each Exo-level pathway before opening the map. Every pathway needs one outside decision setting and one carried Micro setting.', 'error');
     }
-    const acceptedEdges = relationshipsAllowed ? project.candidates.edges.filter((item) => item.scale === project.activeScale && (item.status === 'confirmed' || item.status === 'research lead') && endpointIds.has(item.source) && endpointIds.has(item.target)) : [];
-    const acceptedSuggestions = relationshipsAllowed ? connectionSuggestions.filter((edge) => edge.status === 'confirmed' && edge.verb.trim() && edge.source !== edge.target) : [];
-    const reviewedNodeIds = new Set(project.candidates.nodes.filter((node) => node.scale === project.activeScale).map((node) => node.id));
-    const reviewedEdgeIds = new Set(project.candidates.edges.filter((edge) => edge.scale === project.activeScale).map((edge) => edge.id));
+    const acceptedEdges = relationshipsAllowed ? reviewedScaleEdges
+      .filter((item) => (item.status === 'confirmed' || item.status === 'research lead') && endpointIds.has(item.source) && endpointIds.has(item.target)) : [];
+    const acceptedSuggestions = relationshipsAllowed ? rekeyedConnectionSuggestions
+      .filter((edge) => edge.status === 'confirmed' && edge.verb.trim() && edge.source !== edge.target) : [];
+    const reviewedNodeIds = new Set(reviewedScaleNodes.map((node) => committedNodeIdByCandidateId.get(node.id) || node.id));
+    const reviewedEdgeIds = new Set(reviewedScaleEdges.map((edge) => edge.id));
     const snapshot = configurationSnapshot(project, 'builder');
     update((draft) => {
       const priorNodeById = new Map(draft.graph.nodes.map((node) => [node.id, node]));
@@ -5046,7 +5115,12 @@ function App() {
       });
       const nodeIds = new Set(nextNodes.map((node) => node.id));
       const edgeIds = new Set(nextEdges.map((edge) => edge.id));
-      const retiredNodeIds = new Set([...reviewedNodeIds].filter((id) => !nodeIds.has(id)));
+      // Candidate ids are stable from memo text and can collide with a renamed
+      // carried node from another level. A review at the current level may
+      // retire only graph nodes at that same level.
+      const retiredNodeIds = new Set([...reviewedNodeIds].filter((id) => (
+        !nodeIds.has(id) && priorNodeById.get(id)?.scale === project.activeScale
+      )));
       const cascadedRetiredNodeIds = new Set(retiredNodeIds);
       let priorNodes = draft.graph.nodes.map((node) => retiredNodeIds.has(node.id) ? { ...node, status: 'rejected', claimState: 'retired', notes: [node.notes, 'Retired during candidate review.'].filter(Boolean).join(' ') } : node);
       let retiredAnotherScope = true;
