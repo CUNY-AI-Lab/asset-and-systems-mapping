@@ -1280,7 +1280,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     : liveMapNodes.filter((node) => node.scale !== 'macrosphere'), [liveMapNodes, mesoSettingNodes, project.activeScale]);
   const [institutionDraft, setInstitutionDraft] = useState({ label: '', type: 'institution', anchor: '', verb: SCALE_VERB_LEXICONS.exosphere[0] });
   const [mesoDraft, setMesoDraft] = useState({ label: '', first: '', second: '' });
-  const [structureDraft, setStructureDraft] = useState({ label: '', type: 'policy', deontic: 'shapes' });
+  const [structureDraft, setStructureDraft] = useState({ label: '', type: 'policy', deontic: 'shapes', evidence: '' });
   const addMesoLinkage = () => {
     const label = mesoDraft.label.trim();
     if (!label) return toast('Name the mesosystem first.', 'error');
@@ -1341,11 +1341,13 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   };
   const addStructure = () => {
     const label = structureDraft.label.trim();
+    const evidence = structureDraft.evidence.trim();
     if (!label) return toast('Name the Macro-level condition first.', 'error');
     if (!isCanonicalMapElementLabel(label, 'macrosphere')) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
     if (containsRetiredSystemsLanguage(label)) return toast('Use a direct, conventional name for the broader condition.', 'error');
     if (isObviousLowerLevelMacroLabel(label)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
     if (labelRepeatsInstitution(label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exo-level instead.', 'error');
+    if (project.instructor.evidenceRequired && !evidence) return toast('Add evidence or a question for this Macro-level condition.', 'error');
     const id = stableId('node', label);
     if (project.candidates.nodes.some((node) => node.id === id)
       || liveMapNodes.some((node) => node.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())) {
@@ -1355,11 +1357,11 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       draft.candidates.nodes = withDefaultNodeLayout([...draft.candidates.nodes, {
         id, label, type: structureDraft.type, scale: 'macrosphere',
         status: 'pending', claimState: 'inference',
-        evidence: '', sourceFingerprint: memoFingerprint(project.submission), notes: '',
+        evidence, sourceFingerprint: memoFingerprint(project.submission), notes: '',
         deontic: structureDraft.deontic, scopeNodeIds: [],
       }]);
     }, 'candidate.added', label);
-    setStructureDraft((current) => ({ ...current, label: '' }));
+    setStructureDraft((current) => ({ ...current, label: '', evidence: '' }));
     toast(`${label} added. Choose at least two mapped elements, then decide whether to add it to the map.`);
   };
   const editScope = (id, memberId, include) => update((draft) => {
@@ -1567,6 +1569,10 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
         </div>
       </div>}
       <p>{item.basis === 'inference' && <span className="basis-chip">suggested from context · review</span>}<span className="evidence-chip">{item.evidence || 'Evidence needed'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
+      <details className="candidate-note candidate-evidence">
+        <summary>{item.evidence ? 'Evidence added' : 'Evidence or question'}</summary>
+        <Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={item.evidence || ''} onChange={(event) => edit(kind, item.id, 'evidence', event.target.value)} /></Field>
+      </details>
       <details className="candidate-note">
         <summary>{item.notes ? 'Annotation added' : 'Annotation'}</summary>
         <Field label="Annotation"><input maxLength={PROJECT_LIMITS.noteText} value={item.notes || ''} onChange={(event) => edit(kind, item.id, 'notes', event.target.value)} /></Field>
@@ -1647,6 +1653,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
             <Field label="Name"><input maxLength={NODE_LABEL_LIMIT} value={structureDraft.label} placeholder="e.g. Americans with Disabilities Act, High housing and transportation costs" onChange={(event) => setStructureDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
             <Field label="Type"><select value={structureDraft.type} onChange={(event) => setStructureDraft((current) => ({ ...current, type: event.target.value }))}>{MACRO_STRUCTURE_KINDS.map((type) => <option key={type}>{type}</option>)}</select></Field>
             <Field label="How it affects mapped elements"><select value={structureDraft.deontic} onChange={(event) => setStructureDraft((current) => ({ ...current, deontic: event.target.value }))}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={structureDraft.evidence} onChange={(event) => setStructureDraft((current) => ({ ...current, evidence: event.target.value }))} /></Field>
             <button className="button" type="button" onClick={addStructure}>Add Macro-level condition</button>
           </div>
         </section>}

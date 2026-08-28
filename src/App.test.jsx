@@ -4601,6 +4601,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
   it('lets students draw a structure’s reach at the Macrosphere and commits the scope, never edges', async () => {
     const project = makeMapProject('macrosphere');
+    project.instructor.evidenceRequired = true;
     const structureTemplate = project.graph.nodes.find((node) => node.scale === 'macrosphere');
     const microNodes = project.graph.nodes.filter((node) => node.scale === 'micro');
     expect(structureTemplate).toBeTruthy();
@@ -4615,6 +4616,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         type: 'law',
         status: 'pending',
         claimState: 'inference',
+        evidence: '',
         deontic: 'mandates',
         scopeNodeIds: [],
       }],
@@ -4624,6 +4626,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.furthestStage = 2;
     await resumeSavedProject(project);
     expect(await screen.findByRole('heading', { name: 'Choose Macro-level items' })).toBeVisible();
+    const candidateRow = screen.getByRole('article');
+    fireEvent.click(candidateRow.querySelector('.candidate-evidence summary'));
+    fireEvent.change(within(candidateRow).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies this policy condition.' } });
     // No connections step exists at this level.
     expect(screen.queryByRole('tab', { name: /Connections/ })).not.toBeInTheDocument();
     const reachEditor = screen.getByLabelText('Mapped elements affected by Universal Pre-K Law');
@@ -4638,10 +4643,36 @@ Overall, the posting history documents a working student repeatedly turning to R
     await waitFor(() => {
       const stored = storedProject();
       const structure = stored.graph.nodes.find((node) => node.label === 'Universal Pre-K Law');
-      expect(structure).toMatchObject({ scale: 'macrosphere', deontic: 'prohibits' });
+      expect(structure).toMatchObject({ scale: 'macrosphere', deontic: 'prohibits', evidence: 'The memo identifies this policy condition.' });
       expect(structure.scopeNodeIds).toEqual([microNodes[0].id, microNodes[1].id]);
       expect(stored.graph.edges.filter((edge) => edge.scale === 'macrosphere')).toEqual([]);
     });
+  });
+
+  it('collects required evidence when a student adds a Macro-level condition', async () => {
+    const project = makeMapProject('macrosphere');
+    project.instructor.evidenceRequired = true;
+    project.graph.nodes = project.graph.nodes.filter((node) => node.scale !== 'macrosphere');
+    project.graph.edges = project.graph.edges.filter((edge) => edge.scale !== 'macrosphere');
+    project.candidates = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    await resumeSavedProject(project);
+
+    const section = screen.getByRole('heading', { name: 'Add a Macro-level condition' }).closest('section');
+    fireEvent.change(within(section).getByRole('textbox', { name: 'Name' }), { target: { value: 'High cost of accessible housing' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Add Macro-level condition' }));
+    expect(screen.getByText('Add evidence or a question for this Macro-level condition.')).toBeVisible();
+
+    fireEvent.change(within(section).getByLabelText('Evidence or question'), { target: { value: 'The memo describes the household cost pressure.' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Add Macro-level condition' }));
+    await waitFor(() => expect(storedProject().candidates.nodes).toEqual([
+      expect.objectContaining({
+        label: 'High cost of accessible housing',
+        scale: 'macrosphere',
+        evidence: 'The memo describes the household cost pressure.',
+      }),
+    ]));
   });
 
   it('rejects immediate actors and schedules from the Macrosphere form while allowing a broader schedule condition', async () => {
@@ -4664,6 +4695,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
 
     fireEvent.change(labelInput, { target: { value: 'Unpredictable work schedules' } });
+    fireEvent.change(within(section).getByLabelText('Evidence or question'), { target: { value: 'The memo describes work schedules that change without notice.' } });
     fireEvent.click(addButton);
     await waitFor(() => expect(storedProject().candidates.nodes).toEqual([
       expect.objectContaining({
