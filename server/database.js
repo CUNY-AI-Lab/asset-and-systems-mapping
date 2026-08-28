@@ -29,6 +29,12 @@ const LEGACY_SCALE_IDS = Object.freeze({
 const SCALE_SCALAR_KEYS = new Set(['scale', 'activeScale']);
 const SCALE_COLLECTION_KEYS = new Set(['scaleIds', 'releasedScales', 'completedScales']);
 const LEGACY_PROMPT_MODULE_ID = /^(preflight|builder)\.(macro|integration)\.(purpose|evidence|privacy|scale_rubric|interaction|output)$/;
+const REQUIRED_PROTOTYPE_EVENT_NAMES = Object.freeze([
+  STUDENT_WORKFLOW_EVALUATION_EVENT,
+  'map_arranged',
+  'map_previewed',
+  'map_preview_closed',
+]);
 
 function migratePromptModuleId(value) {
   if (typeof value !== 'string' || !LEGACY_PROMPT_MODULE_ID.test(value)) return value;
@@ -321,7 +327,8 @@ function migrate(db) {
       event_name TEXT NOT NULL CHECK(event_name IN (
         'class_access_succeeded', 'class_access_failed',
         'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
-        'node_moved', 'viewport_changed', 'annotation_saved',
+        'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
+        'annotation_saved',
         'project_exported', 'project_imported', 'recovery_exported',
         'workflow_observed'
       )),
@@ -559,7 +566,7 @@ function migratePrototypeEventVocabulary(db) {
   const definition = db.prepare(`
     SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'prototype_events'
   `).get()?.sql || '';
-  if (definition.includes(`'${STUDENT_WORKFLOW_EVALUATION_EVENT}'`)) return;
+  if (REQUIRED_PROTOTYPE_EVENT_NAMES.every((eventName) => definition.includes(`'${eventName}'`))) return;
   inTransaction(db, () => db.exec(`
     DROP INDEX IF EXISTS prototype_events_recorded_idx;
     DROP TABLE IF EXISTS prototype_events_workflow_migration;
@@ -572,7 +579,8 @@ function migratePrototypeEventVocabulary(db) {
       event_name TEXT NOT NULL CHECK(event_name IN (
         'class_access_succeeded', 'class_access_failed',
         'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
-        'node_moved', 'viewport_changed', 'annotation_saved',
+        'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
+        'annotation_saved',
         'project_exported', 'project_imported', 'recovery_exported',
         'workflow_observed'
       )),

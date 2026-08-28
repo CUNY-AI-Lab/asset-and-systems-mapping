@@ -186,7 +186,8 @@ const POSTGRES_SCHEMA_SQL = `
     event_name TEXT NOT NULL CONSTRAINT prototype_events_event_name_check CHECK(event_name IN (
       'class_access_succeeded', 'class_access_failed',
       'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
-      'node_moved', 'viewport_changed', 'annotation_saved',
+      'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
+      'annotation_saved',
       'project_exported', 'project_imported', 'recovery_exported',
       'workflow_observed'
     )),
@@ -602,6 +603,28 @@ async function migratePrototypeEventVocabulary(client) {
   `);
 }
 
+async function migrateMapViewPrototypeEventVocabulary(client) {
+  const applied = await client.query('SELECT version FROM schema_migrations WHERE version = 12');
+  if (applied.rows.length) return;
+  await client.query(`
+    ALTER TABLE prototype_events
+      DROP CONSTRAINT IF EXISTS prototype_events_event_name_check;
+    ALTER TABLE prototype_events
+      ADD CONSTRAINT prototype_events_event_name_check CHECK(event_name IN (
+        'class_access_succeeded', 'class_access_failed',
+        'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
+        'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
+        'annotation_saved',
+        'project_exported', 'project_imported', 'recovery_exported',
+        'workflow_observed'
+      ));
+  `);
+  await client.query(`
+    INSERT INTO schema_migrations (version) VALUES (12)
+    ON CONFLICT (version) DO NOTHING
+  `);
+}
+
 async function migrateEcologicalScaleIds(client) {
   const applied = await client.query('SELECT version FROM schema_migrations WHERE version = 9');
   if (applied.rows.length) return;
@@ -867,6 +890,7 @@ async function initializePostgres(database) {
     await client.query(`SET LOCAL idle_in_transaction_session_timeout = '${database.transactionIdleTimeoutMs}ms'`);
     await client.query(POSTGRES_SCHEMA_SQL);
     await migratePrototypeEventVocabulary(client);
+    await migrateMapViewPrototypeEventVocabulary(client);
     await migrateSavedProjectMetadata(client);
     await migrateEcologicalScaleIds(client);
     await seedPostgres(client);

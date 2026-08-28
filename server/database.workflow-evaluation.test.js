@@ -17,7 +17,7 @@ describe('student workflow evaluation SQLite migration', () => {
     if (directory) rmSync(directory, { recursive: true, force: true });
   });
 
-  it('preserves existing prototype events while adding the closed workflow vocabulary', () => {
+  it('preserves existing events and rebuilds when any client map-view event is absent', () => {
     directory = mkdtempSync(join(tmpdir(), 'systems-mapping-workflow-evaluation-'));
     const path = join(directory, 'legacy.sqlite');
     const legacy = new DatabaseSync(path);
@@ -30,7 +30,8 @@ describe('student workflow evaluation SQLite migration', () => {
           'class_access_succeeded', 'class_access_failed',
           'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
           'node_moved', 'viewport_changed', 'annotation_saved',
-          'project_exported', 'project_imported', 'recovery_exported'
+          'project_exported', 'project_imported', 'recovery_exported',
+          'workflow_observed'
         )),
         stage INTEGER CHECK(stage IS NULL OR (stage >= 0 AND stage <= 6)),
         metadata_json TEXT NOT NULL CHECK(length(metadata_json) <= 1024),
@@ -46,6 +47,21 @@ describe('student workflow evaluation SQLite migration', () => {
     database = openDatabase(path);
     expect(database.prepare('SELECT event_name AS event FROM prototype_events ORDER BY id').all())
       .toEqual([{ event: 'stage_viewed' }]);
+    const insert = database.prepare(`
+      INSERT INTO prototype_events
+        (session_kind, session_ref, event_name, stage, metadata_json, recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const [index, event] of ['map_arranged', 'map_previewed', 'map_preview_closed'].entries()) {
+      expect(() => insert.run(
+        'student',
+        '0123456789abcdef',
+        event,
+        3,
+        '{}',
+        1500 + index,
+      )).not.toThrow();
+    }
     expect(() => database.prepare(`
       INSERT INTO prototype_events
         (session_kind, session_ref, event_name, stage, metadata_json, recorded_at)
@@ -64,6 +80,14 @@ describe('student workflow evaluation SQLite migration', () => {
       }),
       2000,
     )).not.toThrow();
+    expect(database.prepare(`
+      SELECT event_name AS event FROM prototype_events
+      WHERE event_name LIKE 'map_%' ORDER BY id
+    `).all()).toEqual([
+      { event: 'map_arranged' },
+      { event: 'map_previewed' },
+      { event: 'map_preview_closed' },
+    ]);
     expect(studentWorkflowEvaluationReport(database)).toMatchObject({
       observationCount: 1,
       discardedObservationCount: 0,

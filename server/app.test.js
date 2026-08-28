@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -703,6 +703,49 @@ describe('hardened Systems Mapping server', () => {
     expect(Object.keys(audit).sort()).toEqual(['correlationCount', 'eventCounts', 'newestAt', 'oldestAt', 'rowCount']);
     expect(JSON.stringify(audit)).not.toContain('sessionRef');
     expect(prototypeEventAudit(system.db)).toEqual(audit);
+  });
+
+  it('accepts and stores map arrangement and preview lifecycle events', async () => {
+    const studentCookie = await grantStudent();
+    const mapViewEvents = [
+      { event: 'map_arranged', stage: 'Build the map', metadata: {} },
+      { event: 'map_previewed', stage: 'Revise and export', metadata: { stageIndex: 4, nodeCount: 4, edgeCount: 3 } },
+      { event: 'map_preview_closed', stage: 'Revise and export', metadata: { stageIndex: 4 } },
+    ];
+    for (const payload of mapViewEvents) {
+      expect((await postJson(system.app, '/api/prototype/events', payload, { cookie: studentCookie })).status).toBe(202);
+    }
+    expect(system.db.prepare(`
+      SELECT event_name AS event FROM prototype_events
+      WHERE event_name LIKE 'map_%' ORDER BY id
+    `).all()).toEqual(mapViewEvents.map(({ event }) => ({ event })));
+  });
+
+  it('accepts and stores every ordinary event emitted by the client', async () => {
+    const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    const clientEvents = [...appSource.matchAll(/logPrototype\('([^']+)'/g)]
+      .map(([, event]) => event)
+      .filter((event, index, events) => events.indexOf(event) === index);
+    expect(clientEvents).toEqual(expect.arrayContaining([
+      'map_arranged',
+      'map_previewed',
+      'map_preview_closed',
+    ]));
+
+    const studentCookie = await grantStudent();
+    for (const event of clientEvents) {
+      const response = await postJson(system.app, '/api/prototype/events', {
+        event,
+        stage: 'Build the map',
+        metadata: {},
+      }, { cookie: studentCookie });
+      expect(response.status, event).toBe(202);
+    }
+
+    const storedEvents = new Set(system.db.prepare(`
+      SELECT event_name AS event FROM prototype_events WHERE session_kind = 'student'
+    `).all().map(({ event }) => event));
+    expect(clientEvents.every((event) => storedEvents.has(event))).toBe(true);
   });
 
   it('rejects workflow observations that contain content or open-ended ratings', async () => {

@@ -87,8 +87,39 @@ describe('PostgreSQL persistence adapter', () => {
     expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(5\)/.test(text))).toBe(true);
     expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(10\)/.test(text))).toBe(true);
     expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(11\)/.test(text))).toBe(true);
-    expect(migration).toContain("'workflow_observed'");
+    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(12\)/.test(text))).toBe(true);
+    const mapViewVocabularyMigration = fake.calls.find(({ text }) => (
+      text.includes('ADD CONSTRAINT prototype_events_event_name_check')
+      && text.includes("'map_arranged'")
+    ))?.text;
+    for (const event of ['workflow_observed', 'map_arranged', 'map_previewed', 'map_preview_closed']) {
+      expect(migration).toContain(`'${event}'`);
+      expect(mapViewVocabularyMigration).toContain(`'${event}'`);
+    }
     expect(fake.calls.at(-1)?.text).toBe('COMMIT');
+    await database.close();
+  });
+
+  it('does not rerun the map-view vocabulary migration after version 12 is recorded', async () => {
+    const fake = fakePool({
+      clientQuery(text) {
+        if (/SELECT version FROM schema_migrations WHERE version = (11|12)/.test(text)) {
+          return { rows: [{ version: Number(text.match(/version = (\d+)/)?.[1]) }], rowCount: 1 };
+        }
+        return null;
+      },
+    });
+    const database = new PostgresDatabase('postgres://app@db.internal/systems_mapping', {
+      pool: fake.pool,
+      initialize: true,
+    });
+    await database.ready;
+    expect(fake.calls.some(({ text }) => text.includes('WHERE version = 12'))).toBe(true);
+    expect(fake.calls.some(({ text }) => (
+      text.includes('ADD CONSTRAINT prototype_events_event_name_check')
+      && text.includes("'map_arranged'")
+    ))).toBe(false);
+    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(12\)/.test(text))).toBe(false);
     await database.close();
   });
 

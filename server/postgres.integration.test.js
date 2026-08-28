@@ -358,7 +358,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     });
     try {
       await second.ready;
-      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(11);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(12);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count).toBe(2);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_modules').get()).count).toBe(60);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_module_history').get()).count).toBe(60);
@@ -453,6 +453,20 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       FROM prototype_events WHERE event_name = ?
       ORDER BY id DESC LIMIT 1
     `).get('stage_viewed')).toEqual({ stage: 1, metadata: '{"stageIndex":1}' });
+    const mapViewEvents = [
+      { event: 'map_arranged', stage: 'Build the map', metadata: {} },
+      { event: 'map_previewed', stage: 'Revise and export', metadata: { stageIndex: 4, nodeCount: 4, edgeCount: 3 } },
+      { event: 'map_preview_closed', stage: 'Revise and export', metadata: { stageIndex: 4 } },
+    ];
+    for (const payload of mapViewEvents) {
+      const response = await jsonMutation(system, 'POST', '/api/prototype/events', payload, studentCookie);
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ accepted: true });
+      expect(await system.db.prepare(`
+        SELECT metadata_json AS metadata FROM prototype_events
+        WHERE event_name = ? ORDER BY id DESC LIMIT 1
+      `).get(payload.event)).toEqual({ metadata: JSON.stringify(payload.metadata) });
+    }
     const hostedProjectId = `hosted_postgres_${Date.now()}`;
     const hostedEvaluation = await jsonMutation(system, 'POST', '/api/preflight/evaluations', preflightEvaluation(
       hostedProjectId,
