@@ -1,5 +1,8 @@
 import { parseProject, serializeProject } from './domain.js';
 
+// Keep the durable browser key stable. Schema-v6 projects stored here are
+// migrated in place by parseProject; changing the key would strand active work
+// in clients that have not yet opened the v7 bundle.
 export const STORAGE_KEY = 'systems-mapping-studio.project.v6';
 export const LEGACY_STORAGE_KEYS = [
   'systems-mapping-studio.project.v5',

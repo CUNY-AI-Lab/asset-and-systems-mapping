@@ -1,20 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLAIM_EVIDENCE_FIELDS,
   containsRetiredSystemsLanguage,
   DEFAULT_VIEWPORT,
   EXOSPHERE_NODE_TYPES,
+  FOCAL_PARTICIPATION_STATES,
   MACROSPHERE_NODE_TYPES,
   MICRO_NODE_TYPES,
   MICRO_SETTING_NODE_TYPES,
   PROJECT_LIMITS,
   PROJECT_SCHEMA_VERSION,
   RELATION_VOCABULARY,
+  RELATIONSHIP_PROCESS_FIELDS,
+  REVIEW_DECISIONS,
   SCALE_ORDER,
   SCALES,
   configFingerprint,
+  createClaimEvidenceRecord,
   createDefaultProject,
   createEvent,
+  createLevelProgress,
   createPortableProject,
+  createRelationshipProcess,
   deterministicMemoReview,
   evaluateSubmission,
   exportFileName,
@@ -26,8 +33,10 @@ import {
   isNamedInstitutionLabel,
   isObviousLowerLevelMacroLabel,
   labelRepeatsInstitution,
+  NODE_ORIGINS,
   normalizeMapElementLabel,
   normalizeMicroNodeLabel,
+  hasRelationshipProcessDetails,
   parseProject,
   projectFileSlug,
   scaleLexiconVerb,
@@ -280,6 +289,163 @@ describe('mapping domain', () => {
   it('creates stable identifiers', () => {
     expect(stableId('node', 'Family')).toBe(stableId('node', 'Family'));
     expect(stableId('node', 'Family')).not.toBe(stableId('node', 'School'));
+  });
+
+  it('keeps several evidence records distinct from interpretation and warrant', () => {
+    const firstPassage = 'Yveline comes four mornings each week.';
+    const records = [
+      createClaimEvidenceRecord({
+        sourcePassage: firstPassage,
+        studentInterpretation: 'The support is regular but does not cover every weekday.',
+        warrant: 'Four mornings is a repeated schedule with a weekly gap.',
+        uncertainty: 'The memo does not say whether the schedule changes during holidays.',
+        counterevidence: 'No passage describes an additional Friday visit.',
+        missingVoice: 'Yveline has not described how the schedule affects her work.',
+        evidenceId: 'evidence_visit_schedule',
+        sourceId: 'submission_east_harlem',
+        evidenceLocator: 'Memo paragraph 1',
+        evidenceHash: stableId('evh', firstPassage),
+      }, { ownerId: 'edge_yveline_supports_rosa', index: 0 }),
+      createClaimEvidenceRecord({
+        sourcePassage: 'The agency cut weekly allocations after a reimbursement change.',
+        studentInterpretation: 'An outside funding decision reduced direct support.',
+        warrant: 'The allocation change precedes the lost visit in the memo.',
+      }, { ownerId: 'edge_yveline_supports_rosa', index: 1 }),
+    ];
+
+    expect(CLAIM_EVIDENCE_FIELDS).toEqual([
+      'sourcePassage', 'studentInterpretation', 'warrant', 'uncertainty',
+      'counterevidence', 'missingVoice',
+    ]);
+    expect(records).toHaveLength(2);
+    expect(records[0].id).not.toBe(records[1].id);
+    expect(records[0]).toMatchObject({
+      sourcePassage: firstPassage,
+      studentInterpretation: 'The support is regular but does not cover every weekday.',
+      evidenceId: 'evidence_visit_schedule',
+      sourceId: 'submission_east_harlem',
+      evidenceLocator: 'Memo paragraph 1',
+    });
+    expect(records[1]).toMatchObject({
+      uncertainty: '', counterevidence: '', missingVoice: '',
+    });
+  });
+
+  it('round-trips claim evidence and compact relationship process details', () => {
+    const project = projectWithGraph();
+    const edge = project.graph.edges.find((candidate) => candidate.scale === 'micro');
+    const sourcePassage = 'The family requests an evaluation from its school.';
+    edge.claimEvidence = [
+      createClaimEvidenceRecord({
+        sourcePassage,
+        studentInterpretation: 'The family initiates the request.',
+        warrant: 'The sentence uses the family as the actor.',
+        uncertainty: 'The response time is not stated.',
+        counterevidence: '',
+        missingVoice: 'The student response is not included.',
+        evidenceId: 'evidence_family_request',
+        sourceId: project.submission.id,
+        evidenceLocator: 'Memo sentence 1',
+        evidenceHash: stableId('evh', sourcePassage),
+      }, { ownerId: edge.id, index: 0 }),
+      createClaimEvidenceRecord({
+        sourcePassage: 'Delayed evaluations burden families.',
+        studentInterpretation: 'The request may not produce timely access.',
+      }, { ownerId: edge.id, index: 1 }),
+    ];
+    edge.relationshipProcess = createRelationshipProcess({
+      frequency: 'At each evaluation request',
+      duration: 'Until eligibility is decided',
+      direction: 'Family to school',
+      conditions: 'When the family requests an evaluation',
+      changeOverTime: 'Delays can extend the request period',
+    });
+
+    expect(RELATIONSHIP_PROCESS_FIELDS).toEqual([
+      'frequency', 'duration', 'direction', 'conditions', 'changeOverTime',
+    ]);
+    expect(hasRelationshipProcessDetails(edge)).toBe(true);
+    expect(hasRelationshipProcessDetails(createRelationshipProcess())).toBe(false);
+    expect(() => validateProject(project)).not.toThrow();
+    const imported = parseProject(serializeProject(project));
+    const importedEdge = imported.graph.edges.find(({ id }) => id === edge.id);
+    expect(importedEdge.claimEvidence).toEqual(edge.claimEvidence);
+    expect(importedEdge.relationshipProcess).toEqual(edge.relationshipProcess);
+  });
+
+  it('tracks independent progress for all four ecological levels', () => {
+    expect(createLevelProgress({
+      activeScale: 'exosphere',
+      stage: 3,
+      reflection: 'Institutions redirect time into the household.',
+      completedScales: ['micro'],
+    })).toEqual({
+      micro: { stage: 4, reflection: '' },
+      meso: { stage: 1, reflection: '' },
+      exosphere: { stage: 3, reflection: 'Institutions redirect time into the household.' },
+      macrosphere: { stage: 1, reflection: '' },
+    });
+    expect(createDefaultProject().levelProgress).toEqual({
+      micro: { stage: 0, reflection: '' },
+      meso: { stage: 1, reflection: '' },
+      exosphere: { stage: 1, reflection: '' },
+      macrosphere: { stage: 1, reflection: '' },
+    });
+  });
+
+  it('round-trips item provenance, review, setting membership, and focal participation', () => {
+    const project = projectWithGraph();
+    const microSetting = project.graph.nodes.find((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type));
+    const mappedNode = project.graph.nodes.find((node) => node.id !== microSetting.id);
+    const candidateNode = project.candidates.nodes.find((node) => node.id !== microSetting.id);
+    const mappedRelationship = project.graph.edges[0];
+    const candidateRelationship = project.candidates.edges[0];
+    Object.assign(mappedNode, {
+      origin: 'student entry',
+      reviewDecision: 'added',
+      settingNodeIds: [microSetting.id],
+      focalParticipation: 'direct',
+    });
+    Object.assign(candidateNode, {
+      origin: 'model suggestion',
+      reviewDecision: 'pending',
+      settingNodeIds: [microSetting.id],
+      focalParticipation: 'indirect',
+    });
+    Object.assign(mappedRelationship, {
+      origin: 'student entry',
+      reviewDecision: 'added',
+    });
+    Object.assign(candidateRelationship, {
+      origin: 'model suggestion',
+      reviewDecision: 'set aside',
+    });
+
+    expect(NODE_ORIGINS).toEqual(['memo extraction', 'model suggestion', 'student entry', 'legacy']);
+    expect(REVIEW_DECISIONS).toEqual(['pending', 'added', 'set aside', 'removed']);
+    expect(FOCAL_PARTICIPATION_STATES).toEqual(['direct', 'indirect', 'unclear', 'not applicable']);
+    expect(() => validateProject(project)).not.toThrow();
+    const restored = parseProject(serializeProject(project));
+    expect(restored.graph.nodes.find(({ id }) => id === mappedNode.id)).toMatchObject({
+      origin: 'student entry',
+      reviewDecision: 'added',
+      settingNodeIds: [microSetting.id],
+      focalParticipation: 'direct',
+    });
+    expect(restored.candidates.nodes.find(({ id }) => id === candidateNode.id)).toMatchObject({
+      origin: 'model suggestion',
+      reviewDecision: 'pending',
+      settingNodeIds: [microSetting.id],
+      focalParticipation: 'indirect',
+    });
+    expect(restored.graph.edges.find(({ id }) => id === mappedRelationship.id)).toMatchObject({
+      origin: 'student entry',
+      reviewDecision: 'added',
+    });
+    expect(restored.candidates.edges.find(({ id }) => id === candidateRelationship.id)).toMatchObject({
+      origin: 'model suggestion',
+      reviewDecision: 'set aside',
+    });
   });
 
   it('resolves verbs against the closed outer-level registers', () => {
@@ -595,6 +761,9 @@ describe('mapping domain', () => {
     expect(candidates.edges.every((edge) => RELATION_VOCABULARY.includes(edge.verb))).toBe(true);
     expect(candidates.edges.every((edge) => edge.evidenceExcerpt && edge.evidenceHash === stableId('evh', edge.evidenceExcerpt))).toBe(true);
     expect(candidates.nodes.find((node) => node.label === 'Parent Advocacy Organizations')).toMatchObject({ type: 'organization', scale: 'micro' });
+    expect(candidates.nodes.filter((node) => node.scale === 'micro').every((node) => (
+      node.focalParticipation === 'direct' && Array.isArray(node.settingNodeIds) && node.settingNodeIds.length === 0
+    ))).toBe(true);
     // The memo's framing question never mints theme nodes; only declarative
     // sentences about actual actors and objects produce candidates.
     expect(candidates.nodes.some((node) => /Ability to Secure Services/.test(node.label))).toBe(false);
@@ -711,6 +880,11 @@ describe('mapping domain', () => {
     });
     expect(candidates.edges[0].evidenceRefs).toHaveLength(2);
     expect(new Set(candidates.edges[0].evidenceRefs.map((reference) => reference.evidenceId)).size).toBe(2);
+    expect(candidates.edges[0].claimEvidence).toHaveLength(2);
+    expect(candidates.edges[0].claimEvidence.map(({ sourcePassage }) => sourcePassage)).toEqual([
+      'New York City Disability Services Office funds Accommodation Form.',
+      'New York City Disability Services Office funds Accommodation Form.',
+    ]);
   });
 
   it('fingerprints the complete effective configuration', () => {
@@ -926,6 +1100,164 @@ describe('mapping domain', () => {
       .toEqual(migrated.graph.nodes.map(({ id, x, y }) => ({ id, x, y })));
   });
 
+  it('migrates schema v6 evidence references without deleting their provenance', () => {
+    const legacy = projectWithGraph();
+    legacy.schemaVersion = 6;
+    legacy.activeScale = 'exosphere';
+    legacy.releasedScales = ['micro', 'exosphere'];
+    legacy.completedScales = ['micro'];
+    legacy.stage = 3;
+    legacy.reflection = 'The outside decision pathway changes the household schedule.';
+    delete legacy.levelProgress;
+    const legacySettings = legacy.candidates.nodes
+      .filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type))
+      .slice(0, 2);
+    const legacyMesoCandidate = withDefaultNodeLayout([{
+      id: 'node_legacy_meso',
+      label: 'School and advocacy mesosystem',
+      type: 'mesosystem',
+      scale: 'meso',
+      status: 'pending',
+      claimState: 'inference',
+      notes: '',
+      scopeNodeIds: legacySettings.map(({ id }) => id),
+    }])[0];
+    delete legacyMesoCandidate.mesoExplanation;
+    legacy.candidates.nodes.push(legacyMesoCandidate);
+    [...legacy.candidates.nodes, ...legacy.graph.nodes].forEach((record) => {
+      delete record.claimEvidence;
+      record.origin = 'student entry';
+      record.settingNodeIds = ['invented_membership'];
+      record.focalParticipation = 'direct';
+      record.reviewDecision = 'added';
+    });
+    [...legacy.candidates.edges, ...legacy.graph.edges].forEach((record) => {
+      delete record.claimEvidence;
+      record.origin = 'model suggestion';
+      record.reviewDecision = 'added';
+    });
+
+    const migrated = parseProject(JSON.stringify(legacy));
+    const source = legacy.graph.nodes.find((node) => node.evidenceExcerpt && node.evidenceRefs?.length);
+    const sourceRelationship = legacy.graph.edges.find((edge) => edge.scale === 'micro');
+    const restored = migrated.graph.nodes.find((node) => node.id === source.id);
+    const restoredRelationship = migrated.graph.edges.find((edge) => edge.id === sourceRelationship.id);
+
+    expect(migrated.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+    expect(migrated.levelProgress).toEqual({
+      micro: { stage: 4, reflection: '' },
+      meso: { stage: 1, reflection: '' },
+      exosphere: { stage: 3, reflection: legacy.reflection },
+      macrosphere: { stage: 1, reflection: '' },
+    });
+    expect(restored.evidenceRefs).toEqual(source.evidenceRefs);
+    expect(restored.evidenceExcerpt).toBe(source.evidenceExcerpt);
+    expect(restored.claimEvidence).toHaveLength(source.evidenceRefs.length);
+    expect(restored.claimEvidence[0]).toMatchObject({
+      sourcePassage: source.evidenceRefs[0].evidenceExcerpt,
+      evidenceId: source.evidenceRefs[0].evidenceId,
+      sourceId: source.evidenceRefs[0].sourceId,
+      evidenceLocator: source.evidenceRefs[0].evidenceLocator,
+      evidenceHash: source.evidenceRefs[0].evidenceHash,
+      studentInterpretation: '',
+      warrant: '',
+      uncertainty: '',
+      counterevidence: '',
+      missingVoice: '',
+    });
+    expect(restored).toMatchObject({
+      origin: 'legacy',
+      settingNodeIds: [],
+      focalParticipation: 'unclear',
+    });
+    expect(restored).not.toHaveProperty('reviewDecision');
+    expect(restoredRelationship).toMatchObject({ origin: 'legacy' });
+    expect(restoredRelationship).not.toHaveProperty('reviewDecision');
+    expect(migrated.candidates.nodes.find(({ id }) => id === legacyMesoCandidate.id).mesoExplanation).toBe('');
+  });
+
+  it.each([2, 4])('preserves schema v%s records while applying all legacy authorship defaults', (schemaVersion) => {
+    const legacy = projectWithGraph();
+    legacy.schemaVersion = schemaVersion;
+    legacy.stage = 0;
+    legacy.furthestStage = 0;
+    delete legacy.levelProgress;
+
+    const retainedEdgeIds = legacy.graph.edges.slice(0, 2).map(({ id }) => id);
+    const retainedNodeIds = new Set(legacy.graph.edges
+      .filter(({ id }) => retainedEdgeIds.includes(id))
+      .flatMap(({ source, target }) => [source, target]));
+    ['candidates', 'graph'].forEach((container) => {
+      legacy[container].nodes = legacy[container].nodes
+        .filter(({ id }) => retainedNodeIds.has(id))
+        .map((node, index) => ({
+          ...node,
+          notes: `${container} legacy node note ${index}`,
+          annotations: {
+            ...node.annotations,
+            analytical: { ...node.annotations.analytical, text: `${container} analytical annotation ${index}` },
+          },
+        }));
+      legacy[container].edges = legacy[container].edges
+        .filter(({ id }) => retainedEdgeIds.includes(id))
+        .map((edge, index) => ({
+          ...edge,
+          notes: `${container} legacy edge note ${index}`,
+          annotation: { ...edge.annotation, text: `${container} edge annotation ${index}` },
+        }));
+      legacy[container].nodes.forEach((node) => {
+        delete node.claimEvidence;
+        delete node.origin;
+        delete node.reviewDecision;
+        delete node.settingNodeIds;
+        delete node.focalParticipation;
+      });
+      legacy[container].edges.forEach((edge) => {
+        delete edge.claimEvidence;
+        delete edge.relationshipProcess;
+        delete edge.origin;
+        delete edge.reviewDecision;
+      });
+    });
+
+    const originalRecords = structuredClone({ candidates: legacy.candidates, graph: legacy.graph });
+    const migrated = parseProject(JSON.stringify(legacy));
+    const withoutV7Additions = (record) => {
+      const {
+        claimEvidence,
+        origin,
+        reviewDecision,
+        settingNodeIds,
+        focalParticipation,
+        relationshipProcess,
+        ...preserved
+      } = record;
+      return preserved;
+    };
+
+    expect(migrated.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+    ['candidates', 'graph'].forEach((container) => {
+      expect(migrated[container].nodes).toHaveLength(originalRecords[container].nodes.length);
+      migrated[container].nodes.forEach((node) => {
+        const original = originalRecords[container].nodes.find(({ id }) => id === node.id);
+        expect(withoutV7Additions(node)).toEqual(original);
+        expect(node).toMatchObject({
+          origin: 'legacy',
+          settingNodeIds: [],
+          focalParticipation: 'unclear',
+        });
+        expect(node).not.toHaveProperty('reviewDecision');
+      });
+      expect(migrated[container].edges).toHaveLength(originalRecords[container].edges.length);
+      migrated[container].edges.forEach((edge) => {
+        const original = originalRecords[container].edges.find(({ id }) => id === edge.id);
+        expect(withoutV7Additions(edge)).toEqual(original);
+        expect(edge).toMatchObject({ origin: 'legacy' });
+        expect(edge).not.toHaveProperty('reviewDecision');
+      });
+    });
+  });
+
   it('migrates earlier stage layouts into the five-stage progression without imposing scale order', () => {
     const stageMap = [0, 0, 1, 1, 2, 3, 4];
     stageMap.forEach((expected, formerStage) => {
@@ -1046,8 +1378,8 @@ describe('mapping domain', () => {
       completedScales: ['exosphere'],
     });
     expect(migrated.graph.nodes.map(({ id }) => id)).toEqual(legacyNodeIds);
-    expect(migrated.candidates.edges[0]).toEqual({ ...legacyCandidateMicroEdge, scale: 'micro' });
-    expect(migrated.graph.edges[0]).toEqual({ ...legacyGraphMicroEdge, scale: 'micro' });
+    expect(migrated.candidates.edges[0]).toEqual({ ...legacyCandidateMicroEdge, scale: 'micro', origin: 'legacy' });
+    expect(migrated.graph.edges[0]).toEqual({ ...legacyGraphMicroEdge, scale: 'micro', origin: 'legacy' });
     expect(migrated.graph.nodes.find((node) => node.id === graphMicroEdge.source).scale).toBe('micro');
     expect(migrated.graph.nodes.find((node) => node.id === graphMicroEdge.target).scale).toBe('micro');
     expect(migrated.graph.nodes.find((node) => node.id === outerNodeIds[0]).scale).toBe('exosphere');
@@ -1141,7 +1473,7 @@ describe('mapping domain', () => {
       deontic: 'constrains',
     })];
 
-    expect(() => validateProject(legacy)).toThrow(/at least two mapped elements/);
+    expect(() => validateProject(legacy)).toThrow(/at least two map items/);
 
     const migrated = parseProject(JSON.stringify(legacy));
     expect(migrated.graph.nodes[0]).toMatchObject({
@@ -1396,11 +1728,30 @@ describe('mapping domain', () => {
     valid.graph.edges = [];
     const settings = valid.graph.nodes.slice(0, 2);
     settings.forEach((node) => { node.scale = 'micro'; node.type = 'setting'; });
-    valid.graph.nodes.push(withDefaultNodeLayout([{
+    const validMesoNode = withDefaultNodeLayout([{
       id: 'node_meso_1', label: 'School and family mesosystem', type: 'mesosystem', scale: 'meso',
       status: 'confirmed', claimState: 'student interpretation', notes: '', scopeNodeIds: settings.map(({ id }) => id),
-    }])[0]);
+    }])[0];
+    expect(validMesoNode.mesoExplanation).toBe('');
+    validMesoNode.mesoExplanation = 'School and family pass requests between settings and coordinate follow-up.';
+    valid.graph.nodes.push(validMesoNode);
     expect(() => validateProject(valid)).not.toThrow();
+    expect(parseProject(serializeProject(valid)).graph.nodes.find(({ id }) => id === validMesoNode.id).mesoExplanation)
+      .toBe(validMesoNode.mesoExplanation);
+    expect(createPortableProject(valid, 'private').graph.nodes.find(({ id }) => id === validMesoNode.id).mesoExplanation)
+      .toBe(validMesoNode.mesoExplanation);
+
+    const emptyOutsideMeso = structuredClone(valid);
+    emptyOutsideMeso.graph.nodes.find((node) => node.id === settings[0].id).mesoExplanation = '';
+    expect(() => validateProject(emptyOutsideMeso)).not.toThrow();
+
+    const explanationOutsideMeso = structuredClone(valid);
+    explanationOutsideMeso.graph.nodes.find((node) => node.id === settings[0].id).mesoExplanation = 'This belongs only on Meso.';
+    expect(() => validateProject(explanationOutsideMeso)).toThrow(/mesoExplanation.*only allowed on a Meso item unless empty/);
+
+    const oversizedExplanation = structuredClone(valid);
+    oversizedExplanation.graph.nodes.find((node) => node.id === validMesoNode.id).mesoExplanation = 'x'.repeat(PROJECT_LIMITS.noteText + 1);
+    expect(() => validateProject(oversizedExplanation)).toThrow(/mesoExplanation.*no more than 4000 characters/);
 
     const incomplete = structuredClone(valid);
     incomplete.graph.nodes.find((node) => node.id === 'node_meso_1').scopeNodeIds = [settings[0].id];
@@ -1568,7 +1919,50 @@ describe('mapping domain', () => {
   });
 
   it('rejects unsupported imports', () => {
-    expect(() => parseProject('{"schemaVersion":7}')).toThrow(/not a supported/);
+    expect(() => parseProject('{"schemaVersion":8}')).toThrow(/not a supported/);
+  });
+
+  it('recovers missing current-schema progress without weakening progress validation', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'meso';
+    project.releasedScales = ['micro', 'meso'];
+    project.completedScales = ['micro'];
+    project.stage = 2;
+    project.reflection = 'The settings coordinate through informal calls.';
+    delete project.levelProgress;
+    const restored = parseProject(JSON.stringify(project));
+    expect(restored.levelProgress).toEqual({
+      micro: { stage: 4, reflection: '' },
+      meso: { stage: 2, reflection: project.reflection },
+      exosphere: { stage: 1, reflection: '' },
+      macrosphere: { stage: 1, reflection: '' },
+    });
+
+    const invalid = structuredClone(restored);
+    invalid.levelProgress.meso.stage = 5;
+    expect(() => validateProject(invalid)).toThrow(/levelProgress\.meso\.stage must be an integer from 0 to 4/);
+    invalid.levelProgress.meso = { stage: 2, reflection: '', privateNote: 'not allowed' };
+    expect(() => parseProject(JSON.stringify(invalid))).toThrow(/privateNote is not an allowed schema field/);
+  });
+
+  it('validates setting membership against stable Micro setting nodes', () => {
+    const project = projectWithGraph();
+    const microSetting = project.graph.nodes.find((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type));
+    const actor = project.graph.nodes.find((node) => node.scale === 'micro' && !MICRO_SETTING_NODE_TYPES.includes(node.type));
+    const member = project.graph.nodes.find((node) => node.id !== microSetting.id && node.id !== actor?.id);
+
+    member.settingNodeIds = ['missing_setting'];
+    expect(() => validateProject(project)).toThrow(/references unknown node missing_setting/);
+    member.settingNodeIds = actor ? [actor.id] : [project.graph.nodes.find((node) => node.scale !== 'micro').id];
+    expect(() => validateProject(project)).toThrow(/must reference a stable Micro setting node/);
+    member.settingNodeIds = [microSetting.id, microSetting.id];
+    expect(() => validateProject(project)).toThrow(/settingNodeIds\[1\] must be unique/);
+    member.settingNodeIds = [microSetting.id];
+    member.origin = 'automatic';
+    expect(() => validateProject(project)).toThrow(/origin must be one of/);
+    member.origin = 'student entry';
+    project.graph.edges[0].origin = 'automatic';
+    expect(() => validateProject(project)).toThrow(/origin must be one of/);
   });
 
   it('rejects structurally incomplete and policy-escalating imports', () => {
@@ -1582,6 +1976,19 @@ describe('mapping domain', () => {
     const project = createDefaultProject();
     project.events[0].metadata = { accessToken: 'must-never-travel' };
     expect(() => parseProject(JSON.stringify(project))).toThrow(/credential or unrelated account field/);
+  });
+
+  it('strictly rejects unknown current-schema claim and process fields', () => {
+    const claimProject = projectWithGraph();
+    claimProject.graph.nodes[0].claimEvidence[0].privateInterpretation = 'must not travel';
+    expect(() => parseProject(JSON.stringify(claimProject))).toThrow(/privateInterpretation is not an allowed schema field/);
+
+    const processProject = projectWithGraph();
+    processProject.graph.edges[0].relationshipProcess = {
+      ...createRelationshipProcess(),
+      privateSchedule: 'must not travel',
+    };
+    expect(() => parseProject(JSON.stringify(processProject))).toThrow(/privateSchedule is not an allowed schema field/);
   });
 
   it('rejects top-level canaries before a sensitive portable export can clone them', () => {
@@ -1603,9 +2010,13 @@ describe('mapping domain', () => {
       ['node annotations', (project) => { project.graph.nodes[0].annotations.privateInterviewTranscript = 'must not travel'; }],
       ['node annotation', (project) => { project.graph.nodes[0].annotations.analytical.privateInterviewTranscript = 'must not travel'; }],
       ['evidence reference', (project) => { project.graph.nodes[0].evidenceRefs[0].privateInterviewTranscript = 'must not travel'; }],
+      ['claim evidence', (project) => { project.graph.nodes[0].claimEvidence[0].privateInterviewTranscript = 'must not travel'; }],
       ['graph container', (project) => { project.graph.privateInterviewTranscript = 'must not travel'; }],
       ['edge', (project) => { project.graph.edges[0].privateInterviewTranscript = 'must not travel'; }],
       ['edge annotation', (project) => { project.graph.edges[0].annotation.privateInterviewTranscript = 'must not travel'; }],
+      ['relationship process', (project) => {
+        project.graph.edges[0].relationshipProcess = { ...createRelationshipProcess(), privateInterviewTranscript: 'must not travel' };
+      }],
       ['viewport', (project) => { project.viewport.privateInterviewTranscript = 'must not travel'; }],
       ['map annotation', (project) => { project.mapAnnotation.privateInterviewTranscript = 'must not travel'; }],
       ['preflight', (project) => { addAuthoritativePreflight(project); project.preflight.privateInterviewTranscript = 'must not travel'; }],
@@ -1639,6 +2050,17 @@ describe('mapping domain', () => {
     project.submission.consent = true;
     const originalText = project.submission.text;
     const personOrFamily = project.graph.nodes.find((node) => node.type === 'person' || node.type === 'family');
+    const microSetting = project.graph.nodes.find((node) => node.id !== personOrFamily.id && node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type));
+    Object.assign(personOrFamily, {
+      origin: 'student entry',
+      reviewDecision: 'added',
+      settingNodeIds: [microSetting.id],
+      focalParticipation: 'direct',
+    });
+    Object.assign(project.graph.edges[0], {
+      origin: 'model suggestion',
+      reviewDecision: 'set aside',
+    });
     project.inquiry = `How does access affect ${personOrFamily.label}?`;
     project.reflection = `${personOrFamily.label} described a private experience.`;
     personOrFamily.notes = 'Identifying analytical note';
@@ -1651,6 +2073,23 @@ describe('mapping domain', () => {
     expect(portableNode.label).not.toBe(personOrFamily.label);
     expect(portableNode.evidenceHash).toBe(personOrFamily.evidenceHash);
     expect(portableNode.evidenceExcerpt).toBeUndefined();
+    expect(portableNode.claimEvidence[0]).toMatchObject({
+      sourcePassage: '',
+      evidenceId: personOrFamily.claimEvidence[0].evidenceId,
+      sourceId: personOrFamily.claimEvidence[0].sourceId,
+      evidenceHash: personOrFamily.claimEvidence[0].evidenceHash,
+    });
+    expect(portableNode).toMatchObject({
+      origin: 'student entry',
+      reviewDecision: 'added',
+      settingNodeIds: [microSetting.id],
+      focalParticipation: 'direct',
+    });
+    expect(portable.graph.edges[0]).toMatchObject({
+      origin: 'model suggestion',
+      reviewDecision: 'set aside',
+    });
+    expect(portable.portableExport.preservedReferenceFields).toContain('settingNodeIds');
     expect(portable.submission.title).toBe('[redacted]');
     expect(portable.inquiry).toBe('[redacted]');
     expect(portable.reflection).toBe('[redacted]');
@@ -1667,7 +2106,23 @@ describe('mapping domain', () => {
     project.submission.sensitive = false;
     project.submission.rights = 'Course use only';
     project.reflection = 'A private derived reflection';
+    project.levelProgress.micro.reflection = 'A private Micro reflection';
     project.mapAnnotation.text = 'A private map interpretation';
+    const mesoSettings = project.graph.nodes
+      .filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type))
+      .slice(0, 2);
+    const mesoNode = withDefaultNodeLayout([{
+      id: 'node_private_meso',
+      label: 'School and advocacy mesosystem',
+      type: 'mesosystem',
+      scale: 'meso',
+      status: 'pending',
+      claimState: 'student interpretation',
+      notes: '',
+      scopeNodeIds: mesoSettings.map(({ id }) => id),
+      mesoExplanation: 'The settings coordinate requests but conflict over response time.',
+    }])[0];
+    project.graph.nodes.push(mesoNode);
     [...project.candidates.nodes, ...project.graph.nodes].forEach((node) => {
       node.notes = 'A private legacy note';
       node.annotations.analytical.text = 'A private analytical annotation';
@@ -1677,6 +2132,18 @@ describe('mapping domain', () => {
       edge.notes = 'A private relationship note';
       edge.rationale = 'A private relationship rationale';
       edge.annotation.text = 'A private relationship annotation';
+      edge.claimEvidence[0].studentInterpretation = 'A private student interpretation';
+      edge.claimEvidence[0].warrant = 'A private interpretive warrant';
+      edge.claimEvidence[0].uncertainty = 'A private uncertainty';
+      edge.claimEvidence[0].counterevidence = 'A private counterexample';
+      edge.claimEvidence[0].missingVoice = 'A private missing voice';
+      edge.relationshipProcess = createRelationshipProcess({
+        frequency: 'Every private meeting',
+        duration: 'A private duration',
+        direction: 'A private direction',
+        conditions: 'A private condition',
+        changeOverTime: 'A private history',
+      });
     });
     const node = project.graph.nodes[0];
     project.events.push(createEvent('node.revised', 'A private event detail', 'student', {
@@ -1689,18 +2156,34 @@ describe('mapping domain', () => {
 
     const portable = createPortableProject(project, 'public');
     const portableNode = portable.graph.nodes.find((item) => item.id === node.id);
+    const portableMesoNode = portable.graph.nodes.find((item) => item.id === mesoNode.id);
     const portableEdge = portable.graph.edges[0];
     const portableEvent = portable.events.at(-1);
     expect(project.mapAnnotation.text).toBe('A private map interpretation');
+    expect(project.levelProgress.micro.reflection).toBe('A private Micro reflection');
     expect(portable.submission.text).toBe('');
     expect(portable.reflection).toBe('[redacted]');
+    expect(portable.levelProgress.micro).toEqual({ stage: project.levelProgress.micro.stage, reflection: '[redacted]' });
     expect(portable.mapAnnotation).toEqual({ id: project.mapAnnotation.id, text: '' });
     expect(portableNode.x).toBe(node.x);
     expect(portableNode.annotations.analytical).toEqual({ id: node.annotations.analytical.id, text: '' });
     expect(portableNode.annotations.evidence).toEqual({ id: node.annotations.evidence.id, text: '' });
     expect(portableNode.notes).toBe('');
+    expect(portableMesoNode.mesoExplanation).toBe('');
     expect(portableEdge.annotation.text).toBe('');
     expect(portableEdge.rationale).toBe('[redacted]');
+    expect(portableEdge.claimEvidence[0]).toMatchObject({
+      sourcePassage: '',
+      studentInterpretation: '',
+      warrant: '',
+      uncertainty: '',
+      counterevidence: '',
+      missingVoice: '',
+      evidenceId: project.graph.edges[0].claimEvidence[0].evidenceId,
+      sourceId: project.graph.edges[0].claimEvidence[0].sourceId,
+      evidenceHash: project.graph.edges[0].claimEvidence[0].evidenceHash,
+    });
+    expect(portableEdge.relationshipProcess).toEqual(createRelationshipProcess());
     expect(portableEvent.detail).toBe('[redacted]');
     expect(portableEvent.operations.nodes).toEqual([node.id]);
     expect(portableEvent.operations.label).toBe('[redacted]');
@@ -1708,6 +2191,9 @@ describe('mapping domain', () => {
     expect(portableEvent.configurationSnapshot.fingerprint).toBe('cfg_safe');
     expect(portableEvent.configurationSnapshot.fixedPrompt).toBe('[redacted]');
     expect(portableEvent.privateInterviewTranscript).toBe('[redacted]');
+    expect(portable.portableExport.redactions.map(({ path }) => path)).toContain(
+      `graph.nodes[${project.graph.nodes.findIndex(({ id }) => id === mesoNode.id)}].mesoExplanation`,
+    );
     expect(parseProject(JSON.stringify(portable)).mapAnnotation.text).toBe('');
   });
 

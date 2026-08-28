@@ -27,6 +27,10 @@ import {
   systemsMappingStage,
 } from '../shared/systems-mapping-stages.js';
 import {
+  STUDENT_WORKFLOW_EVALUATION_EVENT,
+  validateStudentWorkflowEvaluationMetadata,
+} from '../shared/student-workflow-evaluation.js';
+import {
   clearSession,
   clearStudentSession,
   consumePasswordReset,
@@ -54,7 +58,12 @@ import {
   SYSTEMS_MAPPING_EDUCATOR_RESOURCE,
   teachingProfileFingerprint,
 } from './config.js';
-import { inTransaction, openDataStore, prototypeEventAudit } from './database.js';
+import {
+  inTransaction,
+  openDataStore,
+  prototypeEventAudit,
+  studentWorkflowEvaluationReport,
+} from './database.js';
 import { OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
 
 const DEFAULT_TEACHER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -138,9 +147,9 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
   'Except at Meso, each node label MUST be the shortest complete memo-supported referring expression for exactly one accepted map element. Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo; if the referent is not unambiguous, omit it. Never attach location, schedule, action, relationship, or explanatory material merely to make a label longer; keep those details in evidence, and emit a separately supported setting only when it is independently relevant. Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments, relationship propositions, outcomes, or explanations as node labels. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
   'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
-  'Keep every suggestion and every sentence of guidance within the active scale. At Macrosphere, discuss only validated broader conditions and the mapped elements they affect; do not discuss missing institutions or outside decision pathways. At Exosphere, discuss only named outside decision settings and their supported pathways into immediate settings. At Meso, discuss only interrelations among Micro settings. At Micro, discuss only discrete immediate elements and direct relationships.',
+  'Keep every suggestion and every sentence of guidance within the active scale. At Macrosphere, discuss only validated broader conditions and the map items they affect; do not discuss missing institutions or outside decision pathways. At Exosphere, discuss only named outside decision settings and their supported pathways into immediate settings. Call these Exo-level connections in student-facing text. At Meso, discuss only interrelations among Micro settings. At Micro, discuss only discrete immediate elements and direct relationships.',
   'SCALE BOUNDARIES — assign each item by the focal person\'s participation and the pathway of effect, never by entity kind, size, or fame. Micro identifies immediate settings the person participates in, their people, roles, activities, objects, and resources, and direct interactions. A named organization, institution, agency, or service remains at Micro when the person participates there directly. Meso identifies only a noun-labeled interrelation among two or more of those Micro settings; it is not another place to add entities or directional connections. Exosphere identifies outside decision settings whose actions reach an immediate Micro setting even though the person does not participate in the decision setting. Macrosphere identifies broader laws, public policies, economic conditions, histories, structures, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level items at a higher level.',
-  `At Micro, propose only bounded people, roles, groups, immediate settings, named activities, tangible objects, or resources that the memo supports. Preserve an organization, institution, agency, or service as its actual entity type while assigning it to Micro when the focal person participates there. A named activity must still be a complete noun phrase, never the action verb or a sentence fragment. A Micro setting used at Meso may have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for outside decision settings that act indirectly and broader conditions that shape several mapped elements. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
+  `At Micro, propose only bounded people, roles, groups, immediate settings, named activities, tangible objects, or resources that the memo supports. Preserve an organization, institution, agency, or service as its actual entity type while assigning it to Micro when the focal person participates there. A named activity must still be a complete noun phrase, never the action verb or a sentence fragment. A Micro setting used at Meso may have one of these types: ${MICRO_SETTING_NODE_TYPES.join(', ')}. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for outside decision settings that act indirectly and broader conditions that shape several map items. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
   'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, each scope entry must use the exact ID of a Micro setting already on the map. At Exosphere, connections may use an existing Micro setting\'s exact label as the endpoint of an outside decision pathway. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
   'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
   `connections must be an array of objects with exactly these keys: source, target, verb, rationale. At Micro, source and target must exactly match accepted node labels or exact supplied node IDs, endpoints must differ, and the rationale must point to direct evidence for a relationship among accepted Micro elements, including resources and directly participated institutions or services. A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting; only setting-to-setting interrelations are excluded from Micro and belong at Meso. Never turn a schedule fact, unresolved coreference fragment, or invented noun phrase into a Micro connection. At Meso and Macrosphere, connections MUST be empty. For Exosphere, every connection MUST join one proposed outside decision setting to one carried Micro setting, endpoints must differ, verb MUST be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}. rationale must identify the supported decision or resource pathway.`,
@@ -151,7 +160,7 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   `EXOSPHERE FINAL CHECK: every node label must be a specific proper name, official acronym, named service, named public-benefit program, or operational rule explicitly scoped to a named outside decision setting. A generic category is not an Exosphere node: omit labels such as "home care agency", "legal services office", "scheduling office", "union", "employer", "benefits office", "service system", or an unnamed hospital, college, clinic, center, program, or agency. An inferred node must still supply a specific proper name and mark basis "inference"; otherwise raise the gap only in guidance. Choose node type only from: ${EXOSPHERE_NODE_TYPES.join(', ')}. Every proposed Exosphere node must have one connection to one carried Micro setting, never another proposed or carried outer-level item, and must use exactly one allowed Exosphere verb. Use human-readable labels rather than node IDs in guidance, rationale, readiness, and example text.`,
   `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact IDs from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
   'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance and readiness text. For Micro and Meso, example must be null. For Exosphere and Macrosphere, example may be a short plain-language paragraph, or null, that explains one outside decision pathway or broader condition.',
-  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means at least one named outside decision setting has an evident pathway to a carried Micro setting. For Macrosphere, ready means at least one broader condition affects two or more mapped elements. Readiness never blocks the student from continuing.',
+  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one mesosystem includes two or more Micro settings already on the map. For Exosphere, ready means at least one named outside decision setting has an evident pathway to a carried Micro setting. For Macrosphere, ready means at least one broader condition affects two or more map items. Readiness never blocks the student from continuing.',
   'FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata: {"guidance":[],"nodes":[],"connections":[],"example":null,"readiness":{"ready":false,"note":"Short plain-language note."}}. Fill the arrays and readiness values under the active-scale rules above. Never add suggestion, review, result, activeScale, scale, confidence, metadata, or any sixth top-level key.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
@@ -180,6 +189,7 @@ const PROTOTYPE_EVENTS = new Set([
   'project_exported',
   'project_imported',
   'recovery_exported',
+  STUDENT_WORKFLOW_EVALUATION_EVENT,
 ]);
 const PROTOTYPE_STAGES = new Map(SYSTEMS_MAPPING_STAGES.map(({ label }, index) => [label, index]));
 [
@@ -1093,9 +1103,9 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
   if (activeScale === 'macrosphere') {
     readinessNote = nodes.length > 0
       ? nodes.length === 1
-        ? 'The review found 1 possible Macrosphere condition affecting at least two mapped elements.'
-        : `The review found ${nodes.length} possible Macrosphere conditions, each affecting at least two mapped elements.`
-      : 'No supported Macrosphere condition affecting at least two mapped elements was found. You can revise the memo or continue without adding one.';
+        ? 'The review found 1 possible Macrosphere condition affecting at least two map items.'
+        : `The review found ${nodes.length} possible Macrosphere conditions, each affecting at least two map items.`
+      : 'No supported Macrosphere condition affecting at least two map items was found. You can revise the memo or continue without adding one.';
   }
   if (storedLegacyMeso) readinessNote = 'This earlier Meso review needs to be refreshed. Meso now identifies interrelations among two or more Micro settings.';
   const readiness = {
@@ -2007,7 +2017,14 @@ function tooManyAttempts(retryAfterSeconds, message) {
   return new HttpError(429, message, { retryAfterSeconds }, { 'Retry-After': String(retryAfterSeconds) });
 }
 
-function validatePrototypeMetadata(metadata) {
+function validatePrototypeMetadata(metadata, event) {
+  if (event === STUDENT_WORKFLOW_EVALUATION_EVENT) {
+    try {
+      return validateStudentWorkflowEvaluationMetadata(metadata);
+    } catch (error) {
+      throw new HttpError(400, error.message);
+    }
+  }
   if (metadata === undefined) return {};
   if (!isPlainObject(metadata)) throw new HttpError(400, 'metadata must be a JSON object.');
   const entries = Object.entries(metadata);
@@ -3013,7 +3030,7 @@ export function createSystemsMappingApp(options = {}) {
     if (stage === undefined) {
       throw new HttpError(400, 'stage must be a canonical workflow stage label.');
     }
-    const metadata = validatePrototypeMetadata(body.metadata);
+    const metadata = validatePrototypeMetadata(body.metadata, body.event);
     await record({
       sessionKind: 'student',
       sessionRef: student.sessionRef,
@@ -3529,6 +3546,11 @@ export function createSystemsMappingApp(options = {}) {
   });
 
   app.get('/api/teacher/prototype-audit', async (context) => context.json({ prototypeEvents: await prototypeEventAudit(db) }));
+
+  app.get('/api/teacher/student-workflow-evaluation-report', async (context) => {
+    context.header('Content-Disposition', 'attachment; filename="student-workflow-evaluation-report.json"');
+    return context.json({ evaluation: await studentWorkflowEvaluationReport(db) });
+  });
 
   app.get('/api/config/public', async (context) => {
     const student = await currentStudentSession(context, db, now);

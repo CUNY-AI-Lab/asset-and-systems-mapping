@@ -19,9 +19,13 @@ const PROVIDER_LABEL = 'OpenRouter';
 const CONFIG_KEYS = new Set(['apiKey', 'baseUrl', 'model', 'timeoutMs', 'maxOutputTokens', 'reasoningEnabled']);
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u;
 
-// Errors with these codes describe the caller's input or intent, so a backup
-// provider would fail identically and must not be attempted.
-const NON_FALLBACK_CODES = new Set(['invalid_input', 'input_too_large', 'request_aborted']);
+// Fallback is fail-closed because it sends the same project material to a
+// second provider. Only typed failures that establish a retryable transport or
+// pre-content provider condition may cross that boundary. Invalid, truncated,
+// or schema-incompatible model content has already been returned and must be
+// surfaced without another provider request.
+const RETRYABLE_FALLBACK_CODES = new Set(['provider_unavailable', 'request_timeout']);
+const RETRYABLE_PROVIDER_HTTP_STATUSES = new Set([408, 425, 429]);
 
 export class OpenRouterError extends OllamaCloudError {
   constructor(message, code, options) {
@@ -292,7 +296,11 @@ export async function requestOpenRouterSuggestion(input, config, { signal, testO
 }
 
 export function shouldFallToBackup(error) {
-  return !(error instanceof Error && typeof error.code === 'string' && NON_FALLBACK_CODES.has(error.code));
+  if (!(error instanceof OllamaCloudError)) return false;
+  if (RETRYABLE_FALLBACK_CODES.has(error.code)) return true;
+  if (error.code !== 'provider_http_error' || !Number.isInteger(error.status)) return false;
+  return RETRYABLE_PROVIDER_HTTP_STATUSES.has(error.status)
+    || (error.status >= 500 && error.status <= 599);
 }
 
 export function withOpenRouterFallback(primaryRequest, backupConfig) {

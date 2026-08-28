@@ -6,6 +6,7 @@ import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   configFingerprint,
   createDefaultProject,
+  createLevelProgress,
   createPortableProject,
   extractCandidates,
   MICRO_SETTING_NODE_TYPES,
@@ -13,6 +14,7 @@ import {
   PROJECT_LIMITS,
   serializeProject,
   stableId,
+  validateProject,
   withDefaultNodeLayout,
 } from './domain.js';
 import { loadStoredLink, rememberStoredLink } from './projectLibrary.js';
@@ -325,6 +327,7 @@ function makeMapProject(activeScale = 'exosphere') {
       label: 'School–family coordination',
       type: 'mesosystem',
       scale: 'meso',
+      mesoExplanation: '',
       x: 2360,
       y: 1200,
       scopeNodeIds: microSettings.slice(0, 2).map((node) => node.id),
@@ -394,6 +397,10 @@ function makeMapProject(activeScale = 'exosphere') {
   project.graph.edges.sort((left, right) => Number(right.scale === activeScale) - Number(left.scale === activeScale));
   project.stage = 3;
   project.furthestStage = 3;
+  project.levelProgress = createLevelProgress({ activeScale, stage: 3, reflection: '' });
+  project.releasedScales.forEach((scale) => {
+    project.levelProgress[scale] = { stage: 3, reflection: '' };
+  });
   return project;
 }
 
@@ -405,6 +412,7 @@ function makeRevisionProject(activeScale = 'micro') {
   project.stage = 4;
   project.furthestStage = 4;
   project.reflection = `Stale ${activeScale} reflection`;
+  project.levelProgress[activeScale] = { stage: 4, reflection: project.reflection };
   if (activeScale === 'meso') {
     project.candidates = {
       nodes: [structuredClone(project.graph.nodes.find((node) => node.scale === 'meso'))],
@@ -895,7 +903,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     expect(screen.getByText('gpt-oss:120b via Ollama Cloud')).toBeVisible();
-    expect(screen.getByText(/sends your memo and map framing to gpt-oss:120b via Ollama Cloud.*retained for 1 day/i)).toBeVisible();
+    expect(screen.getByText(/sends your memo and map framing to gpt-oss:120b via Ollama Cloud.*retains the memo request and generated guidance for 1 day.*working project stays on this device/i)).toBeVisible();
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 750)); });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
@@ -971,7 +979,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(legacy.title);
     expect(screen.getByRole('textbox', { name: /Memo text/ })).toHaveValue(legacy.submission.text);
-    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 6, title: legacy.title, participantName: '' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 7, title: legacy.title, participantName: '' }));
   });
 
   it('loads the v5 browser workspace as legacy data and persists it under the v6 key', async () => {
@@ -985,7 +993,7 @@ describe('Systems Mapping workflow', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     openProjectFromList(legacy.title);
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
-    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 6, participantName: '' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 7, participantName: '' }));
   });
 
   it('expires an ISO-timestamped class grant at the exact fake-clock boundary without erasing local project bytes', async () => {
@@ -1033,19 +1041,19 @@ describe('Systems Mapping workflow', () => {
     expect(memo.closest('label')).toHaveTextContent(`${memoWordCount} words`);
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
-    const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
+    fireEvent.click(screen.getByRole('button', { name: 'Progress: Micro-level, Review' }));
+    const stageMenu = screen.getByRole('dialog', { name: 'Progress' });
     ['add your memo', 'review your memo', 'choose map elements', 'build map', 'revise and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
-    fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Five stages' }));
+    fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Progress' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     const guidance = await screen.findByRole('region', { name: 'Memo review' });
     expect(within(guidance).getAllByRole('article')).toHaveLength(2);
     expect(within(guidance).getByText('The memo grounds the referral in a specific handoff.')).toBeVisible();
     expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
     expect(within(guidance).getByText('The school refers the student to the committee.')).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Where your memo stands' })).toHaveTextContent('The memo already supports mapping');
-    const scaffold = screen.getByRole('complementary', { name: 'Suggested Micro elements' });
+    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toHaveTextContent('The memo already supports mapping');
+    const scaffold = screen.getByRole('complementary', { name: 'Suggested Micro-level items' });
     expect(within(scaffold).getByLabelText('Nodes evident in the memo')).toHaveTextContent('School');
     expect(within(scaffold).getByText('refers students to')).toBeVisible();
     expect(within(scaffold).getByLabelText('Nodes evident in the memo')).toHaveTextContent('Committee');
@@ -1239,7 +1247,6 @@ describe('Systems Mapping workflow', () => {
     ['micro', 'meso', 'Continue to Meso-level'],
     ['meso', 'exosphere', 'Continue to Exo-level'],
     ['exosphere', 'macrosphere', 'Continue to Macro-level'],
-    ['macrosphere', 'macrosphere', 'Start another Macro-level cycle'],
   ])('completing %s preserves accumulated work and continues at %s', async (activeScale, expectedScale, cta) => {
     const project = makeRevisionProject(activeScale);
     const graphBefore = structuredClone(project.graph);
@@ -1264,14 +1271,35 @@ describe('Systems Mapping workflow', () => {
     expect(stored.candidates).toEqual(candidatesBefore);
     expect(stored.completedScales).toEqual(expect.arrayContaining([activeScale]));
     expect(stored.graph).toEqual(graphBefore);
-    if (activeScale === 'macrosphere') {
-      expect(stored.releasedScales).toEqual(releasedBefore);
-    } else {
-      expect(stored.releasedScales).toEqual([...releasedBefore, expectedScale]);
-    }
+    expect(stored.releasedScales).toEqual([...releasedBefore, expectedScale]);
     expect(screen.getByRole('heading', { name: 'Review your memo' })).toBeVisible();
     const levelLabels = { micro: 'Micro-level', meso: 'Meso-level', exosphere: 'Exo-level', macrosphere: 'Macro-level' };
     expect(screen.getByText(`Part ${['micro', 'meso'].includes(expectedScale) ? 1 : 2} · ${levelLabels[expectedScale]}`)).toBeVisible();
+  });
+
+  it('completes Macrosphere once and leaves the cumulative project at its terminal review', async () => {
+    const project = makeRevisionProject('macrosphere');
+    const graphBefore = structuredClone(project.graph);
+    const candidatesBefore = structuredClone(project.candidates);
+    const preflightBefore = structuredClone(project.preflight);
+    const reflectionBefore = project.reflection;
+    const releasedBefore = [...project.releasedScales];
+    await resumeSavedProject(project);
+
+    const completeButton = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Complete Macro-level' });
+    expect(completeButton).toBeEnabled();
+    fireEvent.click(completeButton);
+
+    await waitFor(() => expect(storedProject().completedScales).toContain('macrosphere'));
+    const stored = storedProject();
+    expect(stored).toMatchObject({ activeScale: 'macrosphere', stage: 4, furthestStage: 4 });
+    expect(stored.graph).toEqual(graphBefore);
+    expect(stored.candidates).toEqual(candidatesBefore);
+    expect(stored.preflight).toEqual(preflightBefore);
+    expect(stored.reflection).toBe(reflectionBefore);
+    expect(stored.releasedScales).toEqual(releasedBefore);
+    expect(screen.getByRole('heading', { name: 'Cross-level synthesis' })).toBeVisible();
+    expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Project complete' })).toBeDisabled();
   });
 
   it('revisits a released work level without changing the visible map layer or cumulative data', async () => {
@@ -1490,13 +1518,13 @@ describe('Systems Mapping workflow', () => {
   it('keeps Map and all five stages available with guidance present and never mentions instructor review', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.getByRole('region', { name: 'Where your memo stands' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
     expect(document.querySelector('.workspace').textContent).not.toMatch(/instructor review|send to instructor|note for instructor/i);
     screen.getAllByRole('button', { name: 'Choose Micro-level items' }).forEach((button) => expect(button).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
-    const stageMenu = screen.getByRole('dialog', { name: 'Five stages' });
+    fireEvent.click(screen.getByRole('button', { name: 'Progress: Micro-level, Review' }));
+    const stageMenu = screen.getByRole('dialog', { name: 'Progress' });
     SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
   });
 
@@ -1543,7 +1571,7 @@ describe('Systems Mapping workflow', () => {
     connectionProject.stage = 2;
     connectionProject.furthestStage = 2;
     await resumeSavedProject(connectionProject);
-    fireEvent.click(screen.getByRole('tab', { name: 'More decision pathways' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'More Exo-level connections' }));
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     expect(screen.getByRole('button', { name: 'Generating suggestions…' })).toBeDisabled();
     const connectionForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' });
@@ -1663,7 +1691,7 @@ describe('Systems Mapping workflow', () => {
     expect(Number(previewEdge.querySelector('rect').getAttribute('height'))).toBeGreaterThan(24);
   });
 
-  it('routes five kept preview connections in separate lanes between their endpoint cards', async () => {
+  it('routes a bounded group of kept preview connections in separate lanes between their endpoint cards', async () => {
     const project = createDefaultProject();
     project.activeScale = 'micro';
     project.releasedScales = ['micro'];
@@ -1728,7 +1756,8 @@ describe('Systems Mapping workflow', () => {
     const cards = [...document.querySelectorAll('.connection-preview__node')].map((node) => translatedRectBounds(node, node.querySelector('rect')));
     const viewBox = previewSvg.getAttribute('viewBox').split(/\s+/).map(Number);
     const [viewX, viewY, viewWidth, viewHeight] = viewBox;
-    expect(labels).toHaveLength(edges.length);
+    expect(labels).toHaveLength(4);
+    expect(screen.getByText(/Showing 4 of 5 connections/, { selector: '.connection-preview__scope' })).toBeVisible();
     labels.forEach((label, index) => {
       const labelBounds = svgRectBounds(label.querySelector('rect'));
       expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
@@ -1748,7 +1777,7 @@ describe('Systems Mapping workflow', () => {
       expect(projection).toBeGreaterThan(0);
       expect(projection).toBeLessThan(1);
     });
-    expect(new Set([...document.querySelectorAll('.connection-preview__edge path')].map((path) => path.getAttribute('d')))).toHaveLength(edges.length);
+    expect(new Set([...document.querySelectorAll('.connection-preview__edge path')].map((path) => path.getAttribute('d')))).toHaveLength(4);
     const renderedBounds = [...cards, ...labels.map((label) => svgRectBounds(label.querySelector('rect')))];
     expect(Math.min(...renderedBounds.map(({ left }) => left))).toBeGreaterThanOrEqual(viewX);
     expect(Math.max(...renderedBounds.map(({ right }) => right))).toBeLessThanOrEqual(viewX + viewWidth);
@@ -1825,7 +1854,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
-    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and ${edges.length} connections` });
+    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and 4 connections` });
     const previewSvg = preview.querySelector('svg');
     const viewBox = previewSvg.getAttribute('viewBox').split(/\s+/).map(Number);
     const [viewX, viewY, viewWidth, viewHeight] = viewBox;
@@ -1838,7 +1867,8 @@ describe('Systems Mapping workflow', () => {
 
     expect(viewWidth / viewHeight).toBeCloseTo(8 / 5, 4);
     expect(viewWidth).toBeLessThan(2300);
-    expect(renderedLabels.map((label) => label.getAttribute('data-edge-id'))).toEqual(edges.map(({ id }) => id));
+    expect(screen.getByText(new RegExp(`Showing 4 of ${edges.length} connections`), { selector: '.connection-preview__scope' })).toBeVisible();
+    expect(renderedLabels.map((label) => label.getAttribute('data-edge-id'))).toEqual(edges.slice(0, 4).map(({ id }) => id));
     expect(Math.min(...bounds.map(({ left }) => left))).toBeGreaterThanOrEqual(viewX);
     expect(Math.max(...bounds.map(({ right }) => right))).toBeLessThanOrEqual(viewX + viewWidth);
     expect(Math.min(...bounds.map(({ top }) => top))).toBeGreaterThanOrEqual(viewY);
@@ -1851,7 +1881,7 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
-  it('keeps every preview connection visible with clear callouts when strict lanes are exhausted', async () => {
+  it('keeps every connection in the bounded preview group visible between its endpoints when strict lanes are exhausted', async () => {
     const project = createDefaultProject();
     project.activeScale = 'micro';
     project.releasedScales = ['micro'];
@@ -1891,18 +1921,19 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
-    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and ${edges.length} connections` });
+    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and 4 connections` });
     const renderedEdges = [...preview.querySelectorAll('.connection-preview__edge')];
     const renderedLabels = [...preview.querySelectorAll('.connection-preview__label')];
     const cardBounds = [...preview.querySelectorAll('.connection-preview__node')]
       .map((node) => translatedRectBounds(node, node.querySelector('rect')));
 
-    expect(renderedEdges).toHaveLength(edges.length);
-    expect(renderedLabels).toHaveLength(edges.length);
-    expect(renderedLabels.some((label) => label.getAttribute('data-edge-route') === 'callout')).toBe(true);
+    expect(screen.getByText(new RegExp(`Showing 4 of ${edges.length} connections`), { selector: '.connection-preview__scope' })).toBeVisible();
+    expect(renderedEdges).toHaveLength(4);
+    expect(renderedLabels).toHaveLength(4);
     renderedLabels.forEach((label, index) => {
       const labelBounds = svgRectBounds(label.querySelector('rect'));
       expect(label.getAttribute('data-edge-id')).toBe(edges[index].id);
+      expect(['between-endpoints', 'between-endpoints-tight']).toContain(label.getAttribute('data-edge-route'));
       expect(svgTextLines(label.querySelector('text')).join('')).toBe(verb);
       cardBounds.forEach((bounds) => expect(rectsIntersect(labelBounds, bounds)).toBe(false));
       renderedLabels.slice(index + 1).forEach((other) => {
@@ -2034,7 +2065,7 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     expect(within(screen.getByRole('article', { name: project.title })).getByText('Review')).toBeVisible();
     openProjectFromList(project.title);
-    expect(await screen.findByRole('region', { name: 'Where your memo stands' })).toBeVisible();
+    expect(await screen.findByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
     expect(screen.getByText('The memo already supports mapping. Continue to choose nodes and connections.')).toBeVisible();
   });
 
@@ -2139,7 +2170,7 @@ describe('Systems Mapping workflow', () => {
   it('marks guidance refreshable after a memo edit without erasing the guidance or any work', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.getByRole('region', { name: 'Where your memo stands' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
     expect(screen.queryByText(/Your memo changed after this guidance was generated/)).not.toBeInTheDocument();
 
     const drawer = document.querySelector('.memo-drawer');
@@ -2201,7 +2232,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     expect(screen.getByText('refers students to')).toBeVisible();
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Micro-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Micro-level items' }));
     expect(await screen.findByRole('heading', { name: 'Choose Micro-level items' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'Direct relationships · 1' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'More direct relationships' })).toBeVisible();
@@ -2230,12 +2261,47 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByLabelText('Current Micro-level map summary')).toHaveTextContent('2 nodes are recorded with 1 direct relationship');
   });
 
+  it('records focal participation and immediate setting membership while reviewing Micro suggestions', async () => {
+    const project = projectWithMemoReview();
+    await resumeSavedProject(project);
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Micro-level items' }));
+    expect(await screen.findByRole('heading', { name: 'Choose Micro-level items' })).toBeVisible();
+
+    await waitFor(() => expect(storedProject().candidates.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(['School', 'Committee'])));
+    const schoolCandidate = storedProject().candidates.nodes.find((node) => node.label === 'School');
+    const committeeCandidate = storedProject().candidates.nodes.find((node) => node.label === 'Committee');
+    expect(schoolCandidate).toMatchObject({ focalParticipation: 'direct', settingNodeIds: [] });
+    expect(committeeCandidate).toMatchObject({ focalParticipation: 'direct', settingNodeIds: [] });
+
+    const schoolRow = screen.getByDisplayValue('School').closest('article');
+    const committeeRow = screen.getByDisplayValue('Committee').closest('article');
+    expect(within(schoolRow).queryByRole('combobox', { name: 'Add an immediate setting for School' })).not.toBeInTheDocument();
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Relation to focal person for Committee' }), { target: { value: 'indirect' } });
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Add an immediate setting for Committee' }), { target: { value: schoolCandidate.id } });
+    await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id)).toMatchObject({
+      focalParticipation: 'indirect',
+      settingNodeIds: [schoolCandidate.id],
+    }));
+
+    fireEvent.click(within(schoolRow).getByRole('button', { name: 'Add to map' }));
+    fireEvent.click(within(committeeRow).getByRole('button', { name: 'Add to map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.label === 'Committee')).toMatchObject({
+      focalParticipation: 'indirect',
+      settingNodeIds: [schoolCandidate.id],
+    }));
+    const settingRegion = document.querySelector(`[data-setting-region="${schoolCandidate.id}"]`);
+    expect(settingRegion).toHaveAttribute('data-member-count', '1');
+    expect(settingRegion.getAttribute('d')).toMatch(/^M /);
+  });
+
   it('leaves every model suggestion off until the student explicitly adds it regardless of teacher preference', async () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
 
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Micro-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Micro-level items' }));
     expect(await screen.findByRole('heading', { name: 'Choose Micro-level items' })).toBeVisible();
     expect(screen.getByText(/Model suggestions stay off the map until you choose Add to map/)).toBeVisible();
     await waitFor(() => {
@@ -2275,7 +2341,7 @@ describe('Systems Mapping workflow', () => {
     };
 
     await resumeSavedProject(project);
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Micro-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Micro-level items' }));
     expect(await screen.findByRole('heading', { name: 'Choose Micro-level items' })).toBeVisible();
 
     const expectedLabels = ['Adult Participants', 'Accessible van'];
@@ -2333,7 +2399,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
 
     await resumeSavedProject(project);
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Micro-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Micro-level items' }));
     expect(await screen.findByRole('heading', { name: 'Choose Micro-level items' })).toBeVisible();
 
     const expectedLabels = review.nodes.map(({ label }) => label);
@@ -2420,7 +2486,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(screen.getByRole('heading', { name: 'Suggested mesosystems' })).toBeVisible();
     const carried = screen.getByRole('region', { name: 'Micro settings available for mesosystems' });
     microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Meso-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Meso-level items' }));
     expect(await screen.findByRole('heading', { name: 'Choose Meso-level items' })).toBeVisible();
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Direct connection' })).not.toBeInTheDocument();
@@ -2503,7 +2569,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
 
     await resumeSavedProject(project);
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where your memo stands' })).getByRole('button', { name: 'Choose Exo-level items' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Choose Exo-level items' }));
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.candidates.nodes.some((node) => node.id === existing.id)).toBe(false);
@@ -2516,8 +2582,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     const institutionRow = screen.getByRole('textbox', { name: 'Node label' }).closest('article');
     fireEvent.click(within(institutionRow).getByRole('button', { name: 'Add to map' }));
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.label === outerLabel)).toMatchObject({ status: 'confirmed' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Decision pathways · 1' }));
-    const relationshipRow = screen.getByLabelText('Institutional relationship').closest('article');
+    fireEvent.click(screen.getByRole('tab', { name: 'Exo-level connections · 1' }));
+    const relationshipRow = screen.getByLabelText('How institution affects Micro setting').closest('article');
     fireEvent.click(within(relationshipRow).getByRole('button', { name: 'Add to map' }));
     await waitFor(() => {
       expect(within(relationshipRow).getByRole('button', { name: 'Add to map' })).toHaveClass('is-active');
@@ -2624,6 +2690,79 @@ Overall, the posting history documents a working student repeatedly turning to R
       scale: 'exosphere',
       status: 'confirmed',
     });
+  });
+
+  it('renames a mapped Micro candidate everywhere before reopening the cumulative map', async () => {
+    const project = makeMapProject('exosphere');
+    const relationship = project.graph.edges.find((edge) => edge.scale === 'micro');
+    const mappedNode = project.graph.nodes.find((node) => node.id === relationship.source);
+    const priorLabel = mappedNode.label;
+    const revisedLabel = 'Peer navigator Alpha';
+    project.activeScale = 'micro';
+    project.stage = 2;
+    project.furthestStage = 4;
+    project.levelProgress.micro = { stage: 2, reflection: '' };
+    project.candidates = {
+      nodes: [structuredClone(mappedNode)],
+      edges: [structuredClone(relationship)],
+    };
+    await resumeSavedProject(project);
+
+    fireEvent.change(screen.getByDisplayValue(priorLabel), { target: { value: revisedLabel } });
+    await waitFor(() => {
+      const stored = storedProject();
+      expect(stored.candidates.nodes.find((node) => node.id === mappedNode.id)?.label).toBe(revisedLabel);
+      expect(stored.graph.nodes.find((node) => node.id === mappedNode.id)?.label).toBe(revisedLabel);
+      expect(stored.candidates.edges.filter((edge) => edge.source === mappedNode.id || edge.target === mappedNode.id)
+        .every((edge) => edge.source === mappedNode.id ? edge.sourceLabel === revisedLabel : edge.targetLabel === revisedLabel)).toBe(true);
+      expect(stored.graph.edges.filter((edge) => edge.source === mappedNode.id || edge.target === mappedNode.id)
+        .every((edge) => edge.source === mappedNode.id ? edge.sourceLabel === revisedLabel : edge.targetLabel === revisedLabel)).toBe(true);
+      expect(() => validateProject(stored)).not.toThrow();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    const reopened = storedProject();
+    expect(reopened.graph.nodes.find((node) => node.id === mappedNode.id)?.label).toBe(revisedLabel);
+    expect(reopened.graph.nodes.some((node) => node.scale === 'meso')).toBe(true);
+    expect(reopened.graph.nodes.some((node) => node.scale === 'exosphere')).toBe(true);
+    expect(() => validateProject(reopened)).not.toThrow();
+    expect(() => validateProject(createPortableProject(reopened))).not.toThrow();
+  });
+
+  it('blocks removing a mapped Micro setting type while later-level work depends on it', async () => {
+    const project = makeMapProject('exosphere');
+    const exospherePathway = project.graph.edges.find((edge) => edge.scale === 'exosphere');
+    const mappedSetting = project.graph.nodes.find((node) => node.id === exospherePathway.target);
+    const mesosystem = project.graph.nodes.find((node) => node.scale === 'meso' && (node.scopeNodeIds || []).includes(mappedSetting.id));
+    expect(MICRO_SETTING_NODE_TYPES).toContain(mappedSetting.type);
+    expect(mesosystem).toBeTruthy();
+    project.activeScale = 'micro';
+    project.stage = 2;
+    project.furthestStage = 4;
+    project.levelProgress.micro = { stage: 2, reflection: '' };
+    project.candidates = { nodes: [structuredClone(mappedSetting)], edges: [] };
+    await resumeSavedProject(project);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Node type' }), { target: { value: 'person' } });
+    expect(screen.getByText(/Review or remove connected map work before changing this setting type/)).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Node type' })).toHaveValue(mappedSetting.type);
+    expect(storedProject().candidates.nodes[0].type).toBe(mappedSetting.type);
+    expect(storedProject().graph.nodes.find((node) => node.id === mappedSetting.id)?.type).toBe(mappedSetting.type);
+    expect(() => validateProject(storedProject())).not.toThrow();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    const reopened = storedProject();
+    expect(reopened.graph.nodes.find((node) => node.id === mappedSetting.id)?.type).toBe(mappedSetting.type);
+    expect(reopened.graph.nodes.find((node) => node.id === mesosystem.id)?.scopeNodeIds).toContain(mappedSetting.id);
+    expect(reopened.graph.edges.find((edge) => edge.id === exospherePathway.id)).toMatchObject({
+      source: exospherePathway.source,
+      target: mappedSetting.id,
+    });
+    expect(() => validateProject(reopened)).not.toThrow();
   });
 
   it('keeps a newly valid class grant active when a stale prototype 401 reads back a valid session', async () => {
@@ -2907,6 +3046,40 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
   });
 
+  it('surfaces Micro participation and setting membership in manual add and node inspection', async () => {
+    const project = makeMapProject('micro');
+    const setting = project.graph.nodes.find((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type));
+    setting.focalParticipation = 'direct';
+    setting.settingNodeIds = [];
+    await openMapProject(project);
+
+    const inspector = openMapInspector();
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
+    fireEvent.click(within(document.getElementById('inspector-add-actions')).getByRole('button', { name: 'Node' }));
+    const addForm = screen.getByRole('heading', { name: 'New node' }).parentElement;
+    expect(within(addForm).getByRole('combobox', { name: 'Relation to focal person for this item' })).toHaveValue('direct');
+    fireEvent.change(within(addForm).getByLabelText('Label'), { target: { value: 'Peer navigator' } });
+    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Relation to focal person for Peer navigator' }), { target: { value: 'indirect' } });
+    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Add an immediate setting for Peer navigator' }), { target: { value: setting.id } });
+    fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies the peer navigator in this setting.' } });
+    fireEvent.click(within(addForm).getByRole('button', { name: 'Add node' }));
+
+    await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.label === 'Peer navigator')).toMatchObject({
+      focalParticipation: 'indirect',
+      settingNodeIds: [setting.id],
+      origin: 'student entry',
+    }));
+    const added = storedProject().graph.nodes.find((node) => node.label === 'Peer navigator');
+    fireEvent.click(within(inspector).getByText('Summary'));
+    expect(within(inspector).getByRole('combobox', { name: 'Relation to focal person for Peer navigator' })).toHaveValue('indirect');
+    expect(within(inspector).getByRole('button', { name: `Remove ${setting.label} from the immediate settings for Peer navigator` })).toBeVisible();
+    fireEvent.change(within(inspector).getByRole('combobox', { name: 'Relation to focal person for Peer navigator' }), { target: { value: 'unclear' } });
+    await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.id === added.id)?.focalParticipation).toBe('unclear'));
+    const settingRegion = document.querySelector(`[data-setting-region="${setting.id}"]`);
+    expect(settingRegion).toHaveAttribute('data-member-count', '1');
+    expect(settingRegion.getAttribute('d')).toMatch(/^M /);
+  });
+
   it('allows manual nodes and direct relationships in Micro but keeps Meso linkage creation in the Choose stage', async () => {
     await openMapProject(makeMapProject('micro'));
     let inspector = openMapInspector();
@@ -2998,7 +3171,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
     expect(screen.getByText(activeScale === 'exosphere'
       ? 'Choose a node to see its relationships.'
-      : 'Choose a Macro-level condition to see the mapped elements it affects.')).toBeVisible();
+      : 'Choose a Macro-level condition to see the map items it affects.')).toBeVisible();
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).toHaveAttribute('inert');
     expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
@@ -3649,7 +3822,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('reroutes a complete relationship label around cards after a drag makes the endpoint corridor too narrow', async () => {
+  it('clamps a drag before the endpoint corridor becomes too narrow and keeps the complete relationship label between cards', async () => {
     const project = makeMapProject('micro');
     const source = structuredClone(project.graph.nodes.find((node) => node.label === 'Family'));
     const target = structuredClone(project.graph.nodes.find((node) => node.label === 'School'));
@@ -3679,10 +3852,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.pointerMove(canvas, { pointerId: 81, clientX: 470, clientY: target.y });
     fireEvent.pointerUp(canvas, { pointerId: 81, clientX: 470, clientY: target.y });
 
-    await waitFor(() => expect(renderedNodePosition(target.id)).toEqual({ x: 470, y: target.y }));
+    await waitFor(() => expect(renderedNodePosition(target.id).x).not.toBe(target.x));
+    const clampedTarget = renderedNodePosition(target.id);
+    expect(clampedTarget.x).toBeGreaterThan(470);
+    expect(clampedTarget.x).toBeLessThan(target.x);
+    expect(clampedTarget.y).toBe(target.y);
     const reroutedLabel = labelForEdge();
     const labelBounds = svgRectBounds(reroutedLabel.querySelector('.edge-label-bg'));
-    expect(reroutedLabel).toHaveAttribute('data-edge-route', 'callout');
+    expect(['between-endpoints', 'between-endpoints-tight']).toContain(reroutedLabel.getAttribute('data-edge-route'));
     expect(svgTextLines(reroutedLabel.querySelector('.edge-label')).join(' ')).toBe(edge.verb);
     expect(reroutedLabel).not.toHaveTextContent('…');
     [...document.querySelectorAll('.graph-node')].forEach((node) => {
@@ -3693,7 +3870,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       .toContain(`L ${anchor.x} ${anchor.y} L`);
     await waitFor(() => {
       expect(storedProject().graph.nodes.find((node) => node.id === source.id)).toMatchObject(sourceBefore);
-      expect(storedProject().graph.nodes.find((node) => node.id === target.id)).toMatchObject({ x: 470, y: target.y });
+      expect(storedProject().graph.nodes.find((node) => node.id === target.id)).toMatchObject(clampedTarget);
     });
   });
 
@@ -4211,8 +4388,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: '' } });
     await screen.findByRole('button', { name: 'Save needs attention' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stages' }));
-    const stages = screen.getByRole('dialog', { name: 'Five stages' });
+    fireEvent.click(screen.getByRole('button', { name: 'Progress: Micro-level, Choose' }));
+    const stages = screen.getByRole('dialog', { name: 'Progress' });
     fireEvent.click(within(stages).getByRole('button', { name: /revise and export/i }));
     expect(await screen.findByRole('heading', { name: 'Review and export your map' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
@@ -4227,7 +4404,9 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it('moves a node through the CTM path and sends the accepted, minimized prototype-event request', async () => {
-    const project = await openMapProject(makeMapProject('micro'));
+    const project = makeMapProject('micro');
+    project.graph = { nodes: [{ ...project.graph.nodes[0], x: 420, y: 270 }], edges: [] };
+    await openMapProject(project);
     const node = project.graph.nodes[0];
     const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
@@ -4264,7 +4443,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       writable: true,
       value: vi.fn((callback) => { callback(0); return 1; }),
     });
-    const project = await openMapProject(makeMapProject('micro'));
+    const project = makeMapProject('micro');
+    project.graph = { nodes: [{ ...project.graph.nodes[0], x: 420, y: 270 }], edges: [] };
+    await openMapProject(project);
     const node = project.graph.nodes[0];
     const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
@@ -4433,7 +4614,9 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it('uses meet-style letterboxing in the no-CTM fallback for a nonmatching aspect ratio', async () => {
-    const project = await openMapProject(makeMapProject('micro'));
+    const project = makeMapProject('micro');
+    project.graph = { nodes: [{ ...project.graph.nodes[0], x: 420, y: 270 }], edges: [] };
+    await openMapProject(project);
     const node = project.graph.nodes[0];
     const svg = mapCanvas();
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
@@ -4631,12 +4814,12 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(within(candidateRow).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies this policy condition.' } });
     // No connections step exists at this level.
     expect(screen.queryByRole('tab', { name: /Connections/ })).not.toBeInTheDocument();
-    const reachEditor = screen.getByLabelText('Mapped elements affected by Universal Pre-K Law');
-    fireEvent.change(within(reachEditor).getByLabelText('How Universal Pre-K Law affects mapped elements'), { target: { value: 'prohibits' } });
-    const addSelect = within(reachEditor).getByLabelText('Add a mapped element affected by Universal Pre-K Law');
+    const reachEditor = screen.getByLabelText('Map items affected by Universal Pre-K Law');
+    fireEvent.change(within(reachEditor).getByLabelText('How Universal Pre-K Law affects map items'), { target: { value: 'prohibits' } });
+    const addSelect = within(reachEditor).getByLabelText('Add a map item affected by Universal Pre-K Law');
     fireEvent.change(addSelect, { target: { value: microNodes[0].id } });
     fireEvent.change(addSelect, { target: { value: microNodes[1].id } });
-    expect(within(reachEditor).getByRole('button', { name: `Remove ${microNodes[0].label} from the mapped elements affected by Universal Pre-K Law` })).toBeVisible();
+    expect(within(reachEditor).getByRole('button', { name: `Remove ${microNodes[0].label} from map items affected by Universal Pre-K Law` })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Add to map' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
@@ -4720,7 +4903,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const field = document.querySelector('.scope-field');
     expect(field).toBeTruthy();
     expect(field.getAttribute('d')).toMatch(/^M /);
-    expect(screen.getByRole('button', { name: new RegExp(`${structure.label}.*frames 2 mapped elements`) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(`${structure.label}.*frames 2 map items`) })).toBeInTheDocument();
   });
 
   it('offers the institutional categories at the Exosphere and records a student-named institution with its pathway', async () => {
@@ -4742,7 +4925,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().candidates.nodes).toEqual([]);
 
     fireEvent.change(within(panel).getByLabelText('Institution name'), { target: { value: 'East Harlem Disability Services Office' } });
-    fireEvent.change(within(panel).getByLabelText('Institutional relationship'), { target: { value: 'sets rules for' } });
+    fireEvent.change(within(panel).getByLabelText('How institution affects Micro setting'), { target: { value: 'sets rules for' } });
     fireEvent.click(within(panel).getByRole('button', { name: 'Add institution' }));
     await waitFor(() => {
       const stored = storedProject();
@@ -4794,7 +4977,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.furthestStage = 2;
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('tab', { name: 'Decision pathways · 1' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Exo-level connections · 1' }));
     const row = screen.getByRole('combobox', { name: 'Outside decision setting' }).closest('article');
     expect(within(row).getByRole('option', { name: `Needs repair: ${invalidTarget.label}` })).toBeInTheDocument();
     expect(within(row).getByText(/This suggestion stays here until you repair or remove it/)).toBeVisible();
@@ -4810,6 +4993,422 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(row).queryByText(/This suggestion stays here until you repair or remove it/)).not.toBeInTheDocument();
     fireEvent.click(within(row).getByRole('button', { name: 'Add to map' }));
     await waitFor(() => expect(storedProject().candidates.edges[0]).toMatchObject({ status: 'confirmed', claimState: 'student interpretation' }));
+  });
+
+  it('keeps evidence records additive when one record is edited, another is removed, and the project is reopened', async () => {
+    const project = makeMapProject('micro');
+    const node = project.graph.nodes.find((item) => item.scale === 'micro');
+    node.claimEvidence = [];
+    await openMapProject(project);
+
+    let inspector = openNodeInspector(node.id);
+    let evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
+    fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
+    let records = [...evidence.querySelectorAll('.claim-evidence-record')];
+    expect(records).toHaveLength(2);
+
+    fireEvent.change(within(records[0]).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: 'The memo records a weekly meeting.' } });
+    fireEvent.change(within(records[0]).getByRole('textbox', { name: /^Student interpretation/ }), { target: { value: 'The meeting is a recurring support.' } });
+    fireEvent.change(within(records[1]).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: 'A program calendar confirms the schedule.' } });
+    fireEvent.change(within(records[1]).getByRole('textbox', { name: /^Uncertainty/ }), { target: { value: 'Attendance is not yet documented.' } });
+
+    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id).claimEvidence).toEqual([
+      expect.objectContaining({
+        sourcePassage: 'The memo records a weekly meeting.',
+        studentInterpretation: 'The meeting is a recurring support.',
+      }),
+      expect.objectContaining({
+        sourcePassage: 'A program calendar confirms the schedule.',
+        uncertainty: 'Attendance is not yet documented.',
+      }),
+    ]));
+    const retainedId = storedProject().graph.nodes.find((item) => item.id === node.id).claimEvidence[1].id;
+
+    records = [...within(screen.getByLabelText('Map inspector')).getByRole('region', { name: 'Evidence records' }).querySelectorAll('.claim-evidence-record')];
+    fireEvent.click(within(records[0]).getByRole('button', { name: 'Remove record' }));
+    await waitFor(() => {
+      const saved = storedProject().graph.nodes.find((item) => item.id === node.id).claimEvidence;
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({
+        id: retainedId,
+        sourcePassage: 'A program calendar confirms the schedule.',
+        uncertainty: 'Attendance is not yet documented.',
+      });
+    });
+
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    inspector = openNodeInspector(node.id);
+    evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    expect(evidence.querySelectorAll('.claim-evidence-record')).toHaveLength(1);
+    expect(within(evidence).getByRole('textbox', { name: /^Memo passage or evidence/ })).toHaveValue('A program calendar confirms the schedule.');
+    expect(within(evidence).getByRole('textbox', { name: /^Uncertainty/ })).toHaveValue('Attendance is not yet documented.');
+  });
+
+  it('rehashes edited linked evidence while preserving its source identity through save, reload, and export', async () => {
+    const project = makeMapProject('micro');
+    const node = project.graph.nodes.find((item) => item.scale === 'micro');
+    const originalPassage = 'The memo records a weekly meeting.';
+    const editedPassage = 'The memo records a meeting every Tuesday.';
+    node.claimEvidence = [{
+      id: 'claim_evidence_linked_passage',
+      sourcePassage: originalPassage,
+      studentInterpretation: 'This meeting is recurring support.',
+      warrant: '',
+      uncertainty: '',
+      counterevidence: '',
+      missingVoice: '',
+      evidenceId: 'evidence_memo_weekly_meeting',
+      sourceId: project.submission.id,
+      evidenceLocator: 'Memo paragraph 2',
+      evidenceHash: stableId('evh', originalPassage),
+    }];
+    await openMapProject(project);
+
+    let inspector = openNodeInspector(node.id);
+    fireEvent.change(within(inspector).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: editedPassage } });
+
+    await waitFor(() => {
+      const saved = storedProject().graph.nodes.find((item) => item.id === node.id).claimEvidence[0];
+      expect(saved).toMatchObject({
+        sourcePassage: editedPassage,
+        evidenceHash: stableId('evh', editedPassage),
+        evidenceId: 'evidence_memo_weekly_meeting',
+        sourceId: project.submission.id,
+        evidenceLocator: 'Memo paragraph 2',
+      });
+      expect(() => validateProject(storedProject())).not.toThrow();
+    });
+
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    inspector = openNodeInspector(node.id);
+    expect(within(inspector).getByRole('textbox', { name: /^Memo passage or evidence/ })).toHaveValue(editedPassage);
+
+    const reloaded = storedProject();
+    const exported = createPortableProject(reloaded, 'private');
+    const exportedEvidence = exported.graph.nodes.find((item) => item.id === node.id).claimEvidence[0];
+    expect(exportedEvidence).toMatchObject({
+      sourcePassage: editedPassage,
+      evidenceHash: stableId('evh', editedPassage),
+      evidenceId: 'evidence_memo_weekly_meeting',
+      sourceId: project.submission.id,
+      evidenceLocator: 'Memo paragraph 2',
+    });
+    expect(() => validateProject(exported)).not.toThrow();
+  });
+
+  it.each(['micro', 'exosphere'])('persists %s process-and-time details after reopening the project', async (scale) => {
+    const project = makeMapProject(scale);
+    const edge = project.graph.edges.find((item) => item.scale === scale);
+    expect(edge).toBeTruthy();
+    edge.relationshipProcess = { frequency: '', duration: '', direction: '', conditions: '', changeOverTime: '' };
+    await openMapProject(project);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: scale } });
+
+    let inspector = openEdgeInspector(edge.id);
+    let process = within(inspector).getByText('Process and time').closest('details');
+    fireEvent.click(within(process).getByText('Process and time'));
+    fireEvent.change(within(process).getByLabelText('Frequency'), { target: { value: 'Weekly' } });
+    fireEvent.change(within(process).getByLabelText('Duration'), { target: { value: 'Six months' } });
+    fireEvent.change(within(process).getByLabelText('Direction'), { target: { value: 'both directions' } });
+    fireEvent.change(within(process).getByRole('textbox', { name: /^Conditions/ }), { target: { value: 'Both offices have current contact information.' } });
+    fireEvent.change(within(process).getByRole('textbox', { name: /^Change over time/ }), { target: { value: 'Response time improved after the schedule changed.' } });
+
+    const expected = {
+      frequency: 'Weekly',
+      duration: 'Six months',
+      direction: 'both directions',
+      conditions: 'Both offices have current contact information.',
+      changeOverTime: 'Response time improved after the schedule changed.',
+    };
+    await waitFor(() => expect(storedProject().graph.edges.find((item) => item.id === edge.id).relationshipProcess).toEqual(expected));
+
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: scale } });
+    inspector = openEdgeInspector(edge.id);
+    process = within(inspector).getByText('Process and time').closest('details');
+    fireEvent.click(within(process).getByText('Process and time'));
+    expect(within(process).getByLabelText('Frequency')).toHaveValue(expected.frequency);
+    expect(within(process).getByLabelText('Duration')).toHaveValue(expected.duration);
+    expect(within(process).getByLabelText('Direction')).toHaveValue(expected.direction);
+    expect(within(process).getByRole('textbox', { name: /^Conditions/ })).toHaveValue(expected.conditions);
+    expect(within(process).getByRole('textbox', { name: /^Change over time/ })).toHaveValue(expected.changeOverTime);
+  });
+
+  it('keeps Micro evidence, process details, and participation edits after returning to review and reopening the map', async () => {
+    const project = makeMapProject('micro');
+    const node = project.graph.nodes.find((item) => item.scale === 'micro' && !MICRO_SETTING_NODE_TYPES.includes(item.type));
+    const setting = project.graph.nodes.find((item) => item.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(item.type));
+    const edge = project.graph.edges.find((item) => item.scale === 'micro');
+    expect(node).toBeTruthy();
+    expect(setting).toBeTruthy();
+    expect(edge).toBeTruthy();
+    node.claimEvidence = [];
+    node.focalParticipation = 'direct';
+    node.settingNodeIds = [];
+    edge.claimEvidence = [];
+    edge.relationshipProcess = { frequency: '', duration: '', direction: '', conditions: '', changeOverTime: '' };
+    project.candidates = {
+      nodes: project.graph.nodes.filter((item) => item.scale === 'micro').map((item) => structuredClone(item)),
+      edges: project.graph.edges.filter((item) => item.scale === 'micro').map((item) => structuredClone(item)),
+    };
+    await openMapProject(project);
+
+    let inspector = openNodeInspector(node.id);
+    fireEvent.change(within(inspector).getByRole('combobox', { name: `Relation to focal person for ${node.label}` }), { target: { value: 'indirect' } });
+    fireEvent.change(within(inspector).getByRole('combobox', { name: `Add an immediate setting for ${node.label}` }), { target: { value: setting.id } });
+    let evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
+    fireEvent.change(within(evidence).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: 'The memo places this item in the school setting.' } });
+
+    inspector = openEdgeInspector(edge.id);
+    evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
+    fireEvent.change(within(evidence).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: 'The memo describes this direct connection.' } });
+    const process = within(inspector).getByText('Process and time').closest('details');
+    fireEvent.click(within(process).getByText('Process and time'));
+    fireEvent.change(within(process).getByLabelText('Frequency'), { target: { value: 'Every Tuesday' } });
+
+    await waitFor(() => {
+      const saved = storedProject();
+      expect(saved.candidates.nodes.find((item) => item.id === node.id)).toMatchObject({
+        focalParticipation: 'indirect',
+        settingNodeIds: [setting.id],
+        claimEvidence: [expect.objectContaining({ sourcePassage: 'The memo places this item in the school setting.' })],
+      });
+      expect(saved.candidates.edges.find((item) => item.id === edge.id)).toMatchObject({
+        claimEvidence: [expect.objectContaining({ sourcePassage: 'The memo describes this direct connection.' })],
+        relationshipProcess: expect.objectContaining({ frequency: 'Every Tuesday' }),
+      });
+    });
+
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back' }));
+    expect(await screen.findByRole('heading', { name: 'Choose Micro-level items' })).toBeVisible();
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+
+    await waitFor(() => {
+      const saved = storedProject();
+      expect(saved.graph.nodes.find((item) => item.id === node.id)).toMatchObject({
+        focalParticipation: 'indirect',
+        settingNodeIds: [setting.id],
+        claimEvidence: [expect.objectContaining({ sourcePassage: 'The memo places this item in the school setting.' })],
+      });
+      expect(saved.graph.edges.find((item) => item.id === edge.id)).toMatchObject({
+        claimEvidence: [expect.objectContaining({ sourcePassage: 'The memo describes this direct connection.' })],
+        relationshipProcess: expect.objectContaining({ frequency: 'Every Tuesday' }),
+      });
+    });
+  });
+
+  it('keeps a Meso explanation after returning to review and reopening the map', async () => {
+    const project = makeMapProject('meso');
+    const node = project.graph.nodes.find((item) => item.scale === 'meso');
+    expect(node).toBeTruthy();
+    node.mesoExplanation = '';
+    project.candidates = { nodes: [structuredClone(node)], edges: [] };
+    await openMapProject(project);
+
+    const inspector = openNodeInspector(node.id);
+    const explanation = 'Appointment information moves between the family and school settings.';
+    fireEvent.change(within(inspector).getByRole('textbox', { name: /^What passes, coordinates, or conflicts\?/ }), { target: { value: explanation } });
+    await waitFor(() => expect(storedProject().candidates.nodes[0].mesoExplanation).toBe(explanation));
+
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back' }));
+    expect(await screen.findByRole('heading', { name: 'Choose Meso-level items' })).toBeVisible();
+    const reviewedNode = screen.getByDisplayValue(node.label).closest('article');
+    expect(within(reviewedNode).getByRole('textbox', { name: /^What passes, coordinates, or conflicts\?/ })).toHaveValue(explanation);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id).mesoExplanation).toBe(explanation));
+  });
+
+  it('presents node suggestions in bounded groups of four without losing later suggestions', async () => {
+    const { project, candidate } = makeCandidateValidationProject();
+    project.candidates.nodes = Array.from({ length: 9 }, (_, index) => ({
+      ...structuredClone(candidate),
+      id: `node_batched_candidate_${index + 1}`,
+      label: `Peer navigator ${index + 1}`,
+      annotations: {
+        analytical: { id: `annotation_batched_candidate_${index + 1}_analytical`, text: '' },
+        evidence: { id: `annotation_batched_candidate_${index + 1}_evidence`, text: '' },
+      },
+    }));
+    await resumeSavedProject(project);
+
+    const candidateList = () => document.querySelector('.candidate-list');
+    expect(within(candidateList()).getAllByRole('article')).toHaveLength(4);
+    expect(screen.getByDisplayValue('Peer navigator 1')).toBeVisible();
+    expect(screen.getByDisplayValue('Peer navigator 4')).toBeVisible();
+    let pagination = screen.getByRole('navigation', { name: 'Suggestion groups' });
+    expect(pagination).toHaveTextContent('Suggestions 1–4 of 9');
+
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Next' }));
+    expect(within(candidateList()).getAllByRole('article')).toHaveLength(4);
+    expect(screen.getByDisplayValue('Peer navigator 5')).toBeVisible();
+    expect(screen.getByDisplayValue('Peer navigator 8')).toBeVisible();
+    pagination = screen.getByRole('navigation', { name: 'Suggestion groups' });
+    expect(pagination).toHaveTextContent('Suggestions 5–8 of 9');
+
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Next' }));
+    expect(within(candidateList()).getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Peer navigator 9')).toBeVisible();
+    expect(screen.getByRole('navigation', { name: 'Suggestion groups' })).toHaveTextContent('Suggestions 9–9 of 9');
+    expect(storedProject().candidates.nodes).toHaveLength(9);
+  });
+
+  it('presents generated connection suggestions in bounded groups of four', async () => {
+    const project = createDefaultProject();
+    const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
+      ...node,
+      type: ['person', 'group', 'object'][index],
+      scale: 'micro',
+      status: 'confirmed',
+      claimState: 'student interpretation',
+      focalParticipation: 'direct',
+      settingNodeIds: [],
+    }));
+    project.candidates = { nodes, edges: [] };
+    project.graph = { nodes: [], edges: [] };
+    project.stage = 2;
+    project.furthestStage = 2;
+    project.levelProgress.micro = { stage: 2, reflection: '' };
+    connectionSuggestionResponder = (body) => jsonResponse({
+      connections: Array.from({ length: 9 }, (_, index) => ({
+        source: body.nodes[index % body.nodes.length].id,
+        target: body.nodes[(index + 1) % body.nodes.length].id,
+        verb: `supports pathway ${index + 1}`,
+        rationale: `The memo supports pathway ${index + 1}.`,
+      })),
+    }, 201);
+    await resumeSavedProject(project);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'More direct relationships' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
+    expect(await screen.findByDisplayValue('supports pathway 1')).toBeVisible();
+    const suggestionList = () => document.querySelector('.connection-suggestions');
+    expect(within(suggestionList()).getAllByRole('article')).toHaveLength(4);
+    let pagination = screen.getByRole('navigation', { name: 'Connection suggestion groups' });
+    expect(pagination).toHaveTextContent('Suggestions 1–4 of 9');
+
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Next' }));
+    expect(within(suggestionList()).getAllByRole('article')).toHaveLength(4);
+    expect(screen.getByDisplayValue('supports pathway 5')).toBeVisible();
+    expect(screen.getByDisplayValue('supports pathway 8')).toBeVisible();
+    pagination = screen.getByRole('navigation', { name: 'Connection suggestion groups' });
+    expect(pagination).toHaveTextContent('Suggestions 5–8 of 9');
+
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Next' }));
+    expect(within(suggestionList()).getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByDisplayValue('supports pathway 9')).toBeVisible();
+    expect(screen.getByRole('navigation', { name: 'Connection suggestion groups' })).toHaveTextContent('Suggestions 9–9 of 9');
+  });
+
+  it('keeps a suggestion set aside for more evidence off the graph after the map opens', async () => {
+    const { project, candidate } = makeCandidateValidationProject();
+    const graphBefore = structuredClone(project.graph);
+    await resumeSavedProject(project);
+
+    const decision = screen.getByDisplayValue(candidate.label).closest('article');
+    fireEvent.click(within(decision).getByRole('button', { name: 'Set aside — needs evidence' }));
+    await waitFor(() => expect(storedProject().candidates.nodes.find((item) => item.id === candidate.id)).toMatchObject({
+      status: 'research lead',
+      claimState: 'research lead',
+      reviewDecision: 'set aside',
+    }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph).toEqual(graphBefore);
+    expect(storedProject().graph.nodes.some((item) => item.id === candidate.id)).toBe(false);
+    expect(document.querySelector(`[data-graph-id="${candidate.id}"]`)).toBeNull();
+  });
+
+  it('restores each released level to its own stage and reflection', async () => {
+    const project = makeMapProject('exosphere');
+    project.stage = 2;
+    project.furthestStage = 4;
+    project.reflection = 'Exo reflection';
+    project.levelProgress = createLevelProgress({ activeScale: 'exosphere', stage: 2, reflection: 'Exo reflection' });
+    project.levelProgress.micro = { stage: 4, reflection: 'Micro reflection' };
+    project.levelProgress.meso = { stage: 3, reflection: 'Meso reflection' };
+    await resumeSavedProject(project);
+    expect(await screen.findByRole('heading', { name: 'Choose Exo-level items' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Work at level: Exo-level' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose work level' })).getByRole('button', { name: 'Meso-level' }));
+    expect(await screen.findByRole('heading', { name: 'Build map' })).toBeVisible();
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3, reflection: 'Meso reflection' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Work at level: Meso-level' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose work level' })).getByRole('button', { name: 'Micro-level' }));
+    expect(await screen.findByRole('heading', { name: 'Review and export your map' })).toBeVisible();
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 4, reflection: 'Micro reflection' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Work at level: Micro-level' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose work level' })).getByRole('button', { name: 'Exo-level' }));
+    expect(await screen.findByRole('heading', { name: 'Choose Exo-level items' })).toBeVisible();
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'exosphere', stage: 2, reflection: 'Exo reflection' }));
+    expect(storedProject().levelProgress).toMatchObject({
+      micro: { stage: 4, reflection: 'Micro reflection' },
+      meso: { stage: 3, reflection: 'Meso reflection' },
+      exosphere: { stage: 2, reflection: 'Exo reflection' },
+    });
+  });
+
+  it('saves and restores the intake evidence used and missing-perspectives framing', async () => {
+    const project = createDefaultProject();
+    await resumeSavedProject(project);
+    const evidence = 'Memo, public meeting notes, and program schedule';
+    const missing = 'Accounts from people who could not attend the meeting';
+    fireEvent.change(screen.getByRole('textbox', { name: /^Evidence used/ }), { target: { value: evidence } });
+    fireEvent.change(screen.getByRole('textbox', { name: /^Missing perspectives/ }), { target: { value: missing } });
+    await waitFor(() => {
+      expect(storedProject().inquiry).toContain(`Evidence used: ${evidence}`);
+      expect(storedProject().inquiry).toContain(`Missing perspectives: ${missing}`);
+    });
+
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /^Evidence used/ })).toHaveValue(evidence);
+    expect(screen.getByRole('textbox', { name: /^Missing perspectives/ })).toHaveValue(missing);
+  });
+
+  it('combines the current level and stage in the Progress control and dialog context', async () => {
+    const project = makeMapProject('exosphere');
+    await openMapProject(project);
+
+    const progress = screen.getByRole('button', { name: 'Progress: Exo-level, Map' });
+    expect(progress).toHaveTextContent('Exo-level · Map');
+    fireEvent.click(progress);
+    const dialog = screen.getByRole('dialog', { name: 'Progress' });
+    expect(dialog.querySelector('.modal-context')).toHaveTextContent('Exo-level · Map');
+  });
+
+  it('defaults a progressed cumulative map to All levels with every released item present', async () => {
+    const project = makeMapProject('exosphere');
+    const cumulative = graphForScale(project, 'all');
+    await openMapProject(project);
+
+    expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('all');
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(cumulative.nodes.length);
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(cumulative.edges.length);
+    expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${cumulative.nodes.length} nodes and ${cumulative.edges.length}`));
   });
 
 });

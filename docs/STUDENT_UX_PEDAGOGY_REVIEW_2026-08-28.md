@@ -4,51 +4,70 @@ Updated: 2026-08-28
 
 ## Finding
 
-The student workflow had been asking the model to sort memo language into rings before the student had established whose experience organized the map, what question the map should answer, or where its boundary lay. That architecture made classification unstable, weakened student authorship, and encouraged entity-type shortcuts: an institution could be pushed outward simply because it was an institution. The revised workflow treats a map as a bounded, revisable claim about one focal person or group. Placement now depends on participation and the pathway of effect.
+The student workflow now frames systems mapping as a bounded, revisable claim about one focal person or group. Intake establishes the focus question, time period, map boundary, evidence used, and missing perspectives before classification. Placement depends on participation and the route by which an outside decision reaches immediate experience, not on entity type alone.
 
-This is an application of ecological systems mapping, not a complete implementation of the later bioecological model. Bronfenbrenner and Morris describe a Process-Person-Context-Time model in which proximal processes, not concentric categories alone, are central. The application therefore collects focal person, question, time, and boundary at intake and returns to process and change in revision and synthesis. It does not add a fifth ring. [Bronfenbrenner and Morris, 2007](https://doi.org/10.1002/9780470147658.chpsy0114)
+This is an application of ecological systems mapping, not a complete implementation of the later bioecological model. Bronfenbrenner and Morris describe a Process-Person-Context-Time model in which proximal processes, not concentric categories alone, are central. The application therefore records focal participation and immediate-setting membership at Micro-level, relationship process and time, and level-specific revision. It does not add a fifth ring. [Bronfenbrenner and Morris, 2007](https://doi.org/10.1002/9780470147658.chpsy0114)
 
 ## Theoretical alignment
 
-- **Relational placement.** A Micro-level setting contains the focal person as a participant. Meso-level names an interrelation among at least two such settings. Exo-level traces a decision from a setting in which the focal person does not participate into an immediate setting. Macro-level names a broader cultural, legal, political, historical, or economic condition. Entity kind does not decide placement.
-- **Bounded models.** A system model must make its boundary and assumptions visible. The intake fields and final limitations prompt now make those choices explicit. The map key also states that a level shows contextual position, not causal strength. [NGSS Appendix G](https://www.nextgenscience.org/sites/ngss/files/Appendix%20G%20-%20Crosscutting%20Concepts%20FINAL.edited.pdf)
-- **Student construction.** Model output is optional guidance. Every suggestion starts off the map, keeps model provenance, and requires an explicit student decision. The student may continue without a model, edit a suggestion, add work manually, mark it as needing evidence, or remove it.
-- **Human-centred AI.** Before a hosted request, the interface names the provider and transfer. No request occurs automatically. This keeps model use subordinate to the learning task and follows UNESCO's emphasis on human agency, privacy, ethical validation, and pedagogical design. [UNESCO guidance for generative AI in education and research](https://www.unesco.org/en/articles/guidance-generative-ai-education-and-research)
-- **Revisability.** Editing the memo marks model guidance as stale without deleting the graph, decisions, evidence, annotations, or history. Starting again creates a separate recoverable project instead of overwriting the previous map.
+- **Relational placement.** A Micro-level setting contains the focal person as a participant. Meso-level names an interrelation among at least two such settings. Exo-level connects a decision setting in which the focal person does not participate to an immediate setting it affects. Macro-level names a broader cultural, legal, political, historical, or economic condition. Entity kind does not decide placement.
+- **Bounded models.** Intake and final synthesis make the inquiry boundary, evidence base, missing perspectives, and limitations visible. Map guidance explains that level concerns relation to the focal person, not causal strength. [NGSS Appendix G](https://www.nextgenscience.org/sites/ngss/files/Appendix%20G%20-%20Crosscutting%20Concepts%20FINAL.edited.pdf)
+- **Student construction.** Model output is optional guidance. Suggestions remain off-map, retain origin and review state, and require an explicit student decision. Students may continue without a model, revise suggestions, add work manually, set a question aside for more evidence, or remove it.
+- **Evidence and warrant.** Nodes and connections can hold multiple evidence records that separate memo passage or other evidence, student interpretation, reasoning, uncertainty, counterevidence, and missing perspective. Existing evidence identifiers and locators remain attached during migration and export.
+- **Process and time.** Micro-level relationships and Exo-level connections can record frequency, duration, direction, conditions, and change over time. This adds PPCT-relevant detail without inventing another level.
+- **Revisability.** Memo edits mark generated guidance as stale without deleting graph data, decisions, evidence, annotations, or history. Per-level stage and reflection state survive moves among released levels. Starting again creates a separate recoverable project.
+- **Human-centred AI.** Before model use, the interface identifies transfer, provider context, retention when configured, and device-versus-link storage. No request occurs automatically. This keeps model use subordinate to student reasoning and follows UNESCO's emphasis on agency, privacy, ethical validation, and pedagogical design. [UNESCO guidance for generative AI in education and research](https://www.unesco.org/en/articles/guidance-generative-ai-education-and-research)
+- **Privacy-bounded evaluation.** Workflow evaluation accepts only closed rubric categories for task completion, classification explanation, revision quality, and recovery. It excludes memo text, names, map labels, annotations, project identifiers, and free text; reports are aggregate only.
 
 ## Workflow review
 
-| Student question | Required experience | Current implementation |
+| Student question | Required experience | Current source behavior |
 | --- | --- | --- |
-| What am I mapping? | Name the focal person or group, focus question, time period, and boundary before classification. | Intake and persistent memo context. |
-| Does the model decide what belongs? | No. Generation is optional; every suggestion remains off-map until the student acts. | Generate guidance and Continue without model are separate paths; Add to map is explicit. |
-| Why is this institution here? | Placement follows participation, not organization type. | A clinic or college can be Micro-level when the focal person participates there; an outside office can be Exo-level when its decision reaches that setting. |
-| What happens at Meso-level? | Form a mesosystem from at least two existing Micro-level settings. | Meso-level carries stable Micro-level setting IDs, uses a conventional noun label, and creates no directional relationship. |
-| What is the Exo/Macro boundary? | Exo-level identifies a concrete outside decision setting and a supported pathway; Macro-level identifies a broader condition affecting several mapped elements. | Separate validators, model contracts, editors, regions, and filters. Named institutions cannot be duplicated as Macro-level conditions. |
-| Does later work replace earlier work? | No. The map grows cumulatively and the student can return to any released work level. | Work at level is independent of Show layer; later levels carry earlier nodes and relationships. |
-| Can I understand a dense map? | Labels remain complete; fit, zoom, pan, full screen, filtering, and a non-spatial view remain available. | Readable zoom floors, collision-aware labels, durable viewport, reversible full screen, and synchronized Canvas/List views. |
-| What happens when something fails? | Preserve work and explain the recovery step in plain language. | Persistent save diagnostics, recovery export, and explicit project-link conflict choices. |
-| Where is my work stored? | Distinguish device storage from an optional server link. | Shared-browser warning, full link disclosure, revision and sync metadata, expiry, conflict handling, revoke, and delete. |
+| What am I mapping? | Name focal person or group, focus question, time period, boundary, evidence used, and missing perspectives before classification. | Intake persists each field with the project. |
+| Does the model decide what belongs? | No. Generation remains optional and suggestions stay off-map until a student acts. | Add to map, Set aside — needs evidence, and Remove preserve distinct review decisions and origin. |
+| How much appears at once? | Keep review cognitively manageable without silently filtering work. | Candidate and connection suggestions use bounded groups of four with explicit Previous and Next controls; bulk Add all is absent. |
+| Why is this institution here? | Placement follows participation, not organization type. | A clinic or college can be Micro-level when the focal person participates there; an outside office belongs at Exo-level when its decision reaches an immediate setting. |
+| What happens at Micro-level? | Name discrete people, roles, groups, activities, objects, resources, and settings, then state direct participation and setting membership where relevant. | Micro item editors store participation and immediate-setting IDs; map and list views expose that context. |
+| What happens at Meso-level? | Form a mesosystem from at least two existing Micro settings and explain what passes, coordinates, or conflicts across them. | Meso-level carries stable setting IDs, uses a noun label, stores an explanation, and creates no directional relationship. |
+| What separates Exo-level from Macro-level? | Exo-level identifies a concrete outside decision setting and affected Micro setting; Macro-level identifies a broader condition affecting several map items. | Separate validators, model contracts, editors, regions, filters, and accessible legend copy enforce the distinction. |
+| Does later work replace earlier work? | No. Preserve cumulative context while keeping filters explicit. | Per-level progress persists. Later levels open with All layers so earlier work remains visible; Show layer filters presentation, while Work at level changes editing context only. |
+| Can I revise without accidental loss? | Block dependency-breaking actions and explain required repair without cascading deletion. | Removal and type changes stop when scopes, memberships, or relationships still depend on an item; repair copy names the connected work. |
+| Can I support and qualify a claim? | Separate evidence from interpretation and make uncertainty visible. | Additive evidence records appear in node and relationship inspectors, list summaries, and exports. |
+| Can I describe how a connection works? | Record frequency, duration, direction, conditions, and change over time. | Process and time editor appears for Micro-level relationships and Exo-level connections. |
+| Can I understand a dense map? | Keep labels complete and preserve fit, zoom, pan, full screen, filtering, and a non-spatial view. | Canvas and synchronized list views remain available; cumulative All layers and explicit filtering serve different purposes. |
+| What happens when something fails? | Preserve work and explain recovery in plain language. | Save diagnostics, recovery export, project-link conflict choices, and non-cascading dependency repair remain explicit. |
+| Where is my work stored? | Distinguish device storage, model-request retention, and optional project-link storage. | Model disclosure, shared-browser warning, sync metadata, expiry, conflict handling, revoke, and delete make those boundaries visible. |
 
-## Highest-value improvements now implemented
+## Implemented source priorities
 
-1. Frame the unit of analysis before model review.
-2. Classify by participation and supported pathway rather than entity type.
-3. Keep model suggestions pending and preserve their origin until the student accepts them.
-4. Preserve mapped work when a memo changes and create a separate project when starting again.
-5. Separate work level from visible layer and carry the graph through Micro-level, Meso-level, Exo-level, and Macro-level.
-6. Keep direct relationships at Micro-level, mesosystems at Meso-level, outside decision pathways at Exo-level, and scoped broader conditions at Macro-level.
-7. Add level-specific revision prompts and a final cross-level synthesis covering the focus question, evidence, contradictions, missing perspectives, limits, and next inquiry.
-8. Make dense maps navigable and supply a synchronized accessible list view.
-9. Clarify device-only persistence and make shared project links conflict-safe and revocable.
-10. Remove student-facing Teacher Console navigation and instructor-review promises from the current journey.
+1. Frame unit of analysis, evidence base, and known absence before model review.
+2. Classify by participation and supported route of effect rather than entity type.
+3. Preserve origin and review decision separately from claim state.
+4. Keep suggestions pending, bound each review group to four, and remove bulk acceptance.
+5. Add Micro participation and immediate-setting membership.
+6. Add cumulative evidence records for memo passage or other evidence, interpretation, reasoning, uncertainty, counterevidence, and missing perspective.
+7. Add relationship process and time for Micro-level and Exo-level connections.
+8. Preserve mapped work when a memo changes and create a separate project when starting again.
+9. Preserve stage and reflection state per level while defaulting later map views to cumulative All layers.
+10. Keep Work at level separate from Show layer.
+11. Replace cascading retirement with explicit dependency repair for scopes, memberships, and relationships.
+12. Keep direct relationships at Micro-level, mesosystems at Meso-level, Exo-level connections at Exo-level, and scoped broader conditions at Macro-level.
+13. Keep level-specific revision and final cross-level synthesis.
+14. Keep map navigation, full screen, filters, and synchronized list view.
+15. Clarify provider transfer, bounded retention, device storage, and optional project-link storage.
+16. Add closed-category workflow evaluation and aggregate-only reporting without project content or identifiers.
+
+## Deferred scope
+
+Teacher Console work is deferred by user direction. This review does not claim that Teacher Console navigation or features were implemented, removed, or verified in this change set.
 
 ## Next pedagogical priorities
 
-- Expand evidence records from one visible passage to an additive claim file: source passage, student interpretation, warrant, uncertainty, counterevidence, and missing voice.
-- Add a compact process editor for frequency, duration, direction, conditions, and change over time on important Micro-level relationships and Exo-level decision pathways.
-- Evaluate the workflow with students using task completion, classification explanations, revision quality, and recovery from errors rather than map size or model acceptance rate.
+- Run the documented student workflow protocol with a fabricated case and applicable consent, accessibility, and course-research procedures.
+- Evaluate task completion, classification explanations, revision quality, and recovery rather than map size or model-acceptance rate.
+- Verify evidence, process, participation, cumulative progression, dependency repair, and privacy disclosures in literal desktop and phone browser walkthroughs.
+- Reconcile remaining source, automated, rendered, deployment, and screenshot evidence before release claims.
 
 ## Acceptance standard
 
-The review is complete only when the implementation ledger, automated suite, production build, live deployment, real-browser walkthrough, and literal screenshot archive agree. Generated illustrations or reconstructed screens do not count as acceptance evidence.
+Acceptance requires agreement among implementation ledger, automated suite, production build, live deployment, real-browser walkthrough, and literal screenshot archive. Generated illustrations or reconstructed screens do not count. No automated, build, deployment, live-browser, or screenshot result is asserted by this document; each remains pending until a separate receipt records it.

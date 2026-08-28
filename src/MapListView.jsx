@@ -15,6 +15,7 @@ function isRemoved(item) {
 
 function hasEvidence(item) {
   if (String(item?.evidence || '').trim() || String(item?.evidenceExcerpt || '').trim()) return true;
+  if (Array.isArray(item?.claimEvidence) && item.claimEvidence.some((record) => String(record?.sourcePassage || '').trim())) return true;
   return Array.isArray(item?.evidenceRefs) && item.evidenceRefs.some((reference) => (
     String(reference?.evidence || '').trim() || String(reference?.evidenceExcerpt || '').trim()
   ));
@@ -79,12 +80,13 @@ function visibleMapRecords(nodes, edges, visibleScale, showRemoved) {
   };
 }
 
-function RecordDetails({ level, type, evidenceStatus, extraTerm, extraValues }) {
+function RecordDetails({ level, type, evidenceStatus, extraTerm, extraValues, additionalRows = EMPTY_LIST }) {
   return <dl className="map-list-record__details">
     <div><dt>Level</dt><dd>{level}</dd></div>
     <div><dt>Type</dt><dd>{type}</dd></div>
     <div><dt>Evidence</dt><dd>{evidenceStatus}</dd></div>
     {extraValues?.length ? <div className="map-list-record__scope"><dt>{extraTerm}</dt><dd>{extraValues.join(', ')}</dd></div> : null}
+    {additionalRows.map((row) => row.value ? <div className="map-list-record__scope" key={row.term}><dt>{row.term}</dt><dd>{row.value}</dd></div> : null)}
   </dl>;
 }
 
@@ -93,9 +95,17 @@ function NodeRecord({ node, nodeById, onSelect }) {
   const extraTerm = node.scale === 'meso'
     ? 'Micro settings'
     : node.scale === 'macrosphere'
-      ? 'Affected map elements'
+      ? 'Affected map items'
       : null;
   const removed = isRemoved(node);
+  const evidenceRecordCount = Array.isArray(node.claimEvidence) ? node.claimEvidence.length : 0;
+  const settingLabels = (node.settingNodeIds || []).map((id) => nodeById.get(id)?.label).filter(Boolean);
+  const additionalRows = [
+    { term: 'Evidence records', value: evidenceRecordCount ? String(evidenceRecordCount) : '' },
+    { term: 'Direct participation', value: node.focalParticipation && node.focalParticipation !== 'not applicable' ? readableType(node.focalParticipation) : '' },
+    { term: 'Micro settings', value: settingLabels.join(', ') },
+    { term: 'How settings interact', value: node.mesoExplanation || '' },
+  ];
   return <li className={`map-list-record${removed ? ' is-removed' : ''}`}>
     <button
       type="button"
@@ -113,6 +123,7 @@ function NodeRecord({ node, nodeById, onSelect }) {
         evidenceStatus={mapItemEvidenceStatus(node)}
         extraTerm={extraTerm}
         extraValues={members}
+        additionalRows={additionalRows}
       />
     </button>
   </li>;
@@ -122,6 +133,12 @@ function ConnectionRecord({ edge, nodeById, onSelect }) {
   const source = edge.sourceLabel || nodeById.get(edge.source)?.label || 'Unknown map item';
   const target = edge.targetLabel || nodeById.get(edge.target)?.label || 'Unknown map item';
   const removed = isRemoved(edge);
+  const evidenceRecordCount = Array.isArray(edge.claimEvidence) ? edge.claimEvidence.length : 0;
+  const process = edge.relationshipProcess || {};
+  const processSummary = [
+    ['Frequency', process.frequency], ['Duration', process.duration], ['Direction', process.direction],
+    ['Conditions', process.conditions], ['Change over time', process.changeOverTime],
+  ].filter(([, value]) => String(value || '').trim()).map(([term, value]) => `${term}: ${value}`).join('; ');
   return <li className={`map-list-record${removed ? ' is-removed' : ''}`}>
     <button
       type="button"
@@ -139,6 +156,10 @@ function ConnectionRecord({ edge, nodeById, onSelect }) {
         level={itemLevelTitle(edge.scale)}
         type="Connection"
         evidenceStatus={mapItemEvidenceStatus(edge)}
+        additionalRows={[
+          { term: 'Evidence records', value: evidenceRecordCount ? String(evidenceRecordCount) : '' },
+          { term: 'Process and time', value: processSummary },
+        ]}
       />
     </button>
   </li>;

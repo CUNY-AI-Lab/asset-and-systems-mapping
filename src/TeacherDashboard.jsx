@@ -274,7 +274,7 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
   };
   return <div className="teacher-access">
     <p className="eyebrow">Teacher Console</p>
-    <h1>{mode === 'login' ? 'Sign in to Teacher Console' : 'Set up a teacher account'}</h1>
+    <h1>{mode === 'login' ? 'Sign in to Teacher Console' : 'Set up teacher account'}</h1>
     <p className="lede">Enter the account ID provided by your school or program.</p>
     <div className="model-switch teacher-access-switch" role="tablist" aria-label="Teacher Console action">
       <button ref={(node) => node ? accessTabRefs.current.set('login', node) : accessTabRefs.current.delete('login')} id="teacher-access-tab-login" aria-controls="teacher-access-panel" type="button" role="tab" aria-selected={mode === 'login'} tabIndex={mode === 'login' ? 0 : -1} className={mode === 'login' ? 'is-active' : ''} onKeyDown={(event) => moveMode(event, 'login')} onClick={() => setMode('login')}>Sign in</button>
@@ -315,7 +315,7 @@ function PasswordReset({ token, onComplete }) {
   };
   return <div className="teacher-access">
     <p className="eyebrow">Teacher Console</p>
-    <h1>Choose a new passphrase</h1>
+    <h1>Choose new passphrase</h1>
     <p className="lede">This password reset link can be used once. After you save the new passphrase, sign in with your teacher account ID.</p>
     <form className="access-form" onSubmit={submit}>
       <label className="field"><span className="field__label">New passphrase</span><input maxLength="128" type="password" autoComplete="new-password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} /></label>
@@ -475,14 +475,14 @@ function ReviewSubmissions() {
         {detail && <div className="student-work__body">
           <p className="eyebrow">{submissionContextLabel(detail)}</p>
           {readableValue(detail.projectMetadata?.participantName) ? <section><h3>Student or group</h3><p>{readableValue(detail.projectMetadata.participantName)}</p></section> : null}
-          {detail.inquiry ? <section><h3>Question from the student's earlier work</h3><p>{detail.inquiry}</p></section> : null}
+          {detail.inquiry ? <section><h3>Question from student’s earlier work</h3><p>{detail.inquiry}</p></section> : null}
           <section><h3>Memo</h3><p className="student-work__memo">{readableValue(detail.sourceMaterial) || 'No memo was submitted.'}</p><SuggestionReview suggestion={detail.suggestion} /></section>
           <section><h3>Student note</h3><p>{readableValue(detail.studentAnnotation) || 'No student note was submitted.'}</p></section>
         </div>}
       </section>
 
       <aside className="instructor-response" aria-labelledby="instructor-response-heading">
-        <h2 id="instructor-response-heading">Write to the student</h2>
+        <h2 id="instructor-response-heading">Write to student</h2>
         {detail ? <form onSubmit={submitDecision}>
           <p className="instructor-response__prompt">Give the student one point to consider next. They can continue working while feedback is pending and decide how to use your response.</p>
           <label className="field instructor-response__guidance"><span className="field__label">Feedback for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
@@ -790,6 +790,6 @@ export default function TeacherDashboard({ onConfigurationChanged, resetToken = 
   };
   if (resetToken) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
   if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Teacher Console…</p></div>;
-  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>The Teacher Console is unavailable</h1><p className="lede">Check the course server, then reopen the Teacher Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
+  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Teacher Console unavailable</h1><p className="lede">Check the course server, then reopen the Teacher Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
   return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
 }

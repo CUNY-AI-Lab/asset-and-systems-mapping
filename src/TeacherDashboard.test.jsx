@@ -216,7 +216,7 @@ describe('TeacherDashboard', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard resetToken={resetToken} onResetComplete={onResetComplete} onConfigurationChanged={vi.fn()} />);
 
-    expect(screen.getByRole('heading', { name: 'Choose a new passphrase' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Choose new passphrase' })).toBeVisible();
     fireEvent.change(screen.getByLabelText('New passphrase'), { target: { value: 'a newly chosen teacher phrase' } });
     fireEvent.change(screen.getByLabelText('Confirm new passphrase'), { target: { value: 'a newly chosen teacher phrase' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save new passphrase' }));
@@ -252,7 +252,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByRole('heading', { name: 'Map ideas' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Questions to consider' })).toBeVisible();
     expect(screen.getAllByText('Prior access shaped who knew which services to request.')).not.toHaveLength(0);
-    expect(screen.getByRole('heading', { name: 'Write to the student' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Write to student' })).toBeVisible();
     expect(screen.getByLabelText('Feedback for the student')).toBeVisible();
     expect(screen.getByText(/Give the student one point/)).toBeVisible();
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
@@ -503,7 +503,7 @@ describe('TeacherDashboard', () => {
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByRole('heading', { name: 'Preview this section' }).closest('aside');
     expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · review your memo');
-    expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one mapped element.');
+    expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one map item.');
     fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();
     expect(screen.getByLabelText('Course guidance sent to the model')).toHaveTextContent('SAVED GUIDANCE FOR THIS SECTION');

@@ -10,6 +10,10 @@ import {
   upgradeSystemsMappingTeachingProfile,
 } from './config.js';
 import { openPostgresDatabase } from './postgres.js';
+import {
+  buildStudentWorkflowEvaluationReport,
+  STUDENT_WORKFLOW_EVALUATION_EVENT,
+} from '../shared/student-workflow-evaluation.js';
 
 const require = createRequire(import.meta.url);
 
@@ -318,7 +322,8 @@ function migrate(db) {
         'class_access_succeeded', 'class_access_failed',
         'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
         'node_moved', 'viewport_changed', 'annotation_saved',
-        'project_exported', 'project_imported', 'recovery_exported'
+        'project_exported', 'project_imported', 'recovery_exported',
+        'workflow_observed'
       )),
       stage INTEGER CHECK(stage IS NULL OR (stage >= 0 AND stage <= 6)),
       metadata_json TEXT NOT NULL CHECK(length(metadata_json) <= 1024),
@@ -525,6 +530,7 @@ function migrate(db) {
       SELECT RAISE(ABORT, 'preflight_retention_purges are append-only');
     END;
   `));
+  migratePrototypeEventVocabulary(db);
   const submissionColumns = new Set(db.prepare('PRAGMA table_info(preflight_submissions)').all().map(({ name }) => name));
   if (!submissionColumns.has('source_record_json')) {
     db.exec(`
@@ -547,6 +553,42 @@ function migrate(db) {
   migrateSavedProjectMetadata(db);
   migrateEcologicalScaleIds(db);
   upgradeStoredTeachingProfiles(db);
+}
+
+function migratePrototypeEventVocabulary(db) {
+  const definition = db.prepare(`
+    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'prototype_events'
+  `).get()?.sql || '';
+  if (definition.includes(`'${STUDENT_WORKFLOW_EVALUATION_EVENT}'`)) return;
+  inTransaction(db, () => db.exec(`
+    DROP INDEX IF EXISTS prototype_events_recorded_idx;
+    DROP TABLE IF EXISTS prototype_events_workflow_migration;
+    ALTER TABLE prototype_events RENAME TO prototype_events_workflow_migration;
+
+    CREATE TABLE prototype_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_kind TEXT NOT NULL CHECK(session_kind IN ('student', 'access_attempt')),
+      session_ref TEXT NOT NULL CHECK(length(session_ref) = 16),
+      event_name TEXT NOT NULL CHECK(event_name IN (
+        'class_access_succeeded', 'class_access_failed',
+        'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
+        'node_moved', 'viewport_changed', 'annotation_saved',
+        'project_exported', 'project_imported', 'recovery_exported',
+        'workflow_observed'
+      )),
+      stage INTEGER CHECK(stage IS NULL OR (stage >= 0 AND stage <= 6)),
+      metadata_json TEXT NOT NULL CHECK(length(metadata_json) <= 1024),
+      recorded_at INTEGER NOT NULL
+    );
+
+    INSERT INTO prototype_events
+      (id, session_kind, session_ref, event_name, stage, metadata_json, recorded_at)
+    SELECT id, session_kind, session_ref, event_name, stage, metadata_json, recorded_at
+    FROM prototype_events_workflow_migration;
+
+    DROP TABLE prototype_events_workflow_migration;
+    CREATE INDEX prototype_events_recorded_idx ON prototype_events(recorded_at DESC);
+  `));
 }
 
 function migrateSavedProjectMetadata(db) {
@@ -1005,4 +1047,15 @@ export function prototypeEventAudit(db) {
   });
   if (summary && typeof summary.then === 'function') return Promise.all([summary, eventCounts]).then(format);
   return format([summary, eventCounts]);
+}
+
+export function studentWorkflowEvaluationReport(db) {
+  const rows = db.prepare(`
+    SELECT metadata_json AS metadata
+    FROM prototype_events
+    WHERE event_name = ?
+    ORDER BY id
+  `).all(STUDENT_WORKFLOW_EVALUATION_EVENT);
+  if (rows && typeof rows.then === 'function') return rows.then(buildStudentWorkflowEvaluationReport);
+  return buildStudentWorkflowEvaluationReport(rows);
 }

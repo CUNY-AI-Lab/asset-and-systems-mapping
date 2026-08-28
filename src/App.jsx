@@ -1,8 +1,10 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapListView from './MapListView.jsx';
 import {
+  CLAIM_EVIDENCE_FIELDS,
   containsRetiredSystemsLanguage,
   EXOSPHERE_NODE_TYPES,
+  FOCAL_PARTICIPATION_STATES,
   MACROSPHERE_NODE_TYPES,
   NODE_TYPES,
   MICRO_SETTING_NODE_TYPES,
@@ -12,9 +14,11 @@ import {
   SCALE_VERB_LEXICONS,
   SCALES,
   configFingerprint,
+  createClaimEvidenceRecord,
   createPortableProject,
   createDefaultProject,
   createEvent,
+  createRelationshipProcess,
   deterministicMemoReview,
   exportFileName,
   extractCandidates,
@@ -121,7 +125,9 @@ function memoFingerprint(submission) {
 
 const INQUIRY_CONTEXT_LABELS = Object.freeze({
   focal: 'Focal person or group', question: 'Map question', time: 'Time period or episode', boundary: 'Map boundary',
+  evidence: 'Evidence used', voices: 'Missing perspectives',
 });
+const LEGACY_INQUIRY_CONTEXT_LABELS = Object.freeze({ 'Evidence sources': 'evidence' });
 const MACRO_SYNTHESIS_LABELS = Object.freeze({
   answer: 'Answer to focus question', strongest: 'Strongest claim', weakest: 'Weakest claim',
   limits: 'Missing perspectives or limits', next: 'Next investigation or action', changed: 'What changed over time',
@@ -129,13 +135,16 @@ const MACRO_SYNTHESIS_LABELS = Object.freeze({
 
 function parseInquiryContext(inquiry) {
   const value = String(inquiry || '').trim();
-  const context = { focal: '', question: '', time: '', boundary: '' };
+  const context = { focal: '', question: '', time: '', boundary: '', evidence: '', voices: '' };
   let matched = false;
   value.split('\n').forEach((line) => {
     const entry = Object.entries(INQUIRY_CONTEXT_LABELS).find(([, label]) => line.startsWith(`${label}:`));
-    if (!entry) return;
+    const legacyEntry = Object.entries(LEGACY_INQUIRY_CONTEXT_LABELS).find(([label]) => line.startsWith(`${label}:`));
+    if (!entry && !legacyEntry) return;
     matched = true;
-    context[entry[0]] = line.slice(entry[1].length + 1).trim();
+    const key = entry?.[0] || legacyEntry[1];
+    const label = entry?.[1] || legacyEntry[0];
+    context[key] = line.slice(label.length + 1).trim();
   });
   if (!matched) context.question = value;
   return context;
@@ -481,6 +490,8 @@ function normalizeConnectionSuggestions(response, project) {
       scale: project.activeScale,
       status: 'pending',
       claimState: 'inference',
+      origin: 'model suggestion',
+      reviewDecision: 'pending',
       notes: '',
       directed: true,
       rationale: connection.rationale,
@@ -697,6 +708,141 @@ function Field({ label, hint, children, className = '' }) {
   return <label className={`field ${className}`}><span className="field__label">{label}</span>{children}{hint && <span className="field__hint">{hint}</span>}</label>;
 }
 
+const FOCAL_PARTICIPATION_LABELS = Object.freeze({
+  direct: 'Participates directly',
+  indirect: 'Affected without participating',
+  unclear: 'Unclear from the memo',
+  'not applicable': 'Not applicable',
+});
+
+function MicroParticipationEditor({ item, settingOptions, onParticipationChange, onSettingNodeIdsChange }) {
+  const itemLabel = item.label?.trim() || 'this item';
+  const itemIsSetting = item.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(item.type);
+  const selectedIds = Array.isArray(item.settingNodeIds) ? item.settingNodeIds : [];
+  const settingById = new Map(settingOptions.map((setting) => [setting.id, setting]));
+  const availableSettings = settingOptions.filter((setting) => setting.id !== item.id && !selectedIds.includes(setting.id));
+  const participation = FOCAL_PARTICIPATION_STATES.includes(item.focalParticipation)
+    ? item.focalParticipation
+    : 'unclear';
+  return <div className="micro-context-editor" aria-label={`Micro context for ${itemLabel}`}>
+    <Field label="Relation to focal person" hint="Record whether the person at the center of the map participates directly, is affected without participating, or whether the memo is unclear.">
+      <select aria-label={`Relation to focal person for ${itemLabel}`} value={participation} onChange={(event) => onParticipationChange(event.target.value)}>
+        {FOCAL_PARTICIPATION_STATES.map((value) => <option key={value} value={value}>{FOCAL_PARTICIPATION_LABELS[value]}</option>)}
+      </select>
+    </Field>
+    {!itemIsSetting && <div className="micro-membership-editor">
+      <span className="field__label">Immediate settings for this item</span>
+      <span className="field__hint">Choose the Micro settings where this person, group, activity, object, or resource is encountered.</span>
+      <div className="scope-editor__members">
+        {selectedIds.map((settingId) => {
+          const setting = settingById.get(settingId);
+          const label = setting?.label || settingId;
+          return <button key={settingId} type="button" className="scope-chip" onClick={() => onSettingNodeIdsChange(selectedIds.filter((id) => id !== settingId))} aria-label={`Remove ${label} from the immediate settings for ${itemLabel}`}>{label}<span aria-hidden="true"> ×</span></button>;
+        })}
+        {availableSettings.length ? <select className="scope-editor__add" aria-label={`Add an immediate setting for ${itemLabel}`} value="" onChange={(event) => {
+          const settingId = event.target.value;
+          if (!settingId || selectedIds.includes(settingId) || selectedIds.length >= PROJECT_LIMITS.scopeMembers) return;
+          onSettingNodeIdsChange([...selectedIds, settingId]);
+        }}>
+          <option value="">Add Micro setting…</option>
+          {availableSettings.map((setting) => <option key={setting.id} value={setting.id}>{setting.label}{setting.status === 'rejected' || setting.claimState === 'retired' ? ' — removed' : ''}</option>)}
+        </select> : null}
+        {!selectedIds.length && !availableSettings.length ? <span className="scope-editor__empty">No Micro settings are available yet.</span> : null}
+      </div>
+    </div>}
+  </div>;
+}
+
+const CLAIM_EVIDENCE_COPY = Object.freeze({
+  sourcePassage: Object.freeze({ label: 'Memo passage or evidence', hint: 'Copy the memo passage or other project evidence that supports this claim.' }),
+  studentInterpretation: Object.freeze({ label: 'Student interpretation', hint: 'State what you think this evidence shows.' }),
+  warrant: Object.freeze({ label: 'Reasoning', hint: 'Explain why the passage supports your interpretation.' }),
+  uncertainty: Object.freeze({ label: 'Uncertainty', hint: 'Record what remains unclear or unsupported.' }),
+  counterevidence: Object.freeze({ label: 'Counterevidence', hint: 'Record evidence that challenges or complicates this claim.' }),
+  missingVoice: Object.freeze({ label: 'Missing perspective', hint: 'Name whose account or knowledge is absent.' }),
+});
+
+const PROCESS_DIRECTION_OPTIONS = Object.freeze([
+  Object.freeze({ value: '', label: 'Not recorded' }),
+  Object.freeze({ value: 'source to target', label: 'Starting item to ending item' }),
+  Object.freeze({ value: 'target to source', label: 'Ending item to starting item' }),
+  Object.freeze({ value: 'both directions', label: 'Both directions' }),
+  Object.freeze({ value: 'varies', label: 'Direction varies' }),
+  Object.freeze({ value: 'not yet known', label: 'Not yet known' }),
+]);
+
+function nextClaimEvidenceRecord(ownerId, records) {
+  const ids = new Set(records.map((record) => record.id));
+  let index = records.length;
+  let record = createClaimEvidenceRecord({}, { ownerId, index });
+  while (ids.has(record.id)) {
+    index += 1;
+    record = createClaimEvidenceRecord({}, { ownerId, index });
+  }
+  return record;
+}
+
+function ClaimEvidenceRecordEditor({ record, index, onEdit, onRemove }) {
+  const [open, setOpen] = useState(index === 0);
+  const completed = CLAIM_EVIDENCE_FIELDS.filter((field) => record[field]?.trim()).length;
+  return <details className="claim-evidence-record" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary><span>Evidence record {index + 1}</span><strong>{completed} of {CLAIM_EVIDENCE_FIELDS.length} fields</strong></summary>
+    <div className="claim-evidence-record__body">
+      {CLAIM_EVIDENCE_FIELDS.map((field) => {
+        const copy = CLAIM_EVIDENCE_COPY[field];
+        return <Field key={field} label={copy.label} hint={copy.hint}><textarea rows={field === 'sourcePassage' ? 4 : 3} maxLength={field === 'sourcePassage' ? PROJECT_LIMITS.evidenceExcerpt : PROJECT_LIMITS.claimEvidenceText} value={record[field] || ''} onChange={(event) => onEdit(field, event.target.value)} /></Field>;
+      })}
+      <button className="claim-evidence-record__remove" type="button" onClick={onRemove}>Remove record</button>
+    </div>
+  </details>;
+}
+
+function ClaimEvidenceEditor({ ownerId, records = [], onChange, onActivity }) {
+  const addRecord = () => {
+    onChange([...records, nextClaimEvidenceRecord(ownerId, records)]);
+    onActivity?.('added');
+  };
+  const editRecord = (recordId, field, value) => {
+    onChange(records.map((record) => {
+      if (record.id !== recordId) return record;
+      const edited = { ...record, [field]: value };
+      if (field === 'sourcePassage' && Object.hasOwn(record, 'evidenceHash')) {
+        if (value) edited.evidenceHash = stableId('evh', value);
+        else delete edited.evidenceHash;
+      }
+      return edited;
+    }));
+  };
+  const removeRecord = (recordId) => {
+    onChange(records.filter((record) => record.id !== recordId));
+    onActivity?.('removed');
+  };
+  return <section className="claim-evidence" aria-label="Evidence records">
+    <div className="claim-evidence__head"><h3>Evidence records</h3><button type="button" onClick={addRecord}>Add record</button></div>
+    <p className="claim-evidence__intro">Separate memo language, your interpretation, and remaining questions.</p>
+    {records.length ? <div className="claim-evidence__list">{records.map((record, index) => <ClaimEvidenceRecordEditor key={record.id} record={record} index={index} onEdit={(field, value) => editRecord(record.id, field, value)} onRemove={() => removeRecord(record.id)} />)}</div> : <p className="empty-message">No evidence records yet.</p>}
+  </section>;
+}
+
+function RelationshipProcessEditor({ edge, onChange, onActivity }) {
+  const process = createRelationshipProcess(edge.relationshipProcess);
+  const updateField = (field, value) => onChange({ ...process, [field]: value });
+  const directionLabels = {
+    'source to target': `${edge.sourceLabel} to ${edge.targetLabel}`,
+    'target to source': `${edge.targetLabel} to ${edge.sourceLabel}`,
+  };
+  return <details className="relationship-process">
+    <summary><span>Process and time</span><strong>{edge.scale === 'micro' ? 'Micro relationship' : 'Exo-level connection'}</strong></summary>
+    <div className="relationship-process__body">
+      <p>Record how this connection operates. Leave any unknown field blank.</p>
+      <div className="field-pair"><Field label="Frequency"><input maxLength={PROJECT_LIMITS.relationshipProcessText} value={process.frequency} onChange={(event) => updateField('frequency', event.target.value)} onBlur={() => onActivity?.()} /></Field><Field label="Duration"><input maxLength={PROJECT_LIMITS.relationshipProcessText} value={process.duration} onChange={(event) => updateField('duration', event.target.value)} onBlur={() => onActivity?.()} /></Field></div>
+      <Field label="Direction"><select value={process.direction} onChange={(event) => { updateField('direction', event.target.value); onActivity?.(); }}>{PROCESS_DIRECTION_OPTIONS.map((option) => <option key={option.value || 'blank'} value={option.value}>{directionLabels[option.value] || option.label}</option>)}</select></Field>
+      <Field label="Conditions" hint="What must be true for this connection to work?"><textarea rows="3" maxLength={PROJECT_LIMITS.relationshipProcessText} value={process.conditions} onChange={(event) => updateField('conditions', event.target.value)} onBlur={() => onActivity?.()} /></Field>
+      <Field label="Change over time" hint="Describe what has changed, when known."><textarea rows="3" maxLength={PROJECT_LIMITS.relationshipProcessText} value={process.changeOverTime} onChange={(event) => updateField('changeOverTime', event.target.value)} onBlur={() => onActivity?.()} /></Field>
+    </div>
+  </details>;
+}
+
 function CommitInput({ value, onCommit, validate, onInvalid, ...props }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -836,7 +982,15 @@ function download(name, contents, type = 'application/json') {
 
 function projectMarkdown(project) {
   const nodeById = new Map(project.graph.nodes.map((node) => [node.id, node]));
-  const nodeLines = project.graph.nodes.map((node) => {
+  const evidenceLines = (records) => (records || []).flatMap((record, index) => {
+    const fields = [
+      ['Memo passage or evidence', record.sourcePassage], ['Student interpretation', record.studentInterpretation],
+      ['Reasoning', record.warrant], ['Uncertainty', record.uncertainty],
+      ['Counterevidence', record.counterevidence], ['Missing perspective', record.missingVoice],
+    ].filter(([, value]) => String(value || '').trim());
+    return fields.length ? [`  - Evidence record ${index + 1}`, ...fields.map(([label, value]) => `    - ${label}: ${value}`)] : [];
+  });
+  const nodeLines = project.graph.nodes.flatMap((node) => {
     const annotations = [node.annotations?.analytical?.text && `analysis: ${node.annotations.analytical.text}`, node.annotations?.evidence?.text && `evidence note: ${node.annotations.evidence.text}`].filter(Boolean).join('; ');
     const members = node.scopeNodeIds?.map((memberId) => nodeById.get(memberId)?.label).filter(Boolean) || [];
     const membership = node.scale === 'meso' && members.length
@@ -844,9 +998,17 @@ function projectMarkdown(project) {
       : node.scale === 'macrosphere' && members.length
         ? `; ${node.deontic || 'shapes'}: ${members.join(', ')}`
         : '';
-    return `- **${node.label}** — ${node.type}; level: ${SCALES[node.scale]?.label || node.scale}; evidence: ${node.evidence || 'needs evidence'}${membership}${annotations ? `; ${annotations}` : ''}`;
+    const explanation = node.scale === 'meso' && node.mesoExplanation ? `; explanation: ${node.mesoExplanation}` : '';
+    const immediateSettings = (node.settingNodeIds || []).map((settingId) => nodeById.get(settingId)?.label).filter(Boolean);
+    const microContext = node.scale === 'micro'
+      ? `; focal participation: ${FOCAL_PARTICIPATION_LABELS[node.focalParticipation] || node.focalParticipation || 'not recorded'}${immediateSettings.length ? `; immediate settings: ${immediateSettings.join(', ')}` : ''}`
+      : '';
+    return [`- **${node.label}** — ${node.type}; level: ${SCALES[node.scale]?.label || node.scale}; evidence: ${node.evidence || 'needs evidence'}${membership}${explanation}${microContext}${annotations ? `; ${annotations}` : ''}`, ...evidenceLines(node.claimEvidence)];
   });
-  const edgeLines = project.graph.edges.map((edge) => `- ${edge.sourceLabel} **${edge.verb}** ${edge.targetLabel} — level: ${SCALES[edge.scale]?.label || edge.scale}; evidence: ${edge.evidence || 'needs evidence'}${edge.annotation?.text ? `; annotation: ${edge.annotation.text}` : ''}`);
+  const edgeLines = project.graph.edges.flatMap((edge) => {
+    const process = Object.entries(edge.relationshipProcess || {}).filter(([, value]) => String(value || '').trim()).map(([field, value]) => `${field}: ${value}`).join('; ');
+    return [`- ${edge.sourceLabel} **${edge.verb}** ${edge.targetLabel} — level: ${SCALES[edge.scale]?.label || edge.scale}; evidence: ${edge.evidence || 'needs evidence'}${process ? `; process: ${process}` : ''}${edge.annotation?.text ? `; annotation: ${edge.annotation.text}` : ''}`, ...evidenceLines(edge.claimEvidence)];
+  });
   const redactionLines = project.portableExport?.redactions?.map((entry) => `- ${entry.path}: ${entry.reason}`).join('\n') || '- None';
   return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Reflection\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
 }
@@ -858,16 +1020,18 @@ export function graphCsv(project) {
   };
   const quote = (value) => `"${inert(value).replaceAll('"', '""')}"`;
   const nodeById = new Map(project.graph.nodes.map((node) => [node.id, node]));
-  const rows = [['record_type', 'id', 'label_or_from', 'type_or_verb', 'target', 'scale', 'evidence', 'annotation', 'evidence_annotation', 'scope_member_ids', 'scope_member_labels', 'structural_action']];
+  const rows = [['record_type', 'id', 'label_or_from', 'type_or_verb', 'target', 'scale', 'evidence', 'annotation', 'evidence_annotation', 'scope_member_ids', 'scope_member_labels', 'structural_action', 'claim_evidence_json', 'relationship_process_json', 'meso_explanation', 'origin', 'review_decision', 'micro_setting_ids', 'focal_participation']];
   project.graph.nodes.forEach((node) => rows.push([
     'node', node.id, node.label, node.type, '', node.scale, node.evidence,
     node.annotations?.analytical?.text || '', node.annotations?.evidence?.text || '',
     (node.scopeNodeIds || []).join('; '),
     (node.scopeNodeIds || []).map((id) => nodeById.get(id)?.label).filter(Boolean).join('; '),
     node.scale === 'macrosphere' ? node.deontic || 'shapes' : '',
+    JSON.stringify(node.claimEvidence || []), '', node.mesoExplanation || '', node.origin || '', node.reviewDecision || '',
+    (node.settingNodeIds || []).join('; '), node.focalParticipation || '',
   ]));
-  project.graph.edges.forEach((edge) => rows.push(['edge', edge.id, edge.sourceLabel, edge.verb, edge.targetLabel, edge.scale, edge.evidence, edge.annotation?.text || '', '', '', '', '']));
-  rows.push(['map', project.mapAnnotation?.id || 'map', project.title, '', '', '', '', project.mapAnnotation?.text || '', '', '', '', '']);
+  project.graph.edges.forEach((edge) => rows.push(['edge', edge.id, edge.sourceLabel, edge.verb, edge.targetLabel, edge.scale, edge.evidence, edge.annotation?.text || '', '', '', '', '', JSON.stringify(edge.claimEvidence || []), JSON.stringify(edge.relationshipProcess || {}), '', edge.origin || '', edge.reviewDecision || '', '', '']));
+  rows.push(['map', project.mapAnnotation?.id || 'map', project.title, '', '', '', '', project.mapAnnotation?.text || '', '', '', '', '', '', '', '', '', '', '']);
   return rows.map((row) => row.map(quote).join(',')).join('\n');
 }
 
@@ -944,6 +1108,8 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
         <Field label="Map question" hint="What should the finished map help you understand?"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.question} onChange={(event) => setInquiryField('question', event.target.value)} /></Field>
         <Field label="Time period or episode" hint="Name the period, event, or recurring situation this map covers."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.time} onChange={(event) => setInquiryField('time', event.target.value)} /></Field>
         <Field label="Map boundary" hint="State what belongs inside this inquiry and what stays outside it."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.boundary} onChange={(event) => setInquiryField('boundary', event.target.value)} /></Field>
+        <Field label="Evidence used" hint="Name the accounts, documents, observations, or records that support this map."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.evidence} onChange={(event) => setInquiryField('evidence', event.target.value)} /></Field>
+        <Field label="Missing perspectives" hint="Name whose account or knowledge is not represented yet."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.voices} onChange={(event) => setInquiryField('voices', event.target.value)} /></Field>
       </div>
       <div className="intake-grid">
         <div>
@@ -973,9 +1139,9 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
   );
 }
 
-function MemoDrawer({ project, update, hint, onRequestRestart }) {
+function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef }) {
   const words = project.submission.text.trim().split(/\s+/).filter(Boolean).length;
-  return <details className="memo-drawer">
+  return <details ref={drawerRef} className="memo-drawer">
     <summary>
       <span className="memo-drawer__title"><strong>Your memo</strong><small>{words.toLocaleString()} {words === 1 ? 'word' : 'words'} · open to read or edit</small></span>
       <span className="memo-drawer__mark" aria-hidden="true" />
@@ -988,13 +1154,14 @@ function MemoDrawer({ project, update, hint, onRequestRestart }) {
 }
 
 function suggestionRuntimeDescription(runtime, persistence, retentionDays) {
-  const retention = Number.isInteger(retentionDays?.evaluation) ? ` Generated guidance is retained for ${retentionDays.evaluation} ${retentionDays.evaluation === 1 ? 'day' : 'days'}.` : '';
+  const retention = Number.isInteger(retentionDays?.evaluation) ? ` Classroom server retains the memo request and generated guidance for ${retentionDays.evaluation} ${retentionDays.evaluation === 1 ? 'day' : 'days'}.` : '';
+  const storage = ' Your working project stays on this device unless you create a project link.';
   if (runtime?.provider === 'ollama-cloud' || runtime?.provider === 'openrouter') {
     const provider = runtime.provider === 'ollama-cloud' ? 'Ollama Cloud' : 'OpenRouter';
-    return `Choosing Generate guidance sends your memo and map framing to ${runtime.model || 'the configured model'} via ${provider}.${retention}`;
+    return `Choosing Generate guidance sends your memo and map framing to ${runtime.model || 'the configured model'} via ${provider}.${retention}${storage}`;
   }
-  if (runtime?.provider === 'deterministic') return `Guidance runs on the classroom server without sending your memo to an external model provider.${retention}`;
-  return `Generate guidance is optional. You can continue without sending the memo for model review.${retention}`;
+  if (runtime?.provider === 'deterministic') return `Guidance runs on the classroom server without sending your memo to an external model provider.${retention}${storage}`;
+  return `Generate guidance is optional. You can continue without sending the memo for model review.${retention}${storage}`;
 }
 
 function suggestionRuntimeLabel(runtime) {
@@ -1135,7 +1302,7 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
 const LEVEL_REVIEW_COPY = Object.freeze({
   micro: Object.freeze({
     items: 'specific people, roles, groups, activities, objects, immediate settings, and direct relationships',
-    scaffoldTitle: 'Suggested Micro elements',
+    scaffoldTitle: 'Suggested Micro-level items',
     next: 'Choose Micro-level items',
   }),
   meso: Object.freeze({
@@ -1156,6 +1323,7 @@ const LEVEL_REVIEW_COPY = Object.freeze({
 });
 
 function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, onContinueWithoutModel, onRequestRestart, suggestionRuntime, persistence, retentionDays }) {
+  const memoDrawerRef = useRef(null);
   const review = project.preflight?.memoReview;
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
   const coursePart = coursePartForScale(project);
@@ -1172,18 +1340,20 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
     <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
     <h1>Review your memo</h1>
     <p className="lede">Check what your memo supports and what remains uncertain.</p>
-    <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
+    <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} drawerRef={memoDrawerRef} />
     {!hasMemo && <p className="empty-message">Add memo text above to begin. You can generate guidance about {levelCopy.items}, or continue without model guidance.</p>}
     <section className="teacher-message" aria-label="Before generating guidance">
       <strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong>
       <p>{suggestionRuntimeDescription(suggestionRuntime, persistence, retentionDays)}</p>
+      <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Review or redact memo</button>
     </section>
     {busy && !review && <p className="review-progress" role="status">Guidance is being generated…</p>}
     {review && <>
-      <section className={`readiness-banner ${review.readiness.ready && !stale ? 'is-ready' : ''}`} aria-label="Where your memo stands">
-        <div className="readiness-banner__text">
+      <section className="coverage-banner" aria-label="Coverage and uncertainty">
+        <div className="coverage-banner__text">
+          <h2>Coverage and uncertainty</h2>
           {review.readiness.note && <p>{review.readiness.note}</p>}
-          {stale && <p className="readiness-banner__stale" role="status">Your memo changed after this guidance was generated. Choose Refresh guidance when you want the model to review the revised memo. Your existing map remains unchanged.</p>}
+          {stale && <p className="coverage-banner__stale" role="status">Your memo changed after this guidance was generated. Choose Refresh guidance when you want the model to review the revised memo. Your existing map remains unchanged.</p>}
         </div>
         <div className="button-row">
           <button type="button" className="button button--secondary" disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Rereading your memo…' : 'Refresh guidance'}</button>
@@ -1208,13 +1378,13 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
           {mesoLinkages && microSettings.length > 0 && <div className="connection-node-list" role="region" aria-label="Micro settings available for mesosystems">{microSettings.map((node) => <span key={node.id}>{node.label}</span>)}</div>}
           {surfacedNodes.length ? (project.activeScale === 'macrosphere'
             ? <ul className="memo-scaffold__structures" aria-label="Macro-level conditions supported by the memo">{surfacedNodes.map((node) => <li key={node.label}>
-              <span className="memo-scaffold__claim"><strong>{node.label}</strong> <em>{node.deontic || 'shapes'}</em>{node.scope?.length ? <> {node.scope.map((member) => member.label).join(', ')}</> : <span className="memo-scaffold__pending">. Select the affected mapped elements at the next step.</span>}</span>
+              <span className="memo-scaffold__claim"><strong>{node.label}</strong> <em>{node.deontic || 'shapes'}</em>{node.scope?.length ? <> {node.scope.map((member) => member.label).join(', ')}</> : <span className="memo-scaffold__pending">. Select affected map items at the next step.</span>}</span>
               {node.basis === 'inference' && <small>Suggested from context. Review, revise, or remove it.</small>}
             </li>)}</ul>
             : mesoLinkages
               ? <ul className="memo-scaffold__structures" aria-label="Mesosystems supported by the memo">{surfacedNodes.map((node) => <li key={node.label}><span className="memo-scaffold__claim"><strong>{node.label}</strong>{node.scope?.length ? <> includes {node.scope.map((member) => member.label).join(' and ')}</> : <span className="memo-scaffold__pending">. Select at least two Micro-level settings at the next step.</span>}</span></li>)}</ul>
             : <div className="connection-node-list" aria-label="Nodes evident in the memo">{surfacedNodes.map((node) => <span key={node.label} className={node.basis === 'inference' ? 'is-inferred' : ''}>{node.label}{node.basis === 'inference' && <em> · inferred</em>}</span>)}</div>) : null}
-          {!surfacedNodes.length ? <p className="empty-message">The review did not suggest any new elements. Revise the memo and refresh the guidance, or add an element at the next stage.</p> : null}
+          {!surfacedNodes.length ? <p className="empty-message">The review did not suggest any new map items. Revise the memo and refresh the guidance, or add a map item at the next stage.</p> : null}
           {mesoLinkages && microSettings.length < 2 ? <p className="empty-message">Meso-level needs at least two Micro-level settings. Choose Work at level: Micro-level above and add the settings in which the person directly participates.</p> : null}
           {!nodesOnly && surfacedConnections.length > 0 && <ul className="memo-scaffold__connections">{surfacedConnections.map((connection, index) => (
             <li key={stableId('scaffold-edge', `${index}:${connection.source}:${connection.verb}:${connection.target}`)}>
@@ -1240,14 +1410,17 @@ function candidateStepsForScale(scale) {
   return ['nodes', 'edges', 'suggest'];
 }
 
+const CANDIDATE_BATCH_SIZE = 4;
 const MACRO_STRUCTURE_KINDS = MACROSPHERE_NODE_TYPES;
 
 function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy, onRequestRestart }) {
   const candidateSteps = useMemo(() => candidateStepsForScale(project.activeScale), [project.activeScale]);
   const [step, setStep] = useState(() => candidateSteps[0]);
+  const [candidatePage, setCandidatePage] = useState({ nodes: 0, edges: 0 });
   useEffect(() => {
     if (!candidateSteps.includes(step)) setStep(candidateSteps[0]);
   }, [candidateSteps, step]);
+  useEffect(() => setCandidatePage({ nodes: 0, edges: 0 }), [project.activeScale]);
   const activeCandidates = useMemo(() => ({
     nodes: project.candidates.nodes.filter((item) => item.scale === project.activeScale),
     edges: project.candidates.edges.filter((item) => item.scale === project.activeScale),
@@ -1256,6 +1429,11 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired'), [project.graph.nodes]);
   const liveMapNodeById = useMemo(() => new Map(liveMapNodes.map((node) => [node.id, node])), [liveMapNodes]);
   const mesoSettingNodes = useMemo(() => liveMapNodes.filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type)), [liveMapNodes]);
+  const microSettingMembershipOptions = useMemo(() => [...new Map([
+    ...project.graph.nodes,
+    ...project.candidates.nodes,
+  ].filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type))
+    .map((node) => [node.id, node])).values()], [project.candidates.nodes, project.graph.nodes]);
   const candidateEndpointNodeById = useMemo(() => new Map([...project.candidates.nodes, ...liveMapNodes]
     .map((node) => [node.id, node])), [liveMapNodes, project.candidates.nodes]);
   const acceptedExosphereNodes = useMemo(() => [...candidateEndpointNodeById.values()].filter((node) => (
@@ -1268,9 +1446,9 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     if (project.activeScale !== 'exosphere' || edge.scale !== 'exosphere') return '';
     const source = candidateEndpointNodeById.get(edge.source);
     const target = candidateEndpointNodeById.get(edge.target);
-    if (source?.scale !== 'exosphere') return 'Choose an Exo-level outside decision setting as the pathway source.';
-    if (!isOrientedExospherePathway(source, target, carriedMicroNodeIds)) return 'Choose a Micro setting already carried on the map as the affected setting.';
-    if (!acceptedExosphereNodes.some((node) => node.id === source.id)) return 'Add the outside decision setting to the map before adding its pathway.';
+    if (source?.scale !== 'exosphere') return 'Choose an Exo-level outside decision setting first.';
+    if (!isOrientedExospherePathway(source, target, carriedMicroNodeIds)) return 'Choose an affected Micro setting already on the map.';
+    if (!acceptedExosphereNodes.some((node) => node.id === source.id)) return 'Add the outside decision setting before adding its Exo-level connection.';
     return '';
   };
   // Mesosystems contain Micro settings. Macrosphere items may affect any
@@ -1279,7 +1457,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     ? mesoSettingNodes
     : liveMapNodes.filter((node) => node.scale !== 'macrosphere'), [liveMapNodes, mesoSettingNodes, project.activeScale]);
   const [institutionDraft, setInstitutionDraft] = useState({ label: '', type: 'institution', anchor: '', verb: SCALE_VERB_LEXICONS.exosphere[0] });
-  const [mesoDraft, setMesoDraft] = useState({ label: '', first: '', second: '' });
+  const [mesoDraft, setMesoDraft] = useState({ label: '', first: '', second: '', explanation: '' });
   const [structureDraft, setStructureDraft] = useState({ label: '', type: 'policy', deontic: 'shapes', evidence: '' });
   const addMesoLinkage = () => {
     const label = mesoDraft.label.trim();
@@ -1295,11 +1473,13 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       draft.candidates.nodes = withDefaultNodeLayout([...draft.candidates.nodes, {
         id, label, type: 'mesosystem', scale: 'meso', status: 'confirmed',
         claimState: 'student interpretation', evidence: '',
+        origin: 'student entry', reviewDecision: 'added',
         sourceFingerprint: memoFingerprint(project.submission), notes: '',
         scopeNodeIds: [mesoDraft.first, mesoDraft.second],
+        mesoExplanation: mesoDraft.explanation.trim(),
       }]);
     }, 'candidate.added', label);
-    setMesoDraft({ label: '', first: '', second: '' });
+    setMesoDraft({ label: '', first: '', second: '', explanation: '' });
     toast(`${label} added with two Micro settings.`);
   };
   const addInstitution = () => {
@@ -1313,13 +1493,14 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     }
     const anchor = liveMapNodeById.get(institutionDraft.anchor);
     if (institutionDraft.anchor && (!anchor || !isOrientedExospherePathway({ scale: 'exosphere' }, anchor, carriedMicroNodeIds))) {
-      return toast('Choose a Micro setting already carried on the map.', 'error');
+      return toast('Choose a Micro setting already on the map.', 'error');
     }
     const fingerprint = memoFingerprint(project.submission);
     update((draft) => {
       draft.candidates.nodes = withDefaultNodeLayout([...draft.candidates.nodes, {
         id, label, type: institutionDraft.type, scale: 'exosphere',
         status: 'confirmed', claimState: 'student interpretation',
+        origin: 'student entry', reviewDecision: 'added',
         evidence: 'Added by the student.',
         sourceFingerprint: fingerprint, notes: '',
       }]);
@@ -1330,6 +1511,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
             id: edgeId, source: id, target: anchor.id, sourceLabel: label, targetLabel: anchor.label,
             verb: institutionDraft.verb, scale: 'exosphere', status: 'confirmed',
             claimState: 'student interpretation', directed: true, rationale: '', evidence: '',
+            origin: 'student entry', reviewDecision: 'added',
             sourceFingerprint: fingerprint, notes: '',
             annotation: { id: stableId('annotation', `edge:${edgeId}:relationship`), text: '' },
           });
@@ -1337,13 +1519,13 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       }
     }, 'candidate.added', label);
     setInstitutionDraft((current) => ({ ...current, label: '', anchor: '' }));
-    toast(anchor ? `${label} added with a decision pathway to ${anchor.label}.` : `${label} added. Add its decision pathway at the next step.`);
+    toast(anchor ? `${label} added with an Exo-level connection to ${anchor.label}.` : `${label} added. Add its Exo-level connection at the next step.`);
   };
   const addStructure = () => {
     const label = structureDraft.label.trim();
     const evidence = structureDraft.evidence.trim();
     if (!label) return toast('Name the Macro-level condition first.', 'error');
-    if (!isCanonicalMapElementLabel(label, 'macrosphere')) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
+    if (!isCanonicalMapElementLabel(label, 'macrosphere')) return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
     if (containsRetiredSystemsLanguage(label)) return toast('Use a direct, conventional name for the broader condition.', 'error');
     if (isObviousLowerLevelMacroLabel(label)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
     if (labelRepeatsInstitution(label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exo-level instead.', 'error');
@@ -1357,12 +1539,13 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       draft.candidates.nodes = withDefaultNodeLayout([...draft.candidates.nodes, {
         id, label, type: structureDraft.type, scale: 'macrosphere',
         status: 'pending', claimState: 'inference',
+        origin: 'student entry', reviewDecision: 'pending',
         evidence, sourceFingerprint: memoFingerprint(project.submission), notes: '',
         deontic: structureDraft.deontic, scopeNodeIds: [],
       }]);
     }, 'candidate.added', label);
     setStructureDraft((current) => ({ ...current, label: '', evidence: '' }));
-    toast(`${label} added. Choose at least two mapped elements, then decide whether to add it to the map.`);
+    toast(`${label} added. Choose at least two map items, then decide whether to add it to the map.`);
   };
   const editScope = (id, memberId, include) => update((draft) => {
     const item = draft.candidates.nodes.find((candidate) => candidate.id === id);
@@ -1375,23 +1558,24 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     if (next.length < 2) {
       item.status = 'pending';
       item.claimState = 'inference';
+      item.reviewDecision = 'pending';
     }
   }, 'candidate.scope-edited', id);
   const setStatus = (kind, id, status) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (status === 'research lead' && !project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
-    if (kind === 'nodes' && (status === 'confirmed' || status === 'research lead') && !isCanonicalMapElementLabel(current.label, project.activeScale)) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
-    if (kind === 'nodes' && (status === 'confirmed' || status === 'research lead') && containsRetiredSystemsLanguage(current.label)) return toast('Use a direct, conventional name for the map element.', 'error');
-    if ((status === 'confirmed' || status === 'research lead') && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
-    if (kind === 'nodes' && project.activeScale === 'micro' && (status === 'confirmed' || status === 'research lead') && !isDiscreteMicroNodeLabel(current.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
-    if (kind === 'nodes' && project.activeScale === 'meso' && (status === 'confirmed' || status === 'research lead') && !isMesosystemLabel(current.label)) return toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error');
-    if (kind === 'nodes' && project.activeScale === 'exosphere' && (status === 'confirmed' || status === 'research lead') && !isNamedInstitutionLabel(current.label)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
-    if (kind === 'nodes' && project.activeScale === 'macrosphere' && (status === 'confirmed' || status === 'research lead') && isObviousLowerLevelMacroLabel(current.label)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
-    if (kind === 'nodes' && project.activeScale === 'macrosphere' && (status === 'confirmed' || status === 'research lead') && labelRepeatsInstitution(current.label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exo-level instead.', 'error');
-    if (kind === 'nodes' && project.activeScale === 'meso' && (status === 'confirmed' || status === 'research lead') && (current.scopeNodeIds || []).length < 2) return toast('Choose at least two Micro settings for this mesosystem.', 'error');
-    if (kind === 'nodes' && project.activeScale === 'macrosphere' && (status === 'confirmed' || status === 'research lead') && (current.scopeNodeIds || []).length < 2) return toast('Choose at least two mapped elements for this Macro-level condition.', 'error');
-    if (kind === 'edges' && (status === 'confirmed' || status === 'research lead')) {
+    if (kind === 'nodes' && status === 'confirmed' && !isCanonicalMapElementLabel(current.label, project.activeScale)) return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
+    if (kind === 'nodes' && status === 'confirmed' && containsRetiredSystemsLanguage(current.label)) return toast('Use a direct, conventional name for the map item.', 'error');
+    if (status === 'confirmed' && project.instructor.evidenceRequired && !current.evidence) return toast('Add evidence before moving this item forward.', 'error');
+    if (kind === 'nodes' && project.activeScale === 'micro' && status === 'confirmed' && !isDiscreteMicroNodeLabel(current.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
+    if (kind === 'nodes' && project.activeScale === 'meso' && status === 'confirmed' && !isMesosystemLabel(current.label)) return toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error');
+    if (kind === 'nodes' && project.activeScale === 'exosphere' && status === 'confirmed' && !isNamedInstitutionLabel(current.label)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
+    if (kind === 'nodes' && project.activeScale === 'macrosphere' && status === 'confirmed' && isObviousLowerLevelMacroLabel(current.label)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
+    if (kind === 'nodes' && project.activeScale === 'macrosphere' && status === 'confirmed' && labelRepeatsInstitution(current.label, liveMapNodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exo-level instead.', 'error');
+    if (kind === 'nodes' && project.activeScale === 'meso' && status === 'confirmed' && (current.scopeNodeIds || []).length < 2) return toast('Choose at least two Micro settings for this mesosystem.', 'error');
+    if (kind === 'nodes' && project.activeScale === 'macrosphere' && status === 'confirmed' && (current.scopeNodeIds || []).length < 2) return toast('Choose at least two map items for this Macro-level condition.', 'error');
+    if (kind === 'edges' && status === 'confirmed') {
       const issue = exospherePathwayIssue(current);
       if (issue) return toast(issue, 'error');
     }
@@ -1399,32 +1583,87 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       const item = draft.candidates[kind].find((candidate) => candidate.id === id);
       item.status = status;
       item.claimState = status === 'research lead' ? 'research lead' : status === 'confirmed' ? 'student interpretation' : item.claimState;
+      item.reviewDecision = status === 'research lead' ? 'set aside' : status === 'confirmed' ? 'added' : 'removed';
     }, `candidate.${status}`, id);
   };
   const edit = (kind, id, field, value) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
     if (!current) return;
     if (kind === 'nodes' && field === 'type' && !isNodeTypeAllowedAtScale(value, project.activeScale)) return toast(`That type does not belong at ${SCALES[project.activeScale].label}.`, 'error');
+    const mappedNode = kind === 'nodes'
+      ? project.graph.nodes.find((node) => node.id === id && node.status !== 'rejected' && node.claimState !== 'retired')
+      : null;
+    const immediateSettingMemberships = mappedNode?.settingNodeIds || current.settingNodeIds || [];
+    if (kind === 'nodes' && field === 'type' && MICRO_SETTING_NODE_TYPE_SET.has(value) && immediateSettingMemberships.length) return toast('Remove the immediate setting memberships before changing this item to a setting.', 'error');
+    const settingRoleRemoved = kind === 'nodes'
+      && field === 'type'
+      && mappedNode?.scale === 'micro'
+      && MICRO_SETTING_NODE_TYPE_SET.has(mappedNode.type)
+      && !MICRO_SETTING_NODE_TYPE_SET.has(value);
+    if (settingRoleRemoved) {
+      const dependencies = [
+        ...project.graph.nodes
+          .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && (node.scopeNodeIds || []).includes(id))
+          .map((node) => node.label),
+        ...project.graph.nodes
+          .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && (node.settingNodeIds || []).includes(id))
+          .map((node) => `${node.label} (setting membership)`),
+        ...project.graph.edges
+          .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired' && (edge.source === id || edge.target === id))
+          .map((edge) => `${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`),
+      ];
+      if (dependencies.length) return toast(`Review or remove connected map work before changing this setting type: ${dependencies.join('; ')}.`, 'error');
+    }
+    const settingRoleAdded = kind === 'nodes'
+      && field === 'type'
+      && mappedNode?.scale === 'micro'
+      && !MICRO_SETTING_NODE_TYPE_SET.has(mappedNode.type)
+      && MICRO_SETTING_NODE_TYPE_SET.has(value);
+    if (settingRoleAdded) {
+      const nodeById = new Map(project.graph.nodes.map((node) => [node.id, node]));
+      const invalidRelationship = project.graph.edges.find((edge) => {
+        if (edge.scale !== 'micro' || edge.status === 'rejected' || edge.claimState === 'retired') return false;
+        if (edge.source !== id && edge.target !== id) return false;
+        const otherNode = nodeById.get(edge.source === id ? edge.target : edge.source);
+        return MICRO_SETTING_NODE_TYPE_SET.has(otherNode?.type);
+      });
+      if (invalidRelationship) return toast(`Review or remove ${invalidRelationship.sourceLabel} ${invalidRelationship.verb} ${invalidRelationship.targetLabel} before changing this item to an immediate-setting type.`, 'error');
+    }
     update((draft) => {
       const item = draft.candidates[kind].find((candidate) => candidate.id === id);
       const previousLabel = item.label;
       item[field] = value;
+      if (kind === 'nodes') {
+        const mappedNode = draft.graph.nodes.find((node) => node.id === id);
+        if (mappedNode && ['label', 'type', 'focalParticipation', 'mesoExplanation'].includes(field)) mappedNode[field] = value;
+        // A setting membership can be mirrored before commit only when every
+        // referenced setting is already on the graph. Newly accepted settings
+        // are applied together by commitMapSelections below.
+        if (mappedNode && field === 'settingNodeIds' && value.every((settingId) => draft.graph.nodes.some((node) => node.id === settingId))) {
+          mappedNode.settingNodeIds = value;
+        }
+      }
       if (kind === 'edges' && (field === 'source' || field === 'target')) {
         const endpoint = candidateEndpointNodeById.get(value);
         if (field === 'source') item.sourceLabel = endpoint?.label || item.sourceLabel;
         if (field === 'target') item.targetLabel = endpoint?.label || item.targetLabel;
         item.status = 'pending';
         item.claimState = 'inference';
+        item.reviewDecision = 'pending';
       }
       if (kind === 'nodes' && field === 'label' && draft.activeScale === 'micro') {
         const validMicroLabel = isDiscreteMicroNodeLabel(value);
-        if (!validMicroLabel) { item.status = 'pending'; item.claimState = 'inference'; }
+        if (!validMicroLabel) { item.status = 'pending'; item.claimState = 'inference'; item.reviewDecision = 'pending'; }
       }
       if (kind === 'nodes' && field === 'label' && draft.activeScale === 'exosphere') {
         const validInstitution = isNamedInstitutionLabel(value);
-        if (!validInstitution) { item.status = 'pending'; item.claimState = 'inference'; }
+        if (!validInstitution) { item.status = 'pending'; item.claimState = 'inference'; item.reviewDecision = 'pending'; }
       }
       if (kind === 'nodes' && field === 'label') {
+        draft.graph.edges.forEach((edge) => {
+          if (edge.source === id) edge.sourceLabel = value;
+          if (edge.target === id) edge.targetLabel = value;
+        });
         draft.candidates.edges.forEach((edge) => {
           if (edge.source === id) edge.sourceLabel = value;
           if (edge.target === id) edge.targetLabel = value;
@@ -1432,29 +1671,6 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
         item.notes = item.notes || `Label revised from ${previousLabel}`;
       }
     });
-  };
-  const addAllRemaining = (kind) => {
-    const remaining = activeCandidates[kind].filter((item) => item.status === 'pending');
-    const invalid = remaining.find((item) => (
-      (project.instructor.evidenceRequired && !item.evidence)
-      || (kind === 'edges' && Boolean(exospherePathwayIssue(item)))
-      || (kind === 'nodes' && (!isCanonicalMapElementLabel(item.label, project.activeScale)
-        || containsRetiredSystemsLanguage(item.label)
-        || (project.activeScale === 'micro' && !isDiscreteMicroNodeLabel(item.label))
-        || (project.activeScale === 'meso' && !isMesosystemLabel(item.label))
-        || (project.activeScale === 'exosphere' && !isNamedInstitutionLabel(item.label))
-        || (project.activeScale === 'macrosphere' && (isObviousLowerLevelMacroLabel(item.label)
-          || labelRepeatsInstitution(item.label, liveMapNodes.filter((node) => node.scale === 'exosphere'))))
-        || (['meso', 'macrosphere'].includes(project.activeScale) && (item.scopeNodeIds || []).length < 2)))
-    ));
-    if (invalid) return toast('Review the remaining items individually before adding all of them.', 'error');
-    update((draft) => {
-      draft.candidates[kind].forEach((item) => {
-        if (item.scale !== draft.activeScale || item.status !== 'pending') return;
-        item.status = 'confirmed';
-        item.claimState = 'student interpretation';
-      });
-    }, 'candidates.batch-confirmed', kind === 'nodes' ? 'Remaining nodes added to map' : 'Remaining connections added to map');
   };
   const counts = Object.fromEntries(['nodes', 'edges'].map((kind) => {
     const items = activeCandidates[kind];
@@ -1477,14 +1693,14 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
         lede: 'At Exo-level, add a named institution, agency, office, or service whose decisions reach an immediate setting even though the focal person does not participate in that decision setting. Place broader laws, economic conditions, and cultural beliefs at Macro-level.',
       },
       edges: {
-        title: 'Review institutional relationships',
+        title: 'Review Exo-level connections',
         lede: 'Connect each Exo-level institution to the immediate setting its decision reaches. Review the wording, then add or remove each relationship.',
       },
     },
     macrosphere: {
       nodes: {
         title: 'Choose Macro-level items',
-        lede: 'At Macro-level, add broader laws, public policies, economic conditions, histories, or cultural beliefs that shape at least two mapped elements. Place named institutions at Exo-level.',
+        lede: 'At Macro-level, add broader laws, public policies, economic conditions, histories, or cultural beliefs that shape at least two map items. Place named institutions at Exo-level.',
       },
     },
   };
@@ -1498,8 +1714,8 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       ...(levelStepCopy[project.activeScale]?.nodes || {}),
     },
     edges: {
-      tab: `${project.activeScale === 'exosphere' ? 'Decision pathways' : 'Direct relationships'} · ${counts.edges.total}`,
-      title: project.activeScale === 'micro' ? 'Review direct relationships' : 'Review decision pathways',
+      tab: `${project.activeScale === 'exosphere' ? 'Exo-level connections' : 'Direct relationships'} · ${counts.edges.total}`,
+      title: project.activeScale === 'micro' ? 'Review direct relationships' : 'Review Exo-level connections',
       lede: project.activeScale === 'meso'
         ? 'Meso-level uses mesosystems that include at least two Micro-level settings. It does not add directional relationships.'
         : project.activeScale === 'micro'
@@ -1508,8 +1724,8 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       ...(levelStepCopy[project.activeScale]?.edges || {}),
     },
     suggest: {
-      tab: project.activeScale === 'micro' ? 'More direct relationships' : 'More decision pathways',
-      title: project.activeScale === 'micro' ? 'Direct relationship' : 'Decision pathway',
+      tab: project.activeScale === 'micro' ? 'More direct relationships' : 'More Exo-level connections',
+      title: project.activeScale === 'micro' ? 'Direct relationship' : 'Exo-level connection',
       lede: project.activeScale === 'micro'
         ? 'Optional. Describe a relationship you want the model to examine.'
         : 'Optional. Describe how an outside decision reaches an immediate setting.',
@@ -1538,36 +1754,43 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       ? [{ ...current, needsRepair: true }, ...validNodes]
       : validNodes;
   };
-  const candidateRows = (kind) => activeCandidates[kind].map((item, index) => {
+  const candidateRows = (kind, items, offset = 0) => items.map((item, index) => {
     const pathwayIssue = kind === 'edges' ? exospherePathwayIssue(item) : '';
     return <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
-    <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
+    <div className="candidate-row__count">{String(offset + index + 1).padStart(2, '0')}</div>
     <div className="candidate-row__main">
       {kind === 'nodes'
         ? mesoLinkageRow
           ? <div className="candidate-expression"><CommitInput aria-label="Mesosystem label" maxLength={NODE_LABEL_LIMIT} value={item.label} validate={isMesosystemLabel} onCommit={(value) => edit(kind, item.id, 'label', value)} onInvalid={() => toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error')} /><span>includes</span><strong>{(item.scopeNodeIds || []).length} Micro settings</strong></div>
           : <div className="candidate-expression"><input aria-label={structureRow ? 'Macro-level condition label' : 'Node label'} maxLength={NODE_LABEL_LIMIT} value={item.label} onChange={(event) => edit(kind, item.id, 'label', event.target.value)} /><span>is a</span><select aria-label={structureRow ? 'Macro-level condition type' : 'Node type'} value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{candidateNodeTypes.map((type) => <option key={type}>{type}</option>)}</select></div>
         : project.activeScale === 'exosphere'
-          ? <div className="candidate-expression candidate-expression--edge"><select aria-label="Outside decision setting" value={item.source} onChange={(event) => edit(kind, item.id, 'source', event.target.value)}>{endpointOptions(acceptedExosphereNodes, item.source).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select><select aria-label="Institutional relationship" value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)}>{exoVerbOptions(item.verb).map((verb) => <option key={verb}>{verb}</option>)}</select><select aria-label="Affected Micro setting" value={item.target} onChange={(event) => edit(kind, item.id, 'target', event.target.value)}>{endpointOptions(mesoSettingNodes, item.target).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select></div>
+          ? <div className="candidate-expression candidate-expression--edge"><select aria-label="Outside decision setting" value={item.source} onChange={(event) => edit(kind, item.id, 'source', event.target.value)}>{endpointOptions(acceptedExosphereNodes, item.source).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select><select aria-label="How institution affects Micro setting" value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)}>{exoVerbOptions(item.verb).map((verb) => <option key={verb}>{verb}</option>)}</select><select aria-label="Affected Micro setting" value={item.target} onChange={(event) => edit(kind, item.id, 'target', event.target.value)}>{endpointOptions(mesoSettingNodes, item.target).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select></div>
           : <div className="candidate-expression candidate-expression--edge"><strong>{item.sourceLabel}</strong><AutoGrowingTextarea className="relationship-verb-editor" aria-label="Direct connection" maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} onChange={(event) => edit(kind, item.id, 'verb', event.target.value)} /><strong>{item.targetLabel}</strong></div>}
+      {kind === 'nodes' && item.scale === 'micro' && <MicroParticipationEditor
+        item={item}
+        settingOptions={microSettingMembershipOptions}
+        onParticipationChange={(value) => edit(kind, item.id, 'focalParticipation', value)}
+        onSettingNodeIdsChange={(value) => edit(kind, item.id, 'settingNodeIds', value)}
+      />}
       {pathwayIssue && <p className="candidate-validation" role="status">{pathwayIssue} This suggestion stays here until you repair or remove it.</p>}
-      {kind === 'nodes' && scopeRow && <div className="scope-editor" aria-label={mesoLinkageRow ? `Micro settings included in ${item.label}` : `Mapped elements affected by ${item.label}`}>
-        {structureRow && <div className="scope-editor__mode"><label><span>How it affects mapped elements</span><select aria-label={`How ${item.label} affects mapped elements`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
+      {kind === 'nodes' && scopeRow && <div className="scope-editor" aria-label={mesoLinkageRow ? `Micro settings included in ${item.label}` : `Map items affected by ${item.label}`}>
+        {structureRow && <div className="scope-editor__mode"><label><span>How it affects map items</span><select aria-label={`How ${item.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
         <div className="scope-editor__members">
           {(item.scopeNodeIds || []).map((memberId) => {
             const member = liveMapNodeById.get(memberId);
             if (!member) return null;
-            return <button key={memberId} type="button" className="scope-chip" onClick={() => editScope(item.id, memberId, false)} aria-label={mesoLinkageRow ? `Remove ${member.label} from ${item.label}` : `Remove ${member.label} from the mapped elements affected by ${item.label}`}>{member.label}<span aria-hidden="true"> ×</span></button>;
+            return <button key={memberId} type="button" className="scope-chip" onClick={() => editScope(item.id, memberId, false)} aria-label={mesoLinkageRow ? `Remove ${member.label} from ${item.label}` : `Remove ${member.label} from map items affected by ${item.label}`}>{member.label}<span aria-hidden="true"> ×</span></button>;
           })}
           {scopeCandidates.some((node) => !(item.scopeNodeIds || []).includes(node.id))
-            ? <select className="scope-editor__add" aria-label={mesoLinkageRow ? `Add a Micro setting to ${item.label}` : `Add a mapped element affected by ${item.label}`} value="" onChange={(event) => { if (event.target.value) editScope(item.id, event.target.value, true); }}>
-              <option value="">{mesoLinkageRow ? 'Add Micro setting…' : 'Add element…'}</option>
+            ? <select className="scope-editor__add" aria-label={mesoLinkageRow ? `Add a Micro setting to ${item.label}` : `Add a map item affected by ${item.label}`} value="" onChange={(event) => { if (event.target.value) editScope(item.id, event.target.value, true); }}>
+              <option value="">{mesoLinkageRow ? 'Add Micro setting…' : 'Add map item…'}</option>
               {scopeCandidates.filter((node) => !(item.scopeNodeIds || []).includes(node.id)).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}
             </select>
             : null}
-          {(item.scopeNodeIds || []).length < 2 && <span className="scope-editor__empty">{mesoLinkageRow ? 'Choose at least two Micro settings.' : `Choose at least two mapped elements this item ${SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'}.`}</span>}
+          {(item.scopeNodeIds || []).length < 2 && <span className="scope-editor__empty">{mesoLinkageRow ? 'Choose at least two Micro settings.' : `Choose at least two map items this condition ${SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'}.`}</span>}
         </div>
       </div>}
+      {kind === 'nodes' && mesoLinkageRow && <Field label="What passes, coordinates, or conflicts?" hint="Describe information, resources, schedules, rules, coordination, or conflict across these settings."><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={item.mesoExplanation || ''} onChange={(event) => edit(kind, item.id, 'mesoExplanation', event.target.value)} /></Field>}
       <p>{item.basis === 'inference' && <span className="basis-chip">suggested from context · review</span>}<span className="evidence-chip">{item.evidence || 'Evidence needed'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
       <details className="candidate-note candidate-evidence">
         <summary>{item.evidence ? 'Evidence added' : 'Evidence or question'}</summary>
@@ -1580,18 +1803,24 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     </div>
     <div className="candidate-actions" aria-label={`Decision for ${kind === 'nodes' ? item.label : `${item.sourceLabel} ${item.verb} ${item.targetLabel}`}`}>
       <button className={item.status === 'confirmed' ? 'is-active' : ''} type="button" disabled={Boolean(pathwayIssue)} onClick={() => setStatus(kind, item.id, 'confirmed')}>Add to map</button>
-      {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" disabled={Boolean(pathwayIssue)} onClick={() => setStatus(kind, item.id, 'research lead')}>Needs more evidence</button>}
+      {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'research lead')}>Set aside — needs evidence</button>}
       <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'rejected')}>Remove</button>
     </div>
   </article>;
   });
   const decisionStep = step === 'nodes' || step === 'edges';
+  const candidatePageCount = decisionStep ? Math.max(1, Math.ceil(activeCandidates[step].length / CANDIDATE_BATCH_SIZE)) : 1;
+  const activeCandidatePage = decisionStep ? Math.min(candidatePage[step] || 0, candidatePageCount - 1) : 0;
+  const candidatePageStart = activeCandidatePage * CANDIDATE_BATCH_SIZE;
+  const visibleCandidateItems = decisionStep
+    ? activeCandidates[step].slice(candidatePageStart, candidatePageStart + CANDIDATE_BATCH_SIZE)
+    : [];
   const stepIndex = candidateSteps.indexOf(step);
   const nextStep = candidateSteps[stepIndex + 1] || null;
   return <div className="wide stage-enter">
     <p className="eyebrow">{LEVEL_REVIEW_COPY[project.activeScale]?.next || LEVEL_REVIEW_COPY.micro.next} · step {stepIndex + 1} of {candidateSteps.length}</p>
     <div className="stage-title-row"><div><h1>{stepCopy[step].title}</h1><p className="lede">{stepCopy[step].lede}</p></div></div>
-    {candidateSteps.length > 1 && <div className="subnav candidate-steps" role="tablist" aria-label="Choose map elements">
+    {candidateSteps.length > 1 && <div className="subnav candidate-steps" role="tablist" aria-label="Choose map items">
       {candidateSteps.map((id) => <button key={id} id={`candidate-tab-${id}`} role="tab" aria-controls="candidate-panel" aria-selected={step === id} tabIndex={step === id ? 0 : -1} data-composite-value={id} className={step === id ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, candidateSteps, step, setStep)} onClick={() => setStep(id)}>{stepCopy[id].tab}</button>)}
     </div>}
     {project.activeScale === 'meso' && <section className="carried-node-summary" aria-labelledby="carried-nodes-title">
@@ -1606,10 +1835,10 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     </>}
     <div id="candidate-panel" role={candidateSteps.length > 1 ? 'tabpanel' : undefined} aria-labelledby={candidateSteps.length > 1 ? `candidate-tab-${step}` : undefined}>
       {decisionStep && <>
-        <p className="candidate-progress">Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it. Choose Needs more evidence to set one aside, or Remove to leave it off the map.</p>
+        <p className="candidate-progress">Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it. Choose Set aside — needs evidence to preserve a question for later, or Remove to leave it off the map.</p>
         {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} decided</p>}
         <div className="candidate-list">
-          {candidateRows(step)}
+          {candidateRows(step, visibleCandidateItems, candidatePageStart)}
           {!counts[step].total && <p className="empty-message">{step === 'nodes'
             ? project.activeScale === 'exosphere'
               ? 'The review did not suggest any Exo-level institutions. Add a named institution whose decisions reach an immediate setting already on the map.'
@@ -1619,9 +1848,10 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
                 ? 'The review did not suggest any Macro-level conditions. Add a supported law, public policy, economic condition, history, or cultural belief below.'
                 : 'The review did not suggest any nodes. Revise the memo and choose “Reread memo,” or add a node on the map.'
             : project.activeScale === 'exosphere'
-              ? 'No decision pathways came from your memo yet. Ask the model for suggestions, or add a pathway yourself on the map.'
+              ? 'No Exo-level connections came from your memo yet. Ask the model for suggestions, or add a connection on the map.'
               : 'No direct relationships came from your memo yet. Ask the model for suggestions, or add a relationship yourself on the map.'}</p>}
         </div>
+        {candidatePageCount > 1 && <nav className="candidate-pagination" aria-label="Suggestion groups"><span>Suggestions {candidatePageStart + 1}–{Math.min(candidatePageStart + CANDIDATE_BATCH_SIZE, counts[step].total)} of {counts[step].total}</span><div><button type="button" disabled={activeCandidatePage === 0} onClick={() => setCandidatePage((current) => ({ ...current, [step]: activeCandidatePage - 1 }))}>Previous</button><button type="button" disabled={activeCandidatePage >= candidatePageCount - 1} onClick={() => setCandidatePage((current) => ({ ...current, [step]: activeCandidatePage + 1 }))}>Next</button></div></nav>}
         {step === 'nodes' && project.activeScale === 'meso' && <section className="elicitation-panel" aria-labelledby="add-meso-linkage-title">
           <p className="eyebrow">Mesosystems</p>
           <h2 id="add-meso-linkage-title">New mesosystem</h2>
@@ -1630,35 +1860,35 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
             <Field label="Mesosystem name"><input maxLength={NODE_LABEL_LIMIT} value={mesoDraft.label} placeholder="e.g. Work–college scheduling conflict" onChange={(event) => setMesoDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
             <Field label="First Micro setting"><select value={mesoDraft.first} onChange={(event) => setMesoDraft((current) => ({ ...current, first: event.target.value }))}><option value="">Choose a Micro setting…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
             <Field label="Second Micro setting"><select value={mesoDraft.second} onChange={(event) => setMesoDraft((current) => ({ ...current, second: event.target.value }))}><option value="">Choose a different Micro setting…</option>{mesoSettingNodes.filter((node) => node.id !== mesoDraft.first).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
+            <Field label="What passes, coordinates, or conflicts?" hint="Describe information, resources, schedules, rules, coordination, or conflict across these settings."><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={mesoDraft.explanation} onChange={(event) => setMesoDraft((current) => ({ ...current, explanation: event.target.value }))} /></Field>
             <button className="button" type="button" onClick={addMesoLinkage}>Add mesosystem</button>
           </div>
         </section>}
         {step === 'nodes' && project.activeScale === 'exosphere' && <section className="elicitation-panel" aria-labelledby="add-institution-title">
           <p className="eyebrow">Exo-level institutions</p>
           <h2 id="add-institution-title">New institution</h2>
-          <p className="lede">Name an institution whose decisions or actions affect an element already on the map. Then choose the institutional relationship and the affected element.</p>
+          <p className="lede">Name an institution whose decisions or actions affect an item already on the map. Then choose how it affects a Micro setting.</p>
           <div className="elicitation-panel__form">
             <Field label="Institution name"><input maxLength={NODE_LABEL_LIMIT} value={institutionDraft.label} placeholder="e.g. NYS OPWDD or MTA Access-A-Ride" onChange={(event) => setInstitutionDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
             <Field label="Institution type"><select value={institutionDraft.type} onChange={(event) => setInstitutionDraft((current) => ({ ...current, type: event.target.value }))}>{EXOSPHERE_NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field>
-            <Field label="Relationship"><select aria-label="Institutional relationship" value={institutionDraft.verb} onChange={(event) => setInstitutionDraft((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
-            <Field label="Affected Micro setting"><select aria-label="Micro setting affected by the institution" value={institutionDraft.anchor} onChange={(event) => setInstitutionDraft((current) => ({ ...current, anchor: event.target.value }))}><option value="">Choose a carried Micro setting…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
+            <Field label="How institution affects Micro setting"><select aria-label="How institution affects Micro setting" value={institutionDraft.verb} onChange={(event) => setInstitutionDraft((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <Field label="Affected Micro setting"><select aria-label="Micro setting affected by the institution" value={institutionDraft.anchor} onChange={(event) => setInstitutionDraft((current) => ({ ...current, anchor: event.target.value }))}><option value="">Choose a Micro setting already on the map…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
             <button className="button" type="button" onClick={addInstitution}>Add institution</button>
           </div>
         </section>}
         {step === 'nodes' && project.activeScale === 'macrosphere' && <section className="elicitation-panel" aria-labelledby="add-structure-title">
           <p className="eyebrow">Macro-level conditions</p>
           <h2 id="add-structure-title">New Macro-level condition</h2>
-          <p className="lede">Name a broader law, policy, economic condition, history, or cultural belief that affects more than one mapped element. Then select the affected elements.</p>
+          <p className="lede">Name a broader law, policy, economic condition, history, or cultural belief that affects more than one map item. Then select the affected items.</p>
           <div className="elicitation-panel__form">
             <Field label="Name"><input maxLength={NODE_LABEL_LIMIT} value={structureDraft.label} placeholder="e.g. Americans with Disabilities Act, High housing and transportation costs" onChange={(event) => setStructureDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
             <Field label="Type"><select value={structureDraft.type} onChange={(event) => setStructureDraft((current) => ({ ...current, type: event.target.value }))}>{MACRO_STRUCTURE_KINDS.map((type) => <option key={type}>{type}</option>)}</select></Field>
-            <Field label="How it affects mapped elements"><select value={structureDraft.deontic} onChange={(event) => setStructureDraft((current) => ({ ...current, deontic: event.target.value }))}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <Field label="How it affects map items"><select value={structureDraft.deontic} onChange={(event) => setStructureDraft((current) => ({ ...current, deontic: event.target.value }))}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
             <Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={structureDraft.evidence} onChange={(event) => setStructureDraft((current) => ({ ...current, evidence: event.target.value }))} /></Field>
             <button className="button" type="button" onClick={addStructure}>Add Macro-level condition</button>
           </div>
         </section>}
         <div className="button-row candidate-step-actions">
-          {counts[step].remaining > 0 && <button className="button button--secondary" type="button" onClick={() => addAllRemaining(step)}>Add all {counts[step].remaining} remaining to map</button>}
           {nextStep && <button className="button" type="button" onClick={() => setStep(nextStep)}>{nextStep === 'edges' ? 'Continue to direct relationships' : 'Continue to more relationships'}<Icon name="arrow" /></button>}
         </div>
       </>}
@@ -1797,6 +2027,65 @@ function mapEdgeLabelGeometry(label, phoneLayout = false, scale = '') {
     height,
     startY: -((lines.length - 1) * lineHeight) / 2 + (emphasizeMeso ? (phoneLayout ? 10 : 7) : (phoneLayout ? 8 : 4)),
   };
+}
+
+// A visible relationship label needs a real corridor between its endpoint
+// cards. Keep a dragged endpoint far enough from every connected card to hold
+// the complete, untruncated label while preserving the requested direction of
+// movement whenever the map bounds allow it.
+function relationshipSafeNodePosition(movingNode, requestedX, requestedY, nodes, edges, phoneLayout = false, mapMode = 'network') {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const movingGeometry = mapNodeGeometry(movingNode.label, phoneLayout);
+  const incidentEdges = edges.filter((edge) => edge.showLabel !== false
+    && (edge.source === movingNode.id || edge.target === movingNode.id));
+  const constrain = (candidate) => {
+    const bounded = {
+      x: clamp(Math.round(candidate.x), movingGeometry.cardWidth / 2 + 8, WORLD_WIDTH - movingGeometry.cardWidth / 2 - 8),
+      y: clamp(Math.round(candidate.y), movingGeometry.cardHeight / 2 + 8, WORLD_HEIGHT - movingGeometry.cardHeight / 2 - 8),
+    };
+    return mapMode === 'ecology'
+      ? constrainToEcologyBand(movingNode, bounded.x, bounded.y, movingGeometry)
+      : bounded;
+  };
+  let position = constrain({ x: requestedX, y: requestedY });
+  for (let pass = 0; pass < Math.max(1, incidentEdges.length * 2); pass += 1) {
+    let changed = false;
+    incidentEdges.forEach((edge) => {
+      const otherId = edge.source === movingNode.id ? edge.target : edge.source;
+      const otherNode = nodeById.get(otherId);
+      if (!otherNode) return;
+      const otherGeometry = mapNodeGeometry(otherNode.label, phoneLayout);
+      let deltaX = position.x - otherNode.x;
+      let deltaY = position.y - otherNode.y;
+      let distance = Math.hypot(deltaX, deltaY);
+      if (distance < 1) {
+        deltaX = movingNode.x - otherNode.x || 1;
+        deltaY = movingNode.y - otherNode.y;
+        distance = Math.max(1, Math.hypot(deltaX, deltaY));
+      }
+      const unit = { x: deltaX / distance, y: deltaY / distance };
+      const labelGeometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
+      const projectedMovingHalf = movingGeometry.cardWidth / 2 * Math.abs(unit.x)
+        + movingGeometry.cardHeight / 2 * Math.abs(unit.y);
+      const projectedOtherHalf = otherGeometry.cardWidth / 2 * Math.abs(unit.x)
+        + otherGeometry.cardHeight / 2 * Math.abs(unit.y);
+      const projectedLabelHalf = labelGeometry.width / 2 * Math.abs(unit.x)
+        + labelGeometry.height / 2 * Math.abs(unit.y);
+      const requiredDistance = projectedMovingHalf + projectedOtherHalf + projectedLabelHalf * 2 + (phoneLayout ? 36 : 24);
+      if (distance >= requiredDistance - 1) return;
+      const requested = { x: requestedX, y: requestedY };
+      const alternatives = [1, -1].map((direction) => constrain({
+        x: otherNode.x + unit.x * requiredDistance * direction,
+        y: otherNode.y + unit.y * requiredDistance * direction,
+      }));
+      const valid = alternatives.filter((candidate) => Math.hypot(candidate.x - otherNode.x, candidate.y - otherNode.y) >= requiredDistance - 1);
+      position = (valid.length ? valid : alternatives)
+        .sort((left, right) => Math.hypot(left.x - requested.x, left.y - requested.y) - Math.hypot(right.x - requested.x, right.y - requested.y))[0];
+      changed = true;
+    });
+    if (!changed) break;
+  }
+  return position;
 }
 
 function cardConnectionPoint(from, toward, geometry, padding = 0) {
@@ -2312,26 +2601,21 @@ function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = fal
     occupiedSegments.push([roundedSource, roundedAnchor], [roundedAnchor, roundedTarget]);
   });
   if (unplaced.size) {
-    // Dragging, imported coordinates, or two cards placed too close together
-    // can make the strict endpoint corridor impossible. Keep the saved node
-    // positions intact and route the complete wording through a nearby clear
-    // callout instead of falling back to an overlapping midpoint label.
+    // Dragging, imported coordinates, or repeated edges can exhaust the clear
+    // lanes. Keep complete wording on the line between its endpoints; never
+    // send a relationship label to a detached callout around the nodes. The
+    // fallbackIds marker lets preview/arrange callers spread nodes and retry.
     const fallbackEdges = edges.filter((edge) => unplaced.has(edge.id));
-    const fallbackAnchors = focusedEcologyCalloutAnchors(
-      fallbackEdges,
-      nodes,
-      positions,
-      phoneLayout,
-      null,
-      [...bounds.values()],
-    );
     fallbackEdges.forEach((edge) => {
-      const anchor = fallbackAnchors.get(edge.id);
       const source = positions.get(edge.source);
       const target = positions.get(edge.target);
       const sourceNode = nodes.find((node) => node.id === edge.source);
       const targetNode = nodes.find((node) => node.id === edge.target);
-      if (!anchor || !source || !target || !sourceNode || !targetNode) return;
+      if (!source || !target || !sourceNode || !targetNode) return;
+      const anchor = {
+        x: Math.round((source.x + target.x) / 2),
+        y: Math.round((source.y + target.y) / 2),
+      };
       const geometry = mapEdgeLabelGeometry(edge.verb, phoneLayout, edge.scale);
       anchors.set(edge.id, anchor);
       bounds.set(edge.id, calloutBounds(anchor, geometry));
@@ -2339,7 +2623,7 @@ function betweenEndpointCalloutLayout(edges, nodes, positions, phoneLayout = fal
         source: cardConnectionPoint(source, anchor, mapNodeGeometry(sourceNode.label, phoneLayout)),
         target: cardConnectionPoint(target, anchor, mapNodeGeometry(targetNode.label, phoneLayout), phoneLayout ? 12 : 7),
       });
-      routeKinds.set(edge.id, 'callout');
+      routeKinds.set(edge.id, 'between-endpoints-tight');
       fallbackIds.add(edge.id);
       unplaced.delete(edge.id);
     });
@@ -2739,10 +3023,18 @@ function mapNeedsReadableOverview(nodes, events = [], phoneLayout = false) {
 
 function ConnectionPreview({ nodes, edges, suggestions }) {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const shownEdges = [
-    ...edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'),
+  const availableEdges = [];
+  const seenEdgeIds = new Set();
+  [
     ...suggestions.filter((edge) => edge.status !== 'rejected'),
-  ].filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
+    ...edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'),
+  ].forEach((edge) => {
+    if (seenEdgeIds.has(edge.id) || !nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
+    seenEdgeIds.add(edge.id);
+    availableEdges.push(edge);
+  });
+  const shownEdges = availableEdges.slice(0, CANDIDATE_BATCH_SIZE);
+  const hiddenEdgeCount = availableEdges.length - shownEdges.length;
   const layout = expandedConnectionLayout(nodes, shownEdges, false, { arrangedOnly: true });
   const previewNodes = nodes.map((node) => ({ ...node, ...(layout.positions.get(node.id) || {}) }));
   const previewNodeById = new Map(previewNodes.map((node) => [node.id, node]));
@@ -2758,7 +3050,7 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
       target,
       anchor,
       route,
-      routeKind: layout.routeKinds.get(edge.id) || 'callout',
+      routeKind: layout.routeKinds.get(edge.id) || 'between-endpoints-tight',
       proposed: suggestions.some((suggestion) => suggestion.id === edge.id),
     }];
   });
@@ -2791,8 +3083,10 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
       return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
     })()
     : `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`;
-  return <div className="connection-preview" role="img" aria-label={`Preview with ${nodes.length} nodes and ${shownEdges.length} connections`}>
-    <svg viewBox={previewViewBox} aria-hidden="true" focusable="false">
+  return <>
+    {hiddenEdgeCount > 0 && <p className="connection-preview__scope" role="status">Showing {shownEdges.length} of {availableEdges.length} connections. Use suggestion groups to review the rest.</p>}
+    <div className="connection-preview" role="img" aria-label={`Preview with ${nodes.length} nodes and ${shownEdges.length} connections`}>
+      <svg viewBox={previewViewBox} aria-hidden="true" focusable="false">
       <defs><marker id="connection-preview-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" /></marker></defs>
       <g className="connection-preview__lines">{shownEdgeLayouts.map(({ edge, anchor, route, proposed }) => <g key={edge.id} data-edge-id={edge.id} className={`connection-preview__edge ${proposed ? 'is-proposed' : 'is-existing'} ${edge.status === 'confirmed' ? 'is-accepted' : ''}`}>
         <path d={`M ${route.source.x} ${route.source.y} L ${anchor.x} ${anchor.y} L ${route.target.x} ${route.target.y}`} markerEnd="url(#connection-preview-arrow)" />
@@ -2811,8 +3105,9 @@ function ConnectionPreview({ nodes, edges, suggestions }) {
           <text textAnchor="middle">{geometry.lines.map((line, lineIndex) => <tspan key={`${node.id}-preview-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
         </g>;
       })}
-    </svg>
-  </div>;
+      </svg>
+    </div>
+  </>;
 }
 
 function AutoGrowingTextarea({ value, onChange, ...props }) {
@@ -2832,6 +3127,7 @@ function AutoGrowingTextarea({ value, onChange, ...props }) {
 }
 
 function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
+  const [suggestionPage, setSuggestionPage] = useState(0);
   const nodes = nodesForConnectionPrompt(project);
   const nodeIds = new Set(nodes.map((node) => node.id));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -2842,7 +3138,7 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
   const carriedMicroSettings = nodes.filter((node) => carriedMicroNodeIds.has(node.id));
   const exospherePathwayIssue = (edge) => project.activeScale === 'exosphere'
     && !isOrientedExospherePathway(nodeById.get(edge.source), nodeById.get(edge.target), carriedMicroNodeIds)
-    ? 'Choose one Exo-level outside decision setting and one Micro setting already carried on the map.'
+    ? 'Choose one Exo-level outside decision setting and one Micro setting already on the map.'
     : '';
   const endpointOptions = (validNodes, currentId) => {
     const current = nodeById.get(currentId);
@@ -2857,6 +3153,14 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
   const edges = [...new Map([...project.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)), ...keptCandidateEdges]
     .map((edge) => [edge.id, edge])).values()];
   const accepted = suggestions.filter((suggestion) => suggestion.status === 'confirmed' && !exospherePathwayIssue(suggestion)).length;
+  const suggestionPageCount = Math.max(1, Math.ceil(suggestions.length / CANDIDATE_BATCH_SIZE));
+  const activeSuggestionPage = Math.min(suggestionPage, suggestionPageCount - 1);
+  const suggestionPageStart = activeSuggestionPage * CANDIDATE_BATCH_SIZE;
+  const visibleSuggestions = suggestions.slice(suggestionPageStart, suggestionPageStart + CANDIDATE_BATCH_SIZE);
+  useEffect(() => {
+    setSuggestionPage((current) => Math.min(current, Math.max(0, suggestionPageCount - 1)));
+  }, [suggestionPageCount]);
+  useEffect(() => setSuggestionPage(0), [project.activeScale]);
   return <section className="connection-stage" aria-label="More connection suggestions">
     <p className="eyebrow">{nodes.length} selected nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
     <div className={`connection-stage__layout ${nodes.length > 6 ? 'is-dense' : ''}`}>
@@ -2873,15 +3177,15 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
       </section>
       <section className="connection-preview-panel" aria-labelledby="connection-preview-title">
         <div className="connection-preview-panel__title"><div><p className="eyebrow">Preview only</p><h2 id="connection-preview-title">Connection preview</h2></div>{suggestions.length > 0 && <strong>{accepted} added</strong>}</div>
-        <ConnectionPreview nodes={nodes} edges={edges} suggestions={suggestions} />
+        <ConnectionPreview nodes={nodes} edges={edges} suggestions={visibleSuggestions} />
       </section>
     </div>
     <section className="connection-suggestions" aria-labelledby="connection-suggestions-title">
       <div className="stage-title-row"><div><p className="eyebrow">Review</p><h2 id="connection-suggestions-title">Suggested connections</h2></div></div>
-      {suggestions.map((item, index) => {
+      {visibleSuggestions.map((item, index) => {
         const pathwayIssue = exospherePathwayIssue(item);
         return <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
-        <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
+        <div className="candidate-row__count">{String(suggestionPageStart + index + 1).padStart(2, '0')}</div>
         <div className="candidate-row__main">
           <div className="candidate-expression candidate-expression--edge connection-expression">
             <select aria-label={`Starting node for suggestion ${index + 1}`} value={item.source} onChange={(event) => onEdit(item.id, 'source', event.target.value)}>{endpointOptions(project.activeScale === 'exosphere' ? exosphereSources : nodes.filter((node) => node.id !== item.target), item.source).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select>
@@ -2898,6 +3202,7 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
       </article>;
       })}
       {!suggestions.length && <p className="empty-message">Choose “Suggest connections” to see suggestions here. Previewing or editing a connection does not add it; choose Add to map explicitly.</p>}
+      {suggestionPageCount > 1 && <nav className="candidate-pagination" aria-label="Connection suggestion groups"><span>Suggestions {suggestionPageStart + 1}–{Math.min(suggestionPageStart + CANDIDATE_BATCH_SIZE, suggestions.length)} of {suggestions.length}</span><div><button type="button" disabled={activeSuggestionPage === 0} onClick={() => setSuggestionPage(activeSuggestionPage - 1)}>Previous</button><button type="button" disabled={activeSuggestionPage >= suggestionPageCount - 1} onClick={() => setSuggestionPage(activeSuggestionPage + 1)}>Next</button></div></nav>}
     </section>
   </section>;
 }
@@ -3166,6 +3471,21 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
         return { id: `${node.id}:${memberId}`, linkageId: node.id, x1: linkagePoint.x, y1: linkagePoint.y, x2: memberPoint.x, y2: memberPoint.y, muted: node.visualMuted };
       }).filter(Boolean);
     });
+  const microSettingRegionVisuals = nodes
+    .filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type))
+    .map((setting) => {
+      const members = nodes.filter((node) => node.id !== setting.id && node.scale === 'micro' && (node.settingNodeIds || []).includes(setting.id));
+      if (!members.length) return null;
+      const points = [setting, ...members].map((node) => positions.get(node.id)).filter(Boolean);
+      if (!points.length) return null;
+      return {
+        setting,
+        memberCount: members.length,
+        path: convexHullPath(points),
+        selected: selection?.kind === 'node' && (selection.id === setting.id || members.some((member) => member.id === selection.id)),
+      };
+    })
+    .filter(Boolean);
   const graphSummary = visibleLayer === 'meso'
     ? `${nodes.filter((node) => node.scale === 'meso').length} ${nodes.filter((node) => node.scale === 'meso').length === 1 ? 'mesosystem' : 'mesosystems'} and ${nodes.filter((node) => node.scale === 'micro').length} Micro ${nodes.filter((node) => node.scale === 'micro').length === 1 ? 'setting' : 'settings'}`
     : `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`;
@@ -3187,6 +3507,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" /></marker></defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
       {mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} /> : null}
+      <g className="micro-setting-regions" aria-hidden="true">{microSettingRegionVisuals.map(({ setting, memberCount, path, selected }) => <path key={`micro-setting-${setting.id}`} data-setting-region={setting.id} data-member-count={memberCount} className={`micro-setting-region ${selected ? 'is-selected' : ''} ${setting.visualMuted ? 'is-muted' : ''}`} d={path} />)}</g>
       <g className="scope-fields" aria-hidden="true">{nodes.filter((node) => node.scale === 'macrosphere' && node.scopeNodeIds?.length).map((node) => {
         const memberPoints = node.scopeNodeIds.map((memberId) => positions.get(memberId)).filter(Boolean);
         if (!memberPoints.length) return null;
@@ -3216,9 +3537,12 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
         const scopeState = node.scale === 'meso' && node.scopeNodeIds?.length
           ? `, includes ${node.scopeNodeIds.length} Micro settings`
           : node.scale === 'macrosphere' && node.scopeNodeIds?.length
-            ? `, ${node.deontic || 'shapes'} ${node.scopeNodeIds.length} mapped ${node.scopeNodeIds.length === 1 ? 'element' : 'elements'}`
+            ? `, ${node.deontic || 'shapes'} ${node.scopeNodeIds.length} map ${node.scopeNodeIds.length === 1 ? 'item' : 'items'}`
             : '';
-        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale}, ${evidenceState}${scopeState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onKeyDown={(event) => keyboardNode(event, node)}>
+        const microContextState = node.scale === 'micro'
+          ? `, ${FOCAL_PARTICIPATION_LABELS[node.focalParticipation || 'unclear'] || 'Focal participation unclear'}, ${(node.settingNodeIds || []).length} immediate ${(node.settingNodeIds || []).length === 1 ? 'setting' : 'settings'}`
+          : '';
+        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale}, ${evidenceState}${scopeState}${microContextState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onKeyDown={(event) => keyboardNode(event, node)}>
           {selected && <rect className="node-selection-ring" x={geometry.ringX} y={geometry.ringY} width={geometry.ringWidth} height={geometry.ringHeight} rx={geometry.ringRadius} />}
           <rect className="node-card" x={geometry.cardX} y={geometry.cardY} width={geometry.cardWidth} height={geometry.cardHeight} rx={geometry.cardRadius} />
           <text className="node-label">{geometry.lines.map((line, lineIndex) => <tspan key={`${node.id}-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
@@ -3243,6 +3567,7 @@ function sameGraphVisuals(previous, next) {
     const a = previous.nodes[index]; const b = next.nodes[index];
     if (a.id !== b.id || a.x !== b.x || a.y !== b.y || a.label !== b.label || a.type !== b.type || a.scale !== b.scale || a.claimState !== b.claimState || Boolean(a.evidence) !== Boolean(b.evidence) || a.visualMuted !== b.visualMuted) return false;
     if ((a.scopeNodeIds || []).join(',') !== (b.scopeNodeIds || []).join(',') || a.deontic !== b.deontic) return false;
+    if ((a.settingNodeIds || []).join(',') !== (b.settingNodeIds || []).join(',') || a.focalParticipation !== b.focalParticipation) return false;
   }
   for (let index = 0; index < previous.edges.length; index += 1) {
     const a = previous.edges[index]; const b = next.edges[index];
@@ -3256,8 +3581,18 @@ const MemoGraphCanvas = React.memo(GraphCanvas, sameGraphVisuals);
 
 function MapLegend() {
   return <div className="legend-grid">
-    <section><h3>Layer</h3><ul>{SCALE_ORDER.map((scale) => <li key={scale}><i className={`legend-symbol legend-symbol--${scale}`} /><span>{SCALES[scale]?.label || scale}</span></li>)}</ul></section>
-        <p className="map-legend__note">A level shows an element’s position relative to the focal person. It does not measure causal strength.</p>
+    <section><h3>Levels</h3><dl className="level-guide">
+      <div><dt><i className="legend-symbol legend-symbol--micro" />Micro-level</dt><dd>Person participates directly in this setting or interaction.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--meso" />Meso-level</dt><dd>Linkage joins two or more Micro settings in which the person participates.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Person does not participate in this decision setting, but its action reaches a Micro setting.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Broader law, policy, economic condition, history, or cultural belief affects several map items.</dd></div>
+    </dl></section>
+    <section><h3>How to read this map</h3><ul className="map-conventions">
+      <li><strong>Micro relationship</strong><span>Direct connection between Micro-level items</span></li>
+      <li><strong>Mesosystem</strong><span>Linkage among settings; no directional connection is added</span></li>
+      <li><strong>Exo-level connection</strong><span>Outside decision setting connected to an affected Micro setting</span></li>
+      <li><strong>Macro-level condition</strong><span>Map items affected by a broader condition</span></li>
+    </ul><p className="map-legend__note">Level shows how each item relates to the focal person. It does not show causal strength.</p></section>
   </div>;
 }
 
@@ -3335,14 +3670,23 @@ function mapContentCenter(nodes, phoneLayout = false) {
 const INSPECTOR_TABS = ['node', 'relationships', 'map'];
 const FOCUSED_RELATIONSHIPS_PER_PAGE = 1;
 
+function blankManualNode(scale) {
+  return {
+    label: '',
+    type: scale === 'exosphere' ? 'institution' : 'person',
+    scale,
+    evidence: '',
+    claimState: 'research lead',
+    ...(scale === 'micro' ? { focalParticipation: 'direct', settingNodeIds: [] } : {}),
+  };
+}
+
 function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart }) {
   const [selection, setSelection] = useState(null);
   const [focus, setFocus] = useState(null);
   const [focusPage, setFocusPage] = useState(0);
   const [visibleScale, setVisibleScale] = useState(() => (
-    project.releasedScales.length > 1
-      ? 'all'
-      : project.releasedScales.includes(project.activeScale) ? project.activeScale : 'all'
+    project.releasedScales.length > 1 ? 'all' : project.activeScale
   ));
   const [presentation, setPresentation] = useState('canvas');
   const [showRemoved, setShowRemoved] = useState(false);
@@ -3360,7 +3704,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [phoneOverviewCommittedScope, setPhoneOverviewCommittedScope] = useState('');
   const [phoneEcologyCommittedScope, setPhoneEcologyCommittedScope] = useState('');
-  const [newNode, setNewNode] = useState({ label: '', type: project.activeScale === 'exosphere' ? 'institution' : 'person', scale: project.activeScale, evidence: '', claimState: 'research lead' });
+  const [newNode, setNewNode] = useState(() => blankManualNode(project.activeScale));
   const [newEdge, setNewEdge] = useState({ source: project.graph.nodes[0]?.id || '', target: project.graph.nodes[1]?.id || '', verb: 'provides', evidence: '', claimState: 'research lead' });
   const canvasWrapRef = useRef(null);
   const fullscreenToggleRef = useRef(null);
@@ -3370,9 +3714,15 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const phoneLayout = usePhoneLayout();
   const previousPhoneLayoutRef = useRef(phoneLayout);
   useEffect(() => {
+    setSelection(null);
+    setFocus(null);
+    setFocusPage(0);
+    setDrawerOpen(false);
+  }, [project.activeScale]);
+  useEffect(() => {
     setAddMode(null);
     setCreateMenuOpen(false);
-    setNewNode({ label: '', type: project.activeScale === 'exosphere' ? 'institution' : 'person', scale: project.activeScale, evidence: '', claimState: 'research lead' });
+    setNewNode(blankManualNode(project.activeScale));
     setNewEdge({ source: project.graph.nodes[0]?.id || '', target: project.graph.nodes[1]?.id || '', verb: 'provides', evidence: '', claimState: 'research lead' });
   }, [project.activeScale]);
   const ecologyLayers = useMemo(() => SCALE_ORDER.filter((scale) => project.releasedScales.includes(scale)), [project.releasedScales]);
@@ -3757,6 +4107,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const moveNode = useCallback((id, x, y, method) => {
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
+    const displayedNode = displayedNodes.find((node) => node.id === id);
+    const safePosition = displayedNode
+      ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, mapMode)
+      : { x, y };
     update((draft) => {
       if (automaticPositions) draft.graph.nodes.forEach((node) => {
         const position = automaticPositions.get(node.id);
@@ -3771,14 +4125,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         if (position) Object.assign(node, position);
       });
       const node = draft.graph.nodes.find((item) => item.id === id);
-      if (node) { node.x = x; node.y = y; }
+      if (node) { node.x = safePosition.x; node.y = safePosition.y; }
       if (phoneOverviewPositions || phoneEcologyPositions) draft.viewport = mapViewport || fitViewport(displayedNodes, 650, true);
     });
     if (phoneOverviewPositions) setPhoneOverviewCommittedScope(phoneOverviewScope);
     if (phoneEcologyPositions) setPhoneEcologyCommittedScope(phoneEcologyScope);
     setAutomaticPositions(null);
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
-  }, [automaticPositions, displayedNodes, logPrototype, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, update]);
+  }, [automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, update, visibleEdges]);
   const minimumInteractiveZoom = focusedEcologyPositions || phoneRelationshipPositions
     ? focusedDetailMinimumZoom
     : VIEWPORT_LIMITS.minZoom;
@@ -3877,50 +4231,81 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     logPrototype('map_arranged');
     toast(visibleScale === 'all' ? 'Map arranged by layer.' : 'Map arranged.');
   };
-  const retireDependentScopes = (draft, memberId) => {
-    const unavailableIds = new Set([memberId]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      ['candidates', 'graph'].forEach((container) => {
-        draft[container].nodes.forEach((node) => {
-          if (!Array.isArray(node.scopeNodeIds) || !node.scopeNodeIds.some((id) => unavailableIds.has(id)) || node.status === 'rejected' || node.claimState === 'retired') return;
-          node.status = 'rejected';
-          node.claimState = 'retired';
-          const note = 'Removed because one of its mapped scope members is no longer available. The earlier scope remains in the record for review.';
-          node.notes = node.notes ? `${node.notes}\n\n${note}` : note;
-          unavailableIds.add(node.id);
-          changed = true;
-        });
-      });
-    }
+  const dependentMapItems = (nodeId) => ({
+    scopes: project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && (node.scopeNodeIds || []).includes(nodeId)),
+    memberships: project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && (node.settingNodeIds || []).includes(nodeId)),
+    relationships: project.graph.edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired' && (edge.source === nodeId || edge.target === nodeId)),
+  });
+  const dependencyMessage = (nodeId, action) => {
+    const dependencies = dependentMapItems(nodeId);
+    const labels = [
+      ...dependencies.scopes.map((node) => node.label),
+      ...dependencies.memberships.map((node) => `${node.label} (setting membership)`),
+      ...dependencies.relationships.map((edge) => `${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`),
+    ];
+    if (!labels.length) return '';
+    return `Review or remove connected map work before ${action}: ${labels.join('; ')}.`;
   };
   const editNode = (field, value) => {
     if (!selectedNode) return;
     if (field === 'scale') return toast('A node’s level is fixed after it is mapped. Remove it and add it at the correct level instead.', 'error');
-    if (field === 'label' && !isCanonicalMapElementLabel(value, selectedNode.scale)) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
-    if (field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map element.', 'error');
+    if (field === 'label' && !isCanonicalMapElementLabel(value, selectedNode.scale)) return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
+    if (field === 'label' && containsRetiredSystemsLanguage(value)) return toast('Use a direct, conventional name for the map item.', 'error');
     if (field === 'type' && !isNodeTypeAllowedAtScale(value, selectedNode.scale)) return toast(`That type does not belong at ${SCALES[selectedNode.scale].label}.`, 'error');
+    if (field === 'type' && selectedNode.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(value) && (selectedNode.settingNodeIds || []).length) return toast('Remove the immediate setting memberships before changing this item to a setting.', 'error');
     if (field === 'label' && selectedNode.scale === 'micro' && !isDiscreteMicroNodeLabel(value)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (field === 'label' && selectedNode.scale === 'meso' && !isMesosystemLabel(value)) return toast('Name how at least two Micro settings relate to one another, without adding a directional connection.', 'error');
     if (field === 'label' && selectedNode.scale === 'exosphere' && !isNamedInstitutionLabel(value)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
     if (field === 'label' && selectedNode.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(value)) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
     if (field === 'label' && selectedNode.scale === 'macrosphere' && labelRepeatsInstitution(value, project.graph.nodes.filter((node) => node.scale === 'exosphere'))) return toast('That label names or repeats an institution. Add it at Exo-level instead.', 'error');
-    if (field === 'scopeNodeIds' && ['meso', 'macrosphere'].includes(selectedNode.scale) && value.length < 2) return toast(selectedNode.scale === 'meso' ? 'A mesosystem must include at least two Micro settings.' : 'A Macro-level condition must affect at least two mapped elements.', 'error');
+    if (field === 'scopeNodeIds' && ['meso', 'macrosphere'].includes(selectedNode.scale) && value.length < 2) return toast(selectedNode.scale === 'meso' ? 'A mesosystem must include at least two Micro settings.' : 'A Macro-level condition must affect at least two map items.', 'error');
+    const settingRoleRemoved = field === 'type' && selectedNode.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(selectedNode.type) && !MICRO_SETTING_NODE_TYPE_SET.has(value);
+    if (settingRoleRemoved) {
+      const message = dependencyMessage(selectedNode.id, 'changing this setting type');
+      if (message) return toast(message, 'error');
+    }
     update((draft) => {
-    const node = draft.graph.nodes.find((item) => item.id === selection?.id);
-    if (!node) return;
-    const settingRoleRemoved = field === 'type' && node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type) && !MICRO_SETTING_NODE_TYPE_SET.has(value);
-    node[field] = value;
-    if (settingRoleRemoved) retireDependentScopes(draft, node.id);
-    if (field === 'label') draft.graph.edges.forEach((edge) => {
-      if (edge.source === node.id) edge.sourceLabel = value;
-      if (edge.target === node.id) edge.targetLabel = value;
+      const node = draft.graph.nodes.find((item) => item.id === selection?.id);
+      if (!node) return;
+      const previousLabel = node.label;
+      node[field] = value;
+      const candidate = draft.candidates.nodes.find((item) => item.id === node.id)
+        || draft.candidates.nodes.find((item) => item.scale === node.scale && item.label === previousLabel);
+      if (candidate) candidate[field] = value;
+      if (field === 'label') {
+        draft.graph.edges.forEach((edge) => {
+          if (edge.source === node.id) edge.sourceLabel = value;
+          if (edge.target === node.id) edge.targetLabel = value;
+        });
+        draft.candidates.edges.forEach((edge) => {
+          if (edge.source === node.id) edge.sourceLabel = value;
+          if (edge.target === node.id) edge.targetLabel = value;
+        });
+      }
     });
+  };
+  const editEdge = (field, value) => {
+    if (!selectedEdge) return;
+    if (field === 'relationshipProcess' && !['micro', 'exosphere'].includes(selectedEdge.scale)) return;
+    update((draft) => {
+      const edge = draft.graph.edges.find((item) => item.id === selection?.id);
+      if (!edge) return;
+      const previousSourceLabel = edge.sourceLabel;
+      const previousTargetLabel = edge.targetLabel;
+      const previousVerb = edge.verb;
+      edge[field] = value;
+      const candidate = draft.candidates.edges.find((item) => item.id === edge.id)
+        || draft.candidates.edges.find((item) => item.scale === edge.scale
+          && item.sourceLabel === previousSourceLabel && item.targetLabel === previousTargetLabel && item.verb === previousVerb);
+      if (candidate) candidate[field] = value;
     });
   };
   const setSelectedRemoved = (removed) => {
     if (!selection) return;
+    if (removed && selection.kind === 'node') {
+      const message = dependencyMessage(selection.id, `removing ${selectedNode?.label || 'this node'}`);
+      if (message) return toast(message, 'error');
+    }
     if (!removed && selection.kind === 'node' && containsRetiredSystemsLanguage(selectedNode?.label)) return toast('Rename this item with a direct, conventional name before returning it to the map.', 'error');
     if (!removed && selection.kind === 'node' && ['meso', 'macrosphere'].includes(selectedNode?.scale)) {
       const memberById = new Map(project.graph.nodes.map((node) => [node.id, node]));
@@ -3929,7 +4314,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         return member && member.status !== 'rejected' && member.claimState !== 'retired'
           && (selectedNode.scale !== 'meso' || (member.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(member.type)));
       });
-      if (!membersAreAvailable) return toast(selectedNode.scale === 'meso' ? 'Restore at least two included Micro settings before returning this mesosystem to the map.' : 'Restore at least two affected mapped elements before returning this Macro-level condition to the map.', 'error');
+      if (!membersAreAvailable) return toast(selectedNode.scale === 'meso' ? 'Restore at least two included Micro settings before returning this mesosystem to the map.' : 'Restore at least two affected map items before returning this Macro-level condition to the map.', 'error');
     }
     if (!removed && selection.kind === 'node' && selectedNode?.scale === 'exosphere' && !isNamedInstitutionLabel(selectedNode.label)) {
       return toast('Rename this item with the full name of an institution, agency, office, or service system before returning it to the map.', 'error');
@@ -3938,7 +4323,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       return toast('Name one specific person, role, group, activity, object, or immediate setting before returning it to the map.', 'error');
     }
     if (!removed && selection.kind === 'node' && !isCanonicalMapElementLabel(selectedNode?.label, selectedNode?.scale)) {
-      return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
+      return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
     }
     if (!removed && selection.kind === 'node' && selectedNode?.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(selectedNode.label)) {
       return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
@@ -3950,17 +4335,28 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       const endpointById = new Map(project.graph.nodes.map((node) => [node.id, node]));
       const sourceNode = endpointById.get(edge.source);
       const targetNode = endpointById.get(edge.target);
-      if (edge.scale === 'micro' && (sourceNode?.scale !== 'micro' || targetNode?.scale !== 'micro')) return toast('A Micro relationship must connect two Micro elements.', 'error');
+      if (edge.scale === 'micro' && (sourceNode?.scale !== 'micro' || targetNode?.scale !== 'micro')) return toast('A Micro relationship must connect two Micro-level items.', 'error');
       if (edge.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(sourceNode?.type) && MICRO_SETTING_NODE_TYPE_SET.has(targetNode?.type)) return toast('An interrelation between two immediate settings belongs at Meso, not in Micro relationships.', 'error');
-      if (edge.scale === 'exosphere' && (!isExosphereDecisionPathway(sourceNode, targetNode) || !scaleLexiconVerb('exosphere', edge.verb))) return toast('This pathway must run from one Exo-level outside decision setting to one carried Micro setting before it can return to the map.', 'error');
+      if (edge.scale === 'exosphere' && (!isExosphereDecisionPathway(sourceNode, targetNode) || !scaleLexiconVerb('exosphere', edge.verb))) return toast('This Exo-level connection must run from one outside decision setting to one Micro setting already on the map.', 'error');
     }
     update((draft) => {
       const items = selection.kind === 'node' ? draft.graph.nodes : draft.graph.edges;
       const item = items.find((candidate) => candidate.id === selection.id);
       if (!item) return;
-      if (removed && selection.kind === 'node') retireDependentScopes(draft, item.id);
       item.status = removed ? 'rejected' : 'confirmed';
       item.claimState = removed ? 'retired' : 'student interpretation';
+      item.reviewDecision = removed ? 'removed' : 'added';
+      const candidates = selection.kind === 'node' ? draft.candidates.nodes : draft.candidates.edges;
+      const candidate = candidates.find((entry) => entry.id === selection.id)
+        || (selection.kind === 'node'
+          ? candidates.find((entry) => entry.scale === item.scale && entry.label === item.label)
+          : candidates.find((entry) => entry.scale === item.scale
+            && entry.sourceLabel === item.sourceLabel && entry.targetLabel === item.targetLabel && entry.verb === item.verb));
+      if (candidate) {
+        candidate.status = item.status;
+        candidate.claimState = item.claimState;
+        candidate.reviewDecision = item.reviewDecision;
+      }
     }, removed ? 'map.item.removed' : 'map.item.restored', selection.id);
     if (removed && !showRemoved) {
       setSelection(null);
@@ -3976,6 +4372,8 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     && node.claimState !== 'retired'
     && (project.activeScale !== 'micro' || node.scale === 'micro')
     && !['meso', 'macrosphere'].includes(project.activeScale));
+  const mapMicroSettingOptions = project.graph.nodes
+    .filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type));
   const relationshipSourceNodes = project.activeScale === 'exosphere'
     ? relationshipNodes.filter((node) => node.scale === 'exosphere')
     : relationshipNodes;
@@ -3988,33 +4386,44 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const addNode = () => {
     if (!project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
     if (project.activeScale === 'meso') return toast('Add mesosystems from the Choose stage so each one includes at least two Micro settings.', 'error');
-    if (project.activeScale === 'macrosphere') return toast('Add Macro-level conditions from the Choose stage so each one identifies the mapped elements it affects.', 'error');
+    if (project.activeScale === 'macrosphere') return toast('Add Macro-level conditions from the Choose stage so each one identifies the map items it affects.', 'error');
     if (project.graph.nodes.length >= PROJECT_LIMITS.nodes) return toast(`This map already contains the maximum ${PROJECT_LIMITS.nodes} nodes.`, 'error');
     if (!newNode.label.trim()) return toast('Name the node before adding it.', 'error');
-    if (!isCanonicalMapElementLabel(newNode.label, newNode.scale)) return toast('Name one complete map element instead of a reference, time, modifier, action, or fragment.', 'error');
-    if (containsRetiredSystemsLanguage(newNode.label)) return toast('Use a direct, conventional name for the map element.', 'error');
+    if (!isCanonicalMapElementLabel(newNode.label, newNode.scale)) return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
+    if (containsRetiredSystemsLanguage(newNode.label)) return toast('Use a direct, conventional name for the map item.', 'error');
     if (!isNodeTypeAllowedAtScale(newNode.type, newNode.scale) || ['meso', 'macrosphere'].includes(newNode.scale)) return toast('Choose a type and level that belong together.', 'error');
     if (newNode.scale === 'micro' && !isDiscreteMicroNodeLabel(newNode.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (newNode.scale === 'exosphere' && !isNamedInstitutionLabel(newNode.label)) return toast('Use the full name of an institution, agency, office, or service system.', 'error');
     if (project.instructor.evidenceRequired && !newNode.evidence.trim()) return toast('Add evidence or a question before adding the node.', 'error');
     const id = stableId('node', `${newNode.label}:${Date.now()}`);
+    const claimEvidence = newNode.evidence.trim()
+      ? [createClaimEvidenceRecord({ sourcePassage: newNode.evidence.trim() }, { ownerId: id, index: 0 })]
+      : [];
+    const microContext = newNode.scale === 'micro'
+      ? {
+        focalParticipation: FOCAL_PARTICIPATION_STATES.includes(newNode.focalParticipation) ? newNode.focalParticipation : 'direct',
+        settingNodeIds: Array.isArray(newNode.settingNodeIds) ? newNode.settingNodeIds : [],
+      }
+      : {};
+    const { focalParticipation: _focalParticipation, settingNodeIds: _settingNodeIds, ...baseNewNode } = newNode;
     update((draft) => {
-      draft.graph.nodes = withDefaultNodeLayout([...draft.graph.nodes, { ...newNode, label: newNode.label.trim(), id, status: 'confirmed', notes: '' }]);
+      draft.graph.nodes = withDefaultNodeLayout([...draft.graph.nodes, { ...baseNewNode, ...microContext, label: newNode.label.trim(), id, status: 'confirmed', notes: '', claimEvidence, origin: 'student entry', reviewDecision: 'added' }]);
     }, 'node.added', newNode.label.trim());
     setSelection({ kind: 'node', id });
+    setInspectorTab('node');
     setNewEdge((current) => ({
       ...current,
       source: current.source || id,
       target: !current.target || current.target === current.source ? id : current.target,
     }));
-    setNewNode({ label: '', type: project.activeScale === 'exosphere' ? 'institution' : 'person', scale: project.activeScale, evidence: '', claimState: 'research lead' });
+    setNewNode(blankManualNode(project.activeScale));
     setAddMode(null);
     toast('Node added.');
   };
   const addEdge = () => {
     if (!project.instructor.allowResearchLeads) return toast('Items needing more evidence are turned off for this project.', 'error');
     if (project.activeScale === 'meso') return toast('Meso shows how Micro settings relate to one another. Add direct connections at Micro.', 'error');
-    if (project.activeScale === 'macrosphere') return toast('Macro-level conditions identify the mapped elements they affect. Add direct connections at Micro-level.', 'error');
+    if (project.activeScale === 'macrosphere') return toast('Macro-level conditions identify the map items they affect. Add direct connections at Micro-level.', 'error');
     if (project.graph.edges.length >= PROJECT_LIMITS.edges) return toast(`This map already contains the maximum ${PROJECT_LIMITS.edges} relationships.`, 'error');
     const source = relationshipSource;
     const target = relationshipTarget;
@@ -4023,13 +4432,16 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (project.activeScale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(source.type) && MICRO_SETTING_NODE_TYPE_SET.has(target.type)) return toast('An interrelation between two immediate settings belongs at Meso, not in Micro relationships.', 'error');
     if (project.activeScale === 'exosphere') {
       const carriedMicroNodeIds = new Set(relationshipTargetNodes.map((node) => node.id));
-      if (!isOrientedExospherePathway(source, target, carriedMicroNodeIds)) return toast('Connect one Exo-level outside decision setting to one carried Micro setting.', 'error');
+      if (!isOrientedExospherePathway(source, target, carriedMicroNodeIds)) return toast('Connect one Exo-level outside decision setting to one Micro setting already on the map.', 'error');
     }
     const canonicalVerb = project.activeScale === 'exosphere' ? scaleLexiconVerb('exosphere', newEdge.verb) : newEdge.verb.trim();
-    if (!canonicalVerb) return toast('Choose an institutional relationship such as funds, regulates, employs, or provides.', 'error');
+    if (!canonicalVerb) return toast('Choose how the institution affects the Micro setting: funds, regulates, employs, or provides.', 'error');
     if (project.instructor.evidenceRequired && !newEdge.evidence.trim()) return toast('Add evidence or a question before adding the relationship.', 'error');
     const id = stableId('edge', `${source.id}:${newEdge.verb}:${target.id}:${Date.now()}`);
-    update((draft) => { draft.graph.edges.push({ ...newEdge, verb: canonicalVerb, id, source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, scale: project.activeScale, status: 'confirmed', notes: '', annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' } }); }, 'edge.added', `${source.label} ${canonicalVerb} ${target.label}`);
+    const claimEvidence = newEdge.evidence.trim()
+      ? [createClaimEvidenceRecord({ sourcePassage: newEdge.evidence.trim() }, { ownerId: id, index: 0 })]
+      : [];
+    update((draft) => { draft.graph.edges.push({ ...newEdge, verb: canonicalVerb, id, source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, scale: project.activeScale, status: 'confirmed', notes: '', claimEvidence, origin: 'student entry', reviewDecision: 'added', annotation: { id: stableId('annotation', `edge:${id}:relationship`), text: '' } }); }, 'edge.added', `${source.label} ${canonicalVerb} ${target.label}`);
     setSelection({ kind: 'edge', id });
     setInspectorTab('relationships');
     setAddMode(null);
@@ -4058,7 +4470,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const focusSummary = focusedNode?.scale === 'meso'
     ? <>Showing the Micro settings included in <strong>{focusLabel}</strong>.</>
     : focusedNode?.scale === 'macrosphere'
-      ? <>Showing mapped elements affected by <strong>{focusLabel}</strong>.</>
+      ? <>Showing map items affected by <strong>{focusLabel}</strong>.</>
       : <>Showing connections for <strong>{focusLabel}</strong>.</>;
   const inspectorTabs = ['meso', 'macrosphere'].includes(visibleScale)
     ? INSPECTOR_TABS.filter((tab) => tab !== 'relationships')
@@ -4067,7 +4479,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const mapOverviewHint = visibleScale === 'meso'
     ? 'Choose a mesosystem to see the Micro settings it includes.'
     : visibleScale === 'macrosphere'
-      ? 'Choose a Macro-level condition to see the mapped elements it affects.'
+      ? 'Choose a Macro-level condition to see the map items it affects.'
       : 'Choose a node to see its relationships.';
   const changeFocusPage = (nextPage) => {
     const boundedPage = clamp(nextPage, 0, focusPageCount - 1);
@@ -4114,7 +4526,26 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           </div>
         </div>
         <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{inspectorTabs.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, inspectorTabs, inspectorTab, setTab)}>{tab === 'relationships' ? 'Relationships' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
-        {addMode === 'node' && <div className="add-form"><h3>New node</h3><Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field><div className="field-pair"><Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value }))}>{NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale)).map((type) => <option key={type}>{type}</option>)}</select></Field><Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => ({ ...current, scale: event.target.value, type: isNodeTypeAllowedAtScale(current.type, event.target.value) ? current.type : (event.target.value === 'exosphere' ? 'institution' : 'person') }))}>{project.releasedScales.filter((scale) => !['meso', 'macrosphere'].includes(scale)).map((scale) => <option key={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field></div><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newNode.evidence} onChange={(event) => setNewNode((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addNode}>Add node</button></div>}
+        {addMode === 'node' && <div className="add-form">
+          <h3>New node</h3>
+          <Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
+          <div className="field-pair">
+            <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale)).map((type) => <option key={type}>{type}</option>)}</select></Field>
+            <Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => {
+              const scale = event.target.value;
+              const type = isNodeTypeAllowedAtScale(current.type, scale) ? current.type : (scale === 'exosphere' ? 'institution' : 'person');
+              return { ...blankManualNode(scale), label: current.label, evidence: current.evidence, type };
+            })}>{project.releasedScales.filter((scale) => !['meso', 'macrosphere'].includes(scale)).map((scale) => <option key={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
+          </div>
+          {newNode.scale === 'micro' && <MicroParticipationEditor
+            item={newNode}
+            settingOptions={mapMicroSettingOptions}
+            onParticipationChange={(value) => setNewNode((current) => ({ ...current, focalParticipation: value }))}
+            onSettingNodeIdsChange={(value) => setNewNode((current) => ({ ...current, settingNodeIds: value }))}
+          />}
+          <Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newNode.evidence} onChange={(event) => setNewNode((current) => ({ ...current, evidence: event.target.value }))} /></Field>
+          <button className="button" type="button" onClick={addNode}>Add node</button>
+        </div>}
         {addMode === 'edge' && ['micro', 'exosphere'].includes(project.activeScale) && <div className="add-form"><h3>New relationship</h3><Field label={project.activeScale === 'exosphere' ? 'Outside decision setting' : 'From'}><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship">{project.activeScale === 'exosphere' ? <select value={scaleLexiconVerb('exosphere', newEdge.verb) || SCALE_VERB_LEXICONS.exosphere[0]} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select> : <input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} />}</Field><Field label={project.activeScale === 'exosphere' ? 'Affected Micro setting' : 'To'}><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-node">{selectedNode ? <>
           <details className="node-summary">
@@ -4133,30 +4564,38 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
                   : <Field label="Type"><select value={selectedNode.type} onChange={(event) => editNode('type', event.target.value)}>{NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, selectedNode.scale)).map((type) => <option key={type}>{type}</option>)}</select></Field>}
                 <Field label="Level"><input value={SCALES[selectedNode.scale].label} readOnly /></Field>
               </div>
-              {['meso', 'macrosphere'].includes(selectedNode.scale) && <div className="scope-editor" aria-label={selectedNode.scale === 'meso' ? `Micro settings included in ${selectedNode.label}` : `Mapped elements affected by ${selectedNode.label}`}>
-                {selectedNode.scale === 'macrosphere' && <div className="scope-editor__mode"><label><span>How it affects mapped elements</span><select aria-label={`How ${selectedNode.label} affects mapped elements`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
+              {selectedNode.scale === 'micro' && <MicroParticipationEditor
+                item={selectedNode}
+                settingOptions={mapMicroSettingOptions}
+                onParticipationChange={(value) => editNode('focalParticipation', value)}
+                onSettingNodeIdsChange={(value) => editNode('settingNodeIds', value)}
+              />}
+              {['meso', 'macrosphere'].includes(selectedNode.scale) && <div className="scope-editor" aria-label={selectedNode.scale === 'meso' ? `Micro settings included in ${selectedNode.label}` : `Map items affected by ${selectedNode.label}`}>
+                {selectedNode.scale === 'macrosphere' && <div className="scope-editor__mode"><label><span>How it affects map items</span><select aria-label={`How ${selectedNode.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
                 <div className="scope-editor__members">
                   {(selectedNode.scopeNodeIds || []).map((memberId) => {
                     const member = project.graph.nodes.find((node) => node.id === memberId);
                     if (!member) return null;
-                    const removeLabel = selectedNode.scale === 'meso' ? `Remove ${member.label} from ${selectedNode.label}` : `Remove ${member.label} from the mapped elements affected by ${selectedNode.label}`;
+                    const removeLabel = selectedNode.scale === 'meso' ? `Remove ${member.label} from ${selectedNode.label}` : `Remove ${member.label} from map items affected by ${selectedNode.label}`;
                     return <button key={memberId} type="button" className="scope-chip" onClick={() => editNode('scopeNodeIds', (selectedNode.scopeNodeIds || []).filter((entry) => entry !== memberId))} aria-label={removeLabel}>{member.label}<span aria-hidden="true"> ×</span></button>;
                   })}
-                  <select className="scope-editor__add" aria-label={selectedNode.scale === 'meso' ? `Add a Micro setting to ${selectedNode.label}` : `Add a mapped element affected by ${selectedNode.label}`} value="" onChange={(event) => { const memberId = event.target.value; if (!memberId) return; const current = selectedNode.scopeNodeIds || []; if (current.includes(memberId) || current.length >= PROJECT_LIMITS.scopeMembers) return; editNode('scopeNodeIds', [...current, memberId]); }}>
-                    <option value="">{selectedNode.scale === 'meso' ? 'Add Micro setting…' : 'Add element…'}</option>
+                  <select className="scope-editor__add" aria-label={selectedNode.scale === 'meso' ? `Add a Micro setting to ${selectedNode.label}` : `Add a map item affected by ${selectedNode.label}`} value="" onChange={(event) => { const memberId = event.target.value; if (!memberId) return; const current = selectedNode.scopeNodeIds || []; if (current.includes(memberId) || current.length >= PROJECT_LIMITS.scopeMembers) return; editNode('scopeNodeIds', [...current, memberId]); }}>
+                    <option value="">{selectedNode.scale === 'meso' ? 'Add Micro setting…' : 'Add map item…'}</option>
                     {project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.id !== selectedNode.id && !(selectedNode.scopeNodeIds || []).includes(node.id) && (selectedNode.scale === 'meso' ? node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type) : node.scale !== 'macrosphere')).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}
                   </select>
-                  {(selectedNode.scopeNodeIds || []).length < 2 && <span className="scope-editor__empty">{selectedNode.scale === 'meso' ? 'Choose at least two Micro settings.' : 'Choose at least two mapped elements.'}</span>}
+                  {(selectedNode.scopeNodeIds || []).length < 2 && <span className="scope-editor__empty">{selectedNode.scale === 'meso' ? 'Choose at least two Micro settings.' : 'Choose at least two map items.'}</span>}
                 </div>
               </div>}
+              {selectedNode.scale === 'meso' && <Field label="What passes, coordinates, or conflicts?" hint="Describe information, resources, schedules, rules, coordination, or conflict across these settings."><textarea rows="4" maxLength={PROJECT_LIMITS.noteText} value={selectedNode.mesoExplanation || ''} onChange={(event) => editNode('mesoExplanation', event.target.value)} /></Field>}
               <div className="provenance-block"><span>Evidence</span><p>{selectedNode.evidence || 'No evidence added yet.'}</p>{selectedNode.notes && <><span>Annotation</span><p>{selectedNode.notes}</p></>}</div>
             </div>
           </details>
           <button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button>
+          <ClaimEvidenceEditor ownerId={`node:${selectedNode.id}`} records={selectedNode.claimEvidence || []} onChange={(records) => editNode('claimEvidence', records)} />
           <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'analytical'} aria-controls="node-analytical-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'analytical' ? null : 'analytical')}><span>Annotation</span><Icon name={annotationDisclosure === 'analytical' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'analytical' && <div id="node-analytical-annotation"><AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Annotation" value={selectedNode.annotations.analytical.text} onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} /></div>}</section>
-          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
+          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence note</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence note" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
         </> : <p className="empty-message">Choose a node on the map to inspect and annotate it.</p>}</div>}
-        {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.verb}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence</span><p>{selectedEdge.evidence || 'No evidence added yet.'}</p></div></div></details><button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button><AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
+        {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.verb}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence</span><p>{selectedEdge.evidence || 'No evidence added yet.'}</p></div></div></details><button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button><ClaimEvidenceEditor ownerId={`edge:${selectedEdge.id}`} records={selectedEdge.claimEvidence || []} onChange={(records) => editEdge('claimEvidence', records)} />{['micro', 'exosphere'].includes(selectedEdge.scale) && <RelationshipProcessEditor edge={selectedEdge} onChange={(process) => editEdge('relationshipProcess', process)} />}<AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
         {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary">{visibleScale === 'meso' ? <><strong>{mesoLinkageCount}</strong><span>{mesoLinkageCount === 1 ? 'mesosystem' : 'mesosystems'}</span><strong>{mesoSettingCount}</strong><span>Micro {mesoSettingCount === 1 ? 'setting' : 'settings'}</span></> : <><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></>}</div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
       </aside>
     </div>
@@ -4272,7 +4711,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype, o
           <Field label="What changed over time or across your revisions?"><textarea rows="3" maxLength="2000" value={macroSynthesis.changed} onChange={(event) => setSynthesisField('changed', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
         </section> : <Field label={revisionPrompt} hint={`Optional ${levelLabel} revision note`}><textarea className="reflection" rows="8" maxLength={PROJECT_LIMITS.promptText} value={project.reflection} onChange={(event) => update((draft) => { draft.reflection = event.target.value; })} onBlur={() => update(() => {}, 'reflection.revised', `${levelLabel} revision reflection`)} placeholder="Record a correction, a change in interpretation, or a question you still need to investigate." /></Field>}
         <div className="release-summary"><div><strong>{currentNodes}</strong><span>{project.activeScale === 'meso' ? 'mesosystems' : 'nodes on map'}</span></div>{project.activeScale !== 'meso' && project.activeScale !== 'macrosphere' && <div><strong>{currentRelationships}</strong><span>{project.activeScale === 'micro' ? 'direct relationships' : 'relationships'}</span></div>}<div><strong>{needsEvidence}</strong><span>items needing evidence</span></div><div><strong>{project.events.length}</strong><span>changes</span></div></div>
-        <div className="sharing-row"><Field label="Who can receive this copy?"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}{index > maxIndex ? ' · unavailable' : ''}</option>)}</select></Field></div>
+        <div className="sharing-row"><Field label="Prepare copy for"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}{index > maxIndex ? ' · unavailable' : ''}</option>)}</select></Field></div>
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
@@ -4623,6 +5062,10 @@ function App() {
   const update = useCallback((mutator, action, detail, actor = 'student', metadata = null) => setProject((current) => {
     const next = structuredClone(current);
     mutator(next);
+    if (next.levelProgress?.[next.activeScale]) {
+      next.levelProgress[next.activeScale].stage = next.stage;
+      next.levelProgress[next.activeScale].reflection = next.reflection;
+    }
     next.updatedAt = new Date().toISOString();
     if (action) next.events.push(createEvent(action, detail, actor, metadata));
     if (next.events.length > 500) next.events = next.events.slice(-500);
@@ -4772,6 +5215,7 @@ function App() {
         next.rationale = 'You edited this suggestion.';
         next.status = 'pending';
         next.claimState = 'inference';
+        next.reviewDecision = 'pending';
       }
       return next;
     }));
@@ -4785,12 +5229,12 @@ function App() {
         .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired' && node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type))
         .map((node) => node.id));
       if (!isOrientedExospherePathway(nodeById.get(suggestion.source), nodeById.get(suggestion.target), carriedMicroNodeIds)) {
-        toast('Choose one Exo-level outside decision setting and one Micro setting already carried on the map.', 'error');
+        toast('Choose one Exo-level outside decision setting and one Micro setting already on the map.', 'error');
         return;
       }
     }
     setConnectionSuggestions((current) => current.map((suggestion) => suggestion.id === id
-      ? { ...suggestion, status, claimState: status === 'confirmed' ? 'student interpretation' : 'inference' }
+      ? { ...suggestion, status, claimState: status === 'confirmed' ? 'student interpretation' : 'inference', reviewDecision: status === 'confirmed' ? 'added' : 'removed' }
       : suggestion));
   };
 
@@ -4852,10 +5296,16 @@ function App() {
           scale: node.scale,
           status: 'pending',
           claimState: 'inference',
+          origin: 'model suggestion',
+          reviewDecision: 'pending',
           evidence: node.evidence || '',
           sourceFingerprint: fingerprint,
           notes: '',
           ...(node.basis ? { basis: node.basis } : {}),
+          ...(currentProject.activeScale === 'micro' ? {
+            focalParticipation: 'direct',
+            settingNodeIds: [],
+          } : {}),
           // Meso linkages and Macrosphere items carry their mapped members as
           // durable graph ids the student can edit directly.
           ...(['meso', 'macrosphere'].includes(currentProject.activeScale) ? {
@@ -4871,7 +5321,14 @@ function App() {
       if (!isNodeTypeAllowedAtScale(node.type, currentProject.activeScale)) return;
       if (currentProject.activeScale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) return;
       if (currentProject.activeScale === 'macrosphere' && labelRepeatsInstitution(node.label, [...liveGraphNodes.values()].filter((entry) => entry.scale === 'exosphere'))) return;
-      if (!nodeById.has(node.id)) nodeById.set(node.id, { ...node, sourceFingerprint: node.sourceFingerprint || fingerprint });
+      if (!nodeById.has(node.id)) nodeById.set(node.id, {
+        ...node,
+        origin: node.origin || 'memo extraction',
+        reviewDecision: node.reviewDecision || 'pending',
+        sourceFingerprint: node.sourceFingerprint || fingerprint,
+        focalParticipation: node.focalParticipation || 'direct',
+        settingNodeIds: Array.isArray(node.settingNodeIds) ? node.settingNodeIds : [],
+      });
     });
     const edgeKeyOf = (edge) => `${edge.source}::${edge.verb.trim().toLocaleLowerCase()}::${edge.target}`;
     // A connection that already lives on the map is settled work: it never
@@ -4905,6 +5362,8 @@ function App() {
         scale: currentProject.activeScale,
         status: 'pending',
         claimState: 'inference',
+        origin: 'model suggestion',
+        reviewDecision: 'pending',
         directed: true,
         rationale: connection.rationale || '',
         evidence: connection.rationale || '',
@@ -4919,7 +5378,7 @@ function App() {
     extracted.edges.forEach((edge) => {
       if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
       const key = edgeKeyOf(edge);
-      if (!liveEdgeKeys.has(key) && !edgeByKey.has(key)) edgeByKey.set(key, { ...edge, sourceFingerprint: edge.sourceFingerprint || fingerprint });
+      if (!liveEdgeKeys.has(key) && !edgeByKey.has(key)) edgeByKey.set(key, { ...edge, origin: edge.origin || 'memo extraction', reviewDecision: edge.reviewDecision || 'pending', sourceFingerprint: edge.sourceFingerprint || fingerprint });
     });
     // Decisions already made on matching items survive a reread.
     const priorNodes = new Map(currentProject.candidates.nodes.filter((node) => node.scale === currentProject.activeScale).map((node) => [node.id, node]));
@@ -4933,9 +5392,13 @@ function App() {
         ...scaled,
         status: prior.status,
         claimState: prior.claimState,
+        origin: prior.origin || scaled.origin,
+        reviewDecision: prior.reviewDecision || scaled.reviewDecision,
         notes: prior.notes || node.notes,
         ...(prior.scopeNodeIds !== undefined ? { scopeNodeIds: prior.scopeNodeIds } : {}),
         ...(prior.deontic !== undefined ? { deontic: prior.deontic } : {}),
+        ...(prior.settingNodeIds !== undefined ? { settingNodeIds: prior.settingNodeIds } : {}),
+        ...(prior.focalParticipation !== undefined ? { focalParticipation: prior.focalParticipation } : {}),
       } : scaled;
       }));
     const edges = [...edgeByKey.values()].map((edge) => {
@@ -4951,7 +5414,7 @@ function App() {
         targetLabel: targetNode?.label || edge.targetLabel,
         scale: currentProject.activeScale,
       };
-      return prior ? { ...scaled, status: prior.status, claimState: prior.claimState, notes: prior.notes || edge.notes } : scaled;
+      return prior ? { ...scaled, status: prior.status, claimState: prior.claimState, origin: prior.origin || scaled.origin, reviewDecision: prior.reviewDecision || scaled.reviewDecision, notes: prior.notes || edge.notes } : scaled;
     });
     // Meso linkages and Macrosphere items use scoped nodes, never verb edges.
     if (currentProject.activeScale === 'meso' || currentProject.activeScale === 'macrosphere') {
@@ -4982,7 +5445,7 @@ function App() {
     const itemCount = candidates.nodes.length + candidates.edges.length;
     toast(itemCount
       ? project.activeScale === 'micro'
-        ? 'Micro elements and direct relationships from your memo are ready for review.'
+        ? 'Micro-level items and direct relationships from your memo are ready for review.'
         : project.activeScale === 'meso'
           ? 'Mesosystems from your memo are ready for review.'
           : project.activeScale === 'exosphere'
@@ -5016,7 +5479,7 @@ function App() {
       item.scale === project.activeScale
       &&
       item.scale === 'macrosphere'
-      && (item.status === 'confirmed' || item.status === 'research lead')
+      && item.status === 'confirmed'
       && isObviousLowerLevelMacroLabel(item.label)
     ));
     if (lowerLevelMacroCandidate) return toast(LOWER_LEVEL_MACRO_MESSAGE, 'error');
@@ -5051,11 +5514,17 @@ function App() {
     });
     const rekeyNode = (node) => {
       const id = committedNodeIdByCandidateId.get(node.id) || node.id;
-      if (id === node.id) return node;
+      const settingNodeIds = Array.isArray(node.settingNodeIds)
+        ? node.settingNodeIds.map((settingId) => committedNodeIdByCandidateId.get(settingId) || settingId)
+        : node.settingNodeIds;
+      const membershipChanged = Array.isArray(settingNodeIds)
+        && settingNodeIds.some((settingId, index) => settingId !== node.settingNodeIds[index]);
+      if (id === node.id && !membershipChanged) return node;
       return {
         ...node,
         id,
-        annotations: {
+        ...(Array.isArray(settingNodeIds) ? { settingNodeIds } : {}),
+        annotations: id === node.id ? node.annotations : {
           analytical: { id: stableId('annotation', `node:${id}:analytical`), text: node.annotations?.analytical?.text || '' },
           evidence: { id: stableId('annotation', `node:${id}:evidence`), text: node.annotations?.evidence?.text || '' },
         },
@@ -5075,8 +5544,20 @@ function App() {
       };
     };
     const acceptedNodes = reviewedScaleNodes
-      .filter((item) => item.status === 'confirmed' || item.status === 'research lead')
+      .filter((item) => item.status === 'confirmed')
       .map(rekeyNode);
+    const availableMicroSettingIds = new Set([
+      ...project.graph.nodes.filter((node) => node.scale === 'micro'
+        && MICRO_SETTING_NODE_TYPE_SET.has(node.type)
+        && node.status !== 'rejected' && node.claimState !== 'retired').map((node) => node.id),
+      ...acceptedNodes.filter((node) => node.scale === 'micro'
+        && MICRO_SETTING_NODE_TYPE_SET.has(node.type)).map((node) => node.id),
+    ]);
+    const unresolvedMembership = acceptedNodes.find((node) => (node.settingNodeIds || [])
+      .some((settingId) => !availableMicroSettingIds.has(settingId)));
+    if (unresolvedMembership) {
+      return toast(`Add each selected Micro setting for ${unresolvedMembership.label}, or remove the unavailable setting membership before opening the map.`, 'error');
+    }
     const acceptedNodeIds = new Set(acceptedNodes.map((node) => node.id));
     const liveGraphNodeIds = new Set(project.graph.nodes
       .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
@@ -5094,17 +5575,27 @@ function App() {
         .map((node) => node.id));
       const invalidAcceptedPathway = [...reviewedScaleEdges, ...rekeyedConnectionSuggestions].find((edge) => (
         edge.scale === 'exosphere'
-        && (edge.status === 'confirmed' || edge.status === 'research lead')
+        && edge.status === 'confirmed'
         && !isOrientedExospherePathway(nodeById.get(edge.source), nodeById.get(edge.target), carriedMicroNodeIds)
       ));
-      if (invalidAcceptedPathway) return toast('Repair or remove each Exo-level pathway before opening the map. Every pathway needs one outside decision setting and one carried Micro setting.', 'error');
+      if (invalidAcceptedPathway) return toast('Repair or remove each Exo-level connection before opening the map. Every connection needs one outside decision setting and one Micro setting already on the map.', 'error');
     }
     const acceptedEdges = relationshipsAllowed ? reviewedScaleEdges
-      .filter((item) => (item.status === 'confirmed' || item.status === 'research lead') && endpointIds.has(item.source) && endpointIds.has(item.target)) : [];
+      .filter((item) => item.status === 'confirmed' && endpointIds.has(item.source) && endpointIds.has(item.target)) : [];
     const acceptedSuggestions = relationshipsAllowed ? rekeyedConnectionSuggestions
       .filter((edge) => edge.status === 'confirmed' && edge.verb.trim() && edge.source !== edge.target) : [];
     const reviewedNodeIds = new Set(reviewedScaleNodes.map((node) => committedNodeIdByCandidateId.get(node.id) || node.id));
     const reviewedEdgeIds = new Set(reviewedScaleEdges.map((edge) => edge.id));
+    const removedGraphNodeIds = new Set([...reviewedNodeIds].filter((id) => (
+      !acceptedNodeIds.has(id) && project.graph.nodes.some((node) => node.id === id && node.scale === project.activeScale && node.status !== 'rejected' && node.claimState !== 'retired')
+    )));
+    const dependentScope = project.graph.nodes.find((node) => node.status !== 'rejected' && node.claimState !== 'retired'
+      && (node.scopeNodeIds || []).some((id) => removedGraphNodeIds.has(id)));
+    if (dependentScope) return toast(`Review or remove ${dependentScope.label} before removing one of its map items.`, 'error');
+    const dependentRelationship = project.graph.edges.find((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'
+      && (removedGraphNodeIds.has(edge.source) || removedGraphNodeIds.has(edge.target))
+      && !reviewedEdgeIds.has(edge.id));
+    if (dependentRelationship) return toast(`Review or remove ${dependentRelationship.sourceLabel} ${dependentRelationship.verb} ${dependentRelationship.targetLabel} before removing its node.`, 'error');
     const snapshot = configurationSnapshot(project, 'builder');
     update((draft) => {
       const priorNodeById = new Map(draft.graph.nodes.map((node) => [node.id, node]));
@@ -5114,11 +5605,33 @@ function App() {
         : acceptedNodes;
       const nextNodes = positionedAcceptedNodes.map((node) => {
         const prior = priorNodeById.get(node.id);
-        return { ...node, x: prior?.x ?? node.x, y: prior?.y ?? node.y, annotations: prior?.annotations ?? node.annotations, notes: node.notes || prior?.notes || '', claimState: node.status === 'research lead' ? 'research lead' : node.claimState };
+        const addsNewSetting = Array.isArray(node.settingNodeIds)
+          && node.settingNodeIds.some((settingId) => acceptedNodeIds.has(settingId) && !priorNodeById.has(settingId));
+        return {
+          ...node,
+          x: prior?.x ?? node.x,
+          y: prior?.y ?? node.y,
+          annotations: prior?.annotations ?? node.annotations,
+          notes: node.notes || prior?.notes || '',
+          claimEvidence: prior?.claimEvidence ?? node.claimEvidence,
+          ...(node.scale === 'meso' ? { mesoExplanation: prior?.mesoExplanation ?? node.mesoExplanation ?? '' } : {}),
+          ...(node.scale === 'micro' ? {
+            focalParticipation: prior?.focalParticipation ?? node.focalParticipation,
+            settingNodeIds: addsNewSetting ? node.settingNodeIds : prior?.settingNodeIds ?? node.settingNodeIds,
+          } : {}),
+          claimState: node.status === 'research lead' ? 'research lead' : node.claimState,
+        };
       });
       const nextEdges = acceptedEdges.map((edge) => {
         const prior = priorEdgeById.get(edge.id);
-        return { ...edge, annotation: prior?.annotation ?? edge.annotation, notes: edge.notes || prior?.notes || '', claimState: edge.status === 'research lead' ? 'research lead' : edge.claimState };
+        return {
+          ...edge,
+          annotation: prior?.annotation ?? edge.annotation,
+          notes: edge.notes || prior?.notes || '',
+          claimEvidence: prior?.claimEvidence ?? edge.claimEvidence,
+          relationshipProcess: prior?.relationshipProcess ?? edge.relationshipProcess,
+          claimState: edge.status === 'research lead' ? 'research lead' : edge.claimState,
+        };
       });
       const nodeIds = new Set(nextNodes.map((node) => node.id));
       const edgeIds = new Set(nextEdges.map((edge) => edge.id));
@@ -5128,19 +5641,8 @@ function App() {
       const retiredNodeIds = new Set([...reviewedNodeIds].filter((id) => (
         !nodeIds.has(id) && priorNodeById.get(id)?.scale === project.activeScale
       )));
-      const cascadedRetiredNodeIds = new Set(retiredNodeIds);
-      let priorNodes = draft.graph.nodes.map((node) => retiredNodeIds.has(node.id) ? { ...node, status: 'rejected', claimState: 'retired', notes: [node.notes, 'Retired during candidate review.'].filter(Boolean).join(' ') } : node);
-      let retiredAnotherScope = true;
-      while (retiredAnotherScope) {
-        retiredAnotherScope = false;
-        priorNodes = priorNodes.map((node) => {
-          if (node.status === 'rejected' || node.claimState === 'retired' || !Array.isArray(node.scopeNodeIds) || !node.scopeNodeIds.some((id) => cascadedRetiredNodeIds.has(id))) return node;
-          cascadedRetiredNodeIds.add(node.id);
-          retiredAnotherScope = true;
-          return { ...node, status: 'rejected', claimState: 'retired', notes: [node.notes, 'Retired because one of its mapped scope members was removed during candidate review.'].filter(Boolean).join(' ') };
-        });
-      }
-      const priorEdges = draft.graph.edges.map((edge) => ((reviewedEdgeIds.has(edge.id) && !edgeIds.has(edge.id)) || cascadedRetiredNodeIds.has(edge.source) || cascadedRetiredNodeIds.has(edge.target)) ? { ...edge, status: 'rejected', claimState: 'retired', notes: [edge.notes, 'Retired during candidate review.'].filter(Boolean).join(' ') } : edge);
+      const priorNodes = draft.graph.nodes.map((node) => retiredNodeIds.has(node.id) ? { ...node, status: 'rejected', claimState: 'retired', notes: [node.notes, 'Retired during candidate review.'].filter(Boolean).join(' ') } : node);
+      const priorEdges = draft.graph.edges.map((edge) => ((reviewedEdgeIds.has(edge.id) && !edgeIds.has(edge.id)) || retiredNodeIds.has(edge.source) || retiredNodeIds.has(edge.target)) ? { ...edge, status: 'rejected', claimState: 'retired', notes: [edge.notes, 'Retired during candidate review.'].filter(Boolean).join(' ') } : edge);
       draft.graph.nodes = [...priorNodes.filter((node) => !nodeIds.has(node.id)), ...nextNodes];
       const currentNodes = draft.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired');
       if (mapNodesOverlap(currentNodes)) {
@@ -5202,24 +5704,28 @@ function App() {
         update((draft) => {
           if (!draft.completedScales.includes(currentScale)) draft.completedScales.push(currentScale);
           draft.completedScales = SCALE_ORDER.filter((scale) => draft.completedScales.includes(scale));
+          draft.levelProgress[currentScale] = { stage: 4, reflection: draft.reflection };
           if (nextScale) {
             draft.activeScale = nextScale;
             if (!draft.releasedScales.includes(nextScale)) draft.releasedScales.push(nextScale);
             draft.releasedScales = SCALE_ORDER.filter((scale) => draft.releasedScales.includes(scale));
+            const nextProgress = draft.levelProgress[nextScale] || { stage: 1, reflection: '' };
+            draft.stage = nextProgress.stage;
+            draft.reflection = nextProgress.reflection;
+            draft.preflight = null;
+          } else {
+            draft.stage = 4;
           }
-          draft.stage = 1;
           draft.furthestStage = Math.max(draft.furthestStage || 0, 4);
-          draft.preflight = null;
-          draft.reflection = '';
         }, 'scale.cycle-completed', nextScale
           ? `${SCALES[currentScale].label} completed; ${SCALES[nextScale].label} opened`
           : `${SCALES[currentScale].label} completed`);
         setConnectionPrompt('');
         setConnectionSuggestions([]);
-        recordStageTransition(4, 1, { completed: true });
+        recordStageTransition(4, nextScale ? (project.levelProgress?.[nextScale]?.stage ?? 1) : 4, { completed: true });
         toast(nextScale
           ? `${SCALES[currentScale].label} complete. Continue with ${SCALES[nextScale].label}.`
-          : `${SCALES[currentScale].label} complete. Start another ${SCALES[currentScale].label} cycle when you are ready.`);
+          : `${SCALES[currentScale].label} complete. Your cumulative project is ready to review or export.`);
         break;
         }
       default: break;
@@ -5269,7 +5775,11 @@ function App() {
     if (!project.releasedScales.includes(scale)) return;
     if (scale === project.activeScale) { setModal(null); return; }
     update((draft) => {
+      draft.levelProgress[draft.activeScale] = { stage: draft.stage, reflection: draft.reflection };
       draft.activeScale = scale;
+      const target = draft.levelProgress[scale] || { stage: 1, reflection: '' };
+      draft.stage = target.stage;
+      draft.reflection = target.reflection;
       draft.preflight = null;
     }, 'scale.selected', `${SCALES[scale].label} selected for work`);
     setConnectionPrompt('');
@@ -5285,13 +5795,13 @@ function App() {
     if (project.stage === 2) return 'Open map';
     if (project.stage === 3) return 'Revise and export';
     const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
-    return nextScale ? `Continue to ${SCALES[nextScale].label}` : `Start another ${SCALES[project.activeScale].label} cycle`;
+    return nextScale ? `Continue to ${SCALES[nextScale].label}` : project.completedScales.includes(project.activeScale) ? 'Project complete' : `Complete ${SCALES[project.activeScale].label}`;
   })();
 
   const backDisabled = project.stage === 0;
   // Model requests are optional background work. They may guard their own
   // duplicate-request controls, but never block the student's next stage.
-  const canPrimary = true;
+  const canPrimary = !(project.stage === 4 && !SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1] && project.completedScales.includes(project.activeScale));
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
     projectActivationGenerationRef.current += 1;
     window.clearTimeout(persistTimer.current);
@@ -5897,14 +6407,14 @@ function App() {
       <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
       <div className="header-actions">
         {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('validation')}><i />Save needs attention</button> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
-        <button className="text-button" type="button" onClick={() => { flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />Projects</button><button className="text-button" type="button" aria-label={`Work at level: ${SCALES[project.activeScale].label}`} onClick={() => setModal('work-level')}>Work at level · {SCALES[project.activeScale].label}</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" onClick={() => setModal('stages')}><Icon name="menu" />Stages</button>
+        <button className="text-button" type="button" onClick={() => { flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />Projects</button><button className="text-button" type="button" aria-label={`Work at level: ${SCALES[project.activeScale].label}`} onClick={() => setModal('work-level')}>Work at level · {SCALES[project.activeScale].label}</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" aria-label={`Progress: ${SCALES[project.activeScale].label}, ${STAGES[project.stage].short}`} onClick={() => setModal('stages')}><Icon name="menu" />{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</button>
       </div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}`}>{screen}</main>
     <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></>}</footer>
-    <Modal open={modal === 'stages'} title="Five stages" onClose={() => setModal(null)}>
-      <ol className="stage-menu">{STAGES.map((stage, index) => {
+    <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
+      <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p><ol className="stage-menu">{STAGES.map((stage, index) => {
         return <li key={stage.id}><button className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><strong>{stage.label}</strong>{index === project.stage ? <em>Current</em> : null}</button></li>;
       })}</ol>
     </Modal>

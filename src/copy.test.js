@@ -7,6 +7,7 @@ import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 const studentCopySources = [
   './App.jsx',
   './MapListView.jsx',
+  './TeacherDashboard.jsx',
   './domain.js',
   '../server/app.js',
   '../server/config.js',
@@ -26,7 +27,7 @@ describe('student-facing copy', () => {
 
   it('defines each candidate decision in plain language', () => {
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
-    expect(source).toContain('Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it. Choose Needs more evidence to set one aside, or Remove to leave it off the map.');
+    expect(source).toContain('Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it. Choose Set aside — needs evidence to preserve a question for later, or Remove to leave it off the map.');
     expect(source).not.toContain('Keep means add this suggestion to the map. Suggestions begin on Keep so you can review them together.');
   });
 
@@ -47,13 +48,21 @@ describe('student-facing copy', () => {
     expect(systemsMappingLevelTitle('exosphere')).toBe('Exo-level');
     expect(systemsMappingLevelTitle('macrosphere')).toBe('Macro-level');
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').description).toMatch(/at least two immediate settings.*without adding a directional relationship/i);
-    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one mapped element/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one map item/i);
   });
 
   it('keeps student headings free of standalone articles', () => {
     const appSource = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
     const listSource = readFileSync(fileURLToPath(new URL(studentCopySources[1], import.meta.url)), 'utf8');
-    const visibleSource = `${appSource}\n${listSource}`;
+    const teacherSource = readFileSync(fileURLToPath(new URL(studentCopySources[2], import.meta.url)), 'utf8');
+    const visibleSource = `${appSource}\n${listSource}\n${teacherSource}`;
+    const literalHeadings = [
+      ...[...visibleSource.matchAll(/<h[1-3][^>]*>([^<>{}]+)<\/h[1-3]>/g)].map((match) => match[1].trim()),
+      ...[...appSource.matchAll(/<(?:Modal)[^>]*\btitle="([^"]+)"/g)].map((match) => match[1].trim()),
+      ...[...appSource.matchAll(/\b(?:title|scaffoldTitle):\s*['`]([^'`]+)['`]/g)].map((match) => match[1].trim()),
+      ...[...teacherSource.matchAll(/<h[1-3][^>]*>([^<>{}]+)<\/h[1-3]>/g)].map((match) => match[1].trim()),
+    ];
+    literalHeadings.forEach((heading) => expect(heading, heading).not.toMatch(/\b(?:a|an|the)\b/i));
     [
       'Describe a direct relationship',
       'Describe a decision pathway',
@@ -69,6 +78,7 @@ describe('student-facing copy', () => {
       'Work at a released level',
       'Start a new map from this memo?',
       'Delete the server copy?',
+      'Set up a teacher account',
     ].forEach((heading) => expect(visibleSource).not.toContain(heading));
   });
 });

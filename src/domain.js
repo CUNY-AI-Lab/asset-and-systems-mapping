@@ -37,11 +37,11 @@ export const SCALES = {
   },
   macrosphere: {
     label: 'Macro-level',
-    prompt: 'Which broader laws, public policies, economic conditions, histories, and cultural beliefs affect multiple mapped elements?',
+    prompt: 'Which broader laws, public policies, economic conditions, histories, and cultural beliefs affect multiple map items?',
     description: 'Broader conditions that affect more than one part of the map.',
     checklist: [
       'Name broader laws, public policies, economic conditions, histories, cultural beliefs, and structures.',
-      'Identify at least two mapped elements affected by each item and the evidence supporting that claim.',
+      'Identify at least two map items affected by each item and the evidence supporting that claim.',
       'Place immediate settings at Micro-level and outside decision settings at Exo-level.',
     ],
   },
@@ -244,8 +244,11 @@ export function labelRepeatsInstitution(value, institutions) {
   )));
 }
 export const CLAIM_STATES = ['confirmed', 'student interpretation', 'inference', 'contested', 'research lead', 'retired'];
+export const NODE_ORIGINS = Object.freeze(['memo extraction', 'model suggestion', 'student entry', 'legacy']);
+export const REVIEW_DECISIONS = Object.freeze(['pending', 'added', 'set aside', 'removed']);
+export const FOCAL_PARTICIPATION_STATES = Object.freeze(['direct', 'indirect', 'unclear', 'not applicable']);
 
-export const PROJECT_SCHEMA_VERSION = 6;
+export const PROJECT_SCHEMA_VERSION = 7;
 
 export const PROJECT_LIMITS = Object.freeze({
   importBytes: 8 * 1024 * 1024,
@@ -256,6 +259,9 @@ export const PROJECT_LIMITS = Object.freeze({
   edges: 1_000,
   events: 2_000,
   evidenceRefs: 50,
+  claimEvidenceRecords: 50,
+  claimEvidenceText: 20_000,
+  relationshipProcessText: 1_000,
   configHistory: 100,
   relationVocabulary: 100,
   annotationText: 4_000,
@@ -294,6 +300,23 @@ export const PROJECT_LIMITS = Object.freeze({
 
 export const DEFAULT_VIEWPORT = Object.freeze({ panX: 0, panY: 0, zoom: 1 });
 
+export const CLAIM_EVIDENCE_FIELDS = Object.freeze([
+  'sourcePassage',
+  'studentInterpretation',
+  'warrant',
+  'uncertainty',
+  'counterevidence',
+  'missingVoice',
+]);
+
+export const RELATIONSHIP_PROCESS_FIELDS = Object.freeze([
+  'frequency',
+  'duration',
+  'direction',
+  'conditions',
+  'changeOverTime',
+]);
+
 const DEFAULT_CANVAS = Object.freeze({ width: 840, height: 540, radiusX: 290, radiusY: 190 });
 
 export const BASE_GUARDRAILS = `Use only material in the active project. Keep track of where each piece of evidence appears. Never invent people, organizations, connections, quotations, or citations. Mark unsupported possibilities as needing more evidence. Keep what the memo says separate from the student's interpretation. Sensitive material stays local unless the instructor explicitly changes the sharing tier. Return stable IDs and schema-valid operations only.`;
@@ -307,6 +330,92 @@ export function stableId(prefix, value) {
     hash = Math.imul(hash, 16777619);
   }
   return `${prefix}_${(hash >>> 0).toString(36)}`;
+}
+
+// Claim evidence is additive: a map item may have several records, and each
+// record keeps the source passage, the student's reading, and the reasoning
+// between them distinct. Existing evidence IDs and locators remain available
+// on the record so the new fields do not replace provenance already captured.
+export function createClaimEvidenceRecord(overrides = {}, { ownerId = 'claim', index = 0 } = {}) {
+  const provenanceSeed = [
+    overrides.evidenceId,
+    overrides.sourceId,
+    overrides.evidenceHash,
+    overrides.evidenceLocator,
+    overrides.sourcePassage,
+    index,
+  ].filter((value) => value !== undefined && value !== null).join(':');
+  const record = {
+    id: overrides.id || stableId('claim_evidence', `${ownerId}:${provenanceSeed}`),
+    sourcePassage: '',
+    studentInterpretation: '',
+    warrant: '',
+    uncertainty: '',
+    counterevidence: '',
+    missingVoice: '',
+  };
+  CLAIM_EVIDENCE_FIELDS.forEach((field) => {
+    if (typeof overrides[field] === 'string') record[field] = overrides[field];
+  });
+  ['evidenceId', 'sourceId', 'evidenceLocator', 'evidenceHash'].forEach((field) => {
+    if (typeof overrides[field] === 'string') record[field] = overrides[field];
+  });
+  return record;
+}
+
+export function normalizeClaimEvidenceRecords(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return [];
+  const ownerId = typeof record.id === 'string' && record.id ? record.id : 'claim';
+  if (Array.isArray(record.claimEvidence)) {
+    return record.claimEvidence.map((item, index) => createClaimEvidenceRecord(
+      item && typeof item === 'object' && !Array.isArray(item) ? item : {},
+      { ownerId, index },
+    ));
+  }
+  const references = Array.isArray(record.evidenceRefs) && record.evidenceRefs.length
+    ? record.evidenceRefs
+    : (record.evidenceExcerpt !== undefined
+      || record.evidenceId !== undefined
+      || record.sourceId !== undefined
+      || record.evidenceLocator !== undefined
+      || record.evidenceHash !== undefined)
+      ? [record]
+      : [];
+  return references.map((reference, index) => createClaimEvidenceRecord({
+    sourcePassage: typeof reference.evidenceExcerpt === 'string' ? reference.evidenceExcerpt : '',
+    evidenceId: reference.evidenceId,
+    sourceId: reference.sourceId,
+    evidenceLocator: reference.evidenceLocator,
+    evidenceHash: reference.evidenceHash,
+  }, { ownerId, index }));
+}
+
+export function createRelationshipProcess(overrides = {}) {
+  return Object.fromEntries(RELATIONSHIP_PROCESS_FIELDS.map((field) => [
+    field,
+    typeof overrides?.[field] === 'string' ? overrides[field] : '',
+  ]));
+}
+
+export function hasRelationshipProcessDetails(edgeOrProcess) {
+  const process = edgeOrProcess?.relationshipProcess || edgeOrProcess;
+  return Boolean(process && RELATIONSHIP_PROCESS_FIELDS.some((field) => (
+    typeof process[field] === 'string' && process[field].trim()
+  )));
+}
+
+export function createLevelProgress({
+  activeScale = 'micro',
+  stage = 0,
+  reflection = '',
+  completedScales = [],
+} = {}) {
+  const safeStage = Number.isInteger(stage) && stage >= 0 && stage <= 4 ? stage : 0;
+  const safeReflection = typeof reflection === 'string' ? reflection : '';
+  const completed = new Set(Array.isArray(completedScales) ? completedScales : []);
+  return Object.fromEntries(SCALE_ORDER.map((scale) => [scale, scale === activeScale
+    ? { stage: safeStage, reflection: safeReflection }
+    : { stage: completed.has(scale) ? 4 : 1, reflection: '' }]));
 }
 
 function canonicalize(value) {
@@ -941,6 +1050,9 @@ export function withDefaultNodeLayout(nodes) {
     }
     return {
       ...node,
+      ...(node?.scale === 'meso' && node?.mesoExplanation === undefined
+        ? { mesoExplanation: '' }
+        : {}),
       x: position.x,
       y: position.y,
       annotations,
@@ -1103,9 +1215,22 @@ export function extractCandidates(submission) {
       if (!edge.evidenceRefs.some((item) => item.evidenceId === evidenceRef.evidenceId)) edge.evidenceRefs.push(evidenceRef);
     }
   });
-  const edges = [...edgeMap.values()];
+  const edges = [...edgeMap.values()].map((edge) => ({
+    ...edge,
+    claimEvidence: normalizeClaimEvidenceRecords(edge),
+  }));
   if (edges.length > PROJECT_LIMITS.edges) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.edges} relationship records`);
-  return { nodes, edges };
+  return {
+    nodes: nodes.map((node) => ({
+      ...node,
+      ...(node.scale === 'micro' ? {
+        focalParticipation: node.focalParticipation || 'direct',
+        settingNodeIds: Array.isArray(node.settingNodeIds) ? node.settingNodeIds : [],
+      } : {}),
+      claimEvidence: normalizeClaimEvidenceRecords(node),
+    })),
+    edges,
+  };
 }
 
 const DETERMINISTIC_REVIEW_SCALE_LIMITS = Object.freeze({
@@ -1297,7 +1422,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       : 'Identify outside offices or decision-making bodies whose actions change what happens in an immediate setting. A named institution the person participates in directly remains in Micro.', PROJECT_LIMITS.memoGuidanceText) });
   }
   if (activeScale === 'macrosphere') {
-    guidance.push({ point: truncateCollapsedText('Identify a broader law, policy, economic condition, or cultural belief only when it shapes multiple parts of the map. After naming the condition, choose the mapped elements it affects.', PROJECT_LIMITS.memoGuidanceText) });
+    guidance.push({ point: truncateCollapsedText('Identify a broader law, policy, economic condition, or cultural belief only when it shapes multiple parts of the map. After naming the condition, choose the map items it affects.', PROJECT_LIMITS.memoGuidanceText) });
   }
   if (!guidance.length) {
     guidance.push({ point: activeScale === 'micro'
@@ -1323,10 +1448,10 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
         ? reviewNodes.length >= 1
         : (reviewNodes.length + carriedNodes.length) >= 2 && connections.length >= 1;
   const outerNote = activeScale === 'macrosphere'
-    ? `The memo names ${reviewNodes.length} possible broader ${reviewNodes.length === 1 ? 'condition' : 'conditions'} and identifies at least two affected mapped elements for each one. Continue to choose which belong.`
+    ? `The memo names ${reviewNodes.length} possible broader ${reviewNodes.length === 1 ? 'condition' : 'conditions'} and identifies at least two affected map items for each one. Continue to choose which belong.`
     : reviewNodes.length
-      ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'institution' : 'institutions'} and ${connections.length} supported ${connections.length === 1 ? 'connection' : 'connections'} to mapped elements. Continue to choose what belongs.`
-      : `The memo describes ${connections.length} supported outside decision ${connections.length === 1 ? 'pathway' : 'pathways'} to immediate settings already on your map. Continue to choose which ones belong.`;
+      ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'institution' : 'institutions'} and ${connections.length} supported ${connections.length === 1 ? 'connection' : 'connections'} to Micro settings. Continue to choose what belongs.`
+      : `The memo describes ${connections.length} supported Exo-level ${connections.length === 1 ? 'connection' : 'connections'} to Micro settings already on your map. Continue to choose which ones belong.`;
   const readiness = {
     ready,
     note: truncateCollapsedText(ready
@@ -1383,7 +1508,7 @@ const builderConfig = {
   label: 'Map builder',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
-  fixedPrompt: `${BASE_GUARDRAILS}\nAssign ecological level by the focal person's participation and the pathway of effect, not by entity kind. Micro uses discrete elements, including resources and named institutions or services the person participates in directly, plus direct relationships among them. Meso uses noun-labeled mesosystem nodes that include two or more Micro settings already on the map and never uses relationship edges or verbs. Exosphere uses outside decision settings and supported pathways into an immediate Micro setting. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two mapped elements. An institution-owned operational rule may remain with its Exosphere decision setting; a broader public policy belongs at Macrosphere. Never add a suggestion to the map until the student continues from review.`,
+  fixedPrompt: `${BASE_GUARDRAILS}\nAssign ecological level by the focal person's participation and the pathway of effect, not by entity kind. Micro uses discrete elements, including resources and named institutions or services the person participates in directly, plus direct relationships among them. Meso uses noun-labeled mesosystem nodes that include two or more Micro settings already on the map and never uses relationship edges or verbs. Exosphere uses outside decision settings and supported pathways into an immediate Micro setting. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two map items. An institution-owned operational rule may remain with its Exosphere decision setting; a broader public policy belongs at Macrosphere. Never add a suggestion to the map until the student continues from review.`,
   customInstructions: 'Use Ecological Systems Theory as an organizing lens. Guide with questions rather than supplying conclusions.',
   contextLimit: 32000,
   confidenceThreshold: 0.72,
@@ -1420,6 +1545,7 @@ export function createDefaultProject() {
     releasedScales: ['micro'],
     completedScales: [],
     stage: 0,
+    levelProgress: createLevelProgress({ activeScale: 'micro', stage: 0, reflection: '' }),
     sharingTier: 'private',
     createdAt: now,
     updatedAt: now,
@@ -1464,11 +1590,13 @@ const FORBIDDEN_PROJECT_KEYS = new Set([
 
 const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId', 'sourceId', 'evidenceRefs'];
-const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
+const CLAIM_EVIDENCE_PROVENANCE_FIELDS = ['evidenceId', 'sourceId', 'evidenceLocator', 'evidenceHash'];
+const CLAIM_EVIDENCE_KEYS = ['id', ...CLAIM_EVIDENCE_FIELDS, ...CLAIM_EVIDENCE_PROVENANCE_FIELDS];
+const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
-const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', ...EVIDENCE_KEYS];
-const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', ...EVIDENCE_KEYS];
+const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'mesoExplanation', 'claimEvidence', 'origin', 'reviewDecision', 'settingNodeIds', 'focalParticipation', ...EVIDENCE_KEYS];
+const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', 'claimEvidence', 'relationshipProcess', 'origin', 'reviewDecision', ...EVIDENCE_KEYS];
 
 function invalidProject(path, expectation) {
   throw new Error(`Invalid Systems Mapping project: ${path} ${expectation}.`);
@@ -1580,6 +1708,61 @@ function validateEvidence(record, path, referenceOnly = false) {
   }
 }
 
+function validateClaimEvidence(records, path) {
+  if (records === undefined) return;
+  if (!Array.isArray(records)) invalidProject(path, 'must be an array');
+  if (records.length > PROJECT_LIMITS.claimEvidenceRecords) {
+    invalidProject(path, `must contain no more than ${PROJECT_LIMITS.claimEvidenceRecords} claim evidence records`);
+  }
+  const ids = new Set();
+  records.forEach((record, index) => {
+    const itemPath = `${path}[${index}]`;
+    assertObject(record, itemPath);
+    assertKnownKeys(record, CLAIM_EVIDENCE_KEYS, itemPath);
+    assertString(record.id, `${itemPath}.id`, false, 200);
+    if (ids.has(record.id)) invalidProject(`${itemPath}.id`, `duplicates ${record.id}`);
+    ids.add(record.id);
+    CLAIM_EVIDENCE_FIELDS.forEach((field) => {
+      const maximum = field === 'sourcePassage'
+        ? PROJECT_LIMITS.evidenceExcerpt
+        : PROJECT_LIMITS.claimEvidenceText;
+      assertString(record[field], `${itemPath}.${field}`, true, maximum);
+    });
+    CLAIM_EVIDENCE_PROVENANCE_FIELDS.forEach((field) => {
+      if (record[field] !== undefined) {
+        const maximum = field === 'evidenceLocator' ? PROJECT_LIMITS.metadataText : 200;
+        assertString(record[field], `${itemPath}.${field}`, true, maximum);
+      }
+    });
+    if (record.sourcePassage && record.evidenceHash
+      && stableId('evh', record.sourcePassage) !== record.evidenceHash) {
+      invalidProject(`${itemPath}.evidenceHash`, 'does not match the memo passage');
+    }
+  });
+}
+
+function validateRelationshipProcess(process, path) {
+  if (process === undefined) return;
+  assertObject(process, path);
+  assertKnownKeys(process, RELATIONSHIP_PROCESS_FIELDS, path);
+  RELATIONSHIP_PROCESS_FIELDS.forEach((field) => {
+    assertString(process[field], `${path}.${field}`, true, PROJECT_LIMITS.relationshipProcessText);
+  });
+}
+
+function validateLevelProgress(levelProgress, path) {
+  assertObject(levelProgress, path);
+  assertKnownKeys(levelProgress, SCALE_ORDER, path);
+  SCALE_ORDER.forEach((scale) => {
+    const itemPath = `${path}.${scale}`;
+    if (!Object.hasOwn(levelProgress, scale)) invalidProject(itemPath, 'is required');
+    assertObject(levelProgress[scale], itemPath);
+    assertKnownKeys(levelProgress[scale], ['stage', 'reflection'], itemPath);
+    assertInteger(levelProgress[scale].stage, `${itemPath}.stage`, 0, 4);
+    assertString(levelProgress[scale].reflection, `${itemPath}.reflection`, true, PROJECT_LIMITS.promptText);
+  });
+}
+
 function validateAnnotation(annotation, path, owner, annotationOwners) {
   assertObject(annotation, path);
   assertKnownKeys(annotation, ['id', 'text'], path);
@@ -1618,8 +1801,29 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     validateAnnotation(node.annotations.evidence, `${itemPath}.annotations.evidence`, `node:${node.id}:evidence`, annotationOwners);
     if (node.sourceFingerprint !== undefined) assertString(node.sourceFingerprint, `${itemPath}.sourceFingerprint`, false, 200);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${itemPath}.basis`);
+    if (node.origin !== undefined) assertEnum(node.origin, NODE_ORIGINS, `${itemPath}.origin`);
+    if (node.reviewDecision !== undefined) assertEnum(node.reviewDecision, REVIEW_DECISIONS, `${itemPath}.reviewDecision`);
+    if (node.focalParticipation !== undefined) assertEnum(node.focalParticipation, FOCAL_PARTICIPATION_STATES, `${itemPath}.focalParticipation`);
+    if (node.settingNodeIds !== undefined) {
+      if (!Array.isArray(node.settingNodeIds) || node.settingNodeIds.length > PROJECT_LIMITS.scopeMembers) {
+        invalidProject(`${itemPath}.settingNodeIds`, `must be an array of no more than ${PROJECT_LIMITS.scopeMembers} node ids`);
+      }
+      const seenSettings = new Set();
+      node.settingNodeIds.forEach((memberId, memberIndex) => {
+        assertString(memberId, `${itemPath}.settingNodeIds[${memberIndex}]`, false, 200);
+        if (seenSettings.has(memberId)) invalidProject(`${itemPath}.settingNodeIds[${memberIndex}]`, 'must be unique');
+        seenSettings.add(memberId);
+        if (memberId === node.id) invalidProject(`${itemPath}.settingNodeIds[${memberIndex}]`, 'cannot include the item itself');
+      });
+    }
     if (node.deontic !== undefined) assertString(node.deontic, `${itemPath}.deontic`, true, 60);
     if (node.deontic !== undefined && node.scale !== 'macrosphere') invalidProject(`${itemPath}.deontic`, 'is only allowed on a Macrosphere item');
+    if (node.mesoExplanation !== undefined) {
+      assertString(node.mesoExplanation, `${itemPath}.mesoExplanation`, true, PROJECT_LIMITS.noteText);
+      if (node.scale !== 'meso' && node.mesoExplanation.trim()) {
+        invalidProject(`${itemPath}.mesoExplanation`, 'is only allowed on a Meso item unless empty');
+      }
+    }
     if (node.scopeNodeIds !== undefined && !['meso', 'macrosphere'].includes(node.scale)) invalidProject(`${itemPath}.scopeNodeIds`, 'is only allowed on Meso and Macrosphere items');
     if (node.scopeNodeIds !== undefined) {
       if (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length > PROJECT_LIMITS.scopeMembers) {
@@ -1645,9 +1849,10 @@ function validateNodeCollection(nodes, path, annotationOwners) {
       invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two Micro settings for a mesosystem node');
     }
     if (node.scale === 'macrosphere' && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
-      invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two mapped elements for a live Macrosphere item');
+      invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two map items for a live Macrosphere item');
     }
     validateEvidence(node, itemPath);
+    validateClaimEvidence(node.claimEvidence, `${itemPath}.claimEvidence`);
   });
   return ids;
 }
@@ -1667,9 +1872,22 @@ function validateScopedNodeReferences(nodes, availableNodes, path) {
         if (scopedNodeIsLive && (member.status === 'rejected' || member.claimState === 'retired')) invalidProject(memberPath, 'must reference a live Micro setting');
       }
       if (node.scale === 'macrosphere') {
-        if (member.scale === 'macrosphere') invalidProject(memberPath, 'must reference an inner mapped element');
-        if (scopedNodeIsLive && (member.status === 'rejected' || member.claimState === 'retired')) invalidProject(memberPath, 'must reference a live mapped element');
+        if (member.scale === 'macrosphere') invalidProject(memberPath, 'must reference an inner map item');
+        if (scopedNodeIsLive && (member.status === 'rejected' || member.claimState === 'retired')) invalidProject(memberPath, 'must reference a live map item');
       }
+    });
+  });
+}
+
+function validateSettingNodeReferences(nodes, availableNodes, path) {
+  const availableById = new Map(availableNodes.map((node) => [node.id, node]));
+  nodes.forEach((node, index) => {
+    if (!Array.isArray(node.settingNodeIds)) return;
+    node.settingNodeIds.forEach((memberId, memberIndex) => {
+      const memberPath = `${path}[${index}].settingNodeIds[${memberIndex}]`;
+      const member = availableById.get(memberId);
+      if (!member) invalidProject(memberPath, `references unknown node ${memberId}`);
+      if (!isMicroSettingNode(member)) invalidProject(memberPath, 'must reference a stable Micro setting node');
     });
   });
 }
@@ -1719,8 +1937,8 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
       if (relationshipIsCommitted && !isExosphereDecisionPathway(sourceNode, targetNode)) invalidProject(itemPath, 'must connect exactly one outside Exosphere decision setting and one carried Micro setting');
       if (relationshipIsCommitted && microSetting && !carriedNodeIds.has(microSetting.id)) invalidProject(itemPath, 'must use a Micro setting already carried on the map');
       if (relationshipIsCommitted && !scaleLexiconVerb('exosphere', edge.verb)) invalidProject(`${itemPath}.verb`, 'must use an Exosphere decision-path relationship');
-      if (relationshipIsCommitted && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live mapped element');
-      if (relationshipIsCommitted && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live mapped element');
+      if (relationshipIsCommitted && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live map item');
+      if (relationshipIsCommitted && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live map item');
     }
     assertString(edge.notes ?? '', `${itemPath}.notes`, true, PROJECT_LIMITS.noteText);
     if (edge.directed !== undefined) assertBoolean(edge.directed, `${itemPath}.directed`);
@@ -1728,7 +1946,11 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
     if (edge.rationale !== undefined) assertString(edge.rationale, `${itemPath}.rationale`, true, PROJECT_LIMITS.rationaleText);
     validateAnnotation(edge.annotation, `${itemPath}.annotation`, `edge:${edge.id}:relationship`, annotationOwners);
     if (edge.sourceFingerprint !== undefined) assertString(edge.sourceFingerprint, `${itemPath}.sourceFingerprint`, false, 200);
+    if (edge.origin !== undefined) assertEnum(edge.origin, NODE_ORIGINS, `${itemPath}.origin`);
+    if (edge.reviewDecision !== undefined) assertEnum(edge.reviewDecision, REVIEW_DECISIONS, `${itemPath}.reviewDecision`);
     validateEvidence(edge, itemPath);
+    validateClaimEvidence(edge.claimEvidence, `${itemPath}.claimEvidence`);
+    validateRelationshipProcess(edge.relationshipProcess, `${itemPath}.relationshipProcess`);
   });
 }
 
@@ -1879,7 +2101,7 @@ function validateMemoReview(review, path) {
       invalidProject(`${nodePath}.scope`, 'must identify at least two Micro settings for a mesosystem suggestion');
     }
     if (node.scale === 'macrosphere' && (!Array.isArray(node.scope) || node.scope.length < 2)) {
-      invalidProject(`${nodePath}.scope`, 'must identify at least two mapped elements for a Macrosphere suggestion');
+      invalidProject(`${nodePath}.scope`, 'must identify at least two map items for a Macrosphere suggestion');
     }
   });
   if (!Array.isArray(review.connections) || review.connections.length > PROJECT_LIMITS.memoReviewConnections) {
@@ -2042,7 +2264,7 @@ function validatePortableExport(portableExport, path) {
   });
   if (!Array.isArray(portableExport.preservedReferenceFields)) invalidProject(`${path}.preservedReferenceFields`, 'must be an array');
   if (portableExport.preservedReferenceFields.length > 20) invalidProject(`${path}.preservedReferenceFields`, 'must contain no more than 20 fields');
-  const allowedReferences = ['id', 'sourceId', 'evidenceId', 'evidenceHash', 'evidenceLocator'];
+  const allowedReferences = ['id', 'sourceId', 'evidenceId', 'evidenceHash', 'evidenceLocator', 'settingNodeIds'];
   portableExport.preservedReferenceFields.forEach((field, index) => assertEnum(field, allowedReferences, `${path}.preservedReferenceFields[${index}]`));
   if (portableExport.redacted !== (portableExport.redactions.length > 0)) invalidProject(`${path}.redacted`, 'must match the redaction manifest');
 }
@@ -2087,6 +2309,7 @@ export function validateProject(project) {
   if (new Set(project.completedScales).size !== project.completedScales.length) invalidProject('project.completedScales', 'must not contain duplicates');
   assertInteger(project.stage, 'project.stage', 0, 4);
   if (project.furthestStage !== undefined) assertInteger(project.furthestStage, 'project.furthestStage', 0, 4);
+  validateLevelProgress(project.levelProgress, 'project.levelProgress');
   assertEnum(project.sharingTier, SHARING_TIERS, 'project.sharingTier');
   assertString(project.createdAt, 'project.createdAt', false, 100);
   assertString(project.updatedAt, 'project.updatedAt', false, 100);
@@ -2142,6 +2365,8 @@ export function validateProject(project) {
   ], project.preflight?.memoReview?.nodes);
   validateScopedNodeReferences(project.candidates.nodes, [...project.graph.nodes, ...project.candidates.nodes], 'project.candidates.nodes');
   validateScopedNodeReferences(project.graph.nodes, project.graph.nodes, 'project.graph.nodes');
+  validateSettingNodeReferences(project.candidates.nodes, [...project.candidates.nodes, ...project.graph.nodes], 'project.candidates.nodes');
+  validateSettingNodeReferences(project.graph.nodes, project.graph.nodes, 'project.graph.nodes');
   const candidateEdgeNodeIds = new Set([...graphNodeIds, ...candidateNodeIds]);
   const candidateEdgeNodes = [...project.graph.nodes, ...project.candidates.nodes];
   validateEdgeCollection(project.candidates.edges, candidateEdgeNodes, candidateEdgeNodeIds, 'project.candidates.edges', annotationOwners, graphNodeIds);
@@ -2223,7 +2448,7 @@ function migratePromptModuleId(value) {
   return value.replace('.macro.', '.exosphere.').replace('.integration.', '.macrosphere.');
 }
 
-function migrateScaleVocabulary(project) {
+function migrateScaleVocabulary(project, { sourceSchemaVersion = project?.schemaVersion } = {}) {
   const migrated = cloneProject(project);
   const scalarKeys = new Set(['scale', 'activeScale']);
   const collectionKeys = new Set(['scaleIds', 'releasedScales', 'completedScales']);
@@ -2247,7 +2472,64 @@ function migrateScaleVocabulary(project) {
     rewritten.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
   }
   rewritten.schemaVersion = PROJECT_SCHEMA_VERSION;
-  return migrateScaleTypeSemantics(rewritten);
+  return migrateEvidenceAndProcess(migrateScaleTypeSemantics(rewritten), {
+    normalizeExisting: sourceSchemaVersion !== PROJECT_SCHEMA_VERSION,
+    legacyNodes: sourceSchemaVersion !== PROJECT_SCHEMA_VERSION,
+  });
+}
+
+function migrateEvidenceAndProcess(project, { normalizeExisting = false, legacyNodes = false } = {}) {
+  if (legacyNodes || project.levelProgress === undefined) {
+    project.levelProgress = createLevelProgress({
+      activeScale: project.activeScale,
+      stage: project.stage,
+      reflection: project.reflection,
+      completedScales: project.completedScales,
+    });
+  }
+  ['candidates', 'graph'].forEach((container) => {
+    const nodes = project?.[container]?.nodes;
+    if (Array.isArray(nodes)) {
+      nodes.forEach((node) => {
+        if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+        if (legacyNodes) {
+          node.origin = 'legacy';
+          delete node.reviewDecision;
+          node.settingNodeIds = [];
+          node.focalParticipation = 'unclear';
+        }
+        if (node.scale === 'meso' && node.mesoExplanation === undefined) {
+          node.mesoExplanation = '';
+        }
+        const records = normalizeClaimEvidenceRecords(node);
+        if (Array.isArray(node.claimEvidence)) {
+          if (normalizeExisting) node.claimEvidence = records;
+        } else if (records.length) node.claimEvidence = records;
+      });
+    }
+    const edges = project?.[container]?.edges;
+    if (Array.isArray(edges)) {
+      edges.forEach((edge) => {
+        if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
+        if (legacyNodes) {
+          edge.origin = 'legacy';
+          delete edge.reviewDecision;
+        }
+        const records = normalizeClaimEvidenceRecords(edge);
+        if (Array.isArray(edge.claimEvidence)) {
+          if (normalizeExisting) edge.claimEvidence = records;
+        } else if (records.length) edge.claimEvidence = records;
+        if (normalizeExisting && edge.relationshipProcess !== undefined) {
+          edge.relationshipProcess = createRelationshipProcess(edge.relationshipProcess);
+        }
+      });
+    }
+  });
+  if (project.portableExport && typeof project.portableExport === 'object' && !Array.isArray(project.portableExport)) {
+    project.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
+  }
+  project.schemaVersion = PROJECT_SCHEMA_VERSION;
+  return project;
 }
 
 function appendSemanticMigrationNote(record, note) {
@@ -2430,7 +2712,7 @@ function migrateScaleTypeSemantics(project) {
             edge.status = 'rejected';
             edge.claimState = 'retired';
           }
-          appendSemanticMigrationNote(edge, 'Reclassified from an earlier cross-level relationship. Review this outside decision pathway before restoring it.');
+          appendSemanticMigrationNote(edge, 'Reclassified from an earlier cross-level relationship. Review this Exo-level connection before restoring it.');
         } else {
           edge.scale = 'exosphere';
           edge.status = 'rejected';
@@ -2452,7 +2734,7 @@ function migrateScaleTypeSemantics(project) {
         if (edgeIsCommitted && (!canonicalVerb || !validPathway || hasRetiredEndpoint)) {
           edge.status = 'pending';
           edge.claimState = 'inference';
-          appendSemanticMigrationNote(edge, 'Needs review after migration because an Exo-level decision pathway must connect exactly one live outside decision setting to one carried Micro setting. Choose valid endpoints or remove this suggestion.');
+          appendSemanticMigrationNote(edge, 'Needs review after migration because an Exo-level connection must join exactly one live outside decision setting and one Micro setting already on the map. Choose valid endpoints or remove this suggestion.');
           if (container === 'graph') graphEdgesReturnedForReview.add(edge.id);
         } else if (canonicalVerb) {
           edge.verb = canonicalVerb;
@@ -2584,6 +2866,7 @@ function migrateLegacyProject(project) {
     })[snapshot.stageId] || snapshot.stageId;
   };
   const finishStageMigration = (migrated, { insertConnection = true } = {}) => {
+    const sourceSchemaVersion = migrated.schemaVersion;
     if (Number.isInteger(migrated.stage)) {
       migrated.stage = collapseFiveStage(insertConnection ? insertConnectionStage(migrated.stage) : migrated.stage);
     }
@@ -2592,11 +2875,7 @@ function migrateLegacyProject(project) {
     }
     Object.values(migrated.teacherGovernance || {}).forEach(canonicalizeStageId);
     canonicalizeStageId(migrated.preflight?.configurationSnapshot);
-    if (migrated.portableExport && typeof migrated.portableExport === 'object' && !Array.isArray(migrated.portableExport)) {
-      migrated.portableExport.schemaVersion = PROJECT_SCHEMA_VERSION;
-    }
-    migrated.schemaVersion = PROJECT_SCHEMA_VERSION;
-    return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
+    return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated), { sourceSchemaVersion });
   };
   if (project?.schemaVersion === 2) {
     const migrated = cloneProject(project);
@@ -2620,10 +2899,11 @@ function migrateLegacyProject(project) {
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
   }
-  if (project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
+  if (project?.schemaVersion === 6 || project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
     // Earlier schema-v6 builds used verb-bearing Meso edges. Preserve those
     // records as Micro research leads so the student can review their level;
-    // never infer a mesosystem scope from a legacy edge.
+    // never infer a mesosystem scope from a legacy edge. Schema v6 evidence
+    // references are also copied into additive claim evidence records.
     const migrated = cloneProject(project);
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
@@ -2723,6 +3003,12 @@ function redactEvidenceExcerpts(records, path, redactions, reason) {
         addRedaction(redactions, `${path}[${index}].evidenceRefs[${referenceIndex}].evidenceExcerpt`, reason);
       }
     });
+    record.claimEvidence?.forEach((claim, claimIndex) => {
+      if (claim.sourcePassage) {
+        claim.sourcePassage = '';
+        addRedaction(redactions, `${path}[${index}].claimEvidence[${claimIndex}].sourcePassage`, reason);
+      }
+    });
   });
 }
 
@@ -2783,7 +3069,7 @@ function preservesEventReference(key) {
 
 function safeEventReference(key, value) {
   if (/(?:^id$|ids$|id$|hash$|fingerprint$)/i.test(key) || ['nodes', 'edges', 'retiredNodes'].includes(key)) {
-    return /^(?:(?:node|edge|evh|evidence|submission|src|cfg|evt|annotation|project)_[A-Za-z0-9._:-]+|[HC][0-9]+)$/.test(value);
+    return /^(?:(?:node|edge|evh|evidence|claim_evidence|submission|src|cfg|evt|annotation|project)_[A-Za-z0-9._:-]+|[HC][0-9]+)$/.test(value);
   }
   if (['revision', 'configRevision', 'schemaVersion'].includes(key)) return /^\d+$/.test(value);
   if (['profileVersion', 'outputSchemaVersion', 'provider', 'baseModel'].includes(key)) return /^[A-Za-z0-9._:/ -]{1,500}$/.test(value);
@@ -2843,6 +3129,11 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
     portable.reflection = '[redacted]';
     addRedaction(redactions, 'reflection', reason);
   }
+  SCALE_ORDER.forEach((scale) => {
+    if (!portable.levelProgress?.[scale]?.reflection) return;
+    portable.levelProgress[scale].reflection = '[redacted]';
+    addRedaction(redactions, `levelProgress.${scale}.reflection`, reason);
+  });
   [['candidates.nodes', portable.candidates.nodes], ['candidates.edges', portable.candidates.edges], ['graph.nodes', portable.graph.nodes], ['graph.edges', portable.graph.edges]].forEach(([path, records]) => {
     records.forEach((record, index) => {
       if (record.notes) {
@@ -2864,6 +3155,24 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
       if (record.rationale) {
         record.rationale = '[redacted]';
         addRedaction(redactions, `${path}[${index}].rationale`, reason);
+      }
+      if (record.mesoExplanation) {
+        record.mesoExplanation = '';
+        addRedaction(redactions, `${path}[${index}].mesoExplanation`, reason);
+      }
+      record.claimEvidence?.forEach((claim, claimIndex) => {
+        CLAIM_EVIDENCE_FIELDS.filter((field) => field !== 'sourcePassage').forEach((field) => {
+          if (!claim[field]) return;
+          claim[field] = '';
+          addRedaction(redactions, `${path}[${index}].claimEvidence[${claimIndex}].${field}`, reason);
+        });
+      });
+      if (record.relationshipProcess) {
+        RELATIONSHIP_PROCESS_FIELDS.forEach((field) => {
+          if (!record.relationshipProcess[field]) return;
+          record.relationshipProcess[field] = '';
+          addRedaction(redactions, `${path}[${index}].relationshipProcess.${field}`, reason);
+        });
       }
     });
   });
@@ -2958,7 +3267,7 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     sharingTier,
     redacted: redactions.length > 0,
     redactions,
-    preservedReferenceFields: ['id', 'sourceId', 'evidenceId', 'evidenceHash', 'evidenceLocator'],
+    preservedReferenceFields: ['id', 'sourceId', 'evidenceId', 'evidenceHash', 'evidenceLocator', 'settingNodeIds'],
   };
   return portable;
 }
@@ -3004,8 +3313,8 @@ export function parseProject(value) {
     throw new Error(`Invalid Systems Mapping project JSON: ${error.message}`);
   }
   assertSafeProjectStructure(parsed);
-  if (![1, 2, 3, 4, 5, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
-    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, or ${PROJECT_SCHEMA_VERSION}.`);
+  if (![1, 2, 3, 4, 5, 6, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
+    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, 6, or ${PROJECT_SCHEMA_VERSION}.`);
   }
   return validateProject(discardRetiredNodeTags(migrateLegacyProject(parsed)));
 }

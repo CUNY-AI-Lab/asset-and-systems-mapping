@@ -21,7 +21,7 @@ export const SYSTEMS_MAPPING_LEVELS = Object.freeze([
     id: 'macrosphere',
     title: 'Macro-level',
     partId: 'part-2',
-    description: 'Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one mapped element.',
+    description: 'Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one map item.',
   }),
 ]);
 

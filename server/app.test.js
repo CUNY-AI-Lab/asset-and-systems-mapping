@@ -623,6 +623,19 @@ describe('hardened Systems Mapping server', () => {
     expect(accepted.status).toBe(202);
     expect(await json(accepted)).toEqual({ accepted: true });
 
+    const workflowObservation = {
+      taskCode: 'classify_micro',
+      taskOutcome: 'completed_independently',
+      classificationExplanation: 'relational_with_evidence',
+      revisionQuality: 'not_applicable',
+      recoveryOutcome: 'not_needed',
+    };
+    expect((await postJson(system.app, '/api/prototype/events', {
+      event: 'workflow_observed',
+      stage: 'Review suggestions',
+      metadata: workflowObservation,
+    }, { cookie: studentCookie })).status).toBe(202);
+
     for (const [stage, stageIndex] of [['Review suggestions', 1], ["Check your instructor's response", 1]]) {
       expect((await postJson(system.app, '/api/prototype/events', {
         event: 'stage_viewed', stage, metadata: { stageIndex },
@@ -655,6 +668,34 @@ describe('hardened Systems Mapping server', () => {
     });
     expect(JSON.stringify(system.db.prepare('SELECT * FROM prototype_events').all())).not.toContain('private');
 
+    expect((await request(system.app, '/api/teacher/student-workflow-evaluation-report', {
+      headers: { cookie: studentCookie },
+    })).status).toBe(401);
+    const reportResponse = await request(system.app, '/api/teacher/student-workflow-evaluation-report', {
+      headers: { cookie: teacherCookie },
+    });
+    expect(reportResponse.status).toBe(200);
+    expect(reportResponse.headers.get('content-disposition'))
+      .toBe('attachment; filename="student-workflow-evaluation-report.json"');
+    const report = (await json(reportResponse)).evaluation;
+    expect(report).toMatchObject({
+      schemaVersion: 'systems-mapping.student-workflow-evaluation.v1',
+      observationCount: 1,
+      discardedObservationCount: 0,
+      measures: {
+        taskCompletion: {
+          overall: { completed_independently: 1 },
+          byTask: { classify_micro: { completed_independently: 1 } },
+        },
+        classificationExplanations: { relational_with_evidence: 1 },
+        revisionQuality: { not_applicable: 1 },
+        errorRecovery: { not_needed: 1 },
+      },
+    });
+    for (const prohibited of ['sessionRef', 'recordedAt', 'memoText', 'nodeCount', 'modelAccepted']) {
+      expect(JSON.stringify(report)).not.toContain(prohibited);
+    }
+
     const auditResponse = await request(system.app, '/api/teacher/prototype-audit', { headers: { cookie: teacherCookie } });
     expect(auditResponse.status).toBe(200);
     const audit = (await json(auditResponse)).prototypeEvents;
@@ -662,6 +703,31 @@ describe('hardened Systems Mapping server', () => {
     expect(Object.keys(audit).sort()).toEqual(['correlationCount', 'eventCounts', 'newestAt', 'oldestAt', 'rowCount']);
     expect(JSON.stringify(audit)).not.toContain('sessionRef');
     expect(prototypeEventAudit(system.db)).toEqual(audit);
+  });
+
+  it('rejects workflow observations that contain content or open-ended ratings', async () => {
+    const studentCookie = await grantStudent();
+    const workflowObservation = {
+      taskCode: 'classify_micro',
+      taskOutcome: 'completed_independently',
+      classificationExplanation: 'relational_with_evidence',
+      revisionQuality: 'not_applicable',
+      recoveryOutcome: 'not_needed',
+    };
+    const rejected = [
+      { ...workflowObservation, memoText: 'private memo' },
+      { ...workflowObservation, taskOutcome: 'mostly done' },
+      { taskCode: 'classify_micro' },
+    ];
+    for (const metadata of rejected) {
+      expect((await postJson(system.app, '/api/prototype/events', {
+        event: 'workflow_observed', stage: 'Review suggestions', metadata,
+      }, { cookie: studentCookie })).status).toBe(400);
+    }
+    const stored = JSON.stringify(system.db.prepare('SELECT * FROM prototype_events').all());
+    expect(stored).not.toContain('private memo');
+    expect(stored).not.toContain('mostly done');
+    expect(stored).not.toContain('classify_micro');
   });
 
   it('atomically rolls back student session issuance when the required success event cannot be stored', async () => {

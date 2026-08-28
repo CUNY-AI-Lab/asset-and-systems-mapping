@@ -192,7 +192,7 @@ describe('OpenRouter fallback runtime', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('falls back to OpenRouter on provider-side failures and reports the serving provider', async () => {
+  it('falls back to OpenRouter on an explicitly retryable provider failure and reports the serving provider', async () => {
     const primary = vi.fn(async () => { throw new OllamaCloudError('Ollama Cloud request was not accepted.', 'provider_http_error', { status: 500 }); });
     const fetchImpl = vi.fn(async () => jsonResponse(envelope()));
     const request = withOpenRouterFallback(primary, config());
@@ -204,22 +204,41 @@ describe('OpenRouter fallback runtime', () => {
     expect(result.metadata.model).toBe(model);
   });
 
-  it('does not retry input-shaped failures against the backup', async () => {
-    for (const code of ['invalid_input', 'input_too_large', 'request_aborted']) {
-      const primary = vi.fn(async () => { throw new OllamaCloudError('rejected', code); });
-      const fetchImpl = vi.fn();
-      const request = withOpenRouterFallback(primary, config());
-      await expect(request(input(), config(), { testOnly: { fetchImpl } })).rejects.toMatchObject({ code });
-      expect(fetchImpl).not.toHaveBeenCalled();
-    }
+  it.each([
+    ['invalid input', new OllamaCloudError('rejected', 'invalid_input')],
+    ['oversized input', new OllamaCloudError('rejected', 'input_too_large')],
+    ['caller cancellation', new OllamaCloudError('rejected', 'request_aborted')],
+    ['invalid model content', new OllamaCloudError('rejected', 'invalid_response')],
+    ['oversized model content', new OllamaCloudError('rejected', 'response_too_large')],
+    ['unexpected model completion', new OllamaCloudError('rejected', 'unexpected_response')],
+    ['provider authorization failure', new OllamaCloudError('rejected', 'provider_http_error', { status: 401 })],
+    ['provider payment failure', new OllamaCloudError('rejected', 'provider_http_error', { status: 402 })],
+    ['provider rejection without a status', new OllamaCloudError('rejected', 'provider_http_error')],
+    ['untyped application failure', new Error('untyped')],
+  ])('fails closed for %s without sending the project to the backup', async (_label, primaryError) => {
+    const primary = vi.fn(async () => { throw primaryError; });
+    const fetchImpl = vi.fn();
+    const request = withOpenRouterFallback(primary, config());
+    await expect(request(input(), config(), { testOnly: { fetchImpl } })).rejects.toBe(primaryError);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('classifies fallback eligibility by error code', () => {
+  it('allows only typed retryable transport and pre-content provider conditions', () => {
     expect(shouldFallToBackup(new OllamaCloudError('x', 'provider_unavailable'))).toBe(true);
     expect(shouldFallToBackup(new OllamaCloudError('x', 'request_timeout'))).toBe(true);
-    expect(shouldFallToBackup(new OllamaCloudError('x', 'invalid_response'))).toBe(true);
-    expect(shouldFallToBackup(new Error('untyped'))).toBe(true);
+    for (const status of [408, 425, 429, 500, 502, 503, 599]) {
+      expect(shouldFallToBackup(new OllamaCloudError('x', 'provider_http_error', { status }))).toBe(true);
+    }
+    for (const status of [400, 401, 402, 403, 404, 409, 422]) {
+      expect(shouldFallToBackup(new OllamaCloudError('x', 'provider_http_error', { status }))).toBe(false);
+    }
+    expect(shouldFallToBackup(new OllamaCloudError('x', 'provider_http_error'))).toBe(false);
+    expect(shouldFallToBackup(new OllamaCloudError('x', 'invalid_response'))).toBe(false);
+    expect(shouldFallToBackup(new OllamaCloudError('x', 'response_too_large'))).toBe(false);
+    expect(shouldFallToBackup(new OllamaCloudError('x', 'unexpected_response'))).toBe(false);
     expect(shouldFallToBackup(new OllamaCloudError('x', 'invalid_input'))).toBe(false);
     expect(shouldFallToBackup(new OllamaCloudError('x', 'request_aborted'))).toBe(false);
+    expect(shouldFallToBackup(new Error('untyped'))).toBe(false);
+    expect(shouldFallToBackup({ code: 'provider_unavailable' })).toBe(false);
   });
 });

@@ -90,7 +90,7 @@ const GLOBAL_CONTENT = {
     purpose: 'Review the student memo and prepare grounded suggestions the student can use while building a systems map. Keep the review encouraging, specific, and based only on the memo.',
     evidence: 'Point each suggestion to a passage in the memo. If the memo does not support something, ask a plain-language question instead of inventing an answer. Keep what the memo says separate from the student’s interpretation.',
     privacy: 'Require a documented permission or a privacy-safe treatment for sensitive material. Do not disclose names or identifying details that are not necessary to the analysis.',
-    scale_rubric: 'Use the focal person’s participation and the pathway of effect to decide placement; entity kind alone never determines a level. Micro returns immediate settings, their discrete elements and resources, and direct relationships. Meso returns mesosystem nodes that each identify an interrelation among two or more Micro settings already on the map. Exosphere returns outside decision settings and supported pathways into an immediate setting. Macrosphere returns broader conditions and the mapped elements they affect.',
+    scale_rubric: 'Use the focal person’s participation and the pathway of effect to decide placement; entity kind alone never determines a level. Micro returns immediate settings, their discrete elements and resources, and direct relationships. Meso returns mesosystem nodes that each identify an interrelation among two or more Micro settings already on the map. Exosphere returns outside decision settings and supported pathways into an immediate setting. Macrosphere returns broader conditions and the map items they affect.',
     interaction: 'Offer no more than three plain-language suggestions or questions. Help the student strengthen what is already in the memo and continue to the map; do not tell the student that progress is blocked.',
     output: 'Return only the memo-review object required by the application: guidance, nodes, connections, example, and readiness. Micro returns nodes plus supported direct connections. Meso returns mesosystem nodes whose scope fields contain two or more exact Micro setting IDs already on the map and an empty connections array. Readiness is a short, non-blocking note.',
   },
@@ -98,7 +98,7 @@ const GLOBAL_CONTENT = {
     purpose: 'Suggest map elements and level-appropriate connections that the memo supports. Every suggestion begins off the map and requires a student decision.',
     evidence: 'Attach a locatable evidence passage to every proposed node and relationship. Keep the student’s interpretation visible and do not turn an unsupported possibility into a confirmed claim.',
     privacy: 'Carry the project sharing tier and sensitivity treatment into every candidate. Do not place unnecessary identifying details in labels, notes, exports, or graph operations.',
-    scale_rubric: 'Use the active level as a filter on one durable graph. Preserve stable identifiers for elements already on the map. Place an entity by the focal person’s participation and the pathway of effect, not by whether it is an institution or service. Micro adds immediate settings, their discrete elements and resources, and direct relationships. Meso adds mesosystem nodes for interrelations among two or more Micro settings already on the map and adds no relationship edges. Exosphere adds outside decision settings and supported pathways into a Micro setting. Macrosphere adds broader conditions and the mapped elements they affect.',
+    scale_rubric: 'Use the active level as a filter on one durable graph. Preserve stable identifiers for elements already on the map. Place an entity by the focal person’s participation and the pathway of effect, not by whether it is an institution or service. Micro adds immediate settings, their discrete elements and resources, and direct relationships. Meso adds mesosystem nodes for interrelations among two or more Micro settings already on the map and adds no relationship edges. Exosphere adds outside decision settings and supported pathways into a Micro setting. Macrosphere adds broader conditions and the map items they affect.',
     interaction: 'Guide with questions rather than supplying conclusions. Let the student add a suggestion to the map, set it aside for more evidence, edit it, or remove it.',
     output: 'Return schema-valid node and edge operations with stable identifiers, type, scale, claim state, evidence locator, confidence, and notes. Allowed operations are add, revise, merge, contest, retire, and mark as research lead.',
   },
@@ -130,12 +130,12 @@ const SCALE_CONTENT = {
     output: 'Return named outside institution, agency, office, employer, funder, or service-system nodes only when each one has a supported relationship to an immediate Micro setting. Represent funding, eligibility, rule-setting, and service delivery as that decision pathway. Do not move a directly participated institution or service out of Micro merely because of its entity kind. A rule explicitly owned by the named outside decision setting may remain at Exosphere; a broader condition belongs at Macrosphere.',
   },
   macrosphere: {
-    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. A concrete institution belongs at Micro or Exosphere according to participation, not at Macrosphere.',
-    evidence: 'For each Macrosphere item, identify at least two affected mapped elements and state what evidence supports the claim. Add dates when time matters.',
+    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple map items. A concrete institution belongs at Micro or Exosphere according to participation, not at Macrosphere.',
+    evidence: 'For each Macrosphere item, identify at least two affected map items and state what evidence supports the claim. Add dates when time matters.',
     privacy: 'Do not include confidential, identifying, or nonpublic community information anywhere in the map or final work.',
-    scale_rubric: 'Show how a broad law, public policy, economic condition, history, or cultural belief affects at least two mapped elements. Keep an institution-specific operational rule with its named Exosphere decision setting; place a broader law or public policy at Macrosphere.',
-    interaction: 'Ask which mapped elements each broader condition affects, how the student knows, and what evidence supports the claim.',
-    output: 'Return Macrosphere nodes for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Each node uses a scope field containing at least two affected mapped element IDs. Return no relationship edge.',
+    scale_rubric: 'Show how a broad law, public policy, economic condition, history, or cultural belief affects at least two map items. Keep an institution-specific operational rule with its named Exosphere decision setting; place a broader law or public policy at Macrosphere.',
+    interaction: 'Ask which map items each broader condition affects, how the student knows, and what evidence supports the claim.',
+    output: 'Return Macrosphere nodes for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Each node uses a scope field containing at least two affected map item IDs. Return no relationship edge.',
   },
 };
 
@@ -236,21 +236,21 @@ const PART_ONE_STAGES = {
 
 const PART_TWO_STAGES = {
   'add-source': {
-    guidance: 'Use the project memo to continue into the active outer level. Exo-level names outside decision settings and traces how their actions reach a Micro-level setting. Macro-level names broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple mapped elements. Place a concrete institution according to the focal person’s participation.',
+    guidance: 'Use the project memo to continue into the active outer level. Exo-level names outside decision settings and traces how their actions reach a Micro-level setting. Macro-level names broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple map items. Place a concrete institution according to the focal person’s participation.',
     materials: '',
   },
   'review-suggestions': {
-    guidance: 'At Exo-level, check the full name of each outside decision setting and the pathway into a Micro-level setting. At Macro-level, check which mapped elements each broader condition affects and what evidence supports the claim.',
+    guidance: 'At Exo-level, check the full name of each outside decision setting and the connection into a Micro-level setting. At Macro-level, check which map items each broader condition affects and what evidence supports the claim.',
     materials: '',
   },
   'choose-what-to-map': {
-    guidance: `Ask the student to choose supported map elements for the active outer level. Exo-level includes named outside decision settings and supported pathways into Micro-level settings. Macro-level includes broader conditions and the mapped elements they affect, with no directional connections. Place concrete institutions at Micro-level or Exo-level according to participation. Add an annotation when evidence is incomplete.
+    guidance: `Ask the student to choose supported map items for the active outer level. Exo-level includes named outside decision settings and supported connections into Micro-level settings. Macro-level includes broader conditions and the map items they affect, with no directional connections. Place concrete institutions at Micro-level or Exo-level according to participation. Add an annotation when evidence is incomplete.
 
 ${CONNECTION_GUIDANCE}`,
     materials: '',
   },
   'build-map': {
-    guidance: 'Place Exo-level and Macro-level work in distinct regions around the earlier levels. Show each Exo-level pathway into a Micro-level setting and the mapped elements affected by each Macro-level item. Filtering a level must not remove or change map records.',
+    guidance: 'Place Exo-level and Macro-level work in distinct regions around the earlier levels. Show each Exo-level connection into a Micro-level setting and the map items affected by each Macro-level item. Filtering a level must not remove or change map records.',
     materials: '',
   },
   'revise-and-export': {

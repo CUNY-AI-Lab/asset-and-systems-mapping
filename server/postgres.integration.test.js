@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSystemsMappingApp } from './app.js';
+import { studentWorkflowEvaluationReport } from './database.js';
 
 const { Pool } = pg;
 
@@ -357,7 +358,7 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     });
     try {
       await second.ready;
-      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(10);
+      expect((await second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()).count).toBe(11);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count).toBe(2);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_modules').get()).count).toBe(60);
       expect((await second.db.prepare('SELECT COUNT(*) AS count FROM prompt_module_history').get()).count).toBe(60);
@@ -580,6 +581,27 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       `).get('node_moved');
       expect(stored.metadata).toBe('{"stageIndex":3,"nodeCount":4,"keyboard":true}');
       expect(stored.metadata).not.toContain('source');
+
+      const workflowEvent = await localMutation(localSystem, '/api/prototype/events', {
+        event: 'workflow_observed',
+        stage: 'Review suggestions',
+        metadata: {
+          taskCode: 'classify_micro',
+          taskOutcome: 'completed_independently',
+          classificationExplanation: 'relational_with_evidence',
+          revisionQuality: 'not_applicable',
+          recoveryOutcome: 'not_needed',
+        },
+      }, cookie);
+      expect(workflowEvent.status).toBe(202);
+      expect(await studentWorkflowEvaluationReport(localSystem.db)).toMatchObject({
+        observationCount: 1,
+        discardedObservationCount: 0,
+        measures: {
+          taskCompletion: { overall: { completed_independently: 1 } },
+          classificationExplanations: { relational_with_evidence: 1 },
+        },
+      });
 
       const projectId = `postgres_project_${Date.now()}`;
       const evaluated = await localMutation(

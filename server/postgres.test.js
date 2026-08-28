@@ -86,6 +86,8 @@ describe('PostgreSQL persistence adapter', () => {
     expect(migration).toContain('revoked_at BIGINT');
     expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(5\)/.test(text))).toBe(true);
     expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(10\)/.test(text))).toBe(true);
+    expect(fake.calls.some(({ text }) => /schema_migrations \(version\) VALUES \(11\)/.test(text))).toBe(true);
+    expect(migration).toContain("'workflow_observed'");
     expect(fake.calls.at(-1)?.text).toBe('COMMIT');
     await database.close();
   });
