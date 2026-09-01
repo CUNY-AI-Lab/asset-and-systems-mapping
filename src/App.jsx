@@ -88,6 +88,7 @@ const CONFIG_TEXT_LIMIT = 500;
 const NODE_LABEL_LIMIT = 200;
 const RELATIONSHIP_VERB_LIMIT = 100;
 const FILE_NAME_LIMIT = 255;
+const THEME_STORAGE_KEY = 'systems-mapping.theme';
 const RELATION_VOCABULARY_TEXT_LIMIT = PROJECT_LIMITS.relationVocabulary * (RELATIONSHIP_VERB_LIMIT + 2);
 const VIEWPORT_LIMITS = {
   minZoom: PROJECT_LIMITS.zoomMin,
@@ -658,6 +659,18 @@ function LabLink() {
   return <a className="brand__lab" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img className="lab-logo" src={cunyAiLabLogo} alt="" /></a>;
 }
 
+function storedTheme() {
+  try {
+    return window.localStorage?.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+function ThemeToggle({ dark, onToggle }) {
+  return <button className="theme-toggle" type="button" aria-pressed={dark} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`} title={`Switch to ${dark ? 'light' : 'dark'} mode`} onClick={onToggle}><span className="theme-toggle__icon" aria-hidden="true" /></button>;
+}
+
 function Modal({ open, title, onClose, children, wide = false }) {
   const closeRef = useRef(null);
   const modalRef = useRef(null);
@@ -860,18 +873,18 @@ function CommitInput({ value, onCommit, validate, onInvalid, ...props }) {
   }} />;
 }
 
-function AccessFrame({ children, onTeacher }) {
+function AccessFrame({ children, onTeacher, dark, onToggleTheme }) {
   return <div className="access-shell">
     <header className="access-header">
       <LabLink />
       <strong>Systems Mapping</strong>
-      <button type="button" className="access-header__teacher" onClick={onTeacher}>Teacher Console</button>
+      <div className="access-header__actions"><ThemeToggle dark={dark} onToggle={onToggleTheme} /><button type="button" className="access-header__teacher" onClick={onTeacher}>Teacher Console</button></div>
     </header>
     {children}
   </div>;
 }
 
-function ClassAccessScreen({ state, onSubmit, onTeacher }) {
+function ClassAccessScreen({ state, onSubmit, onTeacher, dark, onToggleTheme }) {
   const [code, setCode] = useState('');
   const inputRef = useRef(null);
   useEffect(() => {
@@ -887,7 +900,7 @@ function ClassAccessScreen({ state, onSubmit, onTeacher }) {
       inputRef.current?.focus();
     }
   };
-  return <AccessFrame onTeacher={onTeacher}>
+  return <AccessFrame onTeacher={onTeacher} dark={dark} onToggleTheme={onToggleTheme}>
     <main className="access-main" id="workspace">
       <p className="eyebrow">Classroom access</p>
       <h1>Enter your class code</h1>
@@ -930,8 +943,8 @@ function projectLinkStatus(link) {
   return 'synced';
 }
 
-function ProjectsScreen({ projects, activeProjectId, saveState, onOpen, onStart, onTeacher, onEndAccess, onRecovery, linkNotice = null }) {
-  return <AccessFrame onTeacher={onTeacher}>
+function ProjectsScreen({ projects, activeProjectId, saveState, onOpen, onStart, onTeacher, onEndAccess, onRecovery, linkNotice = null, dark, onToggleTheme }) {
+  return <AccessFrame onTeacher={onTeacher} dark={dark} onToggleTheme={onToggleTheme}>
     <main className="resume-main" id="workspace">
       <p className="eyebrow">Class workspace open</p>
       <div className="projects-heading">
@@ -1099,16 +1112,16 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
     <div className="wide stage-enter intake-stage">
       <p className="eyebrow">Start here</p>
       <h1>Add your memo</h1>
-      <p className="lede lede--compact">Frame whose experience you are mapping, what you want to understand, and where this map stops. You can revise any field without losing the map.</p>
+      <p className="lede lede--compact">Say who this map is about and what you want to understand. Everything can be revised later.</p>
       <div className="project-context-fields">
         <Field label="Map title (optional)"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
         <Field label="Student or group name (optional)"><input autoComplete="name" maxLength={CONFIG_TEXT_LIMIT} value={project.participantName || ''} onChange={(event) => setProjectField('participantName', event.target.value)} /></Field>
-        <Field label="Focal person or group" hint="Center the people whose participation and experience determine each systems level."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.focal} onChange={(event) => setInquiryField('focal', event.target.value)} /></Field>
-        <Field label="Map question" hint="What should the finished map help you understand?"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.question} onChange={(event) => setInquiryField('question', event.target.value)} /></Field>
-        <Field label="Time period or episode" hint="Name the period, event, or recurring situation this map covers."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.time} onChange={(event) => setInquiryField('time', event.target.value)} /></Field>
-        <Field label="Map boundary" hint="State what belongs inside this inquiry and what stays outside it."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.boundary} onChange={(event) => setInquiryField('boundary', event.target.value)} /></Field>
-        <Field label="Evidence used" hint="Name the accounts, documents, observations, or records that support this map."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.evidence} onChange={(event) => setInquiryField('evidence', event.target.value)} /></Field>
-        <Field label="Missing perspectives" hint="Name whose account or knowledge is not represented yet."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.voices} onChange={(event) => setInquiryField('voices', event.target.value)} /></Field>
+        <Field label="Focal person" hint="Who this map is about."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.focal} onChange={(event) => setInquiryField('focal', event.target.value)} /></Field>
+        <Field label="Question" hint="What the map should help you understand."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.question} onChange={(event) => setInquiryField('question', event.target.value)} /></Field>
+        <Field label="Time period" hint="What period or situation it covers."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.time} onChange={(event) => setInquiryField('time', event.target.value)} /></Field>
+        <Field label="Boundary" hint="What is inside this map, and what stays out."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.boundary} onChange={(event) => setInquiryField('boundary', event.target.value)} /></Field>
+        <Field label="Evidence" hint="What the map draws on."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.evidence} onChange={(event) => setInquiryField('evidence', event.target.value)} /></Field>
+        <Field label="Missing voices" hint="Whose view is missing."><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.voices} onChange={(event) => setInquiryField('voices', event.target.value)} /></Field>
       </div>
       <div className="intake-grid">
         <div>
@@ -1119,10 +1132,10 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
             <span>DOCX, TXT, MD, HTML, JSON, or PDF</span>
           </label>
           {fileNotice && <p className="privacy-note" role="status">{fileNotice}</p>}
-          <Field label="Memo text" hint={`${project.submission.text.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words`}>
+          <Field label="Memo" hint={`${project.submission.text.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words`}>
             <textarea className="memo-text" maxLength="500000" value={project.submission.text} onChange={(event) => setSubmission('text', event.target.value)} rows="15" />
           </Field>
-          {hasProjectWork(project) && <button className="button button--ghost" type="button" onClick={onRequestRestart}>Start a new map from this memo</button>}
+          {hasProjectWork(project) && <button className="button button--ghost" type="button" onClick={onRequestRestart}>New map from this memo</button>}
         </div>
         <aside className="memo-panel">
           <button type="button" className="disclosure-button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>
@@ -1142,13 +1155,13 @@ function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef }) {
   const words = project.submission.text.trim().split(/\s+/).filter(Boolean).length;
   return <details ref={drawerRef} className="memo-drawer">
     <summary>
-      <span className="memo-drawer__title"><strong>Your memo</strong><small>{words.toLocaleString()} {words === 1 ? 'word' : 'words'} · open to read or edit</small></span>
+      <span className="memo-drawer__title"><strong>Your memo</strong><small>{words.toLocaleString()} {words === 1 ? 'word' : 'words'}</small></span>
       <span className="memo-drawer__mark" aria-hidden="true" />
     </summary>
-    <Field label="Memo text" hint={hint || 'Editing marks generated guidance as ready to refresh. Your map, decisions, and history remain.'}>
+    <Field label="Memo" hint={hint || 'Edits mark guidance for refresh. Your map and history stay.'}>
       <textarea className="memo-text" maxLength="500000" rows="12" value={project.submission.text} onChange={(event) => update((draft) => { invalidateSubmissionDerived(draft, 'text', event.target.value); })} />
     </Field>
-    {hasProjectWork(project) && <button className="button button--ghost" type="button" onClick={onRequestRestart}>Start a new map from this memo</button>}
+    {hasProjectWork(project) && <button className="button button--ghost" type="button" onClick={onRequestRestart}>New map from this memo</button>}
   </details>;
 }
 
@@ -1296,31 +1309,6 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
   </div>;
 }
 
-// Each level reads and asks for something different; the copy names it so a
-// returning cycle never feels like the same screen with the same words.
-const LEVEL_REVIEW_COPY = Object.freeze({
-  micro: Object.freeze({
-    items: 'specific people, roles, groups, activities, objects, immediate settings, and direct relationships',
-    scaffoldTitle: 'Suggested Micro-level items',
-    next: 'Choose Micro-level items',
-  }),
-  meso: Object.freeze({
-    items: 'mesosystems formed by two or more Micro settings',
-    scaffoldTitle: 'Suggested mesosystems',
-    next: 'Choose Meso-level items',
-  }),
-  exosphere: Object.freeze({
-    items: 'outside decision settings whose actions reach a Micro-level setting',
-    scaffoldTitle: 'Suggested Exo-level decision settings',
-    next: 'Choose Exo-level items',
-  }),
-  macrosphere: Object.freeze({
-    items: 'broader laws, policies, economic conditions, and cultural beliefs',
-    scaffoldTitle: 'Suggested Macro-level conditions',
-    next: 'Choose Macro-level items',
-  }),
-});
-
 function carriedWorkSummary(project) {
   const liveNodes = project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired');
   const microSettings = liveNodes.filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type)).length;
@@ -1343,10 +1331,10 @@ function LevelProgressionBridge({ project }) {
   return <section className="level-progression" aria-label={`${level.label} progression`}>
     <dl>
       <div><dt>Uses</dt><dd>{level.uses}</dd></div>
-      <div><dt>Adds now</dt><dd>{level.adds}</dd></div>
+      <div><dt>Adds</dt><dd>{level.adds}</dd></div>
+      <div><dt>Boundary</dt><dd>{level.boundary}</dd></div>
+      {carried ? <div><dt>Carried</dt><dd>{carried}</dd></div> : null}
     </dl>
-    <p className="level-progression__boundary"><strong>Level boundary</strong><span>{level.boundary}</span></p>
-    {carried ? <p className="level-progression__carried"><strong>Work carried forward</strong><span>{carried}</span></p> : null}
   </section>;
 }
 
@@ -1360,6 +1348,14 @@ function levelProgressStatus(project, scale) {
   return 'Not started';
 }
 
+// Short on-screen ledes; the fuller shared reviewInstruction still frames the model request.
+const REVIEW_LEDES = Object.freeze({
+  micro: 'Find the settings, people, and interactions your memo supports.',
+  meso: 'Find evidence that two mapped settings interact.',
+  exosphere: 'Find outside decision settings that change a mapped setting.',
+  macrosphere: 'Find one condition that affects at least two map items.',
+});
+
 function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, onContinueWithoutModel, onRequestRestart, suggestionRuntime, persistence, retentionDays }) {
   const memoDrawerRef = useRef(null);
   const review = project.preflight?.memoReview;
@@ -1369,34 +1365,32 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
   const hasMemo = Boolean(project.submission.text.trim());
   const nodesOnly = project.activeScale === 'meso' || project.activeScale === 'macrosphere';
   const mesoLinkages = project.activeScale === 'meso';
-  const levelCopy = LEVEL_REVIEW_COPY[project.activeScale] || LEVEL_REVIEW_COPY.micro;
   const surfacedNodes = review?.nodes || [];
   const surfacedConnections = review?.connections || [];
   const microSettings = mesoLinkages ? carriedMicroNodes(project).filter((node) => MICRO_SETTING_NODE_TYPE_SET.has(node.type)) : [];
-  const nextLabel = levelCopy.next;
   return <div className="wide stage-enter">
     <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
-    <h1>Review your memo</h1>
-    <p className="lede">{SCALES[project.activeScale].reviewInstruction}</p>
+    <h1>Review memo</h1>
+    <p className="lede">{REVIEW_LEDES[project.activeScale] || SCALES[project.activeScale].reviewInstruction}</p>
     <LevelProgressionBridge project={project} />
     <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} drawerRef={memoDrawerRef} />
-    {!hasMemo && <p className="empty-message">Add memo text above to begin. You can generate guidance about {levelCopy.items}, or continue without model guidance.</p>}
+    {!hasMemo && <p className="empty-message">Add memo text above to begin.</p>}
     <section className="teacher-message" aria-label="Before generating guidance">
       <strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong>
       <p>{suggestionRuntimeDescription(suggestionRuntime, persistence, retentionDays)}</p>
-      <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Review or redact memo</button>
+      <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Open memo</button>
     </section>
     {busy && !review && <p className="review-progress" role="status">Guidance is being generated…</p>}
     {review && <>
       <section className="coverage-banner" aria-label="Coverage and uncertainty">
         <div className="coverage-banner__text">
-          <h2>Coverage and uncertainty</h2>
+          <h2>Coverage</h2>
           {review.readiness.note && <p>{review.readiness.note}</p>}
           {stale && <p className="coverage-banner__stale" role="status">Your memo changed after this guidance was generated. Choose Refresh guidance when you want the model to review the revised memo. Your existing map remains unchanged.</p>}
         </div>
         <div className="button-row">
-          <button type="button" className="button button--secondary" disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Rereading your memo…' : 'Refresh guidance'}</button>
-          <button type="button" className="button" onClick={onContinue}>{stale ? 'Continue without model' : nextLabel}<Icon name="arrow" /></button>
+          <button type="button" className="button button--secondary" disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Rereading…' : 'Refresh'}</button>
+          <button type="button" className="button" onClick={onContinue}>{stale ? 'Continue without model' : 'Continue'}<Icon name="arrow" /></button>
         </div>
       </section>
       <div className="preflight-grid">
@@ -1412,8 +1406,7 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
           )) : <p className="empty-message">The model returned no guidance this time. Refresh to try again.</p>}
         </section>
         <aside className="memo-scaffold" aria-labelledby="memo-scaffold-title">
-          <p className="eyebrow">Suggestions</p>
-          <h2 id="memo-scaffold-title">{levelCopy.scaffoldTitle}</h2>
+          <h2 id="memo-scaffold-title">Suggestions</h2>
           {mesoLinkages && microSettings.length > 0 && <div className="connection-node-list" role="region" aria-label="Micro settings available for mesosystems">{microSettings.map((node) => <span key={node.id}>{node.label}</span>)}</div>}
           {surfacedNodes.length ? (project.activeScale === 'macrosphere'
             ? <ul className="memo-scaffold__structures" aria-label="Macro-level conditions supported by the memo">{surfacedNodes.map((node) => <li key={node.label}>
@@ -1423,16 +1416,16 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
             : mesoLinkages
               ? <ul className="memo-scaffold__structures" aria-label="Mesosystems supported by the memo">{surfacedNodes.map((node) => <li key={node.label}><span className="memo-scaffold__claim"><strong>{node.label}</strong>{node.scope?.length ? <> includes {node.scope.map((member) => member.label).join(' and ')}</> : <span className="memo-scaffold__pending">. Select at least two Micro-level settings at the next step.</span>}</span></li>)}</ul>
             : <div className="connection-node-list" aria-label="Nodes evident in the memo">{surfacedNodes.map((node) => <span key={node.label} className={node.basis === 'inference' ? 'is-inferred' : ''}>{node.label}{node.basis === 'inference' && <em> · inferred</em>}</span>)}</div>) : null}
-          {!surfacedNodes.length ? <p className="empty-message">The review did not suggest any new map items. Revise the memo and refresh the guidance, or add a map item at the next stage.</p> : null}
-          {mesoLinkages && microSettings.length < 2 ? <p className="empty-message">Meso-level needs at least two Micro-level settings. Choose Work at level: Micro-level above and add the settings in which the person directly participates.</p> : null}
+          {!surfacedNodes.length ? <p className="empty-message">No suggestions from this review. Revise and refresh, or add items at the next step.</p> : null}
+          {mesoLinkages && microSettings.length < 2 ? <p className="empty-message">Meso needs at least two Micro settings. Switch to Micro-level and add them.</p> : null}
           {!nodesOnly && surfacedConnections.length > 0 && <ul className="memo-scaffold__connections">{surfacedConnections.map((connection, index) => (
             <li key={stableId('scaffold-edge', `${index}:${connection.source}:${connection.verb}:${connection.target}`)}>
               <span className="memo-scaffold__claim"><strong>{connection.sourceLabel || connection.source}</strong> <em>{connection.verb}</em> <strong>{connection.targetLabel || connection.target}</strong></span>
               {connection.rationale && <small>{connection.rationale}</small>}
             </li>
           ))}</ul>}
-          {!nodesOnly && review.example && <div className="memo-scaffold__example"><p className="eyebrow">Worked example</p><p>{review.example}</p></div>}
-          <p className="privacy-note">Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it.</p>
+          {!nodesOnly && review.example && <div className="memo-scaffold__example"><p className="eyebrow">Example</p><p>{review.example}</p></div>}
+          <p className="privacy-note">Suggestions join the map only when you add them.</p>
         </aside>
       </div>
     </>}
@@ -1721,53 +1714,39 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   }));
   const levelStepCopy = {
     meso: {
-      nodes: {
-        title: 'Choose Meso-level items',
-        lede: SCALES.meso.chooseInstruction,
-      },
+      nodes: { lede: 'Each mesosystem links at least two Micro settings, without a directional edge.' },
     },
     exosphere: {
-      nodes: {
-        title: 'Choose Exo-level items',
-        lede: SCALES.exosphere.chooseInstruction,
-      },
-      edges: {
-        title: 'Review Exo-level connections',
-        lede: 'Connect each outside decision setting to the Micro-level setting its action changes. State what changes for the focal person there, then add or remove the suggestion.',
-      },
+      nodes: { lede: 'Each item is an outside setting whose decisions reach a mapped Micro setting.' },
+      edges: { lede: 'Link each decision setting to the Micro setting it changes.' },
     },
     macrosphere: {
-      nodes: {
-        title: 'Choose Macro-level items',
-        lede: SCALES.macrosphere.chooseInstruction,
-      },
+      nodes: { lede: 'Each condition affects at least two map items.' },
     },
   };
   const stepCopy = {
     nodes: {
-      tab: `Nodes · ${counts.nodes.total}`,
-      title: 'Choose Micro-level items',
-      lede: project.activeScale === 'micro'
-        ? SCALES.micro.chooseInstruction
-        : 'Review the label and type of each suggested node, then add, rename, or remove it. Only items you add join the map.',
+      tab: `Items · ${counts.nodes.total}`,
+      title: 'Choose items',
+      lede: 'Keep, edit, or remove each suggestion. Only what you add joins the map.',
       ...(levelStepCopy[project.activeScale]?.nodes || {}),
     },
     edges: {
-      tab: `${project.activeScale === 'exosphere' ? 'Exo-level connections' : 'Direct relationships'} · ${counts.edges.total}`,
-      title: project.activeScale === 'micro' ? 'Review direct relationships' : 'Review Exo-level connections',
+      tab: `${project.activeScale === 'exosphere' ? 'Connections' : 'Relationships'} · ${counts.edges.total}`,
+      title: project.activeScale === 'micro' ? 'Relationships' : 'Connections',
       lede: project.activeScale === 'meso'
-        ? 'Meso-level uses mesosystems that include at least two Micro-level settings. It does not add directional relationships.'
+        ? 'Mesosystems have no directional edges.'
         : project.activeScale === 'micro'
-          ? 'Each Micro-level relationship describes a direct interaction within an immediate setting. Edit the action, then add or remove the suggestion.'
-        : 'Each relationship connects an Exo-level institution to an immediate setting. Edit the wording, then add or remove the suggestion.',
+          ? 'One direct action between two items. Edit it, then add or remove.'
+        : 'Link each decision setting to the Micro setting it changes.',
       ...(levelStepCopy[project.activeScale]?.edges || {}),
     },
     suggest: {
-      tab: project.activeScale === 'micro' ? 'More direct relationships' : 'More Exo-level connections',
-      title: project.activeScale === 'micro' ? 'Direct relationship' : 'Exo-level connection',
+      tab: project.activeScale === 'micro' ? 'More relationships' : 'More connections',
+      title: project.activeScale === 'micro' ? 'More relationships' : 'More connections',
       lede: project.activeScale === 'micro'
-        ? 'Optional. Describe a relationship you want the model to examine.'
-        : 'Optional. Describe how an outside decision reaches an immediate setting.',
+        ? 'Optional. Describe a relationship for the model to examine.'
+        : 'Optional. Describe how an outside decision reaches a setting.',
     },
   };
   const carriedNodes = project.activeScale === 'meso'
@@ -1813,7 +1792,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       />}
       {pathwayIssue && <p className="candidate-validation" role="status">{pathwayIssue} This suggestion stays here until you repair or remove it.</p>}
       {kind === 'nodes' && scopeRow && <div className="scope-editor" aria-label={mesoLinkageRow ? `Micro settings included in ${item.label}` : `Map items affected by ${item.label}`}>
-        {structureRow && <div className="scope-editor__mode"><label><span>How it affects map items</span><select aria-label={`How ${item.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
+        {structureRow && <div className="scope-editor__mode"><label><span>Effect</span><select aria-label={`How ${item.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'} onChange={(event) => edit(kind, item.id, 'deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
         <div className="scope-editor__members">
           {(item.scopeNodeIds || []).map((memberId) => {
             const member = liveMapNodeById.get(memberId);
@@ -1829,7 +1808,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
           {(item.scopeNodeIds || []).length < 2 && <span className="scope-editor__empty">{mesoLinkageRow ? 'Choose at least two Micro settings.' : `Choose at least two map items this condition ${SCALE_VERB_LEXICONS.macrosphere.includes(item.deontic) ? item.deontic : 'shapes'}.`}</span>}
         </div>
       </div>}
-      {kind === 'nodes' && mesoLinkageRow && <Field label="Explain how these settings interact" hint="Describe coordination or conflict supported by the memo. Do not add a directional relationship."><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={item.mesoExplanation || ''} onChange={(event) => edit(kind, item.id, 'mesoExplanation', event.target.value)} /></Field>}
+      {kind === 'nodes' && mesoLinkageRow && <Field label="Interaction" hint="Coordination or conflict the memo supports."><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={item.mesoExplanation || ''} onChange={(event) => edit(kind, item.id, 'mesoExplanation', event.target.value)} /></Field>}
       <p>{item.basis === 'inference' && <span className="basis-chip">suggested from context · review</span>}<span className="evidence-chip">{item.evidence || 'Evidence needed'}</span> · {SCALES[item.scale]?.label || item.scale}</p>
       <details className="candidate-note candidate-evidence">
         <summary>{item.evidence ? 'Evidence added' : 'Evidence or question'}</summary>
@@ -1842,7 +1821,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     </div>
     <div className="candidate-actions" aria-label={`Decision for ${kind === 'nodes' ? item.label : `${item.sourceLabel} ${item.verb} ${item.targetLabel}`}`}>
       <button className={item.status === 'confirmed' ? 'is-active' : ''} type="button" disabled={Boolean(pathwayIssue)} onClick={() => setStatus(kind, item.id, 'confirmed')}>Add to map</button>
-      {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'research lead')}>Set aside — needs evidence</button>}
+      {project.instructor.allowResearchLeads && <button className={item.status === 'research lead' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'research lead')}>Set aside</button>}
       <button className={item.status === 'rejected' ? 'is-active' : ''} type="button" onClick={() => setStatus(kind, item.id, 'rejected')}>Remove</button>
     </div>
   </article>;
@@ -1857,79 +1836,76 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   const stepIndex = candidateSteps.indexOf(step);
   const nextStep = candidateSteps[stepIndex + 1] || null;
   return <div className="wide stage-enter">
-    <p className="eyebrow">{LEVEL_REVIEW_COPY[project.activeScale]?.next || LEVEL_REVIEW_COPY.micro.next} · step {stepIndex + 1} of {candidateSteps.length}</p>
+    <p className="eyebrow">{SCALES[project.activeScale].label}{candidateSteps.length > 1 ? ` · ${stepIndex + 1} of ${candidateSteps.length}` : ''}</p>
     <div className="stage-title-row"><div><h1>{stepCopy[step].title}</h1><p className="lede">{stepCopy[step].lede}</p></div></div>
     <LevelProgressionBridge project={project} />
     {candidateSteps.length > 1 && <div className="subnav candidate-steps" role="tablist" aria-label="Choose map items">
       {candidateSteps.map((id) => <button key={id} id={`candidate-tab-${id}`} role="tab" aria-controls="candidate-panel" aria-selected={step === id} tabIndex={step === id ? 0 : -1} data-composite-value={id} className={step === id ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, candidateSteps, step, setStep)} onClick={() => setStep(id)}>{stepCopy[id].tab}</button>)}
     </div>}
     {project.activeScale === 'meso' && <section className="carried-node-summary" aria-labelledby="carried-nodes-title">
-      <div><p className="eyebrow">From Micro</p><h2 id="carried-nodes-title">Micro settings available for mesosystems</h2></div>
-      {carriedNodes.length ? <div className="connection-node-list" aria-label="Micro-level settings available for mesosystems">{carriedNodes.map((node) => <span key={node.id}>{node.label}</span>)}</div> : <p className="empty-message">No Micro-level settings are available. Choose Work at level: Micro-level above and add the settings in which the person directly participates.</p>}
+      <h2 id="carried-nodes-title">Micro settings</h2>
+      {carriedNodes.length ? <div className="connection-node-list" aria-label="Micro-level settings available for mesosystems">{carriedNodes.map((node) => <span key={node.id}>{node.label}</span>)}</div> : <p className="empty-message">None yet. Switch to Micro-level and add settings first.</p>}
     </section>}
     {decisionStep && <>
       <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
       <div className="button-row candidate-refresh-row">
-        <button className="button button--secondary" type="button" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Rereading memo…' : 'Reread memo for new suggestions'}</button>
+        <button className="button button--secondary" type="button" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Rereading…' : 'Reread memo'}</button>
       </div>
     </>}
     <div id="candidate-panel" role={candidateSteps.length > 1 ? 'tabpanel' : undefined} aria-labelledby={candidateSteps.length > 1 ? `candidate-tab-${step}` : undefined}>
       {decisionStep && <>
-        <p className="candidate-progress">Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it. Choose Set aside — needs evidence to preserve a question for later, or Remove to leave it off the map.</p>
+        <p className="candidate-progress">Suggestions join the map only when you choose Add. Set aside keeps a question for later; Remove leaves it off.</p>
         {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} decided</p>}
         <div className="candidate-list">
           {candidateRows(step, visibleCandidateItems, candidatePageStart)}
           {!counts[step].total && <p className="empty-message">{step === 'nodes'
             ? project.activeScale === 'exosphere'
-              ? 'The review did not suggest any Exo-level decision settings. Add a named outside setting whose decisions reach an immediate setting already on the map.'
+              ? 'No suggestions. Add a decision setting below.'
               : project.activeScale === 'meso'
-                ? 'The review did not suggest a mesosystem. Add a supported mesosystem that includes at least two Micro settings below.'
+                ? 'No suggestions. Add one below.'
               : project.activeScale === 'macrosphere'
-                ? 'The review did not suggest any Macro-level conditions. Add a supported law, public policy, economic condition, history, or cultural belief below.'
-                : 'The review did not suggest any nodes. Revise the memo and choose “Reread memo,” or add a node on the map.'
+                ? 'No suggestions. Add a condition below.'
+                : 'No suggestions. Revise the memo and reread it, or add items on the map.'
             : project.activeScale === 'exosphere'
-              ? 'No Exo-level connections came from your memo yet. Ask the model for suggestions, or add a connection on the map.'
-              : 'No direct relationships came from your memo yet. Ask the model for suggestions, or add a relationship yourself on the map.'}</p>}
+              ? 'None yet. Ask for suggestions or add one on the map.'
+              : 'None yet. Ask for suggestions or add one on the map.'}</p>}
         </div>
         {candidatePageCount > 1 && <nav className="candidate-pagination" aria-label="Suggestion groups"><span>Suggestions {candidatePageStart + 1}–{Math.min(candidatePageStart + CANDIDATE_BATCH_SIZE, counts[step].total)} of {counts[step].total}</span><div><button type="button" disabled={activeCandidatePage === 0} onClick={() => setCandidatePage((current) => ({ ...current, [step]: activeCandidatePage - 1 }))}>Previous</button><button type="button" disabled={activeCandidatePage >= candidatePageCount - 1} onClick={() => setCandidatePage((current) => ({ ...current, [step]: activeCandidatePage + 1 }))}>Next</button></div></nav>}
       {step === 'nodes' && project.activeScale === 'meso' && <section className="elicitation-panel" aria-labelledby="add-meso-linkage-title">
-          <p className="eyebrow">Mesosystems</p>
           <h2 id="add-meso-linkage-title">New mesosystem</h2>
-          <p className="lede">Give the mesosystem a short, conventional name, then select at least two Micro-level settings. Do not add a directional relationship.</p>
+          <p className="lede">A short name plus at least two Micro settings. No directional edge.</p>
           <div className="elicitation-panel__form">
-            <Field label="Mesosystem name"><input maxLength={NODE_LABEL_LIMIT} value={mesoDraft.label} placeholder="e.g. Work–college scheduling conflict" onChange={(event) => setMesoDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
-            <Field label="First Micro setting"><select value={mesoDraft.first} onChange={(event) => setMesoDraft((current) => ({ ...current, first: event.target.value }))}><option value="">Choose a Micro setting…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
-            <Field label="Second Micro setting"><select value={mesoDraft.second} onChange={(event) => setMesoDraft((current) => ({ ...current, second: event.target.value }))}><option value="">Choose a different Micro setting…</option>{mesoSettingNodes.filter((node) => node.id !== mesoDraft.first).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
-            <Field label="Explain how these settings interact" hint="Describe coordination or conflict supported by the memo. Do not add a directional relationship."><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={mesoDraft.explanation} onChange={(event) => setMesoDraft((current) => ({ ...current, explanation: event.target.value }))} /></Field>
+            <Field label="Name"><input maxLength={NODE_LABEL_LIMIT} value={mesoDraft.label} placeholder="e.g. Work–college scheduling conflict" onChange={(event) => setMesoDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
+            <Field label="Setting 1"><select value={mesoDraft.first} onChange={(event) => setMesoDraft((current) => ({ ...current, first: event.target.value }))}><option value="">Choose a Micro setting…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
+            <Field label="Setting 2"><select value={mesoDraft.second} onChange={(event) => setMesoDraft((current) => ({ ...current, second: event.target.value }))}><option value="">Choose a different Micro setting…</option>{mesoSettingNodes.filter((node) => node.id !== mesoDraft.first).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
+            <Field label="Interaction" hint="Coordination or conflict the memo supports."><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={mesoDraft.explanation} onChange={(event) => setMesoDraft((current) => ({ ...current, explanation: event.target.value }))} /></Field>
             <button className="button" type="button" onClick={addMesoLinkage}>Add mesosystem</button>
           </div>
         </section>}
       {step === 'nodes' && project.activeScale === 'exosphere' && <section className="elicitation-panel" aria-labelledby="add-institution-title">
-          <p className="eyebrow">Exo-level decision settings</p>
           <h2 id="add-institution-title">New decision setting</h2>
-          <p className="lede">Name an outside setting where decisions occur, then connect it to the Micro-level setting those decisions change.</p>
+          <p className="lede">An outside setting whose decisions change a mapped Micro setting.</p>
           <div className="elicitation-panel__form">
-            <Field label="Decision setting name"><input maxLength={NODE_LABEL_LIMIT} value={institutionDraft.label} placeholder="e.g. NYS OPWDD or MTA Access-A-Ride" onChange={(event) => setInstitutionDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
-            <Field label="Decision setting type"><select value={institutionDraft.type} onChange={(event) => setInstitutionDraft((current) => ({ ...current, type: event.target.value }))}>{EXOSPHERE_NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field>
-            <Field label="How decision reaches Micro setting"><select aria-label="How decision reaches Micro setting" value={institutionDraft.verb} onChange={(event) => setInstitutionDraft((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
-            <Field label="Affected Micro setting"><select aria-label="Micro setting affected by decision setting" value={institutionDraft.anchor} onChange={(event) => setInstitutionDraft((current) => ({ ...current, anchor: event.target.value }))}><option value="">Choose a Micro setting already on the map…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
-            <button className="button" type="button" onClick={addInstitution}>Add decision setting</button>
+            <Field label="Name"><input maxLength={NODE_LABEL_LIMIT} value={institutionDraft.label} placeholder="e.g. NYS OPWDD or MTA Access-A-Ride" onChange={(event) => setInstitutionDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
+            <Field label="Type"><select value={institutionDraft.type} onChange={(event) => setInstitutionDraft((current) => ({ ...current, type: event.target.value }))}>{EXOSPHERE_NODE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></Field>
+            <Field label="Pathway"><select aria-label="How decision reaches Micro setting" value={institutionDraft.verb} onChange={(event) => setInstitutionDraft((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <Field label="Affects"><select aria-label="Micro setting affected by decision setting" value={institutionDraft.anchor} onChange={(event) => setInstitutionDraft((current) => ({ ...current, anchor: event.target.value }))}><option value="">Choose a Micro setting already on the map…</option>{mesoSettingNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>
+            <button className="button" type="button" onClick={addInstitution}>Add setting</button>
           </div>
         </section>}
         {step === 'nodes' && project.activeScale === 'macrosphere' && <section className="elicitation-panel" aria-labelledby="add-structure-title">
-          <p className="eyebrow">Macro-level conditions</p>
-          <h2 id="add-structure-title">New Macro-level condition</h2>
-          <p className="lede">Name a broader law, policy, economic condition, history, or cultural belief that affects more than one map item. Then select the affected items.</p>
+          <h2 id="add-structure-title">New condition</h2>
+          <p className="lede">A law, policy, history, or belief that affects two or more map items.</p>
           <div className="elicitation-panel__form">
-            <Field label="Name"><input maxLength={NODE_LABEL_LIMIT} value={structureDraft.label} placeholder="e.g. Americans with Disabilities Act, High housing and transportation costs" onChange={(event) => setStructureDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
+            <Field label="Name"><input maxLength={NODE_LABEL_LIMIT} value={structureDraft.label} placeholder="e.g. ADA, housing costs" onChange={(event) => setStructureDraft((current) => ({ ...current, label: event.target.value }))} /></Field>
             <Field label="Type"><select value={structureDraft.type} onChange={(event) => setStructureDraft((current) => ({ ...current, type: event.target.value }))}>{MACRO_STRUCTURE_KINDS.map((type) => <option key={type}>{type}</option>)}</select></Field>
-            <Field label="How it affects map items"><select value={structureDraft.deontic} onChange={(event) => setStructureDraft((current) => ({ ...current, deontic: event.target.value }))}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
-            <Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={structureDraft.evidence} onChange={(event) => setStructureDraft((current) => ({ ...current, evidence: event.target.value }))} /></Field>
-            <button className="button" type="button" onClick={addStructure}>Add Macro-level condition</button>
+            <Field label="Effect"><select value={structureDraft.deontic} onChange={(event) => setStructureDraft((current) => ({ ...current, deontic: event.target.value }))}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></Field>
+            <Field label="Evidence"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={structureDraft.evidence} onChange={(event) => setStructureDraft((current) => ({ ...current, evidence: event.target.value }))} /></Field>
+            <button className="button" type="button" onClick={addStructure}>Add condition</button>
           </div>
         </section>}
         <div className="button-row candidate-step-actions">
-          {nextStep && <button className="button" type="button" onClick={() => setStep(nextStep)}>{nextStep === 'edges' ? 'Continue to direct relationships' : 'Continue to more relationships'}<Icon name="arrow" /></button>}
+          {nextStep && <button className="button" type="button" onClick={() => setStep(nextStep)}>Continue<Icon name="arrow" /></button>}
         </div>
       </>}
       {step === 'suggest' && <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} />}
@@ -5022,7 +4998,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
                 onSettingNodeIdsChange={(value) => editNode('settingNodeIds', value)}
               />}
               {['meso', 'macrosphere'].includes(selectedNode.scale) && <div className="scope-editor" aria-label={selectedNode.scale === 'meso' ? `Micro settings included in ${selectedNode.label}` : `Map items affected by ${selectedNode.label}`}>
-                {selectedNode.scale === 'macrosphere' && <div className="scope-editor__mode"><label><span>How it affects map items</span><select aria-label={`How ${selectedNode.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
+                {selectedNode.scale === 'macrosphere' && <div className="scope-editor__mode"><label><span>Effect</span><select aria-label={`How ${selectedNode.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
                 <div className="scope-editor__members">
                   {(selectedNode.scopeNodeIds || []).map((memberId) => {
                     const member = project.graph.nodes.find((node) => node.id === memberId);
@@ -5037,7 +5013,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
                   {(selectedNode.scopeNodeIds || []).length < 2 && <span className="scope-editor__empty">{selectedNode.scale === 'meso' ? 'Choose at least two Micro settings.' : 'Choose at least two map items.'}</span>}
                 </div>
               </div>}
-              {selectedNode.scale === 'meso' && <Field label="Explain how these settings interact" hint="Describe coordination or conflict supported by the memo. Do not add a directional relationship."><textarea rows="4" maxLength={PROJECT_LIMITS.noteText} value={selectedNode.mesoExplanation || ''} onChange={(event) => editNode('mesoExplanation', event.target.value)} /></Field>}
+              {selectedNode.scale === 'meso' && <Field label="Interaction" hint="Coordination or conflict the memo supports."><textarea rows="4" maxLength={PROJECT_LIMITS.noteText} value={selectedNode.mesoExplanation || ''} onChange={(event) => editNode('mesoExplanation', event.target.value)} /></Field>}
               <div className="provenance-block"><span>Evidence</span><p>{selectedNode.evidence || 'No evidence added yet.'}</p>{selectedNode.notes && <><span>Annotation</span><p>{selectedNode.notes}</p></>}</div>
             </div>
           </details>
@@ -5222,6 +5198,7 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
 }
 
 function App() {
+  const [theme, setTheme] = useState(storedTheme);
   const [initialLoad] = useState(loadProject);
   const [project, setProject] = useState(initialLoad.project);
   const [projectRecords, setProjectRecords] = useState(() => loadProjectLibrary(window.localStorage, initialLoad.project, initialLoad.hasSavedProject));
@@ -5266,6 +5243,18 @@ function App() {
   const projectRef = useRef(project);
   const connectionPromptRef = useRef(connectionPrompt);
   const workspaceRef = useRef(null);
+  const dark = theme === 'dark';
+  const toggleTheme = useCallback(() => setTheme((current) => current === 'dark' ? 'light' : 'dark'), []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#141919' : '#ffffff');
+    try {
+      window.localStorage?.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // The visual preference remains available for the current session.
+    }
+  }, [theme]);
   projectRef.current = project;
   projectRecordsRef.current = projectRecords;
   connectionPromptRef.current = connectionPrompt;
@@ -6256,7 +6245,7 @@ function App() {
 
   const primaryLabel = (() => {
     if (project.stage === 0) return 'Review memo';
-    if (project.stage === 1) return project.preflight?.memoReview && project.preflight.sourceFingerprint === memoFingerprint(project.submission) ? (LEVEL_REVIEW_COPY[project.activeScale] || LEVEL_REVIEW_COPY.micro).next : 'Continue without model';
+    if (project.stage === 1) return project.preflight?.memoReview && project.preflight.sourceFingerprint === memoFingerprint(project.submission) ? 'Continue' : 'Continue without model';
     if (project.stage === 2) return 'Open map';
     if (project.stage === 3) return 'Revise and export';
     const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
@@ -6850,17 +6839,17 @@ function App() {
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Teacher Console home"><strong>Systems Mapping</strong><small>Teacher Console</small></a></div>
-      <button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button>
+      <div className="header-actions"><ThemeToggle dark={dark} onToggle={toggleTheme} /><button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button></div>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
       <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} /></Suspense>
     </main>
   </div>;
 
-  if (accessState.status !== 'granted') return <ClassAccessScreen state={accessState} onSubmit={submitClassCode} onTeacher={() => setTeacherOpen(true)} />;
+  if (accessState.status !== 'granted') return <ClassAccessScreen state={accessState} onSubmit={submitClassCode} onTeacher={() => setTeacherOpen(true)} dark={dark} onToggleTheme={toggleTheme} />;
 
   if (!workspaceStarted) return <>
-    <ProjectsScreen projects={projectRecords} activeProjectId={hasSavedProject ? project.id : null} saveState={saveState} onOpen={openSavedProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} linkNotice={linkStatus === 'error' ? linkMessage : null} />
+    <ProjectsScreen projects={projectRecords} activeProjectId={hasSavedProject ? project.id : null} saveState={saveState} onOpen={openSavedProject} onStart={requestNewProject} onTeacher={() => setTeacherOpen(true)} onEndAccess={endAccess} onRecovery={() => setModal('storage')} linkNotice={linkStatus === 'error' ? linkMessage : null} dark={dark} onToggleTheme={toggleTheme} />
     {recoveryModal}
     <Modal open={modal === 'new-project'} title="Start new project?" onClose={() => { setPendingNewProject(false); setModal(null); }}>
       <div className="confirm-panel"><p>Your current project will stay saved on this device. You can return to it from Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start new project</button></div></div>
@@ -6872,7 +6861,7 @@ function App() {
       <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
       <div className="header-actions">
         {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('validation')}><i />Save needs attention</button> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
-        <button className="text-button" type="button" onClick={() => { flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />Projects</button><button className="text-button" type="button" aria-label={`Work at level: ${SCALES[project.activeScale].label}`} onClick={() => setModal('work-level')}>Work at level · {SCALES[project.activeScale].label}</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" onClick={() => setModal('project-link')}><Icon name="link" />Project link</button><button className="text-button" type="button" aria-label={`Progress: ${SCALES[project.activeScale].label}, ${STAGES[project.stage].short}`} onClick={() => setModal('stages')}><Icon name="menu" />{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</button>
+        <button className="text-button" type="button" onClick={() => { flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />Projects</button><button className="text-button" type="button" aria-label={`Work at level: ${SCALES[project.activeScale].label}`} title="Work at level" onClick={() => setModal('work-level')}>{SCALES[project.activeScale].label}</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" aria-label="Project link" title="Copy or manage the project link" onClick={() => setModal('project-link')}><Icon name="link" />Link</button><button className="text-button" type="button" aria-label={`Progress: ${SCALES[project.activeScale].label}, ${STAGES[project.stage].short}`} title="Progress and stages" onClick={() => setModal('stages')}><Icon name="menu" />Progress</button><ThemeToggle dark={dark} onToggle={toggleTheme} />
       </div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>

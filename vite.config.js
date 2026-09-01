@@ -6,7 +6,17 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:4177',
+      '/api': {
+        target: 'http://127.0.0.1:4177',
+        changeOrigin: true,
+        // The API only accepts mutations whose Origin matches its own address.
+        // The dev server proxies across ports, so restate the Origin it expects.
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyReq) => {
+            if (proxyReq.getHeader('origin')) proxyReq.setHeader('origin', 'http://127.0.0.1:4177');
+          });
+        },
+      },
     },
   },
   test: {

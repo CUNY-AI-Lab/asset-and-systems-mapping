@@ -27,7 +27,7 @@ describe('student-facing copy', () => {
 
   it('defines each candidate decision in plain language', () => {
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
-    expect(source).toContain('Model suggestions stay off the map until you choose Add to map. Editing a suggestion does not add it. Choose Set aside — needs evidence to preserve a question for later, or Remove to leave it off the map.');
+    expect(source).toContain('Suggestions join the map only when you choose Add. Set aside keeps a question for later; Remove leaves it off.');
     expect(source).not.toContain('Keep means add this suggestion to the map. Suggestions begin on Keep so you can review them together.');
   });
 
@@ -69,11 +69,10 @@ describe('student-facing copy', () => {
 
   it('uses decision-setting language for Exo-level and plain Meso explanation copy', () => {
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
-    expect(source).toContain('Suggested Exo-level decision settings');
     expect(source).toContain('New decision setting');
-    expect(source).toContain('Decision setting name');
-    expect(source).toContain('Add decision setting');
-    expect(source).toContain('Explain how these settings interact');
+    expect(source).toContain('Add setting');
+    expect(source).toContain('label="Pathway"');
+    expect(source).toContain('label="Interaction"');
     expect(source).not.toContain('Suggested Exo-level institutions');
     expect(source).not.toContain('Place named institutions at Exo-level');
     expect(source).not.toContain('What passes, coordinates, or conflicts?');

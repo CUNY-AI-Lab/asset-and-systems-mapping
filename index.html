@@ -8,6 +8,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
     <title>Systems Mapping</title>
+    <script>
+      try {
+        if (localStorage.getItem('systems-mapping.theme') === 'dark') {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.style.colorScheme = 'dark';
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#141919');
+        }
+      } catch (_) {}
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#workspace">Skip to workspace</a>

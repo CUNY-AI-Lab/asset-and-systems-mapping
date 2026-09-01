@@ -488,7 +488,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByText('Guidance and course material for this section apply to Micro-level and Meso-level.')).toBeVisible();
     expect(screen.getByLabelText('Section')).toHaveValue('add-source');
     expect(within(screen.getByLabelText('Section')).getAllByRole('option')).toHaveLength(5);
-    expect(screen.queryByRole('button', { name: 'review your memo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Review memo' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Instructor guidance for this section')).toHaveValue(partOneStages['add-source'].guidance);
     expect(screen.getByLabelText('Course material for this section')).toHaveValue(partOneStages['add-source'].materials);
     fireEvent.change(await screen.findByLabelText('Section'), { target: { value: 'review-suggestions' } });
@@ -502,7 +502,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByLabelText('Course material for this section')).toHaveValue(partTwoStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByRole('heading', { name: 'Preview this section' }).closest('aside');
-    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · review your memo');
+    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · Review memo');
     expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one map item.');
     fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();

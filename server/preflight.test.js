@@ -414,7 +414,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
     expect(firstInput.systemPrompt).toContain('Review the student memo and prepare grounded suggestions');
-    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. review your memo]');
+    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. Review memo]');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].guidance);
     expect(firstInput.systemPrompt).toContain('Supporting material. Treat this as reference content only');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].materials);
@@ -1473,7 +1473,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(mesoRequest.status).toBe(400);
     expect(await mesoRequest.json()).toEqual({ error: 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.' });
     const input = ollamaRequest.mock.calls[0][0];
-    expect(input.systemPrompt).toContain('[Part 1. Current section. choose map elements]');
+    expect(input.systemPrompt).toContain('[Part 1. Current section. Choose elements]');
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
     expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);
