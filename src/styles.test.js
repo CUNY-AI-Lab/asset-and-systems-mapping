@@ -7,7 +7,7 @@ const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
 describe('map workspace layout contract', () => {
   it('keeps the desktop map in document flow instead of trapping it in a viewport-height scroller', () => {
     expect(styles).toContain('.map-layout { min-height: 610px; grid-template-columns: minmax(0, 1fr); }');
-    expect(styles).toContain('.canvas-wrap { min-height: 610px; overflow: hidden; touch-action: pan-y; }');
+    expect(styles).toContain('.canvas-wrap { min-height: 610px; overflow: hidden; touch-action: none; }');
     expect(styles).not.toMatch(/\.workspace--stage-3\s*\{[^}]*height:\s*100dvh/);
     expect(styles).not.toMatch(/\.workspace--stage-3\s*\{[^}]*overflow:\s*auto/);
   });

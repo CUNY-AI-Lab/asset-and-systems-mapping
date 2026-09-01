@@ -51,6 +51,34 @@ describe('student-facing copy', () => {
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one map item/i);
   });
 
+  it('gives every level one explicit progression contract', () => {
+    const contracts = Object.fromEntries(SYSTEMS_MAPPING_LEVELS.map((level) => [level.id, level]));
+    SYSTEMS_MAPPING_LEVELS.forEach((level) => {
+      expect(level.reviewInstruction, `${level.id} review instruction`).toBeTruthy();
+      expect(level.chooseInstruction, `${level.id} choose instruction`).toBeTruthy();
+      expect(level.uses, `${level.id} uses`).toBeTruthy();
+      expect(level.adds, `${level.id} adds`).toBeTruthy();
+      expect(level.boundary, `${level.id} boundary`).toBeTruthy();
+    });
+    expect(contracts.meso.boundary).toMatch(/do not add.*relationship edges/i);
+    expect(contracts.exosphere.uses).toBe('Micro-level settings');
+    expect(contracts.exosphere.boundary).toMatch(/participates.*Micro-level.*broader conditions.*Macro-level/i);
+    expect(contracts.macrosphere.uses).toBe('Map items from earlier levels');
+    expect(contracts.macrosphere.boundary).toMatch(/Micro-level.*participates.*Exo-level.*decisions/i);
+  });
+
+  it('uses decision-setting language for Exo-level and plain Meso explanation copy', () => {
+    const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
+    expect(source).toContain('Suggested Exo-level decision settings');
+    expect(source).toContain('New decision setting');
+    expect(source).toContain('Decision setting name');
+    expect(source).toContain('Add decision setting');
+    expect(source).toContain('Explain how these settings interact');
+    expect(source).not.toContain('Suggested Exo-level institutions');
+    expect(source).not.toContain('Place named institutions at Exo-level');
+    expect(source).not.toContain('What passes, coordinates, or conflicts?');
+  });
+
   it('keeps student headings free of standalone articles', () => {
     const appSource = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
     const listSource = readFileSync(fileURLToPath(new URL(studentCopySources[1], import.meta.url)), 'utf8');

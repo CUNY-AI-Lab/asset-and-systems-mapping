@@ -1,51 +1,13 @@
 import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
-import { SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
+import { SYSTEMS_MAPPING_LEVELS, SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
 
 export const SCALE_ORDER = ['micro', 'meso', 'exosphere', 'macrosphere'];
 export const SCALE_PARTS = SYSTEMS_MAPPING_PARTS;
 
-export const SCALES = {
-  micro: {
-    label: 'Micro-level',
-    prompt: 'Which settings does the person participate in directly, and what people, roles, activities, objects, and resources are part of those settings?',
-    description: 'Immediate settings, their elements, and direct interactions.',
-    checklist: [
-      'Name each immediate setting and each relevant person, role, activity, object, or resource as a discrete map element.',
-      'Describe what happens between Micro elements with one direct verb.',
-      'Record whose voices you have heard and whose are missing.',
-    ],
-  },
-  meso: {
-    label: 'Meso-level',
-    prompt: 'Which two or more Micro settings form a mesosystem?',
-    description: 'Interrelations among two or more immediate settings already mapped in Micro.',
-    checklist: [
-      'Use the exact names of settings already mapped in Micro.',
-      'Group two or more settings into each mesosystem.',
-      'Name the mesosystem without adding a directional connection.',
-    ],
-  },
-  exosphere: {
-    label: 'Exo-level',
-    prompt: 'Which outside decision settings affect what happens in the person’s immediate settings?',
-    description: 'Outside decision settings and their effects on immediate settings.',
-    checklist: [
-      'Name the outside office, agency, funder, service system, or decision-making body.',
-      'Connect each outside decision setting to an immediate setting it affects.',
-      'Keep institution-specific decisions separate from broader laws, public policies, beliefs, and structures.',
-    ],
-  },
-  macrosphere: {
-    label: 'Macro-level',
-    prompt: 'Which broader laws, public policies, economic conditions, histories, and cultural beliefs affect multiple map items?',
-    description: 'Broader conditions that affect more than one part of the map.',
-    checklist: [
-      'Name broader laws, public policies, economic conditions, histories, cultural beliefs, and structures.',
-      'Identify at least two map items affected by each item and the evidence supporting that claim.',
-      'Place immediate settings at Micro-level and outside decision settings at Exo-level.',
-    ],
-  },
-};
+export const SCALES = Object.freeze(Object.fromEntries(SYSTEMS_MAPPING_LEVELS.map(({ id, title, ...level }) => [id, Object.freeze({
+  ...level,
+  label: title,
+})])));
 
 export const HARD_CRITERIA = [
   { id: 'H1', label: 'Memo detail', help: 'The memo includes enough detail to begin mapping.' },
@@ -1470,7 +1432,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
             ? 'No broader condition with enough evidence was found. Revise the memo, or add a condition yourself and mark it as needing more evidence.'
             : 'No supported outside decision setting was found. You can continue and ask which outside office, funder, or service system changes what happens in an immediate setting.', PROJECT_LIMITS.memoGuidanceText),
   };
-  return { guidance, nodes: reviewNodes, connections, example: activeScale === 'micro' ? null : example, readiness };
+  return { guidance, nodes: reviewNodes, connections, example: ['micro', 'meso'].includes(activeScale) ? null : example, readiness };
 }
 
 export function createEvent(action, detail, actor = 'student', metadata = {}) {

@@ -125,7 +125,7 @@ const PROJECT_OVERLAY_KEYS = Object.freeze([
 ]);
 const MEMO_REVIEW_NODE_TYPES = NODE_TYPES;
 const MEMO_REVIEW_LIMITS = Object.freeze({
-  guidance: 8, nodes: 20, connections: 12, point: 500, evidence: 500,
+  guidance: 3, nodes: 20, connections: 12, point: 500, evidence: 500,
   label: 200, verb: 100, rationale: 1000, example: 1000, note: 500,
 });
 // Per-level ceilings keep the review focused: a student decides on a handful
@@ -135,15 +135,15 @@ const MEMO_REVIEW_LIMITS = Object.freeze({
 const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
   micro: Object.freeze({ nodes: 10, connections: 8 }),
   meso: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
-  exosphere: Object.freeze({ nodes: 8, connections: 6 }),
-  macrosphere: Object.freeze({ nodes: 8, connections: 0, scope: 12 }),
+  exosphere: Object.freeze({ nodes: 6, connections: 5 }),
+  macrosphere: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
 });
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
   'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 10 nodes and 8 direct relationships at Micro, 6 mesosystems at Meso, 6 new outside decision settings with 5 pathways at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
-  `guidance must be an array of no more than 4 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
+  `guidance must be an array of no more than 3 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
   `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
   'Except at Meso, each node label MUST be the shortest complete memo-supported referring expression for exactly one accepted map element. Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo; if the referent is not unambiguous, omit it. Never attach location, schedule, action, relationship, or explanatory material merely to make a label longer; keep those details in evidence, and emit a separately supported setting only when it is independently relevant. Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments, relationship propositions, outcomes, or explanations as node labels. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
   'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
@@ -263,8 +263,11 @@ class MemoReviewSemanticError extends Error {
       'The replacement must have exactly five top-level keys and no wrapper: guidance, nodes, connections, example, readiness.',
       'Every node label must be one complete, concrete noun phrase for one accepted map element.',
       'Resolve pronouns and coreference to a named or role-resolved element. Omit unresolved references, dates, times, frequencies, schedules, modifiers, quantifiers, action fragments, clauses, and dangling phrases from nodes.',
-      'Every relationship endpoint must exactly match an accepted node label or supplied node ID. At Micro, never return a relationship between two immediate settings; that interrelation belongs at Meso.',
-      'Use only a short, plain active verb phrase for a concrete, memo-supported action or exchange that matters to the mapped situation. Omit mere co-presence, co-residence, vague collaboration, and generic planning unless the memo makes the tie analytically consequential and names what passes between the endpoints.',
+      'At Micro, return discrete immediate elements and direct memo-supported actions. Never return a relationship between two immediate settings; that interrelation belongs at Meso.',
+      'At Meso, return scoped mesosystems that each use at least two supplied Micro settings. Return no relationship edge.',
+      'At Exosphere, return named outside decision settings with one supported pathway into one supplied Micro setting.',
+      'At Macrosphere, return broader conditions scoped to at least two supplied map items. Return no relationship edge.',
+      'Every relationship endpoint must exactly match an accepted node label or supplied node ID. Use only a short, plain active verb phrase for a concrete, supported action or exchange.',
       `Validation failure: ${message}`,
     ].join('\n');
   }
@@ -1136,8 +1139,8 @@ function validatePreflightEvaluationRequest(value) {
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   const hasCarriedNodes = Object.hasOwn(value, 'carriedNodes');
   if (value.activeScale === 'meso' && !hasCarriedNodes) throw new HttpError(400, 'carriedNodes is required for Meso.');
-  if (hasCarriedNodes && (!Array.isArray(value.carriedNodes) || value.carriedNodes.length > 50)) {
-    throw new HttpError(400, 'carriedNodes must contain no more than 50 items.');
+  if (hasCarriedNodes && (!Array.isArray(value.carriedNodes) || value.carriedNodes.length > PROJECT_LIMITS.nodes)) {
+    throw new HttpError(400, `carriedNodes must contain no more than ${PROJECT_LIMITS.nodes} items.`);
   }
   const seenCarriedNodeIds = new Set();
   const carriedNodes = hasCarriedNodes ? value.carriedNodes.map((node, index) => {
@@ -1163,8 +1166,8 @@ function validatePreflightEvaluationRequest(value) {
     };
   }) : [];
   const hasCarriedConnections = Object.hasOwn(value, 'carriedConnections');
-  if (hasCarriedConnections && (!Array.isArray(value.carriedConnections) || value.carriedConnections.length > 100)) {
-    throw new HttpError(400, 'carriedConnections must contain no more than 100 items.');
+  if (hasCarriedConnections && (!Array.isArray(value.carriedConnections) || value.carriedConnections.length > PROJECT_LIMITS.edges)) {
+    throw new HttpError(400, `carriedConnections must contain no more than ${PROJECT_LIMITS.edges} items.`);
   }
   const carriedConnections = hasCarriedConnections ? value.carriedConnections.map((connection, index) => {
     const connectionName = `carriedConnections[${index}]`;

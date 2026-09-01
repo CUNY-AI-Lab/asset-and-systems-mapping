@@ -282,6 +282,7 @@ describe('mapping domain', () => {
     expect(studentText).not.toContain(carriedNodes[0].id);
     expect(studentText).not.toContain(carriedNodes[1].id);
     expect(review.guidance[0].point).toContain('as one mesosystem');
+    expect(review.example).toBeNull();
     expect(JSON.stringify(review)).not.toContain('"verb"');
     expect(studentText).not.toMatch(/offline reader|connects .* through/i);
   });
