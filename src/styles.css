@@ -1001,6 +1001,8 @@ label.button:focus-within {
 .access-shell {
   min-height: 100vh;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
   background: var(--surface);
 }
@@ -1027,20 +1029,30 @@ label.button:focus-within {
   text-underline-offset: 4px;
 }
 .access-main {
-  width: min(560px, calc(100% - 32px));
+  flex: 1;
+  display: grid;
+  align-content: center;
+  width: min(460px, calc(100% - 32px));
   margin: 0 auto;
-  padding: clamp(50px, 9vh, 92px) 0 56px;
+  padding: 24px 0 clamp(48px, 14vh, 150px);
 }
-.access-main h1 { max-width: 470px; font-size: clamp(30px, 4.5vw, 40px); }
+.access-mark { display: block; margin-bottom: 20px; overflow: visible; }
+.access-mark ellipse { fill: none; stroke-width: 1.5; }
+.access-mark ellipse:nth-child(1) { stroke: var(--teal); }
+.access-mark ellipse:nth-child(2) { stroke: var(--amber); }
+.access-mark ellipse:nth-child(3) { stroke: var(--plum); }
+.access-main h1 { margin-bottom: 26px; font-size: clamp(28px, 4vw, 36px); }
 .access-main .lede { max-width: 500px; margin-bottom: 48px; font-family: inherit; font-size: 17px; line-height: 1.55; }
 .class-code-form { display: grid; gap: 16px; }
-.class-code-form input { min-height: 64px; padding: 0 18px; font-size: 24px; letter-spacing: .04em; }
-.access-primary { width: 100%; min-height: 56px; border-color: var(--teal); background: var(--teal); font-size: 16px; }
+.class-code-form input { min-height: 56px; padding: 0 16px; font-size: 20px; letter-spacing: .04em; }
+.access-primary { width: 100%; min-height: 50px; border-color: var(--teal); background: var(--teal); font-size: 15px; }
+.access-primary:disabled { border-color: var(--line); background: var(--surface-subtle); color: var(--muted); opacity: 1; }
 .access-primary:hover:not(:disabled) { border-color: color-mix(in srgb, var(--teal) 85%, var(--ink)); background: color-mix(in srgb, var(--teal) 85%, var(--ink)); }
 .access-message { margin: 0; padding: 12px 14px; border-left: 3px solid var(--line-strong); background: var(--surface-subtle); font-size: 13px; line-height: 1.45; }
 .access-message--error { border-left-color: var(--bad); background: var(--surface-hover); }
-.access-help { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
-.access-help summary { min-height: 44px; display: flex; align-items: center; color: var(--teal); cursor: pointer; font-weight: 750; text-decoration: underline; text-underline-offset: 4px; }
+.access-help { margin-top: 26px; color: var(--muted); font-size: 13px; }
+.access-help summary { min-height: 44px; display: flex; align-items: center; color: var(--muted); cursor: pointer; font-weight: 650; text-decoration: underline; text-underline-offset: 4px; }
+.access-help summary:hover { color: var(--teal); }
 .access-help p { line-height: 1.55; }
 .resume-main { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: clamp(34px, 5vh, 56px) 0 56px; }
 .projects-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }

@@ -902,11 +902,16 @@ function ClassAccessScreen({ state, onSubmit, onTeacher, dark, onToggleTheme }) 
   };
   return <AccessFrame onTeacher={onTeacher} dark={dark} onToggleTheme={onToggleTheme}>
     <main className="access-main" id="workspace">
+      <svg className="access-mark" viewBox="0 0 64 40" width="64" height="40" aria-hidden="true" focusable="false">
+        <ellipse cx="32" cy="20" rx="11" ry="6.5" />
+        <ellipse cx="32" cy="20" rx="20.5" ry="12.25" />
+        <ellipse cx="32" cy="20" rx="30" ry="18" />
+      </svg>
       <p className="eyebrow">Classroom access</p>
       <h1>Enter your class code</h1>
       <form className="class-code-form" onSubmit={submit}>
         <Field label="Class code">
-          <input ref={inputRef} maxLength="32" autoComplete="one-time-code" autoCapitalize="none" spellCheck="false" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Class code" disabled={state.status === 'checking' || state.status === 'submitting'} />
+          <input ref={inputRef} maxLength="32" autoComplete="one-time-code" autoCapitalize="none" spellCheck="false" value={code} onChange={(event) => setCode(event.target.value)} disabled={state.status === 'checking' || state.status === 'submitting'} />
         </Field>
         {state.message && <p className={`access-message access-message--${state.kind || 'info'}`} role={state.kind === 'error' ? 'alert' : 'status'}>{state.message}</p>}
         <button className="button access-primary" type="submit" disabled={!code.trim() || state.status === 'checking' || state.status === 'submitting'}>{state.status === 'checking' ? 'Checking class access…' : state.status === 'submitting' ? 'Checking code…' : 'Continue'}</button>
