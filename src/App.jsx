@@ -1356,7 +1356,7 @@ const REVIEW_LEDES = Object.freeze({
   macrosphere: 'Find one condition that affects at least two map items.',
 });
 
-function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, onContinueWithoutModel, onRequestRestart, suggestionRuntime, persistence, retentionDays }) {
+function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, onRequestRestart, suggestionRuntime, persistence, retentionDays }) {
   const memoDrawerRef = useRef(null);
   const review = project.preflight?.memoReview;
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
@@ -1378,7 +1378,10 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
     <section className="teacher-message" aria-label="Before generating guidance">
       <strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong>
       <p>{suggestionRuntimeDescription(suggestionRuntime, persistence, retentionDays)}</p>
-      <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Open memo</button>
+      <div className="button-row teacher-message__actions">
+        {!review && hasMemo && <button className="button" type="button" disabled={busy} onClick={onGenerate}>{busy ? 'Generating guidance…' : 'Generate guidance'}</button>}
+        <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Open memo</button>
+      </div>
     </section>
     {busy && !review && <p className="review-progress" role="status">Guidance is being generated…</p>}
     {review && <>
@@ -1429,7 +1432,6 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
         </aside>
       </div>
     </>}
-    {!review && hasMemo && <div className="button-row"><button className="button" type="button" disabled={busy} onClick={onGenerate}>{busy ? 'Generating guidance…' : 'Generate guidance'}</button><button className="button button--secondary" type="button" onClick={onContinueWithoutModel}>Continue without model</button></div>}
   </div>;
 }
 
@@ -6633,7 +6635,7 @@ function App() {
   }, [toast]);
   const stageScreens = [
     <IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />,
-    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onContinue={primary} onContinueWithoutModel={primary} onRequestRestart={() => setModal('restart-map')} suggestionRuntime={accessState.access?.suggestionRuntime} persistence={accessState.access?.persistence} retentionDays={accessState.access?.retentionDays} />,
+    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} suggestionRuntime={accessState.access?.suggestionRuntime} persistence={accessState.access?.persistence} retentionDays={accessState.access?.retentionDays} />,
     <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} />,
     <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} />,
