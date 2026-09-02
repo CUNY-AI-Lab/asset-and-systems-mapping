@@ -949,8 +949,8 @@ function ProjectsScreen({ projects, activeProjectId, saveState, onOpen, onStart,
       <p className="eyebrow">Class workspace open</p>
       <div className="projects-heading">
         <div>
-          <h1>Your projects</h1>
-          <p>Continue a saved map or start a new one.</p>
+          <h1>Projects</h1>
+          <p>Continue a saved map or start a new one</p>
         </div>
         {projects.length > 0 && <button type="button" className="button" onClick={onStart}><Icon name="plus" />New project</button>}
       </div>
@@ -1169,14 +1169,14 @@ function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef, defaul
 }
 
 function suggestionRuntimeDescription(runtime, persistence, retentionDays) {
-  const retention = Number.isInteger(retentionDays?.evaluation) ? ` Classroom server retains the memo request and generated guidance for ${retentionDays.evaluation} ${retentionDays.evaluation === 1 ? 'day' : 'days'}.` : '';
-  const storage = ' Your working project stays on this device unless you create a project link.';
+  const retention = Number.isInteger(retentionDays?.evaluation) ? ` The class server keeps each request for ${retentionDays.evaluation} ${retentionDays.evaluation === 1 ? 'day' : 'days'}.` : '';
+  const storage = ' Your project stays on this device unless you create a project link.';
   if (runtime?.provider === 'ollama-cloud' || runtime?.provider === 'openrouter') {
     const provider = runtime.provider === 'ollama-cloud' ? 'Ollama Cloud' : 'OpenRouter';
-    return `Choosing Generate guidance sends your memo and map framing to ${runtime.model || 'the configured model'} via ${provider}.${retention}${storage}`;
+    return `Generate guidance sends your memo and map framing to ${runtime.model || 'the configured model'} via ${provider}.${retention}${storage}`;
   }
-  if (runtime?.provider === 'deterministic') return `Guidance runs on the classroom server without sending your memo to an external model provider.${retention}${storage}`;
-  return `Generate guidance is optional. You can continue without sending the memo for model review.${retention}${storage}`;
+  if (runtime?.provider === 'deterministic') return `Runs on the class server. Your memo goes to no outside model.${retention}${storage}`;
+  return `Optional. You can continue without sending your memo for review.${retention}${storage}`;
 }
 
 function suggestionRuntimeLabel(runtime) {

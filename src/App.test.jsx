@@ -252,7 +252,7 @@ function storedProject() {
 }
 
 async function showResumeScreen() {
-  expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
 }
 
 function openProjectFromList(title = null) {
@@ -267,7 +267,7 @@ async function resumeSavedProject(project = createDefaultProject()) {
   render(<App />);
   await showResumeScreen();
   openProjectFromList(project.title);
-  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Your projects' })).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Projects' })).not.toBeInTheDocument());
   return project;
 }
 
@@ -901,7 +901,7 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.change(code, { target: { value: '101' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(within(screen.getByRole('article', { name: project.title })).getByText('Review')).toBeVisible();
     openProjectFromList(project.title);
     expect(await screen.findByRole('heading', { name: 'Review memo' })).toBeVisible();
@@ -913,7 +913,7 @@ describe('Systems Mapping workflow', () => {
 
   it('switches between light and dark mode and retains the selected theme', async () => {
     render(<App />);
-    await screen.findByRole('heading', { name: 'Your projects' });
+    await screen.findByRole('heading', { name: 'Projects' });
     const toggle = screen.getByRole('button', { name: 'Switch to dark mode' });
     expect(document.documentElement.dataset.theme).toBe('light');
     fireEvent.click(toggle);
@@ -944,7 +944,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
     expect(screen.getByRole('heading', { name: 'Review memo' })).toBeVisible();
     expect(screen.getByText('gpt-oss:120b via Ollama Cloud')).toBeVisible();
-    expect(screen.getByText(/sends your memo and map framing to gpt-oss:120b via Ollama Cloud.*retains the memo request and generated guidance for 1 day.*working project stays on this device/i)).toBeVisible();
+    expect(screen.getByText(/sends your memo and map framing to gpt-oss:120b via Ollama Cloud.*keeps each request for 1 day.*project stays on this device/i)).toBeVisible();
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 750)); });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
@@ -972,7 +972,7 @@ describe('Systems Mapping workflow', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     const earlierProjectCard = screen.getByRole('article', { name: earlierProject.title });
     expect(within(earlierProjectCard).getByRole('button', { name: 'Open project' })).toBeVisible();
 
@@ -986,14 +986,14 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('');
 
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
-    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(screen.getAllByRole('article')).toHaveLength(2);
     expect(screen.getByRole('article', { name: 'Untitled systems map' })).toBeVisible();
 
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, PERSIST_DEBOUNCE_MS + 30)); });
     cleanup();
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(screen.getAllByRole('article')).toHaveLength(2);
 
     const savedEarlierProject = screen.getByRole('article', { name: earlierProject.title });
@@ -1014,7 +1014,7 @@ describe('Systems Mapping workflow', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     const legacyProjectCard = screen.getByRole('article', { name: legacy.title });
     fireEvent.click(within(legacyProjectCard).getByRole('button', { name: 'Open project' }));
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
@@ -1046,7 +1046,7 @@ describe('Systems Mapping workflow', () => {
 
     render(<App />);
     for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
-    expect(screen.getByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeVisible();
     openProjectFromList(project.title);
     expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
 
@@ -1223,7 +1223,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
-    expect(await screen.findByRole('heading', { name: 'Your projects' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(screen.getByRole('article', { name: project.title })).toBeVisible();
     expect(screen.getByRole('article', { name: `${project.title} — new map` })).toBeVisible();
     openProjectFromList(project.title);
