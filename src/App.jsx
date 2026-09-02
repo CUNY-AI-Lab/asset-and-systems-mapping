@@ -1863,7 +1863,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
     </>}
     <div id="candidate-panel" role={candidateSteps.length > 1 ? 'tabpanel' : undefined} aria-labelledby={candidateSteps.length > 1 ? `candidate-tab-${step}` : undefined}>
       {decisionStep && <>
-        <p className="candidate-progress">Suggestions join the map only when you choose Add. Set aside keeps a question for later; Remove leaves it off.</p>
+        <p className="candidate-progress">Add puts a suggestion on the map, Set aside keeps it as a question for later, and Remove leaves it off.</p>
         {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} decided</p>}
         <div className="candidate-list">
           {candidateRows(step, visibleCandidateItems, candidatePageStart)}

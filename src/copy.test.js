@@ -27,7 +27,7 @@ describe('student-facing copy', () => {
 
   it('defines each candidate decision in plain language', () => {
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
-    expect(source).toContain('Suggestions join the map only when you choose Add. Set aside keeps a question for later; Remove leaves it off.');
+    expect(source).toContain('Add puts a suggestion on the map, Set aside keeps it as a question for later, and Remove leaves it off.');
     expect(source).not.toContain('Keep means add this suggestion to the map. Suggestions begin on Keep so you can review them together.');
   });
 

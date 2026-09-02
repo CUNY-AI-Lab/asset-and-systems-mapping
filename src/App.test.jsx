@@ -2429,7 +2429,7 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.click(within(screen.getByRole('region', { name: 'Coverage and uncertainty' })).getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
-    expect(screen.getByText(/Suggestions join the map only when you choose Add/)).toBeVisible();
+    expect(screen.getByText(/Add puts a suggestion on the map/)).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.candidates.nodes.every((node) => node.status === 'pending')).toBe(true);
