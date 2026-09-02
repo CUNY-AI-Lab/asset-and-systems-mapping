@@ -1151,9 +1151,12 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
   );
 }
 
-function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef }) {
+function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef, defaultOpen = false }) {
   const words = project.submission.text.trim().split(/\s+/).filter(Boolean).length;
-  return <details ref={drawerRef} className="memo-drawer">
+  const localRef = useRef(null);
+  const ref = drawerRef || localRef;
+  useEffect(() => { if (defaultOpen && ref.current) ref.current.open = true; }, [defaultOpen, ref]);
+  return <details ref={ref} className="memo-drawer">
     <summary>
       <span className="memo-drawer__title"><strong>Your memo</strong><small>{words.toLocaleString()} {words === 1 ? 'word' : 'words'}</small></span>
       <span className="memo-drawer__mark" aria-hidden="true" />
@@ -1372,18 +1375,22 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
     <p className="eyebrow">{coursePart.label} · {SCALES[project.activeScale].label}</p>
     <h1>Review memo</h1>
     <p className="lede">{REVIEW_LEDES[project.activeScale] || SCALES[project.activeScale].reviewInstruction}</p>
-    <LevelProgressionBridge project={project} />
-    <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} drawerRef={memoDrawerRef} />
-    {!hasMemo && <p className="empty-message">Add memo text above to begin.</p>}
-    <section className="teacher-message" aria-label="Before generating guidance">
-      <strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong>
-      <p>{suggestionRuntimeDescription(suggestionRuntime, persistence, retentionDays)}</p>
-      <div className="button-row teacher-message__actions">
-        {!review && hasMemo && <button className="button" type="button" disabled={busy} onClick={onGenerate}>{busy ? 'Generating guidance…' : 'Generate guidance'}</button>}
-        <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Open memo</button>
+    <div className="review-intro">
+      <div className="review-intro__main">
+        <LevelProgressionBridge project={project} />
+        <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} drawerRef={memoDrawerRef} defaultOpen={!review} />
+        {!hasMemo && <p className="empty-message">Add memo text above to begin.</p>}
+        {busy && !review && <p className="review-progress" role="status">Guidance is being generated…</p>}
       </div>
-    </section>
-    {busy && !review && <p className="review-progress" role="status">Guidance is being generated…</p>}
+      <section className="teacher-message review-intro__aside" aria-label="Before generating guidance">
+        <strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong>
+        <p>{suggestionRuntimeDescription(suggestionRuntime, persistence, retentionDays)}</p>
+        <div className="button-row teacher-message__actions">
+          {!review && hasMemo && <button className="button" type="button" disabled={busy} onClick={onGenerate}>{busy ? 'Generating guidance…' : 'Generate guidance'}</button>}
+          <button type="button" className="button button--ghost" onClick={() => { if (memoDrawerRef.current) memoDrawerRef.current.open = true; window.requestAnimationFrame(() => memoDrawerRef.current?.querySelector('textarea')?.focus()); }}>Open memo</button>
+        </div>
+      </section>
+    </div>
     {review && <>
       <section className="coverage-banner" aria-label="Coverage and uncertainty">
         <div className="coverage-banner__text">
