@@ -33,7 +33,7 @@ describe('student-facing copy', () => {
 
   it('keeps the shared student actions concise and separate from teacher and model setup', () => {
     const descriptions = SYSTEMS_MAPPING_STAGES.map(({ description }) => description);
-    expect(descriptions[0]).toBe('Students add one memo. It stays with the project through all four levels.');
+    expect(descriptions[0]).toBe('Set your focus and add the memo you will use across all four levels.');
     descriptions.forEach((description) => expect(description.length).toBeLessThanOrEqual(100));
     expect(descriptions.join(' ')).not.toMatch(/choose a level|new memo|teacher|instructor|model|provider|prompt|submission|approval/i);
   });

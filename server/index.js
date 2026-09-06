@@ -221,6 +221,7 @@ try {
 app.use('/assets/*', serveStatic({ root: './dist' }));
 app.use('/favicon.svg', serveStatic({ root: './dist' }));
 app.use('/favicon.png', serveStatic({ root: './dist' }));
+app.use('/theme.js', serveStatic({ root: './dist' }));
 app.get('*', serveStatic({ path: './dist/index.html' }));
 
 const server = serve({ fetch: app.fetch, hostname, port }, (info) => {

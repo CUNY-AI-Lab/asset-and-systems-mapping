@@ -11,7 +11,7 @@ import { STORAGE_KEY } from '../../src/projectLibrary.js';
 async function enterClass(page) {
   await page.getByRole('textbox', { name: 'Class code' }).fill('101');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { name: 'Your projects' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
 }
 
 async function seedCumulativeProject(page) {
