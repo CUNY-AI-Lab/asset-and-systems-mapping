@@ -1154,7 +1154,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(createDefaultProject());
 
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Say who this map is about/)).toBeVisible();
+    expect(screen.getByText(/Set your focus and question/)).toBeVisible();
     expect(storedProject()).toMatchObject({ activeScale: 'micro', releasedScales: ['micro'], completedScales: [] });
   });
 
@@ -2297,7 +2297,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
-    expect(screen.queryByText(/Your memo changed after this guidance was generated/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your memo changed. Refresh to review the new text/)).not.toBeInTheDocument();
 
     const drawer = document.querySelector('.memo-drawer');
     drawer.open = true;
@@ -2305,7 +2305,7 @@ describe('Systems Mapping workflow', () => {
       target: { value: `${project.submission.text} A later correction adds one more connection.` },
     });
 
-    expect(await screen.findByText(/Your memo changed after this guidance was generated/)).toBeVisible();
+    expect(await screen.findByText(/Your memo changed. Refresh to review the new text/)).toBeVisible();
     expect(screen.getByRole('region', { name: 'Memo review' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled();
     screen.getAllByRole('button', { name: 'Continue without model' }).forEach((button) => expect(button).toBeEnabled());
@@ -3301,7 +3301,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       });
     });
     expect(screen.getByText(activeScale === 'exosphere'
-      ? 'Choose a node to see its relationships.'
+      ? 'Choose an item to inspect its connections. Drag empty space to pan; scroll or pinch to zoom.'
       : 'Choose a Macro-level condition to see the map items it affects.')).toBeVisible();
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
     expect(inspector).toHaveAttribute('inert');
@@ -3316,7 +3316,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     fireEvent.change(scale, { target: { value: 'all' } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
-    expect(screen.getByText('Choose a node to see its relationships.')).toBeVisible();
+    expect(screen.getByText('Choose an item to inspect its connections. Drag empty space to pan; scroll or pinch to zoom.')).toBeVisible();
     expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(project.releasedScales.length);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(all.edges.length);
@@ -4904,7 +4904,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     try {
       await resumeSavedProject(project);
       expect(screen.getByText('nodes on map')).toBeVisible();
-      expect(screen.getByText('items needing evidence')).toBeVisible();
+      expect(screen.getByText('items to check for evidence')).toBeVisible();
       expect(screen.getByText('Memo imported')).toBeInTheDocument();
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();

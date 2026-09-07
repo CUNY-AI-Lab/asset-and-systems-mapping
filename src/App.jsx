@@ -1,5 +1,9 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapListView from './MapListView.jsx';
+import MapConnections from './MapConnections.jsx';
+import MapSearch from './MapSearch.jsx';
+import ProjectOverview from './ProjectOverview.jsx';
+import { indexMapConnections, needsEvidenceReview, summarizeMap } from './mapInsights.js';
 import { resolveRingConstrainedCollisions } from './ringCollisionLayout.js';
 import {
   CLAIM_EVIDENCE_FIELDS,
@@ -1117,7 +1121,7 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
     <div className="wide stage-enter intake-stage">
       <p className="eyebrow">Start here</p>
       <h1>Add your memo</h1>
-      <p className="lede lede--compact">Say who this map is about and what you want to understand. Everything can be revised later.</p>
+      <p className="lede lede--compact">Set your focus and question. Include community strengths, local knowledge, and the conditions people want to change.</p>
       <div className="project-context-fields">
         <Field label="Map title (optional)"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
         <Field label="Student or group name (optional)"><input autoComplete="name" maxLength={CONFIG_TEXT_LIMIT} value={project.participantName || ''} onChange={(event) => setProjectField('participantName', event.target.value)} /></Field>
@@ -1340,9 +1344,9 @@ function LevelProgressionBridge({ project }) {
     <dl>
       <div><dt>Uses</dt><dd>{level.uses}</dd></div>
       <div><dt>Adds</dt><dd>{level.adds}</dd></div>
-      <div><dt>Boundary</dt><dd>{level.boundary}</dd></div>
       {carried ? <div><dt>Carried</dt><dd>{carried}</dd></div> : null}
     </dl>
+    <details className="level-progression__boundary"><summary>Boundary</summary><p>{level.boundary}</p></details>
   </section>;
 }
 
@@ -1358,7 +1362,7 @@ function levelProgressStatus(project, scale) {
 
 // Short on-screen ledes; the fuller shared reviewInstruction still frames the model request.
 const REVIEW_LEDES = Object.freeze({
-  micro: 'Find the settings, people, and interactions your memo supports.',
+  micro: 'Find the people, settings, resources, and interactions your memo supports.',
   meso: 'Find evidence that two mapped settings interact.',
   exosphere: 'Find outside decision settings that change a mapped setting.',
   macrosphere: 'Find one condition that affects at least two map items.',
@@ -1401,7 +1405,7 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
         <div className="coverage-banner__text">
           <h2>Coverage</h2>
           {review.readiness.note && <p>{review.readiness.note}</p>}
-          {stale && <p className="coverage-banner__stale" role="status">Your memo changed after this guidance was generated. Choose Refresh guidance when you want the model to review the revised memo. Your existing map remains unchanged.</p>}
+          {stale && <p className="coverage-banner__stale" role="status">Your memo changed. Refresh to review the new text; your map and earlier decisions are preserved.</p>}
         </div>
         <div className="button-row">
           <button type="button" className="button button--secondary" disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Rereading…' : 'Refresh'}</button>
@@ -1431,7 +1435,7 @@ function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onContinue, 
             : mesoLinkages
               ? <ul className="memo-scaffold__structures" aria-label="Mesosystems supported by the memo">{surfacedNodes.map((node) => <li key={node.label}><span className="memo-scaffold__claim"><strong>{node.label}</strong>{node.scope?.length ? <> includes {node.scope.map((member) => member.label).join(' and ')}</> : <span className="memo-scaffold__pending">. Select at least two Micro-level settings at the next step.</span>}</span></li>)}</ul>
             : <div className="connection-node-list" aria-label="Nodes evident in the memo">{surfacedNodes.map((node) => <span key={node.label} className={node.basis === 'inference' ? 'is-inferred' : ''}>{node.label}{node.basis === 'inference' && <em> · inferred</em>}</span>)}</div>) : null}
-          {!surfacedNodes.length ? <p className="empty-message">No suggestions from this review. Revise and refresh, or add items at the next step.</p> : null}
+          {!surfacedNodes.length ? <p className="empty-message">No suggestions yet. Refresh the review or add your own items in Choose elements.</p> : null}
           {mesoLinkages && microSettings.length < 2 ? <p className="empty-message">Meso needs at least two Micro settings. Switch to Micro-level and add them.</p> : null}
           {!nodesOnly && surfacedConnections.length > 0 && <ul className="memo-scaffold__connections">{surfacedConnections.map((connection, index) => (
             <li key={stableId('scaffold-edge', `${index}:${connection.source}:${connection.verb}:${connection.target}`)}>
@@ -3486,6 +3490,18 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   const wheelViewportRef = useRef(null);
   const liveViewportRef = useRef(viewport);
   const wheelHandlerRef = useRef(null);
+  const panModifierRef = useRef(false);
+  const [spacePanning, setSpacePanning] = useState(false);
+  useEffect(() => {
+    const release = (event) => {
+      if (event.type !== 'blur' && event.key !== ' ') return;
+      panModifierRef.current = false;
+      setSpacePanning(false);
+    };
+    window.addEventListener('keyup', release);
+    window.addEventListener('blur', release);
+    return () => { window.removeEventListener('keyup', release); window.removeEventListener('blur', release); };
+  }, []);
   const [transientNode, setTransientNode] = useState(null);
   const [transientViewport, setTransientViewport] = useState(null);
   const [pointerGesture, setPointerGesture] = useState(null);
@@ -3588,7 +3604,8 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     setPointerGesture('pinch');
   };
   const beginViewportGesture = (event, kind, selectionId = null) => {
-    if (interactionRef.current?.kind === 'pinch' || (event.button !== undefined && event.button !== 0)) return;
+    if (interactionRef.current?.kind === 'pinch' || (event.button !== undefined && ![0, 1].includes(event.button))) return;
+    if (event.button === 1) event.preventDefault();
     event.stopPropagation();
     svgRef.current?.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -3613,6 +3630,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     setPointerGesture(kind);
   };
   const beginNode = (event, node) => {
+    if (event.button === 1 || panModifierRef.current) { beginViewportGesture(event, 'pan'); return; }
     if (event.button !== undefined && event.button !== 0) return;
     event.stopPropagation();
     if (interactionRef.current?.kind === 'pinch') return;
@@ -3638,7 +3656,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   const beginPan = (event) => {
     beginViewportGesture(event, 'pan');
   };
-  const beginEdge = (event, edge) => beginViewportGesture(event, 'edge', edge.id);
+  const beginEdge = (event, edge) => beginViewportGesture(event, event.button === 1 || panModifierRef.current ? 'pan' : 'edge', edge.id);
   const movePointer = (event) => {
     if (pointersRef.current.has(event.pointerId)) {
       pointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
@@ -3730,9 +3748,9 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   };
   const zoomWithWheel = (event) => {
     event.preventDefault();
-    const current = wheelViewportRef.current || transientViewport || viewport;
+    const current = activeViewport();
     const sensitivity = event.ctrlKey ? 0.01 : 0.0025;
-    const next = zoomAtPoint(current, current.zoom * Math.exp(-event.deltaY * sensitivity), clientPoint(event.clientX, event.clientY));
+    const next = zoomAtPoint(current, current.zoom * Math.exp(-event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? GRAPH_HEIGHT : 1) * sensitivity), clientPoint(event.clientX, event.clientY));
     if (Math.abs(next.zoom - current.zoom) < 0.001) return;
     wheelViewportRef.current = next;
     liveViewportRef.current = next;
@@ -3800,16 +3818,16 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     top: (graphViewBoxBounds.y - viewport.panY) / viewport.zoom + labelViewportInset,
     bottom: (graphViewBoxBounds.y + graphViewBoxBounds.height - viewport.panY) / viewport.zoom - labelViewportInset,
   };
-  const nodeVisuals = new Map(nodes.map((node) => [node.id, {
+  const nodeVisuals = useMemo(() => new Map(nodes.map((node) => [node.id, {
     position: renderedPositions.get(node.id),
     geometry: mapNodeGeometry(node.label, phoneLayout),
-  }]));
-  const betweenEndpointLayout = betweenEndpointCalloutLayout(
+  }])), [nodes, renderedPositions, phoneLayout]);
+  const betweenEndpointLayout = useMemo(() => betweenEndpointCalloutLayout(
     edges.filter((edge) => edge.showLabel !== false),
     nodes,
     renderedPositions,
     phoneLayout,
-  );
+  ), [edges, nodes, renderedPositions, phoneLayout]);
   const edgeVisuals = edges.map((edge) => {
     const source = nodeVisuals.get(edge.source);
     const target = nodeVisuals.get(edge.target);
@@ -3873,8 +3891,29 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   const graphSummary = visibleLayer === 'meso'
     ? `${nodes.filter((node) => node.scale === 'meso').length} ${nodes.filter((node) => node.scale === 'meso').length === 1 ? 'mesosystem' : 'mesosystems'} and ${nodes.filter((node) => node.scale === 'micro').length} Micro ${nodes.filter((node) => node.scale === 'micro').length === 1 ? 'setting' : 'settings'}`
     : `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`;
-  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. Choose a node or connection for details. Drag the map or use arrow keys to pan. Use the mouse wheel or pinch to zoom.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
+  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. Choose a node or connection for details. Drag the map or use arrow keys to pan. Use the mouse wheel or pinch to zoom.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
+    if (event.key === 'Escape' && interactionRef.current) {
+      event.preventDefault();
+      const interaction = interactionRef.current;
+      finishPointer({ pointerId: interaction.pointerId ?? [...interaction.pointerIds][0] }, true);
+      liveViewportRef.current = viewport;
+      onAnnounce('Map gesture cancelled.');
+      return;
+    }
     if (event.target !== event.currentTarget) return;
+    if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault(); panModifierRef.current = true; setSpacePanning(true); return;
+    }
+    if (['+', '=', '-'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      const current = endWheelSession(false);
+      const center = { x: GRAPH_WIDTH / 2, y: phoneLayout ? PHONE_GRAPH_VIEWBOX.y + PHONE_GRAPH_VIEWBOX.height / 2 : GRAPH_HEIGHT / 2 };
+      const next = zoomAtPoint(current, current.zoom * (event.key === '-' ? 1 / 1.2 : 1.2), center);
+      liveViewportRef.current = next;
+      onViewportChange(next);
+      onAnnounce(`Map zoom ${Math.round(next.zoom * 100)} percent.`);
+      return;
+    }
     const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (!deltas[event.key]) return;
     event.preventDefault();
@@ -4057,6 +4096,9 @@ function blankManualNode(scale) {
 
 function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart }) {
   const [selection, setSelection] = useState(null);
+  const [traceHistory, setTraceHistory] = useState([]);
+  const [layoutHistory, setLayoutHistory] = useState({ past: [], future: [] });
+  const connectionIndex = useMemo(() => indexMapConnections(project.graph), [project.graph]);
   const [focus, setFocus] = useState(null);
   const [focusPage, setFocusPage] = useState(0);
   const [visibleScale, setVisibleScale] = useState(() => (
@@ -4086,6 +4128,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const moveMenuTriggerRef = useRef(null);
   const fullscreenToggleRef = useRef(null);
   const inspectorRef = useRef(null);
+  const selectionTriggerRef = useRef(null);
   const initialLayoutCheckedRef = useRef(false);
   const phoneOverviewViewportKeyRef = useRef('');
   const phoneLayout = usePhoneLayout();
@@ -4095,6 +4138,8 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   }, []);
   useEffect(() => {
     setSelection(null);
+    setTraceHistory([]);
+    setLayoutHistory({ past: [], future: [] });
     setFocus(null);
     setFocusPage(0);
     setDrawerOpen(false);
@@ -4145,7 +4190,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     .flatMap((node) => node.scopeNodeIds || [])), [project.graph.nodes, visibleScaleSet, showRemoved]);
   const scaleNodes = useMemo(() => project.graph.nodes.filter((node) => {
     const scaleMatches = visibleScaleSet.has(node.scale) || scaleEdgeIds.has(node.id) || scopeMemberIds.has(node.id);
-    return scaleMatches && (showRemoved || node.claimState !== 'retired');
+    return scaleMatches && node.status !== 'rejected' && (showRemoved || node.claimState !== 'retired');
   }), [project.graph.nodes, visibleScaleSet, scaleEdgeIds, scopeMemberIds, showRemoved]);
   const mesoLinkageCount = useMemo(() => scaleNodes.filter((node) => node.scale === 'meso').length, [scaleNodes]);
   const mesoSettingCount = useMemo(() => scaleNodes.filter((node) => node.scale === 'micro' && scopeMemberIds.has(node.id)).length, [scaleNodes, scopeMemberIds]);
@@ -4442,6 +4487,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     });
   }, []);
   const selectItem = useCallback((kind, id, openInspector = true) => {
+    if (openInspector && !inspectorRef.current?.contains(document.activeElement)) selectionTriggerRef.current = document.activeElement;
+    setTraceHistory([]);
+    setAddMode(null);
     setSelection({ kind, id });
     setInspectorTab(kind === 'edge' ? 'relationships' : 'node');
     setAnnotationDisclosure('analytical');
@@ -4459,10 +4507,12 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     window.requestAnimationFrame(() => {
       const targets = canvasWrapRef.current?.querySelectorAll('[data-graph-id]') || [];
       const target = selection?.id ? [...targets].find((element) => element.getAttribute('data-graph-id') === selection.id) : null;
-      (target || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
+      const trigger = selectionTriggerRef.current;
+      (target || (trigger?.isConnected ? trigger : null) || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
     });
   }, [selection]);
   const showFullMap = useCallback(() => {
+    setTraceHistory([]);
     setFocus(null);
     setFocusPage(0);
     setSelection(null);
@@ -4475,6 +4525,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
   }, [automaticPositions, project.graph.nodes, readingViewport, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale]);
   const changeVisibleScale = (nextScale) => {
+    setTraceHistory([]);
     const nextEdges = project.graph.edges.filter((edge) => edge.status !== 'rejected'
       && edge.claimState !== 'retired'
       && (nextScale === 'all' ? project.releasedScales.includes(edge.scale) : edge.scale === nextScale));
@@ -4507,12 +4558,68 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setMapViewport(readingViewport(nextNodes, nextScale, nextLabelBounds));
     setAnnouncement(`${nextScale === 'all' ? 'All layers' : SCALES[nextScale]?.label || nextScale} shown.`);
   };
+  const followMapItem = (kind, id) => {
+    const item = kind === 'node' ? connectionIndex.nodeById.get(id) : project.graph.edges.find((edge) => edge.id === id);
+    if (!item) return;
+    const previous = selection ? [...traceHistory, { selection, visibleScale, focusPage }].slice(-12) : [];
+    if (visibleScale !== 'all' && item.scale !== visibleScale) changeVisibleScale('all');
+    selectItem(kind, id);
+    setTraceHistory(previous);
+    setAnnouncement(`Opened ${kind === 'node' ? item.label : `${item.sourceLabel} ${item.verb} ${item.targetLabel}`}.`);
+  };
+  const returnToPreviousItem = () => {
+    const previous = traceHistory.at(-1);
+    if (!previous) return;
+    const remaining = traceHistory.slice(0, -1);
+    if (previous.visibleScale !== visibleScale) changeVisibleScale(previous.visibleScale);
+    selectItem(previous.selection.kind, previous.selection.id);
+    setFocusPage(previous.focusPage);
+    setTraceHistory(remaining);
+  };
+  const previousTraceItem = traceHistory.at(-1)?.selection;
+  const previousTraceLabel = previousTraceItem?.kind === 'node'
+    ? connectionIndex.nodeById.get(previousTraceItem.id)?.label
+    : project.graph.edges.find((edge) => edge.id === previousTraceItem?.id)?.verb;
+  const snapshotLayout = useCallback(() => ({
+    positions: new Map(project.graph.nodes.map((node) => [node.id, {
+      x: node.x, y: node.y, ...(automaticPositions?.get(node.id) || {}),
+      ...(phoneOverviewPositions?.get(node.id) || {}), ...(phoneEcologyPositions?.get(node.id) || {}),
+    }])),
+    viewport: mapViewport || project.viewport,
+  }), [project.graph.nodes, project.viewport, automaticPositions, phoneOverviewPositions, phoneEcologyPositions, mapViewport]);
+  const rememberLayout = useCallback(() => {
+    const snapshot = snapshotLayout();
+    setLayoutHistory((history) => ({ past: [...history.past, snapshot].slice(-30), future: [] }));
+  }, [snapshotLayout]);
+  const restoreLayout = (direction) => {
+    const from = direction === 'undo' ? layoutHistory.past : layoutHistory.future;
+    const snapshot = from.at(-1);
+    if (!snapshot) return;
+    const current = snapshotLayout();
+    setLayoutHistory(direction === 'undo'
+      ? { past: from.slice(0, -1), future: [...layoutHistory.future, current] }
+      : { past: [...layoutHistory.past, current], future: from.slice(0, -1) });
+    update((draft) => {
+      draft.graph.nodes.forEach((node) => {
+        const position = snapshot.positions.get(node.id);
+        if (position) Object.assign(node, position);
+      });
+      draft.viewport = snapshot.viewport;
+    }, 'map.layout-restored', direction === 'undo' ? 'Layout change undone' : 'Layout change redone');
+    setAutomaticPositions(null);
+    setMapViewport(snapshot.viewport);
+    setRingExpansion(1);
+    if (phoneLayout && mapMode === 'network') setPhoneOverviewCommittedScope(phoneOverviewScope);
+    if (phoneLayout && mapMode === 'ecology') setPhoneEcologyCommittedScope(phoneEcologyScope);
+    setAnnouncement(direction === 'undo' ? 'Layout change undone.' : 'Layout change redone.');
+  };
   const moveNode = useCallback((id, x, y, method) => {
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     const displayedNode = displayedNodes.find((node) => node.id === id);
     const safePosition = displayedNode
       ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, mapMode)
       : { x, y };
+    rememberLayout();
     update((draft) => {
       if (automaticPositions) draft.graph.nodes.forEach((node) => {
         const position = automaticPositions.get(node.id);
@@ -4534,7 +4641,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (phoneEcologyPositions) setPhoneEcologyCommittedScope(phoneEcologyScope);
     setAutomaticPositions(null);
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
-  }, [automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, update, visibleEdges]);
+  }, [automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, update, visibleEdges]);
   const minimumInteractiveZoom = VIEWPORT_LIMITS.minZoom;
   const changeViewport = useCallback((next) => {
     const bounded = {
@@ -4597,6 +4704,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAnnouncement('Map fitted to view.');
   };
   const arrangeMap = () => {
+    rememberLayout();
     const liveNodes = project.graph.nodes.filter((node) => showRemoved || node.claimState !== 'retired');
     const nodes = visibleScale === 'all' ? liveNodes : visibleNodes.length ? visibleNodes : liveNodes;
     const positions = mapMode === 'ecology'
@@ -4884,7 +4992,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     : focusedNode?.scale === 'macrosphere'
       ? <>Showing map items affected by <strong>{focusLabel}</strong>.</>
       : <>Showing connections for <strong>{focusLabel}</strong>.</>;
-  const inspectorTabs = ['meso', 'macrosphere'].includes(visibleScale)
+  const inspectorTabs = ['meso', 'macrosphere'].includes(visibleScale) && !selectedEdge
     ? INSPECTOR_TABS.filter((tab) => tab !== 'relationships')
     : INSPECTOR_TABS;
   const focusHasRelationshipPages = focus?.kind === 'node' && focusIncidentEdges.length > 0;
@@ -4892,7 +5000,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     ? 'Choose a mesosystem to see the Micro settings it includes.'
     : visibleScale === 'macrosphere'
       ? 'Choose a Macro-level condition to see the map items it affects.'
-      : 'Choose a node to see its relationships.';
+      : 'Choose an item to inspect its connections. Drag empty space to pan; scroll or pinch to zoom.';
   const changeFocusPage = (nextPage) => {
     const boundedPage = clamp(nextPage, 0, focusPageCount - 1);
     setFocusPage(boundedPage);
@@ -4944,16 +5052,24 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setMoveMenuOpen(false);
     setAnnouncement(next === 'list' ? 'Map list opened.' : 'Map canvas opened.');
   };
-  return <div className={`map-stage map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}>
+  return <div className={`map-stage map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} onKeyDown={(event) => {
+    if (!event.target.closest?.('.graph-canvas')) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      restoreLayout(event.shiftKey ? 'redo' : 'undo');
+    } else if (event.key === '0' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault(); fitMap();
+    }
+  }}>
     <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
-    <div className="map-toolbar"><h1>Systems map</h1><div className="map-toolbar__controls"><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{mapMode === 'ecology' && phoneLayout && visibleScale !== 'all' ? <button className="map-show-all" type="button" onClick={() => changeVisibleScale('all')}>Show all layers</button> : null}{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
+    <div className="map-toolbar"><h1>Systems map</h1><div className="map-toolbar__controls"><MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{mapMode === 'ecology' && phoneLayout && visibleScale !== 'all' ? <button className="map-show-all" type="button" onClick={() => changeVisibleScale('all')}>Show all layers</button> : null}{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
     {focusActive ? <div className="map-focus-bar" role="status"><div className="map-focus-bar__summary"><span>{focusSummary}</span>{focusHasRelationshipPages && <small aria-live="polite">Relationship {activeFocusPage + 1} of {focusIncidentEdges.length}</small>}</div><div className="map-focus-bar__actions">{focusHasRelationshipPages && focusPageCount > 1 ? <><button type="button" aria-label="Previous relationship" disabled={activeFocusPage === 0} onClick={() => changeFocusPage(activeFocusPage - 1)}>Previous</button><button type="button" aria-label="Next relationship" disabled={activeFocusPage === focusPageCount - 1} onClick={() => changeFocusPage(activeFocusPage + 1)}>Next</button></> : null}<button type="button" onClick={showFullMap}>Show full map</button></div></div> : <p className="map-overview-hint">{mapOverviewHint}</p>}
     <div className={`map-layout ${drawerOpen ? 'has-inspector' : ''}`}>
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && drawerOpen ? 'is-inspector-open' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} visibleLayer={visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
           <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-key-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
-          <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!project.graph.nodes.length) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
+          <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
         </div>
         {legendOpen && <aside id="map-key-panel" className="map-legend" role="dialog" aria-labelledby="map-key-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-key-title">Map key</strong><button type="button" onClick={closeLegend} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend /></aside>}
         <div className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcement.revision}>{announcement.message}</span></div>
@@ -4966,6 +5082,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
             <button className="inspector-done" type="button" onClick={closeInspector}>Done</button>
           </div>
         </div>
+        {previousTraceLabel && <button type="button" className="map-trace-back" onClick={returnToPreviousItem}>Back to {previousTraceLabel}</button>}
         <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{inspectorTabs.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, inspectorTabs, inspectorTab, setTab)}>{tab === 'relationships' ? 'Relationships' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
         {addMode === 'node' && <div className="add-form">
           <h3>New node</h3>
@@ -4976,7 +5093,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
               const scale = event.target.value;
               const type = isNodeTypeAllowedAtScale(current.type, scale) ? current.type : (scale === 'exosphere' ? 'institution' : 'person');
               return { ...blankManualNode(scale), label: current.label, evidence: current.evidence, type };
-            })}>{project.releasedScales.filter((scale) => !['meso', 'macrosphere'].includes(scale)).map((scale) => <option key={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
+            })}>{project.releasedScales.filter((scale) => !['meso', 'macrosphere'].includes(scale)).map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
           </div>
           {newNode.scale === 'micro' && <MicroParticipationEditor
             item={newNode}
@@ -4989,6 +5106,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         </div>}
         {addMode === 'edge' && ['micro', 'exosphere'].includes(project.activeScale) && <div className="add-form"><h3>New relationship</h3><Field label={project.activeScale === 'exosphere' ? 'Outside decision setting' : 'From'}><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship">{project.activeScale === 'exosphere' ? <select value={scaleLexiconVerb('exosphere', newEdge.verb) || SCALE_VERB_LEXICONS.exosphere[0]} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select> : <input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} />}</Field><Field label={project.activeScale === 'exosphere' ? 'Affected Micro setting' : 'To'}><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-node">{selectedNode ? <>
+          <MapConnections nodeId={selectedNode.id} index={connectionIndex} onFollow={followMapItem} />
           <details className="node-summary">
             <summary><span>Summary</span><strong>{selectedNode.type}</strong></summary>
             <div className="node-summary__body">
@@ -5038,7 +5156,17 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence note</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence note" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
         </> : <p className="empty-message">Choose a node on the map to inspect and annotate it.</p>}</div>}
         {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.verb}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence</span><p>{selectedEdge.evidence || 'No evidence added yet.'}</p></div></div></details><button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button><ClaimEvidenceEditor ownerId={`edge:${selectedEdge.id}`} records={selectedEdge.claimEvidence || []} onChange={(records) => editEdge('claimEvidence', records)} />{['micro', 'exosphere'].includes(selectedEdge.scale) && <RelationshipProcessEditor edge={selectedEdge} onChange={(process) => editEdge('relationshipProcess', process)} />}<AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}</div>}
-        {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map"><div className="map-summary">{visibleScale === 'meso' ? <><strong>{mesoLinkageCount}</strong><span>{mesoLinkageCount === 1 ? 'mesosystem' : 'mesosystems'}</span><strong>{mesoSettingCount}</strong><span>Micro {mesoSettingCount === 1 ? 'setting' : 'settings'}</span></> : <><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></>}</div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
+        {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map">
+          <details className="map-help"><summary>Map controls</summary><dl>
+            <div><dt>Pan</dt><dd>Drag empty space, hold Space and drag, or use the middle mouse button.</dd></div>
+            <div><dt>Zoom</dt><dd>Scroll or pinch; use + and − while the canvas is focused.</dd></div>
+            <div><dt>Move an item</dt><dd>Drag it, or focus it and use arrow keys. Shift moves it farther.</dd></div>
+            <div><dt>Fit map</dt><dd>Show the current map in the available space. Press 0 on the canvas.</dd></div>
+            <div><dt>Undo layout</dt><dd>Use Ctrl/⌘ Z on the canvas; Shift redoes the change. Text fields keep their own undo.</dd></div>
+          </dl></details>
+          <div className="layout-history" role="group" aria-label="Layout history"><button type="button" disabled={!layoutHistory.past.length} onClick={() => restoreLayout('undo')}>Undo layout</button><button type="button" disabled={!layoutHistory.future.length} onClick={() => restoreLayout('redo')}>Redo layout</button></div>
+          <ProjectOverview project={project} />
+          <div className="map-summary">{visibleScale === 'meso' ? <><strong>{mesoLinkageCount}</strong><span>{mesoLinkageCount === 1 ? 'mesosystem' : 'mesosystems'}</span><strong>{mesoSettingCount}</strong><span>Micro {mesoSettingCount === 1 ? 'setting' : 'settings'}</span></> : <><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></>}</div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
       </aside>
     </div>
   </div>;
@@ -5060,6 +5188,7 @@ const REVISION_EVENT_COPY = Object.freeze({
   'node.added': ['Node added', true],
   'edge.added': ['Relationship added', true],
   'map.arranged': ['Map arranged', true],
+  'map.layout-restored': ['Layout restored', true],
   'map.item.removed': ['Item removed from map', false],
   'map.item.restored': ['Item returned to map', false],
   'scale.selected': ['Level changed', true],
@@ -5083,12 +5212,13 @@ function activeLevelGraph(project) {
   return { nodes, edges };
 }
 
-function RevisionStage({ project, update, replaceProject, toast, logPrototype, onRequestRestart, onValidationError }) {
+function RevisionStage({ project, update, replaceProject, toast, logPrototype, onRequestRestart, onValidationError, onReviewLevel }) {
   const [importError, setImportError] = useState('');
   const levelGraph = activeLevelGraph(project);
   const currentNodes = levelGraph.nodes.length;
   const currentRelationships = levelGraph.edges.length;
-  const needsEvidence = [...levelGraph.nodes, ...levelGraph.edges].filter((item) => item.claimState === 'research lead').length;
+  const needsEvidence = [...levelGraph.nodes, ...levelGraph.edges].filter(needsEvidenceReview).length;
+  const cumulative = useMemo(() => summarizeMap(project), [project.graph, project.candidates]);
   const levelLabel = SCALES[project.activeScale]?.label || project.activeScale;
   const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1] || null;
   const currentSummary = project.activeScale === 'meso'
@@ -5138,8 +5268,9 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype, o
   return <div className="wide stage-enter">
     <p className="eyebrow">Revise and export</p>
     <h1>Review and export your map</h1>
-    <p className="lede">Record what changed at this level before continuing. You can export the cumulative project at any point.</p>
+    <p className="lede">Review this level, record what changed, and connect it to your wider map. Exports include every level.</p>
     <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
+    <ProjectOverview project={project} onReviewLevel={onReviewLevel} />
     <div className="revision-grid">
       <section>
         <div className="before-after"><div><span>Memo</span><p>You used evidence from the memo to build this level.</p></div><Icon name="arrow" size={24} /><div aria-label={`Current ${levelLabel} map summary`}><span>Current {levelLabel} map</span><p>{currentSummary}</p></div></div>
@@ -5154,7 +5285,7 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype, o
         </section> : null}
         {project.activeScale === 'macrosphere' ? <section aria-labelledby="cross-level-synthesis-title">
           <h2 id="cross-level-synthesis-title">Cross-level synthesis</h2>
-          <p className="lede">Use the cumulative map to answer the inquiry, weigh the evidence, name its limits, and decide what comes next.</p>
+          <p className="lede">Use the cumulative map to weigh the evidence, recognize community capacities, and identify changes that reflect residents’ priorities.</p>
           <Field label="How would you answer the focus question now?"><textarea rows="3" maxLength="2000" value={macroSynthesis.answer} onChange={(event) => setSynthesisField('answer', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
           <Field label="Which claim is strongest, and why?"><textarea rows="3" maxLength="2000" value={macroSynthesis.strongest} onChange={(event) => setSynthesisField('strongest', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
           <Field label="Which claim is weakest, and why?"><textarea rows="3" maxLength="2000" value={macroSynthesis.weakest} onChange={(event) => setSynthesisField('weakest', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
@@ -5162,12 +5293,12 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype, o
           <Field label="What should you investigate or do next?"><textarea rows="3" maxLength="2000" value={macroSynthesis.next} onChange={(event) => setSynthesisField('next', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
           <Field label="What changed over time or across your revisions?"><textarea rows="3" maxLength="2000" value={macroSynthesis.changed} onChange={(event) => setSynthesisField('changed', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
         </section> : <Field label={revisionPrompt} hint={`Optional ${levelLabel} revision note`}><textarea className="reflection" rows="8" maxLength={PROJECT_LIMITS.promptText} value={project.reflection} onChange={(event) => update((draft) => { draft.reflection = event.target.value; })} onBlur={() => update(() => {}, 'reflection.revised', `${levelLabel} revision reflection`)} placeholder="Record a correction, a change in interpretation, or a question you still need to investigate." /></Field>}
-        <div className="release-summary"><div><strong>{currentNodes}</strong><span>{project.activeScale === 'meso' ? 'mesosystems' : 'nodes on map'}</span></div>{project.activeScale !== 'meso' && project.activeScale !== 'macrosphere' && <div><strong>{currentRelationships}</strong><span>{project.activeScale === 'micro' ? 'direct relationships' : 'Exo-level connections'}</span></div>}<div><strong>{needsEvidence}</strong><span>items needing evidence</span></div><div><strong>{project.events.length}</strong><span>changes</span></div></div>
+        <div className="release-summary"><div><strong>{currentNodes}</strong><span>{project.activeScale === 'meso' ? 'mesosystems' : 'nodes on map'}</span></div>{project.activeScale !== 'meso' && project.activeScale !== 'macrosphere' && <div><strong>{currentRelationships}</strong><span>{project.activeScale === 'micro' ? 'direct relationships' : 'Exo-level connections'}</span></div>}<div><strong>{needsEvidence}</strong><span>items to check for evidence</span></div><div><strong>{cumulative.crossLevelLinks}</strong><span>links across levels</span></div></div>
         <div className="sharing-row"><Field label="Prepare copy for"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}{index > maxIndex ? ' · unavailable' : ''}</option>)}</select></Field></div>
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
-    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Full map export</h2><p>Choose JSON, CSV, or Markdown.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
+    <section className="export-strip"><div><p className="eyebrow">Export a copy</p><h2>Full map export</h2><p>JSON saves a project you can reopen. CSV supports spreadsheet analysis. Markdown provides a readable report. Your audience setting applies to every format.</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
 
@@ -6239,14 +6370,17 @@ function App() {
     toast('New Micro map started from this memo. The earlier project remains in Projects.');
   };
 
-  const selectWorkScale = (scale) => {
+  const selectWorkScale = (scale, targetStage = null) => {
     if (!project.releasedScales.includes(scale)) return;
-    if (scale === project.activeScale) { setModal(null); return; }
+    if (scale === project.activeScale) {
+      if (targetStage !== null) setStage(targetStage);
+      setModal(null); return;
+    }
     update((draft) => {
       draft.levelProgress[draft.activeScale] = { stage: draft.stage, reflection: draft.reflection };
       draft.activeScale = scale;
       const target = draft.levelProgress[scale] || { stage: 1, reflection: '' };
-      draft.stage = target.stage;
+      draft.stage = targetStage ?? target.stage;
       draft.reflection = target.reflection;
       draft.preflight = null;
     }, 'scale.selected', `${SCALES[scale].label} selected for work`);
@@ -6650,7 +6784,7 @@ function App() {
     <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} suggestionRuntime={accessState.access?.suggestionRuntime} persistence={accessState.access?.persistence} retentionDays={accessState.access?.retentionDays} />,
     <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} />,
-    <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} />,
+    <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,
   ];
   const screen = mapPreviewOpen ? stageScreens[3] : stageScreens[project.stage];
   const displayedStage = mapPreviewOpen ? 3 : project.stage;
@@ -6880,7 +7014,7 @@ function App() {
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}`}>{screen}</main>
-    <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></>}</footer>
+    <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><span className="step-position">Step {project.stage + 1} of {STAGES.length}</span><strong>{STAGES[project.stage].label}</strong></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></>}</footer>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>
       <section className="level-progress-summary" aria-labelledby="level-progress-title">
@@ -6888,7 +7022,7 @@ function App() {
         <ol>{SCALE_ORDER.map((scale) => <li key={scale}><strong>{SCALES[scale].label}</strong><span>{levelProgressStatus(project, scale)}</span></li>)}</ol>
       </section>
       <ol className="stage-menu">{STAGES.map((stage, index) => {
-        return <li key={stage.id}><button className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><strong>{stage.label}</strong>{index === project.stage ? <em>Current</em> : null}</button></li>;
+        return <li key={stage.id}><button aria-label={stage.label} aria-describedby={`stage-description-${stage.id}`} className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><span className="stage-menu__description"><strong><span aria-hidden="true">{index + 1}. </span>{stage.label}</strong><small id={`stage-description-${stage.id}`}>{stage.description}</small></span>{index === project.stage ? <em>Current</em> : null}</button></li>;
       })}</ol>
     </Modal>
     <Modal open={modal === 'work-level'} title="Choose work level" onClose={() => setModal(null)}>

@@ -1,153 +1,202 @@
-> **Active beta.** Systems Mapping is under active classroom development.
-
 # Systems Mapping
 
-Systems Mapping supports place-based inquiry through one persistent map. Students revisit five workflow stages across four analytical levels: Part 1 groups Micro and Meso; Part 2 groups Exosphere and Macrosphere. Teacher Console lets instructors adapt guidance and course material for each Part and section. A language model can suggest discrete Micro elements and their direct relationships, mesosystems formed by carried Micro settings, outside Exo-level decision settings and pathways into carried Micro settings, and scoped Macro-level conditions. Students review and edit each suggestion, then choose Add to map, Set aside — needs evidence, or Remove.
+> **Active beta.** Systems Mapping is under active classroom development.
 
-Implementation is local-first. Project state stays in browser storage. Bounded evaluations, retained review records, teacher accounts, and shared course configuration live on classroom server in SQLite locally or PostgreSQL when hosted.
+Systems Mapping helps students turn a place-based inquiry into an evidence-informed account of people, settings, institutions, and broader conditions. Students build one cumulative map, revisit their interpretations, and explain how connections operate across four ecological levels. The map, supporting evidence, and revision notes form a record of their reasoning.
 
-## Student workflow
+The prototype combines a guided student workspace with a Teacher Console for course guidance and materials. Model assistance is optional: students decide which suggestions belong on the map and can complete every stage through their own reading and analysis. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
 
-- add your memo asks students to choose a level, upload a memo or paste its text, and optionally name the map
-- review your memo lets the student request model guidance after reviewing the transfer disclosure or continue without it: Micro proposals name discrete people, roles, activities, objects, and immediate settings, with direct relationships stored separately; Meso receives eligible Micro setting IDs and may propose noun-labeled mesosystems scoped to at least two settings
-- choose nodes and describe relationships lets students revise each suggestion; suggestions begin off the map, appear in groups of four, and only items explicitly added are committed to the cumulative map
-- build map asks students to arrange and annotate selected elements; Micro retains its direct relationship verbs, Meso shows named mesosystems and their included settings without verb edges, Exo-level shows outside decision pathways into carried Micro settings, and Macro-level conditions identify the map items they affect
-- revise and export asks students to reconsider the current level, record what changed, and decide what can be shared; the current-level view preserves the correct records for that level, while a full export preserves the complete cumulative graph
+## Learning model
 
-The five stages are repeatable, and every stage and the map are directly available in every level. Completing revise and export advances the active level in order: Micro to Meso, Meso to Exosphere, and Exosphere to Macrosphere. Completing Macrosphere ends progression at **Project complete**; students may continue to review, revise, and export the project without starting another level cycle. Part 1 contains Micro and Meso; Part 2 contains Exosphere and Macrosphere. Meso carries eligible Micro settings forward by stable ID, so identifying a mesosystem does not duplicate or move those settings. Exosphere replaces the former Macro level; Macrosphere replaces the former Integration level. Those later levels use distinct concentric regions. Once more than one level is available, the map opens on **All levels** so prior work remains visible; students may isolate one level without changing hidden graph records.
+The course develops one inquiry through two Parts. Each level adds a distinct form of analysis while retaining earlier work by stable reference.
 
-The memo stays available as a collapsed, editable drawer on every later stage. Editing it never removes candidates or map work; it marks the current guidance as ready to refresh. At Micro and Exosphere, students may ask the model for additional relationships and can change both endpoints and the wording. Meso and Macrosphere do not use graph relationship edges: a Meso item identifies its included Micro settings, and a Macrosphere item identifies the inner mapped elements it affects.
+| Part | Level | Analytical focus | Map representation |
+| --- | --- | --- | --- |
+| 1 | Micro | People, roles, activities, objects, and immediate settings relevant to the focal person or group. | Discrete elements with separately described direct relationships. Non-setting elements can identify the immediate settings in which they appear. |
+| 1 | Meso | How two or more of the focal person's immediate settings interact. | Named mesosystems linked to at least two existing Micro settings. The settings remain in place and retain their original IDs. |
+| 2 | Exo | Decisions made in outside settings that indirectly affect the focal person or group. | Outside decision settings with pathways into mapped Micro settings. |
+| 2 | Macro | Laws, policies, economic conditions, histories, beliefs, and structures that shape the system. | Broader conditions scoped to at least two earlier map elements. |
 
-Micro records distinguish direct, indirect, unclear, and not-applicable participation by the focal person or group. A non-setting Micro item may also reference the immediate setting or settings in which it appears. Those memberships are separate from Meso scope: Meso reuses eligible Micro setting IDs to describe interrelations across settings.
+The interface labels the later levels **Exo-level** and **Macro-level**; project records use `exosphere` and `macrosphere`. Meso and Macro scope links identify inclusion or influence without creating directional relationship edges. A named institution belongs at Exo-level; a policy or structural condition belongs at Macro-level.
 
-Nodes and connections support additive evidence records that keep a memo passage, student interpretation, reasoning, uncertainty, counterevidence, and missing perspective distinct. Micro and Exo-level connections may also record frequency, duration, direction, conditions, and change over time. Removing a node or changing a Micro setting type is blocked while another map item, setting membership, scope, or connection still depends on it; the interface names the dependent work so the student can repair or remove it explicitly.
+Evidence remains distinct from interpretation. Students can record a source passage, their claim and reasoning, uncertainty, counterevidence, and missing perspectives. Micro and Exo relationships can also describe frequency, duration, direction, conditions, and change over time. The application checks references and required structure; students remain responsible for the strength of the explanation.
 
-Each level stores its own stage and reflection. Moving among released levels restores that level's saved work, while the cumulative graph and prior decisions remain intact. Browser project schema v7 validates these records, migrates supported v1–v6 projects, and preserves them through canonical export and import.
+### Community assets and wider systems
 
-Generating guidance does not edit the memo or map. Every stage, level, and the map remain open regardless of a model response, instructor review, or outstanding evaluation. There is no course-wide ceiling on active preflight evaluations; expiration, rate limits, and provider-concurrency safeguards still apply. Per-session supersession and retention purges are unchanged in this pass.
+Asset mapping gives this inquiry a practical starting point: residents' skills, local knowledge, associations, gathering places, and organizational resources. Students can examine how these capacities connect, who can access them, and what residents want to change. The Exo and Macro levels extend that inquiry to outside decisions and structural conditions. This framing draws on [“What is Asset Mapping?” (Social Design Notes, 2004)](https://backspace.com/notes/2004/06/what-is-asset-mapping.php), supplied as a copy reference. The prototype's ecological levels continue to govern how those observations enter the map.
 
-Optional student-workflow evaluation uses the closed `workflow_observed` event. It records only task code, completion outcome, classification explanation, revision quality, and recovery outcome from fixed categories. Reports expose aggregate counts, not memo text, map labels, annotations, prompts, capabilities, identity, row-level observations, sessions, or timestamps.
+## Student experience
+
+Students repeat five stages at each level. The stage menu provides a short purpose statement, and the footer identifies the current step and next action.
+
+| Stage | Student action | Result |
+| --- | --- | --- |
+| **Add memo** | Set the inquiry and upload or paste source material. | A shared memo and focus for the project. |
+| **Review memo** | Read the evidence and, if useful, request guidance after reviewing the transfer disclosure. | Optional suggestions and questions to assess. |
+| **Choose elements** | Edit suggestions, add supported items, and set open questions aside. | Explicit decisions about what enters the map. |
+| **Build map** | Arrange elements, inspect connections, and record evidence or notes. | An editable map that carries work across levels. |
+| **Revise and export** | Review the current level alongside earlier results, explain changes, and prepare an export. | A revised interpretation and a portable copy of the cumulative work. |
+
+Suggestions begin off the map and appear in groups of four. **Add to map**, **Set aside — needs evidence**, and **Remove** make each decision explicit. Generating guidance never commits a suggestion or edits the memo. Editing the memo preserves prior decisions and marks existing guidance for refresh.
+
+The memo stays available in a collapsed drawer after the first stage. Level explanations introduce what the student will use, add, and carry forward; the analytical boundary opens on request. Every stage remains available without a model response or instructor approval.
+
+Each level keeps its own stage and revision note. Switching levels restores that context while preserving the cumulative graph. Completing the revision stage advances from Micro through Macro; completing Macro marks the project complete while leaving it available for revision and export. Students can also revisit an earlier level directly from the cumulative review without marking another level complete.
+
+### Reviewing results across levels
+
+**Cumulative map** provides a compact overview in the map inspector and revision stage. It opens into results for each available level: mapped elements, direct relationships or scope links, items to check for evidence, and suggestions set aside. Saved revision notes remain available with their level. The overview also counts recorded links that cross levels.
+
+These counts support review; they are not a score or proof of quality. An item is flagged for evidence review when it lacks a recorded passage or retains an unresolved, inferred, or contested status. At Macro-level, synthesis prompts ask students to answer the inquiry, weigh stronger and weaker claims, identify missing perspectives, and choose the next investigation or action.
+
+## Working with the map
+
+The canvas uses concentric ecological regions and restrained level colors. **All layers** shows cumulative work; the layer selector isolates one level without deleting hidden records. **List** provides an alternative way to inspect map items.
+
+Selecting an element opens its inspector. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
+
+The default view keeps detailed evidence, map controls, and cumulative results collapsed until needed. **Details** opens map notes and controls even when no element is selected. Closing the inspector returns keyboard focus to the selected canvas item or the list control that opened it.
+
+| Task | Control |
+| --- | --- |
+| Move around the map | Drag empty canvas, use a middle-button drag, or focus the canvas and hold Space while dragging. Arrow keys pan a focused canvas. |
+| Zoom | Scroll at the pointer, pinch on a touch screen, or use the zoom buttons. `+` and `−` zoom a focused canvas. |
+| Move an element | Drag the element. |
+| Restore an overview | Choose **Fit map** or press `0` with focus in the canvas. |
+| Reorganize the layout | Choose **Arrange map**. |
+| Undo or redo a layout change | Open **Details → Map** for layout controls, or use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
+| Expand the workspace | Choose **Full screen map**; press `Escape` to exit. |
+
+Layout history covers element moves and automatic arrangements during the current map visit. Undo restores positions and the recorded view while preserving evidence, labels, and notes edited afterward. It is not a general project-history rollback. Layout, viewport, and annotations save with the project; the undo stack is temporary.
+
+The application prevents removal or reclassification of an element while another relationship, membership, or scope depends on it. It identifies the dependent work so students can resolve those references explicitly.
+
+## Saving and sharing
+
+Projects save to browser `localStorage`, including the memo, candidates, graph, evidence, annotations, per-level progress, layout, and viewport. This storage belongs to the current browser and device. A classroom server does not provide automatic synchronization of the student project. Export JSON to keep a portable backup or move work to another browser.
+
+**Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
+
+- **JSON** preserves a reopenable project with stable IDs and layout, subject to the selected audience's redactions. Import validates the file before replacing the open project.
+- **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.
+- **Markdown** provides a readable account for review and discussion.
+
+Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v7 supports migration of v1–v6 projects.
 
 ## Run locally
 
-Requirements: Node 22.5 or newer and pnpm 11.
+Requirements: **Node.js 22.5 or newer** and **pnpm 11**. The repository pins pnpm in `package.json`.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 pnpm server
 ```
 
-Open `http://127.0.0.1:4177`. Local mode binds only to `127.0.0.1`, creates `data/systems-mapping.sqlite`, and accepts the initial class code `101`. That code is held by the server and is not compiled into the browser bundle. It opens the class workspace; it is not student identity or strong authentication.
+Open `http://127.0.0.1:4177` and enter class code `101`. Local mode binds to `127.0.0.1` and creates `data/systems-mapping.sqlite`. The class code opens the workspace; it does not identify an individual student.
 
-For live frontend development, run the API and Vite separately:
+For frontend development, run these commands in separate terminals:
 
 ```bash
 pnpm server:dev
+```
+
+```bash
 pnpm dev
 ```
 
-Current automated gates:
+The server loads optional settings from `.env`. Use [`.env.example`](./.env.example) as the configuration reference. Model providers are disabled by default, so the local workflow can be evaluated without external model access.
+
+## Teacher Console
+
+Teachers manage guidance and course material by **Part** and **stage**. Micro and Meso share Part 1 settings; Exo and Macro share Part 2 settings. The runtime still applies the distinct analytical rules for each level.
+
+Course settings are versioned. A teacher creates a draft from an existing version, saves changes with a note, previews the saved guidance and material, and publishes it. One published version governs new model requests. Publishing preserves earlier versions, and cloning a previous version provides a rollback path. **Preview level** supplies analytical context for a preview; it does not create a separate saved configuration.
+
+Evidence, privacy, output validation, and student-confirmation rules remain controlled by the application. The preview exposes instructor-authored guidance and materials without exposing internal prompts or configuration fingerprints.
+
+The Console opens on **Review submissions**. The current student interface does not create submissions for this queue; it supports retained records and the compatibility review API. Review actions provide asynchronous feedback without editing the student's map or controlling access to stages.
+
+Fresh databases seed unclaimed accounts for Maria Mavrides Calderon and Zach Muhlbauer. There are no default passphrases. An operator can set a temporary, server-only `SYSTEMS_MAPPING_TEACHER_BOOTSTRAP_TOKEN` of 16–256 characters to authorize one account claim per server process. Claiming another account requires a fresh token and restart. The command below creates an account-bound password-reset link valid for 30 minutes and one use:
 
 ```bash
-pnpm test
-pnpm test:server
-pnpm build
+node server/create-password-reset.js <teacher-account-id>
 ```
 
-## Teacher accounts and review
+Resetting a passphrase revokes that account's existing sessions. Passphrases use scrypt derivation; teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
 
-Fresh databases seed unclaimed identities for Maria Mavrides Calderon and Zach Muhlbauer, never default passphrases. To claim one account, start the server with a temporary, server-only `SYSTEMS_MAPPING_TEACHER_BOOTSTRAP_TOKEN` of 16–256 characters. A token authorizes one claim for that server process; claim the second account with a fresh token on a later restart. An operator can create an account-bound, 30-minute password-reset link with `node server/create-password-reset.js <teacher-account-id>` from the deployed service. Reset links work once and revoke the account's existing teacher sessions. Passphrases are scrypt-derived, and teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
+## Optional model assistance
 
-The Teacher Console opens on **Review submissions**. The current student workflow does not send a note or review snapshot to this queue. It remains available for records from earlier releases and the retained review API. Review actions record asynchronous feedback without changing student work or controlling stage and map access.
+With no provider enabled, the server performs a reproducible built-in text review and sends nothing to an external model. This mode is suitable for checking the workflow but does not establish model performance. Additional relationship suggestions require a live provider.
 
-**Course settings** follows the same five sections students revisit. Its compact controls show one Part and one section at a time. A saved guidance-and-material pair is shared by both levels in that Part: Micro and Meso share Part 1 settings, while Exosphere and Macrosphere share Part 2 settings. Level-specific runtime rules still apply: Micro may produce direct relationships, Meso produces only scoped `mesosystem` nodes, Exosphere may produce institutional relationships, and Macrosphere produces only scoped conditions.
-
-One published version governs new model requests. A teacher creates a draft from the published or an earlier version, saves changes with a note, previews the saved settings, and publishes it. **Preview level** supplies context for that preview; it does not select a separate saved configuration. The preview shows only the saved instructor guidance and course material, never the full effective prompt, code-owned guardrails, internal modules, or configuration fingerprints. Publishing retires the earlier version without erasing its history. Cloning an earlier version provides rollback without editing a published record in place.
-
-Fixed evidence, privacy, output, and student-confirmation rules remain code-owned. The server still composes those rules from smaller internal parts, but it exposes no internal configuration matrix to the Teacher Console or its retired module endpoints. Ollama Cloud receives the published guidance and course material for the current section.
-
-## Suggestion runtime
-
-With a model enabled, it reads the memo under a level-specific contract. Micro returns grounded proposals for discrete elements and direct relationships. Each Micro node label names one relevant person, role, activity, object, or immediate setting as a noun phrase; a sentence, clause, proposition, finding, or explanation is not a node label. Meso receives carried Micro settings and returns only noun-labeled `mesosystem` nodes scoped to at least two of them, with zero relationship edges. Exosphere returns institutions and registered institutional relationships. Macrosphere returns broader laws, policies, economic conditions, histories, beliefs, and structures with scopes of at least two mapped elements and zero relationship edges. A named institution such as CUNY belongs at Exosphere, not Macrosphere. Without a model provider, the classroom server uses a reproducible built-in text review and sends nothing to an outside provider; it is not proof that a language model ran. Additional relationship suggestions require a model provider and do not fall back to built-in rules.
-
-Ollama Cloud is the primary model runtime and OpenRouter is an optional backup; both are explicit opt-in:
+Ollama Cloud is the first provider when enabled. OpenRouter can serve alone or provide a backup for retryable provider failures. Both require explicit server configuration. The following Ollama settings illustrate the setup; select a model supported by the configured provider:
 
 ```dotenv
 OLLAMA_ENABLED=true
-OLLAMA_API_KEY=<fresh-rotated-server-only-key>
+OLLAMA_API_KEY=<server-only-key>
 OLLAMA_CLOUD_URL=https://ollama.com
-OLLAMA_MODEL=deepseek-v4-flash:0731
+OLLAMA_MODEL=gpt-oss:20b
 OLLAMA_TIMEOUT_MS=90000
 OLLAMA_MAX_OUTPUT_TOKENS=8192
-
-OPENROUTER_ENABLED=true
-OPENROUTER_API_KEY=<fresh-rotated-server-only-key>
-OPENROUTER_URL=https://openrouter.ai
-OPENROUTER_MODEL=deepseek/deepseek-v4-flash-0731
-OPENROUTER_TIMEOUT_MS=90000
-OPENROUTER_MAX_OUTPUT_TOKENS=8192
 ```
 
-When both runtimes are enabled, every request goes to Ollama Cloud first; provider-side failures (timeouts, HTTP errors, malformed envelopes) retry once through OpenRouter, while input-shaped failures never retry. The stored runtime metadata records which provider actually served each evaluation. With only OpenRouter enabled it serves as the primary runtime. Thinking models such as DeepSeek V4 Flash spend output tokens on reasoning before the JSON answer, so the token and timeout headroom above is required — the 2,048-token default truncates real memo reviews.
+For OpenRouter, set `OPENROUTER_ENABLED=true`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL`; optional URL, timeout, token, and reasoning settings are documented in [`.env.example`](./.env.example). Keep all provider credentials server-side and outside version control. Never expose them through `VITE_` variables.
 
-The server sends the published guidance and course material for the current section, bounded project instructions, inquiry, level, memo details, and memo text to the configured provider. Memo text is limited to 131,072 UTF-8 bytes and the inquiry to 8,192 UTF-8 bytes. Provider output must satisfy the memo review JSON contract; malformed, oversized, or unavailable provider responses fail with a generic error and do not silently fall back to deterministic output.
+Model requests include the active section's published guidance and material, bounded project instructions, inquiry, analytical level, and memo. Memo text is limited to 131,072 UTF-8 bytes; the inquiry is limited to 8,192 bytes. Students review the transfer disclosure before requesting guidance.
 
-Any credential pasted into chat or shell history must be treated as exposed: revoke it and configure a newly rotated key. Never prefix `OLLAMA_API_KEY` or `OPENROUTER_API_KEY` with `VITE_` or otherwise expose them to client code.
+Responses must satisfy the level-specific structured contract. Meso and Macro responses contain scoped nodes without relationship edges. With both providers enabled, retryable provider failures can invoke OpenRouter; input-shaped failures do not trigger that backup. Runtime metadata records which provider served the request. Invalid or unavailable model responses return an error and never silently switch to built-in text review.
 
-## Persistence and retention
+## Architecture and operations
 
-- Browser `localStorage` holds schema-v7 student projects, the active project-library pointer, optional student/group name, per-level stages and reflections, memo, candidates, graph records, participation and setting memberships, evidence and relationship-process records, node positions, viewport, and node/relationship/map annotations. A retained compatibility review capability may be present in an older project, but the current student interface does not create a submission. The optional name appears with a project link so an instructor can identify the work; leaving it blank never blocks progress. Save failures preserve the in-memory project and offer recovery export.
-- The classroom database holds teacher identities and sessions, course profiles and append-only profile events, code-owned base configuration, bounded prototype events, authoritative evaluations, review snapshots, and append-only decision events.
-- Unsubmitted evaluations expire after 1 day. Pending review snapshots are retained for 30 days; decided snapshots for 180 days. Retention deletes snapshots that contain memo text and their decision rows, then keeps only a hashed, append-only purge receipt.
-- Review and evaluation IDs are random bearer capabilities. Every portable export redacts both IDs. Student status responses are deliberately minimal and never return memo text, prompt content, configuration, or teacher identity.
-- Canonical JSON preserves stable graph IDs, layout, viewport, annotations, and redaction manifests. CSV cells are neutralized against spreadsheet formulas.
+| Component | Responsibility |
+| --- | --- |
+| React and Vite client (`src/`) | Student workflow, browser project library, map interaction, evidence editing, and portable exports. |
+| Shared contracts (`shared/`) | Canonical stages, ecological levels, and educator-resource rules used across client and server. |
+| Hono server (`server/`) | Class access, teacher accounts, course configuration, validated model requests, and retained review records. |
+| SQLite / PostgreSQL | Classroom persistence: SQLite locally and PostgreSQL in hosted mode. |
+| Vitest / Playwright (`src/`, `server/`, `tests/e2e/`) | Domain and API checks, rendered student journeys, and automated accessibility scans. |
 
-## Hosted and Railway contract
+### Hosted configuration
 
-The PostgreSQL-backed Railway service is reachable at [web-production-08455.up.railway.app](https://web-production-08455.up.railway.app). PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged the ecological progression into clean `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`. Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS` from that exact commit, ran the PostgreSQL migration, passed `/api/health`, and served byte-identical production bundles. Deployment `39d38543-20ca-4626-95e6-237ef9213881` remains historical evidence for the preceding Macro/Integration implementation. Hosted mode requires these server variables together:
+Hosted mode requires these server settings together:
 
 ```dotenv
 DATABASE_URL=<postgres-connection-string>
 PUBLIC_ORIGIN=https://<public-host>
 HOST=0.0.0.0
 TRUST_PROXY_HOPS=1
-SYSTEMS_MAPPING_CLASS_CODE=<10-32-character-server-only-code>
+SYSTEMS_MAPPING_CLASS_CODE=<private-class-code>
 ```
 
-Private hosted courses require a class code with at least six distinct characters; `101` remains rejected by default. A public teaching demo instead uses this exact pair:
+Set the trusted proxy count to match the actual hosting topology. Private class codes must contain 10–32 characters with at least six distinct characters. A public teaching demo explicitly uses `SYSTEMS_MAPPING_PUBLIC_DEMO=true` with `SYSTEMS_MAPPING_CLASS_CODE=101`. A shared code provides class access, not student identity.
 
-```dotenv
-SYSTEMS_MAPPING_PUBLIC_DEMO=true
-SYSTEMS_MAPPING_CLASS_CODE=101
+Hosted mode uses secure cookies and enforces public-origin checks, rate limits, retention, provider concurrency, and review-queue bounds. PostgreSQL SSL, pool size, and connection, idle, statement, and transaction timeouts are configurable in [`server/index.js`](./server/index.js). Startup initializes the persistence layer; `pnpm db:migrate` is also available to operators.
+
+### Server data and retention
+
+The classroom database stores teacher accounts and sessions, course configuration and its history, bounded evaluations, retained review snapshots, and decision events. Unsubmitted evaluations expire after one day. Pending review snapshots are retained for 30 days; decided snapshots for 180 days. Purges remove snapshot content and decisions while retaining a hashed receipt.
+
+Optional workflow evaluation uses fixed categories for task, completion, explanation, revision quality, and recovery. Reports expose aggregate counts. They exclude memo text, map labels, annotations, prompts, capabilities, identities, row-level observations, sessions, and timestamps.
+
+## Verification and project records
+
+```bash
+pnpm test
+pnpm build
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
-The shared demo code is low-assurance access, not student identity. Hosted cookies remain `Secure`; exact public origin, host, proxy depth, rate limits, retention, provider concurrency, and submission-queue bounds remain enforced. Outstanding preflight evaluations do not share a course-wide maximum. `DATABASE_SSL`, pool, connection, idle, statement, and transaction timeout variables are available for the target PostgreSQL environment.
+`pnpm test` includes client, shared-contract, and server tests; `pnpm test:server` runs the server subset. Live PostgreSQL integration tests require a dedicated disposable database through `TEST_POSTGRES_URL` and are skipped when it is absent. The Playwright suite starts an isolated local server with a temporary SQLite database and disabled model providers, then tests desktop and phone viewports. `pnpm test:a11y` runs the dedicated accessibility suite.
 
-## Design and map behavior
+Local tests establish behavior for the tested source and environment. They do not establish hosted deployment status, live model quality, or complete accessibility conformance. Release-specific receipts and historical screenshots belong in the project records below; older receipts should be read against their recorded commit and date.
 
-Black, white, and gray remain dominant. Restrained accents identify Micro, Meso, Exosphere, and Macrosphere. Micro presents discrete elements with their direct relationship lines, including in revise and export. Each Meso item sits in the Meso region and uses unlabeled scope lines to identify its included Micro settings; no proposition or relationship verb appears in that layer. Exosphere and Macrosphere use distinct, filterable concentric regions. The larger map canvas supports persistent pointer or keyboard panning, zooming out to `0.15`, and a CSS full-screen view that can always be exited. Cards keep labels separate from icons and render every character. The UI uses modest editorial typography rather than oversized display copy.
+- [Requirements](./docs/REQUIREMENTS.md) — product and workflow requirements.
+- [Source ledger](./docs/SOURCE_LEDGER.md) — source provenance and authority.
+- [QA report](./docs/QA.md) — recorded validation and scope.
+- [Security review](./docs/SECURITY_REVIEW.md) — security design and review evidence.
+- [Educator resource framework](./docs/EDUCATOR_RESOURCE_FRAMEWORK.md) — teacher control across applications.
+- [Release evidence ledger](./TODO.md) — release work and historical receipts.
+- [August 13 reconciliation](./docs/RECONCILIATION_2026-08-13.md) — earlier reconciliation decisions.
 
-## Evidence and authority
-
-The 2026-08-17 baseline passed 171 tests with 3 PostgreSQL integration tests skipped, produced a successful build, and passed its recorded dependency and leakage scans. Those results predate the 2026-08-21 ecological-layer reversion and are not evidence for this candidate.
-
-The 2026-08-22 map-interaction candidate has local receipts only. The ordinary suite passed 242 tests, with 4 PostgreSQL tests skipped behind their explicit environment guard. `pnpm build` produced `index-BJBuN6w3.js`, `TeacherDashboard-DPrpmbM0.js`, and `index-BZOzcHy4.css`; `git diff --check` passed. A real in-app browser run against that final built bundle at 1440×1000 and 390×844 confirmed the relationship-free Micro revision view, the Micro-to-Meso and Meso-to-Exosphere transitions, six complete non-overlapping Meso relationship callouts in the Meso annulus, computed Meso callout sizes of `24px` on desktop and `26px` on phone, full-screen without horizontal overflow, `0.25` zoom, keyboard panning, and zero browser warnings or errors. These checks do not establish GitHub, Railway, or live-provider acceptance for the changed working tree. The fresh PostgreSQL, dependency-audit, leakage, GitHub, Railway, and live-provider receipts below remain evidence for the 2026-08-21 ecological release rather than this local candidate.
-
-A second real in-app browser run exercised the discrete-label regression directly. The memo sentence “Adult Participants face delays when the Accessible Van Program is unavailable” surfaced exactly `Adult Participants` and `Accessible Van Program` as Micro nodes, committed those two labels to the map, created zero relationships, and produced zero browser warnings or errors. This was a local deterministic run, not a hosted-provider or deployed receipt.
-
-GitHub readback confirmed that PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged feature commit `e17142b7c4974a8db4fe02bcded47f0ce5ecf497` into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`; local, `origin/main`, and GitHub `main` matched that merge before deployment. PR [#3](https://github.com/CUNY-AI-Lab/systems-mapping/pull/3) and PR [#5](https://github.com/CUNY-AI-Lab/systems-mapping/pull/5) remain historical receipts for earlier implementations.
-
-Existing browser journeys and screenshot archives document earlier workflows only. The last inspected rendered package is `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ecological-cycle-qa-2026-08-21/systems-mapping-ecological-cycle-qa-2026-08-21.zip` (SHA-256 `89f959144d0257a0a21d6440f7be3a37e50925f60adc7dd1687caeb246277c11`). It contains 40 browser-capture PNGs, 4 fabricated memo files, and 4 metadata/assertion files: all 15 states at 1440×1000 and 390×844, plus five map/Teacher states each at 320×812 and 430×932. Strict inspection found no truncation, overlap, overflow, console errors, or captured success toasts; recorded graph assertions include Micro at 6 nodes/0 connections, Meso reusing exact Micro IDs, a cumulative 21-node/19-connection map, and the post-authentication Teacher Console. No credentials are packaged. This package predates the 2026-08-22 map-interaction changes and is not current rendered evidence for them.
-
-For the 2026-08-22 working tree, the automated suite, production build, diff-integrity check, and local source-built browser run above are current. The clean GitHub-to-Railway release, live migration, health, security-header, public-demo access, session/configuration, student-to-teacher denial, logout, exact-bundle, no-5xx, and `ollama-cloud` receipts apply to the 2026-08-21 release. They do not establish deployment or live behavior for the current local changes. Credential rotation provenance was not inspected and remains an operator responsibility.
-
-- [Source ledger](./docs/SOURCE_LEDGER.md)
-- [Requirements](./docs/REQUIREMENTS.md)
-- [QA report](./docs/QA.md)
-- [Security review](./docs/SECURITY_REVIEW.md)
-- [Teacher control across both applications](./docs/EDUCATOR_RESOURCE_FRAMEWORK.md)
-- [Release evidence ledger](./TODO.md)
-- [August 13 reconciliation record](./docs/RECONCILIATION_2026-08-13.md)
-
-The source ledger remains authoritative about provenance. The Maria and Zach Zoom material supplied on 2026-08-21 governs the current analytical progression and ecological-layer design. The fuller Drive specification governs compatible general behavior; the supplied HTML/DOCX guides interaction; CALI materials provide context; Zach's August 5 notes remain unconfirmed minutes; and STEM Splitter is an architecture precedent.
+The source ledger governs provenance. The August 24, 2026 correction governs the Micro/Meso boundary; compatible August 21 decisions govern the four levels and ecological-layer design. The fuller Drive specification governs compatible general behavior, the supplied HTML/DOCX informs interaction, and CALI materials provide context. Zach's August 5 notes remain unconfirmed minutes; STEM Splitter is an architecture precedent.

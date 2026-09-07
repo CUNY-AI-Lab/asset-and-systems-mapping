@@ -1,0 +1,84 @@
+/* Review and navigation extend the existing type, color, and disclosure system. */
+/* An entrance transform would make phone controls fixed to the map, not the viewport. */
+.map-stage { animation: none; }
+.map-connections, .project-overview { border: 1px solid var(--line); background: var(--surface); }
+.map-connections > summary, .project-overview > summary { min-height: 48px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: 650; }
+.map-connections > summary span { margin-left: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.map-connections__body, .project-overview__body { padding: 0 12px 12px; }
+.map-connections p, .project-overview p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.map-connections h3 { margin: 16px 0 8px; font: 650 13px/1.4 var(--body); }
+.map-connections ul, .map-search ul { margin: 0; padding: 0; list-style: none; }
+.map-connections li + li, .map-search li + li { border-top: 1px solid var(--line); }
+.map-connections li button, .map-search li button { width: 100%; min-height: 48px; display: grid; gap: 3px; padding: 9px 6px; border: 0; background: var(--surface); text-align: left; overflow-wrap: anywhere; }
+.map-connections button:hover, .map-search button:hover { background: var(--surface-hover); }
+.map-connections button strong, .map-search button strong { font-size: 14px; line-height: 1.4; }
+.map-connections button span, .map-search button span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.map-trace-back { width: 100%; min-height: 44px; padding: 8px 14px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface-subtle); text-align: left; font-size: 13px; overflow-wrap: anywhere; }
+.map-search { position: relative; align-self: end; }
+.map-search > summary { min-height: 44px; padding: 12px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; font-weight: 650; }
+.map-search__panel { position: absolute; z-index: 15; right: 0; top: calc(100% + 8px); width: min(340px, calc(100vw - 28px)); max-height: min(440px, 60dvh); overflow: auto; padding: 14px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: 0 8px 24px #0002; }
+.map-search__panel label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 650; }
+.map-search input { width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 16px; }
+.map-search p { margin: 10px 0; color: var(--muted); font-size: 13px; }
+.project-overview { margin: 22px 0; }
+.project-overview > summary span { margin-left: 16px; color: var(--muted); font-size: 13px; font-weight: 450; }
+.project-overview__levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.project-overview__levels > section { min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.project-overview__level-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.project-overview__level-heading h3 { margin: 0; font: 650 15px/1.4 var(--body); }
+.project-overview__level-heading button { border: 0; background: transparent; color: var(--teal); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.project-overview__levels p { margin: 5px 0; }
+.project-overview__levels details { margin-top: 8px; font-size: 13px; }
+.project-overview__levels summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+.project-overview__reflection { white-space: pre-wrap; overflow-wrap: anywhere; }
+.level-progression__boundary { margin-top: 10px; color: var(--muted); font-size: 13px; }
+.level-progression__boundary summary { cursor: pointer; min-height: 36px; padding: 7px 0; font-weight: 650; }
+.level-progression__boundary p { margin: 4px 0; }
+.stage-menu__description { display: grid; gap: 4px; padding: 10px 0; }
+.stage-menu .stage-menu__description small { color: var(--muted); font: 400 13px/1.4 var(--body); }
+.map-help { margin: 0 0 16px; padding: 0; font-size: 13px; }
+.map-help summary { min-height: 44px; padding: 10px 0; cursor: pointer; font-weight: 650; }
+.map-help dl { display: grid; gap: 10px; margin: 4px 0; }
+.map-help dl > div { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr; gap: 12px; }
+.map-help dt { font-weight: 650; }
+.map-help dd { margin: 0; color: var(--muted); }
+.layout-history { display: flex; gap: 8px; }
+.layout-history button { flex: 1; min-height: 44px; padding: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; }
+.map-details-trigger { display: inline-flex; align-items: center; justify-content: center; }
+.graph-canvas.is-space-panning, .graph-canvas.is-space-panning .graph-node { cursor: grab; }
+.graph-canvas.is-panning, .graph-canvas.is-panning .graph-node { cursor: grabbing; }
+.map-stage > .memo-drawer { margin: 0 0 16px; }
+.map-stage > .memo-drawer > summary { min-height: 48px; padding: 10px 16px; }
+.map-stage .memo-drawer__title { display: flex; align-items: baseline; gap: 10px; }
+.map-toolbar { flex-shrink: 0; }
+.map-focus-bar, .map-overview-hint { flex-shrink: 0; }
+.map-layout:has(.map-list-view) { height: auto; min-height: 360px; }
+.inspector .project-overview { margin: 0; }
+.inspector .project-overview__levels { grid-template-columns: 1fr; }
+
+@media (min-width: 601px) {
+  .graph-canvas .node-label { font-size: 18px; }
+  .workspace--stage-3 { height: 100dvh; min-height: 720px; display: flex; padding-top: calc(var(--header) + 20px); padding-bottom: calc(var(--footer) + 20px); }
+  .map-stage { display: flex; flex-direction: column; min-height: 0; }
+  .map-stage > .memo-drawer { flex-shrink: 0; }
+  .map-layout { flex: 1; height: 0; min-height: 360px; }
+  .canvas-wrap, .graph-canvas, .graph-canvas--ecology { min-height: 0; height: 100%; }
+  .map-layout > .inspector { max-height: 100%; }
+}
+
+@media (max-width: 600px) {
+  .map-stage:not(.is-fullscreen):not(:has(> .memo-drawer[open])) .canvas-chrome__bottom { position: fixed; bottom: calc(var(--footer) + var(--safe-bottom) + 8px); }
+  .workspace--stage-3 { padding-top: calc(var(--header) + 12px); }
+  .map-stage > .memo-drawer { margin: 0 14px 12px; }
+  .map-toolbar { gap: 10px; margin-bottom: 12px; }
+  .map-toolbar__controls { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .map-layer-control { grid-column: 2; }
+  .map-search { grid-column: 3; grid-row: 1; }
+  .map-search > summary { min-height: 48px; padding: 14px 8px; }
+  .map-toolbar select { width: 100%; padding-right: 20px; }
+  .map-search__panel { right: 0; }
+  .project-overview > summary span { display: block; margin: 4px 0 0 16px; }
+  .project-overview__levels { grid-template-columns: 1fr; }
+  .footer-context { flex-shrink: 0; }
+  .footer-context .step-position { font-size: 12px; }
+}
