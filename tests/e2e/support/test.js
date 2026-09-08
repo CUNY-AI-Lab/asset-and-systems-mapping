@@ -61,10 +61,16 @@ export async function scanAccessibility(page, makeAxeBuilder, testInfo, state) {
   // mistaken for the settled interface's contrast.
   await page.evaluate(async () => {
     const animations = document.getAnimations().filter((animation) => (
-      animation.playState !== 'finished'
+      (animation.playState === 'running' || animation.pending)
       && animation.effect?.getTiming?.().iterations !== Infinity
     ));
-    await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)));
+    // A paused/replaced transition must not hang the accessibility audit.
+    let timeout;
+    await Promise.race([
+      Promise.all(animations.map((animation) => animation.finished.catch(() => undefined))),
+      new Promise((resolve) => { timeout = setTimeout(resolve, 2000); }),
+    ]);
+    clearTimeout(timeout);
   });
   const results = await makeAxeBuilder().analyze();
   const name = `${slug(state)}-axe.json`;

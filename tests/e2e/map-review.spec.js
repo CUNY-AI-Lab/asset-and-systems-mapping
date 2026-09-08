@@ -175,3 +175,32 @@ test('dark mode exposes readable connection and search controls', async ({ page,
   await expect(page.getByRole('search', { name: 'Find map elements' }).getByRole('button')).toHaveCount(2);
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Dark map search'));
 });
+
+test('list remains readable when switching themes in both directions', async ({ page, makeAxeBuilder }, testInfo) => {
+  await openProject(page);
+  await page.getByRole('button', { name: 'List', exact: true }).click();
+  for (const theme of ['dark', 'light']) {
+    await page.getByRole('button', { name: `Switch to ${theme} mode` }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `${theme} map list`));
+    await captureSourceRenderedScreenshot(page, testInfo, `${theme} map list`);
+  }
+});
+
+test('saved theme loads before React and skip link stays readable', async ({ page, makeAxeBuilder }, testInfo) => {
+  const errors = [];
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.addInitScript(() => localStorage.setItem('systems-mapping.theme', 'dark'));
+  // Hold the application bundle: theme restoration must not depend on React.
+  await page.route('**/assets/*.js', (route) => route.abort());
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.unroute('**/assets/*.js');
+  errors.length = 0;
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Enter your class code' })).toBeVisible();
+  await page.getByRole('link', { name: 'Skip to workspace' }).focus();
+  await expect(page.getByRole('link', { name: 'Skip to workspace' })).toBeFocused();
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Dark focused skip link'));
+  expect(errors).toEqual([]);
+});

@@ -1,7 +1,7 @@
 .map-list-view {
   width: 100%;
   color: var(--ink, #0b0b0b);
-  background: #fff;
+  background: var(--surface, #fff);
   border-top: 1px solid var(--ink, #0b0b0b);
   border-bottom: 1px solid var(--line, #d9d9d9);
 }
@@ -73,7 +73,7 @@
   align-items: center;
   padding: 14px 20px;
   border: 0;
-  background: #fff;
+  background: var(--surface, #fff);
   color: inherit;
   font: inherit;
   text-align: left;

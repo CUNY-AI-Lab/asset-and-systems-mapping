@@ -1679,7 +1679,7 @@ html[data-theme="dark"] .map-stage.is-fullscreen { background: var(--canvas); }
 html[data-theme="dark"] .theme-toggle__icon { background: transparent; box-shadow: inset -4px -4px 0 #f1f4f3; }
 html[data-theme="dark"] .theme-toggle:hover { background: var(--teal-pale); }
 html[data-theme="dark"] .lab-logo { filter: brightness(0) invert(1); }
-html[data-theme="dark"] .skip-link { color: var(--surface); background: #0b0b0b; }
+html[data-theme="dark"] .skip-link { color: var(--surface); background: var(--ink); }
 html[data-theme="dark"] :is(.button:not(.button--secondary):not(.button--ghost), .candidate-actions button.is-active, .map-presentation-toggle button[aria-pressed="true"], .is-selected .account-initials, .course-stage-nav button.is-active, .inspector-done, .elicitation-panel__chips button.is-active, .toast) { color: #101514; }
 html[data-theme="dark"] :is(.button--secondary, .button--ghost) { color: var(--ink); }
 html[data-theme="dark"] .button--secondary,
