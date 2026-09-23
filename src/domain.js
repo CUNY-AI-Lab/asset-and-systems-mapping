@@ -1539,7 +1539,7 @@ const SHARING_TIERS = ['private', 'course', 'CUNY', 'public'];
 const CANDIDATE_STATUSES = ['pending', 'confirmed', 'research lead', 'rejected'];
 const PREFLIGHT_REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
 const PREFLIGHT_REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
-const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter'];
+const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter', 'cail-gateway'];
 const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
   'evalCount', 'evalDurationNs',

@@ -1,3 +1,4 @@
+import { projectStorage } from './accountStorage.js';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapListView from './MapListView.jsx';
 import MapConnections from './MapConnections.jsx';
@@ -198,9 +199,9 @@ function technicalDiagnostic(error) {
 
 function loadProject() {
   try {
-    const current = window.localStorage.getItem(STORAGE_KEY);
+    const current = projectStorage().getItem(STORAGE_KEY);
     const legacyEntry = current === null
-      ? LEGACY_STORAGE_KEYS.map((key) => [key, window.localStorage.getItem(key)]).find(([, value]) => value !== null)
+      ? LEGACY_STORAGE_KEYS.map((key) => [key, projectStorage().getItem(key)]).find(([, value]) => value !== null)
       : null;
     const saved = current ?? legacyEntry?.[1] ?? null;
     const sourceKey = current !== null ? STORAGE_KEY : legacyEntry?.[0] ?? null;
@@ -210,7 +211,7 @@ function loadProject() {
     try {
       const parsedProject = parseProject(saved);
       return {
-        project: reconcileActiveProject(window.localStorage, parsedProject),
+        project: reconcileActiveProject(projectStorage(), parsedProject),
         loadError: null,
         recovery: null,
         hasSavedProject: true,
@@ -394,7 +395,7 @@ function carriedReviewConnections(project) {
     .map(({ source, target, verb }) => ({ source, target, verb }));
 }
 
-function preflightEvaluationPayload(project) {
+export function preflightEvaluationPayload(project) {
   const carriedNodes = carriedReviewNodes(project);
   const carriedConnections = carriedReviewConnections(project);
   return {
@@ -605,7 +606,7 @@ function normalizePreflightEvaluation(evaluation, project) {
   return preflight;
 }
 
-function createBlankProject() {
+export function createBlankProject() {
   const project = createDefaultProject();
   const nonce = globalThis.crypto?.randomUUID?.().replaceAll('-', '')
     || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -665,7 +666,7 @@ function LabLink() {
 
 function storedTheme() {
   try {
-    return window.localStorage?.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+    return projectStorage()?.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
   } catch {
     return 'light';
   }
@@ -1179,9 +1180,9 @@ function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef, defaul
 
 function suggestionRuntimeDescription(runtime, persistence, retentionDays) {
   const retention = Number.isInteger(retentionDays?.evaluation) ? ` The class server keeps each request for ${retentionDays.evaluation} ${retentionDays.evaluation === 1 ? 'day' : 'days'}.` : '';
-  const storage = ' Your project stays on this device unless you create a project link.';
-  if (runtime?.provider === 'ollama-cloud' || runtime?.provider === 'openrouter') {
-    const provider = runtime.provider === 'ollama-cloud' ? 'Ollama Cloud' : 'OpenRouter';
+  const storage = runtime?.provider === 'cail-gateway' ? ' Your map and memo are saved to your CUNY account, with a recovery copy in this browser.' : ' Your project stays on this device unless you create a project link.';
+  if (['ollama-cloud', 'openrouter', 'cail-gateway'].includes(runtime?.provider)) {
+    const provider = runtime.provider === 'cail-gateway' ? 'CAIL Gateway' : runtime.provider === 'ollama-cloud' ? 'Ollama Cloud' : 'OpenRouter';
     return `Generate guidance sends your memo and map framing to ${runtime.model || 'the configured model'} via ${provider}.${retention}${storage}`;
   }
   if (runtime?.provider === 'deterministic') return `Runs on the class server. Your memo goes to no outside model.${retention}${storage}`;
@@ -5342,11 +5343,11 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
   return next;
 }
 
-function App() {
+function App({ startInWorkspace = false, startInTeacher = false, onAccountDashboard, cloudSaveStatus, cloudError } = {}) {
   const [theme, setTheme] = useState(storedTheme);
   const [initialLoad] = useState(loadProject);
   const [project, setProject] = useState(initialLoad.project);
-  const [projectRecords, setProjectRecords] = useState(() => loadProjectLibrary(window.localStorage, initialLoad.project, initialLoad.hasSavedProject));
+  const [projectRecords, setProjectRecords] = useState(() => loadProjectLibrary(projectStorage(), initialLoad.project, initialLoad.hasSavedProject));
   const [modal, setModal] = useState(null);
   const [toastState, setToastState] = useState(null);
   const [passwordResetToken, setPasswordResetToken] = useState(() => {
@@ -5354,9 +5355,9 @@ function App() {
     const token = hash.get('teacher-reset');
     return typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
   });
-  const [teacherOpen, setTeacherOpen] = useState(() => passwordResetToken !== null);
+  const [teacherOpen, setTeacherOpen] = useState(() => startInTeacher || passwordResetToken !== null);
   const [accessState, setAccessState] = useState({ status: 'checking', access: null, message: 'Loading…', kind: 'info' });
-  const [workspaceStarted, setWorkspaceStarted] = useState(false);
+  const [workspaceStarted, setWorkspaceStarted] = useState(startInWorkspace);
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false);
   const [hasSavedProject, setHasSavedProject] = useState(initialLoad.hasSavedProject);
   const [persistenceBlocked, setPersistenceBlocked] = useState(initialLoad.persistenceBlocked);
@@ -5372,7 +5373,7 @@ function App() {
     diagnostic: initialLoad.diagnostic || null,
     savedRevision: 0,
   });
-  const [link, setLink] = useState(() => loadStoredLink(window.localStorage, initialLoad.project.id));
+  const [link, setLink] = useState(() => loadStoredLink(projectStorage(), initialLoad.project.id));
   const [linkStatus, setLinkStatus] = useState(() => projectLinkStatus(link));
   const [linkMessage, setLinkMessage] = useState(null);
   const toastTimer = useRef(null);
@@ -5385,6 +5386,8 @@ function App() {
   const pendingAnnotationsRef = useRef(new Map());
   const prototypeLogNoticeRef = useRef({ sequence: 0, lastFailure: 0 });
   const accessGenerationRef = useRef(0);
+  const modelRequestAbort = useRef(null);
+  useEffect(() => () => modelRequestAbort.current?.abort(), []);
   const projectRef = useRef(project);
   const connectionPromptRef = useRef(connectionPrompt);
   const workspaceRef = useRef(null);
@@ -5395,7 +5398,7 @@ function App() {
     document.documentElement.style.colorScheme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#141919' : '#ffffff');
     try {
-      window.localStorage?.setItem(THEME_STORAGE_KEY, theme);
+      projectStorage()?.setItem(THEME_STORAGE_KEY, theme);
     } catch {
       // The visual preference remains available for the current session.
     }
@@ -5511,7 +5514,7 @@ function App() {
       return false;
     }
     try {
-      const records = saveProjectToLibrary(window.localStorage, snapshot, projectRecordsRef.current, { makeActive: true });
+      const records = saveProjectToLibrary(projectStorage(), snapshot, projectRecordsRef.current, { makeActive: true });
       commitProjectRecords(records);
       setHasSavedProject(true);
       setSaveState((current) => ({ ...current, status: 'saved', message: 'Project saved on this device', diagnostic: null, savedRevision: (current.savedRevision || 0) + 1 }));
@@ -5558,7 +5561,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const onStorage = (event) => {
+    const onStorage = (rawEvent) => {
+      const prefix = projectStorage().prefix;
+      if (prefix && !rawEvent.key?.startsWith(prefix)) return;
+      const event = prefix ? { key: rawEvent.key.slice(prefix.length), newValue: rawEvent.newValue } : rawEvent;
       if (event.key === STORAGE_KEY && event.newValue) {
         try {
           const incoming = parseProject(event.newValue);
@@ -5567,7 +5573,7 @@ function App() {
             projectRef.current = incoming;
             setProject(incoming);
           }
-          commitProjectRecords(loadProjectLibrary(window.localStorage, projectRef.current, true));
+          commitProjectRecords(loadProjectLibrary(projectStorage(), projectRef.current, true));
         } catch {
           setPersistenceBlocked(true);
           setSaveState((current) => ({ ...current, status: 'error', message: 'Another browser session wrote an invalid project. The current workspace was preserved.', recovery: event.newValue }));
@@ -5575,12 +5581,12 @@ function App() {
         return;
       }
       if (event.key === PROJECT_LIBRARY_KEY || event.key?.startsWith(PROJECT_BODY_PREFIX)) {
-        const reconciled = reconcileActiveProject(window.localStorage, projectRef.current);
+        const reconciled = reconcileActiveProject(projectStorage(), projectRef.current);
         if (reconciled !== projectRef.current) {
           projectRef.current = reconciled;
           setProject(reconciled);
         }
-        commitProjectRecords(loadProjectLibrary(window.localStorage, reconciled, true));
+        commitProjectRecords(loadProjectLibrary(projectStorage(), reconciled, true));
       }
     };
     window.addEventListener('storage', onStorage);
@@ -5689,6 +5695,7 @@ function App() {
   };
 
   const handleReviewApiError = async (error, accessGeneration, retryLabel = 'memo-guidance request') => {
+    if (error instanceof ApiError && error.payload?.details?.code) return toast(error.message, 'error');
     if (error instanceof ApiError && error.status === 401 && accessGeneration === accessGenerationRef.current) {
       try {
         const session = await getStudentSession();
@@ -5734,7 +5741,7 @@ function App() {
       return;
     }
     const runtime = accessState.access?.suggestionRuntime;
-    const hostedModelRuntime = runtime?.provider === 'ollama-cloud' || runtime?.provider === 'openrouter';
+    const hostedModelRuntime = ['ollama-cloud', 'openrouter', 'cail-gateway'].includes(runtime?.provider);
     if (hostedModelRuntime && encoder.encode(payload.inquiry).byteLength > MAX_EVALUATION_INQUIRY_BYTES) {
       toast('The guiding inquiry is too large to send. Shorten it and try again.', 'error');
       return;
@@ -5749,9 +5756,12 @@ function App() {
     }
     const accessGeneration = accessGenerationRef.current;
     const requestKey = authoritativeEvaluationKey(project);
+    modelRequestAbort.current?.abort();
+    const controller = new AbortController();
+    modelRequestAbort.current = controller;
     setReviewBusy('evaluating');
     try {
-      const response = await createPreflightEvaluation(payload);
+      const response = await createPreflightEvaluation(payload, { signal: controller.signal });
       if (!response || !Object.hasOwn(response, 'evaluation')) throw new Error('The server returned guidance in an unexpected format. Generate the guidance again.');
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
       if (authoritativeEvaluationKey(projectRef.current) !== requestKey) {
@@ -5767,6 +5777,7 @@ function App() {
       toast('Guidance is ready.');
       return true;
     } catch (error) {
+      if (controller.signal.aborted) return false;
       await handleReviewApiError(error, accessGeneration, 'guidance request');
       return false;
     } finally {
@@ -5785,9 +5796,12 @@ function App() {
     }
     const accessGeneration = accessGenerationRef.current;
     const requestKey = stableId('connection-request', JSON.stringify(payload));
+    modelRequestAbort.current?.abort();
+    const controller = new AbortController();
+    modelRequestAbort.current = controller;
     setConnectionBusy(true);
     try {
-      const response = await suggestMapConnections(payload);
+      const response = await suggestMapConnections(payload, { signal: controller.signal });
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
       if (stableId('connection-request', JSON.stringify(connectionSuggestionPayload(projectRef.current, connectionPromptRef.current.trim() || memoPromptExcerpt(projectRef.current.submission.text)))) !== requestKey) {
         toast('The nodes or description changed while suggestions were being prepared. Request them again.', 'error');
@@ -5797,6 +5811,7 @@ function App() {
       setConnectionSuggestions(normalized);
       toast(normalized.length ? 'Connections are ready for your review.' : 'No connections were suggested. Add more detail and try again.');
     } catch (error) {
+      if (controller.signal.aborted) return;
       await handleReviewApiError(error, accessGeneration, 'connection request');
     } finally {
       if (accessGeneration === accessGenerationRef.current) setConnectionBusy(false);
@@ -6350,7 +6365,7 @@ function App() {
     ];
     let records;
     try {
-      records = saveProjectToLibrary(window.localStorage, restarted, previous.records, { makeActive: true });
+      records = saveProjectToLibrary(projectStorage(), restarted, previous.records, { makeActive: true });
     } catch (error) {
       setPersistenceBlocked(true);
       setSaveState((current) => ({
@@ -6422,10 +6437,10 @@ function App() {
     setPendingNewProject(false);
     setModal(null);
     setSaveState((current) => ({ ...current, status: 'saved', message: 'Project saved on this device', savedRevision: (current.savedRevision || 0) + 1 }));
-    const nextLink = loadStoredLink(window.localStorage, next.id);
+    const nextLink = loadStoredLink(projectStorage(), next.id);
     linkRef.current = nextLink;
     setLink(nextLink);
-    mirrorActiveLink(window.localStorage, nextLink);
+    mirrorActiveLink(projectStorage(), nextLink);
     setLinkStatus(projectLinkStatus(nextLink));
     setLinkMessage(null);
     const pathToken = urlLinkToken();
@@ -6439,8 +6454,8 @@ function App() {
     const snapshot = committed.project;
     if (!hasSavedProject && !workspaceStarted) return { snapshot, records: projectRecordsRef.current };
     try {
-      const records = saveProjectToLibrary(window.localStorage, snapshot, projectRecordsRef.current);
-      if (linkRef.current?.projectId === snapshot.id) rememberStoredLink(window.localStorage, linkRef.current);
+      const records = saveProjectToLibrary(projectStorage(), snapshot, projectRecordsRef.current);
+      if (linkRef.current?.projectId === snapshot.id) rememberStoredLink(projectStorage(), linkRef.current);
       commitProjectRecords(records);
       setHasSavedProject(true);
       return { snapshot, records };
@@ -6449,14 +6464,14 @@ function App() {
         serializeProject(snapshot);
       } catch (validationError) {
         if (allowSavedFallback && hasSavedProject) {
-          const durableProject = loadDurableProject(window.localStorage, snapshot.id);
+          const durableProject = loadDurableProject(projectStorage(), snapshot.id);
           if (durableProject) {
             try {
-              const records = saveProjectToLibrary(window.localStorage, durableProject, projectRecordsRef.current);
+              const records = saveProjectToLibrary(projectStorage(), durableProject, projectRecordsRef.current);
               let recovery = null;
               try {
                 recovery = JSON.stringify(snapshot);
-                window.localStorage.setItem(`systems-mapping-studio.recovery.${Date.now()}`, recovery);
+                projectStorage().setItem(`systems-mapping-studio.recovery.${Date.now()}`, recovery);
               } catch {
                 // The last valid project is still preserved even if the invalid draft cannot be copied.
               }
@@ -6497,7 +6512,7 @@ function App() {
     if (!previous) return false;
     let records;
     try {
-      records = saveProjectToLibrary(window.localStorage, next, previous.records, { makeActive: true });
+      records = saveProjectToLibrary(projectStorage(), next, previous.records, { makeActive: true });
     } catch (error) {
       setPersistenceBlocked(true);
       setSaveState((current) => ({
@@ -6531,7 +6546,7 @@ function App() {
         const remote = await fetchProjectLink(activeLink.token);
         if (remote.project !== serialized) {
           const conflictedLink = mergeProjectLinkMetadata(activeLink, remote);
-          rememberStoredLink(window.localStorage, conflictedLink);
+          rememberStoredLink(projectStorage(), conflictedLink);
           linkRef.current = conflictedLink;
           setLink(conflictedLink);
           setLinkStatus('conflict');
@@ -6539,7 +6554,7 @@ function App() {
           return false;
         }
         const reconciledLink = mergeProjectLinkMetadata(activeLink, { ...remote, lastSyncedAt: remote.updatedAt || Date.now() });
-        rememberStoredLink(window.localStorage, reconciledLink);
+        rememberStoredLink(projectStorage(), reconciledLink);
         linkRef.current = reconciledLink;
         setLink(reconciledLink);
         setLinkStatus('synced');
@@ -6549,7 +6564,7 @@ function App() {
       const result = await updateProjectLink(activeLink.token, serialized, activeLink.revision);
       if (linkRef.current?.token !== activeLink.token || projectRef.current.id !== snapshot.id) return false;
       const syncedLink = mergeProjectLinkMetadata(activeLink, { ...result, lastSyncedAt: result.updatedAt || Date.now() });
-      rememberStoredLink(window.localStorage, syncedLink);
+      rememberStoredLink(projectStorage(), syncedLink);
       linkRef.current = syncedLink;
       setLink(syncedLink);
       setLinkStatus('synced');
@@ -6593,11 +6608,11 @@ function App() {
         ...result,
         lastSyncedAt: result.updatedAt || Date.now(),
       });
-      rememberStoredLink(window.localStorage, nextLink);
+      rememberStoredLink(projectStorage(), nextLink);
       const local = projectRef.current;
       if (local.id !== incoming.id || Date.parse(incoming.updatedAt || 0) > Date.parse(local.updatedAt || 0)) {
         if (!replaceProject(incoming, 'Project link')) {
-          const currentLink = loadStoredLink(window.localStorage, projectRef.current.id);
+          const currentLink = loadStoredLink(projectStorage(), projectRef.current.id);
           linkRef.current = currentLink;
           setLink(currentLink);
           setLinkStatus('error');
@@ -6607,7 +6622,7 @@ function App() {
       } else {
         setLink(nextLink);
         linkRef.current = nextLink;
-        mirrorActiveLink(window.localStorage, nextLink);
+        mirrorActiveLink(projectStorage(), nextLink);
       }
       setHasSavedProject(true);
       setLinkStatus('synced');
@@ -6645,7 +6660,7 @@ function App() {
         ...result,
         lastSyncedAt: result.updatedAt || Date.now(),
       });
-      rememberStoredLink(window.localStorage, nextLink);
+      rememberStoredLink(projectStorage(), nextLink);
       if (projectRef.current.id !== snapshot.id) return;
       setLink(nextLink);
       linkRef.current = nextLink;
@@ -6670,7 +6685,7 @@ function App() {
     current.updatedAt = new Date().toISOString();
     current.events = [...(current.events || []), createEvent('project.copied', 'Preserved before loading a different linked revision')].slice(-500);
     try {
-      const records = saveProjectToLibrary(window.localStorage, current, projectRecordsRef.current);
+      const records = saveProjectToLibrary(projectStorage(), current, projectRecordsRef.current);
       commitProjectRecords(records);
       return true;
     } catch (error) {
@@ -6700,7 +6715,7 @@ function App() {
       if (!archiveDeviceCopyBeforeLinkReload()) return;
       if (!replaceProject(incoming, 'Linked version chosen after a sync conflict')) return;
       const nextLink = mergeProjectLinkMetadata(activeLink, { ...result, lastSyncedAt: result.updatedAt || Date.now() });
-      rememberStoredLink(window.localStorage, nextLink);
+      rememberStoredLink(projectStorage(), nextLink);
       linkRef.current = nextLink;
       setLink(nextLink);
       setLinkStatus('synced');
@@ -6716,8 +6731,8 @@ function App() {
 
   const createNewLinkForDeviceCopy = useCallback(async () => {
     const activeLink = linkRef.current;
-    if (activeLink) forgetStoredLink(window.localStorage, activeLink.projectId);
-    mirrorActiveLink(window.localStorage, null);
+    if (activeLink) forgetStoredLink(projectStorage(), activeLink.projectId);
+    mirrorActiveLink(projectStorage(), null);
     linkRef.current = null;
     setLink(null);
     setLinkStatus('idle');
@@ -6733,7 +6748,7 @@ function App() {
     try {
       const result = await revokeProjectLink(activeLink.token, activeLink.revision);
       const revokedLink = mergeProjectLinkMetadata(activeLink, result);
-      rememberStoredLink(window.localStorage, revokedLink);
+      rememberStoredLink(projectStorage(), revokedLink);
       linkRef.current = revokedLink;
       setLink(revokedLink);
       setLinkStatus('revoked');
@@ -6753,8 +6768,8 @@ function App() {
     setLinkStatus('syncing');
     try {
       await deleteProjectLink(activeLink.token, activeLink.revision);
-      forgetStoredLink(window.localStorage, activeLink.projectId);
-      mirrorActiveLink(window.localStorage, null);
+      forgetStoredLink(projectStorage(), activeLink.projectId);
+      mirrorActiveLink(projectStorage(), null);
       linkRef.current = null;
       setLink(null);
       setLinkStatus('idle');
@@ -6852,7 +6867,7 @@ function App() {
     const blank = createBlankProject();
     let records;
     try {
-      records = saveProjectToLibrary(window.localStorage, blank, previous.records, { makeActive: true });
+      records = saveProjectToLibrary(projectStorage(), blank, previous.records, { makeActive: true });
     } catch (error) {
       setPersistenceBlocked(true);
       setSaveState((current) => ({
@@ -6876,15 +6891,15 @@ function App() {
     let target;
     try {
       target = record.id === projectRef.current.id
-        ? reconcileActiveProject(window.localStorage, projectRef.current)
-        : loadLibraryProject(window.localStorage, record);
+        ? reconcileActiveProject(projectStorage(), projectRef.current)
+        : loadLibraryProject(projectStorage(), record);
     } catch {
       toast('The selected project could not be opened safely. Its saved copy was left unchanged.', 'error');
       return;
     }
     if (record.id === projectRef.current.id) {
       try {
-        const records = saveProjectToLibrary(window.localStorage, target, projectRecordsRef.current, { makeActive: true });
+        const records = saveProjectToLibrary(projectStorage(), target, projectRecordsRef.current, { makeActive: true });
         activateProject(target, records);
       } catch (error) {
         // The existing singleton is already the durable copy. Let the student
@@ -6906,7 +6921,7 @@ function App() {
     if (!previous) return;
     let records;
     try {
-      records = saveProjectToLibrary(window.localStorage, target, previous.records, { makeActive: true });
+      records = saveProjectToLibrary(projectStorage(), target, previous.records, { makeActive: true });
     } catch (error) {
       setPersistenceBlocked(true);
       setSaveState((current) => ({
@@ -6945,7 +6960,7 @@ function App() {
     try {
       if (saveState.recovery) {
         const recoveryKey = `systems-mapping-studio.recovery.${Date.now()}`;
-        window.localStorage.setItem(recoveryKey, saveState.recovery);
+        projectStorage().setItem(recoveryKey, saveState.recovery);
       }
       setPersistenceBlocked(false);
       setSaveState((current) => ({ ...current, status: 'saving', message: 'Trying to save…', recovery: saveState.recovery }));
@@ -6987,10 +7002,10 @@ function App() {
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Teacher Console home"><strong>Systems Mapping</strong><small>Teacher Console</small></a></div>
-      <div className="header-actions"><ThemeToggle dark={dark} onToggle={toggleTheme} /><button className="text-button" type="button" onClick={() => setTeacherOpen(false)}><Icon name="back" />Back to class access</button></div>
+      <div className="header-actions"><ThemeToggle dark={dark} onToggle={toggleTheme} /><button className="text-button" type="button" onClick={() => onAccountDashboard ? void onAccountDashboard() : setTeacherOpen(false)}><Icon name="back" />{onAccountDashboard ? 'Dashboard' : 'Back to class access'}</button></div>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
-      <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} /></Suspense>
+      <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} institutionalMode={Boolean(onAccountDashboard)} /></Suspense>
     </main>
   </div>;
 
@@ -7006,14 +7021,16 @@ function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
+      <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); if (onAccountDashboard) { void onAccountDashboard(); return; } flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><strong>Systems Mapping</strong><small>{project.title}</small></a></div>
       <div className="header-actions">
+        {onAccountDashboard && <span className="account-save" role="status" title={cloudSaveStatus}>{cloudSaveStatus === 'Saved to your account' ? 'Account saved' : cloudSaveStatus}</span>}
+        {(reviewBusy || connectionBusy) && <button className="text-button" type="button" aria-label="Cancel model request" onClick={() => { modelRequestAbort.current?.abort(); toast('Model request cancelled. Your map is unchanged.'); }}><Icon name="close" />Cancel model request</button>}
         {saveState.status === 'error' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('storage')}><i />Save needs attention</button> : saveState.status === 'validation' ? <button className="save-state save-state--error" type="button" onClick={() => setModal('validation')}><i />Save needs attention</button> : saveState.status === 'saving' ? <span className="save-state"><i />Saving…</span> : null}
-        <button className="text-button" type="button" onClick={() => { flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />Projects</button><button className="text-button" type="button" aria-label={`Work at level: ${SCALES[project.activeScale].label}`} title="Work at level" onClick={() => setModal('work-level')}>{SCALES[project.activeScale].label}</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" aria-label="Project link" title="Copy or manage the project link" onClick={() => setModal('project-link')}><Icon name="link" />Link</button><button className="text-button" type="button" aria-label={`Progress: ${SCALES[project.activeScale].label}, ${STAGES[project.stage].short}`} title="Progress and stages" onClick={() => setModal('stages')}><Icon name="menu" />Progress</button><ThemeToggle dark={dark} onToggle={toggleTheme} />
+        <button className="text-button" type="button" onClick={() => { if (onAccountDashboard) { void onAccountDashboard(); return; } flushPersistence(); setMapPreviewOpen(false); setWorkspaceStarted(false); }}><Icon name="back" />{onAccountDashboard ? 'Dashboard' : 'Projects'}</button><button className="text-button" type="button" aria-label={`Work at level: ${SCALES[project.activeScale].label}`} title="Work at level" onClick={() => setModal('work-level')}>{SCALES[project.activeScale].label}</button><button className="text-button" type="button" aria-current={!mapPreviewOpen && project.stage === 3 ? 'page' : undefined} aria-label={mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'} onClick={mapPreviewOpen ? returnFromMapPreview : openMapPreview}><Icon name={mapPreviewOpen ? 'back' : 'map'} />{mapPreviewOpen ? `Back to ${STAGES[project.stage].short}` : 'Map'}</button><button className="text-button" type="button" aria-label="Project link" title="Copy or manage the project link" onClick={() => setModal('project-link')}><Icon name="link" />Link</button><button className="text-button" type="button" aria-label={`Progress: ${SCALES[project.activeScale].label}, ${STAGES[project.stage].short}`} title="Progress and stages" onClick={() => setModal('stages')}><Icon name="menu" />Progress</button><ThemeToggle dark={dark} onToggle={toggleTheme} />
       </div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
-    <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}`}>{screen}</main>
+    <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}`}>{cloudError && <p className="account-error" role="alert">{cloudError}</p>}{screen}</main>
     <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><span className="step-position">Step {project.stage + 1} of {STAGES.length}</span><strong>{STAGES[project.stage].label}</strong></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></>}</footer>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>

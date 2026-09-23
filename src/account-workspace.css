@@ -1,0 +1,8 @@
+.account-workspace{width:min(960px,100% - 40px);margin:8vh auto;padding-bottom:40px;color:var(--ink)}
+.account-workspace h1{font-size:clamp(2rem,5vw,3.5rem);margin:0 0 1rem}.account-workspace h2{margin-top:2rem}
+.account-actions{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}.account-actions form{margin:0}
+.account-projects{padding:0;list-style:none}.account-projects li{display:flex;align-items:center;justify-content:space-between;gap:1rem;border:1px solid var(--line);padding:1rem;margin-bottom:.75rem;background:var(--surface)}
+.account-projects h3{margin:0;overflow-wrap:anywhere}.account-projects p{margin:.5rem 0 0}.account-error{padding:1rem;border:2px solid currentColor;background:var(--surface);color:var(--ink)}
+@media(max-width:500px){.account-projects li{align-items:stretch;flex-direction:column}}
+.account-save{font-size:.75rem;max-width:10rem;line-height:1.2;color:var(--muted)}
+@media(max-width:900px){.account-save{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
