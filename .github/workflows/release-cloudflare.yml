@@ -1,0 +1,67 @@
+name: Release Cloudflare version
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full current main commit to release
+        type: string
+        required: true
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: systems-mapping-cloudflare-release
+  cancel-in-progress: false
+jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the exact current main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.commit }}
+          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
+        run: |
+          test "$RUN_REF" = refs/heads/main
+          [[ "$REQUESTED" =~ ^[0-9a-f]{40}$ ]]
+          test "$REQUESTED" = "$RUN_SHA"
+          test "$REQUESTED" = "$(gh api repos/CUNY-AI-Lab/systems-mapping/commits/main --jq .sha)"
+  checks:
+    needs: verify-source
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: cloudflare
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 11.16.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          registry-url: https://npm.pkg.github.com
+          scope: '@cuny-ai-lab'
+      - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm build:cloudflare
+      - name: Deploy the checked source and verify its readiness marker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.commit }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test "$RELEASE_SHA" = "$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+          test "$RELEASE_SHA" = "$(gh api repos/CUNY-AI-Lab/systems-mapping/commits/main --jq .sha)"
+          pnpm exec wrangler deploy --var "RELEASE:$RELEASE_SHA"
+          node scripts/verify-cloudflare-release.mjs "$RELEASE_SHA"
+          pnpm exec wrangler deployments list --name systems-mapping

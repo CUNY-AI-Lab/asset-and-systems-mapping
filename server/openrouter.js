@@ -135,7 +135,7 @@ function resolveDependencies(config, testOnly) {
   return { fetchImpl, baseUrl };
 }
 
-function parseProviderEnvelope(body, requestedModel) {
+export function parseProviderEnvelope(body, requestedModel) {
   let envelope;
   try {
     envelope = JSON.parse(body);

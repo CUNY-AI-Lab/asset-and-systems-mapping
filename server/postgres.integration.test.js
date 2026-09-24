@@ -910,6 +910,8 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       await createLegacyV8Schema(databaseUrl, schema, fixture);
       legacySystem = createSystemsMappingApp({
         databaseUrl: scopedDatabaseUrl,
+        // Keep the migration fixture live; retention is tested separately.
+        now: () => fixture.createdAt + 60_000,
         hostedMode: false,
         postgres: { maxConnections: 2 },
       });
@@ -1028,6 +1030,8 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
 
       reopened = createSystemsMappingApp({
         databaseUrl: scopedDatabaseUrl,
+        // Keep the migration fixture live; retention is tested separately.
+        now: () => fixture.createdAt + 60_000,
         hostedMode: false,
         postgres: { maxConnections: 2 },
       });

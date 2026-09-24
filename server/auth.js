@@ -204,6 +204,7 @@ export async function clearStudentSession(context, db, secure = false) {
 }
 
 export async function currentTeacherSession(context, db, now = Date.now) {
+  if (context.env?.verifiedAccount) return context.env.verifiedAccount.teacherSession;
   const token = getCookie(context, TEACHER_SESSION_COOKIE);
   if (!token) return null;
   const tokenHash = hashSessionToken(token);
@@ -226,6 +227,7 @@ export async function currentTeacherSession(context, db, now = Date.now) {
 }
 
 export async function currentStudentSession(context, db, now = Date.now) {
+  if (context.env?.verifiedAccount) return context.env.verifiedAccount.studentSession;
   const token = getCookie(context, STUDENT_SESSION_COOKIE);
   if (!token) return null;
   const tokenHash = hashSessionToken(token);

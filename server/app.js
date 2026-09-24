@@ -1318,7 +1318,7 @@ const OLLAMA_RUNTIME_INTEGER_FIELDS = Object.freeze([
   'evalCount', 'evalDurationNs',
 ]);
 
-const MODEL_SUGGESTION_PROVIDERS = new Set(['ollama-cloud', 'openrouter']);
+const MODEL_SUGGESTION_PROVIDERS = new Set(['ollama-cloud', 'openrouter', 'cail-gateway']);
 
 function authoritativeRuntimeMetadata(value, { provider, model, createdAt }) {
   if (!isPlainObject(value)) value = {};
@@ -2492,7 +2492,8 @@ export function createSystemsMappingApp(options = {}) {
       return context.json({ error: error.message, ...(error.details ? { details: error.details } : {}) }, error.status);
     }
     // Request bodies, secrets, SQL parameters, and stack traces are deliberately omitted.
-    console.error('Systems Mapping request failed with an internal error.');
+    if (options.onInternalError) options.onInternalError(context);
+    else console.error('Systems Mapping request failed with an internal error.');
     return context.json({ error: 'Internal server error.' }, 500);
   });
 
@@ -2782,12 +2783,12 @@ export function createSystemsMappingApp(options = {}) {
             ...(input.activeScale === 'meso' || input.carriedNodes.length ? { carriedNodes: input.carriedNodes } : {}),
             ...(input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
           };
-          let generated = await ollamaRequest(providerInput, ollamaConfig);
+          let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
           let review;
           try {
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
           } catch (error) {
-            if (!(error instanceof MemoReviewSemanticError)) throw error;
+            if (!(error instanceof MemoReviewSemanticError) || suggestionProvider === 'cail-gateway') throw error;
             generated = await ollamaRequest({
               ...providerInput,
               systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}`,
@@ -2806,6 +2807,10 @@ export function createSystemsMappingApp(options = {}) {
             createdAt,
           });
         } catch (error) {
+          if (options.suggestionFailure) {
+            const safe = options.suggestionFailure(error, context);
+            throw new HttpError(safe.status, safe.message, safe.details);
+          }
           // Code-only server log; provider bodies and memo content never land in logs.
           console.warn(
             'memo review generation failed:',
@@ -2916,10 +2921,11 @@ export function createSystemsMappingApp(options = {}) {
           }
           return proposed;
         };
-        let generated = await ollamaRequest(providerInput, ollamaConfig);
+        let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
         try {
           connections = validateWholeResponse(generated.suggestion);
         } catch (error) {
+          if (suggestionProvider === 'cail-gateway') throw error;
           generated = await ollamaRequest({
             ...providerInput,
             systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\nReturn one complete replacement JSON object. Do not patch, explain, filter, or reuse any part of the rejected response. Every relationship must use exact supplied node IDs, must be new, and must satisfy the active-scale contract.\nValidation failure: ${error.message}`,
@@ -2927,6 +2933,10 @@ export function createSystemsMappingApp(options = {}) {
           connections = validateWholeResponse(generated.suggestion);
         }
       } catch (error) {
+        if (options.suggestionFailure) {
+          const safe = options.suggestionFailure(error, context);
+          throw new HttpError(safe.status, safe.message, safe.details);
+        }
         console.warn('connection suggestion generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
         throw new HttpError(502, 'Connection suggestions are temporarily unavailable.');
       }

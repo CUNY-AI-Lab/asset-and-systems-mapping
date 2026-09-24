@@ -6,6 +6,12 @@ Systems Mapping helps students turn a place-based inquiry into an evidence-infor
 
 The prototype combines a guided student workspace with a Teacher Console for course guidance and materials. Model assistance is optional: students decide which suggestions belong on the map and can complete every stage through their own reading and analysis. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
 
+A separate [Cloudflare version](./docs/cloudflare-deployment.md) adds CUNY Login,
+private account maps, browser recovery copies, and CAIL Gateway model requests.
+It shares the existing map and teaching workflows, with independent storage.
+The Node/Railway version and its saved data remain in place. Source checks and
+release acceptance are recorded [separately](./docs/CLOUDFLARE_ACCEPTANCE_2026-09-23.md).
+
 ## Learning model
 
 The course develops one inquiry through two Parts. Each level adds a distinct form of analysis while retaining earlier work by stable reference.
@@ -75,6 +81,11 @@ The application prevents removal or reclassification of an element while another
 
 Projects save to browser `localStorage`, including the memo, candidates, graph, evidence, annotations, per-level progress, layout, and viewport. This storage belongs to the current browser and device. A classroom server does not provide automatic synchronization of the student project. Export JSON to keep a portable backup or move work to another browser.
 
+In the Cloudflare version, projects also save to the signed-in account using
+optimistic revisions. An unsynced browser copy is preserved when a save fails
+or another session changes the map. Explicit project links keep their existing
+sharing, expiry, and revocation behavior and reopen after CUNY sign-in.
+
 **Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
 
 - **JSON** preserves a reopenable project with stable IDs and layout, subject to the selected audience's redactions. Import validates the file before replacing the open project.
@@ -86,6 +97,10 @@ Exports include the cumulative graph across levels. Portable copies remove evalu
 ## Run locally
 
 Requirements: **Node.js 22.5 or newer** and **pnpm 11**. The repository pins pnpm in `package.json`.
+
+Installation requires read access to the pinned `@cuny-ai-lab` packages on
+GitHub Packages. Configure that scope and an installation token outside the
+repository; never commit the token. CI uses its workflow token during installation.
 
 ```bash
 pnpm install --frozen-lockfile

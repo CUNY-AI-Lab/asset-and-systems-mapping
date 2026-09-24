@@ -20,9 +20,13 @@
     "test:e2e": "pnpm build && playwright test",
     "test:a11y": "pnpm build && playwright test tests/e2e/accessibility.spec.js",
     "test:e2e:headed": "pnpm build && playwright test --headed",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:cloudflare": "VITE_ACCOUNT_WORKSPACE=true vite build --outDir dist-cloudflare",
+    "typecheck:cloudflare": "tsc -p cloudflare/tsconfig.json",
+    "check:cloudflare": "pnpm typecheck:cloudflare && pnpm build:cloudflare && wrangler deploy --dry-run --outdir .wrangler/dry-run"
   },
   "dependencies": {
+    "@cuny-ai-lab/cail-identity": "5.2.6",
     "@fontsource-variable/source-sans-3": "^5.3.0",
     "@fontsource-variable/source-serif-4": "^5.3.0",
     "@hono/node-server": "2.1.0",
@@ -32,14 +36,20 @@
     "pg": "^8.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "vite": "8.2.1"
+    "vite": "8.2.1",
+    "@cuny-ai-lab/cail-client": "6.2.2",
+    "@cuny-ai-lab/cail-log": "0.6.4"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
+    "@cloudflare/workers-types": "^5.20260907.1",
     "@playwright/test": "1.62.1",
     "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "16.3.2",
+    "@types/node": "^26.5.0",
     "jsdom": "30.0.1",
-    "vitest": "4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.130.0"
   }
 }

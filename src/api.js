@@ -1,3 +1,4 @@
+import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
 export class ApiError extends Error {
   constructor(message, status, payload = null) {
     super(message);
@@ -12,12 +13,18 @@ export async function apiRequest(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...requestOptions,
-    headers: body ? { 'Content-Type': 'application/json', ...(suppliedHeaders || {}) } : suppliedHeaders,
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(projectStorage()?.cacheKey ? { 'x-systems-account-cache': projectStorage().cacheKey } : {}), ...(suppliedHeaders || {}) },
     body: body && typeof body !== 'string' ? JSON.stringify(body) : body,
   });
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : null;
-  if (!response.ok) throw new ApiError(payload?.error || `Request failed (${response.status})`, response.status, payload);
+  if (!response.ok) {
+    const requestId = payload?.details?.requestId;
+    const support = typeof requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId) ? ` Support ID: ${requestId}` : '';
+    if (response.status === 401 && projectStorage()?.prefix && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl());
+    throw new ApiError((payload?.error || `Request failed (${response.status})`) + support, response.status, payload);
+  }
   return payload;
 }
 
@@ -42,12 +49,12 @@ export function endStudentAccess() {
   return apiRequest('/api/student/logout', { method: 'POST' });
 }
 
-export function createPreflightEvaluation(payload) {
-  return apiRequest('/api/preflight/evaluations', { method: 'POST', body: payload });
+export function createPreflightEvaluation(payload, options = {}) {
+  return apiRequest('/api/preflight/evaluations', { ...options, method: 'POST', body: payload });
 }
 
-export function suggestMapConnections(payload) {
-  return apiRequest('/api/map/connections', { method: 'POST', body: payload });
+export function suggestMapConnections(payload, options = {}) {
+  return apiRequest('/api/map/connections', { ...options, method: 'POST', body: payload });
 }
 
 export function createProjectLink(project) {

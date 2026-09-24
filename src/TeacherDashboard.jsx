@@ -102,7 +102,7 @@ function runtimeEffect(runtime, stageId, scale) {
       detail: stageUse.inactiveDetail,
     };
   }
-  if (runtime?.provider === 'ollama-cloud' || runtime?.provider === 'openrouter') {
+  if (['ollama-cloud', 'openrouter', 'cail-gateway'].includes(runtime?.provider)) {
     return {
       label: 'Model guidance is active.',
       detail: stageUse.activeDetail,
@@ -745,7 +745,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
   </section>;
 }
 
-function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged }) {
+function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, institutionalMode = false }) {
   const [section, setSection] = useState('reviews');
   const [guidanceVisited, setGuidanceVisited] = useState(false);
   const sectionTabRefs = useRef(new Map());
@@ -762,34 +762,36 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged }) {
     sectionTabRefs.current.get(next.id)?.focus();
   };
   return <div className="teacher-dashboard">
-    <div className="teacher-dashboard__title"><div><p className="eyebrow">Instructor tools</p><h1>Teacher Console</h1><p className="lede">Manage course settings and any review records already available.</p></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong><button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button></div></div>
+    <div className="teacher-dashboard__title"><div><p className="eyebrow">Instructor tools</p><h1>Teacher Console</h1><p className="lede">Manage course settings and any review records already available.</p></div><div className="teacher-session"><span>Signed in as</span><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div></div>
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
   </div>;
 }
 
-export default function TeacherDashboard({ onConfigurationChanged, resetToken = null, onResetComplete = () => {} }) {
+export default function TeacherDashboard({ onConfigurationChanged, resetToken = null, onResetComplete = () => {}, institutionalMode = false }) {
   const [teacherAccess, setTeacherAccess] = useState({ mode: 'manual', claimEnabled: false });
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState(null);
   const refreshAccess = async () => {
+    if (institutionalMode) return { mode: 'institutional', claimEnabled: false };
     const result = await apiRequest('/api/auth/accounts');
     setTeacherAccess(result.teacherAccess);
     return result.teacherAccess;
   };
   useEffect(() => {
     Promise.all([refreshAccess(), apiRequest('/api/auth/me')]).then(([, result]) => setUser(result.user)).catch((error) => setFatal(error.message)).finally(() => setLoading(false));
-  }, []);
+  }, [institutionalMode]);
   const authenticated = (nextUser) => setUser(nextUser);
   const logout = async () => {
     await apiRequest('/api/auth/logout', { method: 'POST' });
     setUser(null);
     await refreshAccess();
   };
-  if (resetToken) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
+  if (resetToken && !institutionalMode) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
   if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Teacher Console…</p></div>;
   if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Teacher Console unavailable</h1><p className="lede">Check the course server, then reopen the Teacher Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
-  return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
+  if (!user && institutionalMode) return <div className="teacher-access"><h1>Instructor access required</h1><p className="lede">The Teacher Console requires current CUNY instructor access.</p><a className="button" href="/auth/start">CUNY Login</a></div>;
+  return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} institutionalMode={institutionalMode} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
 }

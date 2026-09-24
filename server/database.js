@@ -15,7 +15,6 @@ import {
   STUDENT_WORKFLOW_EVALUATION_EVENT,
 } from '../shared/student-workflow-evaluation.js';
 
-const require = createRequire(import.meta.url);
 
 const ACCOUNT_SEEDS = [
   { id: 'zach-muhlbauer', displayName: 'Zach Muhlbauer' },
@@ -155,6 +154,7 @@ function runSqliteSavepoint(db, state, callback) {
 }
 
 export function openDatabase(dbPath = 'data/systems-mapping.sqlite') {
+  const require = createRequire(import.meta.url);
   const { DatabaseSync } = require('node:sqlite');
   const resolvedPath = dbPath === ':memory:' ? dbPath : resolve(dbPath);
   if (resolvedPath !== ':memory:') mkdirSync(dirname(resolvedPath), { recursive: true, mode: 0o700 });
@@ -1017,11 +1017,19 @@ function seed(db) {
 }
 
 export function inTransaction(db, callback) {
+  if (db.dialect === 'durable-sqlite') return db.transaction(callback);
   if (db.dialect === 'postgres') return db.transaction(callback);
   const state = sqliteTransactionState(db);
   if (state.storage.getStore()?.db === db) return runSqliteSavepoint(db, state, callback);
   if (!state.active) return runSqliteTopLevelTransaction(db, state, callback);
   return new Promise((resolve, reject) => state.queue.push({ callback, resolve, reject }));
+}
+
+// Used only by the separate Cloudflare entrypoint. Node/Railway keep their
+// existing database initialization and transaction implementation.
+export function initializeDurableDatabase(db) {
+  migrate(db);
+  seed(db);
 }
 
 export function assertDatabaseIntegrity(db) {

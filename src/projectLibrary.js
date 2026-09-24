@@ -230,6 +230,7 @@ export function saveProjectToLibrary(storage, project, records, { makeActive = f
     nextRecords = upsertRecord(nextRecords, summarizeProject(project));
     writeLibraryIndex(storage, nextRecords, currentIndex.activeProjectId || activeStored?.project.id || null);
   }
+  storage.onProjectSaved?.(project);
   return nextRecords;
 }
 
