@@ -7,6 +7,7 @@ import {
   LEGACY_DEFAULT_MODULE_FINGERPRINTS,
   moduleSeeds,
   teachingProfileFingerprint,
+  teachingProfileShape,
   upgradeSystemsMappingTeachingProfile,
 } from './config.js';
 import { openPostgresDatabase } from './postgres.js';
@@ -194,7 +195,7 @@ function protectDatabaseFiles(resolvedPath) {
   }
 }
 
-function migrate(db) {
+function migrate(db, options = {}) {
   inTransaction(db, () => db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
@@ -559,7 +560,7 @@ function migrate(db) {
   }
   migrateSavedProjectMetadata(db);
   migrateEcologicalScaleIds(db);
-  upgradeStoredTeachingProfiles(db);
+  upgradeStoredTeachingProfiles(db, options);
 }
 
 function migratePrototypeEventVocabulary(db) {
@@ -889,7 +890,7 @@ function migrateEcologicalScaleIds(db) {
   });
 }
 
-function upgradeStoredTeachingProfiles(db) {
+function upgradeStoredTeachingProfiles(db, { onProfileUpgradeFailure } = {}) {
   const rows = db.prepare(`
     SELECT id, revision, profile_json AS profileJson, fingerprint
     FROM teaching_profiles
@@ -912,7 +913,14 @@ function upgradeStoredTeachingProfiles(db) {
   inTransaction(db, () => {
     for (const row of rows) {
       const current = JSON.parse(row.profileJson);
-      const upgraded = upgradeSystemsMappingTeachingProfile(current);
+      let upgraded;
+      try {
+        upgraded = upgradeSystemsMappingTeachingProfile(current);
+      } catch (error) {
+        try { onProfileUpgradeFailure?.(teachingProfileShape(current)); }
+        catch { /* Diagnostics must not replace the validation failure. */ }
+        throw error;
+      }
       const serialized = JSON.stringify(upgraded);
       const profileFingerprint = teachingProfileFingerprint(upgraded);
       if (profileFingerprint === row.fingerprint) continue;
@@ -1027,8 +1035,8 @@ export function inTransaction(db, callback) {
 
 // Used only by the separate Cloudflare entrypoint. Node/Railway keep their
 // existing database initialization and transaction implementation.
-export function initializeDurableDatabase(db) {
-  migrate(db);
+export function initializeDurableDatabase(db, options = {}) {
+  migrate(db, options);
   seed(db);
 }
 

@@ -46,7 +46,15 @@ export class MappingCourse extends DurableObject<Bindings> {
     super(ctx, env);
     this.db = durableDatabase(ctx.storage);
     ctx.blockConcurrencyWhile(async () => {
-      initializeDurableDatabase(this.db);
+      let profileShape: unknown;
+      try {
+        initializeDurableDatabase(this.db, { onProfileUpgradeFailure: (shape: unknown) => { profileShape = shape; } });
+      } catch (error) {
+        // Native startup diagnostics contain schema identifiers only, never
+        // course text, account IDs, project data, credentials or SQL values.
+        if (profileShape) throw new TypeError(`Course profile compatibility: ${JSON.stringify(profileShape)}`);
+        throw error;
+      }
       this.db.exec(`CREATE TABLE IF NOT EXISTS cloud_projects (
         owner TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, project TEXT NOT NULL,
         revision INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(owner,id)

@@ -2464,7 +2464,7 @@ export function createSystemsMappingApp(options = {}) {
       }),
     ));
   });
-  const ready = db.dialect === 'postgres'
+  const ready = ['postgres', 'durable-sqlite'].includes(db.dialect)
     ? Promise.resolve(db.ready).then(pruneAtStartup)
     : (pruneAtStartup(), Promise.resolve());
 
