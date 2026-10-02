@@ -6,6 +6,7 @@ import { createDefaultProject, serializeProject } from '../src/domain.js';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { serializedEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
+import { DEFAULT_TEACHING_PROFILE } from '../server/config.js';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
 let harness, worker, services;
@@ -58,6 +59,28 @@ test('current membership and instructor authority are checked on the next reques
   expect((await request('/api/teacher/profiles', 'admin')).status).toBe(200);
   await control({ denied: true }); expect((await request('/api/cloud/account')).status).toBe(403);
   await control({ denied: false }); expect((await request('/api/cloud/account')).status).toBe(200);
+});
+test('populated legacy course profiles and account maps survive constructor upgrades', async () => {
+  const storage = await worker.getDurableObjectStorage('COURSES', { name: 'test-course' });
+  const profile = structuredClone(DEFAULT_TEACHING_PROFILE);
+  profile.intakeQuestions = [{ id: 'focus', question: 'What would you like to understand?', required: false }];
+  profile.parts[0].stages['review-suggestions'].guidance = 'Preserve this instructor guidance';
+  await storage.exec('UPDATE teaching_profiles SET profile_json=?, fingerprint=? WHERE id=?',
+    JSON.stringify(profile), 'a'.repeat(64), 'systems-mapping-default');
+
+  await worker.evictDurableObject('COURSES', { name: 'test-course' });
+  expect((await request('/api/health', '')).status).toBe(200);
+  const [stored] = await storage.exec('SELECT profile_json AS profile, revision FROM teaching_profiles WHERE id=?', 'systems-mapping-default');
+  const migrated = JSON.parse(stored.profile);
+  expect(migrated.intakeQuestions).toEqual(profile.intakeQuestions);
+  expect(migrated.parts[0].stages['review-suggestions'].guidance).toBe('Preserve this instructor guidance');
+  expect(JSON.parse((await (await request('/api/cloud/projects/account-map')).json()).project).title).toBe('Preserved account map');
+  expect((await request('/api/teacher/profiles', 'admin')).status).toBe(200);
+
+  await worker.evictDurableObject('COURSES', { name: 'test-course' });
+  expect((await request('/api/health', '')).status).toBe(200);
+  const [again] = await storage.exec('SELECT profile_json AS profile, revision FROM teaching_profiles WHERE id=?', 'systems-mapping-default');
+  expect(again).toEqual(stored);
 });
 test('explicit capability links preserve class sharing and optimistic revision semantics', async () => {
   const project = newProject();

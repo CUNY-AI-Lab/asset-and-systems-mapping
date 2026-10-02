@@ -118,4 +118,29 @@ describe('educator resource contract', () => {
       parts: [base.parts[0], { ...base.parts[1], scaleIds: ['exosphere', 'unsupported'] }],
     }, options)).toThrow(/unsupported scale/);
   });
+
+  it('preserves optional intakeQuestions only as bounded finite JSON data', () => {
+    const base = {
+      schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
+      parts: [{ id: 'part-1', label: 'Part 1', scaleIds: ['micro'], stages: { map: { guidance: '', materials: '' } } }],
+    };
+    const options = { stageIds: ['map'], scaleIds: ['micro'] };
+    const cyclic = {};
+    cyclic.self = cyclic;
+    const getter = Object.defineProperty({}, 'question', { enumerable: true, get() { throw new Error('must not execute'); } });
+    const toJSON = { toJSON() { throw new Error('must not execute'); } };
+    for (const intakeQuestions of [undefined, NaN, Infinity, 1n, () => null, Symbol('question'), cyclic, getter, toJSON, new Date(), [undefined], new Array(1)]) {
+      expect(() => normalizeCourseProgression({ ...base, intakeQuestions }, options)).toThrow(/finite JSON data/);
+    }
+    for (const intakeQuestions of [null, false, 0, '', [], { question: '  Original text\n', required: false }]) {
+      expect(normalizeCourseProgression({ ...base, intakeQuestions }, options).intakeQuestions).toEqual(intakeQuestions);
+    }
+    expect(() => normalizeCourseProgression({ ...base, intakeQuestions: 'x'.repeat(60_000) }, options)).toThrow(/too large/);
+    expect(() => normalizeCourseProgression({ ...base, intakeQuestions: 'é'.repeat(30_000) }, options)).toThrow(/too large/);
+    const oversizedProfile = { ...base, intakeQuestions: 'x'.repeat(59_800), parts: [{ ...base.parts[0], stages: { map: { guidance: 'y'.repeat(500), materials: '' } } }] };
+    expect(() => normalizeCourseProgression(oversizedProfile, options)).toThrow(/too large/);
+    const deep = Array.from({ length: 65 }).reduce((value) => [value], null);
+    expect(() => normalizeCourseProgression({ ...base, intakeQuestions: deep }, options)).toThrow(/JSON depth/);
+    expect(() => normalizeCourseProgression({ ...base, intakeQuestions: [], unknownField: true }, options)).toThrow(/fields do not match/);
+  });
 });

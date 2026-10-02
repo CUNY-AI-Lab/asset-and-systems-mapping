@@ -562,7 +562,8 @@ describe('TeacherDashboard', () => {
   });
 
   it('creates, saves, and publishes selected-section guidance without editing the published version in place', async () => {
-    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000001', name: 'Evidence guidance', status: 'draft', parentId: activeProfile.id };
+    const intakeQuestions = [{ id: 'question-1', text: '  Keep this legacy question unchanged\n', required: false }];
+    const draftProfile = { ...activeProfile, profile: { ...profileValue, intakeQuestions }, id: 'draft-profile-identifier-000001', name: 'Evidence guidance', status: 'draft', parentId: activeProfile.id };
     let profiles = [activeProfile];
     const requests = [];
     const fetchMock = vi.fn(async (path, options = {}) => {
@@ -618,6 +619,7 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByText('Draft revision 2 saved.')).toBeVisible();
     expect(screen.getByText('Draft saved')).toBeVisible();
     const savedBody = requests.find(([path, method]) => path === `/api/teacher/profiles/${draftProfile.id}` && method === 'PUT')?.[2];
+    expect(savedBody.profile.intakeQuestions).toEqual(intakeQuestions);
     expect(savedBody.profile.parts[0]).toMatchObject({ id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] });
     expect(savedBody.profile.parts[0].stages['review-suggestions']).toEqual({
       guidance: 'Return first to evidence that names a relationship.\n\nMicro-level: Ask the student to name the direct action.',

@@ -358,27 +358,6 @@ export function normalizeSystemsMappingTeachingProfile(value) {
   return Object.freeze({ ...normalized, parts: Object.freeze(ordered) });
 }
 
-// Diagnostics describe the stored schema, never instructor text or record IDs.
-export function teachingProfileShape(value) {
-  const record = item => item && typeof item === 'object' && !Array.isArray(item);
-  const kind = item => Array.isArray(item) ? 'array' : item === null ? 'null' : typeof item;
-  const keys = item => record(item) ? Object.keys(item).slice(0, 24).map(key =>
-    /^[a-z][a-zA-Z0-9_.-]{0,79}$/.test(key) ? key : 'unrecognized-field').sort() : [];
-  const versions = [COURSE_PROGRESSION_SCHEMA_VERSION, LEGACY_PARTS_COURSE_PROGRESSION_SCHEMA_VERSION,
-    LEGACY_COURSE_PROGRESSION_SCHEMA_VERSION, TEACHING_PROFILE_SCHEMA_VERSION];
-  return {
-    schemaVersion: versions.includes(value?.schemaVersion) ? value.schemaVersion : 'unrecognized',
-    rootKind: kind(value),
-    rootKeys: keys(value),
-    partsKind: kind(value?.parts),
-    partCount: Array.isArray(value?.parts) ? value.parts.length : 0,
-    parts: Array.isArray(value?.parts) ? value.parts.slice(0, 8).map(part => ({
-      keys: keys(part), stagesKind: kind(part?.stages), stageKeys: keys(part?.stages),
-    })) : [],
-    legacyStageKeys: keys(value?.stages),
-  };
-}
-
 export function upgradeSystemsMappingTeachingProfile(value) {
   if (value?.schemaVersion === COURSE_PROGRESSION_SCHEMA_VERSION) {
     const normalized = normalizeSystemsMappingTeachingProfile(value);
