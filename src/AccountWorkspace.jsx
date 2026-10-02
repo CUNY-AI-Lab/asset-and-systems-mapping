@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import App, { createBlankProject } from './App.jsx';
+import App, { AccessFrame, createBlankProject } from './App.jsx';
+import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
 import { parseProject } from './domain.js';
 import { saveProjectToLibrary, loadProjectLibrary } from './projectLibrary.js';
 import { useAccountStorage, projectStorage, institutionalLoginUrl } from './accountStorage.js';
@@ -19,6 +20,10 @@ async function request(path, options) {
 }
 
 export default function AccountWorkspace() {
+  const [dark, setDark] = useState(() => {
+    try { return window.localStorage.getItem('systems-mapping.theme') === 'dark'; }
+    catch { return document.documentElement.dataset.theme === 'dark'; }
+  });
   const [account,setAccount] = useState(null);
   const [records,setRecords] = useState([]);
   const [active,setActive] = useState(null);
@@ -40,6 +45,15 @@ export default function AccountWorkspace() {
     setRecords(records);
     return records;
   };
+
+  useEffect(() => {
+    const theme = dark ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#171717' : '#f8fafc');
+    try { window.localStorage.setItem('systems-mapping.theme', theme); }
+    catch { /* Theme remains usable when browser storage is unavailable. */ }
+  }, [dark]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +147,8 @@ export default function AccountWorkspace() {
       window.history.replaceState(null, '', '/');
       setActive(null);
       setTeacher(false);
+      try { setDark(document.documentElement.dataset.theme === 'dark'); }
+      catch { /* Preserve the current theme when browser storage is unavailable. */ }
       try { await refresh(); } catch (failure) { setError(failure.message); }
     }
     setBusy(false);
@@ -140,15 +156,22 @@ export default function AccountWorkspace() {
 
   if (active) return <App key={active} startInWorkspace onAccountDashboard={dashboard} cloudSaveStatus={status} cloudError={error} />;
   if (teacher) return <App startInTeacher onAccountDashboard={dashboard} />;
-  return <main id="workspace" className="account-workspace">
-    <p className="eyebrow">CUNY AI Lab</p><h1>Systems Mapping</h1>
-    {signedOut ? <><p>Sign in to create maps and continue previous work.</p><a className="button" href={institutionalLoginUrl()}>CUNY Login</a></> : account ? <>
-      <div className="account-actions"><button className="button" disabled={busy} onClick={() => open(null)}>New project</button><form action="/auth/logout" method="post"><button className="button button--secondary">Sign out</button></form></div>
-      {account.role === 'instructor' && <button className="button button--secondary" onClick={() => setTeacher(true)}>Teacher Console</button>}
-      <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}. This estimate does not limit map editing.</p>
-      <h2>Projects</h2><p>Maps and memos are saved to your account. A recovery copy stays in this browser profile. Starting a new project keeps your previous work.</p>
-      {records.length ? <ul className="account-projects">{records.map(record => <li key={record.id}><div><h3>{record.title || 'Untitled systems map'}</h3><p>Updated {new Date(record.updatedAt).toLocaleString()}</p></div><button className="button button--secondary" disabled={busy} onClick={() => open(record)}>Continue</button></li>)}</ul> : <p>No saved projects yet.</p>}
-    </> : <p role="status">{status}</p>}
-    {error && <p role="alert" className="account-error">{error}</p>}
-  </main>;
+  return <AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} onTeacher={account?.role === 'instructor' ? () => setTeacher(true) : undefined}>
+    <main id="workspace" className={signedOut ? 'access-main account-workspace' : 'studio-dashboard account-workspace'}>
+      {signedOut ? <>
+        <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
+        <LevelTrail />
+        <Action as="a" href={institutionalLoginUrl()}>CUNY Login</Action>
+      </> : account ? <>
+        <PageHeading title="Projects" description="Continue a map or start a new one" actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
+        {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} />)}</div>
+          : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
+        <Disclosure title="Account" className="account-details">
+          <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}</p>
+          <form action="/auth/logout" method="post"><Action variant="ghost" type="submit">Sign out</Action></form>
+        </Disclosure>
+      </> : <p role="status">{status}</p>}
+      {error && <p role="alert" className="account-error">{error}</p>}
+    </main>
+  </AccessFrame>;
 }

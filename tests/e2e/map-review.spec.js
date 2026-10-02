@@ -96,7 +96,7 @@ test('layout undo restores positions without replacing annotations and the canva
 
 test('cumulative review exposes level results and reopens earlier revision without completing another level', async ({ page, makeAxeBuilder }, testInfo) => {
   await openProject(page);
-  await page.locator('.app-footer').getByRole('button', { name: 'Revise and export' }).click();
+  await page.locator('.app-footer').getByRole('button', { name: 'Review and export' }).click();
   await expect(page.getByText('Step 5 of 5', { exact: true })).toBeVisible();
   await page.locator('.project-overview > summary').click();
   await expect(page.getByRole('region', { name: 'Meso-level results' })).toContainText('1 mesosystem · 2 setting links');
@@ -198,7 +198,7 @@ test('saved theme loads before React and skip link stays readable', async ({ pag
   await page.unroute('**/assets/*.js');
   errors.length = 0;
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Enter your class code' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Systems Mapping', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Skip to workspace' }).focus();
   await expect(page.getByRole('link', { name: 'Skip to workspace' })).toBeFocused();
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Dark focused skip link'));

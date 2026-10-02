@@ -2,11 +2,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
+import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
 import {
   containsRetiredSystemsLanguage,
   deterministicMemoReview,
   EXOSPHERE_NODE_TYPES,
   isDiscreteMicroNodeLabel,
+  isStatementMapElementLabel,
   isObviousLowerLevelMacroLabel,
   isNamedInstitutionLabel,
   isMesosystemLabel,
@@ -64,7 +66,7 @@ import {
   prototypeEventAudit,
   studentWorkflowEvaluationReport,
 } from './database.js';
-import { OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
+import { OllamaCloudError, OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
 
 const DEFAULT_TEACHER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_STUDENT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -139,6 +141,7 @@ const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
   macrosphere: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
 });
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
+  STUDENT_JUDGMENT_INSTRUCTION,
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
@@ -165,6 +168,7 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
+  STUDENT_JUDGMENT_INSTRUCTION,
   'MAP CONNECTION JSON CONTRACT',
   'The student has already chosen the nodes. Use only the exact node IDs supplied in the project input; never write a pronoun, alias, schedule phrase, or new noun phrase as an endpoint.',
   'Use the student description to suggest only direct, evidence-backed connections among those accepted nodes. Do not add nodes or facts that the student did not provide.',
@@ -251,6 +255,20 @@ class HttpError extends Error {
     this.details = details;
     this.headers = headers;
   }
+}
+
+function generationFailureDetails(error, provider) {
+  if (provider !== 'cail-gateway') return undefined;
+  const details = { code: 'guidance_unavailable', retryable: error?.retryable === true };
+  if (details.retryable && Number.isSafeInteger(error?.retryAfterSeconds)
+    && error.retryAfterSeconds >= 1) {
+    details.retryAfterSeconds = error.retryAfterSeconds;
+  }
+  if (error instanceof OllamaCloudError && typeof error.supportReference === 'string'
+    && /^[A-Za-z0-9._-]{1,100}$/u.test(error.supportReference)) {
+    details.supportReference = error.supportReference;
+  }
+  return details;
 }
 
 class MemoReviewSemanticError extends Error {
@@ -714,7 +732,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       throw new MemoReviewSemanticError(`nodes[${index}] is not a complete node object.`);
     }
     const canonicalLabel = normalizeMapElementLabel(label, { micro: activeScale === 'micro' });
-    if (!canonicalLabel || canonicalLabel !== label) throw new MemoReviewSemanticError(`nodes[${index}].label is not a complete, concrete map element.`);
+    if (!canonicalLabel || canonicalLabel !== label || isStatementMapElementLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label must name a complete map element rather than a statement.`);
     if (node.scale !== activeScale) throw new MemoReviewSemanticError(`nodes[${index}].scale does not match the active scale.`);
     if (!isNodeTypeAllowedAtScale(node.type, activeScale)) throw new MemoReviewSemanticError(`nodes[${index}].type does not belong at ${activeScale}.`);
     if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is a reference, action, clause, fragment, or non-entity Micro label.`);
@@ -1133,7 +1151,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments',
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
@@ -1183,6 +1201,9 @@ function validatePreflightEvaluationRequest(value) {
   if (!SYSTEMS_MAPPING_STAGE_IDS.includes(stageId)) throw new HttpError(400, 'stageId is not supported.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const sourceRecord = validateSourceRecord(value.sourceRecord);
+  let studentJudgments;
+  try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
+  catch { throw new HttpError(400, 'Student judgments are invalid.'); }
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
   return {
@@ -1191,6 +1212,7 @@ function validatePreflightEvaluationRequest(value) {
     stageId,
     inquiry,
     sourceRecord,
+    studentJudgments,
     sourceMaterial,
     projectOverlay,
     customInstructions,
@@ -1200,7 +1222,10 @@ function validatePreflightEvaluationRequest(value) {
 }
 
 function validateConnectionSuggestionRequest(value) {
-  assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay']);
+  assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay', 'studentJudgments']);
+  let studentJudgments;
+  try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
+  catch { throw new HttpError(400, 'Student judgments are invalid.'); }
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   if (value.activeScale === 'meso') throw new HttpError(400, 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.');
   if (value.activeScale === 'macrosphere') throw new HttpError(400, 'Macrosphere uses structure scopes and does not use relationship edges.');
@@ -1245,6 +1270,7 @@ function validateConnectionSuggestionRequest(value) {
     activeScale: value.activeScale,
     inquiry,
     prompt,
+    studentJudgments,
     nodes,
     relationships,
     projectOverlay,
@@ -2778,7 +2804,7 @@ export function createSystemsMappingApp(options = {}) {
             systemPrompt,
             activeScale: input.activeScale,
             inquiry: input.inquiry,
-            sourceMetadata: input.sourceRecord,
+            sourceMetadata: { ...input.sourceRecord, studentJudgments: input.studentJudgments },
             sourceText: input.sourceMaterial,
             ...(input.activeScale === 'meso' || input.carriedNodes.length ? { carriedNodes: input.carriedNodes } : {}),
             ...(input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
@@ -2788,11 +2814,15 @@ export function createSystemsMappingApp(options = {}) {
           try {
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
           } catch (error) {
-            if (!(error instanceof MemoReviewSemanticError) || suggestionProvider === 'cail-gateway') throw error;
+            if (!(error instanceof MemoReviewSemanticError)) throw error;
+            // CAIL Gateway owns provider/model failover. Do not silently issue a
+            // second potentially billable request when its completed output is
+            // unusable; keep the project editable and let the student choose.
+            if (suggestionProvider === 'cail-gateway') throw error;
             generated = await ollamaRequest({
               ...providerInput,
               systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}`,
-            }, ollamaConfig);
+            }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
           }
           suggestion = {
@@ -2818,7 +2848,11 @@ export function createSystemsMappingApp(options = {}) {
             error?.status ?? '',
             error instanceof MemoReviewSemanticError ? error.message : '',
           );
-          throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
+          throw new HttpError(
+            502,
+            'Suggestion generation is temporarily unavailable.',
+            generationFailureDetails(error, suggestionProvider),
+          );
         }
       } else {
         const deterministic = deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale, {
@@ -2827,7 +2861,17 @@ export function createSystemsMappingApp(options = {}) {
           });
         let review;
         try {
-          review = validateGeneratedMemoReviewAtomically(deterministic, input.activeScale, input.carriedNodes, input.carriedConnections);
+          // The local reader already resolves scope labels for its client
+          // output; the provider contract accepts the same references as IDs.
+          // Preserve every item and scope member, then apply the same validator.
+          const providerReview = {
+            ...deterministic,
+            nodes: deterministic.nodes.map((node) => ({
+              ...node,
+              ...(Array.isArray(node.scope) ? { scope: node.scope.map(member => typeof member === 'string' ? member : member.id) } : {}),
+            })),
+          };
+          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections);
         } catch (error) {
           if (!(error instanceof MemoReviewSemanticError)) throw error;
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
@@ -2889,7 +2933,7 @@ export function createSystemsMappingApp(options = {}) {
     if (!ollamaConfig) throw new HttpError(503, 'Connection suggestions are not available for this class.');
     const body = await parseJsonBody(context, JSON_BODY_LIMIT_BYTES);
     const input = validateConnectionSuggestionRequest(body);
-    const sourceMetadata = { nodes: input.nodes, existingConnections: input.relationships };
+    const sourceMetadata = { nodes: input.nodes, existingConnections: input.relationships, studentJudgments: input.studentJudgments };
     if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
       throw new HttpError(413, 'Use fewer nodes or existing connections for this request.');
     }
@@ -2929,7 +2973,7 @@ export function createSystemsMappingApp(options = {}) {
           generated = await ollamaRequest({
             ...providerInput,
             systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\nReturn one complete replacement JSON object. Do not patch, explain, filter, or reuse any part of the rejected response. Every relationship must use exact supplied node IDs, must be new, and must satisfy the active-scale contract.\nValidation failure: ${error.message}`,
-          }, ollamaConfig);
+          }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
           connections = validateWholeResponse(generated.suggestion);
         }
       } catch (error) {
@@ -2938,7 +2982,11 @@ export function createSystemsMappingApp(options = {}) {
           throw new HttpError(safe.status, safe.message, safe.details);
         }
         console.warn('connection suggestion generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
-        throw new HttpError(502, 'Connection suggestions are temporarily unavailable.');
+        throw new HttpError(
+          502,
+          'Connection suggestions are temporarily unavailable.',
+          generationFailureDetails(error, suggestionProvider),
+        );
       }
       return context.json({ connections }, 201);
     } finally {

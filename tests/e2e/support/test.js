@@ -88,6 +88,9 @@ export async function scanAccessibility(page, makeAxeBuilder, testInfo, state) {
 }
 
 export async function captureSourceRenderedScreenshot(page, testInfo, state) {
+  // Capture the settled screen after real transient notifications expire.
+  // Never hide, crop, or replace UI to manufacture a cleaner result.
+  await expect(page.locator('.toast.is-visible')).toHaveCount(0, { timeout: 6500 });
   const basename = slug(state);
   const screenshotPath = testInfo.outputPath(`${basename}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: false, animations: 'disabled' });
@@ -103,6 +106,7 @@ export async function captureSourceRenderedScreenshot(page, testInfo, state) {
     sourceStatus: gitStatus,
     sourceDiffSha256: sha256(patch),
     distSha256: directoryFingerprint(resolve(process.cwd(), 'dist')),
+    sourceTreesSha256: Object.fromEntries(['src', 'shared', 'public'].map(name => [name, directoryFingerprint(resolve(process.cwd(), name))])),
     lockfileSha256: sha256(readFileSync(resolve(process.cwd(), 'pnpm-lock.yaml'))),
     pageUrl: page.url(),
     testTitle: testInfo.titlePath.join(' > '),

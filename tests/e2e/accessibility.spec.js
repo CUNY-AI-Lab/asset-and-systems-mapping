@@ -165,11 +165,146 @@ async function ecologyRingGeometry(page) {
   });
 }
 
+async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
+  return page.locator('.graph-canvas').evaluate(async (canvas, requiredLayers) => {
+    await document.fonts.ready;
+    const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
+    const issues = [];
+    const nodes = [...canvas.querySelectorAll('.graph-node')];
+    if (!nodes.length) issues.push('No graph nodes were available for geometry verification');
+    const hasLayers = Boolean(canvas.querySelector('.ecology-layers'));
+    const checkMembership = requiredLayers || (canvas.dataset.mapMode === 'ecology' && !canvas.classList.contains('is-detail-view'));
+    if (checkMembership && !hasLayers) issues.push('Required ecology ring geometry is missing');
+
+    const readBox = (element, name, allowEmpty = false) => {
+      if (!element || typeof element.getBBox !== 'function') {
+        issues.push(`${name} SVG geometry is missing`);
+        return null;
+      }
+      try {
+        const box = element.getBBox();
+        if (![box.x, box.y, box.width, box.height].every(Number.isFinite)
+          || box.width < 0 || box.height < 0 || (!allowEmpty && (!box.width || !box.height))) {
+          issues.push(`${name} SVG bounds are invalid`);
+          return null;
+        }
+        return box;
+      } catch (error) {
+        issues.push(`${name} SVG bounds failed: ${error.message}`);
+        return null;
+      }
+    };
+    const corners = (box) => [
+      { x: box.x, y: box.y }, { x: box.x + box.width, y: box.y },
+      { x: box.x + box.width, y: box.y + box.height }, { x: box.x, y: box.y + box.height },
+    ];
+    const pointsIn = (points, source, target, name) => {
+      try {
+        const sourceMatrix = source.getCTM();
+        const targetMatrix = target.getCTM();
+        if (!sourceMatrix || !targetMatrix) throw new Error('coordinate transform is missing');
+        const matrix = targetMatrix.inverse().multiply(sourceMatrix);
+        const transformed = points.map((point) => new DOMPoint(point.x, point.y).matrixTransform(matrix));
+        if (!transformed.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) throw new Error('coordinate transform is invalid');
+        return transformed;
+      } catch (error) {
+        issues.push(`${name} SVG transform failed: ${error.message}`);
+        return null;
+      }
+    };
+    const rings = new Map();
+    if (checkMembership) {
+      for (const level of levels) {
+        const ellipse = canvas.querySelector(`[data-ecology-layer="${level}"] > ellipse`);
+        const attributes = ['cx', 'cy', 'rx', 'ry'].map((attribute) => ellipse?.getAttribute(attribute));
+        const values = attributes.map(Number);
+        if (!ellipse || attributes.some((value) => value == null || value.trim() === '')
+          || !values.every(Number.isFinite) || values[2] <= 0 || values[3] <= 0) {
+          issues.push(`${level} ellipse geometry is missing or invalid`);
+          continue;
+        }
+        const [cx, cy, rx, ry] = values;
+        rings.set(level, { ellipse, cx, cy, rx, ry });
+      }
+    }
+    const normalizedCard = (card, box, ring, name) => {
+      const points = pointsIn(corners(box), card, ring.ellipse, name);
+      return points?.map((point) => ({ x: (point.x - ring.cx) / ring.rx, y: (point.y - ring.cy) / ring.ry }));
+    };
+    // In normalized ellipse coordinates, the inner ellipse is the unit circle.
+    // The nearest point lies on a rectangle edge, unless the rectangle contains
+    // the ellipse's center. Checking only corners would miss inner-ring entry.
+    const nearestMetric = (polygon) => {
+      const crosses = polygon.map((point, index) => {
+        const next = polygon[(index + 1) % polygon.length];
+        return (next.x - point.x) * -point.y - (next.y - point.y) * -point.x;
+      });
+      if (crosses.every((value) => value >= 0) || crosses.every((value) => value <= 0)) return 0;
+      return Math.min(...polygon.map((point, index) => {
+        const next = polygon[(index + 1) % polygon.length];
+        const dx = next.x - point.x;
+        const dy = next.y - point.y;
+        const lengthSquared = dx * dx + dy * dy;
+        const t = lengthSquared ? Math.max(0, Math.min(1, -(point.x * dx + point.y * dy) / lengthSquared)) : 0;
+        return (point.x + t * dx) ** 2 + (point.y + t * dy) ** 2;
+      }));
+    };
+
+    for (const node of nodes) {
+      const name = node.getAttribute('data-full-label') || node.getAttribute('data-graph-id') || '[unidentified node]';
+      const card = node.querySelector('.node-card');
+      const cardBox = readBox(card, `${name} card`);
+      if (!cardBox) continue;
+      const label = node.querySelector('.node-label');
+      const lines = [...(label?.querySelectorAll('tspan') || [])];
+      if (!label || !lines.length) issues.push(`${name} label or line geometry is missing`);
+      for (const [index, item] of [label, ...lines].entries()) {
+        const itemName = `${name} ${index ? `line ${index}` : 'label'}`;
+        const box = readBox(item, itemName, index > 0 && !item?.textContent.trim());
+        if (!box) continue;
+        const points = pointsIn(corners(box), item, card, itemName);
+        if (points?.some((point) => point.x < cardBox.x - .01 || point.x > cardBox.x + cardBox.width + .01
+          || point.y < cardBox.y - .01 || point.y > cardBox.y + cardBox.height + .01)) {
+          issues.push(`${itemName} leaves its node card`);
+        }
+      }
+      // Detail/focus views deliberately omit ring backdrops; text containment
+      // still applies there, but an absent annulus cannot establish membership.
+      if (!checkMembership) continue;
+      const levelIndex = levels.findIndex((level) => node.classList.contains(`graph-node--${level}`));
+      const outer = rings.get(levels[levelIndex]);
+      if (levelIndex < 0 || !outer) {
+        issues.push(`${name} semantic annulus geometry is missing`);
+        continue;
+      }
+      const stroke = getComputedStyle(card).stroke === 'none' ? 0 : Number.parseFloat(getComputedStyle(card).strokeWidth);
+      if (!Number.isFinite(stroke) || stroke < 0) {
+        issues.push(`${name} card stroke geometry is invalid`);
+        continue;
+      }
+      const completeCardBox = { x: cardBox.x - stroke / 2, y: cardBox.y - stroke / 2, width: cardBox.width + stroke, height: cardBox.height + stroke };
+      const outerPoints = normalizedCard(card, completeCardBox, outer, `${name} outer ring`);
+      const outerMetric = outerPoints && Math.max(...outerPoints.map((point) => point.x ** 2 + point.y ** 2));
+      if (outerMetric != null && outerMetric > 1 + 1e-6) issues.push(`${name} whole card leaves ${levels[levelIndex]} outer ellipse (${outerMetric.toFixed(6)})`);
+      if (levelIndex === 0) continue;
+      const inner = rings.get(levels[levelIndex - 1]);
+      if (!inner) {
+        issues.push(`${name} inner annulus geometry is missing`);
+        continue;
+      }
+      const innerPoints = normalizedCard(card, completeCardBox, inner, `${name} inner ring`);
+      const innerMetric = innerPoints && nearestMetric(innerPoints);
+      if (innerMetric != null && innerMetric < 1 - 1e-6) issues.push(`${name} whole card enters ${levels[levelIndex - 1]} inner ellipse (${innerMetric.toFixed(6)})`);
+    }
+    return issues;
+  }, requireLayers);
+}
+
 test.describe('student accessibility', () => {
   test('class entry and project list have no automatically detectable WCAG A or AA violations', async ({ page, makeAxeBuilder }, testInfo) => {
     const violations = [];
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Enter your class code' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Systems Mapping' })).toBeVisible();
     violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Class entry'));
 
     await enterClass(page);
@@ -200,6 +335,7 @@ test.describe('student accessibility', () => {
       await expect.poll(() => clippedSemanticItems(page), { message: `${layer} semantic map content should fit` }).toEqual([]);
       await expect.poll(() => controlDockIssues(page), { message: `${layer} control docks should stay distinct` }).toEqual([]);
       await expect.poll(() => layerLabelNodeCollisions(page), { message: `${layer} level labels should not overlap nodes` }).toEqual([]);
+      await expect.poll(() => ecologyNodeGeometryIssues(page, { requireLayers: layer === 'all' }), { message: `${layer} whole node cards should stay in their annuli and contain their rendered labels` }).toEqual([]);
       if (layer === 'all') await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Level badges should remain ordered inside their own rings' }).toEqual([]);
       if (layer === 'all' && testInfo.project.name.includes('phone')) {
         const smallestRenderedLabel = await page.locator('.node-label').evaluateAll((labels) => (
@@ -227,12 +363,13 @@ test.describe('student accessibility', () => {
     await expect.poll(() => clippedSemanticItems(page), { message: 'Full-screen semantic map content should fit' }).toEqual([]);
     await expect.poll(() => controlDockIssues(page), { message: 'Full-screen control docks should stay distinct' }).toEqual([]);
     await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Full-screen level badges should remain ordered inside their own rings' }).toEqual([]);
+    await expect.poll(() => ecologyNodeGeometryIssues(page, { requireLayers: true }), { message: 'Full-screen whole node cards should stay in their annuli and contain their rendered labels' }).toEqual([]);
     violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Full-screen cumulative map'));
     await captureSourceRenderedScreenshot(page, testInfo, 'Full-screen cumulative map');
 
     const beforeZoomOut = await ecologyRingGeometry(page);
     const expectedMacroRadius = testInfo.project.name.includes('phone') ? 630 : 1540;
-    expect(beforeZoomOut.rings.macrosphere.rx).toBe(expectedMacroRadius);
+    expect(beforeZoomOut.rings.macrosphere.rx, 'Macro ring must retain at least its baseline radius while allowing measured capacity growth').toBeGreaterThanOrEqual(expectedMacroRadius);
     await page.getByRole('button', { name: 'Zoom out' }).click();
     const afterZoomOut = await ecologyRingGeometry(page);
     expect(afterZoomOut.zoom).toBeLessThan(beforeZoomOut.zoom);
@@ -245,6 +382,7 @@ test.describe('student accessibility', () => {
     }
     await expect.poll(() => clippedSemanticItems(page), { message: 'Explicit ring expansion should keep semantic map content visible' }).toEqual([]);
     await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Expanded level badges should stay ordered inside their own rings' }).toEqual([]);
+    await expect.poll(() => ecologyNodeGeometryIssues(page, { requireLayers: true }), { message: 'Expanded whole node cards should stay in their annuli and contain their rendered labels' }).toEqual([]);
     await captureSourceRenderedScreenshot(page, testInfo, 'Full-screen cumulative map zoomed out');
 
     await page.keyboard.press('Escape');

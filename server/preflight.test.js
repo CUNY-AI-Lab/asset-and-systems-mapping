@@ -12,6 +12,7 @@ import {
   teachingProfileFingerprint,
 } from './config.js';
 import { assertDatabaseIntegrity } from './database.js';
+import { OllamaCloudError } from './ollama.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
 const BOOTSTRAP_TOKEN = 'preflight-test-bootstrap-token';
@@ -541,6 +542,59 @@ describe('persistent preflight suggestion review queue', () => {
     expect(serializedDatabase).not.toContain('fresh-test-only-server-key');
   });
 
+  it.each(['meso', 'macrosphere'])('retains complete scope references in local %s guidance', async (activeScale) => {
+    const carriedNodes = [
+      { id: 'school', label: 'School', type: 'setting', scale: 'micro' },
+      { id: 'center', label: 'Community Center', type: 'setting', scale: 'micro' },
+    ];
+    const sourceMaterial = 'The community center coordinates with the school. The Americans with Disabilities Act shapes the school and community center.';
+    const studentCookie = await grantStudent();
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale, sourceMaterial, carriedNodes }));
+    expect(evaluation.review.nodes).toHaveLength(1);
+    expect(evaluation.review.nodes[0].scope).toEqual(expect.arrayContaining([
+      { id: 'school', label: 'School' }, { id: 'center', label: 'Community Center' },
+    ]));
+    expect(evaluation.review.connections).toEqual([]);
+  });
+
+  it.each(['exosphere', 'macrosphere'])('rejects narrative clauses at %s before persisting any review', async (activeScale) => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'home', label: 'Home', type: 'setting', scale: 'micro' },
+      { id: 'clinic', label: 'Clinic', type: 'setting', scale: 'micro' },
+    ];
+    const label = activeScale === 'exosphere'
+      ? 'State Benefits Office requires additional paperwork'
+      : 'Public funding limits service availability';
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [],
+        nodes: [{
+          label, type: activeScale === 'exosphere' ? 'agency' : 'economic condition',
+          scale: activeScale, evidence: label, basis: 'memo',
+          ...(activeScale === 'macrosphere' ? { deontic: 'constrains', scope: ['home', 'clinic'] } : {}),
+        }],
+        connections: activeScale === 'exosphere'
+          ? [{ source: label, target: 'home', verb: 'sets rules for', rationale: label }] : [],
+        example: null,
+        readiness: { ready: true, note: 'Ready' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, `outer-clause-${activeScale}.sqlite`),
+      now: () => currentTime,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _annotation, ...body } = submissionBody({ activeScale, carriedNodes, sourceMaterial: label });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+    expect(response.status).toBe(502);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('rather than a statement');
+  });
+
   it('atomically retries the Rosa memo regression and stores only the fully valid replacement review', async () => {
     await system.close();
     const invalidReview = {
@@ -648,6 +702,82 @@ describe('persistent preflight suggestion review queue', () => {
     expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('does not repeat invalid CAIL Gateway output and leaves the project path available', async () => {
+    await system.close();
+    const invalidReview = {
+      guidance: [],
+      nodes: [{ label: 'Tuesdays', type: 'activity', scale: 'micro', evidence: 'The memo names a Tuesday schedule.' }],
+      connections: [],
+      example: null,
+      readiness: { ready: false, note: 'The response contains only a schedule detail.' },
+    };
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: invalidReview,
+      metadata: { provider: 'cail-gateway', model: 'canonical-test-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'gateway-invalid-single-attempt.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-gateway-token', model: 'canonical-test-model' },
+      suggestionProvider: 'cail-gateway',
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
+      sourceMaterial: 'The meeting happens on Tuesdays.',
+      projectMetadata: { projectId: 'gateway_invalid_single_attempt', title: 'Gateway response must fail closed' },
+    });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: 'Suggestion generation is temporarily unavailable.',
+      details: { code: 'guidance_unavailable', retryable: false },
+    });
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest.mock.calls[0][2].signal).toBeInstanceOf(AbortSignal);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('returns only Gateway-approved retry timing and safe support references to the caller', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn(async () => {
+      throw new OllamaCloudError('provider response body must not escape', 'provider_http_error', {
+        status: 503,
+        retryable: true,
+        retryAfterSeconds: 7,
+        supportReference: 'gw-log-12345',
+      });
+    });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'gateway-retry-details.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-gateway-token', model: 'canonical-test-model' },
+      suggestionProvider: 'cail-gateway',
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
+      projectMetadata: { projectId: 'gateway_safe_retry_details', title: 'Only safe retry guidance is returned' },
+    });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: 'Suggestion generation is temporarily unavailable.',
+      details: {
+        code: 'guidance_unavailable',
+        retryable: true,
+        retryAfterSeconds: 7,
+        supportReference: 'gw-log-12345',
+      },
+    });
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
@@ -1456,6 +1586,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         { id: 'node_counselor', label: 'Counselor', type: 'role', scale: 'micro' },
       ],
       relationships: [{ source: 'node_family', target: 'node_school', verb: 'asks for help from' }],
+      studentJudgments: [{ kind: 'item', label: 'Counselor', scale: 'micro', decision: 'added', note: 'Use the role name' }],
     });
     const response = await postJson(system.app, '/api/map/connections', body, { cookie: studentCookie });
     expect(response.status).toBe(201);
@@ -1478,7 +1609,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
     expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);
     expect(input.systemPrompt).toContain('MAP CONNECTION JSON CONTRACT');
-    expect(input.sourceMetadata).toEqual({ nodes: body.nodes, existingConnections: body.relationships });
+    expect(input.sourceMetadata).toEqual({ nodes: body.nodes, existingConnections: body.relationships, studentJudgments: body.studentJudgments });
+    expect(input.systemPrompt).toContain('Preserve the student\'s revised names');
     expect(input.sourceText).toBe(body.prompt);
     expect(input.inquiry).toBe(body.inquiry);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);

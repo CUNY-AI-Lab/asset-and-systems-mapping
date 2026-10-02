@@ -153,7 +153,7 @@ function roundedPosition(center, angle, distance) {
   };
 }
 
-function projectToBand(node, position, band, center, boundaryPadding, fallbackAngle) {
+function projectToBand(node, position, band, center, boundaryPadding, fallbackAngle, round = true) {
   const deltaX = position.x - center.x;
   const deltaY = position.y - center.y;
   const atCenter = Math.hypot(deltaX, deltaY) < 0.001;
@@ -162,7 +162,98 @@ function projectToBand(node, position, band, center, boundaryPadding, fallbackAn
   if (!interval) return null;
   const requestedDistance = atCenter && interval.minimum === 0 ? 0 : Math.hypot(deltaX, deltaY);
   const distance = Math.min(interval.maximum, Math.max(interval.minimum, requestedDistance));
-  return roundedPosition(center, angle, distance);
+  return round ? roundedPosition(center, angle, distance) : {
+    x: center.x + Math.cos(angle) * distance,
+    y: center.y + Math.sin(angle) * distance,
+  };
+}
+
+function normalizedRectangleGeometry(position, { width, height, center, band, boundaryPadding }) {
+  if (!position || typeof position !== 'object') throw new TypeError('position is required.');
+  if (!center || typeof center !== 'object') throw new TypeError('center is required.');
+  if (!Number.isFinite(boundaryPadding) || boundaryPadding < 0) throw new TypeError('boundaryPadding cannot be negative.');
+  return {
+    rectangle: {
+      x: finiteNumber(position.x, 'position.x'),
+      y: finiteNumber(position.y, 'position.y'),
+      width: positiveNumber(width, 'width'),
+      height: positiveNumber(height, 'height'),
+    },
+    center: { x: finiteNumber(center.x, 'center.x'), y: finiteNumber(center.y, 'center.y') },
+    band: normalizedBand(band, 'rectangle'),
+  };
+}
+
+function rectangleFitsNormalizedRing(position, rectangle, center, band, boundaryPadding) {
+  const outerRx = band.outerRx - boundaryPadding;
+  const outerRy = band.outerRy - boundaryPadding;
+  if (outerRx <= 0 || outerRy <= 0) return false;
+  const deltaX = Math.abs(position.x - center.x);
+  const deltaY = Math.abs(position.y - center.y);
+  // These independent maximum extents select the furthest of all four
+  // rectangle corners, not an approximation made by shrinking ellipse axes.
+  const furthestX = deltaX + rectangle.width / 2;
+  const furthestY = deltaY + rectangle.height / 2;
+  const tolerance = 1e-10;
+  if ((furthestX / outerRx) ** 2 + (furthestY / outerRy) ** 2 > 1 + tolerance) return false;
+  if (!band.innerRx && !band.innerRy) return true;
+  const nearestX = Math.max(0, deltaX - rectangle.width / 2);
+  const nearestY = Math.max(0, deltaY - rectangle.height / 2);
+  return (nearestX / (band.innerRx + boundaryPadding)) ** 2
+    + (nearestY / (band.innerRy + boundaryPadding)) ** 2 >= 1 - tolerance;
+}
+
+/** Test the complete rectangle against both contours of its ecological band. */
+export function rectangleFitsRing(position, {
+  width, height, center, band, boundaryPadding = DEFAULT_BOUNDARY_PADDING,
+} = {}) {
+  const geometry = normalizedRectangleGeometry(position, { width, height, center, band, boundaryPadding });
+  return rectangleFitsNormalizedRing(position, geometry.rectangle, geometry.center, geometry.band, boundaryPadding);
+}
+
+/** Project a card onto a feasible ray, returning null when it cannot fit. */
+export function projectRectangleToRing(position, {
+  width, height, center, band, boundaryPadding = DEFAULT_BOUNDARY_PADDING,
+  fallbackAngle = -Math.PI / 2,
+} = {}) {
+  const geometry = normalizedRectangleGeometry(position, { width, height, center, band, boundaryPadding });
+  finiteNumber(fallbackAngle, 'fallbackAngle');
+  const rectangle = geometry.rectangle;
+  const ring = geometry.band;
+  const origin = geometry.center;
+  if (rectangleFitsNormalizedRing(position, rectangle, origin, ring, boundaryPadding)) return { x: position.x, y: position.y };
+  // Keep the exact radial projection: hundredth-pixel rounding can move a
+  // boundary corner outside the ellipse and make subsequent calls unstable.
+  const requested = projectToBand(rectangle, position, ring, origin, boundaryPadding, fallbackAngle, false);
+  if (requested && rectangleFitsNormalizedRing(requested, rectangle, origin, ring, boundaryPadding)) return requested;
+  const deltaX = position.x - origin.x;
+  const deltaY = position.y - origin.y;
+  const atCenter = Math.hypot(deltaX, deltaY) < .001;
+  const preferredAngle = atCenter ? fallbackAngle : Math.atan2(deltaY, deltaX);
+  const preferredDistance = Math.hypot(deltaX, deltaY);
+  const angles = Array.from({ length: DEFAULT_ANGULAR_STEPS }, (_, index) => {
+    const step = index % 2 ? Math.ceil(index / 2) : -Math.ceil(index / 2);
+    return preferredAngle + step * TAU / DEFAULT_ANGULAR_STEPS;
+  });
+  // Include exact axial rays independently of the requested direction. For
+  // coaxial ellipse bands and axis-aligned rectangles, maximum available
+  // inner-ring clearance on the outer contour occurs on an axial ray; these
+  // prevent the angular sampling from declaring a narrowly feasible band
+  // impossible merely because its feasible sector fell between samples.
+  angles.push(0, Math.PI / 2, Math.PI, Math.PI * 1.5);
+  const candidates = angles.flatMap((angle) => {
+    const interval = radialInterval(rectangle, angle, ring, boundaryPadding);
+    if (!interval) return [];
+    const distance = Math.min(interval.maximum, Math.max(interval.minimum, preferredDistance));
+    const candidate = { x: origin.x + Math.cos(angle) * distance, y: origin.y + Math.sin(angle) * distance };
+    return rectangleFitsNormalizedRing(candidate, rectangle, origin, ring, boundaryPadding) ? [candidate] : [];
+  });
+  candidates.sort((left, right) => (
+    (left.x - position.x) ** 2 + (left.y - position.y) ** 2
+      - (right.x - position.x) ** 2 - (right.y - position.y) ** 2
+      || left.y - right.y || left.x - right.x
+  ));
+  return candidates[0] || null;
 }
 
 function candidatePositions(node, preferred, band, center, boundaryPadding, angularSteps, radialSteps, fallbackAngle) {

@@ -225,7 +225,7 @@ describe('TeacherDashboard', () => {
 
   it('defaults to the pending review queue and offers three advisory feedback modes', async () => {
     const fetchMock = await renderAuthenticated();
-    expect(screen.getByText('Manage course settings and any review records already available.')).toBeVisible();
+    expect(screen.getByText('Review student work and manage course settings')).toBeVisible();
     const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');

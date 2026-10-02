@@ -3,31 +3,31 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
     id: 'add-source',
     label: 'Add memo',
     short: 'Memo',
-    description: 'Set your focus and add the memo you will use across all four levels.',
+    description: 'Set your focus and add a memo for all four levels',
   }),
   Object.freeze({
     id: 'review-suggestions',
     label: 'Review memo',
     short: 'Review',
-    description: 'Check the evidence. Generate optional guidance or continue with your own reading.',
+    description: 'Review memo evidence and optional guidance',
   }),
   Object.freeze({
     id: 'choose-what-to-map',
     label: 'Choose elements',
     short: 'Choose',
-    description: 'Review suggestions, add supported items, and set open questions aside.',
+    description: 'Choose supported map items and set questions aside',
   }),
   Object.freeze({
     id: 'build-map',
     label: 'Build map',
     short: 'Map',
-    description: 'Arrange items, trace connections, and record evidence or notes.',
+    description: 'Arrange items, trace connections, and record evidence',
   }),
   Object.freeze({
     id: 'revise-and-export',
-    label: 'Revise and export',
-    short: 'Revision',
-    description: 'Review this level alongside earlier work, record changes, and export a copy.',
+    label: 'Review and export',
+    short: 'Export',
+    description: 'Review this level and export the full map',
   }),
 ]);
 
