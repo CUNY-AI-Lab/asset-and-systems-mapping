@@ -41,4 +41,3 @@ describe('project-specific student judgments', () => {
     expect(validateStudentJudgments()).toEqual([]);
   });
 });
-

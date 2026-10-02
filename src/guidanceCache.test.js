@@ -37,4 +37,3 @@ describe('bounded guidance reuse', () => {
     expect(() => removeGuidanceCacheEntry(unavailable, 'p', 'key', now)).not.toThrow();
   });
 });
-
