@@ -1,5 +1,7 @@
-import React, { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow, ReviewPager } from './ui/StudioPrimitives.jsx';
+import { readInstitutionalSession } from './studentSession.js';
+import { cacheMemoDraft, restoreMemoDraft } from './memoDraft.js';
 import { useCanvasWindow } from './ui/useCanvasWindow.js';
 import { useMapFontMetrics } from './ui/useMapFontMetrics.js';
 import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-judgments.js';
@@ -217,8 +219,10 @@ function loadProject() {
     }
     try {
       const parsedProject = parseProject(saved);
+      const savedBase = loadDurableProject(projectStorage(), parsedProject.id, { restoreDraft: false }) || parsedProject;
       return {
-        project: reconcileActiveProject(projectStorage(), parsedProject),
+        project: restoreMemoDraft(projectStorage(), savedBase),
+        memoDraftBase: savedBase,
         loadError: null,
         recovery: null,
         hasSavedProject: true,
@@ -253,8 +257,10 @@ function linkUrl(token) {
   return `${window.location.origin}/p/${token}`;
 }
 
-function describeLinkError(error) {
+function describeLinkError(error, institutionalMode = false) {
   if (error instanceof ApiError) {
+    if (institutionalMode && error.status === 401) return 'Use CUNY Login to continue syncing';
+    if (institutionalMode && error.status === 403) return 'CUNY AI Lab access required to continue syncing';
     if (error.status === 401) return 'Class access ended. Enter the class code again to keep syncing this link.';
     if (error.status === 404) return 'This project link was not found. It may have been removed or belong to a different class workspace.';
     if (error.status === 409) return 'This project link changed in another session. Nothing on this device was overwritten.';
@@ -676,8 +682,31 @@ function Icon({ name, size = 18 }) {
     history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
     map: <><circle cx="6" cy="8" r="2" /><circle cx="18" cy="7" r="2" /><circle cx="13" cy="17" r="2" /><path d="m8 8 8-1M7 10l5 5m2 0 3-6" /></>,
     link: <><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" /><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" /></>,
+    fork: <><circle cx="6" cy="4" r="2" /><circle cx="18" cy="4" r="2" /><circle cx="12" cy="20" r="2" /><path d="M6 6v3a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V6M12 12v6" /></>,
   };
   return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+}
+
+function MemoForkButton({ onRequestRestart }) {
+  const tooltipId = useId();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const showTooltip = !dismissed && (hovered || focused);
+  useEffect(() => {
+    if (!showTooltip) return undefined;
+    const onEscape = (event) => { if (event.key === 'Escape') setDismissed(true); };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [showTooltip]);
+  return <span className="memo-fork" onPointerEnter={(event) => {
+    if (event.pointerType !== 'touch') { setHovered(true); setDismissed(false); }
+  }} onPointerLeave={() => setHovered(false)}>
+    <button className="memo-fork__button" type="button" aria-label="New map from this memo" aria-describedby={showTooltip ? tooltipId : undefined}
+      onFocus={() => { setFocused(true); setDismissed(false); }} onBlur={() => setFocused(false)}
+      onClick={() => { setDismissed(true); onRequestRestart(); }}><Icon name="fork" size={20} /></button>
+    <span id={tooltipId} className="memo-fork__tooltip" role="tooltip" hidden={!showTooltip}>New map from this memo</span>
+  </span>;
 }
 
 function LabLink() {
@@ -915,6 +944,31 @@ function AccessFrame({ children, onTeacher, dark, onToggleTheme }) {
   </div>;
 }
 
+function InstitutionalAccessScreen({ state, onRetry, onLeave, dark, onToggleTheme }) {
+  return <AccessFrame dark={dark} onToggleTheme={onToggleTheme}>
+    <main className="access-main" id="workspace">
+      <PageHeading title="Systems Mapping" />
+      {state.message && <p className={`access-message access-message--${state.kind || 'info'}`} role={state.kind === 'error' ? 'alert' : 'status'}>{state.message}</p>}
+      <div className="button-row">
+        <Action as="a" href={institutionalLoginUrl()} onClick={onLeave}>CUNY Login</Action>
+        {state.status === 'unavailable' && <Action variant="secondary" onClick={onRetry}>Try again</Action>}
+      </div>
+    </main>
+  </AccessFrame>;
+}
+
+function sessionFailureState(error, institutionalMode) {
+  const authenticationFailed = error instanceof ApiError && [401, 403].includes(error.status);
+  return {
+    status: institutionalMode && authenticationFailed ? 'expired' : 'unavailable',
+    access: null,
+    message: !institutionalMode ? 'The class workspace is unavailable. Try again later.'
+      : error instanceof ApiError && error.status === 403 ? 'CUNY AI Lab access required'
+        : authenticationFailed ? 'Use CUNY Login to continue' : 'Sign-in check unavailable',
+    kind: 'error',
+  };
+}
+
 function ClassAccessScreen({ state, onSubmit, onTeacher, dark, onToggleTheme }) {
   const [code, setCode] = useState('');
   const inputRef = useRef(null);
@@ -1140,7 +1194,7 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
           <Field label="Memo" hint={`${project.submission.text.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words`}>
             <textarea className="memo-text" maxLength="500000" value={project.submission.text} onChange={(event) => setSubmission('text', event.target.value)} rows="15" />
           </Field>
-          {hasProjectWork(project) && <button className="button button--ghost" type="button" onClick={onRequestRestart}>New map from this memo</button>}
+          {hasProjectWork(project) && <MemoForkButton onRequestRestart={onRequestRestart} />}
         </div>
         <aside className="memo-panel">
           <button type="button" className="disclosure-button" aria-label="Privacy" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>
@@ -1169,7 +1223,7 @@ function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef, defaul
     <Field label="Memo" hint={hint}>
       <textarea className="memo-text" maxLength="500000" rows="12" value={project.submission.text} onChange={(event) => update((draft) => { invalidateSubmissionDerived(draft, 'text', event.target.value); })} />
     </Field>
-    {hasProjectWork(project) && <button className="button button--ghost" type="button" onClick={onRequestRestart}>New map from this memo</button>}
+    {hasProjectWork(project) && <MemoForkButton onRequestRestart={onRequestRestart} />}
   </details>;
 }
 
@@ -5344,8 +5398,12 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
 }
 
 function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, cloudSaveStatus, cloudError } = {}) {
+  const institutionalMode = Boolean(onAccountDashboard);
   const [theme, setTheme] = useState(storedTheme);
   const [initialLoad] = useState(loadProject);
+  const persistenceStorageRef = useRef(projectStorage());
+  const memoDraftBaseRef = useRef(initialLoad.memoDraftBase || initialLoad.project);
+  const memoDraftErrorRef = useRef(false);
   const [project, setProject] = useState(initialLoad.project);
   const [projectRecords, setProjectRecords] = useState(() => loadProjectLibrary(projectStorage(), initialLoad.project, initialLoad.hasSavedProject));
   const [modal, setModal] = useState(null);
@@ -5357,6 +5415,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   });
   const [teacherOpen, setTeacherOpen] = useState(() => startInTeacher || passwordResetToken !== null);
   const [accessState, setAccessState] = useState({ status: 'checking', access: null, message: 'Loading…', kind: 'info' });
+  const [sessionCheck, setSessionCheck] = useState(0);
   const [workspaceStarted, setWorkspaceStarted] = useState(startInWorkspace);
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false);
   const [hasSavedProject, setHasSavedProject] = useState(initialLoad.hasSavedProject);
@@ -5491,40 +5550,20 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const generation = ++accessGenerationRef.current;
-    getStudentSession().then((result) => {
+    if (institutionalMode) setAccessState({ status: 'checking', access: null, message: 'Checking sign-in…', kind: 'info' });
+    const request = institutionalMode ? readInstitutionalSession({ signal: controller.signal }) : getStudentSession();
+    request.then((result) => {
       if (!active || generation !== accessGenerationRef.current) return;
       setAccessState(result.access
         ? { status: 'granted', access: result.access, message: null, kind: 'info' }
-        : { status: 'required', access: null, message: null, kind: 'info' });
-    }).catch(() => {
-      if (active && generation === accessGenerationRef.current) setAccessState({ status: 'unavailable', access: null, message: 'The class workspace is unavailable. Try again later.', kind: 'error' });
+        : { status: 'required', access: null, message: institutionalMode ? 'Use CUNY Login to continue' : null, kind: institutionalMode ? 'error' : 'info' });
+    }).catch((error) => {
+      if (active && generation === accessGenerationRef.current) setAccessState(sessionFailureState(error, institutionalMode));
     });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    if (accessState.status !== 'granted' || typeof accessState.access?.expiresAt !== 'string') return undefined;
-    const remaining = Date.parse(accessState.access.expiresAt) - Date.now();
-    if (remaining <= 0) {
-      accessGenerationRef.current += 1;
-      setReviewBusy(null);
-      setConnectionBusy(false);
-      setWorkspaceStarted(false);
-      setMapPreviewOpen(false);
-      setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
-      return undefined;
-    }
-    const timer = window.setTimeout(() => {
-      accessGenerationRef.current += 1;
-      setReviewBusy(null);
-      setConnectionBusy(false);
-      setWorkspaceStarted(false);
-      setMapPreviewOpen(false);
-      setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
-    }, Math.min(remaining, 2_147_000_000));
-    return () => window.clearTimeout(timer);
-  }, [accessState.status, accessState.access?.expiresAt]);
+    return () => { active = false; controller.abort(); };
+  }, [institutionalMode, sessionCheck]);
 
   const persistNow = useCallback((snapshot = projectRef.current) => {
     if (!workspaceStarted || persistenceBlocked) return false;
@@ -5541,7 +5580,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       return false;
     }
     try {
-      const records = saveProjectToLibrary(projectStorage(), snapshot, projectRecordsRef.current, { makeActive: true });
+      const records = saveProjectToLibrary(persistenceStorageRef.current, snapshot, projectRecordsRef.current, { makeActive: true });
+      memoDraftBaseRef.current = snapshot;
       commitProjectRecords(records);
       setHasSavedProject(true);
       setSaveState((current) => ({ ...current, status: 'saved', message: 'Project saved on this device', diagnostic: null, savedRevision: (current.savedRevision || 0) + 1 }));
@@ -5559,23 +5599,68 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
   }, [commitProjectRecords, workspaceStarted, persistenceBlocked]);
 
+  useLayoutEffect(() => {
+    if (!workspaceStarted) return;
+    try {
+      if (memoDraftBaseRef.current.id !== project.id || memoDraftBaseRef.current.submission.id !== project.submission.id) {
+        memoDraftBaseRef.current = loadDurableProject(persistenceStorageRef.current, project.id, { restoreDraft: false }) || project;
+      }
+      if (!cacheMemoDraft(persistenceStorageRef.current, project, memoDraftBaseRef.current)) throw new Error('Draft cache conflict');
+      memoDraftErrorRef.current = false;
+    } catch {
+      memoDraftErrorRef.current = true;
+      setSaveState(current => current.status === 'error' ? current : { ...current, status: 'error', message: 'Draft cache unavailable; keep this page open' });
+    }
+  }, [project, workspaceStarted]);
+
   const flushPersistence = useCallback(() => {
     window.clearTimeout(persistTimer.current);
     const committed = commitPendingAnnotations();
     return persistNow(committed.project);
   }, [commitPendingAnnotations, persistNow]);
 
+  const pauseAccess = useCallback((state = null) => {
+    // Keep the recovery copy and editing location before hiding an SSO workspace.
+    if (institutionalMode) flushPersistence();
+    accessGenerationRef.current += 1;
+    setReviewBusy(null);
+    setConnectionBusy(false);
+    if (!institutionalMode) setWorkspaceStarted(false);
+    setMapPreviewOpen(false);
+    setAccessState(state || {
+      status: 'expired', access: null,
+      message: institutionalMode ? 'Use CUNY Login to continue' : 'Enter your class code to continue.',
+      kind: 'error',
+    });
+  }, [institutionalMode, flushPersistence]);
+
+  useEffect(() => {
+    if (accessState.status !== 'granted' || typeof accessState.access?.expiresAt !== 'string') return undefined;
+    const remaining = Date.parse(accessState.access.expiresAt) - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      pauseAccess();
+      return undefined;
+    }
+    const timer = window.setTimeout(() => pauseAccess(), Math.min(remaining, 2_147_000_000));
+    return () => window.clearTimeout(timer);
+  }, [accessState.status, accessState.access?.expiresAt, pauseAccess]);
+
   useEffect(() => {
     if (!workspaceStarted || persistenceBlocked) return undefined;
-    setSaveState((current) => ({ ...current, status: 'saving', message: 'Saving project on this device…', diagnostic: null }));
+    if (!memoDraftErrorRef.current) setSaveState((current) => ({ ...current, status: 'saving', message: 'Saving project on this device…', diagnostic: null }));
     window.clearTimeout(persistTimer.current);
     persistTimer.current = window.setTimeout(persistNow, PERSIST_DEBOUNCE_MS);
     return () => window.clearTimeout(persistTimer.current);
   }, [project, workspaceStarted, persistenceBlocked, persistNow]);
 
   useEffect(() => {
+    const flushWhenHidden = () => { if (document.visibilityState === 'hidden') flushPersistence(); };
     window.addEventListener('pagehide', flushPersistence);
-    return () => window.removeEventListener('pagehide', flushPersistence);
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    return () => {
+      window.removeEventListener('pagehide', flushPersistence);
+      document.removeEventListener('visibilitychange', flushWhenHidden);
+    };
   }, [flushPersistence]);
 
   useEffect(() => () => {
@@ -5665,23 +5750,19 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       if (accessGeneration !== accessGenerationRef.current) return false;
       return true;
     }).catch(async (error) => {
-      if (error instanceof ApiError && error.status === 401) {
+      if (error instanceof ApiError && (error.status === 401 || institutionalMode && error.status === 403)) {
         if (accessGeneration !== accessGenerationRef.current) return false;
         try {
-          const currentSession = await getStudentSession();
+          const currentSession = await (institutionalMode ? readInstitutionalSession() : getStudentSession());
           if (accessGeneration !== accessGenerationRef.current) return false;
           if (currentSession.access) {
             setAccessState({ status: 'granted', access: currentSession.access, message: null, kind: 'info' });
             return false;
           }
-          accessGenerationRef.current += 1;
-          setReviewBusy(null);
-          setConnectionBusy(false);
-          setWorkspaceStarted(false);
-          setMapPreviewOpen(false);
-          setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
+          pauseAccess();
           return false;
-        } catch {
+        } catch (sessionError) {
+          if (institutionalMode && accessGeneration === accessGenerationRef.current) pauseAccess(sessionFailureState(sessionError, true));
           markPrototypeFailure(sequence);
           return false;
         }
@@ -5689,7 +5770,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       markPrototypeFailure(sequence);
       return false;
     });
-  }, [accessState.status, markPrototypeFailure]);
+  }, [accessState.status, markPrototypeFailure, institutionalMode, pauseAccess]);
 
   const update = useCallback((mutator, action, detail, actor = 'student', metadata = null) => setProject((current) => {
     const next = structuredClone(current);
@@ -5698,7 +5779,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       next.levelProgress[next.activeScale].stage = next.stage;
       next.levelProgress[next.activeScale].reflection = next.reflection;
     }
-    next.updatedAt = new Date().toISOString();
+    next.updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
     if (action) next.events.push(createEvent(action, detail, actor, metadata));
     if (next.events.length > 500) next.events = next.events.slice(-500);
     return next;
@@ -5731,23 +5812,22 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         ? 'Connection request timed out'
         : 'Guidance timed out', 'error', 8000);
     }
-    if (error instanceof ApiError && error.status === 401 && accessGeneration === accessGenerationRef.current) {
+    if (error instanceof ApiError && (error.status === 401 || institutionalMode && error.status === 403) && accessGeneration === accessGenerationRef.current) {
       try {
-        const session = await getStudentSession();
+        const session = await (institutionalMode ? readInstitutionalSession() : getStudentSession());
         if (accessGeneration !== accessGenerationRef.current) return;
         if (session.access) {
           setAccessState({ status: 'granted', access: session.access, message: null, kind: 'info' });
-          toast(`Class access is still valid. Retry the ${retryLabel}.`, 'error');
+          toast(institutionalMode ? 'Sign-in confirmed — try again' : `Class access is still valid. Retry the ${retryLabel}.`, 'error');
           return;
         }
-        accessGenerationRef.current += 1;
-        setReviewBusy(null);
-        setConnectionBusy(false);
-        setWorkspaceStarted(false);
-        setMapPreviewOpen(false);
-        setAccessState({ status: 'expired', access: null, message: 'Enter your class code to continue.', kind: 'error' });
+        pauseAccess();
         return;
-      } catch {
+      } catch (sessionError) {
+        if (institutionalMode) {
+          if (accessGeneration === accessGenerationRef.current) pauseAccess(sessionFailureState(sessionError, true));
+          return;
+        }
         toast('The classroom server could not confirm access. Your local project remains active; retry when the server is available.', 'error');
         return;
       }
@@ -6709,10 +6789,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         : error instanceof ApiError && error.status === 410
           ? (error.message.includes('revoked') ? 'revoked' : 'expired')
           : 'error');
-      setLinkMessage(describeLinkError(error));
+      setLinkMessage(describeLinkError(error, institutionalMode));
       return false;
     }
-  }, []);
+  }, [institutionalMode]);
 
   useEffect(() => {
     if (!workspaceStarted || !link || link.projectId !== project.id
@@ -6765,11 +6845,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         ? (error.message.includes('revoked') ? 'revoked' : 'expired')
         : 'error');
       setLinkMessage(error instanceof ApiError
-        ? describeLinkError(error)
+        ? describeLinkError(error, institutionalMode)
         : 'The linked project could not be opened safely. The project on this device was not replaced.');
     });
     return () => { active = false; };
-  }, [accessState.status, replaceProject]);
+  }, [accessState.status, replaceProject, institutionalMode]);
 
   const createLink = useCallback(async () => {
     const committed = commitPendingAnnotations();
@@ -6802,11 +6882,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     } catch (error) {
       if (projectRef.current.id !== snapshot.id) return;
       setLinkStatus('error');
-      const message = describeLinkError(error);
+      const message = describeLinkError(error, institutionalMode);
       setLinkMessage(message);
       toast(message, 'error');
     }
-  }, [commitPendingAnnotations, toast]);
+  }, [commitPendingAnnotations, toast, institutionalMode]);
 
   const archiveDeviceCopyBeforeLinkReload = useCallback(() => {
     const current = structuredClone(projectRef.current);
@@ -6857,9 +6937,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       setLinkStatus(error instanceof ApiError && error.status === 410
         ? (error.message.includes('revoked') ? 'revoked' : 'expired')
         : 'error');
-      setLinkMessage(describeLinkError(error));
+      setLinkMessage(describeLinkError(error, institutionalMode));
     }
-  }, [archiveDeviceCopyBeforeLinkReload, replaceProject]);
+  }, [archiveDeviceCopyBeforeLinkReload, replaceProject, institutionalMode]);
 
   const createNewLinkForDeviceCopy = useCallback(async () => {
     const activeLink = linkRef.current;
@@ -6889,10 +6969,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       setModal('project-link');
     } catch (error) {
       setLinkStatus(error instanceof ApiError && error.status === 409 ? 'conflict' : 'error');
-      setLinkMessage(describeLinkError(error));
+      setLinkMessage(describeLinkError(error, institutionalMode));
       setModal('project-link');
     }
-  }, []);
+  }, [institutionalMode]);
 
   const deleteCurrentLink = useCallback(async () => {
     const activeLink = linkRef.current;
@@ -6911,10 +6991,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       toast('The server copy was deleted. Your device copy remains in Projects.');
     } catch (error) {
       setLinkStatus(error instanceof ApiError && error.status === 409 ? 'conflict' : 'error');
-      setLinkMessage(describeLinkError(error));
+      setLinkMessage(describeLinkError(error, institutionalMode));
       setModal('project-link');
     }
-  }, [toast]);
+  }, [toast, institutionalMode]);
 
   const copyLink = useCallback(async () => {
     const activeLink = linkRef.current;
@@ -7143,6 +7223,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     </div>
   </Modal>;
 
+  if (institutionalMode && accessState.status !== 'granted') return <InstitutionalAccessScreen state={accessState} onRetry={() => setSessionCheck((current) => current + 1)} onLeave={flushPersistence} dark={dark} onToggleTheme={toggleTheme} />;
+
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Teacher Console home"><strong>Systems Mapping</strong><small>Teacher Console</small></a></div>
@@ -7211,7 +7293,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
           </div>
         </dl>
         {link && link.projectId === project.id ? <>
-          <p>This link stores the complete project on the class server: the memo, framing answers, map items, evidence notes, and revision history. Anyone with both the link and current class code can open it.</p>
+          {institutionalMode ? <>
+            <p>This link stores your complete memo, framing, map, notes, and revision history for 90 days</p>
+            <p>Anyone with this link and CUNY AI Lab membership can open it after CUNY Login</p>
+          </> : <p>This link stores the complete project on the class server: the memo, framing answers, map items, evidence notes, and revision history. Anyone with both the link and current class code can open it.</p>}
           <p className="project-link-url"><code>{linkUrl(link.token)}</code></p>
           <dl className="project-link-summary project-link-summary--metadata">
             <div><dt>Last server sync</dt><dd>{projectLinkDate(link.lastSyncedAt, 'Not synced yet')}</dd></div>
@@ -7247,7 +7332,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
             </div>
           </>}
         </> : <>
-          <p>Create a unique link to use this project on another device. The complete project—including its memo and evidence notes—will be stored on the class server for 90 days. Opening it also requires the current class code.</p>
+          {institutionalMode ? <>
+            <p>Your complete memo, framing, map, notes, and revision history are stored for 90 days</p>
+            <p>Opening this link requires CUNY Login and CUNY AI Lab membership</p>
+          </> : <p>Create a unique link to use this project on another device. The complete project—including its memo and evidence notes—will be stored on the class server for 90 days. Opening it also requires the current class code.</p>}
           {link && <p className="project-link-status">Your earlier link stays usable for the project it was created on.</p>}
           {linkStatus === 'error' && linkMessage && <p className="error-text">{linkMessage}</p>}
           <div className="button-row">
@@ -7271,4 +7359,4 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 
 export { AccessFrame, ThemeToggle, GraphCanvas, MapStage };
 export default App;
-import { projectStorage } from './accountStorage.js';
+import { projectStorage, institutionalLoginUrl } from './accountStorage.js';

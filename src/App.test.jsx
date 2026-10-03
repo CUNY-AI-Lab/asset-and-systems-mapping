@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './api.js';
+import { INSTITUTIONAL_SESSION_TIMEOUT_MS } from './studentSession.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   configFingerprint,
@@ -19,6 +20,7 @@ import {
   withDefaultNodeLayout,
 } from './domain.js';
 import { loadStoredLink, rememberStoredLink } from './projectLibrary.js';
+import { memoDraftKey } from './memoDraft.js';
 
 async function memoReviewDetails() {
   await screen.findByText('Guidance and evidence');
@@ -976,6 +978,123 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('button', { name: 'Switch to light mode' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it.each([false, true])('uses CUNY Login while an institutional session is loading and preserves the project-link return path (teacher: %s)', async (startInTeacher) => {
+    const token = '0123456789abcdefghijklmnopqrstuv';
+    window.history.replaceState(null, '', `/p/${token}`);
+    fetchMock.mockImplementation((path, options) => String(path) === '/api/student/session' ? new Promise(() => {}) : defaultFetch(path, options));
+    render(<App startInWorkspace={!startInTeacher} startInTeacher={startInTeacher} onAccountDashboard={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Checking sign-in');
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toHaveAttribute('href', `/auth/start?returnTo=${encodeURIComponent(`/p/${token}`)}`);
+    expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ask your teacher/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Teacher Console')).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/student/access')).toBe(false);
+  });
+
+  it.each([null, 401, 403])('uses CUNY Login rather than class access for institutional auth state %s', async (status) => {
+    studentSession = null;
+    if (status) fetchMock.mockImplementation((path, options) => String(path) === '/api/student/session' ? jsonResponse({ error: 'Sign-in required' }, status) : defaultFetch(path, options));
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(status === 403 ? 'CUNY AI Lab access required' : 'Use CUNY Login to continue');
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toHaveAttribute('href', '/auth/start');
+    expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/student/access')).toBe(false);
+  });
+
+  it('retries an institutional session outage and restores the saved stage without resetting the map', async () => {
+    const project = seedProject(makeMapProject());
+    let reads = 0;
+    fetchMock.mockImplementation((path, options) => String(path) === '/api/student/session' && ++reads === 1 ? jsonResponse({ error: 'Unavailable' }, 503) : defaultFetch(path, options));
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sign-in check unavailable');
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
+    expect(storedProject()).toMatchObject({ id: project.id, stage: project.stage, graph: project.graph, submission: project.submission });
+    expect(reads).toBe(2);
+  });
+
+  it('flushes an institutional draft at expiry before offering CUNY Login without resetting prior work', async () => {
+    vi.useFakeTimers();
+    const project = makeMapProject();
+    project.stage = 0;
+    seedProject(project);
+    studentSession = grantedAccess(60_000);
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    act(() => vi.advanceTimersByTime(59_800));
+    const revisedMemo = `${project.submission.text}\nA new memo detail remains in the recovery copy`;
+    fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: revisedMemo } });
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.getByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
+    expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: { text: revisedMemo } });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session')).toHaveLength(1);
+  });
+
+  it('returns institutional users to CUNY Login after a prototype 401 and a missing server session', async () => {
+    seedProject(createDefaultProject());
+    let reads = 0;
+    studentSession = () => ++reads === 1 ? grantedAccess() : null;
+    prototypeResponder = () => jsonResponse({ error: 'Sign-in ended' }, 401);
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    await screen.findByRole('heading', { name: 'Add your memo' });
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(storedProject().submission.text).toBe(createDefaultProject().submission.text);
+  });
+
+  it.each(['node', 'edge', 'map'])('preserves a pending institutional %s annotation before sign-in expires', async (target) => {
+    vi.useFakeTimers();
+    const project = seedProject(makeMapProject());
+    studentSession = grantedAccess(60_000);
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    act(() => vi.advanceTimersByTime(59_800));
+    const field = selectAnnotationTarget(target);
+    const note = `Pending ${target} note for recovery`;
+    fireEvent.change(field, { target: { value: note } });
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.getByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
+    expect(storedAnnotation(target, project)).toBe(note);
+    expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(project.graph.nodes.map(({ id }) => id));
+    expect(storedProject().graph.edges.map(({ id }) => id)).toEqual(project.graph.edges.map(({ id }) => id));
+    expect(storedProject().stage).toBe(project.stage);
+  });
+
+  it('bounds institutional guidance auth revalidation and allows outage recovery without class codes', async () => {
+    vi.useFakeTimers();
+    const project = seedProject(createDefaultProject());
+    project.stage = 1;
+    seedProject(project);
+    let reads = 0;
+    fetchMock.mockImplementation((path, options) => {
+      if (String(path) === '/api/student/session' && ++reads === 2) return new Promise(() => {});
+      return defaultFetch(path, options);
+    });
+    preflightEvaluationResponder = () => jsonResponse({ error: 'Sign-in ended' }, 401);
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(INSTITUTIONAL_SESSION_TIMEOUT_MS); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign-in check unavailable');
+    expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Reading memo/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Generate guidance' })).not.toBeDisabled();
+    expect(storedProject()).toMatchObject({ id: project.id, stage: 1, submission: project.submission });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+  });
+
   it('passes a hosted high-entropy alphanumeric class code unchanged', async () => {
     const hostedCode = 'CALI-7qN4vP9xR2mK8sT';
     seedProject(createDefaultProject());
@@ -1283,6 +1402,41 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(privacy);
     expect(screen.getByRole('checkbox', { name: 'Includes private information' })).toBeVisible();
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
+  });
+
+  it('labels the compact memo fork on hover and focus without changing its confirmation', async () => {
+    const project = makeMapProject('micro');
+    project.stage = 0;
+    await resumeSavedProject(project);
+    const fork = screen.getByRole('button', { name: 'New map from this memo' });
+    expect(fork).toHaveClass('memo-fork__button');
+    expect(fork).toHaveTextContent('');
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.pointerEnter(fork.parentElement, { pointerType: 'mouse' });
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent('New map from this memo');
+    expect(fork).toHaveAttribute('aria-describedby', tooltip.id);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    fireEvent.pointerLeave(fork.parentElement);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.focus(fork);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('New map from this memo');
+    fireEvent.keyDown(fork, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    expect(fork).not.toHaveAttribute('aria-describedby');
+    fireEvent.blur(fork);
+    fireEvent.focus(fork);
+    expect(screen.getByRole('tooltip')).toBeVisible();
+
+    fireEvent.click(fork);
+    const dialog = screen.getByRole('dialog', { name: 'Start new map from this memo?' });
+    expect(dialog).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(storedProject().id).toBe(project.id);
+    expect(storedProject().graph).toEqual(project.graph);
   });
 
   it('preserves prior work on memo edits and starts a separate map only after explicit confirmation', async () => {
@@ -4930,6 +5084,50 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled();
   });
 
+  it('restores an immediate memo journal and current step after reload when a full save is unavailable', async () => {
+    const project = makeMapProject('micro');
+    project.stage = 0;
+    seedProject(project);
+    const view = render(<App startInWorkspace />);
+    await screen.findByRole('heading', { name: 'Add your memo' });
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key === STORAGE_KEY) throw new DOMException('Full save unavailable');
+      return setItem.call(this, key, value);
+    });
+    const memo = `${project.submission.text}\nA student detail survives immediate reload`;
+    fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: memo } });
+    expect(JSON.parse(localStorage.getItem(memoDraftKey(project.id))).draft.submission.text).toBe(memo);
+    expect(storedProject().submission.text).toBe(project.submission.text);
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review', exact: true }));
+    expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
+    expect(JSON.parse(localStorage.getItem(memoDraftKey(project.id))).draft.stage).toBe(1);
+    view.unmount();
+
+    render(<App startInWorkspace />);
+    expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Add memo' }));
+    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
+    expect(storedProject().graph).toEqual(project.graph);
+  });
+
+  it('retains an edited memo and its current step after returning through Projects', async () => {
+    const project = makeMapProject('micro');
+    project.stage = 0;
+    await resumeSavedProject(project);
+    const memo = `${project.submission.text}\nA student revision before returning to Projects`;
+    fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: memo } });
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review', exact: true }));
+    await screen.findByRole('heading', { name: 'Memo review' });
+    fireEvent.click(screen.getByRole('button', { name: 'Projects', exact: true }));
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
+    expect(storedProject()).toMatchObject({ id: project.id, stage: 1, submission: { text: memo }, graph: project.graph });
+  });
+
   it.each(['node', 'edge', 'map'])('shows annotation saving only while work is pending and persists the text for %s', async (target) => {
     const project = await openMapProject();
     const field = selectAnnotationTarget(target);
@@ -4949,7 +5147,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     const field = selectAnnotationTarget(target);
     fireEvent.change(field, { target: { value: `${target} unsaved annotation` } });
-    expect(annotationStatus(field)).toHaveTextContent(/Saving…|The project opened, but browser storage could not update its saved record\./);
+    expect(annotationStatus(field)).toHaveTextContent(/Saving…|Draft cache unavailable; keep this page open|The project opened, but browser storage could not update its saved record\./);
     await waitFor(() => expect(annotationStatus(field)).toHaveTextContent('The project opened, but browser storage could not update its saved record.'));
     expect(annotationStatus(field)).not.toHaveTextContent('Quota exceeded');
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)).id).toBe(project.id);

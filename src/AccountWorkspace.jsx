@@ -7,8 +7,7 @@ import { useAccountStorage, projectStorage, institutionalLoginUrl } from './acco
 import { reconcileCloudProject, rememberCloudSave, serializeCloudProject } from './cloudSync.js';
 import './account-workspace.css';
 
-async function request(path, options) {
-  const cacheKey = projectStorage().cacheKey;
+async function request(path, options, cacheKey = projectStorage().cacheKey) {
   const response = await fetch(path, { credentials:'same-origin', ...options,
     headers: { ...(cacheKey ? { 'x-systems-account-cache': cacheKey } : {}), ...options?.headers } });
   const data = await response.json();
@@ -87,6 +86,7 @@ export default function AccountWorkspace() {
   }, []);
 
   const persist = (project) => {
+    const storage = storageRef.current;
     const serialized = serializeCloudProject(project);
     if (blocked.current.has(project.id) || saved.current.get(project.id) === serialized) return;
     setStatus('Saving to your account…');
@@ -96,10 +96,10 @@ export default function AccountWorkspace() {
         const result = await request(`/api/cloud/projects/${encodeURIComponent(project.id)}`, {
           method:'PUT', headers:{'Content-Type':'application/json'},
           body:JSON.stringify({project:serialized,revision:revisions.current.get(project.id) || 0}),
-        });
+        }, storage.cacheKey);
         revisions.current.set(project.id,result.revision);
         saved.current.set(project.id,serialized);
-        await rememberCloudSave(storageRef.current, project.id, result.revision, serialized);
+        await rememberCloudSave(storage, project.id, result.revision, serialized);
         setStatus('Saved to your account');
       } catch (failure) {
         blocked.current.add(project.id);
@@ -164,7 +164,7 @@ export default function AccountWorkspace() {
         <Action as="a" className="account-login" href={institutionalLoginUrl()}>CUNY Login</Action>
       </> : account ? <>
         <PageHeading title="Projects" description="Continue a map or start a new one" actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
-        {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} />)}</div>
+        {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} openLabel="Open" />)}</div>
           : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
         <Disclosure title="Account" className="account-details">
           <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}</p>

@@ -1,4 +1,5 @@
 import { parseProject, serializeProject } from './domain.js';
+import { clearSavedMemoDraft, restoreMemoDraft } from './memoDraft.js';
 
 // Keep the durable browser key stable. Schema-v6 projects stored here are
 // migrated in place by parseProject; changing the key would strand active work
@@ -43,7 +44,7 @@ function projectBodyKey(projectId) {
   return `${PROJECT_BODY_PREFIX}${encodedId}`;
 }
 
-export function loadDurableProject(storage, projectId) {
+export function loadDurableProject(storage, projectId, { restoreDraft = true } = {}) {
   const candidates = [];
   [projectBodyKey(projectId), STORAGE_KEY].forEach((key) => {
     try {
@@ -55,7 +56,8 @@ export function loadDurableProject(storage, projectId) {
       // Try the other durable copy.
     }
   });
-  return candidates.sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0))[0] || null;
+  const saved = candidates.sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0))[0];
+  return saved ? restoreDraft ? restoreMemoDraft(storage, saved) : saved : null;
 }
 
 export function reconcileActiveProject(storage, activeProject) {
@@ -230,6 +232,7 @@ export function saveProjectToLibrary(storage, project, records, { makeActive = f
     nextRecords = upsertRecord(nextRecords, summarizeProject(project));
     writeLibraryIndex(storage, nextRecords, currentIndex.activeProjectId || activeStored?.project.id || null);
   }
+  clearSavedMemoDraft(storage, project);
   storage.onProjectSaved?.(project);
   return nextRecords;
 }
@@ -238,7 +241,7 @@ export function loadLibraryProject(storage, record) {
   if (!isLibraryRecord(record)) throw new Error('This saved project entry is invalid.');
   const raw = storage.getItem(record.storageKey);
   if (!raw) throw new Error('This saved project is no longer available on this device.');
-  return parseProject(raw);
+  return restoreMemoDraft(storage, parseProject(raw));
 }
 
 function readStoredLinks(storage) {

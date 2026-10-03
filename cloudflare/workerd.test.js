@@ -7,6 +7,7 @@ import { chromium, expect as browserExpect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { serializedEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
 import { DEFAULT_TEACHING_PROFILE } from '../server/config.js';
+import { STORAGE_KEY } from '../src/projectLibrary.js';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
 let harness, worker, services;
@@ -233,4 +234,120 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await browserExpect(page.getByText('approximately 90% remaining', { exact: false })).toBeVisible();
     expect(errors).toEqual([]);
   } finally { await context.unrouteAll({ behavior: 'wait' }); await browser.close(); }
+}, 45000);
+
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO access states preserve account drafts without offering a class code', async () => {
+  const fixture = JSON.parse(serializedEastHarlemDisabilityProject());
+  fixture.id = 'browser-sso-map';
+  fixture.title = 'SSO recovery map';
+  expect((await request(`/api/cloud/projects/${fixture.id}`, 'alice', {
+    method: 'PUT', body: JSON.stringify({ project: serializeProject(fixture), revision: 0 }),
+  })).status).toBe(200);
+  const { account } = await (await request('/api/cloud/account')).json();
+  const recoveryKey = `systems-mapping.account.${account.cacheKey}.${STORAGE_KEY}`;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  let sessionMode = 'loading';
+  let releaseSession;
+  const sessionGate = new Promise(resolve => { releaseSession = resolve; });
+  await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'alice', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+  await context.addInitScript(() => {
+    window.__ssoClassCodeShown = false;
+    new MutationObserver(() => {
+      if (/class code/i.test(document.body?.innerText || '')) window.__ssoClassCodeShown = true;
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
+  await context.route('**/*', async route => {
+    const source = route.request();
+    const url = new URL(source.url());
+    if (url.origin !== ORIGIN) return route.abort();
+    // Only the local fixture's session response is varied; account storage and
+    // identity verification still run through the ordinary Worker entrypoint.
+    if (url.pathname === '/api/student/session') {
+      if (sessionMode === 'loading') await sessionGate;
+      if (sessionMode === 'missing') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access: null }) });
+      if (['invalid', 'denied', 'unavailable'].includes(sessionMode)) return route.fulfill({
+        status: sessionMode === 'invalid' ? 401 : sessionMode === 'denied' ? 403 : 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Synthetic session check failure' }),
+      });
+    }
+    const response = await worker.fetch(source.url(), { method: source.method(), headers: await source.allHeaders(), body: source.postDataBuffer() ?? undefined, redirect: 'manual' });
+    if (url.pathname === '/api/student/session' && sessionMode === 'expiring') {
+      const data = await response.json();
+      expect(response.status).toBe(200);
+      expect(data.access).toBeTruthy();
+      data.access.expiresAt = new Date(Date.now() + 5000).toISOString();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+    }
+    await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const assertSsoOnly = async () => {
+    await browserExpect(page.getByLabel('Class code', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__ssoClassCodeShown)).toBe(false);
+    await browserExpect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/start');
+  };
+  const openAccountMap = async () => {
+    await page.goto(ORIGIN);
+    await page.getByRole('article', { name: fixture.title, exact: true }).getByRole('button', { name: 'Open project', exact: true }).click();
+  };
+  try {
+    await openAccountMap();
+    await browserExpect(page.getByRole('status')).toHaveText('Checking sign-in…');
+    await assertSsoOnly();
+    sessionMode = 'missing';
+    releaseSession();
+    await browserExpect(page.getByRole('alert')).toHaveText('Use CUNY Login to continue');
+    await assertSsoOnly();
+    await browserExpect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
+
+    sessionMode = 'invalid';
+    await openAccountMap();
+    await browserExpect(page.getByRole('alert')).toHaveText('Use CUNY Login to continue');
+    await assertSsoOnly();
+
+    sessionMode = 'denied';
+    await openAccountMap();
+    await browserExpect(page.getByRole('alert')).toHaveText('CUNY AI Lab access required');
+    await assertSsoOnly();
+    await browserExpect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
+
+    sessionMode = 'unavailable';
+    await openAccountMap();
+    await browserExpect(page.getByRole('alert')).toHaveText('Sign-in check unavailable');
+    await assertSsoOnly();
+    await page.screenshot({ path: '/tmp/cail-systems-sso-unavailable.png' });
+    sessionMode = 'expiring';
+    await page.getByRole('button', { name: 'Try again', exact: true }).click();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    const draft = 'Map note retained when CUNY sign-in expires';
+    await page.getByRole('textbox', { name: 'Map note', exact: true }).fill(draft);
+    // Leave the annotation focused: expiry must flush its pending edit before
+    // hiding the editor, not rely on a blur or dashboard navigation to save it.
+    await browserExpect(page.getByRole('alert')).toHaveText('Use CUNY Login to continue', { timeout: 8000 });
+    await assertSsoOnly();
+    const recovery = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), recoveryKey);
+    expect(recovery.id).toBe(fixture.id);
+    expect(recovery.mapAnnotation.text).toBe(draft);
+    expect(recovery.graph.nodes).toHaveLength(9);
+    await page.screenshot({ path: '/tmp/cail-systems-sso-expired.png' });
+
+    sessionMode = 'success';
+    await openAccountMap();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await browserExpect(page.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue(draft);
+    await browserExpect.poll(async () => JSON.parse((await (await request(`/api/cloud/projects/${fixture.id}`)).json()).project).mapAnnotation.text).toBe(draft);
+    expect(await page.evaluate(() => window.__ssoClassCodeShown)).toBe(false);
+    expect(errors).toEqual([]);
+    await page.screenshot({ path: '/tmp/cail-systems-sso-recovered.png' });
+  } finally {
+    releaseSession();
+    await context.unrouteAll({ behavior: 'ignoreErrors' });
+    await browser.close();
+  }
 }, 45000);
