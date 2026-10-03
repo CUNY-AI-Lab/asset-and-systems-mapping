@@ -109,6 +109,19 @@ describe('project-scoped memo journal', () => {
     expect(window.localStorage.getItem(memoDraftKey(original.id))).toBeNull();
   });
 
+  it('anchors later edits to a newer saved replacement rather than a retained older journal', () => {
+    const original = project();
+    cacheMemoDraft(window.localStorage, revise(original, 'Older unsaved memo'), original);
+    const replaced = revise(original, 'Deliberately saved replacement');
+    replaced.updatedAt = '2026-10-03T16:00:02.000Z';
+    saveProjectToLibrary(window.localStorage, replaced, [], { makeActive: true });
+    expect(window.localStorage.getItem(memoDraftKey(original.id))).not.toBeNull();
+    const edited = revise(replaced, 'Newest edit after replacement');
+    edited.updatedAt = '2026-10-03T16:00:03.000Z';
+    expect(cacheMemoDraft(window.localStorage, edited, replaced)).toBe(true);
+    expect(loadDurableProject(window.localStorage, replaced.id).submission.text).toBe(edited.submission.text);
+  });
+
   it('never overlays a stale journal on newer full or cloud work', async () => {
     const storage = useAccountStorage('alice', null);
     const original = project();

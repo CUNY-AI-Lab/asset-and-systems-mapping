@@ -53,7 +53,9 @@ export function cacheMemoDraft(storage, project, savedBase = project) {
   if (previous && Date.parse(previous.draft.updatedAt) > Date.parse(draft.updatedAt)) return false;
   if (previous && stateFingerprint(previous.draft) === stateFingerprint(project)) return true;
   if (previous && previous.draft.updatedAt === draft.updatedAt) return false;
-  const baseFingerprint = previous?.baseFingerprint || stateFingerprint(savedBase);
+  const savedFingerprint = stateFingerprint(savedBase);
+  const previousStillMatchesBase = previous && [previous.baseFingerprint, stateFingerprint(previous.draft)].includes(savedFingerprint);
+  const baseFingerprint = previousStillMatchesBase ? previous.baseFingerprint : savedFingerprint;
   const serialized = JSON.stringify({ version: 1, projectId: project.id, submissionId: project.submission.id, createdAt: project.createdAt, baseFingerprint, draft });
   if (serialized.length > MAX_DRAFT_CHARACTERS) throw new Error('Memo draft exceeds cache limit');
   if (storage.getItem(key) !== serialized) storage.setItem(key, serialized);
