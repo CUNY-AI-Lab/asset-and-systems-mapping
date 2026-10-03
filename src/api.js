@@ -8,6 +8,16 @@ export class ApiError extends Error {
   }
 }
 
+export const GUIDANCE_REQUEST_TIMEOUT_MS = 100_000;
+
+export class TimeoutError extends Error {
+  constructor(timeoutMs = GUIDANCE_REQUEST_TIMEOUT_MS) {
+    super('Guidance request timed out');
+    this.name = 'TimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export async function apiRequest(path, options = {}) {
   const { body, headers: suppliedHeaders, ...requestOptions } = options;
   const response = await fetch(path, {
@@ -49,12 +59,52 @@ export function endStudentAccess() {
   return apiRequest('/api/student/logout', { method: 'POST' });
 }
 
+async function guidanceRequest(path, payload, options = {}) {
+  const { timeoutMs = GUIDANCE_REQUEST_TIMEOUT_MS, signal, ...requestOptions } = options;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > GUIDANCE_REQUEST_TIMEOUT_MS) {
+    throw new RangeError(`timeoutMs must be an integer from 1 to ${GUIDANCE_REQUEST_TIMEOUT_MS}`);
+  }
+  const abortReason = () => signal.reason ?? new DOMException('Request cancelled', 'AbortError');
+  if (signal?.aborted) throw abortReason();
+  const controller = new AbortController();
+  let timer;
+  let onAbort;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new TimeoutError(timeoutMs);
+      // Settle the deadline first so an abort-aware fetch cannot replace the
+      // typed timeout with a generic AbortError.
+      reject(error);
+      controller.abort(error);
+    }, timeoutMs);
+    if (signal) {
+      onAbort = () => {
+        const reason = abortReason();
+        reject(reason);
+        controller.abort(reason);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+  try {
+    // apiRequest includes body parsing; the deadline covers both phases and
+    // still settles if a transport or body reader ignores cancellation.
+    return await Promise.race([
+      apiRequest(path, { ...requestOptions, method: 'POST', body: payload, signal: controller.signal }),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
+}
+
 export function createPreflightEvaluation(payload, options = {}) {
-  return apiRequest('/api/preflight/evaluations', { ...options, method: 'POST', body: payload });
+  return guidanceRequest('/api/preflight/evaluations', payload, options);
 }
 
 export function suggestMapConnections(payload, options = {}) {
-  return apiRequest('/api/map/connections', { ...options, method: 'POST', body: payload });
+  return guidanceRequest('/api/map/connections', payload, options);
 }
 
 export function createProjectLink(project) {

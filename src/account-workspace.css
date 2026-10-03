@@ -1,4 +1,5 @@
 .account-workspace{padding-bottom:40px;color:var(--ink)}
+.account-workspace .account-login{justify-self:start;width:fit-content;max-width:100%;min-height:44px;padding-inline:18px}
 .account-details form{margin:0}
 .account-error{padding:1rem;border:2px solid currentColor;background:var(--surface);color:var(--ink);overflow-wrap:anywhere}
 .account-save{font-size:.75rem;max-width:10rem;line-height:1.2;color:var(--muted)}

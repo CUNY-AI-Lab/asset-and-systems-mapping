@@ -225,13 +225,13 @@ describe('TeacherDashboard', () => {
 
   it('defaults to the pending review queue and offers three advisory feedback modes', async () => {
     const fetchMock = await renderAuthenticated();
-    expect(screen.getByText('Review student work and manage course settings')).toBeVisible();
-    const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
+    expect(screen.queryByText('Review student work and manage course settings')).not.toBeInTheDocument();
+    const reviewTab = screen.getByRole('tab', { name: 'Submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     expect(reviewTab).toHaveAttribute('tabindex', '0');
     expect(guidanceTab).toHaveAttribute('tabindex', '-1');
-    expect(screen.getByRole('heading', { name: 'Available review records' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Submissions' })).toBeVisible();
     expect(await screen.findByRole('button', { name: /East Harlem Disability Services team/ })).toHaveAttribute('aria-current', 'true');
     expect(screen.getAllByText('Part 1 · Meso-level')).not.toHaveLength(0);
 
@@ -240,7 +240,7 @@ describe('TeacherDashboard', () => {
     expect(within(feedbackGroup).getByRole('button', { name: 'Add feedback' })).toBeVisible();
     expect(within(feedbackGroup).getByRole('button', { name: 'Add feedback and a question' })).toBeVisible();
     expect(within(feedbackGroup).getByRole('button', { name: 'Recommend another pass' })).toBeVisible();
-    expect(screen.getByText('Give the student one point to consider next. They can continue working while feedback is pending and decide how to use your response.')).toBeVisible();
+    expect(screen.getByText('Offer one next step')).toBeVisible();
     expect(screen.getByText(submissionDetail.inquiry)).toBeVisible();
     expect(screen.getByText(submissionDetail.studentAnnotation)).toBeVisible();
     const modelReview = screen.getByText('Review details').closest('details');
@@ -252,11 +252,47 @@ describe('TeacherDashboard', () => {
     expect(screen.getByRole('heading', { name: 'Map ideas' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Questions to consider' })).toBeVisible();
     expect(screen.getAllByText('Prior access shaped who knew which services to request.')).not.toHaveLength(0);
-    expect(screen.getByRole('heading', { name: 'Write to student' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Work' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Feedback' })).toBeVisible();
     expect(screen.getByLabelText('Feedback for the student')).toBeVisible();
-    expect(screen.getByText(/Give the student one point/)).toBeVisible();
+    expect(screen.queryByText(/Give the student one point/)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/history?limit=60');
+  });
+
+  it('shows one compact empty state without blank work or feedback columns', async () => {
+    await renderAuthenticated(authenticatedFetch({ queue: [] }));
+    expect(await screen.findByText('No submissions yet')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Student work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Feedback' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Choose an available review record.')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Submissions' }).closest('.teacher-review-grid')).toHaveClass('teacher-review-grid--queue-only');
+  });
+
+  it('reveals work and feedback only after the selected submission loads', async () => {
+    let finishDetail;
+    const detailResponse = new Promise((resolve) => { finishDetail = resolve; });
+    const ordinaryFetch = authenticatedFetch();
+    const fetchMock = vi.fn((path, options) => path === `/api/teacher/preflight-submissions/${submissionSummary.id}`
+      ? detailResponse
+      : ordinaryFetch(path, options));
+    await renderAuthenticated(fetchMock);
+    expect(await screen.findByText('Loading submission…')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Feedback' })).not.toBeInTheDocument();
+    finishDetail(jsonResponse({ submission: submissionDetail, reviewEvents: [] }));
+    await waitForSubmission();
+    expect(screen.getByRole('heading', { name: 'Work' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Feedback' })).toBeVisible();
+    expect(screen.queryByText('Loading submission…')).not.toBeInTheDocument();
+  });
+
+  it('omits an absent student note instead of adding an empty field', async () => {
+    await renderAuthenticated(authenticatedFetch({ detail: { ...submissionDetail, studentAnnotation: null } }));
+    await waitForSubmission();
+    expect(screen.queryByRole('heading', { name: 'Student note' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No student note was submitted.')).not.toBeInTheDocument();
   });
 
   it('falls back to the project title when no student or group name was provided', async () => {
@@ -337,7 +373,7 @@ describe('TeacherDashboard', () => {
 
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     expect(loginBody).toEqual({ userId: 'local-teacher-id', passphrase: 'a locally chosen phrase' });
-    expect(await screen.findByText('No review records are available. The current student workflow does not send work to this queue.')).toBeVisible();
+    expect(await screen.findByText('No submissions yet')).toBeVisible();
     expect(screen.queryByText(/send your work here|submit your map for review/i)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([path]) => path)).toContain('/api/teacher/preflight-submissions?status=pending');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
@@ -418,8 +454,10 @@ describe('TeacherDashboard', () => {
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
 
-    expect(await screen.findByText('No review records are available. The current student workflow does not send work to this queue.')).toBeVisible();
-    expect(screen.getByText('Feedback recorded. This review record is no longer pending.')).toBeVisible();
+    expect(await screen.findByText('No submissions yet')).toBeVisible();
+    expect(screen.getByText('Feedback saved')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Feedback' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Latest feedback' })).toBeVisible();
     expect(screen.getByText(event.instructorAnnotation)).toBeVisible();
     expect(decisionBody).toEqual({ decision: 'approve', instructorAnnotation: event.instructorAnnotation, expectedRevision: 2 });
@@ -468,7 +506,7 @@ describe('TeacherDashboard', () => {
   it('lazy-loads compact Part, Level, and Section controls with version details collapsed', async () => {
     const fetchMock = await renderAuthenticated();
     await waitForSubmission();
-    const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
+    const reviewTab = screen.getByRole('tab', { name: 'Submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/profiles');
 
@@ -502,7 +540,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByLabelText('Course material for this section')).toHaveValue(partTwoStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByRole('heading', { name: 'Preview this section' }).closest('aside');
-    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · Review memo');
+    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · Memo review');
     expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one map item.');
     fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();

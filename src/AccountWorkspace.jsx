@@ -161,7 +161,7 @@ export default function AccountWorkspace() {
       {signedOut ? <>
         <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
         <LevelTrail />
-        <Action as="a" href={institutionalLoginUrl()}>CUNY Login</Action>
+        <Action as="a" className="account-login" href={institutionalLoginUrl()}>CUNY Login</Action>
       </> : account ? <>
         <PageHeading title="Projects" description="Continue a map or start a new one" actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
         {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} />)}</div>

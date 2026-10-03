@@ -10,6 +10,8 @@ import { gatewaySuggestion, gatewayClient, safeGatewayFailure, canonicalModel, R
 import { login } from './login';
 import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
+import { apiRateLimitKey } from './request-load.js';
+import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
@@ -17,7 +19,9 @@ const HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 };
 type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv;
-const failure = (error: string, status: number) => Response.json({ error }, { status });
+const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
+  ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
+}, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
 function securedResponse(response: Response, requestId: string) {
   const headers = new Headers(response.headers);
   headers.set('x-request-id', requestId);
@@ -59,6 +63,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);`);
       this.db.finishInitialization();
       this.system = createSystemsMappingApp({ db: this.db, publicOrigin: env.PUBLIC_ORIGIN, hostedMode: true, classCode: 'cail-only-no-class-code-827361',
+        preflightEvaluationConcurrency: Number(env.GUIDANCE_CONCURRENCY),
         ollamaConfig: { apiKey: 'private-service-binding', model: env.GATEWAY_MODEL }, suggestionProvider: 'cail-gateway',
         suggestionFailure: (error: unknown, context: any) => safeGatewayFailure(error, context.env.verifiedAccount.correlation.request_id),
         onInternalError: (context: any) => requestLog(env.RELEASE, context.env.verifiedAccount.correlation.request_id).failure(),
@@ -149,10 +154,8 @@ export class MappingCourse extends DurableObject<Bindings> {
   }
 }
 
-export default {
-  async fetch(request: Request, env: Bindings): Promise<Response> {
+async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation): Promise<Response> {
     let response: Response;
-    const correlation = requestCorrelation(request);
     try {
       const url = new URL(request.url);
       if (url.origin !== env.PUBLIC_ORIGIN) return securedResponse(failure('Not found.', 404), correlation.request_id);
@@ -173,15 +176,15 @@ export default {
       else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL });
       else if (url.pathname.startsWith('/auth/')) {
         const limit = await env.REQUEST_LIMIT.limit({ key: 'login:' + (request.headers.get('cf-connecting-ip') || 'unknown') });
-        response = limit.success ? await login(request,env.IDENTITY) : failure('Please wait before signing in again.',429);
+        response = limit.success ? await login(request,env.IDENTITY) : failure('Please wait before signing in again.',429,60);
       }
       else if (url.pathname.startsWith('/api/')) {
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
         else {
-          const limit = await env.REQUEST_LIMIT.limit({ key: request.headers.get('cf-connecting-ip') || 'unknown' });
-          if (!limit.success) response = failure('Please wait a moment and try again.', 429);
+          const principal = await authorize(request, env);
+          const limit = await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal instanceof Response ? null : principal.subject) });
+          if (!limit.success) response = failure('Please wait a moment and try again.', 429,60);
           else {
-            const principal = await authorize(request, env);
             if (principal instanceof Response) response = principal;
             else if (url.pathname === '/api/cloud/quota' && request.method === 'GET') {
               try {
@@ -197,5 +200,28 @@ export default {
       response = failure('Systems Mapping is temporarily unavailable. Please try again.', 503);
     }
     return securedResponse(response, correlation.request_id);
-  },
-} satisfies ExportedHandler<Bindings>;
+}
+
+// The override is for the local runtime harness, never an environment setting.
+// Production always uses 95s, below the browser's 100s whole-request bound.
+export function createMappingHandler({ testOnlyGuidanceTimeoutMs = GUIDANCE_DEADLINE_MS } = {}) {
+  return {
+    async fetch(request: Request, env: Bindings): Promise<Response> {
+      const correlation = requestCorrelation(request);
+      if (!isGuidanceRequest(request)) return handleRequest(request, env, correlation);
+      try {
+        return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation), testOnlyGuidanceTimeoutMs);
+      } catch (error) {
+        requestLog(env.RELEASE, correlation.request_id).failure();
+        const cancelled = request.signal.aborted;
+        const timedOut = error instanceof Error && error.name === 'TimeoutError';
+        return securedResponse(Response.json({
+          error: cancelled ? 'Guidance was cancelled' : timedOut ? 'Guidance took too long' : 'Guidance is unavailable',
+          details: { code: cancelled ? 'guidance_cancelled' : timedOut ? 'guidance_timeout' : 'guidance_unavailable', shouldRetry: false },
+        }, { status: cancelled ? 499 : timedOut ? 504 : 503 }), correlation.request_id);
+      }
+    },
+  } satisfies ExportedHandler<Bindings>;
+}
+
+export default createMappingHandler();

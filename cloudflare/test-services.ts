@@ -39,6 +39,6 @@ export default {
     captured = { model: body.model, identity: Boolean(request.headers.get('x-cail-identity-jwt')), authorization: request.headers.has('authorization'), requestId: request.headers.get('x-cail-request-id') };
     if (mode === 'quota') return Response.json({ error: { code: 'quota_exceeded', type: 'insufficient_quota', message: 'Test refusal', param: null } }, { status: 429, headers: { 'x-should-retry': 'false', 'x-request-id': request.headers.get('x-cail-request-id')! } });
     const suggestion = mode === 'invalid' ? { unsupported: 'Invalid structured output' } : { guidance: [{ point: 'Identify the immediate setting in this synthetic memo.' }], nodes: [], connections: [], example: null, readiness: { ready: false, note: 'More detail would support a map.' } };
-    return Response.json({ model: 'glm-5.2', created: Math.floor(Date.now() / 1000), choices: [{ message: { role: 'assistant', content: JSON.stringify(suggestion) }, finish_reason: 'stop' }] });
+    return Response.json({ model: body.model, created: Math.floor(Date.now() / 1000), choices: [{ message: { role: 'assistant', content: JSON.stringify(suggestion) }, finish_reason: 'stop' }] });
   },
 };

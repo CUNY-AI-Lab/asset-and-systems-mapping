@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
+import { GUIDANCE_REQUEST_TIMEOUT_MS } from './api.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import {
   configFingerprint,
@@ -957,7 +958,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(within(screen.getByRole('article', { name: project.title })).getByText(/Review/)).toBeVisible();
     openProjectFromList(project.title);
-    expect(await screen.findByRole('heading', { name: 'Review memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
 
     const attempts = fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/access');
     expect(attempts.map(([, options]) => JSON.parse(options.body))).toEqual([{ code: '999' }, { code: '101' }]);
@@ -994,13 +995,13 @@ describe('Systems Mapping workflow', () => {
     const request = fetchMock.mock.calls.find(([path]) => String(path) === '/api/student/access');
     expect(JSON.parse(request[1].body)).toEqual({ code: hostedCode });
     openProjectFromList('NYC systems and assets map');
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
-    expect(screen.getByRole('heading', { name: 'Review memo' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(screen.queryByText(/STEM Splitter|class server keeps each request|project stays on this device/i)).not.toBeInTheDocument();
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 750)); });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
-    expect(screen.getAllByRole('button', { name: 'Continue without model' }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole('button', { name: 'Continue →' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
   });
 
@@ -1023,7 +1024,7 @@ describe('Systems Mapping workflow', () => {
   it('sends explicit choices forward and preserves revised labels and removals after a selective response', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →', exact: true }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: 'Neighborhood school' } });
     fireEvent.click(within(document.querySelector('.candidate-list')).getByRole('button', { name: 'Add to map' }));
     expect(screen.getByRole('textbox', { name: 'Node label' })).toHaveValue('Committee');
@@ -1181,11 +1182,11 @@ describe('Systems Mapping workflow', () => {
     expect(memo).toBeVisible();
     const memoWordCount = memo.value.trim().split(/\s+/).filter(Boolean).length;
     expect(memo.closest('label')).toHaveTextContent(`${memoWordCount} words`);
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
-    expect(screen.getByRole('heading', { name: 'Review memo' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
     const stageMenu = screen.getByRole('dialog', { name: 'Progress' });
-    ['Add memo', 'Review memo', 'Choose elements', 'Build map', 'Review and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
+    ['Add memo', 'Memo review', 'Choose elements', 'Build map', 'Review and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Progress' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
@@ -1221,7 +1222,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /^Question/ }), { target: { value: 'Where do referral delays emerge?' } });
     fireEvent.change(screen.getByRole('textbox', { name: /^Time period/ }), { target: { value: 'The first semester after referral' } });
     fireEvent.change(screen.getByRole('textbox', { name: /^Boundary/ }), { target: { value: 'NYC school and family interactions; clinical treatment is outside scope' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
 
@@ -1235,8 +1236,8 @@ describe('Systems Mapping workflow', () => {
     ].join('\n'));
   });
 
-  it('opens a non-advancing map preview and returns to the current memo stage', async () => {
-    const project = createDefaultProject();
+  it('opens a non-advancing map preview after model guidance and returns to the current memo stage', async () => {
+    const project = projectWithMemoReview({ stage: 0, furthestStage: 0 });
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
@@ -1323,6 +1324,11 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().events[0]).toMatchObject({ action: 'project.created', detail: 'Started a new map from an existing memo' });
     expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.restarted' });
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Map' }));
+    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(storedProject().preflight).toBeNull();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
@@ -1354,13 +1360,12 @@ describe('Systems Mapping workflow', () => {
   });
 
   it('supports a final Macrosphere synthesis across levels, evidence, limits, and next steps', async () => {
-    const project = createDefaultProject();
+    const project = projectWithMemoReview();
     project.activeScale = 'macrosphere';
     project.releasedScales = ['micro', 'meso', 'exosphere', 'macrosphere'];
     project.completedScales = ['micro', 'meso', 'exosphere'];
     project.stage = 4;
     project.furthestStage = 4;
-    project.preflight = null;
     project.candidates = { nodes: [], edges: [] };
     project.graph = { nodes: [], edges: [] };
     project.reflection = '';
@@ -1422,7 +1427,7 @@ describe('Systems Mapping workflow', () => {
     expect(stored.completedScales).toEqual(expect.arrayContaining([activeScale]));
     expect(stored.graph).toEqual(graphBefore);
     expect(stored.releasedScales).toEqual([...releasedBefore, expectedScale]);
-    expect(screen.getByRole('heading', { name: 'Review memo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     const levelLabels = { micro: 'Micro-level', meso: 'Meso-level', exosphere: 'Exo-level', macrosphere: 'Macro-level' };
     expect(document.querySelector('.studio-levels [aria-current="step"]')).toHaveTextContent({ micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere: 'Macro' }[expectedScale]);
     expect(document.documentElement.scrollTop).toBe(0);
@@ -1437,7 +1442,7 @@ describe('Systems Mapping workflow', () => {
     project.preflight = null;
     await resumeSavedProject(project);
 
-    expect(screen.getByRole('heading', { name: 'Review memo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(screen.queryByRole('region', { name: 'Micro-level progression' })).not.toBeInTheDocument();
   });
 
@@ -1681,7 +1686,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
     expect(document.querySelector('.workspace').textContent).not.toMatch(/instructor review|send to instructor|note for instructor/i);
-    screen.getAllByRole('button', { name: 'Continue' }).forEach((button) => expect(button).toBeEnabled());
+    screen.getAllByRole('button', { name: 'Continue →' }).forEach((button) => expect(button).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
@@ -1689,7 +1694,7 @@ describe('Systems Mapping workflow', () => {
     SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
   });
 
-  it('keeps forward stage navigation available while optional model requests are running', async () => {
+  it('waits for the first model response while later connection requests remain optional', async () => {
     let releaseReview;
     preflightEvaluationResponder = (body) => new Promise((resolve) => {
       releaseReview = () => resolve(jsonResponse({ evaluation: evaluationRecord(body) }, 201));
@@ -1701,11 +1706,16 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(reviewProject);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
-    const reviewForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue without model' });
-    expect(reviewForward).toBeEnabled();
+    const reviewForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' });
+    expect(reviewForward).toBeDisabled();
+    fireEvent.click(reviewForward);
+    expect(screen.queryByRole('heading', { name: 'Choose items' })).not.toBeInTheDocument();
+    expect(storedProject().stage).toBe(1);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+    await act(async () => { releaseReview(); await Promise.resolve(); });
+    await waitFor(() => expect(reviewForward).toBeEnabled());
     fireEvent.click(reviewForward);
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
-    await act(async () => { releaseReview(); await Promise.resolve(); });
 
     cleanup();
     window.localStorage.clear();
@@ -1744,8 +1754,11 @@ describe('Systems Mapping workflow', () => {
     await act(async () => { releaseConnections(); await Promise.resolve(); });
   });
 
-  it('opens an empty map from candidate choice instead of gating on generated items', async () => {
-    const project = createDefaultProject();
+  it('opens an empty map from candidate choice after a valid model response with no suggested items', async () => {
+    const project = projectWithMemoReview();
+    project.instructor.requireStudentConfirmation = true;
+    project.preflight.memoReview.nodes = [];
+    project.preflight.memoReview.connections = [];
     project.stage = 2;
     project.furthestStage = 2;
     project.candidates = { nodes: [], edges: [] };
@@ -2197,7 +2210,7 @@ describe('Systems Mapping workflow', () => {
     project.instructor.requireStudentConfirmation = true;
     project.participantName = 'East Harlem mapping group';
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await memoReviewDetails()).toBeVisible();
 
@@ -2251,7 +2264,7 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 0;
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     await memoReviewDetails();
 
@@ -2389,6 +2402,68 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().preflight).toBeNull();
   });
 
+  it.each(['failure', 'invalid output'])('does not advance the first mapping cycle after model %s', async (failure) => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = (body) => failure === 'failure'
+      ? jsonResponse({ error: 'Suggestion generation is temporarily unavailable.' }, 502)
+      : jsonResponse({ evaluation: evaluationRecord(body, { review: {
+        ...memoReviewFixture(),
+        nodes: [{ label: 'He', type: 'person', scale: 'micro', evidence: 'He attended' }],
+        connections: [],
+      } }) }, 201);
+    await resumeSavedProject(project);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    await screen.findByText(failure === 'failure'
+      ? 'Suggestion generation is temporarily unavailable.'
+      : 'The classroom server returned guidance with unusable map items. Generate the guidance again.');
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
+    expect(storedProject().preflight).toBeNull();
+    expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
+    expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Map' }));
+    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    const progress = screen.getByRole('dialog', { name: 'Progress' });
+    for (const label of ['Choose elements', 'Build map', 'Review and export']) {
+      fireEvent.click(within(progress).getByRole('button', { name: label, exact: true }));
+      expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
+    }
+    expect(storedProject().stage).toBe(1);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+  });
+
+  it.each([2, 3, 4])('returns an unseeded saved empty project from stage %s to Memo review', async (stage) => {
+    const project = createDefaultProject();
+    project.stage = stage;
+    project.furthestStage = stage;
+    await resumeSavedProject(project);
+    expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(1));
+    expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
+    expect(storedProject().preflight).toBeNull();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
+  });
+
+  it('returns an unseeded empty cross-tab update to Memo review without inventing guidance', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    await resumeSavedProject(project);
+    const incoming = structuredClone(project);
+    incoming.title = 'Updated from another tab';
+    incoming.stage = 4;
+    incoming.furthestStage = 4;
+    incoming.updatedAt = new Date(Date.now() + 1000).toISOString();
+    fireEvent(window, new StorageEvent('storage', { key: STORAGE_KEY, newValue: serializeProject(incoming) }));
+    expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Review and export' })).not.toBeInTheDocument();
+    await waitFor(() => expect(storedProject()).toMatchObject({ title: incoming.title, stage: 1 }));
+    expect(storedProject().preflight).toBeNull();
+    expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
+  });
+
   it('marks guidance refreshable after a memo edit without erasing the guidance or any work', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
@@ -2404,7 +2479,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByText(/Update suggestions for your revised memo/)).toBeVisible();
     expect(await memoReviewDetails()).toBeVisible();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled();
-    screen.getAllByRole('button', { name: 'Continue without model' }).forEach((button) => expect(button).toBeEnabled());
+    screen.getAllByRole('button', { name: 'Continue →' }).forEach((button) => expect(button).toBeEnabled());
     await waitFor(() => expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture()));
   });
 
@@ -2417,7 +2492,7 @@ describe('Systems Mapping workflow', () => {
       expect(configCalls).toHaveLength(2);
     });
     await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.moduleVersions).toHaveLength(12));
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await memoReviewDetails()).toBeVisible();
     await waitFor(() => {
@@ -2444,19 +2519,20 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 1;
 
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue without model' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
     await waitFor(() => {
       expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
       expect(storedProject().graph).toEqual(graphBefore);
     });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
   });
 
   it('reviews, commits, and summarizes direct Micro relationships with their verbs at Micro', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     expect(project.preflight.memoReview.connections[0].verb).toBe('refers students to');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'Connections' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'Ask' })).toBeVisible();
@@ -2490,7 +2566,7 @@ describe('Systems Mapping workflow', () => {
   it('records focal participation and immediate setting membership while reviewing Micro suggestions', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
 
     await waitFor(() => expect(storedProject().candidates.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(['School', 'Committee'])));
@@ -2535,7 +2611,7 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     openProjectFromList();
     expect(screen.getByRole('checkbox', { name: 'Add suggestions automatically' })).not.toBeChecked();
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
     expect(storedProject().graph.nodes).toHaveLength(0);
     expect(storedProject().candidates.nodes.every((node) => node.status === 'pending')).toBe(true);
@@ -2545,12 +2621,12 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(2));
     const initialIds = storedProject().graph.nodes.map(({ id }) => id);
     fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Review memo', exact: true }));
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Memo review', exact: true }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(initialIds);
     expect(storedProject().graph.edges).toHaveLength(1);
@@ -2562,7 +2638,7 @@ describe('Systems Mapping workflow', () => {
     saved.candidates.edges[0] = { ...saved.candidates.edges[0], status: 'rejected', reviewDecision: 'removed', claimState: 'retired' };
     cleanup();
     await resumeSavedProject(saved);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.filter((node) => node.status === 'confirmed')).toHaveLength(0);
     expect(storedProject().graph.edges.filter((edge) => edge.status === 'confirmed')).toHaveLength(0);
@@ -2592,8 +2668,8 @@ describe('Systems Mapping workflow', () => {
     for (const [index, scale] of scales.entries()) {
       fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
       await waitFor(() => expect(storedProject()?.preflight?.memoReview, `${scale}: ${document.querySelector('[role="status"]')?.textContent}`).toBeTruthy());
-      await waitFor(() => expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' })).toBeEnabled());
-      fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+      await waitFor(() => expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled());
+      fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
       await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: scale, stage: 3 }));
       const graph = storedProject().graph;
       expect(graph.nodes).toHaveLength(3 + index);
@@ -2621,23 +2697,125 @@ describe('Systems Mapping workflow', () => {
   }, 20000);
 
 
-  it('makes no automatic guesses when continuing without a model review', async () => {
+  it('uses Continue to generate and validate the first model review before automatically building the map', async () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     project.preflight = null;
-    const graphBefore = structuredClone(project.graph);
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue without model' }));
+    expect(screen.queryByRole('button', { name: 'Continue without model' })).not.toBeInTheDocument();
+    expect(screen.getByText('Step 2/5')).toBeVisible();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
-    expect(storedProject().graph).toEqual(graphBefore);
-    expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+    expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture());
+    expect(storedProject().graph.nodes.map(node => node.label)).toEqual(['School', 'Committee']);
+    expect(storedProject().graph.edges).toEqual([expect.objectContaining({ verb: 'refers students to' })]);
+    expect([...storedProject().graph.nodes, ...storedProject().graph.edges].every(item => item.claimState === 'inference' && item.reviewDecision === 'pending')).toBe(true);
+  });
+
+  it('deduplicates Continue and Generate guidance while the first model response is pending', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    let releaseReview;
+    preflightEvaluationResponder = (body) => new Promise(resolve => {
+      releaseReview = () => resolve(jsonResponse({ evaluation: evaluationRecord(body) }, 201));
+    });
+    await resumeSavedProject(project);
+    const continueButton = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' });
+    fireEvent.click(continueButton);
+    fireEvent.click(continueButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Reading memo…' }));
+    expect(continueButton).toBeDisabled();
+    expect(storedProject().stage).toBe(1);
+    expect(storedProject().preflight).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+    await act(async () => { releaseReview(); await Promise.resolve(); });
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.nodes).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+  });
+
+  it('ends a stalled first request without opening an empty map or applying a late response', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    let releaseReview;
+    preflightEvaluationResponder = body => new Promise(resolve => {
+      releaseReview = () => resolve(jsonResponse({ evaluation: evaluationRecord(body) }, 201));
+    });
+    await resumeSavedProject(project);
+    vi.useFakeTimers();
+    const continueButton = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' });
+    fireEvent.click(continueButton);
+    expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(GUIDANCE_REQUEST_TIMEOUT_MS); });
+
+    expect(screen.queryByRole('button', { name: 'Reading memo…' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeEnabled();
+    expect(continueButton).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Guidance timed out');
+    expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
+    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+
+    await act(async () => { releaseReview(); await Promise.resolve(); });
+    expect(storedProject().preflight).toBeNull();
+    expect(storedProject().graph.nodes).toHaveLength(0);
+
+    vi.useRealTimers();
+    preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body) }, 201);
+    fireEvent.click(continueButton);
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.nodes).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(2);
+  });
+
+  it('reports the server deadline as a timeout and leaves the first memo ready for retry', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance took too long', details: { code: 'guidance_timeout', shouldRetry: false } }, 504);
+    await resumeSavedProject(project);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Guidance timed out'));
+    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeEnabled();
+    expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+  });
+
+  it('accepts a valid empty first response and retains that model seed after advancing levels', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, { review: {
+      guidance: [{ point: 'Identify who participates in this setting' }],
+      nodes: [], connections: [], example: null,
+      readiness: { ready: false, note: 'More evidence needed' },
+    } }) }, 201);
+    await resumeSavedProject(project);
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
+    expect(storedProject().preflight.memoReview.nodes).toEqual([]);
+    expect(storedProject().events.find(event => event.action === 'preflight.completed')).toMatchObject({
+      sourceFingerprint: storedProject().preflight.sourceFingerprint,
+    });
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Review and export' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue to Meso-level' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1, preflight: null }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
   });
 
   it('adds requested connection suggestions automatically without marking them reviewed', async () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Choose elements', exact: true }));
@@ -2683,7 +2861,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByRole('checkbox', { name: 'Add suggestions automatically' })).toBeChecked();
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
@@ -2724,7 +2902,7 @@ describe('Systems Mapping workflow', () => {
     };
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
 
     const expectedLabels = ['Adult Participants', 'Accessible van'];
@@ -2786,7 +2964,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
 
     const expectedLabels = review.nodes.map(({ label }) => label);
@@ -2873,7 +3051,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     await resumeSavedProject(project);
     expect(screen.getByRole('heading', { name: 'Suggestions' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
     const carried = screen.getByLabelText('Micro-level settings available for mesosystems');
     microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
@@ -2962,7 +3140,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     await resumeSavedProject(project);
     expect(screen.getByRole('heading', { name: 'Suggestions' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
     fireEvent.click(screen.getByText('Add decision setting', { selector: 'summary' }));
     expect(screen.getByRole('heading', { name: 'New decision setting' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Name/ })).toBeVisible();
@@ -3216,7 +3394,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     render(<App />);
     await showResumeScreen();
     openProjectFromList(project.title);
-    fireEvent.click(screen.getByRole('button', { name: 'Review memo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     const recovery = await screen.findByRole('button', { name: 'Recover project' });
     fireEvent.click(recovery);
     expect(screen.getByRole('dialog', { name: 'Save recovery' })).toBeVisible();
@@ -4746,10 +4924,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 1;
     project.furthestStage = 1;
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Review memo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
-    expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue without model' })).toBeEnabled();
+    expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled();
   });
 
   it.each(['node', 'edge', 'map'])('shows annotation saving only while work is pending and persists the text for %s', async (target) => {

@@ -4,6 +4,7 @@ import { useCanvasWindow } from './ui/useCanvasWindow.js';
 import { useMapFontMetrics } from './ui/useMapFontMetrics.js';
 import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-judgments.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
+import { requiresInitialModel } from './mappingCycle.js';
 import MapListView from './MapListView.jsx';
 import MapConnections from './MapConnections.jsx';
 import MapSearch from './MapSearch.jsx';
@@ -53,6 +54,7 @@ import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import cunyAiLabLogo from './assets/cuny-ai-lab-logo.png';
 import {
   ApiError,
+  TimeoutError,
   createPreflightEvaluation,
   createProjectLink,
   deleteProjectLink,
@@ -1323,23 +1325,23 @@ const REVIEW_LEDES = Object.freeze({
   macrosphere: 'Find broader conditions that affect several map items',
 });
 
-function ReviewMemoStage({ project, update, reviewBusy, onGenerate, onRequestRestart }) {
+function ReviewMemoStage({ project, update, reviewBusy, retryPending, onGenerate, onRequestRestart }) {
   const review = project.preflight?.memoReview;
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
   return <div className="wide stage-enter review-stage">
-    <PageHeading title="Review memo" description={REVIEW_LEDES[project.activeScale]} />
+    <PageHeading title="Memo review" description={REVIEW_LEDES[project.activeScale]} />
     <LevelTrail active={project.activeScale} completed={project.completedScales} />
     <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
     <div className="review-intro">
       <SuggestionPreference project={project} update={update} />
-      {!review && <Action disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Reading memo…' : 'Generate guidance'}</Action>}
+      {!review && <Action disabled={busy || retryPending || !hasMemo} onClick={onGenerate}>{busy ? 'Reading memo…' : 'Generate guidance'}</Action>}
     </div>
     {review && <>
       <section className="coverage-banner" aria-label="Coverage and uncertainty">
         <div className="coverage-banner__text"><h2>Suggestions</h2><p>{review.nodes.length} {review.nodes.length === 1 ? 'item' : 'items'} · {review.connections.length} {review.connections.length === 1 ? 'connection' : 'connections'}</p>{stale && <p role="status">Update suggestions for your revised memo</p>}</div>
-        <Action variant="ghost" disabled={busy || !hasMemo} onClick={onGenerate}>{busy ? 'Updating…' : 'Refresh'}</Action>
+        <Action variant="ghost" disabled={busy || retryPending || !hasMemo} onClick={onGenerate}>{busy ? 'Updating…' : 'Refresh'}</Action>
       </section>
       <Disclosure title="Guidance and evidence" className="review-details">
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
@@ -5362,6 +5364,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const [pendingNewProject, setPendingNewProject] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(null);
   const reviewInFlightRef = useRef(false);
+  const reviewRequestRef = useRef(null);
+  const reviewRetryAtRef = useRef(0);
+  const [reviewRetryAt, setReviewRetryAt] = useState(0);
   const [connectionPrompt, setConnectionPrompt] = useState('');
   const [connectionSuggestions, setConnectionSuggestions] = useState([]);
   const [connectionBusy, setConnectionBusy] = useState(false);
@@ -5402,6 +5407,30 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
   }, [theme]);
   projectRef.current = project;
+  const initialModelRequired = requiresInitialModel(project);
+  useEffect(() => {
+    if (!initialModelRequired || project.stage < 2) return;
+    setMapPreviewOpen(false);
+    setProject(current => ({ ...current, stage: 1 }));
+  }, [initialModelRequired, project.stage]);
+  useEffect(() => {
+    setReviewBusy(null);
+    setReviewRetryAt(0);
+    return () => {
+      reviewRequestRef.current?.controller.abort();
+      reviewRequestRef.current = null;
+      reviewInFlightRef.current = false;
+      reviewRetryAtRef.current = 0;
+    };
+  }, [project.id, accessState.status]);
+  useEffect(() => {
+    if (!reviewRetryAt) return;
+    const timer = window.setTimeout(() => {
+      reviewRetryAtRef.current = 0;
+      setReviewRetryAt(0);
+    }, Math.max(0, reviewRetryAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [reviewRetryAt]);
   projectRecordsRef.current = projectRecords;
   connectionPromptRef.current = connectionPrompt;
   linkRef.current = link;
@@ -5682,6 +5711,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 
   const setStage = (stage, options = {}) => {
     if (!Number.isInteger(stage) || stage < 0 || stage >= STAGES.length) return false;
+    if (stage >= 2 && requiresInitialModel(projectRef.current)) {
+      toast('Continue from Memo review to start your map', 'error');
+      return false;
+    }
     const fromStage = project.stage;
     setMapPreviewOpen(false);
     update((draft) => {
@@ -5693,6 +5726,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const handleReviewApiError = async (error, accessGeneration, retryLabel = 'memo-guidance request') => {
+    if (error instanceof TimeoutError || error instanceof ApiError && error.status === 504 && error.payload?.details?.code === 'guidance_timeout') {
+      return toast(retryLabel.includes('connection')
+        ? 'Connection request timed out'
+        : 'Guidance timed out', 'error', 8000);
+    }
     if (error instanceof ApiError && error.status === 401 && accessGeneration === accessGenerationRef.current) {
       try {
         const session = await getStudentSession();
@@ -5716,7 +5754,14 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
     if (error instanceof ApiError) {
       if (error.status === 413) return toast('The guidance request is too large. Shorten the memo and try again.', 'error');
-      if (error.status === 429) return toast('Guidance requests are briefly paused. Wait a moment and try again.', 'error');
+      if (error.status === 429 || error.status === 409 && error.payload?.details?.code === 'guidance_in_progress') {
+        if (error.payload?.details?.shouldRetry === false) return toast(error.message, 'error', 8000);
+        const seconds = error.payload?.details?.retryAfterSeconds;
+        const waitSeconds = Number.isSafeInteger(seconds) && seconds > 0 && seconds <= 86_400 ? seconds : 2;
+        reviewRetryAtRef.current = Date.now() + waitSeconds * 1000;
+        setReviewRetryAt(reviewRetryAtRef.current);
+        return toast(waitSeconds <= 120 ? `Try again in ${waitSeconds} ${waitSeconds === 1 ? 'second' : 'seconds'}` : 'Guidance is paused — try again later', 'error', 8000);
+      }
       if ([502, 503, 504].includes(error.status)) {
         const details = error.payload?.details;
         if (details?.code === 'guidance_unavailable') {
@@ -5727,7 +5772,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
           const waitSeconds = Number.isSafeInteger(details.retryAfterSeconds) ? details.retryAfterSeconds : 1;
           const nextStep = details.retryable === true
             ? ` Try again in ${waitSeconds} ${waitSeconds === 1 ? 'second' : 'seconds'}.`
-            : ' No automatic retry was made. Continue manually or choose when to make another request.';
+            : requiresInitialModel(projectRef.current)
+              ? ' Retry to start your map.'
+              : ' Retry when ready or continue with your existing map.';
           return toast(`${feature} unavailable. Your project is unchanged.${nextStep}${reference}`, 'error', 8000);
         }
         return toast('Suggestion generation is temporarily unavailable.', 'error');
@@ -5740,7 +5787,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const generateSuggestions = async () => {
-    if (reviewInFlightRef.current) return false;
+    if (reviewInFlightRef.current || reviewRetryAtRef.current > Date.now()) return false;
     const payload = preflightEvaluationPayload(project);
     const encoder = new TextEncoder();
     const sourceBytes = encoder.encode(payload.sourceMaterial).byteLength;
@@ -5769,6 +5816,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     const accessGeneration = accessGenerationRef.current;
     const requestKey = authoritativeEvaluationKey(project);
     const cacheRequestKey = stableId('guidance-cache', `${requestKey}:${JSON.stringify(accessState.access)}`);
+    const request = { controller: new AbortController(), projectId: project.id };
+    reviewRequestRef.current = request;
     reviewInFlightRef.current = true;
     setReviewBusy('evaluating');
     try {
@@ -5778,7 +5827,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         try { result = normalizePreflightEvaluation(cached.evaluation, project); }
         catch { removeGuidanceCacheEntry(projectStorage(), project.id, cacheRequestKey); }
       }
-      const response = result ? cached : await createPreflightEvaluation(payload);
+      const response = result ? cached : await createPreflightEvaluation(payload, { signal: request.controller.signal });
+      if (request.controller.signal.aborted) return false;
       if (!response || !Object.hasOwn(response, 'evaluation')) throw new Error('The server returned guidance in an unexpected format. Generate the guidance again.');
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
       if (authoritativeEvaluationKey(projectRef.current) !== requestKey) {
@@ -5790,6 +5840,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         writeGuidanceCache(projectStorage(), project.id, cacheRequestKey, response);
       }
       update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Memo guidance generated', 'student', {
+        sourceFingerprint: result.sourceFingerprint,
         configurationSnapshot: result.configurationSnapshot,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
@@ -5797,11 +5848,15 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       toast('Guidance is ready.');
       return result;
     } catch (error) {
+      if (request.controller.signal.aborted) return false;
       await handleReviewApiError(error, accessGeneration, 'guidance request');
       return false;
     } finally {
-      reviewInFlightRef.current = false;
-      if (accessGeneration === accessGenerationRef.current) setReviewBusy(null);
+      if (reviewRequestRef.current === request) {
+        reviewRequestRef.current = null;
+        reviewInFlightRef.current = false;
+        if (accessGeneration === accessGenerationRef.current) setReviewBusy(null);
+      }
     }
   };
 
@@ -6045,6 +6100,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 
   const prepareCandidates = (sourceProject = project) => {
     const project = sourceProject;
+    if (requiresInitialModel(project)) return false;
     let candidates;
     try {
       candidates = buildCandidatesFromProject(project);
@@ -6351,9 +6407,20 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const primary = async () => {
+    if (project.stage >= 2 && requiresInitialModel(projectRef.current)) return setStage(1);
     switch (project.stage) {
       case 0: setStage(1, { completed: true }); break;
-      case 1: prepareCandidates(); break;
+      case 1: {
+        if (reviewInFlightRef.current) return;
+        const current = projectRef.current;
+        if (requiresInitialModel(current)) {
+          const result = await generateSuggestions();
+          if (!result) return;
+          return prepareCandidates({ ...projectRef.current, preflight: result });
+        }
+        prepareCandidates(current);
+        break;
+      }
       case 2: {
         if (project.instructor.requireStudentConfirmation) {
           commitMapSelections();
@@ -6473,8 +6540,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const primaryLabel = (() => {
-    if (project.stage === 0) return 'Review memo';
-    if (project.stage === 1) return project.preflight?.memoReview && project.preflight.sourceFingerprint === memoFingerprint(project.submission) ? (project.instructor.requireStudentConfirmation ? 'Continue' : 'Open map') : 'Continue without model';
+    if (project.stage === 0) return 'Memo review';
+    if (project.stage === 1) return 'Continue →';
     if (project.stage === 2) return 'Open map';
     if (project.stage === 3) return 'Review and export';
     const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
@@ -6482,9 +6549,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   })();
 
   const backDisabled = project.stage === 0;
-  // Model requests are optional background work. They may guard their own
-  // duplicate-request controls, but never block the student's next stage.
-  const canPrimary = !(project.stage === 4 && !SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1] && project.completedScales.includes(project.activeScale));
+  const canPrimary = !(project.stage === 1 && (Boolean(reviewBusy) || reviewRetryAt > Date.now() || (initialModelRequired && !project.submission.text.trim())))
+    && !(project.stage === 4 && !SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1] && project.completedScales.includes(project.activeScale));
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
     projectActivationGenerationRef.current += 1;
     window.clearTimeout(persistTimer.current);
@@ -6862,18 +6928,23 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   }, [toast]);
   const stageScreens = [
     <IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />,
-    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
+    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
     <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} onReview={() => { setMapPreviewOpen(false); update((draft) => { draft.stage = 2; }); }} />,
     <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,
   ];
-  const screen = mapPreviewOpen ? stageScreens[3] : stageScreens[project.stage];
-  const displayedStage = mapPreviewOpen ? 3 : project.stage;
+  const displayedStage = initialModelRequired && project.stage >= 2 ? 1 : mapPreviewOpen ? 3 : project.stage;
+  const screen = stageScreens[displayedStage];
   const returnFromMapPreview = () => {
     setMapPreviewOpen(false);
     logPrototype('map_preview_closed', { stageIndex: project.stage }, STAGES[project.stage].label);
   };
   const openMapPreview = () => {
+    if (requiresInitialModel(projectRef.current)) {
+      setStage(1);
+      toast('Continue from Memo review to start your map', 'error');
+      return;
+    }
     if (mapPreviewOpen || project.stage === 3) {
       workspaceRef.current?.focus();
       return;
@@ -7075,7 +7146,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Teacher Console home"><strong>Systems Mapping</strong><small>Teacher Console</small></a></div>
-      <div className="header-actions"><ThemeToggle dark={dark} onToggle={toggleTheme} /><button className="text-button" type="button" onClick={() => onAccountDashboard ? void onAccountDashboard() : setTeacherOpen(false)}><Icon name="back" />{onAccountDashboard ? 'Projects' : 'Back to class access'}</button></div>
+      <div className="header-actions"><ThemeToggle dark={dark} onToggle={toggleTheme} /><button className="text-button" type="button" onClick={() => workspaceStarted ? setTeacherOpen(false) : onAccountDashboard ? void onAccountDashboard() : setTeacherOpen(false)}><Icon name="back" />{workspaceStarted ? 'Back to project' : onAccountDashboard ? 'Projects' : 'Back to class access'}</button></div>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
       <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} institutionalMode={Boolean(onAccountDashboard)} /></Suspense>
@@ -7109,7 +7180,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       {['error', 'validation'].includes(saveState.status) && <div className="workspace-save-notice" role="alert"><span>{saveState.status === 'validation' ? 'Finish the map item to save' : 'Changes are not saved'}</span><button type="button" onClick={() => setModal(saveState.status === 'validation' ? 'validation' : 'storage')}>{saveState.status === 'validation' ? 'Review issue' : 'Recover project'}</button></div>}
       {screen}
     </main>
-    <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><span className="step-position">Step {project.stage + 1} of {STAGES.length}</span>{project.stage !== 4 && <strong>{STAGES[project.stage].label}</strong>}</div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}<Icon name="arrow" /></button></div></>}</footer>
+    <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><span className="step-position">Step {project.stage + 1}/{STAGES.length}</span>{project.stage !== 4 && <strong>{STAGES[project.stage].label}</strong>}</div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <SuggestionPreference project={project} update={update} />
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>

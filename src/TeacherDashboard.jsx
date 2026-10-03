@@ -5,7 +5,7 @@ import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 
 const DASHBOARD_SECTIONS = [
-  { id: 'reviews', label: 'Review submissions' },
+  { id: 'reviews', label: 'Submissions' },
   { id: 'guidance', label: 'Course settings' },
 ];
 const REVIEW_DECISIONS = [
@@ -17,6 +17,10 @@ const REVIEW_DECISIONS = [
 function Message({ message }) {
   if (!message) return null;
   return <p className={`teacher-message teacher-message--${message.type}`} role={message.type === 'error' ? 'alert' : 'status'}>{message.text}</p>;
+}
+
+function ReviewColumnHeading({ id, children, actions }) {
+  return <div className="review-column-heading"><h2 id={id}>{children}</h2>{actions}</div>;
 }
 
 function rovingIndex(event, currentIndex, length) {
@@ -415,7 +419,7 @@ function ReviewSubmissions() {
       });
       const events = Array.isArray(result.reviewEvents) ? result.reviewEvents : [];
       setLastDecision({ submission: result.submission, events });
-      setMessage({ type: 'success', text: 'Feedback recorded. This review record is no longer pending.' });
+      setMessage({ type: 'success', text: 'Feedback saved' });
       setDecision('');
       setInstructorAnnotation('');
       setFocusedQuestion('');
@@ -453,12 +457,12 @@ function ReviewSubmissions() {
 
   const lastEvents = lastDecision?.events || [];
   return <section className="review-submissions" aria-labelledby="review-submissions-heading">
-    <div className="teacher-review-grid">
+    <div className={`teacher-review-grid${detail ? '' : ' teacher-review-grid--queue-only'}`}>
       <aside className="submission-queue" aria-labelledby="review-submissions-heading">
-        <div className="section-heading"><div><p className="eyebrow">Review submissions</p><h2 id="review-submissions-heading">Available review records</h2></div><button type="button" className="button button--ghost" disabled={queueLoading} onClick={() => loadQueue()}>{queueLoading ? 'Refreshing…' : 'Refresh'}</button></div>
+        <ReviewColumnHeading id="review-submissions-heading" actions={<button type="button" className="button button--ghost" disabled={queueLoading} onClick={() => loadQueue()}>{queueLoading ? 'Refreshing…' : 'Refresh'}</button>}>Submissions</ReviewColumnHeading>
         {queueError && <p className="teacher-message teacher-message--error" role="alert">{queueError}</p>}
-        {queueLoading && !submissions.length ? <p className="empty-message">Loading pending submissions…</p> : null}
-        {!queueLoading && !submissions.length && !queueError ? <p className="empty-message">No review records are available. The current student workflow does not send work to this queue.</p> : null}
+        {queueLoading && !submissions.length ? <p className="empty-message" role="status">Loading submissions…</p> : null}
+        {!queueLoading && !submissions.length && !queueError ? <p className="empty-message">No submissions yet</p> : null}
         {submissions.length ? <ol className="submission-queue__list">{submissions.map((submission, index) => <li key={submission.id}>
           <button type="button" className={selectedId === submission.id ? 'is-selected' : ''} aria-current={selectedId === submission.id ? 'true' : undefined} onClick={() => selectSubmission(submission.id)}>
             <strong>{submissionLabel(submission, index)}</strong>
@@ -468,35 +472,35 @@ function ReviewSubmissions() {
         </li>)}</ol> : null}
       </aside>
 
-      <section className="student-work" aria-labelledby="student-work-heading">
-        <h2 id="student-work-heading">Student work</h2>
-        {detailLoading && <p className="empty-message">Loading student work…</p>}
-        {detailError && <p className="teacher-message teacher-message--error" role="alert">{detailError}</p>}
-        {!detailLoading && !detail && !detailError && <p className="empty-message">Choose an available review record.</p>}
-        {detail && <div className="student-work__body">
+      {detail && <section className="student-work" aria-labelledby="student-work-heading">
+        <ReviewColumnHeading id="student-work-heading">Work</ReviewColumnHeading>
+        <div className="student-work__body">
           <p className="eyebrow">{submissionContextLabel(detail)}</p>
           {readableValue(detail.projectMetadata?.participantName) ? <section><h3>Student or group</h3><p>{readableValue(detail.projectMetadata.participantName)}</p></section> : null}
-          {detail.inquiry ? <section><h3>Question from student’s earlier work</h3><p>{detail.inquiry}</p></section> : null}
+          {detail.inquiry ? <section><h3>Question</h3><p>{detail.inquiry}</p></section> : null}
           <section><h3>Memo</h3><p className="student-work__memo">{readableValue(detail.sourceMaterial) || 'No memo was submitted.'}</p><SuggestionReview suggestion={detail.suggestion} /></section>
-          <section><h3>Student note</h3><p>{readableValue(detail.studentAnnotation) || 'No student note was submitted.'}</p></section>
-        </div>}
-      </section>
+          {readableValue(detail.studentAnnotation) ? <section><h3>Student note</h3><p>{readableValue(detail.studentAnnotation)}</p></section> : null}
+        </div>
+      </section>}
 
-      <aside className="instructor-response" aria-labelledby="instructor-response-heading">
-        <h2 id="instructor-response-heading">Write to student</h2>
-        {detail ? <form onSubmit={submitDecision}>
-          <p className="instructor-response__prompt">Give the student one point to consider next. They can continue working while feedback is pending and decide how to use your response.</p>
+      {detail && <aside className="instructor-response" aria-labelledby="instructor-response-heading">
+        <ReviewColumnHeading id="instructor-response-heading">Feedback</ReviewColumnHeading>
+        <form onSubmit={submitDecision}>
+          <p className="instructor-response__prompt">Offer one next step</p>
           <label className="field instructor-response__guidance"><span className="field__label">Feedback for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
           <fieldset className="review-decision"><legend>Feedback type</legend><div className="review-decision__actions">{REVIEW_DECISIONS.map((item) => <button key={item.id} type="button" aria-pressed={decision === item.id} className={decision === item.id ? 'is-selected' : ''} onClick={() => { setDecision(item.id); setMessage(null); }}>{item.label}</button>)}</div></fieldset>
           {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Question for the student</span><textarea rows="5" maxLength="1000" value={focusedQuestion} onChange={(event) => setFocusedQuestion(event.target.value)} /></label>}
           <Message message={message} />
           {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Submission conflict actions"><p>Select Reload current submission to review the newer version. Your feedback will remain in the form.</p><button type="button" className="button button--ghost" onClick={reloadConflict}>Reload current submission</button></div>}
           <button type="submit" className="button" disabled={busy}>{busy ? 'Recording…' : 'Record feedback'}</button>
-        </form> : <Message message={message} />}
+        </form>
         <DecisionHistory events={reviewHistory} />
-        {lastEvents.length && lastDecision?.submission?.id !== detail?.id ? <DecisionHistory events={lastEvents} title="Latest feedback" /> : null}
-      </aside>
+      </aside>}
     </div>
+    {detailLoading && <p className="review-submissions__status" role="status">Loading submission…</p>}
+    {detailError && <p className="teacher-message teacher-message--error" role="alert">{detailError}</p>}
+    {!detail && <Message message={message} />}
+    {lastEvents.length && lastDecision?.submission?.id !== detail?.id ? <DecisionHistory events={lastEvents} title="Latest feedback" /> : null}
   </section>;
 }
 
@@ -763,7 +767,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
     sectionTabRefs.current.get(next.id)?.focus();
   };
   return <div className="teacher-dashboard">
-    <PageHeading title="Teacher Console" description="Review student work and manage course settings" actions={<div className="teacher-session"><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div>} />
+    <PageHeading title="Teacher Console" actions={<div className="teacher-session"><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div>} />
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}

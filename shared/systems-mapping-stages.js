@@ -7,9 +7,9 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
   }),
   Object.freeze({
     id: 'review-suggestions',
-    label: 'Review memo',
+    label: 'Memo review',
     short: 'Review',
-    description: 'Review memo evidence and optional guidance',
+    description: 'Review suggestions from your memo',
   }),
   Object.freeze({
     id: 'choose-what-to-map',

@@ -22,7 +22,7 @@ beforeAll(async () => {
   };
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mapping-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
-    vars: { PUBLIC_ORIGIN: ORIGIN, LOGIN_URL: '/auth/start', COURSE_ID: 'test-course', RELEASE: 'test-release', GATEWAY_MODEL: 'glm-5.2', CAIL_IDENTITY_JWKS: issuer.jwksJson },
+    vars: { PUBLIC_ORIGIN: ORIGIN, LOGIN_URL: '/auth/start', COURSE_ID: 'test-course', RELEASE: 'test-release', GATEWAY_MODEL: 'glm-5.3-flash', GUIDANCE_CONCURRENCY: '8', CAIL_IDENTITY_JWKS: issuer.jwksJson },
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-fixture' }],
@@ -104,7 +104,7 @@ test('structured model validation and quota refusals make exactly one attempt an
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(mode === 'invalid' ? 502 : mode === 'quota' ? 429 : 201);
     const stats = await (await services.fetch('https://fixtures.test/control')).json();
-    expect(stats.calls).toBe(1); expect(stats.captured).toMatchObject({ model: 'glm-5.2', identity: true, authorization: false });
+    expect(stats.calls).toBe(1); expect(stats.captured).toMatchObject({ model: 'glm-5.3-flash', identity: true, authorization: false });
     if (mode === 'quota') expect(body.details).toMatchObject({ code: 'quota_exceeded', shouldRetry: false, requestId: '01900000-0000-7000-8000-000000000001' });
   }
   expect((await (await request('/api/cloud/quota')).json()).quota.remaining_percent).toBe(90);
@@ -139,7 +139,25 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   try {
     await page.goto(ORIGIN);
-    await browserExpect(page.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    await browserExpect(login).toBeVisible();
+    await browserExpect(login).toHaveAttribute('href', '/auth/start');
+    for (const width of [1440, 320, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(() => document.fonts.ready);
+      const bounds = await login.boundingBox();
+      expect(bounds.width).toBeLessThan(160);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+    await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    expect((await login.boundingBox()).width).toBeLessThan(160);
+    await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+    await page.keyboard.press('Tab');
+    await browserExpect(login).toBeFocused();
+    expect(await login.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none');
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'alice', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.reload();
     await page.getByText('Account', { exact: true }).click();
@@ -206,7 +224,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.goto(ORIGIN);
     await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
-    await browserExpect(page.getByRole('tab', { name: 'Review submissions', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await browserExpect(page.getByRole('tab', { name: 'Submissions', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('tab', { name: 'Course settings', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Course settings', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Projects', exact: true }).click();

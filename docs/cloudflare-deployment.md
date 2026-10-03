@@ -58,8 +58,8 @@ subsequent saves. Shared review retention follows the existing product rules.
   use the shared Teacher Console; members cannot. No legacy teacher account
   is automatically linked by name or email.
 - `GATEWAY` binds to `cail-model-api`. Exact installed artifacts are CAIL Client
-  6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `glm-5.2`,
-  observed active in the public Gateway catalog on September 23. Provider
+  6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `glm-5.3-flash`,
+  observed active in the public Gateway catalog on October 2. Provider
   credentials, routing controls, output caps and accounting identities are not
   supplied by this application.
 - Each explicit model action makes one attempt. Invalid structured output
@@ -67,6 +67,23 @@ subsequent saves. Shared review retention follows the existing product rules.
   cancellation ends local waiting even when an upstream ignores it. Safe
   error code, retry advice and canonical UUIDv4/v7 support ID reach the UI.
   Quota is an estimated display only; unavailable quota remains unavailable.
+- Guidance POSTs have a 95-second whole-Worker waiting limit, including
+  identity checks and course dispatch, below the browser's 100-second limit.
+  The Gateway operation separately has a 90-second bound. A whole-request
+  timeout returns `504` with `guidance_timeout` and no automatic retry.
+  The Worker deadline remains local because its AbortSignal is not supported
+  across the deployed course RPC boundary. It does not release the course's
+  active permit, prove upstream cancellation, or prevent a queued remote
+  operation from finishing. Project reads, saves, and submissions do not use
+  this guidance-only deadline.
+- `GUIDANCE_CONCURRENCY=8` bounds concurrent guidance and connection actions
+  in the Cloudflare teaching workspace. Each student can have only one such
+  action running at a time. Duplicate and capacity refusals do not consume
+  that student's generation rate allowance. Gateway-approved retry timing
+  reaches the caller without an automatic retry or a second model request.
+- Protected API request limits are per verified account, not per campus IP.
+  Login and anonymous failures retain their IP-bound limit. Identity and
+  Admission remain authoritative on every protected request.
 - CAIL Log emits fixed request/outcome fields without prompts, maps, user
   identifiers, credentials or provider bodies. Logging is separate from the
   product's private data and semantic validation.

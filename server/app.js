@@ -2031,15 +2031,19 @@ function rateLimiter({ limit, windowMs, now, maxKeys = 512 }) {
 
 function concurrencyLimiter(limit) {
   let active = 0;
+  const activeKeys = new Set();
   return {
-    acquire() {
-      if (active >= limit) return null;
+    has(key) { return activeKeys.has(key); },
+    acquire(key) {
+      if (active >= limit || key !== undefined && activeKeys.has(key)) return null;
       active += 1;
+      if (key !== undefined) activeKeys.add(key);
       let released = false;
       return () => {
         if (released) return;
         released = true;
         active -= 1;
+        if (key !== undefined) activeKeys.delete(key);
       };
     },
   };
@@ -2772,11 +2776,10 @@ export function createSystemsMappingApp(options = {}) {
         `inquiry must contain no more than ${OLLAMA_CLOUD_LIMITS.inquiryBytes} UTF-8 bytes for this suggestion runtime.`,
       );
     }
-    const rate = preflightEvaluationLimiter.take(student.sessionRef);
-    if (!rate.allowed) {
-      throw tooManyAttempts(rate.retryAfterSeconds, 'You have requested guidance several times in this class session. Try again later.');
+    if (preflightEvaluationCapacity.has(student.sessionRef)) {
+      throw new HttpError(409, 'Guidance is already running', { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 }, { 'Retry-After': '1' });
     }
-    const release = preflightEvaluationCapacity.acquire();
+    const release = preflightEvaluationCapacity.acquire(student.sessionRef);
     if (!release) throw tooManyAttempts(1, 'Guidance is busy. Try again shortly.');
 
     const evaluationId = randomBytes(24).toString('base64url');
@@ -2786,6 +2789,13 @@ export function createSystemsMappingApp(options = {}) {
     let configSnapshot;
     let runtimeMetadata;
     try {
+      // Capacity refusals and duplicate clicks do not consume the student's
+      // generation allowance. No promise or model output is shared across requests.
+      const rate = preflightEvaluationLimiter.take(student.sessionRef);
+      if (!rate.allowed) {
+        throw tooManyAttempts(rate.retryAfterSeconds, 'You have requested guidance several times in this class session. Try again later.');
+      }
+      context.req.raw.signal.throwIfAborted();
       const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true, null, input.stageId);
       configSnapshot = evaluationConfigSnapshot(
         effective,
@@ -2839,7 +2849,7 @@ export function createSystemsMappingApp(options = {}) {
         } catch (error) {
           if (options.suggestionFailure) {
             const safe = options.suggestionFailure(error, context);
-            throw new HttpError(safe.status, safe.message, safe.details);
+            throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
           }
           // Code-only server log; provider bodies and memo content never land in logs.
           console.warn(
@@ -2889,6 +2899,7 @@ export function createSystemsMappingApp(options = {}) {
         });
       }
 
+      context.req.raw.signal.throwIfAborted();
       await inTransaction(db, async () => {
         await db.advisoryTransactionLock?.('preflight-evaluations:issue');
         await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit });
@@ -2937,13 +2948,17 @@ export function createSystemsMappingApp(options = {}) {
     if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
       throw new HttpError(413, 'Use fewer nodes or existing connections for this request.');
     }
-    const rate = connectionSuggestionLimiter.take(student.sessionRef);
-    if (!rate.allowed) {
-      throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
+    if (preflightEvaluationCapacity.has(student.sessionRef)) {
+      throw new HttpError(409, 'Guidance is already running', { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 }, { 'Retry-After': '1' });
     }
-    const release = preflightEvaluationCapacity.acquire();
+    const release = preflightEvaluationCapacity.acquire(student.sessionRef);
     if (!release) throw tooManyAttempts(1, 'Connection suggestions are busy. Try again shortly.');
     try {
+      const rate = connectionSuggestionLimiter.take(student.sessionRef);
+      if (!rate.allowed) {
+        throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
+      }
+      context.req.raw.signal.throwIfAborted();
       const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, 'choose-what-to-map');
       const systemPrompt = input.customInstructions
         ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`
@@ -2979,7 +2994,7 @@ export function createSystemsMappingApp(options = {}) {
       } catch (error) {
         if (options.suggestionFailure) {
           const safe = options.suggestionFailure(error, context);
-          throw new HttpError(safe.status, safe.message, safe.details);
+          throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
         }
         console.warn('connection suggestion generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
         throw new HttpError(
@@ -2988,6 +3003,7 @@ export function createSystemsMappingApp(options = {}) {
           generationFailureDetails(error, suggestionProvider),
         );
       }
+      context.req.raw.signal.throwIfAborted();
       return context.json({ connections }, 201);
     } finally {
       release();

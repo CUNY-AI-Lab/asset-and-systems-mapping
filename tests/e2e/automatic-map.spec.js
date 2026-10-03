@@ -17,15 +17,15 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect(page.getByRole('textbox', { name: 'Map title (optional)' })).not.toBeVisible();
   await page.getByRole('textbox', { name: /^Memo/ }).fill(memo);
   await captureSourceRenderedScreenshot(page, testInfo, 'Memo intake');
-  await page.getByRole('button', { name: 'Review memo', exact: true }).click();
+  await page.getByRole('button', { name: 'Memo review', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Add suggestions automatically' })).toBeChecked();
   await page.getByRole('button', { name: 'Generate guidance' }).click();
-  await expect(page.getByRole('button', { name: 'Open map', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeVisible();
   await expect(page.locator('.review-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('.memo-drawer')).not.toHaveAttribute('open', '');
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic review'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic review');
-  await page.getByRole('button', { name: 'Open map', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue →', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).graph.nodes.length).toBeGreaterThan(0);
   const graph = (await readProject(page)).graph;
