@@ -7,7 +7,7 @@ const request = path => new Request(ORIGIN + path, { method: 'POST' });
 afterEach(() => vi.useRealTimers());
 
 test('only model guidance POSTs use the whole-request deadline', () => {
-  expect(GUIDANCE_DEADLINE_MS).toBe(95000);
+  expect(GUIDANCE_DEADLINE_MS).toBe(28000);
   expect(isGuidanceRequest(request('/api/preflight/evaluations'))).toBe(true);
   expect(isGuidanceRequest(request('/api/map/connections'))).toBe(true);
   expect(isGuidanceRequest(new Request(ORIGIN + '/api/preflight/evaluations'))).toBe(false);

@@ -2552,7 +2552,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText('Suggestion generation is temporarily unavailable.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(storedProject().preflight).toBeNull();
   });
 
@@ -2908,9 +2908,11 @@ describe('Systems Mapping workflow', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(GUIDANCE_REQUEST_TIMEOUT_MS); });
 
     expect(screen.queryByRole('button', { name: 'Reading memo…' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(continueButton).toBeEnabled();
-    expect(screen.getByRole('status')).toHaveTextContent('Guidance timed out');
+    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t generate guidance — Try again');
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t generate guidance — Try again');
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
     expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
 
@@ -2920,6 +2922,8 @@ describe('Systems Mapping workflow', () => {
 
     vi.useRealTimers();
     preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body) }, 201);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(storedProject().preflight).not.toBeNull());
     fireEvent.click(continueButton);
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes).toHaveLength(2);
@@ -2933,8 +2937,8 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance took too long', details: { code: 'guidance_timeout', shouldRetry: false } }, 504);
     await resumeSavedProject(project);
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Guidance timed out'));
-    expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t generate guidance — Try again'));
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
   });

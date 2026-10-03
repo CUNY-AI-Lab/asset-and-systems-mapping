@@ -59,28 +59,53 @@ subsequent saves. Shared review retention follows the existing product rules.
   is automatically linked by name or email.
 - `GATEWAY` binds to `cail-model-api`. Exact installed artifacts are CAIL Client
   6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `glm-5.3-flash`,
-  observed active in the public Gateway catalog on October 2. Provider
-  credentials, routing controls, output caps and accounting identities are not
-  supplied by this application.
-- Each explicit model action makes one attempt. Invalid structured output
-  fails without a corrective paid retry. Bodies and deadlines are bounded;
+  observed active in the public Gateway catalog on October 3. Provider
+  credentials, routing controls and accounting identities are not supplied by
+  this application. GLM and its GPT-OSS backup use low reasoning. A
+  4,096-token completion ceiling bounds output, and truncated results fail
+  validation. A compact first pass asks the model for at most six nodes and
+  four connections, subject to the stricter active-level contract. No returned
+  items are silently filtered or relabeled.
+- An explicit model action normally makes one attempt. The requested backup,
+  `gpt-oss-20b`, gets a separately admitted Gateway call only after
+  a known availability refusal with affirmative Gateway retry advice. This
+  is application-level model selection, not a claim of model equivalence or
+  Gateway routing configuration. Respect Retry-After within the original
+  deadline. Quota/auth denials, ambiguous failures, timeouts, and invalid
+  completed output never trigger an automatic second paid call.
+  Invalid structured output fails without a corrective paid retry. Bodies and deadlines are bounded;
   cancellation ends local waiting even when an upstream ignores it. Safe
   error code, retry advice and canonical UUIDv4/v7 support ID reach the UI.
   Quota is an estimated display only; unavailable quota remains unavailable.
-- Guidance POSTs have a 95-second whole-Worker waiting limit, including
-  identity checks and course dispatch, below the browser's 100-second limit.
-  The Gateway operation separately has a 90-second bound. A whole-request
+- DeepSeek Flash is not an automatic backup: live full-memo checks on October
+  3 exceeded the 25-second model budget even with reasoning disabled. The
+  opt-in live test can probe it again before qualifying a future change.
+- Guidance POSTs have a 28-second whole-Worker waiting limit, including
+  identity checks and course dispatch, below the browser's 30-second limit.
+  The entire Gateway attempt/fallback operation has a 25-second bound. A whole-request
   timeout returns `504` with `guidance_timeout` and no automatic retry.
-  The Worker deadline remains local because its AbortSignal is not supported
-  across the deployed course RPC boundary. It does not release the course's
-  active permit, prove upstream cancellation, or prevent a queued remote
-  operation from finishing. Project reads, saves, and submissions do not use
-  this guidance-only deadline.
+  The browser displays a persistent error and a Try again action. Existing
+  memo/map data remains unchanged. Transfer an absolute deadline across the
+  course RPC boundary, not an unsupported AbortSignal; the course reconstructs
+  a local abort signal and releases its active permit on cancellation. An
+  expired queued request cannot begin generation, and a late model response
+  cannot be saved. This bounds application waiting, not provider residency or
+  billing after cancellation. Project reads, saves, and submissions do not
+  use this guidance-only deadline.
+- The Gateway session hint is a stable application label. Gateway owns its
+  principal-scoped affinity derivation; no account identity is constructed
+  locally. Affinity may help prefix reuse, but is not a promise of warm model
+  residency. The app does not send speculative billable warm-up requests.
+- Successful Workers AI responses retain native `@cf/vendor/model` IDs.
+  Accept only an exact canonical model or its exact native variant and
+  normalize it before the strict envelope parser. The separate Railway
+  provider parser is unchanged.
 - `GUIDANCE_CONCURRENCY=8` bounds concurrent guidance and connection actions
   in the Cloudflare teaching workspace. Each student can have only one such
   action running at a time. Duplicate and capacity refusals do not consume
   that student's generation rate allowance. Gateway-approved retry timing
-  reaches the caller without an automatic retry or a second model request.
+  reaches the caller; only the explicit availability fallback above may start
+  another admitted model call.
 - Protected API request limits are per verified account, not per campus IP.
   Login and anonymous failures retain their IP-bound limit. Identity and
   Admission remain authoritative on every protected request.

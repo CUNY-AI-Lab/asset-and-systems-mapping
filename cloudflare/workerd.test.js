@@ -122,6 +122,21 @@ test('login callback establishes an opaque HttpOnly session and logout revokes i
   expect((await request('/api/cloud/account', '', { headers: { cookie: session } })).status).toBe(401);
 });
 
+test('a known availability refusal uses the admitted backup and records the model that answered', async () => {
+  const { preflightEvaluationPayload } = await import('../src/App.jsx');
+  const project = newProject();
+  project.submission.text = 'A student meets an instructor in a college classroom.';
+  await control({ mode: 'fallback' });
+  const response = await request('/api/preflight/evaluations', 'alice', { method: 'POST', body: JSON.stringify(preflightEvaluationPayload(project)) });
+  const body = await response.json();
+  expect(response.status).toBe(201);
+  expect(body.evaluation.runtime.model).toBe('gpt-oss-20b');
+  const stats = await (await services.fetch('https://fixtures.test/control')).json();
+  expect(stats.calls).toBe(2);
+  expect(stats.captured).toMatchObject({ model: 'gpt-oss-20b', identity: true, authorization: false });
+  await control({ mode: 'success' });
+});
+
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome account flow preserves map edits and exported content across reload and account switching', async () => {
   const fixture = JSON.parse(serializedEastHarlemDisabilityProject());
   fixture.id = 'browser-map';

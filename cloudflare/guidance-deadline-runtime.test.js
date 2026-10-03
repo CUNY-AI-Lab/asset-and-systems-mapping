@@ -40,7 +40,7 @@ test('a stalled course RPC returns a safe504 while its work remains independentl
   expect(response.headers.get('x-request-id')).toBe(REQUEST_ID);
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(response.headers.has('retry-after')).toBe(false);
-  expect(await response.json()).toEqual({ error: 'Guidance took too long', details: { code: 'guidance_timeout', shouldRetry: false } });
+  expect(await response.json()).toEqual({ error: 'Couldn’t generate guidance — Try again', details: { code: 'guidance_timeout', shouldRetry: false } });
   const inFlight = await request('/api/cloud/account');
   expect(inFlight.status).toBe(200);
   expect(await inFlight.json()).toEqual({ started: 1, completed: 0 });

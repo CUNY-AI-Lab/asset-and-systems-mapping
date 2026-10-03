@@ -117,14 +117,14 @@ describe('bounded guidance requests', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('uses the bounded 100-second default', async () => {
+  it('ends the complete action at 30 seconds', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn(() => new Promise(() => {}));
     vi.stubGlobal('fetch', fetch);
     const pending = createPreflightEvaluation({});
-    const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError', timeoutMs: 100_000 });
-    expect(GUIDANCE_REQUEST_TIMEOUT_MS).toBe(100_000);
-    await vi.advanceTimersByTimeAsync(99_999);
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError', timeoutMs: 30_000 });
+    expect(GUIDANCE_REQUEST_TIMEOUT_MS).toBe(30_000);
+    await vi.advanceTimersByTimeAsync(29_999);
     expect(fetch.mock.calls[0][1].signal.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     await assertion;

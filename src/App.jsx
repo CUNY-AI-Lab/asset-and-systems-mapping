@@ -1379,7 +1379,7 @@ const REVIEW_LEDES = Object.freeze({
   macrosphere: 'Find broader conditions that affect several map items',
 });
 
-function ReviewMemoStage({ project, update, reviewBusy, retryPending, onGenerate, onRequestRestart }) {
+function ReviewMemoStage({ project, update, reviewBusy, reviewFailure, retryPending, onGenerate, onRequestRestart }) {
   const review = project.preflight?.memoReview;
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
@@ -1390,12 +1390,13 @@ function ReviewMemoStage({ project, update, reviewBusy, retryPending, onGenerate
     <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
     <div className="review-intro">
       <SuggestionPreference project={project} update={update} />
-      {!review && <Action disabled={busy || retryPending || !hasMemo} onClick={onGenerate}>{busy ? 'Reading memo…' : 'Generate guidance'}</Action>}
+      {!review && <Action disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Reading memo…' : reviewFailure ? 'Try again' : 'Generate guidance'}</Action>}
     </div>
+    {reviewFailure && <p role="alert" className="teacher-message teacher-message--error">{reviewFailure.message}</p>}
     {review && <>
       <section className="coverage-banner" aria-label="Coverage and uncertainty">
         <div className="coverage-banner__text"><h2>Suggestions</h2><p>{review.nodes.length} {review.nodes.length === 1 ? 'item' : 'items'} · {review.connections.length} {review.connections.length === 1 ? 'connection' : 'connections'}</p>{stale && <p role="status">Update suggestions for your revised memo</p>}</div>
-        <Action variant="ghost" disabled={busy || retryPending || !hasMemo} onClick={onGenerate}>{busy ? 'Updating…' : 'Refresh'}</Action>
+        <Action variant="ghost" disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Updating…' : reviewFailure ? 'Try again' : 'Refresh'}</Action>
       </section>
       <Disclosure title="Guidance and evidence" className="review-details">
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
@@ -5422,6 +5423,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const [persistenceBlocked, setPersistenceBlocked] = useState(initialLoad.persistenceBlocked);
   const [pendingNewProject, setPendingNewProject] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(null);
+  const [reviewFailure, setReviewFailure] = useState(null);
   const reviewInFlightRef = useRef(false);
   const reviewRequestRef = useRef(null);
   const reviewRetryAtRef = useRef(0);
@@ -5474,6 +5476,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   }, [initialModelRequired, project.stage]);
   useEffect(() => {
     setReviewBusy(null);
+    setReviewFailure(null);
     setReviewRetryAt(0);
     return () => {
       reviewRequestRef.current?.controller.abort();
@@ -5482,6 +5485,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       reviewRetryAtRef.current = 0;
     };
   }, [project.id, accessState.status]);
+  useEffect(() => setReviewFailure(null), [project.activeScale, project.submission.text]);
   useEffect(() => {
     if (!reviewRetryAt) return;
     const timer = window.setTimeout(() => {
@@ -5809,8 +5813,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const handleReviewApiError = async (error, accessGeneration, retryLabel = 'memo-guidance request') => {
     if (error instanceof TimeoutError || error instanceof ApiError && error.status === 504 && error.payload?.details?.code === 'guidance_timeout') {
       return toast(retryLabel.includes('connection')
-        ? 'Connection request timed out'
-        : 'Guidance timed out', 'error', 8000);
+        ? 'Couldn’t suggest connections — Try again'
+        : 'Couldn’t generate guidance — Try again', 'error', 8000);
     }
     if (error instanceof ApiError && (error.status === 401 || institutionalMode && error.status === 403) && accessGeneration === accessGenerationRef.current) {
       try {
@@ -5899,6 +5903,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     const request = { controller: new AbortController(), projectId: project.id };
     reviewRequestRef.current = request;
     reviewInFlightRef.current = true;
+    setReviewFailure(null);
     setReviewBusy('evaluating');
     try {
       const cached = readGuidanceCache(projectStorage(), project.id, cacheRequestKey);
@@ -5929,6 +5934,13 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       return result;
     } catch (error) {
       if (request.controller.signal.aborted) return false;
+      if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return false;
+      const quotaDenied = error instanceof ApiError && error.payload?.details?.code === 'quota_exceeded';
+      setReviewFailure({
+        message: quotaDenied ? 'Model usage limit reached' : 'Couldn’t generate guidance — Try again',
+        retryable: !quotaDenied,
+      });
+      setReviewBusy(null);
       await handleReviewApiError(error, accessGeneration, 'guidance request');
       return false;
     } finally {
@@ -7008,7 +7020,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   }, [toast]);
   const stageScreens = [
     <IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />,
-    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
+    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
     <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} onReview={() => { setMapPreviewOpen(false); update((draft) => { draft.stage = 2; }); }} />,
     <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,

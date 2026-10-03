@@ -1,4 +1,6 @@
 import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
+import { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
+export { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 export class ApiError extends Error {
   constructor(message, status, payload = null) {
     super(message);
@@ -7,8 +9,6 @@ export class ApiError extends Error {
     this.payload = payload;
   }
 }
-
-export const GUIDANCE_REQUEST_TIMEOUT_MS = 100_000;
 
 export class TimeoutError extends Error {
   constructor(timeoutMs = GUIDANCE_REQUEST_TIMEOUT_MS) {

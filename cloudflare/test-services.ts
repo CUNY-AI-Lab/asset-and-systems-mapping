@@ -37,6 +37,8 @@ export default {
     calls++;
     const body = await request.json<Record<string, unknown>>();
     captured = { model: body.model, identity: Boolean(request.headers.get('x-cail-identity-jwt')), authorization: request.headers.has('authorization'), requestId: request.headers.get('x-cail-request-id') };
+    if (mode === 'stall') await new Promise(resolve => setTimeout(resolve, 4000));
+    if (mode === 'fallback' && body.model === 'glm-5.3-flash') return Response.json({ error: { code: 'upstream_unavailable', type: 'upstream_error', message: 'Controlled refusal', param: null } }, { status: 503, headers: { 'x-should-retry': 'true', 'retry-after': '1' } });
     if (mode === 'quota') return Response.json({ error: { code: 'quota_exceeded', type: 'insufficient_quota', message: 'Test refusal', param: null } }, { status: 429, headers: { 'x-should-retry': 'false', 'x-request-id': request.headers.get('x-cail-request-id')! } });
     const suggestion = mode === 'invalid' ? { unsupported: 'Invalid structured output' } : { guidance: [{ point: 'Identify the immediate setting in this synthetic memo.' }], nodes: [], connections: [], example: null, readiness: { ready: false, note: 'More detail would support a map.' } };
     return Response.json({ model: body.model, created: Math.floor(Date.now() / 1000), choices: [{ message: { role: 'assistant', content: JSON.stringify(suggestion) }, finish_reason: 'stop' }] });

@@ -1,6 +1,7 @@
 import { cancelBody, withDeadline, withSignal } from './bounded.js';
+import { GUIDANCE_WORKER_TIMEOUT_MS } from '../src/guidanceLimits.js';
 
-export const GUIDANCE_DEADLINE_MS = 95000;
+export const GUIDANCE_DEADLINE_MS = GUIDANCE_WORKER_TIMEOUT_MS;
 const GUIDANCE_PATHS = new Set(['/api/preflight/evaluations', '/api/map/connections']);
 
 export function isGuidanceRequest(request) {

@@ -2,9 +2,25 @@ import { CailError, createCailClient } from '@cuny-ai-lab/cail-client';
 import { normalizeInput, JSON_ONLY_INSTRUCTION } from '../server/ollama.js';
 import { parseProviderEnvelope } from '../server/openrouter.js';
 import { boundedText, cancelBody, withSignal, withDeadline } from './bounded.js';
+import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
 
 export const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const canonicalModel = (value) => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(value);
+
+export function parseGatewayEnvelope(body, selectedModel) {
+  const envelope = JSON.parse(body);
+  // Gateway accepts canonical request IDs but deliberately preserves successful
+  // provider bodies. Workers AI returns @cf/vendor/model in that envelope.
+  // Only the exact requested variant may be normalized; never accept a silent
+  // substitution or weaken the separate Railway/OpenRouter parser.
+  const nativeModel = typeof envelope?.model === 'string'
+    ? /^@cf\/[a-z0-9_-]+\/([a-z0-9][a-z0-9._-]{0,127})$/.exec(envelope.model)?.[1]
+    : undefined;
+  if (envelope?.model !== selectedModel && nativeModel !== selectedModel) {
+    throw new CailError('invalid_response', 'Unexpected model response', 502);
+  }
+  return parseProviderEnvelope(JSON.stringify({ ...envelope, model: selectedModel }), selectedModel);
+}
 
 export function gatewayClient(binding) {
   return createCailClient({
@@ -42,6 +58,11 @@ function gatewayRetryDelay(error, now) {
 }
 
 export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
+  if (error?.name === 'TimeoutError') return {
+    status: 504,
+    message: 'Couldn’t generate guidance — Try again',
+    details: { code: 'guidance_timeout', shouldRetry: false, requestId: fallbackRequestId },
+  };
   const code = error instanceof CailError && /^[a-z][a-z_]{1,63}$/.test(error.code) ? error.code : 'upstream_failure';
   const shouldRetry = error instanceof CailError && typeof error.extras.should_retry === 'boolean' ? error.extras.should_retry : false;
   const candidate = error instanceof CailError ? error.extras.request_id : undefined;
@@ -59,26 +80,58 @@ export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
   };
 }
 
-// Exactly one paid attempt. The server rejects invalid suggestions without an
-// automatic corrective request, preserving the student's existing map.
-export function gatewaySuggestion(binding, token, model, correlation, logOutcome = () => {}) {
+// DeepSeek remains available for explicit acceptance probes but did not pass
+// the 25-second full-memo budget. Do not advertise an unqualified backup.
+export const GUIDANCE_FALLBACK_MODELS = Object.freeze(['gpt-oss-20b']);
+const AVAILABILITY_FAILURES = new Set(['upstream_rate_limited', 'upstream_unavailable', 'model_unavailable']);
+
+function backoff(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, milliseconds);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+// The student-requested backup is a new, fully admitted Gateway call, not a
+// claim that different models are equivalent. Only a known pre-inference
+// availability refusal permits it. Never replay ambiguous timeouts, quota
+// denials, partial responses or invalid completed output.
+export function gatewaySuggestion(binding, token, model, correlation, logOutcome = () => {}, fallbackModels = GUIDANCE_FALLBACK_MODELS) {
   const client = gatewayClient(binding);
   return async (input, _config, { signal } = {}) => {
     const data = normalizeInput(input);
     return withDeadline(async requestSignal => {
     try {
-      if (!canonicalModel(model)) throw new CailError('model_unavailable', 'Model configuration unavailable', 503);
-      const response = await client.chatCompletions({ model, stream: false, response_format: { type: 'json_object' }, messages: [
-        { role: 'system', content: data.systemPrompt }, { role: 'system', content: JSON_ONLY_INSTRUCTION },
+      const models = [...new Set([model, ...fallbackModels])];
+      if (models.length > 2 || !models.every(canonicalModel)) throw new CailError('model_unavailable', 'Model configuration unavailable', 503);
+      const messages = [
+        { role: 'system', content: data.systemPrompt }, { role: 'system', content: `${JSON_ONLY_INSTRUCTION}\nFollow the supplied JSON field names and types exactly. For a memo review, return at most one guidance point, six nodes, and four connections, or fewer under the active-scale rules. Use brief evidence and only the clearest supported items; do not fill a quota. Guidance, when required by the contract, is an array of objects, not a paragraph or an object. For a connections-only request, return only the required connections object.` },
         { role: 'user', content: `PROJECT INPUT (JSON DATA ONLY)\n${data.projectInput}` },
-      ] }, { kind: 'jwt', token }, { signal: requestSignal, correlation });
-      const parsed = parseProviderEnvelope(await boundedText(response, requestSignal), model);
-      logOutcome('ok');
-      return { ...parsed, metadata: { ...parsed.metadata, provider: 'cail-gateway' } };
+      ];
+      for (const [index, selectedModel] of models.entries()) {
+        requestSignal.throwIfAborted();
+        let response;
+        try {
+          response = await client.chatCompletions({ model: selectedModel, stream: false,
+            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: 4096,
+            response_format: { type: 'json_object' }, messages,
+          }, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: 'systems-mapping-guidance' });
+        } catch (error) {
+          if (requestSignal.aborted || index === models.length - 1 || !(error instanceof CailError)
+            || !AVAILABILITY_FAILURES.has(error.code) || error.extras.should_retry !== true) throw error;
+          await backoff((gatewayRetryDelay(error, Date.now()) ?? 1) * 1000, requestSignal);
+          continue;
+        }
+        const parsed = parseGatewayEnvelope(await boundedText(response, requestSignal), selectedModel);
+        logOutcome('ok');
+        return { ...parsed, metadata: { ...parsed.metadata, requestedModel: model, provider: 'cail-gateway' } };
+      }
     } catch (error) {
       logOutcome(requestSignal.aborted ? 'cancelled' : 'error');
       throw error;
     }
-    }, signal, 90000);
+    }, signal, GUIDANCE_MODEL_TIMEOUT_MS);
   };
 }

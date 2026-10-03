@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { correlationFromHeaders, type CailCorrelation } from '@cuny-ai-lab/cail-log';
 import { authorize, verifierConfigs, type Principal, type IdentityEnv } from './identity';
 import { requestLog } from './log.js';
-import { boundedText, boundedRpc, withDeadline } from './bounded.js';
+import { boundedText, boundedRpc, withDeadline, withSignal } from './bounded.js';
 import { createSystemsMappingApp } from '../server/app.js';
 import { initializeDurableDatabase } from '../server/database.js';
 import { gatewaySuggestion, gatewayClient, safeGatewayFailure, canonicalModel, REQUEST_ID } from './gateway.js';
@@ -81,7 +81,7 @@ export class MappingCourse extends DurableObject<Bindings> {
     return this.db.healthCheck();
   }
 
-  async request(request: Request, principal: Principal, correlation: CailCorrelation = correlationFromHeaders(request.headers)): Promise<Response> {
+  async request(request: Request, principal: Principal, correlation: CailCorrelation = correlationFromHeaders(request.headers), guidanceDeadline?: number): Promise<Response> {
     const url = new URL(request.url);
     const owner = digest(principal.subject);
     const path = url.pathname;
@@ -150,11 +150,20 @@ export class MappingCourse extends DurableObject<Bindings> {
     const internalHeaders = new Headers(request.headers);
     internalHeaders.set('host',url.host);
     internalHeaders.delete('x-forwarded-proto');
-    return app.fetch(new Request(request,{headers:internalHeaders}), { verifiedAccount: { studentSession: session, teacherSession, gatewayJwt: principal.gatewayJwt, correlation } });
+    const dispatch = (signal: AbortSignal) => app.fetch(new Request(request, { headers: internalHeaders, signal }),
+      { verifiedAccount: { studentSession: session, teacherSession, gatewayJwt: principal.gatewayJwt, correlation } });
+    if (isGuidanceRequest(request)) {
+      // Transfer an absolute time, not an AbortSignal, across the RPC boundary.
+      // Late dispatch must not start a model after the browser has stopped waiting.
+      const remaining = Math.min(GUIDANCE_DEADLINE_MS - 500, (guidanceDeadline ?? Date.now() + GUIDANCE_DEADLINE_MS) - Date.now() - 500);
+      if (remaining <= 0) throw new DOMException('Request deadline exceeded', 'TimeoutError');
+      return withDeadline(signal => withSignal(Promise.resolve(dispatch(signal)), signal), request.signal, remaining);
+    }
+    return dispatch(request.signal);
   }
 }
 
-async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation): Promise<Response> {
+async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation, guidanceDeadline?: number): Promise<Response> {
     let response: Response;
     try {
       const url = new URL(request.url);
@@ -191,11 +200,12 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
                 const quota = await withDeadline(signal => gatewayClient(env.GATEWAY).getQuota({ kind: 'jwt', token: principal.gatewayJwt }, { signal }), request.signal, 5000);
                 response = Response.json({ quota });
               } catch { response = Response.json({ quota: null, error: 'Model usage is temporarily unavailable.' }, { status: 503 }); }
-            } else response = await env.COURSES.getByName(env.COURSE_ID).request(internal, principal, correlation);
+            } else response = await env.COURSES.getByName(env.COURSE_ID).request(internal, principal, correlation, guidanceDeadline);
           }
         }
       } else response = await env.ASSETS.fetch(internal);
-    } catch {
+    } catch (error) {
+      if (isGuidanceRequest(request) && error instanceof Error && error.name === 'TimeoutError') throw error;
       requestLog(env.RELEASE, correlation.request_id).failure();
       response = failure('Systems Mapping is temporarily unavailable. Please try again.', 503);
     }
@@ -203,20 +213,21 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
 }
 
 // The override is for the local runtime harness, never an environment setting.
-// Production always uses 95s, below the browser's 100s whole-request bound.
+// Production uses 28s, below the browser's 30s whole-request bound.
 export function createMappingHandler({ testOnlyGuidanceTimeoutMs = GUIDANCE_DEADLINE_MS } = {}) {
   return {
     async fetch(request: Request, env: Bindings): Promise<Response> {
       const correlation = requestCorrelation(request);
       if (!isGuidanceRequest(request)) return handleRequest(request, env, correlation);
       try {
-        return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation), testOnlyGuidanceTimeoutMs);
+        const deadline = Date.now() + testOnlyGuidanceTimeoutMs;
+        return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation, deadline), testOnlyGuidanceTimeoutMs);
       } catch (error) {
         requestLog(env.RELEASE, correlation.request_id).failure();
         const cancelled = request.signal.aborted;
         const timedOut = error instanceof Error && error.name === 'TimeoutError';
         return securedResponse(Response.json({
-          error: cancelled ? 'Guidance was cancelled' : timedOut ? 'Guidance took too long' : 'Guidance is unavailable',
+          error: cancelled ? 'Guidance was cancelled' : 'Couldn’t generate guidance — Try again',
           details: { code: cancelled ? 'guidance_cancelled' : timedOut ? 'guidance_timeout' : 'guidance_unavailable', shouldRetry: false },
         }, { status: cancelled ? 499 : timedOut ? 504 : 503 }), correlation.request_id);
       }
