@@ -41,6 +41,7 @@ describe.skipIf(process.env.SYSTEMS_MAPPING_LIVE_GUIDANCE !== '1')('paid Gateway
     const correlation = correlationFromHeaders(new Headers());
     let paidCalls = 0;
     let bindingCalls = 0;
+    let validationFailure;
     const binding = { fetch: async request => {
       bindingCalls++;
       if (refusePrimary && bindingCalls === 1) return Response.json({ error: {
@@ -72,6 +73,8 @@ describe.skipIf(process.env.SYSTEMS_MAPPING_LIVE_GUIDANCE !== '1')('paid Gateway
     const system = createSystemsMappingApp({ dbPath: ':memory:', classCode: '101',
       ollamaConfig: { apiKey: 'acceptance-helper', model }, suggestionProvider: 'cail-gateway',
       suggestionFailure: error => {
+        validationFailure = { type: error?.name, code: error?.code,
+          ...(error?.name === 'MemoReviewSemanticError' ? { validation: error.message } : {}) };
         console.log(JSON.stringify({ model, errorType: error?.name, errorCode: error?.code,
           ...(error?.name === 'MemoReviewSemanticError' ? { validation: error.message } : {}),
         }));
@@ -100,7 +103,7 @@ describe.skipIf(process.env.SYSTEMS_MAPPING_LIVE_GUIDANCE !== '1')('paid Gateway
         nodes: result.evaluation?.review?.nodes?.length, connections: result.evaluation?.review?.connections?.length,
         failureCode: result.details?.code, requestId: correlation.request_id,
       }));
-      expect(response.status).toBe(201);
+      expect(response.status, JSON.stringify(validationFailure)).toBe(201);
       expect(Date.now() - started).toBeLessThan(30000);
       expect(result.evaluation.review.nodes.length).toBeGreaterThan(1);
       expect(result.evaluation.review.connections.length).toBeGreaterThan(0);
