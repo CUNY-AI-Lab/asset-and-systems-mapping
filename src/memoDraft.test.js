@@ -122,6 +122,24 @@ describe('project-scoped memo journal', () => {
     expect(loadDurableProject(window.localStorage, replaced.id).submission.text).toBe(edited.submission.text);
   });
 
+  it('recovers the next edit when a successful full save cannot clear its journal', () => {
+    const storage = {
+      getItem: key => window.localStorage.getItem(key),
+      setItem: (key, value) => window.localStorage.setItem(key, value),
+      removeItem: () => { throw new DOMException('Storage cleanup unavailable'); },
+    };
+    const original = project();
+    saveProjectToLibrary(storage, original, [], { makeActive: true });
+    const saved = revise(original, 'First saved edit');
+    cacheMemoDraft(storage, saved, original);
+    saveProjectToLibrary(storage, saved, [], { makeActive: true });
+    expect(storage.getItem(memoDraftKey(saved.id))).not.toBeNull();
+    const edited = revise(saved, 'Next edit after failed cleanup');
+    edited.updatedAt = '2026-10-03T16:00:02.000Z';
+    expect(cacheMemoDraft(storage, edited, saved)).toBe(true);
+    expect(loadDurableProject(storage, saved.id).submission.text).toBe(edited.submission.text);
+  });
+
   it('never overlays a stale journal on newer full or cloud work', async () => {
     const storage = useAccountStorage('alice', null);
     const original = project();
