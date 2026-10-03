@@ -4,6 +4,7 @@ import { loadEnvFile } from 'node:process';
 import { createSystemsMappingApp } from './app.js';
 import { requestOllamaSuggestion, validateOllamaCloudConfig } from './ollama.js';
 import { requestOpenRouterSuggestion, validateOpenRouterConfig, withOpenRouterFallback } from './openrouter.js';
+import { parseRetentionHoldUntil } from './retention.js';
 
 try {
   loadEnvFile('.env');
@@ -169,6 +170,9 @@ const publicDemo = takePublicDemo(hostedMode);
 const runtimeClassCode = takeClassCode(hostedMode, publicDemo);
 const ollamaConfig = takeOllamaConfig();
 const openRouterConfig = takeOpenRouterConfig();
+const retentionHoldUntil = process.env.SYSTEMS_MAPPING_RETENTION_HOLD_UNTIL;
+// Validate before opening the hosted database, without logging the environment.
+parseRetentionHoldUntil(retentionHoldUntil);
 
 // Ollama Cloud is the primary model runtime; OpenRouter either backs it up on
 // provider-side failures or serves alone when it is the only runtime enabled.
@@ -205,6 +209,7 @@ const { app, close, ready } = createSystemsMappingApp({
   teacherBootstrapToken: takeBootstrapToken(),
   classCode: runtimeClassCode,
   publicDemo,
+  retentionHoldUntil,
   ...suggestionOptions,
   studentSessionTtlMs: optionalDuration('STUDENT_SESSION_TTL_MS', { min: 1000, max: 7 * 24 * 60 * 60 * 1000 }),
   sessionTtlMs: optionalDuration('TEACHER_SESSION_TTL_MS', { min: 60_000, max: 30 * 24 * 60 * 60 * 1000 }),

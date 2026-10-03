@@ -1,0 +1,3 @@
+# esbuild verifies its pinned platform binary during installation
+allowBuilds:
+  esbuild: true

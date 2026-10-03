@@ -67,6 +67,7 @@ import {
   studentWorkflowEvaluationReport,
 } from './database.js';
 import { OllamaCloudError, OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
+import { parseRetentionHoldUntil, retentionCleanupAllowed } from './retention.js';
 
 const DEFAULT_TEACHER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_STUDENT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -2090,21 +2091,23 @@ async function recordPrototypeEvent(db, {
   recordedAt,
   retentionMs,
   maxRows,
+  retentionHoldUntil = null,
 }) {
   const metadataJson = JSON.stringify(metadata);
   await inTransaction(db, async () => {
     await db.advisoryTransactionLock?.('prototype-events');
-    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows });
+    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows, retentionHoldUntil });
     await db.prepare(`
       INSERT INTO prototype_events
         (session_kind, session_ref, event_name, stage, metadata_json, recorded_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(sessionKind, sessionRef, event, stage, metadataJson, recordedAt);
-    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows });
+    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows, retentionHoldUntil });
   });
 }
 
-function prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows }) {
+function prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows, retentionHoldUntil = null }) {
+  if (!retentionCleanupAllowed(retentionHoldUntil, recordedAt)) return 0;
   const pruneExpired = db.prepare('DELETE FROM prototype_events WHERE recorded_at < ?').run(recordedAt - retentionMs);
   const pruneRows = () => db.prepare(`
     DELETE FROM prototype_events WHERE id IN (
@@ -2117,6 +2120,7 @@ function prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows }) {
 }
 
 function purgeExpiredPreflightSubmissions(db, options) {
+  if (!retentionCleanupAllowed(options.retentionHoldUntil ?? null, options.purgedAt)) return 0;
   if (db.dialect !== 'postgres') return purgeExpiredPreflightSubmissionsSqlite(db, options);
   return purgeExpiredPreflightSubmissionsAsync(db, options);
 }
@@ -2235,6 +2239,7 @@ async function purgeExpiredPreflightSubmissionsAsync(db, {
 }
 
 function purgeExpiredPreflightEvaluations(db, options) {
+  if (!retentionCleanupAllowed(options.retentionHoldUntil ?? null, options.expiredAt)) return 0;
   if (db.dialect !== 'postgres') {
     const rows = db.prepare(`
       SELECT id FROM preflight_evaluations
@@ -2267,13 +2272,14 @@ async function purgeExpiredPreflightEvaluationsAsync(db, { expiredAt, limit }) {
 }
 
 export function createSystemsMappingApp(options = {}) {
+  const now = options.now ?? Date.now;
+  const retentionHoldUntil = parseRetentionHoldUntil(options.retentionHoldUntil, { now });
   const db = options.db || openDataStore({
     databaseUrl: options.databaseUrl,
     dbPath: options.dbPath,
     postgres: options.postgres,
   });
   const ownsDatabase = !options.db;
-  const now = options.now ?? Date.now;
   const hostedMode = options.hostedMode ?? Boolean(options.databaseUrl || options.publicOrigin);
   let publicOrigin = null;
   if (options.publicOrigin !== undefined && options.publicOrigin !== null) {
@@ -2454,6 +2460,7 @@ export function createSystemsMappingApp(options = {}) {
       recordedAt,
       retentionMs: prototypeRetentionMs,
       maxRows: prototypeMaxRows,
+      retentionHoldUntil,
     });
     return continueWith(prototypeResult, () => continueWith(
       purgeExpiredPreflightSubmissions(db, {
@@ -2461,10 +2468,12 @@ export function createSystemsMappingApp(options = {}) {
         pendingRetentionDays: preflightPendingRetentionDays,
         decidedRetentionDays: preflightDecidedRetentionDays,
         limit: preflightRetentionPurgeLimit,
+        retentionHoldUntil,
       }),
       () => purgeExpiredPreflightEvaluations(db, {
         expiredAt: recordedAt,
         limit: preflightEvaluationPurgeLimit,
+        retentionHoldUntil,
       }),
     ));
   });
@@ -2549,6 +2558,7 @@ export function createSystemsMappingApp(options = {}) {
     recordedAt: clockValue(now),
     retentionMs: prototypeRetentionMs,
     maxRows: prototypeMaxRows,
+    retentionHoldUntil,
   });
 
   const ensureNotBlocked = (limiter, key, message) => {
@@ -2902,7 +2912,7 @@ export function createSystemsMappingApp(options = {}) {
       context.req.raw.signal.throwIfAborted();
       await inTransaction(db, async () => {
         await db.advisoryTransactionLock?.('preflight-evaluations:issue');
-        await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit });
+        await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit, retentionHoldUntil });
         // Only the newest review capability is usable for a class session. Older
         // unused reviews are no longer reachable from the student project and
         // must not accumulate into a workflow-blocking "active" ceiling.
@@ -3023,7 +3033,7 @@ export function createSystemsMappingApp(options = {}) {
     const submittedAt = clockValue(now);
     const consumedEvaluation = await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('preflight-submissions:consume');
-      await purgeExpiredPreflightEvaluations(db, { expiredAt: submittedAt, limit: preflightEvaluationPurgeLimit });
+      await purgeExpiredPreflightEvaluations(db, { expiredAt: submittedAt, limit: preflightEvaluationPurgeLimit, retentionHoldUntil });
       const evaluation = await db.prepare(`
         SELECT project_metadata_json AS projectMetadata, active_scale AS activeScale,
           inquiry, source_record_json AS sourceRecord, source_material AS sourceMaterial,
@@ -3133,10 +3143,12 @@ export function createSystemsMappingApp(options = {}) {
     const expiresAt = savedAt + savedProjectTtlMs;
     await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('saved-projects:capacity');
-      await db.prepare(`
-        DELETE FROM saved_projects
-        WHERE expires_at IS NOT NULL AND expires_at <= ?
-      `).run(savedAt);
+      if (retentionCleanupAllowed(retentionHoldUntil, savedAt)) {
+        await db.prepare(`
+          DELETE FROM saved_projects
+          WHERE expires_at IS NOT NULL AND expires_at <= ?
+        `).run(savedAt);
+      }
       const total = await db.prepare('SELECT COUNT(*) AS count FROM saved_projects').get();
       if ((total?.count ?? 0) >= savedProjectMaxTotal) {
         throw new HttpError(507, 'The class workspace cannot store more project links right now.');
@@ -3338,6 +3350,7 @@ export function createSystemsMappingApp(options = {}) {
       pendingRetentionDays: preflightPendingRetentionDays,
       decidedRetentionDays: preflightDecidedRetentionDays,
       limit: preflightRetentionPurgeLimit,
+      retentionHoldUntil,
     }));
     const where = status === 'all' ? '' : 'WHERE ps.status = ?';
     const parameters = status === 'all' ? [200] : [status, 200];
