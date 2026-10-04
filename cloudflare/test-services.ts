@@ -29,7 +29,7 @@ export default {
   async fetch(request: Request) {
     const url = new URL(request.url);
     if (url.pathname === '/control') {
-      if (request.method === 'POST') { const value = await request.json<{ mode?: string; denied?: boolean }>(); mode = value.mode ?? mode; denied = value.denied ?? denied; calls = 0; captured = null; }
+      if (request.method === 'POST') { const value = await request.json<{ mode?: string; denied?: boolean; resetSessions?: boolean }>(); mode = value.mode ?? mode; denied = value.denied ?? denied; if (value.resetSessions) revoked.clear(); calls = 0; captured = null; }
       return Response.json({ calls, captured });
     }
     if (url.pathname === '/v1/quota') return Response.json({ object: 'quota', managed_by: 'cloudflare', state: 'estimated', unit: 'microdollar', currency: 'USD', limit: 1000, estimated_used: 100, estimated_remaining: 900, used_percent: 10, remaining_percent: 90, window_seconds: 86400, window_technique: 'fixed', calculated_at: Date.now() });

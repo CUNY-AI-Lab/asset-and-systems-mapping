@@ -48,6 +48,10 @@ subsequent saves. Shared review retention follows the existing product rules.
   `{id:"systems-mapping",worker:"systems-mapping",workspace:false}`. Login uses
   PKCE/state and an opaque Secure, HttpOnly, SameSite=Lax host cookie. Callback
   codes are canonical UUIDv4. Logout revokes the session.
+- HTML pages use `Referrer-Policy: same-origin` so native sign-out forms send
+  their origin. Cross-origin referrers remain suppressed; API responses and
+  authentication redirects retain `no-referrer`. Mutations still reject
+  missing, null, foreign, and cross-site origins before session revocation.
 - Both signed `cail:systems-mapping` and `cail:gateway` legs are verified for
   signature, issuer, expiry, exact scalar audience and matching subject. JWTs
   never enter browser responses or browser storage. Caller identity headers

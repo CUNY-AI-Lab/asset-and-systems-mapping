@@ -26,6 +26,12 @@ function securedResponse(response: Response, requestId: string) {
   const headers = new Headers(response.headers);
   headers.set('x-request-id', requestId);
   for (const [key, value] of Object.entries(HEADERS)) headers.set(key, value);
+  // Native form POSTs from no-referrer documents send Origin: null. Keep
+  // same-origin logout verifiable without sharing referrers with other sites.
+  // API responses and authentication redirects retain no-referrer.
+  if (headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/html') {
+    headers.set('Referrer-Policy', 'same-origin');
+  }
   return new Response(response.body, { status: response.status, headers });
 }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
