@@ -122,6 +122,86 @@ test('login callback establishes an opaque HttpOnly session and logout revokes i
   expect((await request('/api/cloud/account', '', { headers: { cookie: session } })).status).toBe(401);
 });
 
+test('logout rejects foreign, missing and null origins without revoking the session', async () => {
+  for (const supplied of [null, 'null', 'https://other.example', ORIGIN]) {
+    const headers = new Headers({ cookie: '__Host-systems-mapping-session=alice', 'sec-fetch-site': supplied === ORIGIN ? 'cross-site' : 'same-origin' });
+    if (supplied !== null) headers.set('origin', supplied);
+    const response = await worker.fetch(`${ORIGIN}/auth/logout`, { method: 'POST', headers, redirect: 'manual' });
+    expect(response.status).toBe(403);
+    expect(response.headers.has('set-cookie')).toBe(false);
+    expect((await request('/api/cloud/account', 'alice')).status).toBe(200);
+  }
+  expect((await request('/auth/logout', 'alice')).status).toBe(405);
+  expect((await request('/api/cloud/account', 'alice')).status).toBe(200);
+});
+
+test('HTML pages retain a same-origin referrer policy while APIs and auth redirects remain no-referrer', async () => {
+  for (const path of ['/', '/teacher', '/p/a-local-project-link']) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await request(path, '', { method });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('text/html');
+      expect(response.headers.get('referrer-policy')).toBe('same-origin');
+      expect(response.headers.get('cache-control')).toContain('no-store');
+    }
+  }
+  for (const path of ['/api/cloud/runtime', '/api/cloud/account', '/auth/start', '/auth/callback']) {
+    expect((await request(path, '')).headers.get('referrer-policy')).toBe('no-referrer');
+  }
+});
+
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome native sign-out works from student Projects and Teacher Console', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const who of ['alice', 'admin']) {
+      await control({ resetSessions: true });
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      await context.addCookies([{ name: '__Host-systems-mapping-session', value: who, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+      try {
+        const page = await context.newPage();
+        const bridge = await context.newCDPSession(page);
+        const bridgeErrors = [];
+        // Intercept every redirect hop as well as the initial request. Standard
+        // Playwright routing handles only the first URL in a redirect chain.
+        // Preserve the browser's Origin/Referer and native cookie handling.
+        bridge.on('Fetch.requestPaused', async ({ requestId, request: source }) => {
+          try {
+            if (new URL(source.url).origin !== ORIGIN) return await bridge.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
+            const response = await worker.fetch(source.url, { method: source.method, headers: source.headers, body: source.postData, redirect: 'manual' });
+            const responseHeaders = [...response.headers].filter(([name]) => name !== 'set-cookie').map(([name, value]) => ({ name, value }));
+            for (const value of response.headers.getSetCookie()) responseHeaders.push({ name: 'set-cookie', value });
+            await bridge.send('Fetch.fulfillRequest', { requestId, responseCode: response.status, responseHeaders, body: Buffer.from(await response.arrayBuffer()).toString('base64') });
+          } catch (error) {
+            bridgeErrors.push(error.message);
+            await bridge.send('Fetch.failRequest', { requestId, errorReason: 'Failed' }).catch(() => {});
+          }
+        });
+        await bridge.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+        await page.goto(ORIGIN);
+        if (who === 'admin') {
+          await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
+          await browserExpect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
+        } else await page.getByText('Account', { exact: true }).click();
+        const signedOut = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/logout' && response.request().method() === 'POST');
+        await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+        const response = await signedOut;
+        expect(await response.request().headerValue('origin')).toBe(ORIGIN);
+        expect(response.status()).toBe(302);
+        await browserExpect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
+        expect(new URL(page.url()).pathname).toBe('/');
+        expect((await context.cookies()).some(cookie => cookie.name === '__Host-systems-mapping-session')).toBe(false);
+        expect((await request('/api/cloud/account', who)).status).toBe(401);
+        expect(bridgeErrors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  } finally {
+    await control({ resetSessions: true });
+    await browser.close();
+  }
+}, 30000);
+
 test('a known availability refusal uses the admitted backup and records the model that answered', async () => {
   const { preflightEvaluationPayload } = await import('../src/App.jsx');
   const project = newProject();
