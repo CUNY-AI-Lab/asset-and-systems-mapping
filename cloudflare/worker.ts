@@ -12,13 +12,14 @@ import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
 import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
+import { handleBugReport, type BugReportService } from './bug-reports';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 };
-type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv;
+type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & { BUG_REPORTS?: BugReportService };
 const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
   ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
 }, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
@@ -176,6 +177,11 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       if (url.origin !== env.PUBLIC_ORIGIN) return securedResponse(failure('Not found.', 404), correlation.request_id);
       if (!['GET','HEAD','OPTIONS'].includes(request.method) && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return securedResponse(failure('Request origin was not accepted.',403), correlation.request_id);
       if (url.pathname.includes('%') && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/'))) return securedResponse(failure('Invalid request path.', 400), correlation.request_id);
+      // Read this public form before constructing the private API request, which
+      // transfers its body stream. No session or private workspace is consulted.
+      if (url.pathname === '/api/bug-reports') return securedResponse(await handleBugReport(request, {
+        app: 'systems-mapping', origin: env.PUBLIC_ORIGIN, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT,
+      }), correlation.request_id);
       const sanitized = new Headers(request.headers);
       for (const name of [...sanitized.keys()]) {
         if (name === 'authorization' || name === 'cookie' || name === 'cf-access-jwt-assertion' || name.startsWith('x-cail-')) sanitized.delete(name);

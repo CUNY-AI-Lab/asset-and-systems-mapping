@@ -1,0 +1,15 @@
+.has-bug-report { --bug-report-height: 50px; }
+.bug-report-footer { position: fixed; inset: auto 0 0; z-index: 46; max-height: 65dvh; overflow-y: auto; padding-bottom: var(--safe-bottom); border-block: 1px solid var(--line-strong); background: var(--surface); --bug-line: var(--line-strong); --bug-ink: var(--ink); --bug-background: var(--surface); --bug-field: var(--surface); --bug-focus: var(--blue); }
+.bug-report-footer .bug-report { border: 0; }
+.bug-report > summary { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.has-bug-report .app-footer { bottom: var(--bug-report-height); }
+.has-bug-report .workspace { padding-bottom: calc(var(--footer) + var(--safe-bottom) + var(--bug-report-height) + 32px); }
+.has-bug-report .access-main, .has-bug-report .studio-dashboard, .has-bug-report .teacher-main { padding-bottom: calc(var(--bug-report-height) + 40px); }
+.has-bug-report .toast { bottom: calc(var(--footer) + var(--safe-bottom) + var(--bug-report-height) + 20px); }
+@media (min-width: 981px) {
+  .has-bug-report .map-stage:not(.is-fullscreen):not(:has(> .memo-drawer[open])) .canvas-chrome__bottom { bottom: calc(var(--footer) + var(--safe-bottom) + var(--bug-report-height) + 8px); }
+}
+@media (max-width: 980px) {
+  .has-bug-report .inspector { bottom: calc(var(--footer) + var(--safe-bottom) + var(--bug-report-height)); }
+}
+@media print { .bug-report-footer { display: none; } }
