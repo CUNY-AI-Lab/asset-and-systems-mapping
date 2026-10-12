@@ -1,24 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import App, { AccessFrame, createBlankProject } from './App.jsx';
 import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
 import { parseProject } from './domain.js';
 import { saveProjectToLibrary, loadProjectLibrary } from './projectLibrary.js';
-import { useAccountStorage, projectStorage, institutionalLoginUrl } from './accountStorage.js';
+import { useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
 import { reconcileCloudProject, rememberCloudSave, serializeCloudProject } from './cloudSync.js';
+import { apiRequest, ApiError } from './api.js';
+import { courseWorkspacePath, parseCourseSelection } from './courseContext.js';
+import { userFacingError } from './userFacingError.js';
+import CoursePromptEditor from './CoursePromptEditor.jsx';
 import './account-workspace.css';
 
-async function request(path, options, cacheKey = projectStorage().cacheKey) {
-  const response = await fetch(path, { credentials:'same-origin', ...options,
-    headers: { ...(cacheKey ? { 'x-systems-account-cache': cacheKey } : {}), ...options?.headers } });
-  const data = await response.json();
-  if (!response.ok) {
-    if (response.status === 401 && cacheKey && ['authentication_required','session_invalid'].includes(data.details?.code)) window.location.assign(institutionalLoginUrl());
-    throw Object.assign(new Error(data.error || 'Please try again.'), { status:response.status });
-  }
-  return data;
-}
-
 export default function AccountWorkspace() {
+  const [courseSelection] = useState(() => parseCourseSelection(window.location.search));
   const [dark, setDark] = useState(() => {
     try { return window.localStorage.getItem('systems-mapping.theme') === 'dark'; }
     catch { return document.documentElement.dataset.theme === 'dark'; }
@@ -37,6 +31,10 @@ export default function AccountWorkspace() {
   const saved = useRef(new Map());
   const blocked = useRef(new Set());
   const storageRef = useRef(null);
+  const request = useCallback((path, options, storage = storageRef.current) => apiRequest(path, {
+    ...options,
+    workspace: storage || { courseSelection },
+  }), [courseSelection]);
   const refresh = async () => {
     const remote = (await request('/api/cloud/projects')).projects;
     const local = loadProjectLibrary(storageRef.current, null, false);
@@ -60,7 +58,11 @@ export default function AccountWorkspace() {
       try {
         const result = await request('/api/cloud/account');
         if (cancelled) return;
-        storageRef.current = useAccountStorage(result.account.cacheKey, null);
+        if ((courseSelection.kind === 'course' && result.account.course?.id !== courseSelection.id)
+          || (courseSelection.kind === 'general' && result.account.course)) {
+          throw new ApiError('Workspace scope unavailable', 503, { details: { code: 'course_access_unavailable' } });
+        }
+        storageRef.current = useAccountStorage(result.account.cacheKey, null, courseSelection);
         setAccount(result.account);
         const records = await refresh();
         try { const data = await request('/api/cloud/quota'); if (!cancelled) setQuota(data.quota); } catch { /* Informational only; map editing stays available. */ }
@@ -78,7 +80,7 @@ export default function AccountWorkspace() {
         if (cancelled) return;
         setSignedOut(failure.status === 401);
         setStatus('');
-        if (failure.status !== 401) setError(failure.message);
+        if (failure.status !== 401) setError(userFacingError(failure, 'Your workspace could not be loaded. Reload to try again.'));
       }
     })();
     // Keep the adapter alive while child cleanup flushes pending edits.
@@ -96,14 +98,14 @@ export default function AccountWorkspace() {
         const result = await request(`/api/cloud/projects/${encodeURIComponent(project.id)}`, {
           method:'PUT', headers:{'Content-Type':'application/json'},
           body:JSON.stringify({project:serialized,revision:revisions.current.get(project.id) || 0}),
-        }, storage.cacheKey);
+        }, storage);
         revisions.current.set(project.id,result.revision);
         saved.current.set(project.id,serialized);
         await rememberCloudSave(storage, project.id, result.revision, serialized);
         setStatus('Saved to your account');
       } catch (failure) {
         blocked.current.add(project.id);
-        setError(`${failure.message} Your unsynced copy remains on this device. Export it before reloading.`);
+        setError(`${userFacingError(failure, 'Your map could not be saved to your account.')} Your unsynced copy remains on this device. Export it before reloading.`);
         setStatus('Not saved to your account');
       }
     });
@@ -113,7 +115,7 @@ export default function AccountWorkspace() {
     setBusy(true); setError('');
     try {
       const result = record && !record.localOnly ? await request(`/api/cloud/projects/${encodeURIComponent(record.id)}`) : null;
-      const storage = useAccountStorage(workspaceAccount.cacheKey, null);
+      const storage = useAccountStorage(workspaceAccount.cacheKey, null, courseSelection);
       const reconciled = record ? await reconcileCloudProject(storage, record.id, result) : { project: createBlankProject(), conflict: false };
       const project = reconciled.project || linkedProject;
       if (!project) throw new Error('The saved device copy is unavailable.');
@@ -131,10 +133,10 @@ export default function AccountWorkspace() {
       // Each account gets a separate browser cache. A different login
       // never inherits another person's draft or project catalog.
       saveProjectToLibrary(storage,project,loadProjectLibrary(storage, project, false),{makeActive:true});
-      storageRef.current = useAccountStorage(workspaceAccount.cacheKey,persist);
+      storageRef.current = useAccountStorage(workspaceAccount.cacheKey,persist,courseSelection);
       if (!reconciled.conflict) persist(project);
       setActive(project.id);
-    } catch (failure) { setError(failure.message); }
+    } catch (failure) { setError(userFacingError(failure, 'This map could not be opened. Return to Projects and try again.')); }
     finally { setBusy(false); }
   };
 
@@ -144,12 +146,12 @@ export default function AccountWorkspace() {
     window.dispatchEvent(new Event('pagehide'));
     await queue.current;
     if (blocked.current.size === 0) {
-      window.history.replaceState(null, '', '/');
+      window.history.replaceState(null, '', courseWorkspacePath('/', courseSelection));
       setActive(null);
       setTeacher(false);
       try { setDark(document.documentElement.dataset.theme === 'dark'); }
       catch { /* Preserve the current theme when browser storage is unavailable. */ }
-      try { await refresh(); } catch (failure) { setError(failure.message); }
+      try { await refresh(); } catch (failure) { setError(userFacingError(failure, 'Your project list could not be loaded. Reload to try again.')); }
     }
     setBusy(false);
   };
@@ -161,11 +163,12 @@ export default function AccountWorkspace() {
       {signedOut ? <>
         <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
         <LevelTrail />
-        <Action as="a" className="account-login" href={institutionalLoginUrl()}>CUNY Login</Action>
+        <Action as="a" className="account-login" href={institutionalLoginUrl(courseSelection)}>CUNY Login</Action>
       </> : account ? <>
-        <PageHeading title="Projects" description="Continue a map or start a new one" actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
+        <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : 'Continue a map or start a new one'} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
         {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} openLabel="Open" />)}</div>
           : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
+        {account.course && account.role === 'instructor' && <CoursePromptEditor key={account.cacheKey} course={account.course} request={request} />}
         <Disclosure title="Account" className="account-details">
           <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}</p>
           <form action="/auth/logout" method="post"><Action variant="ghost" type="submit">Sign out</Action></form>

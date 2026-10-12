@@ -21,6 +21,7 @@ import {
 } from './domain.js';
 import { loadStoredLink, rememberStoredLink } from './projectLibrary.js';
 import { memoDraftKey } from './memoDraft.js';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
 async function memoReviewDetails() {
   await screen.findByText('Guidance and evidence');
@@ -932,6 +933,7 @@ describe('Systems Mapping workflow', () => {
 
   afterEach(() => {
     cleanup();
+    releaseAccountStorage();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -1717,6 +1719,29 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
+  it('keeps a new project link in the course pinned to the open workspace', async () => {
+    const project = createDefaultProject();
+    const token = 'project_link_course_scope_token';
+    const storage = useAccountStorage('course-link-account', null, { kind: 'course', id: 'seminar-one' });
+    storage.setItem(STORAGE_KEY, serializeProject(project));
+    fetchMock = vi.fn((path, options = {}) => String(path) === '/api/projects' && options.method === 'POST'
+      ? jsonResponse({ token, projectId: project.id, revision: 1, updatedAt: project.updatedAt, expiresAt: '2027-04-15T14:30:00.000Z' }, 201)
+      : defaultFetch(path, options));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    await screen.findByRole('textbox', { name: 'Student or group name (optional)' });
+    window.history.replaceState(null, '', '/?course=another-course');
+    const dialog = openProjectLink();
+    expect(within(dialog).getByText('Opening this link requires CUNY Login and access to this course')).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create project link' }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${token}`));
+    expect(window.location.search).toBe('?course=seminar-one');
+    expect(within(dialog).getByText(`${window.location.origin}/p/${token}?course=seminar-one`)).toBeVisible();
+    expect(within(dialog).getByText('Anyone with this link and access to this course can open it after CUNY Login')).toBeVisible();
+    const [, request] = fetchMock.mock.calls.find(([path, options]) => path === '/api/projects' && options.method === 'POST');
+    expect(request.headers['x-systems-course']).toBe('seminar-one');
+  });
+
   it('uses the stored revision for sync conflicts and preserves the device copy before opening the linked version', async () => {
     const project = createDefaultProject();
     project.title = 'Local East Harlem map';
@@ -2355,7 +2380,7 @@ describe('Systems Mapping workflow', () => {
     }, 201);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText('The classroom server returned guidance with unusable map items. Generate the guidance again.')).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
     expect(storedProject().preflight).toBeNull();
   });
 
@@ -2551,8 +2576,41 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = () => jsonResponse({ error: 'Suggestion generation is temporarily unavailable.' }, 502);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText('Suggestion generation is temporarily unavailable.')).toBeVisible();
+    expect(await screen.findByText('Guidance is temporarily unavailable. Try again later.')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    expect(storedProject().preflight).toBeNull();
+  });
+
+  it.each([
+    [429, 'quota_exceeded', 'You have reached the model usage limit. Continue editing your map and try again later.'],
+    [429, 'internal_throttle', 'Requests are paused. Try again later.'],
+    [403, 'course_access_denied', 'This course is not available to your account. Ask your instructor to check your enrollment.'],
+    [409, 'course_prompt_changed', 'The course instructions changed. Reload this page before requesting guidance again.'],
+  ])('shows safe guidance copy for %s %s while preserving the memo', async (status, code, message) => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = () => jsonResponse({ error: `${code}: private provider diagnostic`, details: { code, shouldRetry: false } }, status);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(document.body).not.toHaveTextContent(/private provider diagnostic/);
+    expect(document.body).not.toHaveTextContent(code);
+    expect(storedProject().submission.text).toBe(project.submission.text);
+    expect(storedProject().preflight).toBeNull();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+  });
+
+  it('keeps arbitrary support diagnostics out of a guidance failure', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = () => jsonResponse({ error: 'UPSTREAM_FAILED', details: { code: 'guidance_unavailable', retryable: true, retryAfterSeconds: 2, supportReference: 'PRIVATE_PROVIDER_TRACE: secret diagnostic' } }, 503);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
+    expect(document.querySelector('.toast')).toHaveTextContent('Guidance is unavailable. Your project is unchanged. Try again in 2 seconds.');
+    expect(document.body).not.toHaveTextContent(/PRIVATE_PROVIDER_TRACE|secret diagnostic|UPSTREAM_FAILED/);
     expect(storedProject().preflight).toBeNull();
   });
 
@@ -2569,9 +2627,8 @@ describe('Systems Mapping workflow', () => {
       } }) }, 201);
     await resumeSavedProject(project);
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
-    await screen.findByText(failure === 'failure'
-      ? 'Suggestion generation is temporarily unavailable.'
-      : 'The classroom server returned guidance with unusable map items. Generate the guidance again.');
+    if (failure === 'failure') await screen.findByText('Guidance is temporarily unavailable. Try again later.');
+    else expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(storedProject().preflight).toBeNull();
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
@@ -2910,9 +2967,9 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('button', { name: 'Reading memo…' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(continueButton).toBeEnabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t generate guidance — Try again');
+    expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.');
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
-    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t generate guidance — Try again');
+    expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.');
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
     expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
 
@@ -2937,7 +2994,7 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance took too long', details: { code: 'guidance_timeout', shouldRetry: false } }, 504);
     await resumeSavedProject(project);
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t generate guidance — Try again'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.'));
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
@@ -3160,7 +3217,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByText('The classroom server returned guidance with unusable map items. Generate the guidance again.')).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
     expect(storedProject().preflight).toBeNull();
     expect(screen.queryByText(clauseLabel)).not.toBeInTheDocument();
     expect(screen.queryByText(discreteLabel)).not.toBeInTheDocument();
@@ -5169,7 +5226,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(saveAttention);
     const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
     expect(within(dialog).getByText(/Review the item you were editing\. Complete its required name or connection/)).toBeVisible();
-    expect(within(dialog).getByText('Technical details')).toBeVisible();
+    expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Invalid Systems Mapping project:');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Return to project' }));
 
     fireEvent.change(label, { target: { value: 'Corrected peer navigator' } });
@@ -5177,7 +5235,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === candidate.id).label).toBe('Corrected peer navigator'));
   });
 
-  it('keeps raw project validation text behind technical details when link creation is blocked', async () => {
+  it('keeps raw project validation text out of the interface when link creation is blocked', async () => {
     const { project } = makeCandidateValidationProject();
     await resumeSavedProject(project);
     fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: '' } });
@@ -5188,15 +5246,13 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
     expect(within(dialog).getByText('The project link was not created because one map item needs attention.')).toBeVisible();
-    const details = within(dialog).getByText('Technical details').closest('details');
-    const diagnostic = within(details).getByText(/^Invalid Systems Mapping project:/);
-    expect(details).not.toHaveAttribute('open');
-    expect(diagnostic).not.toBeVisible();
+    expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Invalid Systems Mapping project:');
     expect(document.querySelector('.toast')).not.toHaveTextContent('Invalid Systems Mapping project:');
     expect(fetchMock.mock.calls.some(([path, options]) => String(path) === '/api/projects' && options.method === 'POST')).toBe(false);
   });
 
-  it('keeps raw project validation text behind technical details when export is blocked', async () => {
+  it('keeps raw project validation text out of the interface when export is blocked', async () => {
     const { project } = makeCandidateValidationProject();
     await resumeSavedProject(project);
     fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: '' } });
@@ -5210,10 +5266,8 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
     expect(within(dialog).getByText('The export was not created because one map item needs attention.')).toBeVisible();
-    const details = within(dialog).getByText('Technical details').closest('details');
-    const diagnostic = within(details).getByText(/^Invalid Systems Mapping project:/);
-    expect(details).not.toHaveAttribute('open');
-    expect(diagnostic).not.toBeVisible();
+    expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Invalid Systems Mapping project:');
     expect(document.querySelector('.toast')).not.toHaveTextContent('Invalid Systems Mapping project:');
   });
 

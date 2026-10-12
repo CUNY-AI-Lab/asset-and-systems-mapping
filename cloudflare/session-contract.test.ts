@@ -1,8 +1,12 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { login, readCookie } from './login.ts';
+import { login, readCookie, returnPath } from './login.ts';
 const origin='https://systems-mapping.ailab-452.workers.dev';
 const sessionName='__Host-systems-mapping-session', loginName='__Host-systems-mapping-login';
+test('course selection and course project links survive only bounded local login returns', () => {
+  for (const path of ['/?course=synthetic-course-a', '/p/abcdefghijklmnopqrst?course=synthetic-course-a']) assert.equal(returnPath(path), path);
+  for (const path of ['//other.example/?course=synthetic-course-a', '/?course=a&course=b', '/?course=search', '/?course=a#fragment', '/?course=a&next=https://other.example', '/?course=%61', '/teacher?course=a']) assert.equal(returnPath(path), '/');
+});
 function fixture() {
  let calls=0;const used=new Set<string>();
  const token=crypto.randomUUID()+'.'+'s'.repeat(43);

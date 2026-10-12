@@ -1,6 +1,8 @@
 import React, { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow, ReviewPager } from './ui/StudioPrimitives.jsx';
 import { readInstitutionalSession } from './studentSession.js';
+import { userFacingError } from './userFacingError.js';
+import { courseWorkspacePath } from './courseContext.js';
 import { cacheMemoDraft, restoreMemoDraft } from './memoDraft.js';
 import { useCanvasWindow } from './ui/useCanvasWindow.js';
 import { useMapFontMetrics } from './ui/useMapFontMetrics.js';
@@ -254,7 +256,7 @@ function loadProject() {
 }
 
 function linkUrl(token) {
-  return `${window.location.origin}/p/${token}`;
+  return `${window.location.origin}${courseWorkspacePath(`/p/${token}`, projectStorage().courseSelection)}`;
 }
 
 function describeLinkError(error, institutionalMode = false) {
@@ -5811,10 +5813,13 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const handleReviewApiError = async (error, accessGeneration, retryLabel = 'memo-guidance request') => {
+    if (error instanceof ApiError && ['course_access_disabled', 'course_not_allowed', 'course_invalid', 'course_access_denied', 'course_access_unavailable', 'course_prompt_changed'].includes(error.payload?.details?.code)) {
+      return toast(userFacingError(error), 'error', 8000);
+    }
     if (error instanceof TimeoutError || error instanceof ApiError && error.status === 504 && error.payload?.details?.code === 'guidance_timeout') {
       return toast(retryLabel.includes('connection')
-        ? 'Couldn’t suggest connections — Try again'
-        : 'Couldn’t generate guidance — Try again', 'error', 8000);
+        ? 'Connection suggestions took too long. Try again.'
+        : 'Guidance took too long. Try again.', 'error', 8000);
     }
     if (error instanceof ApiError && (error.status === 401 || institutionalMode && error.status === 403) && accessGeneration === accessGenerationRef.current) {
       try {
@@ -5822,7 +5827,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         if (accessGeneration !== accessGenerationRef.current) return;
         if (session.access) {
           setAccessState({ status: 'granted', access: session.access, message: null, kind: 'info' });
-          toast(institutionalMode ? 'Sign-in confirmed — try again' : `Class access is still valid. Retry the ${retryLabel}.`, 'error');
+          toast(institutionalMode ? 'Sign-in confirmed. Try again.' : `Class access is still valid. Retry the ${retryLabel}.`, 'error');
           return;
         }
         pauseAccess();
@@ -5839,35 +5844,32 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     if (error instanceof ApiError) {
       if (error.status === 413) return toast('The guidance request is too large. Shorten the memo and try again.', 'error');
       if (error.status === 429 || error.status === 409 && error.payload?.details?.code === 'guidance_in_progress') {
-        if (error.payload?.details?.shouldRetry === false) return toast(error.message, 'error', 8000);
+        if (error.payload?.details?.shouldRetry === false) return toast(userFacingError(error), 'error', 8000);
         const seconds = error.payload?.details?.retryAfterSeconds;
         const waitSeconds = Number.isSafeInteger(seconds) && seconds > 0 && seconds <= 86_400 ? seconds : 2;
         reviewRetryAtRef.current = Date.now() + waitSeconds * 1000;
         setReviewRetryAt(reviewRetryAtRef.current);
-        return toast(waitSeconds <= 120 ? `Try again in ${waitSeconds} ${waitSeconds === 1 ? 'second' : 'seconds'}` : 'Guidance is paused — try again later', 'error', 8000);
+        return toast(waitSeconds <= 120 ? `Guidance is busy. Try again in ${waitSeconds} ${waitSeconds === 1 ? 'second' : 'seconds'}.` : 'Guidance is paused. Try again later.', 'error', 8000);
       }
       if ([502, 503, 504].includes(error.status)) {
         const details = error.payload?.details;
         if (details?.code === 'guidance_unavailable') {
           const feature = retryLabel.includes('connection') ? 'Connection suggestions are' : 'Guidance is';
-          const reference = typeof details.supportReference === 'string'
-            ? ` Support reference: ${details.supportReference}.`
-            : '';
-          const waitSeconds = Number.isSafeInteger(details.retryAfterSeconds) ? details.retryAfterSeconds : 1;
+          const waitSeconds = Number.isSafeInteger(details.retryAfterSeconds) && details.retryAfterSeconds > 0 && details.retryAfterSeconds <= 86_400 ? details.retryAfterSeconds : 1;
           const nextStep = details.retryable === true
             ? ` Try again in ${waitSeconds} ${waitSeconds === 1 ? 'second' : 'seconds'}.`
             : requiresInitialModel(projectRef.current)
               ? ' Retry to start your map.'
               : ' Retry when ready or continue with your existing map.';
-          return toast(`${feature} unavailable. Your project is unchanged.${nextStep}${reference}`, 'error', 8000);
+          return toast(`${feature} unavailable. Your project is unchanged.${nextStep}`, 'error', 8000);
         }
-        return toast('Suggestion generation is temporarily unavailable.', 'error');
+        return toast('Guidance is temporarily unavailable. Try again later.', 'error');
       }
       return toast(`The ${retryLabel} could not be completed. Your project remains editable; try again.`, 'error');
     }
-    toast(retryLabel.includes('connection')
-      ? 'The classroom server returned connection suggestions that could not be used. Request them again.'
-      : 'The classroom server returned guidance with unusable map items. Generate the guidance again.', 'error');
+    toast(userFacingError(error, retryLabel.includes('connection')
+      ? 'Connection suggestions could not be completed. Try again.'
+      : 'Guidance could not be completed. Try again.'), 'error');
   };
 
   const generateSuggestions = async () => {
@@ -5937,7 +5939,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return false;
       const quotaDenied = error instanceof ApiError && error.payload?.details?.code === 'quota_exceeded';
       setReviewFailure({
-        message: quotaDenied ? 'Model usage limit reached' : 'Couldn’t generate guidance — Try again',
+        message: error instanceof TimeoutError ? 'Guidance took too long. Try again.'
+          : userFacingError(error, 'Guidance could not be completed. Try again.'),
         retryable: !quotaDenied,
       });
       setReviewBusy(null);
@@ -6668,7 +6671,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setLinkStatus(projectLinkStatus(nextLink));
     setLinkMessage(null);
     const pathToken = urlLinkToken();
-    if (pathToken && pathToken !== nextLink?.token) window.history.replaceState(null, '', '/');
+    if (pathToken && pathToken !== nextLink?.token) window.history.replaceState(null, '', courseWorkspacePath('/', projectStorage().courseSelection));
   }, [commitProjectRecords]);
 
   const archiveCurrentProject = useCallback(({ allowSavedFallback = false } = {}) => {
@@ -6889,7 +6892,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       setLink(nextLink);
       linkRef.current = nextLink;
       setLinkStatus('synced');
-      window.history.replaceState(null, '', `/p/${result.token}`);
+      window.history.replaceState(null, '', courseWorkspacePath(`/p/${result.token}`, projectStorage().courseSelection));
       toast('Project link created.');
     } catch (error) {
       if (projectRef.current.id !== snapshot.id) return;
@@ -6961,7 +6964,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setLink(null);
     setLinkStatus('idle');
     setLinkMessage(null);
-    window.history.replaceState(null, '', '/');
+    window.history.replaceState(null, '', courseWorkspacePath('/', projectStorage().courseSelection));
     await createLink();
   }, [createLink]);
 
@@ -6977,7 +6980,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       setLink(revokedLink);
       setLinkStatus('revoked');
       setLinkMessage('This link is turned off. Your device copy remains in Projects.');
-      window.history.replaceState(null, '', '/');
+      window.history.replaceState(null, '', courseWorkspacePath('/', projectStorage().courseSelection));
       setModal('project-link');
     } catch (error) {
       setLinkStatus(error instanceof ApiError && error.status === 409 ? 'conflict' : 'error');
@@ -6998,7 +7001,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       setLink(null);
       setLinkStatus('idle');
       setLinkMessage(null);
-      window.history.replaceState(null, '', '/');
+      window.history.replaceState(null, '', courseWorkspacePath('/', projectStorage().courseSelection));
       setModal(null);
       toast('The server copy was deleted. Your device copy remains in Projects.');
     } catch (error) {
@@ -7216,7 +7219,6 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     <div className="confirm-panel">
       <p>{saveState.message}</p>
       <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p>
-      {saveState.diagnostic && <details className="technical-details"><summary>Technical details</summary><code>{saveState.diagnostic}</code></details>}
       <div className="button-stack">
         {saveState.recovery && <button type="button" className="button button--secondary" onClick={() => download('systems-mapping-prior-recovery.json', saveState.recovery)}>Download earlier copy</button>}
         <button type="button" className="button button--secondary" onClick={() => download(exportFileName(project, 'json', 'recovery'), serializeProject(project))}>Download current project</button>
@@ -7230,7 +7232,6 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     <div className="confirm-panel">
       <p>{saveState.message}</p>
       <p>Review the item you were editing. Complete its required name or connection, or remove the unfinished item. Saving will retry automatically. If you were exporting or creating a link, try that action again after this warning clears.</p>
-      {saveState.diagnostic && <details className="technical-details"><summary>Technical details</summary><code>{saveState.diagnostic}</code></details>}
       <div className="button-row"><button type="button" className="button" onClick={() => setModal(null)}>Return to project</button></div>
     </div>
   </Modal>;
@@ -7307,7 +7308,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         {link && link.projectId === project.id ? <>
           {institutionalMode ? <>
             <p>This link stores your complete memo, framing, map, notes, and revision history for 90 days</p>
-            <p>Anyone with this link and CUNY AI Lab membership can open it after CUNY Login</p>
+            <p>{projectStorage().courseSelection?.kind === 'course' ? 'Anyone with this link and access to this course can open it after CUNY Login' : 'Anyone with this link and CUNY AI Lab membership can open it after CUNY Login'}</p>
           </> : <p>This link stores the complete project on the class server: the memo, framing answers, map items, evidence notes, and revision history. Anyone with both the link and current class code can open it.</p>}
           <p className="project-link-url"><code>{linkUrl(link.token)}</code></p>
           <dl className="project-link-summary project-link-summary--metadata">
@@ -7346,7 +7347,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         </> : <>
           {institutionalMode ? <>
             <p>Your complete memo, framing, map, notes, and revision history are stored for 90 days</p>
-            <p>Opening this link requires CUNY Login and CUNY AI Lab membership</p>
+            <p>{projectStorage().courseSelection?.kind === 'course' ? 'Opening this link requires CUNY Login and access to this course' : 'Opening this link requires CUNY Login and CUNY AI Lab membership'}</p>
           </> : <p>Create a unique link to use this project on another device. The complete project—including its memo and evidence notes—will be stored on the class server for 90 days. Opening it also requires the current class code.</p>}
           {link && <p className="project-link-status">Your earlier link stays usable for the project it was created on.</p>}
           {linkStatus === 'error' && linkMessage && <p className="error-text">{linkMessage}</p>}

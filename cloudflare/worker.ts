@@ -1,3 +1,5 @@
+import { CourseAccessError, resolveCourseAccess, courseFailure, type CourseAccessEnv } from './course-access';
+import { currentCoursePrompt, coursePromptRequest } from './course-prompt';
 import { DurableObject } from 'cloudflare:workers';
 import { createHash } from 'node:crypto';
 import { correlationFromHeaders, type CailCorrelation } from '@cuny-ai-lab/cail-log';
@@ -18,7 +20,7 @@ const HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 };
-type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv;
+type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'>;
 const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
   ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
 }, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
@@ -71,10 +73,17 @@ export class MappingCourse extends DurableObject<Bindings> {
       this.system = createSystemsMappingApp({ db: this.db, publicOrigin: env.PUBLIC_ORIGIN, hostedMode: true, classCode: 'cail-only-no-class-code-827361',
         preflightEvaluationConcurrency: Number(env.GUIDANCE_CONCURRENCY),
         ollamaConfig: { apiKey: 'private-service-binding', model: env.GATEWAY_MODEL }, suggestionProvider: 'cail-gateway',
-        suggestionFailure: (error: unknown, context: any) => safeGatewayFailure(error, context.env.verifiedAccount.correlation.request_id),
+        suggestionFailure: (error: unknown, context: any) => error instanceof CourseAccessError
+          ? { status: error.status, message: error.status === 409 ? 'Course guidance changed. Refresh the course settings and request guidance again.' : 'Course access could not be verified. Reload your course and try again.', details: { code: error.code, shouldRetry: false } }
+          : safeGatewayFailure(error, context.env.verifiedAccount.correlation.request_id),
         onInternalError: (context: any) => requestLog(env.RELEASE, context.env.verifiedAccount.correlation.request_id).failure(),
-        ollamaRequest: (input: any, config: any, options: any) => {
-          const { gatewayJwt, correlation } = options.context;
+        ollamaRequest: async (input: any, config: any, options: any) => {
+          const { gatewayJwt, correlation, course, subject, coursePrompt } = options.context;
+          if (course) {
+            await resolveCourseAccess(env, subject, course.classId, options.signal);
+            const current = await currentCoursePrompt(this.ctx.storage);
+            if (current.revision !== coursePrompt.revision) throw new CourseAccessError(409, 'course_prompt_changed');
+          }
           return gatewaySuggestion(env.GATEWAY, gatewayJwt, env.GATEWAY_MODEL, correlation, requestLog(env.RELEASE, correlation.request_id).gateway)(input, config, { signal: options.signal });
         },
       });
@@ -89,17 +98,22 @@ export class MappingCourse extends DurableObject<Bindings> {
 
   async request(request: Request, principal: Principal, correlation: CailCorrelation = correlationFromHeaders(request.headers), guidanceDeadline?: number): Promise<Response> {
     const url = new URL(request.url);
-    const owner = digest(principal.subject);
+    const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
     const expectedCache = request.headers.get('x-systems-account-cache');
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
       if (account?.cache_key !== expectedCache) return failure('The signed-in account changed. Reload to open its workspace. Your device copy is preserved.', 409);
     }
+    if (path === '/api/cloud/course-prompt' || path === '/api/cloud/course-prompt/history') {
+      if (!principal.course) return failure('Open a course to view its guidance.', 404);
+      return coursePromptRequest(request, this.ctx.storage, principal.course.owner, principal.course);
+    }
     if (path === '/api/cloud/account' && request.method === 'GET') {
       this.db.prepare('INSERT OR IGNORE INTO cloud_accounts VALUES (?,?)').run(owner, crypto.randomUUID());
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
-        role: principal.admin ? 'instructor' : 'student' } });
+        role: principal.admin ? 'instructor' : 'student',
+        course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
     }
     if (path === '/api/cloud/projects' && request.method === 'GET') {
       const projects = this.db.prepare('SELECT id,title,revision,updated_at AS updatedAt FROM cloud_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 200').all(owner);
@@ -156,8 +170,9 @@ export class MappingCourse extends DurableObject<Bindings> {
     const internalHeaders = new Headers(request.headers);
     internalHeaders.set('host',url.host);
     internalHeaders.delete('x-forwarded-proto');
+    const coursePrompt = principal.course ? await currentCoursePrompt(this.ctx.storage) : undefined;
     const dispatch = (signal: AbortSignal) => app.fetch(new Request(request, { headers: internalHeaders, signal }),
-      { verifiedAccount: { studentSession: session, teacherSession, gatewayJwt: principal.gatewayJwt, correlation } });
+      { verifiedAccount: { studentSession: session, teacherSession, gatewayJwt: principal.gatewayJwt, correlation, course: principal.course, subject: principal.subject, coursePrompt } });
     if (isGuidanceRequest(request)) {
       // Transfer an absolute time, not an AbortSignal, across the RPC boundary.
       // Late dispatch must not start a model after the browser has stopped waiting.
@@ -196,7 +211,14 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       else if (url.pathname.startsWith('/api/')) {
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
         else {
-          const principal = await authorize(request, env);
+          let principal = await authorize(request, env);
+          const selectedCourse = request.headers.get('x-systems-course');
+          if (!(principal instanceof Response) && request.headers.has('x-systems-course')) {
+            try {
+              const course = await resolveCourseAccess(env, principal.subject, selectedCourse ?? '', request.signal);
+              principal = { ...principal, admin: course.owner, expiresAt: Math.min(principal.expiresAt, Date.parse(course.expiresAt)), course };
+            } catch (error) { principal = courseFailure(error); }
+          }
           const limit = await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal instanceof Response ? null : principal.subject) });
           if (!limit.success) response = failure('Please wait a moment and try again.', 429,60);
           else {
@@ -206,7 +228,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
                 const quota = await withDeadline(signal => gatewayClient(env.GATEWAY).getQuota({ kind: 'jwt', token: principal.gatewayJwt }, { signal }), request.signal, 5000);
                 response = Response.json({ quota });
               } catch { response = Response.json({ quota: null, error: 'Model usage is temporarily unavailable.' }, { status: 503 }); }
-            } else response = await env.COURSES.getByName(env.COURSE_ID).request(internal, principal, correlation, guidanceDeadline);
+            } else response = await env.COURSES.getByName(principal.course ? `systems-mapping:course:${principal.course.classId}` : env.COURSE_ID).request(internal, principal, correlation, guidanceDeadline);
           }
         }
       } else response = await env.ASSETS.fetch(internal);

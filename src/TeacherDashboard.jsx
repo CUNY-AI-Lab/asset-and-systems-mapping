@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PageHeading } from './ui/StudioPrimitives.jsx';
 import { ApiError, apiRequest, resetTeacherPassword } from './api.js';
+import { userFacingError } from './userFacingError.js';
+import { institutionalLoginUrl } from './accountStorage.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 
@@ -262,7 +264,11 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
       setBootstrapToken('');
       onAuthenticated(result.user);
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      setMessage({ type: 'error', text: error.status === 401
+        ? mode === 'login'
+          ? 'Sign-in did not work. Check your account ID and passphrase, then try again.'
+          : 'Account setup could not be completed. Check your account ID and setup code, then try again.'
+        : userFacingError(error, 'Sign-in could not be completed. Check your account details and try again.') });
     } finally {
       setBusy(false);
     }
@@ -313,7 +319,9 @@ function PasswordReset({ token, onComplete }) {
       setConfirmation('');
       onComplete();
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      setMessage({ type: 'error', text: error.status === 401
+        ? 'This reset link is invalid or has expired. Ask the course administrator for a new link.'
+        : userFacingError(error, 'Your passphrase could not be changed. Try again or ask for a new reset link.') });
     } finally {
       setBusy(false);
     }
@@ -366,7 +374,7 @@ function ReviewSubmissions() {
       }
       return nextSubmissions;
     } catch (error) {
-      setQueueError(error.message);
+      setQueueError(userFacingError(error, 'Submissions could not be loaded. Select Refresh to try again.'));
       return null;
     } finally {
       setQueueLoading(false);
@@ -390,7 +398,7 @@ function ReviewSubmissions() {
       setConflict(null);
       setMessage(null);
     }).catch((error) => {
-      if (current) setDetailError(error.message);
+      if (current) setDetailError(userFacingError(error, 'This submission could not be loaded. Select Refresh, then open it again.'));
     }).finally(() => {
       if (current) setDetailLoading(false);
     });
@@ -430,7 +438,7 @@ function ReviewSubmissions() {
         setConflict(current || true);
         setMessage({ type: 'error', text: 'Another session changed this submission after you opened it. Your feedback remains in the form.' });
       } else {
-        setMessage({ type: 'error', text: error.message });
+        setMessage({ type: 'error', text: userFacingError(error, 'Your feedback could not be saved. Keep your text in the form and try again.') });
       }
     } finally {
       setBusy(false);
@@ -536,7 +544,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
 
   useEffect(() => {
     setLoading(true);
-    loadCatalog().catch((error) => setMessage({ type: 'error', text: error.message })).finally(() => setLoading(false));
+    loadCatalog().catch((error) => setMessage({ type: 'error', text: userFacingError(error, 'Course settings could not be loaded. Reopen the Teacher Console to try again.') })).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -554,7 +562,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setEvents(Array.isArray(result.events) ? result.events : []);
       setConflict(null);
       setMessage(null);
-    }).catch((error) => setMessage({ type: 'error', text: error.message })).finally(() => setLoading(false));
+    }).catch((error) => setMessage({ type: 'error', text: userFacingError(error, 'These course settings could not be loaded. Select another version, then try again.') })).finally(() => setLoading(false));
   }, [selectedId]);
 
   const profileParts = Array.isArray(draft?.profile?.parts) ? draft.profile.parts : [];
@@ -608,7 +616,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       await loadCatalog(result.profile.id);
       setMessage({ type: 'success', text: 'Draft created. Published course settings are unchanged.' });
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      setMessage({ type: 'error', text: userFacingError(error, 'The draft could not be created. Keep your text in the form and try again.') });
     } finally { setBusy(false); }
   };
 
@@ -633,7 +641,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       if (current) {
         setConflict(current);
         setMessage({ type: 'error', text: 'Another session saved a newer revision of this draft. Your unsaved text remains in the editor.' });
-      } else setMessage({ type: 'error', text: error.message });
+      } else setMessage({ type: 'error', text: userFacingError(error, 'The draft could not be saved. Keep your text in the editor and try again.') });
     } finally { setBusy(false); }
   };
 
@@ -664,7 +672,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
     } catch (error) {
       const current = error instanceof ApiError && error.status === 409 ? error.payload?.details?.current : null;
       if (current) setConflict(current);
-      setMessage({ type: 'error', text: current ? 'Another session saved a newer revision before publication. Your unsaved text remains in the editor.' : error.message });
+      setMessage({ type: 'error', text: current ? 'Another session saved a newer revision before publication. Your unsaved text remains in the editor.' : userFacingError(error, 'These settings could not be published. Keep your changes and try again.') });
     } finally { setBusy(false); }
   };
 
@@ -675,7 +683,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/preview?${new URLSearchParams({ configKind, scale: previewScale, stageId: selectedStageId })}`);
       setPreview(result);
       setMessage(null);
-    } catch (error) { setMessage({ type: 'error', text: error.message }); }
+    } catch (error) { setMessage({ type: 'error', text: userFacingError(error, 'The preview could not be loaded. Select Preview saved section to try again.') }); }
     finally { setBusy(false); }
   };
 
@@ -750,7 +758,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
   </section>;
 }
 
-function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, institutionalMode = false }) {
+function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, institutionalMode = false, sessionError = null }) {
   const [section, setSection] = useState('reviews');
   const [guidanceVisited, setGuidanceVisited] = useState(false);
   const sectionTabRefs = useRef(new Map());
@@ -768,6 +776,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
   };
   return <div className="teacher-dashboard">
     <PageHeading title="Teacher Console" actions={<div className="teacher-session"><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div>} />
+    {sessionError && <p className="teacher-message teacher-message--error" role="alert">{sessionError}</p>}
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
@@ -779,6 +788,7 @@ export default function TeacherDashboard({ onConfigurationChanged, resetToken = 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState(null);
+  const [sessionError, setSessionError] = useState(null);
   const refreshAccess = async () => {
     if (institutionalMode) return { mode: 'institutional', claimEnabled: false };
     const result = await apiRequest('/api/auth/accounts');
@@ -786,17 +796,24 @@ export default function TeacherDashboard({ onConfigurationChanged, resetToken = 
     return result.teacherAccess;
   };
   useEffect(() => {
-    Promise.all([refreshAccess(), apiRequest('/api/auth/me')]).then(([, result]) => setUser(result.user)).catch((error) => setFatal(error.message)).finally(() => setLoading(false));
+    Promise.all([refreshAccess(), apiRequest('/api/auth/me')]).then(([, result]) => setUser(result.user)).catch((error) => setFatal(userFacingError(error, 'The Teacher Console could not be opened. Reload this page to try again.'))).finally(() => setLoading(false));
   }, [institutionalMode]);
   const authenticated = (nextUser) => setUser(nextUser);
   const logout = async () => {
-    await apiRequest('/api/auth/logout', { method: 'POST' });
-    setUser(null);
-    await refreshAccess();
+    setSessionError(null);
+    try {
+      await apiRequest('/api/auth/logout', { method: 'POST' });
+      setUser(null);
+    } catch (error) {
+      setSessionError(userFacingError(error, 'Sign-out could not be confirmed. Try signing out again before leaving this device.'));
+      return;
+    }
+    try { await refreshAccess(); }
+    catch (error) { setFatal(userFacingError(error, 'You are signed out, but the sign-in form could not be loaded. Reload this page to continue.')); }
   };
   if (resetToken && !institutionalMode) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
   if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Teacher Console…</p></div>;
   if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Teacher Console unavailable</h1><p className="lede">Check the course server, then reopen the Teacher Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
-  if (!user && institutionalMode) return <div className="teacher-access"><h1>Instructor access required</h1><a className="button" href="/auth/start">CUNY Login</a></div>;
-  return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} institutionalMode={institutionalMode} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
+  if (!user && institutionalMode) return <div className="teacher-access"><h1>Instructor access required</h1><a className="button" href={institutionalLoginUrl()}>CUNY Login</a></div>;
+  return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} institutionalMode={institutionalMode} sessionError={sessionError} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
 }

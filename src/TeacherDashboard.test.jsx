@@ -2,6 +2,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import TeacherDashboard from './TeacherDashboard.jsx';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -197,7 +198,63 @@ describe('TeacherDashboard', () => {
 
   afterEach(() => {
     cleanup();
+    releaseAccountStorage();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps institutional instructor recovery pinned to the current course', async () => {
+    useAccountStorage('instructor-recovery-account', null, { kind: 'course', id: 'seminar-one' });
+    const fetch = vi.fn(async () => jsonResponse({ user: null }));
+    vi.stubGlobal('fetch', fetch);
+    render(<TeacherDashboard institutionalMode onConfigurationChanged={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Instructor access required' })).toBeVisible();
+    const login = screen.getByRole('link', { name: 'CUNY Login' });
+    expect(login).toHaveAttribute('href', '/auth/start?returnTo=%2F%3Fcourse%3Dseminar-one');
+    expect(fetch.mock.calls[0][1].headers['x-systems-course']).toBe('seminar-one');
+  });
+
+  it.each(['server response', 'network failure', 'invalid response'])('keeps startup diagnostics out of the visible %s error', async failure => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (failure === 'network failure') throw new Error('ECONNRESET at private.internal:5432');
+      if (failure === 'invalid response') return new Response('private database diagnostic', { headers: { 'content-type': 'application/json' } });
+      return jsonResponse({ error: 'DATABASE_FAILED: private database diagnostic', details: { code: 'database_failed' } }, 503);
+    }));
+    render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('The Teacher Console could not be opened. Reload this page to try again.');
+    expect(document.body).not.toHaveTextContent(/DATABASE_FAILED|private\.internal|private database|ECONNRESET/);
+  });
+
+  it('gives submissions a useful recovery action without exposing the response body', async () => {
+    const working = authenticatedFetch();
+    await renderAuthenticated(vi.fn((path, options) => path === '/api/teacher/preflight-submissions?status=pending'
+      ? Promise.resolve(jsonResponse({ error: 'internal_queue_failure at private.internal' }, 503))
+      : working(path, options)));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Submissions could not be loaded. Select Refresh to try again.');
+    expect(document.body).not.toHaveTextContent(/internal_queue_failure|private\.internal/);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+  });
+
+  it('does not expose diagnostics when course settings cannot be loaded', async () => {
+    const working = authenticatedFetch({ queue: [] });
+    await renderAuthenticated(vi.fn((path, options) => path === '/api/teacher/profiles'
+      ? Promise.resolve(jsonResponse({ error: 'course_settings_failure: private database detail' }, 503))
+      : working(path, options)));
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Course settings could not be loaded. Reopen the Teacher Console to try again.');
+    expect(document.body).not.toHaveTextContent(/course_settings_failure|private database/);
+  });
+
+  it('keeps the instructor workspace available when sign-out cannot be confirmed', async () => {
+    const working = authenticatedFetch({ queue: [] });
+    const request = vi.fn((path, options) => path === '/api/auth/logout'
+      ? Promise.reject(new Error('logout_transport_failure: private session diagnostic'))
+      : working(path, options));
+    await renderAuthenticated(request);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sign-out could not be confirmed. Try signing out again before leaving this device.');
+    expect(screen.getByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    expect(document.body).not.toHaveTextContent(/logout_transport_failure|private session/);
   });
 
   it('renders an account-bound reset form and clears it after a successful passphrase change', async () => {

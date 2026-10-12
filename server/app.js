@@ -1,3 +1,4 @@
+import { appendCoursePrompt } from '../shared/course-prompt.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
@@ -1839,7 +1840,7 @@ async function listModules(db, where = '', parameters = []) {
   `).all(...parameters)).map(moduleRow);
 }
 
-async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null) {
+async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null, coursePrompt = null) {
   if (!CONFIG_KINDS.includes(configKind)) throw new HttpError(400, 'configKind must be preflight or builder.');
   if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, exosphere, or macrosphere.');
   const effectiveStageId = canonicalStageId(stageId || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
@@ -1847,13 +1848,13 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
   const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
   if (!teachingProfile) throw new HttpError(503, 'No course settings are published. Publish a draft in the Teacher Console, then try again.');
-  const effectivePrompt = composeEffectivePrompt({
+  const effectivePrompt = appendCoursePrompt(composeEffectivePrompt({
     configKind,
     scale,
     modules,
     teachingProfile: teachingProfile.profile,
     stageId: effectiveStageId,
-  });
+  }), coursePrompt?.amendment);
   const snapshot = {
     configKind,
     scale,
@@ -1861,10 +1862,11 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
     effectivePrompt,
     fixedGuardrails: FIXED_GUARDRAILS.join('\n'),
     fingerprint: fingerprint(effectivePrompt),
-    revision: Math.max(teachingProfile.revision, ...modules.map((module) => module.revision)),
+    revision: Math.max(teachingProfile.revision, ...modules.map((module) => module.revision), coursePrompt?.revision ?? 0),
     moduleVersions: [
       ...modules.map(({ id, revision, fingerprint: moduleFingerprint }) => ({ id, revision, fingerprint: moduleFingerprint })),
       { id: `teaching-profile.${teachingProfile.id}`, revision: teachingProfile.revision, fingerprint: teachingProfile.fingerprint },
+      ...(coursePrompt ? [{ id: 'course-appendix', revision: coursePrompt.revision, fingerprint: fingerprint(coursePrompt.amendment) }] : []),
     ],
     courseParts: coursePartsForTeachingProfile(teachingProfile.profile),
   };
@@ -2806,7 +2808,7 @@ export function createSystemsMappingApp(options = {}) {
         throw tooManyAttempts(rate.retryAfterSeconds, 'You have requested guidance several times in this class session. Try again later.');
       }
       context.req.raw.signal.throwIfAborted();
-      const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true, null, input.stageId);
+      const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true, null, input.stageId, context.env?.verifiedAccount?.coursePrompt);
       configSnapshot = evaluationConfigSnapshot(
         effective,
         input.projectOverlay,
@@ -2969,7 +2971,7 @@ export function createSystemsMappingApp(options = {}) {
         throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
       }
       context.req.raw.signal.throwIfAborted();
-      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, 'choose-what-to-map');
+      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, 'choose-what-to-map', context.env?.verifiedAccount?.coursePrompt);
       const systemPrompt = input.customInstructions
         ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`
         : `${effective.effectivePrompt}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`;
@@ -3608,7 +3610,7 @@ export function createSystemsMappingApp(options = {}) {
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
     const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
-    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId);
+    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId, context.env?.verifiedAccount?.coursePrompt);
     const part = profile.profile.parts.find(({ scaleIds }) => scaleIds.includes(scale));
     const settings = part?.stages?.[stageId];
     if (!part || !settings) throw new HttpError(400, 'The selected part does not include this level and section. Choose a level and section listed under that part.');
@@ -3652,7 +3654,7 @@ export function createSystemsMappingApp(options = {}) {
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
     const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
-    return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false, null, stageId)));
+    return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false, null, stageId, context.env?.verifiedAccount?.coursePrompt)));
   });
 
   app.all('/api/*', (context) => context.json({ error: 'API route not found.' }, 404));

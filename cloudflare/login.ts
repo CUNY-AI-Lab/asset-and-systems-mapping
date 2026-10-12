@@ -9,7 +9,12 @@ export interface IdentityClient {
 }
 const sessionName = '__Host-systems-mapping-session';
 const loginName = '__Host-systems-mapping-login';
-const returnPath = (value: unknown) => typeof value === 'string' && /^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(value) ? value : '/';
+export function returnPath(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 200) return '/';
+  const match = /^(\/|\/p\/[A-Za-z0-9_-]{20,64}\/?)(?:\?course=([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?))?$/.exec(value);
+  if (!match || match[2] === 'search') return '/';
+  return value;
+}
 const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 const random = () => base64(crypto.getRandomValues(new Uint8Array(32)));
 export const readCookie = (request: Request, name = sessionName) => uniqueCookie(request, name);

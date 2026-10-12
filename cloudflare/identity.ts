@@ -1,12 +1,13 @@
+import type { CourseAccess } from './course-access';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
 import { boundedRpc } from './bounded.js';
 import { readCookie, type IdentityClient } from './login';
 import publicJwks from './jwks.json';
 
-export type Principal = { subject: string; admin: boolean; expiresAt: number; gatewayJwt: string };
+export type Principal = { subject: string; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
 export type IdentityEnv = {
   IDENTITY: IdentityClient;
-  ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown> };
+  ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccess?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
   CAIL_IDENTITY_JWKS?: string;
 };
 export const authFailure = (status: number, code: string) => Response.json({

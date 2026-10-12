@@ -10,6 +10,8 @@ import {
   TimeoutError,
   updateProjectLink,
 } from './api.js';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
+import { parseCourseSelection } from './courseContext.js';
 
 function successfulFetch() {
   return vi.fn(async () => ({
@@ -18,6 +20,76 @@ function successfulFetch() {
     json: async () => ({ accepted: true }),
   }));
 }
+
+describe('course API scope', () => {
+  afterEach(() => {
+    releaseAccountStorage();
+    window.localStorage.clear();
+    window.history.replaceState(null, '', '/');
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps public Node requests unchanged even when the URL contains a course', async () => {
+    vi.stubEnv('VITE_ACCOUNT_WORKSPACE', 'false');
+    window.history.replaceState(null, '', '/?course=course-a');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/config/public');
+    expect(fetch.mock.calls[0][1].headers).toEqual({});
+  });
+
+  it('sends the selected course on every Cloudflare request before bootstrap', async () => {
+    vi.stubEnv('VITE_ACCOUNT_WORKSPACE', 'true');
+    window.history.replaceState(null, '', '/?course=course-a');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/cloud/account');
+    expect(fetch.mock.calls[0][1].headers).toEqual({ 'x-systems-course': 'course-a' });
+  });
+
+  it('rejects invalid and duplicate Cloudflare selections without a general request', async () => {
+    vi.stubEnv('VITE_ACCOUNT_WORKSPACE', 'true');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    for (const search of ['?course=', '?course=a&course=a']) {
+      window.history.replaceState(null, '', `/${search}`);
+      await expect(apiRequest('/api/cloud/account')).rejects.toMatchObject({ status: 403, payload: { details: { code: 'course_invalid' } } });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('pins requests to their account adapter despite URL or global storage changes', async () => {
+    const original = useAccountStorage('server-cache-a', null, parseCourseSelection('?course=course-a'));
+    window.history.replaceState(null, '', '/?course=course-b');
+    useAccountStorage('server-cache-b', null, parseCourseSelection('?course=course-b'));
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/cloud/projects/map-a', {
+      method: 'PUT', body: { project: '{}' }, workspace: original,
+      headers: { 'X-Systems-Course': 'course-b', 'x-systems-account-cache': 'server-cache-b' },
+    });
+    expect(fetch.mock.calls[0][1].headers).toEqual({
+      'Content-Type': 'application/json', 'x-systems-course': 'course-a', 'x-systems-account-cache': 'server-cache-a',
+    });
+    expect(fetch.mock.calls[0][1]).not.toHaveProperty('workspace');
+  });
+
+  it('keeps all ordinary child APIs in the established course after URL changes', async () => {
+    useAccountStorage('server-cache-a', null, parseCourseSelection('?course=course-a'));
+    window.history.replaceState(null, '', '/?course=course-b');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/student/session');
+    await updateProjectLink('token', '{}', 1);
+    await createPreflightEvaluation({});
+    expect(fetch).toHaveBeenCalledTimes(3);
+    for (const [, options] of fetch.mock.calls) {
+      expect(options.headers['x-systems-course']).toBe('course-a');
+      expect(options.headers['x-systems-account-cache']).toBe('server-cache-a');
+    }
+  });
+});
 
 describe('project link API helpers', () => {
   afterEach(() => vi.unstubAllGlobals());

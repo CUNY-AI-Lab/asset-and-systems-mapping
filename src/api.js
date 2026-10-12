@@ -1,4 +1,5 @@
 import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
+import { courseRequestHeaders, initialApiCourseSelection } from './courseContext.js';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 export { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 export class ApiError extends Error {
@@ -19,12 +20,19 @@ export class TimeoutError extends Error {
 }
 
 export async function apiRequest(path, options = {}) {
-  const { body, headers: suppliedHeaders, ...requestOptions } = options;
+  const { body, headers: suppliedHeaders, workspace = projectStorage(), ...requestOptions } = options;
+  // Capture the workspace once, before any asynchronous work. Supplied headers
+  // cannot redirect a pending request into a different account or course.
+  const selection = workspace?.courseSelection || initialApiCourseSelection();
+  const headers = { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(suppliedHeaders || {}) };
+  for (const name of Object.keys(headers)) {
+    if (['x-systems-account-cache', 'x-systems-course'].includes(name.toLowerCase())) delete headers[name];
+  }
+  Object.assign(headers, courseRequestHeaders(selection), workspace?.cacheKey ? { 'x-systems-account-cache': workspace.cacheKey } : {});
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...requestOptions,
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}),
-      ...(projectStorage()?.cacheKey ? { 'x-systems-account-cache': projectStorage().cacheKey } : {}), ...(suppliedHeaders || {}) },
+    headers,
     body: body && typeof body !== 'string' ? JSON.stringify(body) : body,
   });
   const contentType = response.headers.get('content-type') || '';
@@ -32,7 +40,7 @@ export async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const requestId = payload?.details?.requestId;
     const support = typeof requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId) ? ` Support ID: ${requestId}` : '';
-    if (response.status === 401 && projectStorage()?.prefix && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl());
+    if (response.status === 401 && workspace?.cacheKey && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl(selection));
     throw new ApiError((payload?.error || `Request failed (${response.status})`) + support, response.status, payload);
   }
   return payload;
