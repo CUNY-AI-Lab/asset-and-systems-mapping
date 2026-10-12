@@ -4,16 +4,17 @@ import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
+const sessions = Object.fromEntries(['alice', 'bob', 'admin', 'instructor'].map(name => [name, crypto.randomUUID() + '.' + 's'.repeat(43)]));
 let harness, worker;
 const account = who => worker.fetch(ORIGIN + '/api/cloud/account', {
-  headers: { 'cf-connecting-ip': '203.0.113.10', ...(who ? { cookie: `__Host-systems-mapping-session=${who}` } : {}) },
+  headers: { 'cf-connecting-ip': '203.0.113.10', ...(who ? { cookie: `__Host-systems-mapping-session=${sessions[who] || ''}` } : {}) },
 });
 
 beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
   for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333']]) {
-    tokens[name] = { subject,
+    tokens[name] = { subject, sessionToken: sessions[name],
       appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }),
       gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
     };
@@ -47,4 +48,39 @@ test('anonymous traffic remains limited without spending a signed-in account all
   expect((await account()).status).toBe(401);
   expect((await account()).status).toBe(429);
   expect((await account('admin')).status).toBe(200);
+});
+
+test('a full shared-IP login bucket cannot block callback recovery or same-origin logout', async () => {
+  const request = (path, options = {}) => worker.fetch(ORIGIN + path, {
+    redirect: 'manual', ...options,
+    headers: { origin: ORIGIN, accept: 'text/html', 'cf-connecting-ip': '203.0.113.12', ...options.headers },
+  });
+  const start = await request('/auth/start');
+  expect(start.status).toBe(303);
+  const transaction = start.headers.get('set-cookie').split(';')[0];
+  const { state } = JSON.parse(decodeURIComponent(transaction.slice(transaction.indexOf('=') + 1)));
+  expect((await request('/auth/start')).status).toBe(303);
+  const limited = await request('/auth/start');
+  expect(limited.status).toBe(429);
+  expect(limited.headers.get('retry-after')).toBe('60');
+  expect(limited.headers.get('content-type')).toContain('text/html');
+  expect(limited.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(limited.headers.get('content-security-policy')).toContain("default-src 'none'");
+
+  const callback = await request(`/auth/callback?code=${crypto.randomUUID()}&state=${state}`, { headers: { cookie: transaction } });
+  expect(callback.status).toBe(303);
+  const sessionCookie = callback.headers.get('set-cookie').split(';')[0];
+  const stale = await request('/auth/callback?code=expired&state=expired', { headers: { cookie: sessionCookie } });
+  expect(stale.status).toBe(303);
+  expect(stale.headers.get('location')).toBe('/');
+  expect(stale.headers.get('set-cookie')).not.toContain(sessionCookie);
+
+  const signedOut = await request('/auth/logout', { method: 'POST', headers: { cookie: sessionCookie } });
+  expect(signedOut.status).toBe(303);
+  expect(signedOut.headers.getSetCookie()).toHaveLength(2);
+  for (const cleared of signedOut.headers.getSetCookie()) expect(cleared).toContain('Max-Age=0');
+  expect((await request('/api/cloud/account', { headers: { cookie: sessionCookie } })).status).toBe(401);
+  const wrongMethod = await request('/auth/logout');
+  expect(wrongMethod.status).toBe(405);
+  expect(wrongMethod.headers.get('allow')).toBe('POST');
 });

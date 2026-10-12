@@ -6,9 +6,10 @@ import { createDefaultProject } from '../src/domain.js';
 import { preflightEvaluationPayload } from '../src/App.jsx';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
+const session = crypto.randomUUID() + '.' + 's'.repeat(43);
 let harness, worker, services;
 const request = (path, options = {}) => worker.fetch(ORIGIN + path, { ...options, headers: {
-  cookie: '__Host-systems-mapping-session=alice', origin: ORIGIN, 'content-type': 'application/json',
+  cookie: `__Host-systems-mapping-session=${session}`, origin: ORIGIN, 'content-type': 'application/json',
   ...(options.headers || {}),
 } });
 const control = mode => services.fetch('https://fixtures.test/control', { method: 'POST', body: JSON.stringify({ mode }) });
@@ -16,7 +17,7 @@ const control = mode => services.fetch('https://fixtures.test/control', { method
 beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const subject = TEST_SUBJECTS.alice;
-  const tokens = { alice: { subject,
+  const tokens = { alice: { subject, sessionToken: session,
     appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }),
     gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   }, admin: { subject: TEST_SUBJECTS.bob } };

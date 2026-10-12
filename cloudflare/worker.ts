@@ -9,7 +9,7 @@ import { boundedText, boundedRpc, withDeadline, withSignal } from './bounded.js'
 import { createSystemsMappingApp } from '../server/app.js';
 import { initializeDurableDatabase } from '../server/database.js';
 import { gatewaySuggestion, gatewayClient, safeGatewayFailure, canonicalModel, REQUEST_ID } from './gateway.js';
-import { login } from './login';
+import { login, signInFailure } from './login';
 import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
@@ -24,14 +24,17 @@ type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pic
 const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
   ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
 }, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
-function securedResponse(response: Response, requestId: string) {
+function securedResponse(response: Response, requestId: string, authentication = false) {
   const headers = new Headers(response.headers);
   headers.set('x-request-id', requestId);
-  for (const [key, value] of Object.entries(HEADERS)) headers.set(key, value);
+  for (const [key, value] of Object.entries(HEADERS)) {
+    if (authentication && key === 'Content-Security-Policy' && headers.has(key)) continue;
+    headers.set(key, value);
+  }
   // Native form POSTs from no-referrer documents send Origin: null. Keep
   // same-origin logout verifiable without sharing referrers with other sites.
   // API responses and authentication redirects retain no-referrer.
-  if (headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/html') {
+  if (!authentication && headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/html') {
     headers.set('Referrer-Policy', 'same-origin');
   }
   return new Response(response.body, { status: response.status, headers });
@@ -188,7 +191,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
     let response: Response;
     try {
       const url = new URL(request.url);
-      if (url.origin !== env.PUBLIC_ORIGIN) return securedResponse(failure('Not found.', 404), correlation.request_id);
+      if (url.protocol !== 'https:' || url.origin !== env.PUBLIC_ORIGIN) return securedResponse(failure('Not found.', 404), correlation.request_id);
       if (!['GET','HEAD','OPTIONS'].includes(request.method) && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return securedResponse(failure('Request origin was not accepted.',403), correlation.request_id);
       if (url.pathname.includes('%') && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/'))) return securedResponse(failure('Invalid request path.', 400), correlation.request_id);
       const sanitized = new Headers(request.headers);
@@ -205,8 +208,14 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       }
       else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL });
       else if (url.pathname.startsWith('/auth/')) {
-        const limit = await env.REQUEST_LIMIT.limit({ key: 'login:' + (request.headers.get('cf-connecting-ip') || 'unknown') });
-        response = limit.success ? await login(request,env.IDENTITY) : failure('Please wait before signing in again.',429,60);
+        // Limit new handoffs only. A busy shared IP must not prevent callback
+        // completion or clearing/revoking this browser's existing session.
+        if (url.pathname === '/auth/start' && request.method === 'GET') {
+          try {
+            const limit = await boundedRpc(env.REQUEST_LIMIT.limit({ key: 'login:' + (request.headers.get('cf-connecting-ip') || 'unknown') }), request.signal);
+            response = limit.success ? await login(request, env.IDENTITY, { CAIL_IDENTITY_JWKS: env.CAIL_IDENTITY_JWKS }) : signInFailure(request, 429);
+          } catch { response = signInFailure(request, 503); }
+        } else response = await login(request, env.IDENTITY, { CAIL_IDENTITY_JWKS: env.CAIL_IDENTITY_JWKS });
       }
       else if (url.pathname.startsWith('/api/')) {
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
@@ -237,7 +246,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       requestLog(env.RELEASE, correlation.request_id).failure();
       response = failure('Systems Mapping is temporarily unavailable. Please try again.', 503);
     }
-    return securedResponse(response, correlation.request_id);
+    return securedResponse(response, correlation.request_id, new URL(request.url).pathname.startsWith('/auth/'));
 }
 
 // The override is for the local runtime harness, never an environment setting.

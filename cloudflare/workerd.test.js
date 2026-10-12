@@ -10,8 +10,9 @@ import { DEFAULT_TEACHING_PROFILE } from '../server/config.js';
 import { STORAGE_KEY } from '../src/projectLibrary.js';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
+const sessions = Object.fromEntries(['alice', 'bob', 'admin', 'instructor'].map(name => [name, crypto.randomUUID() + '.' + 's'.repeat(43)]));
 let harness, worker, services;
-const request = (path, who = 'alice', options = {}) => worker.fetch(ORIGIN + path, { redirect: 'manual', ...options, headers: { cookie: `__Host-systems-mapping-session=${who}`, origin: ORIGIN, ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
+const request = (path, who = 'alice', options = {}) => worker.fetch(ORIGIN + path, { redirect: 'manual', ...options, headers: { cookie: `__Host-systems-mapping-session=${sessions[who] || ''}`, origin: ORIGIN, ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
 const control = value => services.fetch('https://fixtures.test/control', { method: 'POST', body: JSON.stringify(value) });
 const newProject = () => { const project = createDefaultProject(); project.id = 'account-map'; project.title = 'Preserved account map'; return project; };
 
@@ -19,7 +20,7 @@ beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
   for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333']]) tokens[name] = {
-    subject, appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
+    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   };
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mapping-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
@@ -115,16 +116,16 @@ test('login callback establishes an opaque HttpOnly session and logout revokes i
   const cookie = start.headers.get('set-cookie').split(';')[0];
   const state = JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf('=') + 1))).state;
   const callback = await request(`/auth/callback?code=${crypto.randomUUID()}&state=${state}`, '', { headers: { cookie } });
-  expect(callback.status).toBe(302); expect(callback.headers.get('set-cookie')).toContain('Secure; HttpOnly; SameSite=Lax');
+  expect(callback.status).toBe(303); expect(callback.headers.get('set-cookie')).toContain('Secure; HttpOnly; SameSite=Lax');
   const session = callback.headers.get('set-cookie').split(';')[0];
   expect((await request('/api/cloud/account', '', { headers: { cookie: session } })).status).toBe(200);
-  expect((await request('/auth/logout', '', { method: 'POST', headers: { cookie: session } })).status).toBe(302);
+  expect((await request('/auth/logout', '', { method: 'POST', headers: { cookie: session } })).status).toBe(303);
   expect((await request('/api/cloud/account', '', { headers: { cookie: session } })).status).toBe(401);
 });
 
 test('logout rejects foreign, missing and null origins without revoking the session', async () => {
   for (const supplied of [null, 'null', 'https://other.example', ORIGIN]) {
-    const headers = new Headers({ cookie: '__Host-systems-mapping-session=alice', 'sec-fetch-site': supplied === ORIGIN ? 'cross-site' : 'same-origin' });
+    const headers = new Headers({ cookie: `__Host-systems-mapping-session=${sessions.alice}`, 'sec-fetch-site': supplied === ORIGIN ? 'cross-site' : 'same-origin' });
     if (supplied !== null) headers.set('origin', supplied);
     const response = await worker.fetch(`${ORIGIN}/auth/logout`, { method: 'POST', headers, redirect: 'manual' });
     expect(response.status).toBe(403);
@@ -156,7 +157,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome nati
     for (const who of ['alice', 'admin']) {
       await control({ resetSessions: true });
       const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-      await context.addCookies([{ name: '__Host-systems-mapping-session', value: who, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+      await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions[who], url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
       try {
         const page = await context.newPage();
         const bridge = await context.newCDPSession(page);
@@ -186,7 +187,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome nati
         await page.getByRole('button', { name: 'Sign out', exact: true }).click();
         const response = await signedOut;
         expect(await response.request().headerValue('origin')).toBe(ORIGIN);
-        expect(response.status()).toBe(302);
+        expect(response.status()).toBe(303);
         await browserExpect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
         expect(new URL(page.url()).pathname).toBe('/');
         expect((await context.cookies()).some(cookie => cookie.name === '__Host-systems-mapping-session')).toBe(false);
@@ -254,7 +255,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await browserExpect(login).toBeFocused();
     expect(await login.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none');
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'alice', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+    await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.alice, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.reload();
     await page.getByText('Account', { exact: true }).click();
     await browserExpect(page.getByText('approximately 90% remaining', { exact: false })).toBeVisible();
@@ -298,7 +299,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
     await page.screenshot({ path: '/tmp/cail-systems-cloudflare-phone.png' });
     await context.clearCookies();
-    await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'bob', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+    await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
     await browserExpect(page.getByRole('heading', { name: 'Start your first map' })).toBeVisible();
     await page.getByText('Account', { exact: true }).click();
@@ -308,7 +309,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.clearCookies();
     await page.goto(`${ORIGIN}/p/${shared.token}`);
     await browserExpect(page.getByRole('link', { name: 'CUNY Login' })).toHaveAttribute('href', `/auth/start?returnTo=${encodeURIComponent(`/p/${shared.token}`)}`);
-    await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'bob', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+    await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.reload();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
     await page.getByRole('button', { name: 'Projects', exact: true }).click();
@@ -316,7 +317,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     expect(new URL(page.url()).pathname).toBe('/');
     await browserExpect(page.getByRole('article', { name: 'East Harlem disability resources' })).toBeVisible();
     await context.clearCookies();
-    await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'admin', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+    await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.admin, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
     await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
@@ -345,7 +346,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
   let sessionMode = 'loading';
   let releaseSession;
   const sessionGate = new Promise(resolve => { releaseSession = resolve; });
-  await context.addCookies([{ name: '__Host-systems-mapping-session', value: 'alice', url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+  await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.alice, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
   await context.addInitScript(() => {
     window.__ssoClassCodeShown = false;
     new MutationObserver(() => {

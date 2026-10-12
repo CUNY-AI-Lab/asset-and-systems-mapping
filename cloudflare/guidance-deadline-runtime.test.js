@@ -5,16 +5,17 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
 const REQUEST_ID = '01900000-0000-7000-8000-000000000071';
+const session = crypto.randomUUID() + '.' + 's'.repeat(43);
 let harness, worker;
 const request = (path, options = {}) => worker.fetch(ORIGIN + path, { ...options, headers: {
-  cookie: '__Host-systems-mapping-session=alice', origin: ORIGIN, 'content-type': 'application/json',
+  cookie: `__Host-systems-mapping-session=${session}`, origin: ORIGIN, 'content-type': 'application/json',
   ...(options.headers || {}),
 } });
 
 beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const subject = TEST_SUBJECTS.alice;
-  const tokens = { alice: { subject,
+  const tokens = { alice: { subject, sessionToken: session,
     appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }),
     gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   }, admin: { subject: 'cail-33333333333333333333333333333333' } };

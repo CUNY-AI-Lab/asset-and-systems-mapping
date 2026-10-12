@@ -16,8 +16,8 @@ export class Identity extends WorkerEntrypoint<FixtureEnv> {
   async redeem(_code: string, _verifier: string) { revoked.delete(loginToken); return { ok: true, token: loginToken, expiresAt: Date.now() + 60000 }; }
   async identities(token: string) {
     if (revoked.has(token)) return { ok: false, status: 401 };
-    const tokens = JSON.parse(this.env.TEST_TOKENS);
-    const value = tokens[token === loginToken ? 'alice' : token];
+    const tokens: Record<string, { subject: string; appJwt: string; gatewayJwt: string; sessionToken?: string }> = JSON.parse(this.env.TEST_TOKENS);
+    const value = token === loginToken ? tokens.alice : Object.values(tokens).find(entry => entry.sessionToken === token);
     return value ? { ok: true, ...value } : { ok: false, status: 401 };
   }
   async revoke(token: string) { revoked.add(token); return { revoked: true }; }
