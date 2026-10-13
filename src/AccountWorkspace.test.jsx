@@ -11,7 +11,7 @@ vi.mock('./App.jsx', async importOriginal => {
   const original = await importOriginal();
   return {
     ...original,
-    default: ({ startInTeacher, onAccountDashboard }) => <><h1>{startInTeacher ? 'Teacher workspace' : 'Project workspace'}</h1><button onClick={onAccountDashboard}>Back to Projects</button></>,
+    default: ({ startInTeacher, onAccountDashboard, onSubmitRevision }) => <><h1>{startInTeacher ? 'Teacher workspace' : 'Project workspace'}</h1><button onClick={onAccountDashboard}>Back to Projects</button>{onSubmitRevision && <button onClick={() => onSubmitRevision(projects[0])}>Submit test revision</button>}</>,
   };
 });
 
@@ -38,6 +38,7 @@ beforeEach(() => {
     else if (path === '/api/cloud/quota') payload = { quota: { remaining_percent: 90 } };
     else if (path === '/api/cloud/courses') payload = { courses: [] };
     else if (path === '/api/cloud/course-prompt') payload = { prompt: { amendment: 'Course instructions', revision: 1, changeNote: 'Initial', updatedAt: null } };
+    else if (path.endsWith('/submitted-revisions')) payload = { recorded: true };
     else if (path.startsWith('/api/cloud/projects/')) {
       const project = projects.find(project => path.endsWith(project.id));
       payload = options?.method === 'PUT' ? { revision: 2 } : { project: serializeProject(project), revision: 1 };
@@ -212,4 +213,20 @@ describe('Account dashboard controls', () => {
     const link = await screen.findByRole('link', { name: 'CUNY Login' });
     expect(new URL(link.href).searchParams.get('returnTo')).toBe('/p/abcdefghijklmnopqrst?course=course-a');
   });
+});
+
+it('submits only after the course map is saved and sends the saved revision in the same workspace', async () => {
+  workspaceAccount = { cacheKey:'student-course', role:'student', course:{id:'course-a',name:'Course A'} };
+  window.history.replaceState(null,'','/?course=course-a');
+  render(<AccountWorkspace />);
+  fireEvent.click((await screen.findAllByRole('button',{name:'Open project',exact:true}))[0]);
+  const submit=await screen.findByRole('button',{name:'Submit test revision'});
+  projects[0].submission.text='An intentional memo revision';
+  fireEvent.click(submit);
+  await waitFor(()=>expect(fetchMock.mock.calls.some(([path])=>path.endsWith('/submitted-revisions'))).toBe(true));
+  const calls=fetchMock.mock.calls;
+  const index=calls.findIndex(([path])=>path.endsWith('/submitted-revisions'));
+  expect(calls.slice(0,index).some(([path,options])=>path==='/api/cloud/projects/dashboard-project-0' && options?.method==='PUT')).toBe(true);
+  expect(JSON.parse(calls[index][1].body)).toEqual({revision:2});
+  expect(new Headers(calls[index][1].headers).get('x-systems-course')).toBe('course-a');
 });

@@ -10,6 +10,7 @@ import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-j
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
 import { hasPendingGuidance } from './durableGuidance.js';
+import { exportMapImage, downloadBlob } from './mapExport.js';
 import MapListView from './MapListView.jsx';
 import MapConnections from './MapConnections.jsx';
 import MapSearch from './MapSearch.jsx';
@@ -5270,7 +5271,7 @@ function activeLevelGraph(project) {
   return { nodes, edges };
 }
 
-function RevisionStage({ project, update, replaceProject, toast, logPrototype, onRequestRestart, onValidationError, onReviewLevel }) {
+function RevisionStage({ onProjectLink, project, update, replaceProject, toast, logPrototype, onRequestRestart, onValidationError, onReviewLevel }) {
   const [importError, setImportError] = useState('');
   const levelGraph = activeLevelGraph(project);
   const currentNodes = levelGraph.nodes.length;
@@ -5308,9 +5309,10 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype, o
     next[field] = value;
     draft.reflection = composeMacroSynthesis(next);
   });
-  const exportProject = (format) => {
+  const exportProject = async (format) => {
     try {
       const portable = createPortableProject(project, project.sharingTier);
+      if (['png', 'pdf'].includes(format)) downloadBlob(await exportMapImage(portable, format), exportFileName(project, format));
       if (format === 'json') download(exportFileName(project, 'json'), serializePortableProject(project, project.sharingTier));
       if (format === 'csv') download(exportFileName(project, 'csv'), graphCsv(portable), 'text/csv');
       if (format === 'markdown') download(exportFileName(project, 'md'), projectMarkdown(portable), 'text/markdown');
@@ -5354,11 +5356,11 @@ function RevisionStage({ project, update, replaceProject, toast, logPrototype, o
           <Field label="What changed across revisions"><textarea rows="3" maxLength="2000" value={macroSynthesis.changed} onChange={(event) => setSynthesisField('changed', event.target.value)} onBlur={() => update(() => {}, 'reflection.revised', 'Cross-level synthesis revised')} /></Field>
           </Disclosure>
         </section> : <Field label={revisionPrompt}><textarea className="reflection" rows="8" maxLength={PROJECT_LIMITS.promptText} value={project.reflection} onChange={(event) => update((draft) => { draft.reflection = event.target.value; })} onBlur={() => update(() => {}, 'reflection.revised', `${levelLabel} revision reflection`)} placeholder="Note a correction or question to investigate" /></Field>}
-        <div className="sharing-row"><Field label="Audience"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}{index > maxIndex ? ' · unavailable' : ''}</option>)}</select></Field></div>
+        <div className="sharing-row"><Field label="Export audience"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}{index > maxIndex ? ' · unavailable' : ''}</option>)}</select></Field></div>
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
-    <section className="export-strip"><div><h2>Export full map</h2><p>Choose JSON to reopen, CSV for data, or Markdown to read</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
+    <section className="export-strip"><div><h2>Export full map</h2><p>Download PNG or PDF to show the map, JSON to reopen, CSV for data, or Markdown to read</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('png')}>PNG image</button><button className="button button--secondary" onClick={() => exportProject('pdf')}>PDF</button><button className="button button--secondary" onClick={onProjectLink}>Project link</button><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
   </div>;
 }
 
@@ -5402,7 +5404,7 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
   return next;
 }
 
-function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, cloudSaveStatus, cloudError } = {}) {
+function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, cloudSaveStatus, cloudError, onSubmitRevision } = {}) {
   const institutionalMode = Boolean(onAccountDashboard);
   const [theme, setTheme] = useState(storedTheme);
   const [initialLoad] = useState(loadProject);
@@ -7027,6 +7029,17 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
   }, [toast, institutionalMode]);
 
+  const [revisionSubmitting, setRevisionSubmitting] = useState(false);
+  const submitRevision = async () => {
+    if (revisionSubmitting) return;
+    setRevisionSubmitting(true);
+    try {
+      const snapshot = commitPendingAnnotations().project;
+      const result = await onSubmitRevision(snapshot);
+      toast(result.recorded ? 'Revision submitted to your instructor.' : 'This stage already has that revision.');
+    } catch (error) { toast(userFacingError(error, 'The revision could not be submitted. Your work remains saved.'), 'error'); }
+    finally { setRevisionSubmitting(false); }
+  };
   const copyLink = useCallback(async () => {
     const activeLink = linkRef.current;
     if (!activeLink) return;
@@ -7042,7 +7055,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
     <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} onReview={() => { setMapPreviewOpen(false); update((draft) => { draft.stage = 2; }); }} />,
-    <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,
+    <RevisionStage onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,
   ];
   const displayedStage = initialModelRequired && project.stage >= 2 ? 1 : mapPreviewOpen ? 3 : project.stage;
   const screen = stageScreens[displayedStage];
@@ -7295,6 +7308,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <SuggestionPreference project={project} update={update} />
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>
+      {onSubmitRevision && <section><p>Submit this stage when you want your instructor to count a reviewed revision. Saving and generation are tracked separately.</p><button type="button" className="button button--secondary" disabled={revisionSubmitting || Boolean(reviewBusy) || Boolean(connectionBusy) || (project.stage === 1 && (!project.preflight?.memoReview || Boolean(reviewFailure)))} onClick={submitRevision}>{revisionSubmitting ? 'Submitting…' : 'Submit revision'}</button></section>}
       <section className="level-progress-summary" aria-labelledby="level-progress-title">
         <h2 id="level-progress-title">Level progression</h2>
         <ol>{SCALE_ORDER.map((scale) => <li key={scale}><strong>{SCALES[scale].label}</strong><span>{levelProgressStatus(project, scale)}</span></li>)}</ol>

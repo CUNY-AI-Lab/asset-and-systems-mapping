@@ -1,0 +1,11 @@
+# Submitted revisions, sharing and map exports
+
+Course students use Progress → Submit revision to submit the currently saved stage. The application waits for the account save and sends its revision number. The server resolves the owned project and derives its mapping level and stage. Consecutive identical content and repeated saved revisions are deduplicated. Source identifiers and memo revision counters are excluded from content comparison. Autosaves and model attempts never invoke this endpoint. Memo review requires a completed review. Counts begin when this feature is deployed, rather than reclassifying historical autosaves.
+
+Only the current verified course owner receives aggregates, within Students and saved progress. Results group submissions by saved project, mapping level (Micro, Meso, Exo, Macro), and one of the five workflow stages. Restarting a map creates a distinct project. Stored count records contain owner/project references, a content hash, saved revision and server timestamp; they do not copy the source memo. Account or course changes are checked on each request.
+
+Review and export now offers Project link beside PNG image, PDF and existing structured exports. Link creation/copy/revocation retains the existing bearer-link plus current membership policy, exact course scope, 90-day expiration and saved revision handling. Export audience controls portable-file redaction; it is separately labeled from link access. Copying a link grants no new membership or course role.
+
+PNG and PDF exports use the portable/redacted map, lay out visible items in four level columns, and include explicit relationships, scope connections and setting memberships in a numbered legend. Rejected, retired and dangling relationships are excluded. PDF is a single raster page; editable text and source material remain available in existing structured exports. Export runs in the browser with no external service or provider call.
+
+Validation: application tests, actual local Worker/database with identity and Admission fixtures, desktop and phone synthetic browser downloads/link access, PDF parser and renderer, screenshot inspection. Actual student submission and instructor viewing in production remain separate signed-in acceptance checks.

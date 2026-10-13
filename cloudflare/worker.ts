@@ -15,6 +15,7 @@ import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
 import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
 import { GuidanceJobs } from './guidance-jobs.js';
+import { SubmittedRevisions } from './submitted-revisions.js';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
@@ -76,6 +77,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
       this.db.finishInitialization();
+      this.submissions = new SubmittedRevisions(this.db);
       this.jobs = new GuidanceJobs(this.db, (pending: Promise<unknown>) => ctx.waitUntil(pending));
       this.system = createSystemsMappingApp({ db: this.db, publicOrigin: env.PUBLIC_ORIGIN, hostedMode: true, classCode: 'cail-only-no-class-code-827361',
         preflightEvaluationConcurrency: Number(env.GUIDANCE_CONCURRENCY),
@@ -102,6 +104,8 @@ export class MappingCourse extends DurableObject<Bindings> {
     await this.system.ready;
     return this.db.healthCheck();
   }
+
+  submissions!: SubmittedRevisions;
 
   async alarm(): Promise<void> {
     this.jobs.purge();
@@ -188,6 +192,7 @@ export class MappingCourse extends DurableObject<Bindings> {
           const projects = rows.map((row: any) => {
             const project = parseProject(row.project);
             return { id: row.id, title: row.title, revision: row.revision, updatedAt: row.updatedAt, activeScale: project.activeScale,
+              submittedRevisions: this.submissions.summary(studentOwner, row.id),
               levels: ['micro','meso','exosphere','macrosphere'].map(scale => ({ scale, stage: project.levelProgress[scale].stage,
                 completed: project.completedScales.includes(scale), started: project.activeScale === scale || project.levelProgress[scale].stage > 1 || project.completedScales.includes(scale) || project.graph.nodes.some((node: any) => node.scale === scale) })) };
           });
@@ -195,6 +200,20 @@ export class MappingCourse extends DurableObject<Bindings> {
         });
         return Response.json({ students, nextCursor: roster.nextCursor });
       } catch (error) { return courseFailure(error); }
+    }
+    const revisionPath = /^\/api\/cloud\/projects\/([A-Za-z0-9_-]{1,128})\/submitted-revisions$/.exec(path);
+    if (revisionPath) {
+      if (!principal.course?.participant || principal.course.owner) return failure('Course student access is required.', 403);
+      if (request.method !== 'POST') return failure('Instructor access is required to read revision counts.', 403);
+      let body;
+      try { body = await boundedJson(request); } catch { return failure('Choose a saved revision to submit.', 400); }
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'revision' || !Number.isSafeInteger(body.revision) || body.revision < 1) return failure('Choose a saved revision to submit.', 400);
+      const row = this.db.prepare('SELECT project,revision FROM cloud_projects WHERE owner=? AND id=?').get(owner, revisionPath[1]);
+      if (!row) return failure('Save this course map before submitting a revision.', 404);
+      if (row.revision !== body.revision) return failure('The saved map changed. Review it before submitting.', 409);
+      const project = parseProject(row.project);
+      if (project.stage === 1 && !project.preflight?.memoReview) return failure('Complete the memo review before submitting this stage.', 409);
+      return Response.json(this.submissions.submit(owner, project, row.revision));
     }
     if (path === '/api/cloud/projects' && request.method === 'GET') {
       const projects = this.db.prepare('SELECT id,title,revision,updated_at AS updatedAt FROM cloud_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 200').all(owner);

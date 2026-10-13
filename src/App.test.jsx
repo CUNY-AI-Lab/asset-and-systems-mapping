@@ -1004,6 +1004,19 @@ describe('Systems Mapping workflow', () => {
     expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/student/access')).toBe(false);
   });
 
+  it('submits the reviewed stage only after an explicit Progress action', async () => {
+    const project=seedProject(makeMapProject());
+    const submit=vi.fn(async () => ({recorded:true}));
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} onSubmitRevision={submit} />);
+    await screen.findByRole('heading',{name:'Systems map'});
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Progress',exact:true}));
+    fireEvent.click(screen.getByRole('button',{name:'Submit revision',exact:true}));
+    await waitFor(()=>expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0][0]).toMatchObject({id:project.id,activeScale:project.activeScale,stage:project.stage});
+    expect(await screen.findByText('Revision submitted to your instructor.')).toBeVisible();
+  });
+
   it('retries an institutional session outage and restores the saved stage without resetting the map', async () => {
     const project = seedProject(makeMapProject());
     let reads = 0;

@@ -147,6 +147,17 @@ export default function AccountWorkspace() {
     finally { setBusy(false); }
   };
 
+  const submitRevision = async (project) => {
+    const storage = storageRef.current;
+    const serialized = serializeCloudProject(project);
+    persist(project);
+    await queue.current;
+    if (blocked.current.has(project.id) || saved.current.get(project.id) !== serialized) throw new Error('Finish saving this map before submitting its revision.');
+    return request(`/api/cloud/projects/${encodeURIComponent(project.id)}/submitted-revisions`, {
+      method: 'POST', body: { revision: revisions.current.get(project.id) },
+    }, storage);
+  };
+
   const dashboard = async () => {
     setBusy(true);
     // Force the app's ordinary pending-edit flush before leaving its view.
@@ -163,7 +174,7 @@ export default function AccountWorkspace() {
     setBusy(false);
   };
 
-  if (active) return <App key={active} startInWorkspace onAccountDashboard={dashboard} cloudSaveStatus={status} cloudError={error} />;
+  if (active) return <App key={active} startInWorkspace onAccountDashboard={dashboard} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} />;
   if (teacher) return <App startInTeacher onAccountDashboard={dashboard} />;
   return <AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} onTeacher={account?.role === 'instructor' ? () => setTeacher(true) : undefined}>
     <main id="workspace" className={signedOut ? 'access-main account-workspace' : 'studio-dashboard account-workspace'}>

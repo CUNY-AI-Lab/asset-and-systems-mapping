@@ -201,3 +201,27 @@ test('malformed and unconfigured course selectors never fall back to the general
     expect(result.headers.get('cache-control')).toContain('no-store');
   }
 });
+
+test('submitted revision metrics require current course ownership and ignore saves, duplicate submissions and failed reviews', async () => {
+  await scoped('/api/cloud/account');
+  const p = newProject(); p.id = 'revision-test';
+  const save = revision => scoped('/api/cloud/projects/revision-test', 'alice', 'synthetic-course-a', { method:'PUT', body:JSON.stringify({project:serializeProject(p),revision}) });
+  const submit = (revision,who='alice',course='synthetic-course-a') => scoped('/api/cloud/projects/revision-test/submitted-revisions',who,course,{method:'POST',body:JSON.stringify({revision})});
+  const counts = async () => (await (await scoped('/api/cloud/course-students','instructor')).json()).students.find(s => s.displayName === 'Alice Student').projects.find(p=>p.id==='revision-test').submittedRevisions;
+  expect((await save(0)).status).toBe(200); expect(await counts()).toEqual([]);
+  expect((await (await submit(1)).json()).recorded).toBe(true);
+  expect((await (await submit(1)).json()).recorded).toBe(false);
+  expect((await submit(1,'instructor')).status).toBe(403);
+  expect((await submit(1,'alice','synthetic-course-b')).status).toBe(404);
+  p.updatedAt = new Date().toISOString(); await save(1);
+  expect((await (await submit(2)).json()).recorded).toBe(false);
+  p.submission.text='Changed synthetic memo'; await save(2);
+  expect((await submit(2)).status).toBe(409);
+  expect((await (await submit(3)).json()).recorded).toBe(true);
+  p.stage=1; p.furthestStage=1; p.preflight=null; await save(3);
+  expect((await submit(4)).status).toBe(409);
+  expect(await counts()).toEqual([expect.objectContaining({scale:'micro',stage:0,count:2})]);
+  expect((await scoped('/api/cloud/projects/revision-test/submitted-revisions')).status).toBe(403);
+  expect((await scoped('/api/cloud/course-students')).status).toBe(403);
+  await control({courseDenied:true}); expect((await submit(4)).status).toBe(403);
+});
