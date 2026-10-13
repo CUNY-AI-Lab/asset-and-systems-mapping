@@ -1,4 +1,4 @@
-import { CourseAccessError, resolveCourseAccess, courseFailure, type CourseAccessEnv } from './course-access';
+import { CourseAccessError, resolveCourseAccess, courseFailure, courseRoster, allowedCourseIds, type CourseAccessEnv, type CourseAccess } from './course-access';
 import { currentCoursePrompt, coursePromptRequest } from './course-prompt';
 import { DurableObject } from 'cloudflare:workers';
 import { createHash } from 'node:crypto';
@@ -71,7 +71,8 @@ export class MappingCourse extends DurableObject<Bindings> {
         event TEXT NOT NULL CHECK(event IN ('created','saved','opened')), revision INTEGER NOT NULL, at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS cloud_activity_owner ON cloud_activity(owner, at);
-      CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
       this.db.finishInitialization();
       this.system = createSystemsMappingApp({ db: this.db, publicOrigin: env.PUBLIC_ORIGIN, hostedMode: true, classCode: 'cail-only-no-class-code-827361',
         preflightEvaluationConcurrency: Number(env.GUIDANCE_CONCURRENCY),
@@ -99,6 +100,12 @@ export class MappingCourse extends DurableObject<Bindings> {
     return this.db.healthCheck();
   }
 
+  async visit(course: CourseAccess): Promise<void> {
+    if (!course.participant || course.owner || Date.parse(course.expiresAt) <= Date.now()) return;
+    const owner = digest(course.memberId), at = new Date().toISOString();
+    this.db.prepare(`INSERT INTO cloud_course_visits VALUES (?,?,?) ON CONFLICT(owner) DO UPDATE SET last_seen=excluded.last_seen`).run(owner, at, at);
+  }
+
   async request(request: Request, principal: Principal, correlation: CailCorrelation = correlationFromHeaders(request.headers), guidanceDeadline?: number): Promise<Response> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
@@ -113,10 +120,33 @@ export class MappingCourse extends DurableObject<Bindings> {
       return coursePromptRequest(request, this.ctx.storage, principal.course.owner, principal.course);
     }
     if (path === '/api/cloud/account' && request.method === 'GET') {
+      if (principal.course) await this.visit(principal.course);
       this.db.prepare('INSERT OR IGNORE INTO cloud_accounts VALUES (?,?)').run(owner, crypto.randomUUID());
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
         role: principal.admin ? 'instructor' : 'student',
         course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
+    }
+    if (path === '/api/cloud/course-students' && request.method === 'GET') {
+      if (!principal.course?.owner) return courseFailure(new CourseAccessError(403, 'not_owner'));
+      if ([...url.searchParams.keys()].some(key => key !== 'cursor') || url.searchParams.getAll('cursor').length > 1) return courseFailure(new CourseAccessError(400, 'cursor_invalid'));
+      try {
+        const roster = await courseRoster(this.env, principal.subject, principal.course, url.searchParams.get('cursor') ?? undefined, request.signal);
+        const students = roster.participants.flatMap(member => {
+          const studentOwner = digest(member.memberId);
+          const visit = this.db.prepare('SELECT first_seen AS firstSeen,last_seen AS lastSeen FROM cloud_course_visits WHERE owner=?').get(studentOwner);
+          if (!visit) return [];
+          const rows = this.db.prepare('SELECT id,title,project,revision,updated_at AS updatedAt FROM cloud_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 20').all(studentOwner);
+          const projectCount = this.db.prepare('SELECT count(*) AS count FROM cloud_projects WHERE owner=?').get(studentOwner).count;
+          const projects = rows.map((row: any) => {
+            const project = parseProject(row.project);
+            return { id: row.id, title: row.title, revision: row.revision, updatedAt: row.updatedAt, activeScale: project.activeScale,
+              levels: ['micro','meso','exosphere','macrosphere'].map(scale => ({ scale, stage: project.levelProgress[scale].stage,
+                completed: project.completedScales.includes(scale), started: project.activeScale === scale || project.levelProgress[scale].stage > 1 || project.completedScales.includes(scale) || project.graph.nodes.some((node: any) => node.scale === scale) })) };
+          });
+          return [{ memberId: member.memberId, displayName: member.displayName, displayNameSource: member.displayNameSource, ...visit, projectCount, projects }];
+        });
+        return Response.json({ students, nextCursor: roster.nextCursor });
+      } catch (error) { return courseFailure(error); }
     }
     if (path === '/api/cloud/projects' && request.method === 'GET') {
       const projects = this.db.prepare('SELECT id,title,revision,updated_at AS updatedAt FROM cloud_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 200').all(owner);
@@ -232,6 +262,24 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
           if (!limit.success) response = failure('Please wait a moment and try again.', 429,60);
           else {
             if (principal instanceof Response) response = principal;
+            else if (url.pathname === '/api/cloud/courses' && request.method === 'GET') {
+              try {
+                const courses = await withDeadline(async signal => {
+                  const found = [];
+                  if (env.COURSE_ACCESS_ENABLED === 'true') {
+                    for (const classId of allowedCourseIds(env)) {
+                      let course;
+                      try { course = await resolveCourseAccess(env, principal.subject, classId, signal); }
+                      catch (error) { if (error instanceof CourseAccessError && error.status === 403) continue; throw error; }
+                      await boundedRpc(env.COURSES.getByName(`systems-mapping:course:${classId}`).visit(course), signal);
+                      found.push({ id: course.classId, name: course.className, term: course.term, section: course.section, role: course.owner ? 'instructor' : 'student' });
+                    }
+                  }
+                  return found;
+                }, request.signal, 8000);
+                response = Response.json({ courses });
+              } catch (error) { response = courseFailure(error); }
+            }
             else if (url.pathname === '/api/cloud/quota' && request.method === 'GET') {
               try {
                 const quota = await withDeadline(signal => gatewayClient(env.GATEWAY).getQuota({ kind: 'jwt', token: principal.gatewayJwt }, { signal }), request.signal, 5000);

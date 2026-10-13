@@ -36,6 +36,7 @@ beforeEach(() => {
     if (path === '/api/cloud/account') payload = { account: workspaceAccount };
     else if (path === '/api/cloud/projects') payload = { projects: projects.map(({ id, title, updatedAt }) => ({ id, title, updatedAt })) };
     else if (path === '/api/cloud/quota') payload = { quota: { remaining_percent: 90 } };
+    else if (path === '/api/cloud/courses') payload = { courses: [] };
     else if (path === '/api/cloud/course-prompt') payload = { prompt: { amendment: 'Course instructions', revision: 1, changeNote: 'Initial', updatedAt: null } };
     else if (path.startsWith('/api/cloud/projects/')) {
       const project = projects.find(project => path.endsWith(project.id));
@@ -55,6 +56,18 @@ afterEach(() => {
 });
 
 describe('Account dashboard controls', () => {
+  it('opens a shared map while course discovery is still pending', async () => {
+    window.history.replaceState(null, '', '/p/' + 'a'.repeat(24));
+    const normal = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((path, options) => {
+      if (path === '/api/cloud/courses') return new Promise(() => {});
+      if (path.startsWith('/api/projects/')) return Promise.resolve(new Response(JSON.stringify({ project: serializeProject(projects[0]), projectId: projects[0].id }), { headers: { 'content-type': 'application/json' } }));
+      return normal(path, options);
+    });
+    render(<AccountWorkspace />);
+    await screen.findByRole('heading', { name: 'Project workspace' });
+  });
+
   it('uses concise visible project actions and opens the chosen map', async () => {
     render(<AccountWorkspace />);
     const row = await screen.findByRole('article', { name: 'Second saved map' });

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { COURSE_APP, CourseAccessError, courseFailure, resolveCourseAccess, validCourseId, type CourseAccessEnv } from './course-access';
+import { COURSE_APP, CourseAccessError, courseFailure, courseRoster, resolveCourseAccess, validCourseId, type CourseAccessEnv } from './course-access';
 
 // Synthetic fixtures exercise the proposed wire only; they are not live grants.
 const now = Date.parse('2026-10-12T18:00:00.000Z');
@@ -23,6 +23,36 @@ function environment(...values: [unknown?]) {
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(now); });
 afterEach(() => { vi.useRealTimers(); });
+
+test('fresh exact owner roster accepts verified names and rejects stale or foreign data', async () => {
+  const { env } = environment(receipt({ owner: true }));
+  const course = await resolveCourseAccess(env, subject, classId);
+  const member = { memberId: course.memberId, displayName: 'Alice Student', displayNameSource: 'verified_profile', startsAt: iso(-60000), expiresAt: iso(60000) };
+  const page = { ok: true, classId, checkedAt: iso(0), expiresAt: iso(60000), revision: 1, participants: [member], nextCursor: null };
+  const roster = vi.fn(async () => page);
+  env.ADMISSION_RESOLVER!.listCourseRoster = roster;
+  await expect(courseRoster(env, subject, course, undefined)).resolves.toEqual({ participants: [member], nextCursor: null });
+  expect(roster).toHaveBeenCalledWith({ subject, app: COURSE_APP, classId, limit: 40 });
+  for (const invalid of [
+    { ...page, classId: 'other-course' }, { ...page, checkedAt: iso(-30000) },
+    { ...page, participants: [member, member] },
+    { ...page, participants: [{ ...member, memberId: 'stem-member-v1-' + 'a'.repeat(64) }] },
+    { ...page, participants: [{ ...member, displayNameSource: 'email' }] },
+  ]) {
+    roster.mockResolvedValueOnce(invalid);
+    await expect(courseRoster(env, subject, course, undefined)).rejects.toMatchObject({ status: 503 });
+  }
+  await expect(courseRoster(env, subject, { ...course, owner: false }, undefined)).rejects.toMatchObject({ status: 403 });
+});
+
+test('a stalled roster call settles at its deadline', async () => {
+  const { env } = environment(receipt({ owner: true }));
+  const course = await resolveCourseAccess(env, subject, classId);
+  env.ADMISSION_RESOLVER!.listCourseRoster = () => new Promise(() => {});
+  const result = expect(courseRoster(env, subject, course, undefined)).rejects.toMatchObject({ status: 503 });
+  await vi.advanceTimersByTimeAsync(5000);
+  await result;
+});
 
 test.each([
   ['a', true], ['a'.repeat(64), true], ['a-b-3', true], ['search', false], ['A', false],

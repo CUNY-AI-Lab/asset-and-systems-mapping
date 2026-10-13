@@ -23,6 +23,13 @@ export class Identity extends WorkerEntrypoint<FixtureEnv> {
   async revoke(token: string) { revoked.add(token); return { revoked: true }; }
 }
 export class Admission extends WorkerEntrypoint<FixtureEnv> {
+  async listCourseRoster({ subject, app, classId }: { subject: string; app: string; classId: string }) {
+    const access = await this.resolveCourseAccess({ subject, app, classId });
+    if (!access.ok) return access;
+    if (!access.owner) return { ok: false, code: 'not_owner', retryable: false };
+    return { ok: true, classId, checkedAt: access.checkedAt, expiresAt: access.expiresAt, revision: 1, nextCursor: null,
+      participants: [{ memberId: 'systems-mapping-member-v1-' + 'a'.repeat(64), displayName: 'Alice Student', displayNameSource: 'verified_profile', startsAt: access.startsAt, expiresAt: access.expiresAt }] };
+  }
   async resolveCourseAccess({ subject, app, classId }: { subject: string; app: string; classId: string }) {
     courseLookups++;
     if (courseOutage) throw new Error('private fixture outage');

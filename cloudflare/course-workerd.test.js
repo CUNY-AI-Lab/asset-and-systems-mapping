@@ -34,6 +34,34 @@ const promptPath = '/api/cloud/course-prompt';
 const savePrompt = (amendment, expectedRevision, who = 'instructor', course = 'synthetic-course-a') => scoped(promptPath, who, course, { method: 'PUT', body: JSON.stringify({ amendment, expectedRevision, changeNote: 'Synthetic test change' }) });
 beforeEach(async () => { await control({ courseDenied: false, courseOutage: false, denyOnCourseLookup: 0, mode: 'success', resetSessions: true }); });
 
+test('first application access records a current student before any saved map and repeat sign-ins preserve the first visit', async () => {
+  const path = '/api/cloud/course-students';
+  expect((await (await scoped(path, 'instructor')).json()).students).toEqual([]);
+  const discovery = await (await request('/api/cloud/courses')).json();
+  expect(discovery.courses.map(course => course.id)).toEqual(['synthetic-course-a', 'synthetic-course-b']);
+  const first = (await (await scoped(path, 'instructor')).json()).students;
+  expect(first).toHaveLength(1);
+  expect(first[0]).toMatchObject({ displayName: 'Alice Student', projectCount: 0, projects: [] });
+  await scoped('/api/cloud/account');
+  await request('/api/cloud/courses');
+  const again = (await (await scoped(path, 'instructor')).json()).students;
+  expect(again).toHaveLength(1);
+  expect(again[0].firstSeen).toBe(first[0].firstSeen);
+  const project = newProject(); project.id = 'roster-map'; project.activeScale = 'micro'; project.releasedScales = ['micro', 'meso']; project.completedScales = ['micro']; project.levelProgress.meso.stage = 2;
+  expect((await scoped('/api/cloud/projects/roster-map', 'alice', 'synthetic-course-a', { method: 'PUT', body: JSON.stringify({ project: serializeProject(project), revision: 0 }) })).status).toBe(200);
+  const saved = (await (await scoped(path, 'instructor')).json()).students[0];
+  expect(saved.projectCount).toBe(1);
+  expect(saved.projects[0].levels).toContainEqual({ scale: 'meso', stage: 2, completed: false, started: true });
+  expect(saved.projects[0].levels).toContainEqual({ scale: 'micro', stage: 0, completed: true, started: true });
+  expect(JSON.stringify(saved)).not.toContain(project.submission.text);
+  expect((await scoped(path, 'alice')).status).toBe(403);
+  expect((await scoped(path, 'admin')).status).toBe(403);
+  expect((await request(path, 'admin')).status).toBe(403);
+  expect((await scoped(path, 'instructor', 'synthetic-course-b')).status).toBe(403);
+  await control({ courseDenied: true });
+  expect((await scoped(path, 'instructor')).status).toBe(403);
+});
+
 test('current exact-course ownership governs instructor access, independently of global role', async () => {
   const first = await scoped('/api/teacher/profiles', 'instructor');
   expect(first.status, JSON.stringify({ response: await first.clone().text(), fixture: await (await services.fetch('https://fixtures.test/control')).json() })).toBe(200);

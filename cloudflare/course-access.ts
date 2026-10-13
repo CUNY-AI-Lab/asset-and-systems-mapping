@@ -1,9 +1,7 @@
 import { withDeadline, withSignal } from './bounded.js';
 
-/** Prospective Systems Mapping counterpart of Admission's private course wire v1.
- * The shared contract currently supports Stem only. These fields and the Systems
- * member namespace require upstream agreement before this feature is enabled.
- * Never use Stem's app literal or member IDs as a compatibility fallback. */
+/** Systems Mapping counterpart of Admission's private course wire v1.
+ * Admission gives each application its own member IDs and roster cursors. */
 export const COURSE_APP = 'systems-mapping' as const;
 
 export interface CourseAccess {
@@ -25,6 +23,7 @@ export interface CourseAccess {
 
 export interface AdmissionCourseResolver {
   resolveCourseAccess?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
+  listCourseRoster?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit: number; cursor?: string }): Promise<unknown>;
 }
 
 export interface CourseAccessEnv {
@@ -87,7 +86,7 @@ function denialCode(value: unknown): string | null {
     && typeof value.code === 'string' && failureCodes.has(value.code) ? value.code : null;
 }
 
-function allowedCourseIds(env: CourseAccessEnv): string[] {
+export function allowedCourseIds(env: CourseAccessEnv): string[] {
   if (env.COURSE_IDS === undefined) return [];
   if (typeof env.COURSE_IDS !== 'string') throw new CourseAccessError(503, 'course_configuration_unavailable');
   if (env.COURSE_IDS.trim() === '') return [];
@@ -96,6 +95,49 @@ function allowedCourseIds(env: CourseAccessEnv): string[] {
     throw new CourseAccessError(503, 'course_configuration_unavailable');
   }
   return [...new Set(ids)];
+}
+
+export interface CourseStudent {
+  memberId: string;
+  displayName: string | null;
+  displayNameSource: 'verified_profile' | 'unavailable';
+  startsAt: string;
+  expiresAt: string;
+}
+
+export async function courseRoster(env: CourseAccessEnv, subject: string, course: CourseAccess, cursor: string | undefined, signal?: AbortSignal): Promise<{ participants: CourseStudent[]; nextCursor: string | null }> {
+  if (!course.owner) throw new CourseAccessError(403, 'not_owner');
+  if (cursor !== undefined && !/^[A-Za-z0-9_-]{1,2048}$/.test(cursor)) throw new CourseAccessError(400, 'cursor_invalid');
+  let value: unknown;
+  try {
+    value = await withDeadline(timed => withSignal(Promise.resolve().then(() => {
+      if (timed.aborted) throw timed.reason;
+      return env.ADMISSION_RESOLVER!.listCourseRoster!({ subject, app: COURSE_APP, classId: course.classId, limit: 40, ...(cursor === undefined ? {} : { cursor }) });
+    }), timed), signal, 5000);
+  } catch { throw new CourseAccessError(503, 'course_access_unavailable'); }
+  const denial = denialCode(value);
+  if (denial) throw new CourseAccessError(403, denial);
+  const now = Date.now();
+  const fields = ['ok', 'classId', 'checkedAt', 'expiresAt', 'revision', 'participants', 'nextCursor'];
+  if (!exactFields(value, fields) || value.ok !== true || value.classId !== course.classId
+    || !canonicalDate(value.checkedAt) || !canonicalDate(value.expiresAt)
+    || Date.parse(value.checkedAt) > now + 5000 || now - Date.parse(value.checkedAt) >= 30000
+    || Date.parse(value.expiresAt) <= now || Date.parse(value.checkedAt) >= Date.parse(value.expiresAt)
+    || !Number.isSafeInteger(value.revision) || Number(value.revision) < 0
+    || !(value.nextCursor === null || typeof value.nextCursor === 'string' && /^[A-Za-z0-9_-]{1,2048}$/.test(value.nextCursor))
+    || !Array.isArray(value.participants) || value.participants.length > 40) throw new CourseAccessError(503, 'course_access_unavailable');
+  const participants: CourseStudent[] = [];
+  const ids = new Set<string>();
+  for (const row of value.participants) {
+    if (!exactFields(row, ['memberId', 'displayName', 'displayNameSource', 'startsAt', 'expiresAt'])
+      || typeof row.memberId !== 'string' || !memberIdPattern.test(row.memberId) || ids.has(row.memberId)
+      || !((row.displayName === null && row.displayNameSource === 'unavailable') || boundedText(row.displayName, 160) && row.displayNameSource === 'verified_profile')
+      || !canonicalDate(row.startsAt) || !canonicalDate(row.expiresAt)
+      || Date.parse(row.startsAt) > now || Date.parse(row.expiresAt) <= now) throw new CourseAccessError(503, 'course_access_unavailable');
+    ids.add(row.memberId);
+    participants.push({ memberId: row.memberId, displayName: row.displayName as string | null, displayNameSource: row.displayNameSource as CourseStudent['displayNameSource'], startsAt: row.startsAt, expiresAt: row.expiresAt });
+  }
+  return { participants, nextCursor: value.nextCursor as string | null };
 }
 
 /** Call only with the canonical subject established by verified server identity.

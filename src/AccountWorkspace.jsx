@@ -26,6 +26,8 @@ export default function AccountWorkspace() {
   const [signedOut,setSignedOut] = useState(false);
   const [busy,setBusy] = useState(false);
   const [quota,setQuota] = useState(null);
+  const [courses,setCourses] = useState([]);
+  const [courseError,setCourseError] = useState('');
   const queue = useRef(Promise.resolve());
   const revisions = useRef(new Map());
   const saved = useRef(new Map());
@@ -65,6 +67,11 @@ export default function AccountWorkspace() {
         storageRef.current = useAccountStorage(result.account.cacheKey, null, courseSelection);
         setAccount(result.account);
         const records = await refresh();
+        if (courseSelection.kind === 'general') {
+          void request('/api/cloud/courses')
+            .then(page => { if (!cancelled) setCourses(page.courses); })
+            .catch(failure => { if (!cancelled) setCourseError(userFacingError(failure, 'Your courses are temporarily unavailable. Reload to check again.')); });
+        }
         try { const data = await request('/api/cloud/quota'); if (!cancelled) setQuota(data.quota); } catch { /* Informational only; map editing stays available. */ }
         if (cancelled) return;
         setStatus('');
@@ -165,6 +172,8 @@ export default function AccountWorkspace() {
         <LevelTrail />
         <Action as="a" className="account-login" href={institutionalLoginUrl(courseSelection)}>CUNY Login</Action>
       </> : account ? <>
+        {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul>{courses.map(course => <li key={course.id}><a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>{course.role === 'instructor' && <span> · Instructor</span>}</li>)}</ul></section>}
+        {courseError && <p role="status">{courseError}</p>}
         <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : 'Continue a map or start a new one'} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
         {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} openLabel="Open" />)}</div>
           : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
