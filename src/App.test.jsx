@@ -1077,6 +1077,7 @@ describe('Systems Mapping workflow', () => {
     seedProject(project);
     let reads = 0;
     fetchMock.mockImplementation((path, options) => {
+      if (String(path) === '/api/cloud/guidance-jobs') return jsonResponse({ error: 'Sign-in ended' }, 401);
       if (String(path) === '/api/student/session' && ++reads === 2) return new Promise(() => {});
       return defaultFetch(path, options);
     });
@@ -1094,7 +1095,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Generate guidance' })).not.toBeDisabled();
     expect(storedProject()).toMatchObject({ id: project.id, stage: 1, submission: project.submission });
-    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/cloud/guidance-jobs')).toHaveLength(1);
   });
 
   it('passes a hosted high-entropy alphanumeric class code unchanged', async () => {
@@ -1568,6 +1569,13 @@ describe('Systems Mapping workflow', () => {
     document.documentElement.scrollTop = 240;
     document.body.scrollTop = 240;
     fireEvent.click(continueButton);
+
+    if (activeScale === 'meso') {
+      const review = await screen.findByRole('dialog', { name: 'Review Micro and Meso' });
+      expect(storedProject().activeScale).toBe('meso');
+      expect(storedProject().graph).toEqual(graphBefore);
+      fireEvent.click(within(review).getByRole('button', { name: 'Continue to Exo-level' }));
+    }
 
     // The next level continues directly at Review — the memo travels with the
     // project, so the student is never routed back through the intake form.
@@ -2896,6 +2904,12 @@ describe('Systems Mapping workflow', () => {
       if (index < 3) {
         fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Review and export' }));
         fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: /^Continue to / }));
+        if (scale === 'meso') {
+          const dialog = await screen.findByRole('dialog', { name: 'Review Micro and Meso' });
+          await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 4 }));
+          expect(storedProject().graph).toEqual(prior);
+          fireEvent.click(within(dialog).getByRole('button', { name: 'Continue to Exo-level' }));
+        }
         await waitFor(() => expect(storedProject()).toMatchObject({ stage: 1, activeScale: scales[index + 1] }));
       }
     }
@@ -3000,7 +3014,7 @@ describe('Systems Mapping workflow', () => {
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
   });
 
-  it('accepts a valid empty first response and retains that model seed after advancing levels', async () => {
+  it('accepts empty Micro output and rereads the memo for Meso', async () => {
     const project = createDefaultProject();
     project.stage = 1;
     project.furthestStage = 1;
@@ -3023,7 +3037,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1, preflight: null }));
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
-    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual(['micro', 'meso']);
   });
 
   it('adds requested connection suggestions automatically without marking them reviewed', async () => {

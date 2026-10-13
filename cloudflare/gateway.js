@@ -100,7 +100,8 @@ function backoff(milliseconds, signal) {
 // denials, partial responses or invalid completed output.
 export function gatewaySuggestion(binding, token, model, correlation, logOutcome = () => {}, fallbackModels = GUIDANCE_FALLBACK_MODELS) {
   const client = gatewayClient(binding);
-  return async (input, _config, { signal } = {}) => {
+  return async (input, _config, { signal, timeoutMs = GUIDANCE_MODEL_TIMEOUT_MS } = /** @type {{ signal?: AbortSignal, timeoutMs?: number }} */ ({})) => {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
     return withDeadline(async requestSignal => {
     try {
@@ -132,6 +133,6 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
       logOutcome(requestSignal.aborted ? 'cancelled' : 'error');
       throw error;
     }
-    }, signal, GUIDANCE_MODEL_TIMEOUT_MS);
+    }, signal, timeoutMs);
   };
 }

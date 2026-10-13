@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultProject, stableId } from './domain.js';
-import { requiresInitialModel } from './mappingCycle.js';
+import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
 
 describe('initial mapping cycle', () => {
+  it('generates Meso guidance from carried Micro settings while preserving an existing Meso map', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'meso'; project.graph.nodes.push({ id:'school', scale:'micro', type:'setting' });
+    expect(requiresInitialModel(project)).toBe(false);
+    expect(requiresLevelModel(project)).toBe(true);
+    project.graph.nodes.push({ id:'home-school', scale:'meso', type:'linkage' });
+    expect(requiresLevelModel(project)).toBe(false);
+  });
   it('requires a model even if an empty project previously skipped stages', () => {
     const project = createDefaultProject();
     project.stage = 4;

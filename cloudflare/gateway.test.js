@@ -67,6 +67,19 @@ test('a hanging provider stops at 25 seconds without starting a second ambiguous
   expect(vi.getTimerCount()).toBe(0);
 });
 
+test('durable generation can finish after the browser deadline and stops at its 85-second limit', async () => {
+  vi.useFakeTimers();
+  const fetch = vi.fn(() => new Promise(() => {}));
+  const result = gatewaySuggestion({ fetch }, 'fixture-identity', 'glm-5.3-flash', correlation)(input, null, { timeoutMs: 85000 });
+  const failure = expect(result).rejects.toMatchObject({ name: 'TimeoutError' });
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(fetch.mock.calls[0][0].signal.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(55000);
+  await failure;
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0].signal.aborted).toBe(true);
+});
+
 test('a slow backup has only the time left in the original budget', async () => {
   vi.useFakeTimers();
   const fetch = vi.fn(async () => fetch.mock.calls.length === 1 ? unavailable('upstream_unavailable', 503, '10') : new Promise(() => {}));

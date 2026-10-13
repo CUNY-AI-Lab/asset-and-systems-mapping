@@ -9,7 +9,12 @@ async function readProject(page) {
 
 test('student automatic flow stays simple, editable, and persistent', async ({ page, makeAxeBuilder }, testInfo) => {
   const violations = [];
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto('/');
+  await expect(page).toHaveTitle(/Systems Mapping/);
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
   await page.getByRole('textbox', { name: 'Class code' }).fill('101');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Start new project' }).click();
@@ -35,6 +40,22 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic map'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic map');
+  await page.getByRole('button', { name: 'Review and export', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue to Meso-level', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue →', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
+  await expect.poll(async () => (await readProject(page)).activeScale).toBe('meso');
+  await page.getByRole('button', { name: 'Review and export', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue to Exo-level', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Review Micro and Meso' });
+  await expect(review).toBeVisible();
+  expect((await readProject(page)).activeScale).toBe('meso');
+  violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Meso review pause'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'Meso review pause');
+  await review.getByRole('button', { name: 'Review the map', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
+  const cumulative = (await readProject(page)).graph;
+  graph.nodes.forEach(node => expect(cumulative.nodes.some(item => item.id === node.id)).toBe(true));
   await page.getByRole('button', { name: 'Full screen map' }).click();
   await captureSourceRenderedScreenshot(page, testInfo, 'Full screen automatic map');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
@@ -44,7 +65,7 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await captureSourceRenderedScreenshot(page, testInfo, 'Manual review preference');
   await page.reload();
   await page.getByRole('button', { name: 'Open project', exact: true }).click();
-  expect((await readProject(page)).graph).toEqual(graph);
+  expect((await readProject(page)).graph).toEqual(cumulative);
   await page.getByRole('button', { name: 'Progress', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Add suggestions automatically' })).not.toBeChecked();
   await page.getByRole('button', { name: 'Close Progress' }).click();
@@ -52,4 +73,5 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic map dark'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic map dark');
   assertNoAccessibilityViolations(violations);
+  expect(errors).toEqual([]);
 });

@@ -1,6 +1,7 @@
 import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
 import { courseRequestHeaders, initialApiCourseSelection } from './courseContext.js';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
+import { durableGuidance } from './durableGuidance.js';
 export { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 export class ApiError extends Error {
   constructor(message, status, payload = null) {
@@ -108,10 +109,12 @@ async function guidanceRequest(path, payload, options = {}) {
 }
 
 export function createPreflightEvaluation(payload, options = {}) {
+  if (options.durable) return durableGuidance(apiRequest, (message, status, result) => new ApiError(message, status, result), 'memo', payload, { ...options, storage: projectStorage() });
   return guidanceRequest('/api/preflight/evaluations', payload, options);
 }
 
 export function suggestMapConnections(payload, options = {}) {
+  if (options.durable) return durableGuidance(apiRequest, (message, status, result) => new ApiError(message, status, result), 'connections', payload, { ...options, storage: projectStorage() });
   return guidanceRequest('/api/map/connections', payload, options);
 }
 

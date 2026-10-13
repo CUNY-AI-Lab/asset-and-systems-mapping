@@ -34,6 +34,34 @@ const promptPath = '/api/cloud/course-prompt';
 const savePrompt = (amendment, expectedRevision, who = 'instructor', course = 'synthetic-course-a') => scoped(promptPath, who, course, { method: 'PUT', body: JSON.stringify({ amendment, expectedRevision, changeNote: 'Synthetic test change' }) });
 beforeEach(async () => { await control({ courseDenied: false, courseOutage: false, denyOnCourseLookup: 0, mode: 'success', resetSessions: true }); });
 
+test('durable generation returns one saved result across repeated starts and enforces account/course isolation', async () => {
+  const { preflightEvaluationPayload } = await import('../src/App.jsx');
+  const project = newProject(); project.id = 'durable-job-map'; project.submission.text = 'A student meets an instructor in a classroom.';
+  const input = preflightEvaluationPayload(project);
+  const requestToken = crypto.randomUUID();
+  const start = () => scoped('/api/cloud/guidance-jobs', 'alice', 'synthetic-course-a', { method: 'POST', body: JSON.stringify({ kind: 'memo', input, requestToken }) });
+  const first = await start();
+  expect(first.status, await first.clone().text()).toBe(202);
+  const initial = await first.json();
+  expect((await (await start()).json()).job.id).toBe(initial.job.id);
+  const path = '/api/cloud/guidance-jobs/' + initial.job.id;
+  let page;
+  for (let i = 0; i < 30; i++) {
+    page = await (await scoped(path)).json();
+    if (page.job.state === 'succeeded' || page.job.state === 'failed') break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  expect(page, JSON.stringify(page)).toMatchObject({ job: { state: 'succeeded', attempts: 1 } });
+  expect(page.result.evaluation.id).toBeTruthy();
+  expect((await (await start()).json()).result.evaluation.id).toBe(page.result.evaluation.id);
+  expect((await (await services.fetch('https://fixtures.test/control')).json()).calls).toBe(1);
+  expect((await scoped(path, 'admin')).status).toBe(404);
+  expect((await scoped(path, 'alice', 'synthetic-course-b')).status).toBe(404);
+  expect((await request(path, 'alice')).status).toBe(404);
+  await control({ courseDenied: true });
+  expect((await scoped(path)).status).toBe(403);
+});
+
 test('first application access records a current student before any saved map and repeat sign-ins preserve the first visit', async () => {
   const path = '/api/cloud/course-students';
   expect((await (await scoped(path, 'instructor')).json()).students).toEqual([]);

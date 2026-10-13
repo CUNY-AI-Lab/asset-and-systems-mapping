@@ -8,7 +8,8 @@ import { useCanvasWindow } from './ui/useCanvasWindow.js';
 import { useMapFontMetrics } from './ui/useMapFontMetrics.js';
 import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-judgments.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
-import { requiresInitialModel } from './mappingCycle.js';
+import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
+import { hasPendingGuidance } from './durableGuidance.js';
 import MapListView from './MapListView.jsx';
 import MapConnections from './MapConnections.jsx';
 import MapSearch from './MapSearch.jsx';
@@ -1341,13 +1342,13 @@ function ModelSetup({ project, update, toast, suggestionRuntime, persistence }) 
         <div className="config-line"><span>Runtime</span><strong>{suggestionRuntimeLabel(suggestionRuntime)}</strong></div>
         <p className="privacy-note">Edit the guidance used for this project.</p>
         <Field label="Configuration name"><input maxLength={CONFIG_TEXT_LIMIT} value={draft.label} onChange={(event) => change('label', event.target.value)} /></Field>
-        <Field label="Base-model reference"><input maxLength={CONFIG_TEXT_LIMIT} value={draft.baseModel} onChange={(event) => change('baseModel', event.target.value)} /></Field>
+        {suggestionRuntime?.provider !== 'cail-gateway' && <><Field label="Base-model reference"><input maxLength={CONFIG_TEXT_LIMIT} value={draft.baseModel} onChange={(event) => change('baseModel', event.target.value)} /></Field>
         <div className="field-pair">
           <Field label="Context limit"><input type="number" min="1000" max="200000" value={draft.contextLimit} onChange={(event) => change('contextLimit', event.target.value)} /></Field>
           <Field label="Confidence threshold"><input type="number" min="0" max="1" step="0.01" value={draft.confidenceThreshold} onChange={(event) => change('confidenceThreshold', event.target.value)} /></Field>
-        </div>
+        </div></>}
         <Field label="Custom project instructions" hint="These instructions supplement the published course settings for this project."><textarea rows="5" maxLength={kind === 'preflight' ? MAX_EVALUATION_CUSTOM_INSTRUCTIONS : PROJECT_LIMITS.promptText} value={draft.customInstructions} onChange={(event) => change('customInstructions', event.target.value)} /></Field>
-        <Field label="Relationship vocabulary" hint="Separate relationship terms with commas."><textarea rows="4" maxLength={RELATION_VOCABULARY_TEXT_LIMIT} value={draft.relationVocabulary} onChange={(event) => change('relationVocabulary', event.target.value)} /></Field>
+        {suggestionRuntime?.provider !== 'cail-gateway' && <Field label="Relationship vocabulary" hint="Separate relationship terms with commas."><textarea rows="4" maxLength={RELATION_VOCABULARY_TEXT_LIMIT} value={draft.relationVocabulary} onChange={(event) => change('relationVocabulary', event.target.value)} /></Field>}
         <Field label="Change note" hint="Required. This note appears in revision history."><input maxLength={PROJECT_LIMITS.rationaleText} value={draft.changeNote || ''} onChange={(event) => change('changeNote', event.target.value)} /></Field>
         {draft.staleRevision && <div className="teacher-message teacher-message--error" role="alert"><strong>Project revision {draft.staleRevision} is now current.</strong><p>Your unsaved draft remains in the editor and cannot overwrite it.</p><button type="button" className="button button--ghost" onClick={loadCurrentRevision}>Load project revision {draft.staleRevision}</button></div>}
         <div className="button-row"><button className="button button--secondary" type="button" onClick={() => setPreview(!preview)}>{preview ? 'Hide combined instructions' : 'Preview combined instructions'}</button><button className="button" type="button" onClick={save}>Save revision</button></div>
@@ -1381,7 +1382,7 @@ const REVIEW_LEDES = Object.freeze({
   macrosphere: 'Find broader conditions that affect several map items',
 });
 
-function ReviewMemoStage({ project, update, reviewBusy, reviewFailure, retryPending, onGenerate, onRequestRestart }) {
+function ReviewMemoStage({ project, update, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate, onRequestRestart }) {
   const review = project.preflight?.memoReview;
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
@@ -1394,6 +1395,7 @@ function ReviewMemoStage({ project, update, reviewBusy, reviewFailure, retryPend
       <SuggestionPreference project={project} update={update} />
       {!review && <Action disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Reading memo…' : reviewFailure ? 'Try again' : 'Generate guidance'}</Action>}
     </div>
+    {busy && reviewProgress && <p role="status">{reviewProgress}</p>}
     {reviewFailure && <p role="alert" className="teacher-message teacher-message--error">{reviewFailure.message}</p>}
     {review && <>
       <section className="coverage-banner" aria-label="Coverage and uncertainty">
@@ -5425,6 +5427,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const [persistenceBlocked, setPersistenceBlocked] = useState(initialLoad.persistenceBlocked);
   const [pendingNewProject, setPendingNewProject] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(null);
+  const [reviewProgress, setReviewProgress] = useState('');
+  const resumedGuidance = useRef(null);
   const [reviewFailure, setReviewFailure] = useState(null);
   const reviewInFlightRef = useRef(false);
   const reviewRequestRef = useRef(null);
@@ -5872,7 +5876,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       : 'Guidance could not be completed. Try again.'), 'error');
   };
 
-  const generateSuggestions = async () => {
+  const generateSuggestions = async ({ resume = false } = {}) => {
     if (reviewInFlightRef.current || reviewRetryAtRef.current > Date.now()) return false;
     const payload = preflightEvaluationPayload(project);
     const encoder = new TextEncoder();
@@ -5907,6 +5911,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     reviewInFlightRef.current = true;
     setReviewFailure(null);
     setReviewBusy('evaluating');
+    setReviewProgress(resume ? 'Recovering your saved request…' : 'Saving your generation request…');
     try {
       const cached = readGuidanceCache(projectStorage(), project.id, cacheRequestKey);
       let result;
@@ -5914,7 +5919,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         try { result = normalizePreflightEvaluation(cached.evaluation, project); }
         catch { removeGuidanceCacheEntry(projectStorage(), project.id, cacheRequestKey); }
       }
-      const response = result ? cached : await createPreflightEvaluation(payload, { signal: request.controller.signal });
+      const response = result ? cached : await createPreflightEvaluation(payload, { signal: request.controller.signal, durable: institutionalMode,
+        projectId: project.id, requestKey, resume, retryFailed: !resume && Boolean(reviewFailure),
+        onProgress: message => { if (reviewRequestRef.current === request) setReviewProgress(message); } });
       if (request.controller.signal.aborted) return false;
       if (!response || !Object.hasOwn(response, 'evaluation')) throw new Error('The server returned guidance in an unexpected format. Generate the guidance again.');
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
@@ -5955,6 +5962,14 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
   };
 
+  useEffect(() => {
+    if (!institutionalMode || accessState.status !== 'granted' || project.stage !== 1) return;
+    const key = authoritativeEvaluationKey(project);
+    if (resumedGuidance.current === key || !hasPendingGuidance(projectStorage(), project.id, key)) return;
+    resumedGuidance.current = key;
+    void generateSuggestions({ resume: true });
+  }, [institutionalMode, accessState.status, project.id, project.activeScale, project.stage, project.teacherGovernance]);
+
   const generateConnectionSuggestions = async () => {
     const effectivePrompt = connectionPrompt.trim() || memoPromptExcerpt(project.submission.text);
     if (!effectivePrompt) return toast('Write a sentence about how the nodes connect, or add memo text first.', 'error');
@@ -5968,7 +5983,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     const requestKey = stableId('connection-request', JSON.stringify(payload));
     setConnectionBusy(true);
     try {
-      const response = await suggestMapConnections(payload);
+      const response = await suggestMapConnections(payload, { durable: institutionalMode, projectId: project.id + '-connections', requestKey, retryFailed: true });
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
       if (stableId('connection-request', JSON.stringify(connectionSuggestionPayload(projectRef.current, connectionPromptRef.current.trim() || memoPromptExcerpt(projectRef.current.submission.text)))) !== requestKey) {
         toast('The nodes or description changed while suggestions were being prepared. Request them again.', 'error');
@@ -6501,14 +6516,14 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     return true;
   };
 
-  const primary = async () => {
+  const primary = async ({ mesoReviewed = false } = {}) => {
     if (project.stage >= 2 && requiresInitialModel(projectRef.current)) return setStage(1);
     switch (project.stage) {
       case 0: setStage(1, { completed: true }); break;
       case 1: {
         if (reviewInFlightRef.current) return;
         const current = projectRef.current;
-        if (requiresInitialModel(current)) {
+        if (requiresLevelModel(current)) {
           const result = await generateSuggestions();
           if (!result) return;
           return prepareCandidates({ ...projectRef.current, preflight: result });
@@ -6537,6 +6552,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       case 3: setStage(4, { completed: true }); break;
       case 4:
         {
+          if (project.activeScale === 'meso' && !mesoReviewed) { setModal('meso-review'); return; }
           const currentScale = project.activeScale;
           const currentIndex = SCALE_ORDER.indexOf(currentScale);
           const nextScale = currentIndex >= 0 ? SCALE_ORDER[currentIndex + 1] || null : null;
@@ -7023,7 +7039,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   }, [toast]);
   const stageScreens = [
     <IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />,
-    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
+    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
     <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
     <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} onReview={() => { setMapPreviewOpen(false); update((draft) => { draft.stage = 2; }); }} />,
     <RevisionStage project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,
@@ -7293,6 +7309,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     </Modal>
     <Modal open={modal === 'restart-map'} title="Start new map from this memo?" onClose={() => setModal(null)}>
       <div className="confirm-panel"><p>This creates a new project at Micro with the same memo and framing. Your current project stays saved in Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={restartFromCurrentMemo}>Start new map</button></div></div>
+    </Modal>
+    <Modal open={modal === 'meso-review'} title="Review Micro and Meso" onClose={() => setModal(null)}>
+      <div className="confirm-panel"><p>Pause here to check the Micro settings and the interactions connecting them at Meso. Your cumulative map is saved and ready to review or export.</p><div className="button-row"><button type="button" className="button" onClick={() => { setModal(null); setStage(3); }}>Review the map</button><button type="button" className="button button--ghost" onClick={() => { setModal(null); void primary({ mesoReviewed: true }); }}>Continue to Exo-level</button></div></div>
     </Modal>
     <Modal open={modal === 'new-project'} title="Start new project?" onClose={() => { setPendingNewProject(false); setModal(null); }}>
       <div className="confirm-panel"><p>Your current project will stay saved on this device. You can return to it from Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start new project</button></div></div>

@@ -14,6 +14,7 @@ import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
 import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
+import { GuidanceJobs } from './guidance-jobs.js';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
@@ -56,6 +57,7 @@ async function boundedJson(request: Request) {
 // This namespace is independent from Railway and from STEM Splitter.
 export class MappingCourse extends DurableObject<Bindings> {
   db;
+  jobs!: GuidanceJobs;
   system!: ReturnType<typeof createSystemsMappingApp>;
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -74,6 +76,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
       this.db.finishInitialization();
+      this.jobs = new GuidanceJobs(this.db, (pending: Promise<unknown>) => ctx.waitUntil(pending));
       this.system = createSystemsMappingApp({ db: this.db, publicOrigin: env.PUBLIC_ORIGIN, hostedMode: true, classCode: 'cail-only-no-class-code-827361',
         preflightEvaluationConcurrency: Number(env.GUIDANCE_CONCURRENCY),
         ollamaConfig: { apiKey: 'private-service-binding', model: env.GATEWAY_MODEL }, suggestionProvider: 'cail-gateway',
@@ -82,13 +85,13 @@ export class MappingCourse extends DurableObject<Bindings> {
           : safeGatewayFailure(error, context.env.verifiedAccount.correlation.request_id),
         onInternalError: (context: any) => requestLog(env.RELEASE, context.env.verifiedAccount.correlation.request_id).failure(),
         ollamaRequest: async (input: any, config: any, options: any) => {
-          const { gatewayJwt, correlation, course, subject, coursePrompt } = options.context;
+          const { gatewayJwt, correlation, course, subject, coursePrompt, guidanceTimeoutMs } = options.context;
           if (course) {
             await resolveCourseAccess(env, subject, course.classId, options.signal);
             const current = await currentCoursePrompt(this.ctx.storage);
             if (current.revision !== coursePrompt.revision) throw new CourseAccessError(409, 'course_prompt_changed');
           }
-          return gatewaySuggestion(env.GATEWAY, gatewayJwt, env.GATEWAY_MODEL, correlation, requestLog(env.RELEASE, correlation.request_id).gateway)(input, config, { signal: options.signal });
+          return gatewaySuggestion(env.GATEWAY, gatewayJwt, env.GATEWAY_MODEL, correlation, requestLog(env.RELEASE, correlation.request_id).gateway)(input, config, { signal: options.signal, ...(guidanceTimeoutMs ? { timeoutMs: guidanceTimeoutMs } : {}) });
         },
       });
       await this.system.ready;
@@ -100,13 +103,19 @@ export class MappingCourse extends DurableObject<Bindings> {
     return this.db.healthCheck();
   }
 
+  async alarm(): Promise<void> {
+    this.jobs.purge();
+    const next = this.jobs.nextCleanup();
+    if (next !== null) await this.ctx.storage.setAlarm(next);
+  }
+
   async visit(course: CourseAccess): Promise<void> {
     if (!course.participant || course.owner || Date.parse(course.expiresAt) <= Date.now()) return;
     const owner = digest(course.memberId), at = new Date().toISOString();
     this.db.prepare(`INSERT INTO cloud_course_visits VALUES (?,?,?) ON CONFLICT(owner) DO UPDATE SET last_seen=excluded.last_seen`).run(owner, at, at);
   }
 
-  async request(request: Request, principal: Principal, correlation: CailCorrelation = correlationFromHeaders(request.headers), guidanceDeadline?: number): Promise<Response> {
+  async request(request: Request, principal: Principal, correlation: CailCorrelation = correlationFromHeaders(request.headers), guidanceDeadline?: number, durableGuidance = false): Promise<Response> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
@@ -114,6 +123,45 @@ export class MappingCourse extends DurableObject<Bindings> {
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
       if (account?.cache_key !== expectedCache) return failure('The signed-in account changed. Reload to open its workspace. Your device copy is preserved.', 409);
+    }
+    if (path === '/api/cloud/guidance-jobs' || path.startsWith('/api/cloud/guidance-jobs/')) {
+      const match = /^\/api\/cloud\/guidance-jobs\/([0-9a-f]{64})(\/resume)?$/.exec(path);
+      const creating = path === '/api/cloud/guidance-jobs' && request.method === 'POST';
+      if (!creating && (!match || request.method !== (match[2] ? 'POST' : 'GET'))) return failure('Job request unavailable.', 404);
+      let body: any;
+      try { body = creating ? await boundedJson(request) : this.jobs.row(owner, match![1]); }
+      catch { return failure('The generation request could not be read.', 400); }
+      if (!body) return failure('Generation request unavailable.', 404);
+      if (creating && (typeof body.requestToken !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(body.requestToken))) return failure('Generation request identity is required.', 400);
+      let input: any;
+      try { input = creating ? body.input : JSON.parse(body.input); }
+      catch { return failure('Generation request unavailable.', 404); }
+      if (!['memo','connections'].includes(body.kind) || !input || typeof input !== 'object') return failure('Choose a supported generation request.', 400);
+      const params = new URLSearchParams({ configKind: body.kind === 'memo' ? 'preflight' : 'builder', scale: input.activeScale || 'micro', stageId: body.kind === 'memo' ? input.stageId || 'review-suggestions' : 'choose-what-to-map' });
+      const config = await this.request(new Request(url.origin + '/api/config/public?' + params), principal, correlation);
+      if (!config.ok) return config;
+      const scope = JSON.stringify({ config: await config.json(), model: this.env.GATEWAY_MODEL });
+      const run = async (kind: string, savedInput: unknown) => {
+        if (principal.expiresAt <= Date.now()) return failure('Sign in again to continue generation.', 401);
+        const target = kind === 'memo' ? '/api/preflight/evaluations' : '/api/map/connections';
+        // The browser can disconnect while this bounded attempt finishes. Its
+        // current verified credentials remain in memory for this attempt only.
+        return this.request(new Request(url.origin + target, { method: 'POST', headers: { 'content-type': 'application/json', origin: url.origin }, body: JSON.stringify(savedInput) }), principal, correlation, Date.now() + 90000, true);
+      };
+      let result;
+      try {
+        result = creating ? this.jobs.create(owner, body.kind, input, scope, body.retryToken, run, body.requestToken)
+          : match![2] ? this.jobs.resume(owner, match![1], scope, run)
+          : body.scope === scope ? this.jobs.read(owner, match![1]) : { conflict: true };
+      } catch { return failure('This generation request exceeds the workspace limit or has invalid input.', 400); }
+      if (!result) return failure('Generation request expired. Your saved map remains available.', 404);
+      if ('expired' in result) return failure('Generation request expired. Choose Generate again to start a new request.', 410);
+      if ('conflict' in result) return failure('Course guidance changed. Start generation again with the current settings.', 409);
+      if (creating) {
+        const next = this.jobs.nextCleanup(), current = await this.ctx.storage.getAlarm();
+        if (next !== null && (current === null || next < current)) await this.ctx.storage.setAlarm(next);
+      }
+      return Response.json(result, { status: ['succeeded','failed'].includes(result.job.state) ? 200 : 202 });
     }
     if (path === '/api/cloud/course-prompt' || path === '/api/cloud/course-prompt/history') {
       if (!principal.course) return failure('Open a course to view its guidance.', 404);
@@ -205,11 +253,11 @@ export class MappingCourse extends DurableObject<Bindings> {
     internalHeaders.delete('x-forwarded-proto');
     const coursePrompt = principal.course ? await currentCoursePrompt(this.ctx.storage) : undefined;
     const dispatch = (signal: AbortSignal) => app.fetch(new Request(request, { headers: internalHeaders, signal }),
-      { verifiedAccount: { studentSession: session, teacherSession, gatewayJwt: principal.gatewayJwt, correlation, course: principal.course, subject: principal.subject, coursePrompt } });
+      { verifiedAccount: { studentSession: session, teacherSession, gatewayJwt: principal.gatewayJwt, correlation, course: principal.course, subject: principal.subject, coursePrompt, ...(durableGuidance ? { guidanceTimeoutMs: 85000 } : {}) } });
     if (isGuidanceRequest(request)) {
       // Transfer an absolute time, not an AbortSignal, across the RPC boundary.
       // Late dispatch must not start a model after the browser has stopped waiting.
-      const remaining = Math.min(GUIDANCE_DEADLINE_MS - 500, (guidanceDeadline ?? Date.now() + GUIDANCE_DEADLINE_MS) - Date.now() - 500);
+      const remaining = Math.min((durableGuidance ? 90000 : GUIDANCE_DEADLINE_MS) - 500, (guidanceDeadline ?? Date.now() + GUIDANCE_DEADLINE_MS) - Date.now() - 500);
       if (remaining <= 0) throw new DOMException('Request deadline exceeded', 'TimeoutError');
       return withDeadline(signal => withSignal(Promise.resolve(dispatch(signal)), signal), request.signal, remaining);
     }
