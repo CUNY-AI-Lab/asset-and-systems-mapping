@@ -1,0 +1,33 @@
+{
+  // Dev Worker: same code and bindings as production, separate name, origin,
+  // Durable Object namespace and rate-limit counters. Doorway derives the
+  // sign-in callback from the `worker` prop, so no identity registration is
+  // needed; the `id` prop stays `systems-mapping` so the app's audience check
+  // (`cail:systems-mapping`) still verifies. Deploy with `pnpm deploy:dev`.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "systems-mapping-dev",
+  "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-09-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": { "directory": "./dist-cloudflare", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "single-page-application" },
+  "durable_objects": { "bindings": [{ "name": "COURSES", "class_name": "MappingCourse" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MappingCourse"] }],
+  "services": [
+    { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
+    { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "systems-mapping", "worker": "systems-mapping-dev", "workspace": false } },
+    { "binding": "GATEWAY", "service": "cail-model-api" }
+  ],
+  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350918", "simple": { "limit": 60, "period": 60 } }],
+  "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
+  "vars": {
+    "PUBLIC_ORIGIN": "https://systems-mapping-dev.ailab-452.workers.dev",
+    "LOGIN_URL": "/auth/start",
+    "COURSE_ID": "systems-mapping-default",
+    "RELEASE": "dev-unreleased",
+    "GATEWAY_MODEL": "glm-5.3-flash",
+    "GUIDANCE_CONCURRENCY": "8"
+  }
+}

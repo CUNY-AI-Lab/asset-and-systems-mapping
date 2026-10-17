@@ -1,6 +1,10 @@
 const expected = process.argv[2];
 if (!/^[0-9a-f]{40}$/.test(expected || '')) throw new Error('A full source commit is required');
-const origin = 'https://systems-mapping.ailab-452.workers.dev';
+// Second argument selects a Worker origin; production is the default so the
+// release workflow keeps its receipt unchanged. The dev Worker passes its own.
+const ALLOWED_ORIGINS = ['https://systems-mapping.ailab-452.workers.dev', 'https://systems-mapping-dev.ailab-452.workers.dev'];
+const origin = process.argv[3] || ALLOWED_ORIGINS[0];
+if (!ALLOWED_ORIGINS.includes(origin)) throw new Error('Unknown Systems Mapping origin');
 const health = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(10000), redirect: 'manual' });
 const body = await health.json();
 if (!health.ok || body.status !== 'ok' || body.release !== expected || body.auth !== 'cuny' || body.storage !== 'isolated-cloudflare') throw new Error('Release readiness does not match the requested source');
