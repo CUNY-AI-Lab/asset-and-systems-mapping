@@ -279,9 +279,7 @@ function footerAction(id) {
 }
 
 function openWorkLevelMenu() {
-  fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Choose work level' }));
-  return screen.getByRole('dialog', { name: 'Choose work level' });
+  return screen.getByRole('navigation', { name: 'Work level' });
 }
 
 function openProjectLink() {
@@ -1014,10 +1012,10 @@ describe('Systems Mapping workflow', () => {
     render(<App startInWorkspace onAccountDashboard={vi.fn()} onSubmitRevision={submit} />);
     await screen.findByRole('heading',{name:'Systems map'});
     expect(submit).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button',{name:'Progress',exact:true}));
+    fireEvent.click(screen.getByRole('tab',{name:'Review',exact:true}));
     fireEvent.click(screen.getByRole('button',{name:'Submit revision',exact:true}));
     await waitFor(()=>expect(submit).toHaveBeenCalledTimes(1));
-    expect(submit.mock.calls[0][0]).toMatchObject({id:project.id,activeScale:project.activeScale,stage:project.stage});
+    expect(submit.mock.calls[0][0]).toMatchObject({id:project.id,activeScale:project.activeScale,stage:4});
     expect(await screen.findByText('Revision submitted to your instructor.')).toBeVisible();
   });
 
@@ -1501,7 +1499,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
-    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
     expect(storedProject().preflight).toBeNull();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
 
@@ -1577,6 +1575,9 @@ describe('Systems Mapping workflow', () => {
     const graphBefore = structuredClone(project.graph);
     const candidatesBefore = structuredClone(project.candidates);
     const releasedBefore = [...project.releasedScales];
+    // The next level's memo reading starts in the same click; keep it pending
+    // so the saved state at the moment of transition is observable.
+    preflightEvaluationResponder = () => new Promise(() => {});
     await resumeSavedProject(project);
 
     const nextLevel = screen.getByText('Next level').closest('section');
@@ -1595,8 +1596,8 @@ describe('Systems Mapping workflow', () => {
       fireEvent.click(within(review).getByRole('button', { name: 'Continue to Exo-level' }));
     }
 
-    // The next level continues directly at Review — the memo travels with the
-    // project, so the student is never routed back through the intake form.
+    // The next level continues directly at Review with its memo reading already
+    // under way — the student is never routed back through the intake form.
     await waitFor(() => expect(storedProject()).toMatchObject({
       activeScale: expectedScale,
       stage: 1,
@@ -1604,6 +1605,8 @@ describe('Systems Mapping workflow', () => {
       preflight: null,
       reflection: '',
     }));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual([expectedScale]));
+    expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
     const stored = storedProject();
     expect(stored.candidates).toEqual(candidatesBefore);
     expect(stored.completedScales).toEqual(expect.arrayContaining([activeScale]));
@@ -1611,7 +1614,7 @@ describe('Systems Mapping workflow', () => {
     expect(stored.releasedScales).toEqual([...releasedBefore, expectedScale]);
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     const levelLabels = { micro: 'Micro-level', meso: 'Meso-level', exosphere: 'Exo-level', macrosphere: 'Macro-level' };
-    expect(document.querySelector('.studio-levels [aria-current="step"]')).toHaveTextContent({ micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere: 'Macro' }[expectedScale]);
+    expect(document.querySelector('.level-rail [aria-current="step"]')).toHaveTextContent({ micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere: 'Macro' }[expectedScale]);
     expect(document.documentElement.scrollTop).toBe(0);
     expect(document.body.scrollTop).toBe(0);
     expect(screen.queryByRole('region', { name: `${levelLabels[expectedScale]} progression` })).not.toBeInTheDocument();
@@ -1674,7 +1677,6 @@ describe('Systems Mapping workflow', () => {
 
     expect(screen.queryByRole('button', { name: 'Teacher Console' })).not.toBeInTheDocument();
     const dialog = openWorkLevelMenu();
-    expect(within(dialog).getByText(/does not filter the visible map or remove cumulative data/i)).toBeVisible();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Micro-level' }));
 
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 3 }));
@@ -1970,7 +1972,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByText(/add items on the map/i)).toBeVisible();
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Items', 'Connections', 'Ask']);
+    expect(within(screen.getByRole('tablist', { name: 'Choose map items' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Items', 'Connections', 'Ask']);
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -2022,307 +2024,16 @@ describe('Systems Mapping workflow', () => {
 
     const addSuggestion = screen.getByRole('button', { name: 'Add to map' });
     expect(addSuggestion).not.toHaveClass('is-active');
-    expect(screen.getByText('0 added')).toBeVisible();
     fireEvent.change(verb, { target: { value: 'informs' } });
     expect(addSuggestion).not.toHaveClass('is-active');
-    expect(screen.getByText('0 added')).toBeVisible();
     fireEvent.click(addSuggestion);
-    expect(screen.getByRole('img', { name: /3 nodes and 1 connections/ })).toBeVisible();
+    expect(addSuggestion).toHaveClass('is-active');
     fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ verb: 'informs', status: 'confirmed', claimState: 'student interpretation' }),
     ])));
     expect(window.localStorage.getItem(STORAGE_KEY)).not.toContain(prompt);
-  });
-
-  it('shows complete node and relationship text in the connection preview without ellipses', async () => {
-    const project = createDefaultProject();
-    project.instructor.requireStudentConfirmation = true;
-    project.activeScale = 'micro';
-    project.releasedScales = ['micro'];
-    const longNodeLabel = 'East Harlem community resource room with transportation and family program materials END NODE';
-    const longEdgeLabel = 'coordinates referrals and follow-up support across neighborhood programs END EDGE';
-    const nodes = extractCandidates(project.submission).nodes.slice(0, 3).map((node, index) => ({
-      ...node,
-      scale: 'micro',
-      type: index === 0 ? 'setting' : index === 1 ? 'person' : 'object',
-      ...(index === 0 ? { label: longNodeLabel } : {}),
-      status: 'confirmed',
-      claimState: 'student interpretation',
-    }));
-    project.candidates = { nodes, edges: [] };
-    project.graph = { nodes: [], edges: [] };
-    project.stage = 2;
-    project.furthestStage = 2;
-    await resumeSavedProject(project);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
-    fireEvent.click(screen.getByText('Describe a relationship (optional)'));
-    fireEvent.change(screen.getByRole('textbox', { name: /Describe connections between nodes/ }), { target: { value: 'Connect these nodes using the relationships described in the memo.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
-    const verb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
-    fireEvent.change(verb, { target: { value: longEdgeLabel } });
-
-    const previewNode = document.querySelector(`.connection-preview__node[data-full-label="${longNodeLabel}"]`);
-    const previewEdge = document.querySelector(`.connection-preview__label[data-full-label="${longEdgeLabel}"]`);
-    expect(svgTextLines(previewNode).join('')).toBe(longNodeLabel);
-    expect(svgTextLines(previewEdge).join('')).toBe(longEdgeLabel);
-    expect(previewNode).not.toHaveTextContent('…');
-    expect(previewEdge).not.toHaveTextContent('…');
-    expect(Number(previewNode.querySelector('rect').getAttribute('height'))).toBeGreaterThan(72);
-    expect(Number(previewEdge.querySelector('rect').getAttribute('height'))).toBeGreaterThan(24);
-  });
-
-  it('routes a bounded group of kept preview connections in separate lanes between their endpoint cards', async () => {
-    const project = createDefaultProject();
-    project.activeScale = 'micro';
-    project.releasedScales = ['micro'];
-    const extracted = extractCandidates(project.submission);
-    const specifications = [
-      ['Rosa', 'person'],
-      ['Peer support group', 'group'],
-      ['College advising office', 'setting'],
-      ['Family caregiver', 'person'],
-      ['BMCC evening registration session', 'activity'],
-    ];
-    const staleSavedPositions = [
-      { x: -2400, y: -1300 },
-      { x: 3800, y: -900 },
-      { x: 4100, y: 1700 },
-      { x: -1800, y: 2100 },
-      { x: 900, y: 3600 },
-    ];
-    const nodes = specifications.map(([label, type], index) => ({
-      ...structuredClone(extracted.nodes[index]),
-      id: `preview-node-${index + 1}`,
-      label,
-      type,
-      scale: 'micro',
-      ...staleSavedPositions[index],
-      status: 'confirmed',
-      claimState: 'student interpretation',
-      annotations: {
-        analytical: { id: `preview-node-${index + 1}-analytical`, text: '' },
-        evidence: { id: `preview-node-${index + 1}-evidence`, text: '' },
-      },
-    }));
-    const connections = [
-      [0, 1, 'asks for advice from'],
-      [0, 2, 'coordinates enrollment with'],
-      [1, 3, 'shares support resources with'],
-      [2, 4, 'determines course options for'],
-      [3, 4, 'adjusts caregiving around'],
-    ];
-    const edges = connections.map(([sourceIndex, targetIndex, verb], index) => ({
-      ...structuredClone(extracted.edges[index % extracted.edges.length]),
-      id: `preview-edge-${index + 1}`,
-      source: nodes[sourceIndex].id,
-      target: nodes[targetIndex].id,
-      sourceLabel: nodes[sourceIndex].label,
-      targetLabel: nodes[targetIndex].label,
-      verb,
-      scale: 'micro',
-      status: 'confirmed',
-      claimState: 'student interpretation',
-      annotation: { id: `preview-edge-${index + 1}-annotation`, text: '' },
-    }));
-    project.candidates = { nodes, edges };
-    project.graph = { nodes: [], edges: [] };
-    project.stage = 2;
-    project.furthestStage = 2;
-    await resumeSavedProject(project);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
-    const previewSvg = document.querySelector('.connection-preview svg');
-    const labels = [...document.querySelectorAll('.connection-preview__label')];
-    const cards = [...document.querySelectorAll('.connection-preview__node')].map((node) => translatedRectBounds(node, node.querySelector('rect')));
-    const viewBox = previewSvg.getAttribute('viewBox').split(/\s+/).map(Number);
-    const [viewX, viewY, viewWidth, viewHeight] = viewBox;
-    expect(labels).toHaveLength(4);
-    expect(screen.getByText(/Showing 4 of 5 connections/, { selector: '.connection-preview__scope' })).toBeVisible();
-    labels.forEach((label, index) => {
-      const labelBounds = svgRectBounds(label.querySelector('rect'));
-      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
-      expect(svgTextLines(label.querySelector('text')).join('')).toBe(edges[index].verb);
-      cards.forEach((cardBounds) => expect(rectsIntersect(labelBounds, cardBounds)).toBe(false));
-      labels.slice(index + 1).forEach((other) => expect(rectsIntersect(labelBounds, svgRectBounds(other.querySelector('rect')))).toBe(false));
-      const positionFor = (nodeId) => {
-        const transform = document.querySelector(`.connection-preview__node[data-node-id="${nodeId}"]`).getAttribute('transform');
-        const match = transform.match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
-        return { x: Number(match[1]), y: Number(match[2]) };
-      };
-      const source = positionFor(label.getAttribute('data-source-id'));
-      const target = positionFor(label.getAttribute('data-target-id'));
-      const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
-      const delta = { x: target.x - source.x, y: target.y - source.y };
-      const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
-      expect(projection).toBeGreaterThan(0);
-      expect(projection).toBeLessThan(1);
-    });
-    expect(new Set([...document.querySelectorAll('.connection-preview__edge path')].map((path) => path.getAttribute('d')))).toHaveLength(4);
-    const renderedBounds = [...cards, ...labels.map((label) => svgRectBounds(label.querySelector('rect')))];
-    expect(Math.min(...renderedBounds.map(({ left }) => left))).toBeGreaterThanOrEqual(viewX);
-    expect(Math.max(...renderedBounds.map(({ right }) => right))).toBeLessThanOrEqual(viewX + viewWidth);
-    expect(Math.min(...renderedBounds.map(({ top }) => top))).toBeGreaterThanOrEqual(viewY);
-    expect(Math.max(...renderedBounds.map(({ bottom }) => bottom))).toBeLessThanOrEqual(viewY + viewHeight);
-    expect(viewWidth / viewHeight).toBeCloseTo(8 / 5, 4);
-    expect(Math.max(...cards.map(({ right }) => right)) - Math.min(...cards.map(({ left }) => left))).toBeLessThan(2600);
-    expect(viewWidth).toBeLessThan(3200);
-  });
-
-  it('fits a dense connection preview around its content instead of stale canvas coordinates', async () => {
-    const project = createDefaultProject();
-    project.activeScale = 'micro';
-    project.releasedScales = ['micro'];
-    const extracted = extractCandidates(project.submission);
-    const labels = [
-      'Rosa',
-      'Family caregiver',
-      'East 111th Street apartment',
-      'Apartment elevator',
-      'East Harlem community resource room',
-      'Resource coordinator',
-      'Rehabilitation room',
-      'Physical therapist',
-      'Neighborhood grocery internship counter',
-      'Internship supervisor',
-    ];
-    const nodes = labels.map((label, index) => ({
-      ...structuredClone(extracted.nodes[index % extracted.nodes.length]),
-      id: `dense-preview-node-${index + 1}`,
-      label,
-      type: index < 2 || index === 5 || index === 7 || index === 9 ? 'person' : 'setting',
-      scale: 'micro',
-      x: index % 2 ? 5200 + index * 240 : -3400 - index * 180,
-      y: index * 720 - 2400,
-      status: 'confirmed',
-      claimState: 'student interpretation',
-      annotations: {
-        analytical: { id: `dense-preview-node-${index + 1}-analytical`, text: '' },
-        evidence: { id: `dense-preview-node-${index + 1}-evidence`, text: '' },
-      },
-    }));
-    const connectionSpecs = [
-      [1, 3, 'checks before each trip'],
-      [1, 5, 'alerts about elevator outages'],
-      [5, 0, 'supports at the resource room'],
-      [0, 4, 'attends on Tuesdays and Thursdays'],
-      [0, 6, 'attends on Tuesday afternoons'],
-      [7, 0, 'provides physical therapy to'],
-      [0, 8, 'works at the internship counter'],
-      [9, 0, 'supervises assigned tasks for'],
-      [5, 6, 'coordinates the Tuesday schedule with'],
-      [5, 9, 'shares the internship task plan with'],
-      [9, 5, 'returns weekly feedback to'],
-      [1, 9, 'confirms the pickup window with'],
-    ];
-    const edges = connectionSpecs.map(([sourceIndex, targetIndex, verb], index) => ({
-      ...structuredClone(extracted.edges[index % extracted.edges.length]),
-      id: `dense-preview-edge-${index + 1}`,
-      source: nodes[sourceIndex].id,
-      target: nodes[targetIndex].id,
-      sourceLabel: nodes[sourceIndex].label,
-      targetLabel: nodes[targetIndex].label,
-      verb,
-      scale: 'micro',
-      status: 'confirmed',
-      claimState: 'student interpretation',
-      annotation: { id: `dense-preview-edge-${index + 1}-annotation`, text: '' },
-    }));
-    project.candidates = { nodes, edges };
-    project.graph = { nodes: [], edges: [] };
-    project.stage = 2;
-    project.furthestStage = 2;
-    await resumeSavedProject(project);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
-    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and 4 connections` });
-    const previewSvg = preview.querySelector('svg');
-    const viewBox = previewSvg.getAttribute('viewBox').split(/\s+/).map(Number);
-    const [viewX, viewY, viewWidth, viewHeight] = viewBox;
-    const renderedNodes = [...preview.querySelectorAll('.connection-preview__node')];
-    const renderedLabels = [...preview.querySelectorAll('.connection-preview__label')];
-    const bounds = [
-      ...renderedNodes.map((node) => translatedRectBounds(node, node.querySelector('rect'))),
-      ...renderedLabels.map((label) => svgRectBounds(label.querySelector('rect'))),
-    ];
-
-    expect(viewWidth / viewHeight).toBeCloseTo(8 / 5, 4);
-    expect(viewWidth).toBeLessThan(2300);
-    expect(screen.getByText(new RegExp(`Showing 4 of ${edges.length} connections`), { selector: '.connection-preview__scope' })).toBeVisible();
-    expect(renderedLabels.map((label) => label.getAttribute('data-edge-id'))).toEqual(edges.slice(0, 4).map(({ id }) => id));
-    expect(Math.min(...bounds.map(({ left }) => left))).toBeGreaterThanOrEqual(viewX);
-    expect(Math.max(...bounds.map(({ right }) => right))).toBeLessThanOrEqual(viewX + viewWidth);
-    expect(Math.min(...bounds.map(({ top }) => top))).toBeGreaterThanOrEqual(viewY);
-    expect(Math.max(...bounds.map(({ bottom }) => bottom))).toBeLessThanOrEqual(viewY + viewHeight);
-    renderedLabels.forEach((label, index) => {
-      const labelBounds = svgRectBounds(label.querySelector('rect'));
-      expect(svgTextLines(label.querySelector('text')).join('')).toBe(edges[index].verb);
-      renderedNodes.forEach((node) => expect(rectsIntersect(labelBounds, translatedRectBounds(node, node.querySelector('rect')))).toBe(false));
-      renderedLabels.slice(index + 1).forEach((other) => expect(rectsIntersect(labelBounds, svgRectBounds(other.querySelector('rect')))).toBe(false));
-    });
-  });
-
-  it('keeps every connection in the bounded preview group visible between its endpoints when strict lanes are exhausted', async () => {
-    const project = createDefaultProject();
-    project.activeScale = 'micro';
-    project.releasedScales = ['micro'];
-    const extracted = extractCandidates(project.submission);
-    const nodes = extracted.nodes.slice(0, 2).map((node, index) => ({
-      ...node,
-      id: `forced-preview-node-${index + 1}`,
-      label: index === 0 ? 'Resident' : 'Peer navigator',
-      type: index === 0 ? 'person' : 'group',
-      scale: 'micro',
-      status: 'confirmed',
-      claimState: 'student interpretation',
-      annotations: {
-        analytical: { id: `forced-preview-node-${index + 1}-analytical`, text: '' },
-        evidence: { id: `forced-preview-node-${index + 1}-evidence`, text: '' },
-      },
-    }));
-    const verb = 'R'.repeat(100);
-    const edgeTemplate = extracted.edges[0];
-    const edges = Array.from({ length: 50 }, (_, index) => ({
-      ...structuredClone(edgeTemplate),
-      id: `forced-preview-edge-${index + 1}`,
-      source: nodes[0].id,
-      target: nodes[1].id,
-      sourceLabel: nodes[0].label,
-      targetLabel: nodes[1].label,
-      verb,
-      scale: 'micro',
-      status: 'confirmed',
-      claimState: 'student interpretation',
-      annotation: { id: `forced-preview-edge-${index + 1}-annotation`, text: '' },
-    }));
-    project.candidates = { nodes, edges };
-    project.graph = { nodes: [], edges: [] };
-    project.stage = 2;
-    project.furthestStage = 2;
-    await resumeSavedProject(project);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
-    const preview = screen.getByRole('img', { name: `Preview with ${nodes.length} nodes and 4 connections` });
-    const renderedEdges = [...preview.querySelectorAll('.connection-preview__edge')];
-    const renderedLabels = [...preview.querySelectorAll('.connection-preview__label')];
-    const cardBounds = [...preview.querySelectorAll('.connection-preview__node')]
-      .map((node) => translatedRectBounds(node, node.querySelector('rect')));
-
-    expect(screen.getByText(new RegExp(`Showing 4 of ${edges.length} connections`), { selector: '.connection-preview__scope' })).toBeVisible();
-    expect(renderedEdges).toHaveLength(4);
-    expect(renderedLabels).toHaveLength(4);
-    renderedLabels.forEach((label, index) => {
-      const labelBounds = svgRectBounds(label.querySelector('rect'));
-      expect(label.getAttribute('data-edge-id')).toBe(edges[index].id);
-      expect(['between-endpoints', 'between-endpoints-tight']).toContain(label.getAttribute('data-edge-route'));
-      expect(svgTextLines(label.querySelector('text')).join('')).toBe(verb);
-      cardBounds.forEach((bounds) => expect(rectsIntersect(labelBounds, bounds)).toBe(false));
-      renderedLabels.slice(index + 1).forEach((other) => {
-        expect(rectsIntersect(labelBounds, svgRectBounds(other.querySelector('rect')))).toBe(false);
-      });
-    });
   });
 
   it('wraps and grows complete model-suggested connection wording while it is edited', async () => {
@@ -2660,7 +2371,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
     expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
-    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
     const progress = screen.getByRole('dialog', { name: 'Progress' });
     for (const label of ['Choose elements', 'Build map', 'Review and export']) {
@@ -2903,10 +2614,13 @@ describe('Systems Mapping workflow', () => {
     const scales = ['micro', 'meso', 'exosphere', 'macrosphere'];
     let prior = { nodes: [], edges: [] };
     for (const [index, scale] of scales.entries()) {
-      fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-      await waitFor(() => expect(storedProject()?.preflight?.memoReview, `${scale}: ${document.querySelector('[role="status"]')?.textContent}`).toBeTruthy());
-      await waitFor(() => expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled());
-      fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+      if (index === 0) {
+        fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+        await waitFor(() => expect(storedProject()?.preflight?.memoReview, `${scale}: ${document.querySelector('[role="status"]')?.textContent}`).toBeTruthy());
+        await waitFor(() => expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled());
+        fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+      }
+      // Later levels read the memo in the same click that completed the previous level.
       await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: scale, stage: 3 }));
       const graph = storedProject().graph;
       expect(graph.nodes).toHaveLength(3 + index);
@@ -2928,7 +2642,7 @@ describe('Systems Mapping workflow', () => {
           expect(storedProject().graph).toEqual(prior);
           fireEvent.click(within(dialog).getByRole('button', { name: 'Continue to Exo-level' }));
         }
-        await waitFor(() => expect(storedProject()).toMatchObject({ stage: 1, activeScale: scales[index + 1] }));
+        await waitFor(() => expect(storedProject().activeScale).toBe(scales[index + 1]));
       }
     }
     cleanup();
@@ -2973,7 +2687,7 @@ describe('Systems Mapping workflow', () => {
     expect(continueButton).toBeDisabled();
     expect(storedProject().stage).toBe(1);
     expect(storedProject().preflight).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     await act(async () => { releaseReview(); await Promise.resolve(); });
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -3003,7 +2717,7 @@ describe('Systems Mapping workflow', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
     expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.');
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
-    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
 
     await act(async () => { releaseReview(); await Promise.resolve(); });
     expect(storedProject().preflight).toBeNull();
@@ -3052,9 +2766,7 @@ describe('Systems Mapping workflow', () => {
     });
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Review and export' }));
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue to Meso-level' }));
-    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1, preflight: null }));
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
-    expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3 }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual(['micro', 'meso']);
   });
 
@@ -3300,7 +3012,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const carried = screen.getByLabelText('Micro-level settings available for mesosystems');
     microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tablist', { name: 'Choose map items' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Direct connection' })).not.toBeInTheDocument();
     expect(screen.queryByText(/More connections|More direct relationships/)).not.toBeInTheDocument();
     const linkageEditor = screen.getByRole('textbox', { name: 'Mesosystem label' });
@@ -5466,7 +5178,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(addDisclosure).toHaveAttribute('aria-expanded', 'false');
     expect(document.getElementById('inspector-add-actions')).toBeNull();
 
-    const tabs = within(inspector).getAllByRole('tab');
+    const tabs = within(within(inspector).getByRole('tablist', { name: 'Annotation target' })).getAllByRole('tab');
     const [nodeTab, relationshipsTab, mapTab] = tabs;
     const expectOnlyTabStop = (expected) => {
       expect(tabs.filter((tab) => tab.tabIndex === 0)).toEqual([expected]);
@@ -6225,17 +5937,17 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
 
     openWorkLevelMenu();
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose work level' })).getByRole('button', { name: 'Meso-level' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Work level' })).getByRole('button', { name: 'Meso-level' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3, reflection: 'Meso reflection' }));
 
     openWorkLevelMenu();
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose work level' })).getByRole('button', { name: 'Micro-level' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Work level' })).getByRole('button', { name: 'Micro-level' }));
     expect(await screen.findByRole('heading', { name: 'Review and export' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 4, reflection: 'Micro reflection' }));
 
     openWorkLevelMenu();
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose work level' })).getByRole('button', { name: 'Exo-level' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Work level' })).getByRole('button', { name: 'Exo-level' }));
     expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'exosphere', stage: 2, reflection: 'Exo reflection' }));
     expect(storedProject().levelProgress).toMatchObject({

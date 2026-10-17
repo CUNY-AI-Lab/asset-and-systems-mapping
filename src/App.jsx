@@ -9,7 +9,7 @@ import { useMapFontMetrics } from './ui/useMapFontMetrics.js';
 import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-judgments.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
-import { levelRailState, nextStep } from './nextStep.js';
+import { levelRailState, nextStep, stageForPanelMode } from './nextStep.js';
 import { LevelRail, PANEL_TABS, WorkPanelTabs } from './MapStudio.jsx';
 import { hasPendingGuidance } from './durableGuidance.js';
 import { exportMapImage, downloadBlob } from './mapExport.js';
@@ -1385,15 +1385,13 @@ const REVIEW_LEDES = Object.freeze({
   macrosphere: 'Find broader conditions that affect several map items',
 });
 
-function ReviewMemoStage({ project, update, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate, onRequestRestart }) {
+function SuggestionsReview({ project, update, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate }) {
   const review = project.preflight?.memoReview;
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
-  return <div className="wide stage-enter review-stage">
-    <PageHeading title="Memo review" description={REVIEW_LEDES[project.activeScale]} />
-    <LevelTrail active={project.activeScale} completed={project.completedScales} />
-    <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
+  return <section className="suggestions-review" aria-label="Memo review">
+    {!review && <div className="work-panel__title"><h2>Memo review</h2><p className="lede">{REVIEW_LEDES[project.activeScale]}</p></div>}
     <div className="review-intro">
       <SuggestionPreference project={project} update={update} />
       {!review && <Action disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Reading memo…' : reviewFailure ? 'Try again' : 'Generate guidance'}</Action>}
@@ -1409,10 +1407,10 @@ function ReviewMemoStage({ project, update, reviewBusy, reviewProgress, reviewFa
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
         {review.guidance.map((item, index) => <div className="studio-feedback" key={index}><p>{item.point}</p>{item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}</div>)}
         <ul className="review-summary">{review.nodes.map((node) => <li key={node.label}><strong>{node.label}</strong><span>{node.evidence}</span></li>)}</ul>
-        {!review.nodes.length && <p className="empty-message">Add items on the map or update suggestions</p>}
+        {!review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>}
       </Disclosure>
     </>}
-  </div>;
+  </section>;
 }
 
 function candidateStepsForScale(scale) {
@@ -1428,11 +1426,7 @@ const MACRO_STRUCTURE_KINDS = MACROSPHERE_NODE_TYPES;
 
 // The full-screen Choose elements stage is a thin wrapper around the same
 // suggestion list the Studio panel shows beside the map.
-function CandidateStage(props) {
-  return <div className="wide stage-enter"><SuggestionsPanel variant="page" {...props} /></div>;
-}
-
-function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy, onRequestRestart, onHighlight, variant = 'panel' }) {
+function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy, onHighlight, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate }) {
   const candidateSteps = useMemo(() => candidateStepsForScale(project.activeScale), [project.activeScale]);
   const [step, setStep] = useState(() => candidateSteps[0]);
   useEffect(() => {
@@ -1830,11 +1824,11 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
   </article>;
   });
   const decisionStep = step === 'nodes' || step === 'edges';
-  return <div className={`suggestions-panel suggestions-panel--${variant}`}>
-    {variant === 'page' && <>
-      <PageHeading title={stepCopy[step].title} actions={decisionStep ? <Action variant="ghost" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Updating…' : 'Update suggestions'}</Action> : null} />
-      <LevelTrail active={project.activeScale} completed={project.completedScales} />
-    </>}
+  const showList = project.stage >= 2 || activeCandidates.nodes.length > 0 || activeCandidates.edges.length > 0;
+  return <div className="suggestions-panel">
+    <SuggestionsReview project={project} update={update} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={retryPending} onGenerate={onGenerate} />
+    {showList && <>
+    <div className="work-panel__title"><h2>{stepCopy[step].title}</h2>{decisionStep && <Action variant="ghost" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Updating…' : 'Update suggestions'}</Action>}</div>
     {candidateSteps.length > 1 && <div className="subnav candidate-steps" role="tablist" aria-label="Choose map items">
       {candidateSteps.map((id) => <button key={id} id={`candidate-tab-${id}`} role="tab" aria-controls="candidate-panel" aria-selected={step === id} tabIndex={step === id ? 0 : -1} data-composite-value={id} className={step === id ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, candidateSteps, step, setStep)} onClick={() => setStep(id)}>{stepCopy[id].tab}</button>)}
     </div>}
@@ -1842,7 +1836,6 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
       <h2 id="carried-nodes-title">Micro settings</h2>
       {carriedNodes.length ? <div className="connection-node-list" aria-label="Micro-level settings available for mesosystems">{carriedNodes.map((node) => <span key={node.id}>{node.label}</span>)}</div> : <p className="empty-message">None yet. Switch to Micro-level and add settings first.</p>}
     </section>}
-    {variant === 'page' && decisionStep && <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />}
     <div id="candidate-panel" role={candidateSteps.length > 1 ? 'tabpanel' : undefined} aria-labelledby={candidateSteps.length > 1 ? `candidate-tab-${step}` : undefined}>
       {decisionStep && <>
         {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} reviewed</p>}
@@ -1896,6 +1889,7 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
       </>}
       {step === 'suggest' && <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} onHighlight={onHighlight} />}
     </div>
+    </>}
   </div>;
 }
 
@@ -3183,95 +3177,6 @@ function mapNeedsReadableOverview(nodes, events = [], phoneLayout = false) {
   return false;
 }
 
-function ConnectionPreview({ nodes, edges, suggestions }) {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const availableEdges = [];
-  const seenEdgeIds = new Set();
-  [
-    ...suggestions.filter((edge) => edge.status !== 'rejected'),
-    ...edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'),
-  ].forEach((edge) => {
-    if (seenEdgeIds.has(edge.id) || !nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
-    seenEdgeIds.add(edge.id);
-    availableEdges.push(edge);
-  });
-  const shownEdges = availableEdges.slice(0, 4);
-  const hiddenEdgeCount = availableEdges.length - shownEdges.length;
-  const layout = expandedConnectionLayout(nodes, shownEdges, false, { arrangedOnly: true });
-  const previewNodes = nodes.map((node) => ({ ...node, ...(layout.positions.get(node.id) || {}) }));
-  const previewNodeById = new Map(previewNodes.map((node) => [node.id, node]));
-  const shownEdgeLayouts = shownEdges.flatMap((edge) => {
-    const source = previewNodeById.get(edge.source);
-    const target = previewNodeById.get(edge.target);
-    const anchor = layout.anchors.get(edge.id);
-    const route = layout.paths.get(edge.id);
-    if (!source || !target || !anchor || !route) return [];
-    return [{
-      edge,
-      source,
-      target,
-      anchor,
-      route,
-      routeKind: layout.routeKinds.get(edge.id) || 'between-endpoints-tight',
-      proposed: suggestions.some((suggestion) => suggestion.id === edge.id),
-    }];
-  });
-  const nodeBounds = previewNodes.map((node) => {
-    const geometry = mapNodeGeometry(node.label);
-    return {
-      left: node.x + geometry.cardX,
-      right: node.x + geometry.cardX + geometry.cardWidth,
-      top: node.y + geometry.cardY,
-      bottom: node.y + geometry.cardY + geometry.cardHeight,
-    };
-  });
-  const contentBounds = [...nodeBounds, ...layout.bounds.values()];
-  const previewViewBox = contentBounds.length
-    ? (() => {
-      const rawMinX = Math.min(...contentBounds.map(({ left }) => left)) - 28;
-      const rawMaxX = Math.max(...contentBounds.map(({ right }) => right)) + 28;
-      const rawMinY = Math.min(...contentBounds.map(({ top }) => top)) - 28;
-      const rawMaxY = Math.max(...contentBounds.map(({ bottom }) => bottom)) + 28;
-      // Match the preview's 8:5 frame instead of padding every graph out to
-      // the main map's fixed 840x540 world. The tight, centered viewBox keeps
-      // all cards and complete labels visible at a useful scale.
-      const targetAspect = 8 / 5;
-      const rawWidth = Math.max(1, rawMaxX - rawMinX);
-      const rawHeight = Math.max(1, rawMaxY - rawMinY);
-      const width = Math.max(rawWidth, rawHeight * targetAspect);
-      const height = Math.max(rawHeight, rawWidth / targetAspect);
-      const centerX = (rawMinX + rawMaxX) / 2;
-      const centerY = (rawMinY + rawMaxY) / 2;
-      return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
-    })()
-    : `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`;
-  return <>
-    {hiddenEdgeCount > 0 && <p className="connection-preview__scope" role="status">Showing {shownEdges.length} of {availableEdges.length} connections. Use suggestion groups to review the rest.</p>}
-    <div className="connection-preview" role="img" aria-label={`Preview with ${nodes.length} nodes and ${shownEdges.length} connections`}>
-      <svg viewBox={previewViewBox} aria-hidden="true" focusable="false">
-      <defs><marker id="connection-preview-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" /></marker></defs>
-      <g className="connection-preview__lines">{shownEdgeLayouts.map(({ edge, anchor, route, proposed }) => <g key={edge.id} data-edge-id={edge.id} className={`connection-preview__edge ${proposed ? 'is-proposed' : 'is-existing'} ${edge.status === 'confirmed' ? 'is-accepted' : ''}`}>
-        <path d={`M ${route.source.x} ${route.source.y} L ${anchor.x} ${anchor.y} L ${route.target.x} ${route.target.y}`} markerEnd="url(#connection-preview-arrow)" />
-      </g>)}</g>
-      <g className="connection-preview__labels">{shownEdgeLayouts.map(({ edge, proposed, anchor, routeKind }) => {
-        const geometry = mapEdgeLabelGeometry(edge.verb);
-        return <g key={edge.id} data-edge-id={edge.id} data-source-id={edge.source} data-target-id={edge.target} data-edge-route={routeKind} data-anchor-x={anchor.x} data-anchor-y={anchor.y} data-full-label={edge.verb} className={`connection-preview__label ${proposed ? 'is-proposed' : 'is-existing'} ${edge.status === 'confirmed' ? 'is-accepted' : ''}`}>
-          <rect x={anchor.x - (geometry.width / 2)} y={anchor.y - (geometry.height / 2)} width={geometry.width} height={geometry.height} rx="4" />
-          <text x={anchor.x} style={{ fontSize: geometry.fontSize, fontWeight: 400, fontFamily: '"Source Sans 3 Variable", "Source Sans 3", sans-serif' }}>{geometry.lines.map((line, lineIndex) => <tspan key={`${edge.id}-preview-line-${lineIndex}`} x={anchor.x} y={anchor.y + geometry.startY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
-        </g>;
-      })}</g>
-      {previewNodes.map((node) => {
-        const geometry = mapNodeGeometry(node.label);
-        return <g key={node.id} data-node-id={node.id} data-full-label={node.label} className="connection-preview__node" transform={`translate(${node.x} ${node.y})`}>
-          <rect x={geometry.cardX} y={geometry.cardY} width={geometry.cardWidth} height={geometry.cardHeight} rx="12" />
-          <text textAnchor="middle" style={{ fontSize: geometry.fontSize, fontWeight: 750, fontFamily: '"Source Sans 3 Variable", "Source Sans 3", sans-serif' }}>{geometry.lines.map((line, lineIndex) => <tspan key={`${node.id}-preview-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
-        </g>;
-      })}
-      </svg>
-    </div>
-  </>;
-}
-
 function AutoGrowingTextarea({ value, onChange, ...props }) {
   const textareaRef = useRef(null);
   const fitContent = useCallback(() => {
@@ -3313,10 +3218,9 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
     .filter((edge) => edge.scale === project.activeScale && (edge.status === 'confirmed' || edge.status === 'research lead') && nodeIds.has(edge.source) && nodeIds.has(edge.target));
   const edges = [...new Map([...project.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)), ...keptCandidateEdges]
     .map((edge) => [edge.id, edge])).values()];
-  const accepted = suggestions.filter((suggestion) => suggestion.status === 'confirmed' && !exospherePathwayIssue(suggestion)).length;
   return <section className="connection-stage" aria-label="More connection suggestions">
     <p className="eyebrow">{nodes.length} selected nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
-    <div className={`connection-stage__layout ${nodes.length > 6 ? 'is-dense' : ''}`}>
+    <div className="connection-stage__layout">
       <section className="connection-prompt-panel">
         {nodes.length < 2 && <p className="teacher-message" role="status">Add at least two nodes to the map and the model can suggest connections between them.</p>}
         <button type="button" className="button" disabled={busy || nodes.length < 2} onClick={onSuggest}>{busy ? 'Generating suggestions…' : suggestions.length ? 'Generate again' : 'Suggest connections'}</button>
@@ -3328,10 +3232,7 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
         </details>
         <div className="connection-node-list" aria-label="Nodes included in this request">{nodes.map((node) => <span key={node.id}>{node.label}</span>)}</div>
       </section>
-      <section className="connection-preview-panel" aria-labelledby="connection-preview-title">
-        <div className="connection-preview-panel__title"><div><p className="eyebrow">Preview only</p><h2 id="connection-preview-title">Connection preview</h2></div>{suggestions.length > 0 && <strong>{accepted} added</strong>}</div>
-        <ConnectionPreview nodes={nodes} edges={edges} suggestions={suggestions} />
-      </section>
+      
     </div>
     <section className="connection-suggestions" aria-labelledby="connection-suggestions-title">
       <div className="stage-title-row"><div><p className="eyebrow">Review</p><h2 id="connection-suggestions-title">Suggested connections</h2></div></div>
@@ -4066,7 +3967,7 @@ function blankManualNode(scale) {
   };
 }
 
-function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart, onReview, panel = null, onPanelMode, toolbarStart = null }) {
+function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart, onReview, panel = null, onPanelMode, toolbarStart = null, highlight = null }) {
   // The Studio work panel shares the inspector's slot. Suggestions and Review
   // keep the slot open; the inspector drawer keeps its own open/closed state.
   const panelMode = panel?.mode ?? 'inspector';
@@ -4512,6 +4413,20 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         || inspector?.querySelector('button, input, select, textarea'))?.focus();
     });
   }, []);
+  // Panel tabs live in the toolbar so they stay reachable while the inspector
+  // drawer is closed. Choosing Inspector opens the drawer like Details does.
+  const changePanel = (mode) => {
+    if (mode === 'inspector') {
+      if (!selection) setInspectorTab('map');
+      setLegendOpen(false);
+      setMoveMenuOpen(false);
+      onPanelMode?.('inspector');
+      setDrawerOpen(true);
+      focusInspector();
+      return;
+    }
+    onPanelMode?.(mode);
+  };
   const selectItem = useCallback((kind, id, openInspector = true) => {
     if (openInspector && !inspectorRef.current?.contains(document.activeElement)) selectionTriggerRef.current = document.activeElement;
     setTraceHistory([]);
@@ -5114,7 +5029,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     }
   }}>
     <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
-    <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls"><MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
+    <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls">{panel && <WorkPanelTabs mode={panelMode} onChange={changePanel} disabled={panel.disabled || []} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, changePanel)} />}<MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
     {focusActive ? <div className="map-focus-bar" role="status"><div className="map-focus-bar__summary"><span>{focusSummary}</span>{focusHasRelationshipPages && <small aria-live="polite">Relationship {activeFocusPage + 1} of {focusIncidentEdges.length}</small>}</div><div className="map-focus-bar__actions">{focusHasRelationshipPages && focusPageCount > 1 ? <><button type="button" aria-label="Previous relationship" disabled={activeFocusPage === 0} onClick={() => changeFocusPage(activeFocusPage - 1)}>Previous</button><button type="button" aria-label="Next relationship" disabled={activeFocusPage === focusPageCount - 1} onClick={() => changeFocusPage(activeFocusPage + 1)}>Next</button></> : null}<button type="button" onClick={showFullMap}>Show full map</button></div></div> : <p className="map-overview-hint">{mapOverviewHint}</p>}
     <div className={`map-layout ${sheetOpen ? 'has-inspector' : ''} is-panel-${panelMode}`}>
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && sheetOpen ? 'is-inspector-open' : ''} is-panel-${panelMode} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
@@ -5127,7 +5042,6 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         <div className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcement.revision}>{announcement.message}</span></div>
       </section> : <MapListView nodes={project.graph.nodes} edges={project.graph.edges} visibleScale={visibleScale} showRemoved={showRemoved} onSelect={selectItem} />}
       <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && drawerOpen && !panelContent) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
-        {panel && <WorkPanelTabs mode={panelMode} onChange={onPanelMode} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, onPanelMode)} />}
         {panelContent ? <div className="work-panel__body">{panel.content}</div> : <>
         <div className="inspector__head">
           <h2>{selectedNode?.label || (selectedEdge ? `${selectedEdge.sourceLabel} → ${selectedEdge.targetLabel}` : 'Map details')}</h2>
@@ -5267,7 +5181,7 @@ function activeLevelGraph(project) {
   return { nodes, edges };
 }
 
-function RevisionStage({ onProjectLink, project, update, replaceProject, toast, logPrototype, onRequestRestart, onValidationError, onReviewLevel }) {
+function ReviewPanel({ onProjectLink, project, update, replaceProject, toast, logPrototype, onValidationError, onReviewLevel, onSubmitRevision, revisionSubmitting = false, submitDisabled = false }) {
   const [importError, setImportError] = useState('');
   const levelGraph = activeLevelGraph(project);
   const currentNodes = levelGraph.nodes.length;
@@ -5319,10 +5233,9 @@ function RevisionStage({ onProjectLink, project, update, replaceProject, toast, 
       onValidationError(error, 'The export was not created because one map item needs attention.');
     }
   };
-  return <div className="wide stage-enter">
-    <PageHeading title="Review and export" description="Review this level before exporting the full map" />
-    <LevelTrail active={project.activeScale} completed={project.completedScales} />
-    <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
+  return <div className="review-panel">
+    <div className="work-panel__title"><h2>Review and export</h2><p className="lede">Review this level before exporting the full map</p></div>
+    {onSubmitRevision && <section className="submit-revision"><p>Submit this stage when you want your instructor to count a reviewed revision. Saving and generation are tracked separately.</p><button type="button" className="button button--secondary" disabled={revisionSubmitting || submitDisabled} onClick={onSubmitRevision}>{revisionSubmitting ? 'Submitting…' : 'Submit revision'}</button></section>}
     <ProjectOverview project={project} onReviewLevel={onReviewLevel} />
     <div className="revision-grid">
       <section>
@@ -5478,6 +5391,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setMapPreviewOpen(false);
     setProject(current => ({ ...current, stage: 1 }));
   }, [initialModelRequired, project.stage]);
+  // Completing a level starts the next level's memo reading in the same click.
+  // The read waits for the stage change to settle because generateSuggestions
+  // reads the rendered project, not the draft being committed.
+  const [pendingLevelRead, setPendingLevelRead] = useState(null);
+  const [studioHighlight, setStudioHighlight] = useState(null);
   useEffect(() => {
     setReviewBusy(null);
     setReviewFailure(null);
@@ -6582,6 +6500,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         toast(nextScale
           ? `${SCALES[currentScale].label} complete. Continue with ${SCALES[nextScale].label}.`
           : `${SCALES[currentScale].label} complete. Your cumulative project is ready to review or export.`);
+        if (nextScale) setPendingLevelRead(nextScale);
         break;
         }
       default: break;
@@ -6659,6 +6578,13 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       default: void primary();
     }
   };
+  useEffect(() => {
+    if (!pendingLevelRead || project.activeScale !== pendingLevelRead || project.stage !== 1) return;
+    setPendingLevelRead(null);
+    if (!project.submission.text.trim() || reviewInFlightRef.current || !requiresLevelModel(project)) return;
+    void primary();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLevelRead, project.activeScale, project.stage]);
   const backDisabled = project.stage === 0;
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
     projectActivationGenerationRef.current += 1;
@@ -7046,27 +6972,33 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       toast('Copy is unavailable. Select the link text and copy it by hand.', 'error');
     }
   }, [toast]);
-  const stageScreens = [
-    <IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />,
-    <ReviewMemoStage project={project} update={update} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onContinue={primary} onRequestRestart={() => setModal('restart-map')} />,
-    <CandidateStage project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} onRequestRestart={() => setModal('restart-map')} />,
-    <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} onReview={() => { setMapPreviewOpen(false); update((draft) => { draft.stage = 2; }); }} toolbarStart={<LevelRail levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} />,
-    <RevisionStage onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onRequestRestart={() => setModal('restart-map')} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} />,
-  ];
-  const displayedStage = initialModelRequired && project.stage >= 2 ? 1 : mapPreviewOpen ? 3 : project.stage;
+  const panelDisabled = initialModelRequired ? ['inspector', 'review'] : [];
+  const changePanelMode = (mode) => {
+    if (mode === 'inspector' && project.stage === 3) return;
+    setStage(stageForPanelMode(mode, projectRef.current), { completed: mode === 'review' && project.stage === 3 });
+  };
+  const suggestionsPanel = <SuggestionsPanel project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onHighlight={setStudioHighlight} />;
+  const reviewPanel = <ReviewPanel onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} onSubmitRevision={onSubmitRevision ? submitRevision : undefined} revisionSubmitting={revisionSubmitting} submitDisabled={Boolean(reviewBusy) || Boolean(connectionBusy)} />;
+  const panel = project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
+    : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
+    : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
+  const studio = <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} toolbarStart={<LevelRail levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} />;
+  const intakeOpen = project.stage === 0 && !mapPreviewOpen;
+  const displayedStage = intakeOpen ? 0 : 3;
+  const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />, studio, studio, studio, studio];
   const screen = stageScreens[displayedStage];
   const returnFromMapPreview = () => {
     setMapPreviewOpen(false);
     logPrototype('map_preview_closed', { stageIndex: project.stage }, STAGES[project.stage].label);
   };
   const openMapPreview = () => {
+    if (mapPreviewOpen || project.stage >= 1) {
+      workspaceRef.current?.focus();
+      return;
+    }
     if (requiresInitialModel(projectRef.current)) {
       setStage(1);
       toast('Continue from Memo review to start your map', 'error');
-      return;
-    }
-    if (mapPreviewOpen || project.stage === 3) {
-      workspaceRef.current?.focus();
       return;
     }
     setMapPreviewOpen(true);
@@ -7288,13 +7220,13 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); openProjects(); }}><strong>Systems Mapping</strong></a></div>
       <div className="header-actions">
         <button className="text-button" type="button" onClick={openProjects}>Projects</button>
-        <button className="text-button" type="button" aria-current={mapPreviewOpen || project.stage === 3 ? 'page' : undefined} onClick={openMapPreview}>Map</button>
+        <button className="text-button" type="button" aria-current={mapPreviewOpen || project.stage >= 1 ? 'page' : undefined} onClick={openMapPreview}>Map</button>
         <button className="text-button" type="button" onClick={() => setModal('stages')}>Progress</button>
         <ThemeToggle dark={dark} onToggle={toggleTheme} showLabel />
       </div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
-    <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}`}>
+    <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}${intakeOpen ? '' : ' workspace--studio'}`}>
       {cloudSaveStatus && <span className="sr-only" role="status">{cloudSaveStatus}</span>}
       {cloudError && <p className="account-error" role="alert">{cloudError}</p>}
       {['error', 'validation'].includes(saveState.status) && <div className="workspace-save-notice" role="alert"><span>{saveState.status === 'validation' ? 'Finish the map item to save' : 'Changes are not saved'}</span><button type="button" onClick={() => setModal(saveState.status === 'validation' ? 'validation' : 'storage')}>{saveState.status === 'validation' ? 'Review issue' : 'Recover project'}</button></div>}
@@ -7302,20 +7234,15 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     </main>
     <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong><span className="next-step-detail">{step.detail}</span></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{step.label}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
-      <SuggestionPreference project={project} update={update} />
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>
-      {onSubmitRevision && <section><p>Submit this stage when you want your instructor to count a reviewed revision. Saving and generation are tracked separately.</p><button type="button" className="button button--secondary" disabled={revisionSubmitting || Boolean(reviewBusy) || Boolean(connectionBusy) || (project.stage === 1 && (!project.preflight?.memoReview || Boolean(reviewFailure)))} onClick={submitRevision}>{revisionSubmitting ? 'Submitting…' : 'Submit revision'}</button></section>}
       <section className="level-progress-summary" aria-labelledby="level-progress-title">
         <h2 id="level-progress-title">Level progression</h2>
         <ol>{SCALE_ORDER.map((scale) => <li key={scale}><strong>{SCALES[scale].label}</strong><span>{levelProgressStatus(project, scale)}</span></li>)}</ol>
       </section>
-      <div className="progress-actions"><button className="button button--ghost" type="button" onClick={() => setModal('work-level')}>Choose work level</button><button className="button button--ghost" type="button" onClick={() => setModal('project-link')}>Project link</button></div>
+      <div className="progress-actions"><button className="button button--ghost" type="button" onClick={() => setModal('project-link')}>Project link</button></div>
        <ol className="stage-menu">{STAGES.map((stage, index) => {
          return <li key={stage.id}><button aria-label={stage.label} className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><strong><span aria-hidden="true">{index + 1}. </span>{stage.label}</strong>{index === project.stage ? <em>Current</em> : null}</button></li>;
        })}</ol>
-    </Modal>
-    <Modal open={modal === 'work-level'} title="Choose work level" onClose={() => setModal(null)}>
-      <div className="confirm-panel"><p>This changes which level you are working on. It does not filter the visible map or remove cumulative data.</p><ol className="stage-menu">{SCALE_ORDER.filter((scale) => project.releasedScales.includes(scale)).map((scale) => <li key={scale}><button className={scale === project.activeScale ? 'is-current' : ''} type="button" onClick={() => selectWorkScale(scale)}><strong>{SCALES[scale].label}</strong>{scale === project.activeScale ? <em>Current work level</em> : null}</button></li>)}</ol></div>
     </Modal>
     <Modal open={modal === 'restart-map'} title="Start new map from this memo?" onClose={() => setModal(null)}>
       <div className="confirm-panel"><p>This creates a new project at Micro with the same memo and framing. Your current project stays saved in Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={restartFromCurrentMemo}>Start new map</button></div></div>

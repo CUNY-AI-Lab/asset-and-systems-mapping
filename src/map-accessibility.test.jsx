@@ -315,10 +315,11 @@ describe('map accessibility', () => {
     const panel = screen.getByRole('complementary', { name: 'Suggestions panel' });
     expect(panel).not.toHaveAttribute('inert');
     expect(within(panel).getByText('Suggested items')).toBeVisible();
-    expect(within(panel).getByRole('tab', { name: 'Suggestions' })).toHaveAttribute('aria-selected', 'true');
+    const tabs = screen.getByRole('tablist', { name: 'Work panel' });
+    expect(within(tabs).getByRole('tab', { name: 'Suggestions' })).toHaveAttribute('aria-selected', 'true');
     expect(within(panel).queryByRole('button', { name: 'Done' })).toBeNull();
     expect(screen.getByRole('navigation', { name: 'Work level' })).toBeInTheDocument();
-    fireEvent.click(within(panel).getByRole('tab', { name: 'Review' }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Review' }));
     expect(onPanelMode).toHaveBeenLastCalledWith('review');
     fireEvent.click(screen.getByRole('button', { name: 'Details' }));
     expect(onPanelMode).toHaveBeenLastCalledWith('inspector');

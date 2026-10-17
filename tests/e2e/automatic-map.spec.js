@@ -23,9 +23,12 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await page.getByRole('textbox', { name: /^Memo/ }).fill(memo);
   await captureSourceRenderedScreenshot(page, testInfo, 'Memo intake');
   await page.getByRole('button', { name: 'Memo review', exact: true }).click();
+  // The Studio opens on the map with the Suggestions panel; the memo reading starts in the same click.
+  await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Work level' })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Add suggestions automatically' })).toBeChecked();
-  await page.getByRole('button', { name: 'Generate guidance' }).click();
-  await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
   await expect(page.locator('.review-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('.memo-drawer')).not.toHaveAttribute('open', '');
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic review'));
@@ -59,16 +62,16 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await page.getByRole('button', { name: 'Full screen map' }).click();
   await captureSourceRenderedScreenshot(page, testInfo, 'Full screen automatic map');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
-  await page.getByRole('button', { name: 'Progress', exact: true }).click();
+  await page.getByRole('tab', { name: 'Suggestions' }).click();
   await page.getByRole('checkbox', { name: 'Add suggestions automatically' }).uncheck();
   await expect.poll(async () => (await readProject(page)).instructor.requireStudentConfirmation).toBe(true);
   await captureSourceRenderedScreenshot(page, testInfo, 'Manual review preference');
   await page.reload();
   await page.getByRole('button', { name: 'Open project', exact: true }).click();
   expect((await readProject(page)).graph).toEqual(cumulative);
-  await page.getByRole('button', { name: 'Progress', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Add suggestions automatically' })).not.toBeChecked();
-  await page.getByRole('button', { name: 'Close Progress' }).click();
+  await page.getByRole('tab', { name: 'Inspector' }).click();
+  await expect(page.getByRole('complementary', { name: 'Map inspector' })).toBeVisible();
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic map dark'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic map dark');
