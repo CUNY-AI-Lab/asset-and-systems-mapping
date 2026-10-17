@@ -47,9 +47,10 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic map');
   await page.getByRole('button', { name: 'Review and export', exact: true }).click();
   await page.getByRole('button', { name: 'Continue to Meso-level', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue →', exact: true }).click();
+  // Meso reads the memo and, in automatic mode, commits in the same click.
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('meso');
+  await expect.poll(async () => (await readProject(page)).stage).toBe(3);
   await page.getByRole('button', { name: 'Review and export', exact: true }).click();
   await page.getByRole('button', { name: 'Continue to Exo-level', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review Micro and Meso' });
