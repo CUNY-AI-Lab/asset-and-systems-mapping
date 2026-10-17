@@ -38,6 +38,7 @@ let studentSession;
 let accessResponder;
 let preflightEvaluationResponder;
 let connectionSuggestionResponder;
+let mapCheckResponder;
 let prototypeResponder;
 let fetchMock;
 
@@ -248,6 +249,7 @@ function defaultFetch(path, options = {}) {
   if (requestPath === '/api/student/logout') return jsonResponse({ ok: true });
   if (requestPath === '/api/preflight/evaluations' && options.method === 'POST') return preflightEvaluationResponder(JSON.parse(options.body));
   if (requestPath === '/api/map/connections' && options.method === 'POST') return connectionSuggestionResponder(JSON.parse(options.body));
+  if (requestPath === '/api/map/check' && options.method === 'POST') return mapCheckResponder(JSON.parse(options.body));
   if (requestPath.startsWith('/api/config/public?')) return jsonResponse(publicConfiguration(requestPath));
   if (requestPath === '/api/prototype/events') return prototypeResponder(options);
   return jsonResponse({ error: `Unexpected fetch: ${requestPath}` }, 500);
@@ -913,6 +915,7 @@ function bytesContain(haystack, needle) {
 
 describe('Systems Mapping workflow', () => {
   beforeEach(() => {
+    mapCheckResponder = () => jsonResponse({ error: 'Map check not stubbed' }, 500);
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1024 });
     window.history.replaceState(null, '', '/');
     window.localStorage.clear();
@@ -5132,6 +5135,67 @@ Overall, the posting history documents a working student repeatedly turning to R
     await waitFor(() => expect(storedProject().viewport).toEqual(expectedViewport));
     const viewportWrites = setItem.mock.calls.filter(([key, value]) => key === STORAGE_KEY && JSON.stringify(JSON.parse(value).viewport) === JSON.stringify(expectedViewport));
     expect(viewportWrites).toHaveLength(1);
+  });
+
+  it('asks the map for gaps from the inspector, highlights the referenced items, and never edits the project', async () => {
+    const project = makeMapProject('exosphere');
+    const [first, second] = project.graph.nodes;
+    mapCheckResponder = (body) => {
+      expect(body).toMatchObject({ activeScale: 'exosphere', intent: 'gaps', focus: null });
+      expect(body).not.toHaveProperty('sourceMaterial');
+      expect(body.nodes.map(({ id }) => id)).toEqual(project.graph.nodes.map(({ id }) => id));
+      expect(body.memoExcerpt.length).toBeLessThanOrEqual(4000);
+      return jsonResponse({ intent: 'gaps', notes: [
+        { kind: 'gap', point: `Which decision setting reaches ${first.label}?`, refs: [first.id] },
+        { kind: 'question', point: 'What passes between the two settings?', refs: [first.id, second.id] },
+      ] }, 201);
+    };
+    await openMapProject(project);
+    const graphBefore = structuredClone(storedProject().graph);
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    const askPanel = screen.getByRole('region', { name: 'Ask the map' });
+    fireEvent.click(within(askPanel).getByRole('button', { name: "Ask what's missing" }));
+    expect(await within(askPanel).findByText(`Which decision setting reaches ${first.label}?`)).toBeVisible();
+    expect(within(askPanel).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(askPanel).getByText(/adds nothing to it/)).toBeVisible();
+    fireEvent.click(within(within(askPanel).getAllByRole('listitem')[0]).getByRole('button', { name: first.label }));
+    expect(document.querySelector(`[data-graph-id="${first.id}"]`)).not.toHaveClass('is-dimmed');
+    expect(document.querySelector(`[data-graph-id="${second.id}"]`)).toHaveClass('is-dimmed');
+    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    expect(storedProject().graph).toEqual(graphBefore);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(1);
+  });
+
+  it('checks a selected relationship with its own focus and reports a failed check without a second request', async () => {
+    const project = makeMapProject('exosphere');
+    const edge = project.graph.edges[0];
+    mapCheckResponder = (body) => {
+      expect(body).toMatchObject({ intent: 'connection', focus: { kind: 'relationship', id: edge.id } });
+      return jsonResponse({ error: 'The model request could not be completed. Your map is still available.', details: { code: 'upstream_failure', shouldRetry: false } }, 502);
+    };
+    await openMapProject(project);
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${edge.id}"]`), { key: 'Enter' });
+    const panel = await screen.findByRole('region', { name: 'Check this connection' });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Check this connection' }));
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(/could not be completed/);
+    expect(within(panel).getByRole('button', { name: 'Check this connection' })).toBeEnabled();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(1);
+  });
+
+  it('offers the synthesis scaffold only on the Macro review', async () => {
+    const exo = makeRevisionProject('exosphere');
+    await resumeSavedProject(exo);
+    expect(screen.queryByRole('button', { name: 'Draft a synthesis scaffold' })).not.toBeInTheDocument();
+    cleanup();
+    const macro = makeRevisionProject('macrosphere');
+    mapCheckResponder = (body) => {
+      expect(body).toMatchObject({ intent: 'synthesis', activeScale: 'macrosphere' });
+      return jsonResponse({ intent: 'synthesis', notes: [{ kind: 'claim', point: 'Outside decisions reach the family through the school.', refs: [macro.graph.nodes[0].id] }] }, 201);
+    };
+    await resumeSavedProject(macro);
+    fireEvent.click(screen.getByRole('button', { name: 'Draft a synthesis scaffold' }));
+    expect(await screen.findByText('Outside decisions reach the family through the school.')).toBeVisible();
+    expect(screen.getByText('Claim the map supports')).toBeVisible();
   });
 
   it('keeps the closed phone inspector out of navigation and provides roving tabs plus deterministic focus return', async () => {

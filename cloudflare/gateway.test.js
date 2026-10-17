@@ -25,7 +25,8 @@ test('one CAIL credential, canonical model, caller correlation and no provider c
     expect(body).toMatchObject({ model: 'glm-5.3-flash', stream: false, reasoning_effort: 'low', max_completion_tokens: 4096 });
     expect(request.headers.get('x-cail-session-id')).toBe('systems-mapping-guidance');
     expect(body).not.toHaveProperty('max_tokens'); expect(body).not.toHaveProperty('provider');
-    expect(body.messages[1].content).toContain('For a connections-only request, return only the required connections object');
+    expect(body.messages[1].content).toContain('For a memo review, return at most 3 guidance points, 10 nodes and 8 direct relationships');
+    expect(body.messages[1].content).not.toContain('connections-only');
     return Response.json({ model: 'glm-5.3-flash', created: 1, choices: [{ message: { role: 'assistant', content: '{"guidance":[]}' }, finish_reason: 'stop' }] });
   });
   const result = await gatewaySuggestion({ fetch }, 'fixture-identity', 'glm-5.3-flash', correlation)(input);

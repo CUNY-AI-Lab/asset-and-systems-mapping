@@ -41,7 +41,36 @@
   .next-step-detail { display: none; }
   .level-rail button { padding: 0 10px; font-size: 13px; }
   .level-rail__mark { display: none; }
+  /* The phone map stage is a fixed-height column; keep the Studio chrome to
+     one extra row so the canvas keeps its reading size. */
+  .work-panel__tabs { flex: 1 0 100%; display: flex; }
+  .work-panel__tabs button { flex: 1; padding: 0 6px; font-size: 13px; }
   .inspector.is-expanded { max-height: calc(100dvh - var(--header) - var(--footer) - var(--safe-bottom)); }
   .inspector .work-panel__expand { position: absolute; top: 6px; right: 10px; }
   .canvas-wrap.is-inspector-open:not(.is-panel-inspector) .canvas-chrome { visibility: visible; pointer-events: auto; }
 }
+
+@media (max-width: 600px) {
+  /* The phone controls row is a three-column grid (toggle, layer, search); the
+     tabs take their own full row beneath it. The overview hint gives its
+     height back to the canvas so labels keep their reading size. */
+  .map-toolbar > div:first-child { flex-wrap: nowrap; }
+  .map-toolbar { gap: 8px; margin-bottom: 8px; }
+  .map-toolbar h1 { font-size: 18px; white-space: nowrap; }
+  .level-rail ol { overflow: visible; }
+  .level-rail button { min-height: 40px; min-width: 40px; padding: 0 6px; font-size: 11px; }
+  .work-panel__tabs { grid-column: 1 / -1; grid-row: 2; display: flex; }
+  .work-panel__tabs button { min-height: 40px; }
+  .workspace--studio .map-overview-hint { display: none; }
+}
+
+/* Map Check notes */
+.map-check { display: grid; gap: 10px; padding: 14px 0 4px; border-top: 1px solid var(--line); }
+.map-check .work-panel__title h2 { margin: 0; font-size: 17px; }
+.map-check .work-panel__title .lede { margin: 4px 0 0; font-size: 14px; }
+.map-check__notes { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.map-check__note { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
+.map-check__note p { margin: 0; font-size: 15px; line-height: 1.45; }
+.map-check__kind { color: var(--blue); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.map-check__refs { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-check__disclosure { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }

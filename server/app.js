@@ -4,6 +4,7 @@ import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
+import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import {
   containsRetiredSystemsLanguage,
   deterministicMemoReview,
@@ -136,12 +137,8 @@ const MEMO_REVIEW_LIMITS = Object.freeze({
 // of strong, concrete items instead of triaging everything the model can find.
 // Macrosphere structures carry a scope (mapped elements they condition)
 // instead of connections.
-const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
-  micro: Object.freeze({ nodes: 10, connections: 8 }),
-  meso: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
-  exosphere: Object.freeze({ nodes: 6, connections: 5 }),
-  macrosphere: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
-});
+// MEMO_REVIEW_SCALE_LIMITS lives in shared/memo-review-limits.js so the
+// Gateway adapter's compact instruction cannot drift from the validator.
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   STUDENT_JUDGMENT_INSTRUCTION,
   'MEMO REVIEW JSON CONTRACT',
@@ -183,6 +180,20 @@ const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   'At Micro, use a short plain active verb phrase for a concrete action or exchange that matters to the mapped situation. Do not use mere co-residence or co-presence, vague collaboration, or generic planning unless the student description makes that tie analytically consequential and names what passes between the endpoints.',
   'rationale must quote or closely paraphrase the exact student-description evidence for the relationship.',
   'Do not add confidence scores, evidence claims, Markdown, or prose outside the object.',
+].join('\n');
+const MAP_CHECK_SCHEMA_INSTRUCTION = [
+  STUDENT_JUDGMENT_INSTRUCTION,
+  'MAP CHECK JSON CONTRACT',
+  'The student has already built this part of the map. carriedNodes and carriedConnections ARE the map. memoDetails.intent names the check: gaps, connection, or synthesis. memoDetails.focus identifies the selected item when there is one. memoDetails.scopes lists mesosystem and condition memberships as exact IDs.',
+  'Never propose new map elements, relationships, labels, or evidence text. Point the student at what to verify, ask, or weigh. Use human-readable labels in point text and exact supplied IDs only in refs.',
+  `Return one object with exactly one key: notes. notes is an array of 1 to ${MAP_CHECK_LIMITS.notes} objects, each with exactly the keys kind, point, refs.`,
+  'kind: for gaps, "gap" or "question"; for connection, "evidence" or "question"; for synthesis, "claim" or "question".',
+  `point: at most ${MAP_CHECK_LIMITS.point} characters of plain instructional language. Do not score, grade, praise, or use rubric labels.`,
+  `refs: 1 to ${MAP_CHECK_LIMITS.refs} exact IDs from carriedNodes or carriedConnections that the note is about.`,
+  'For gaps: name what the active level still needs given the carried map, such as a mesosystem that links only one setting, an outside decision setting without a pathway into a Micro setting, a condition that reaches only one item, or a relationship whose verb does not say what passes between its endpoints. Ask one question the memo could answer.',
+  'For connection: for the focused item, say what evidence would strengthen or challenge it, which direction, frequency, or condition remains unclear, and what the student should look for in the memo or in a further source.',
+  'For synthesis: offer at most two claims the map now supports in answer to the inquiry, each tied to the items that support it, and the questions that remain open.',
+  'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const PROTOTYPE_EVENTS = new Set([
   'project_started',
@@ -1278,6 +1289,100 @@ function validateConnectionSuggestionRequest(value) {
     projectOverlay,
     customInstructions,
   };
+}
+
+function validateMapCheckRequest(value) {
+  assertOnlyKeys(value, ['activeScale', 'intent', 'inquiry', 'memoExcerpt', 'nodes', 'relationships', 'scopes', 'focus', 'projectOverlay', 'studentJudgments']);
+  let studentJudgments;
+  try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
+  catch { throw new HttpError(400, 'Student judgments are invalid.'); }
+  if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
+  if (typeof value.intent !== 'string' || !Object.hasOwn(MAP_CHECK_INTENTS, value.intent)) throw new HttpError(400, 'intent is not supported.');
+  if (value.intent === 'synthesis' && value.activeScale !== 'macrosphere') throw new HttpError(400, 'A synthesis check belongs at Macro-level.');
+  const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
+  const memoExcerpt = requireSnapshotText(value.memoExcerpt, 'memoExcerpt', { min: 0, max: MAP_CHECK_LIMITS.memoExcerpt });
+  if (!Array.isArray(value.nodes) || value.nodes.length < 1 || value.nodes.length > 50) {
+    throw new HttpError(400, 'nodes must contain between 1 and 50 items.');
+  }
+  const nodes = value.nodes.map((node, index) => {
+    const name = `nodes[${index}]`;
+    assertOnlyNamedKeys(node, ['id', 'label', 'type', 'scale'], name);
+    requireObjectKeys(node, ['id', 'label', 'type', 'scale'], name);
+    const scale = requireSnapshotText(node.scale, `${name}.scale`, { max: 40 });
+    if (!PREFLIGHT_SCALES.has(scale)) throw new HttpError(400, `${name}.scale is not supported.`);
+    return {
+      id: requireSnapshotText(node.id, `${name}.id`, { max: 200 }),
+      label: requireSnapshotText(node.label, `${name}.label`, { max: 200 }),
+      type: requireSnapshotText(node.type, `${name}.type`, { max: 100 }),
+      scale,
+    };
+  });
+  const nodeIds = new Set(nodes.map(({ id }) => id));
+  if (nodeIds.size !== nodes.length) throw new HttpError(400, 'nodes must not contain duplicate IDs.');
+  if (!Array.isArray(value.relationships) || value.relationships.length > 100) {
+    throw new HttpError(400, 'relationships must be an array of no more than 100 items.');
+  }
+  const relationshipIds = new Set();
+  const relationships = value.relationships.map((relationship, index) => {
+    const name = `relationships[${index}]`;
+    assertOnlyNamedKeys(relationship, ['id', 'source', 'target', 'verb'], name);
+    requireObjectKeys(relationship, ['id', 'source', 'target', 'verb'], name);
+    const id = requireSnapshotText(relationship.id, `${name}.id`, { max: 200 });
+    if (relationshipIds.has(id) || nodeIds.has(id)) throw new HttpError(400, `${name}.id must be unique.`);
+    relationshipIds.add(id);
+    const source = requireSnapshotText(relationship.source, `${name}.source`, { max: 200 });
+    const target = requireSnapshotText(relationship.target, `${name}.target`, { max: 200 });
+    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
+      throw new HttpError(400, `${name} must connect two different supplied nodes.`);
+    }
+    return { id, source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { max: 100 }) };
+  });
+  if (!Array.isArray(value.scopes) || value.scopes.length > 50) throw new HttpError(400, 'scopes must be an array of no more than 50 items.');
+  const scopes = value.scopes.map((scope, index) => {
+    const name = `scopes[${index}]`;
+    assertOnlyNamedKeys(scope, ['id', 'memberIds'], name);
+    requireObjectKeys(scope, ['id', 'memberIds'], name);
+    const id = requireSnapshotText(scope.id, `${name}.id`, { max: 200 });
+    if (!nodeIds.has(id)) throw new HttpError(400, `${name}.id must name a supplied node.`);
+    if (!Array.isArray(scope.memberIds) || scope.memberIds.length < 1 || scope.memberIds.length > 40) throw new HttpError(400, `${name}.memberIds must contain between 1 and 40 node IDs.`);
+    const memberIds = scope.memberIds.map((memberId, memberIndex) => requireSnapshotText(memberId, `${name}.memberIds[${memberIndex}]`, { max: 200 }));
+    if (new Set(memberIds).size !== memberIds.length || memberIds.some((memberId) => !nodeIds.has(memberId) || memberId === id)) throw new HttpError(400, `${name}.memberIds must be distinct supplied nodes.`);
+    return { id, memberIds };
+  });
+  let focus = null;
+  if (value.focus !== null && value.focus !== undefined) {
+    assertOnlyNamedKeys(value.focus, ['kind', 'id'], 'focus');
+    requireObjectKeys(value.focus, ['kind', 'id'], 'focus');
+    if (!['node', 'relationship', 'scope'].includes(value.focus.kind)) throw new HttpError(400, 'focus.kind is not supported.');
+    const id = requireSnapshotText(value.focus.id, 'focus.id', { max: 200 });
+    if (value.focus.kind === 'relationship' ? !relationshipIds.has(id) : !nodeIds.has(id)) throw new HttpError(400, 'focus.id must name a supplied map item.');
+    focus = { kind: value.focus.kind, id };
+  }
+  if (value.intent === 'connection' && !focus) throw new HttpError(400, 'A connection check needs a focused map item.');
+  const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
+  return { activeScale: value.activeScale, intent: value.intent, inquiry, memoExcerpt, studentJudgments, nodes, relationships, scopes, focus, projectOverlay, customInstructions };
+}
+
+function validateGeneratedMapCheck(value, intent, refIds) {
+  validateBoundedJson(value, 'generated map check', { maxSerialized: 16_000, maxObjectKeys: 40 });
+  assertOnlyNamedKeys(value, ['notes'], 'generated map check');
+  requireObjectKeys(value, ['notes'], 'generated map check');
+  if (!Array.isArray(value.notes) || value.notes.length < 1 || value.notes.length > MAP_CHECK_LIMITS.notes) {
+    throw new HttpError(400, `generated map check must contain between 1 and ${MAP_CHECK_LIMITS.notes} notes.`);
+  }
+  const kinds = new Set(MAP_CHECK_INTENTS[intent]);
+  return value.notes.map((note, index) => {
+    const name = `notes[${index}]`;
+    assertOnlyNamedKeys(note, ['kind', 'point', 'refs'], name);
+    requireObjectKeys(note, ['kind', 'point', 'refs'], name);
+    if (!kinds.has(note.kind)) throw new HttpError(400, `${name}.kind is not allowed for a ${intent} check.`);
+    const point = requireSnapshotText(note.point, `${name}.point`, { max: MAP_CHECK_LIMITS.point }).trim();
+    if (/[\u0000-\u001f\u007f]/.test(point)) throw new HttpError(400, `${name}.point contains control characters.`);
+    if (!Array.isArray(note.refs) || note.refs.length < 1 || note.refs.length > MAP_CHECK_LIMITS.refs) throw new HttpError(400, `${name}.refs must contain between 1 and ${MAP_CHECK_LIMITS.refs} map IDs.`);
+    const refs = note.refs.map((ref, refIndex) => requireSnapshotText(ref, `${name}.refs[${refIndex}]`, { max: 200 }));
+    if (new Set(refs).size !== refs.length || refs.some((ref) => !refIds.has(ref))) throw new HttpError(400, `${name}.refs must name distinct supplied map items.`);
+    return { kind: note.kind, point, refs };
+  });
 }
 
 function validateGeneratedConnections(value, nodes, activeScale) {
@@ -2377,6 +2482,7 @@ export function createSystemsMappingApp(options = {}) {
     { max: 10 },
   );
   const connectionSuggestionLimit = positiveInteger(options.connectionSuggestionLimit, 'connectionSuggestionLimit', 20, { max: 100 });
+  const mapCheckLimit = positiveInteger(options.mapCheckLimit, 'mapCheckLimit', 20, { max: 100 });
   const connectionSuggestionWindowMs = positiveInteger(
     options.connectionSuggestionWindowMs,
     'connectionSuggestionWindowMs',
@@ -2505,6 +2611,11 @@ export function createSystemsMappingApp(options = {}) {
   });
   const connectionSuggestionLimiter = rateLimiter({
     limit: connectionSuggestionLimit,
+    windowMs: connectionSuggestionWindowMs,
+    now,
+  });
+  const mapCheckLimiter = rateLimiter({
+    limit: mapCheckLimit,
     windowMs: connectionSuggestionWindowMs,
     now,
   });
@@ -2992,7 +3103,7 @@ export function createSystemsMappingApp(options = {}) {
           }
           return proposed;
         };
-        let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
+        let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount, kind: 'connections' });
         try {
           connections = validateWholeResponse(generated.suggestion);
         } catch (error) {
@@ -3017,6 +3128,65 @@ export function createSystemsMappingApp(options = {}) {
       }
       context.req.raw.signal.throwIfAborted();
       return context.json({ connections }, 201);
+    } finally {
+      release();
+    }
+  });
+
+  // Map Check reasons over the student's carried map instead of rereading the
+  // memo. It returns bounded notes tied to map IDs and never commits anything.
+  app.post('/api/map/check', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    if (!ollamaConfig) throw new HttpError(503, 'Map checks are not available for this class.');
+    const body = await parseJsonBody(context, JSON_BODY_LIMIT_BYTES);
+    const input = validateMapCheckRequest(body);
+    const sourceMetadata = { intent: input.intent, focus: input.focus, scopes: input.scopes, studentJudgments: input.studentJudgments };
+    if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
+      throw new HttpError(413, 'Use fewer scopes for this request.');
+    }
+    if (preflightEvaluationCapacity.has(student.sessionRef)) {
+      throw new HttpError(409, 'Guidance is already running', { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 }, { 'Retry-After': '1' });
+    }
+    const release = preflightEvaluationCapacity.acquire(student.sessionRef);
+    if (!release) throw tooManyAttempts(1, 'Map checks are busy. Try again shortly.');
+    try {
+      const rate = mapCheckLimiter.take(student.sessionRef);
+      if (!rate.allowed) {
+        throw tooManyAttempts(rate.retryAfterSeconds, 'Map check limit reached for this class session. Try again later.');
+      }
+      context.req.raw.signal.throwIfAborted();
+      const stageId = input.intent === 'synthesis' ? 'revise-and-export' : 'build-map';
+      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, stageId, context.env?.verifiedAccount?.coursePrompt);
+      const systemPrompt = input.customInstructions
+        ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${MAP_CHECK_SCHEMA_INSTRUCTION}`
+        : `${effective.effectivePrompt}\n\n${MAP_CHECK_SCHEMA_INSTRUCTION}`;
+      let notes;
+      try {
+        const providerInput = {
+          systemPrompt,
+          activeScale: input.activeScale,
+          inquiry: input.inquiry,
+          sourceMetadata,
+          sourceText: input.memoExcerpt.trim() || 'No memo excerpt was supplied. Reason only from the carried map, the inquiry, and the student judgments.',
+          carriedNodes: input.nodes,
+          carriedConnections: input.relationships,
+        };
+        const refIds = new Set([...input.nodes.map(({ id }) => id), ...input.relationships.map(({ id }) => id)]);
+        // One attempt per explicit action. Invalid output is a visible failure,
+        // never a second paid request.
+        const generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount, kind: 'map-check' });
+        notes = validateGeneratedMapCheck(generated.suggestion, input.intent, refIds);
+      } catch (error) {
+        if (options.suggestionFailure) {
+          const safe = options.suggestionFailure(error, context);
+          throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
+        }
+        console.warn('map check generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
+        throw new HttpError(502, 'Map checks are temporarily unavailable.', generationFailureDetails(error, suggestionProvider));
+      }
+      context.req.raw.signal.throwIfAborted();
+      return context.json({ intent: input.intent, notes }, 201);
     } finally {
       release();
     }

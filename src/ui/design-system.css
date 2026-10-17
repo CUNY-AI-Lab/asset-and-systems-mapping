@@ -133,8 +133,6 @@ html[data-theme="dark"] .lab-logo { filter: grayscale(1) brightness(0) invert(1)
 .candidate-actions { grid-column: 1; display: flex; gap: 8px; border: 0; flex-wrap: wrap; }
 .candidate-actions button { flex: 1; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 15px; padding: 10px 14px; }
 .candidate-actions button.is-active { color: var(--surface); background: var(--ink); border-color: var(--ink); }
-.studio-review-pager { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 20px 0; color: var(--muted); font-size: 14px; }
-.studio-review-pager > div { display: flex; gap: 8px; }
 .elicitation-panel { margin-top: 30px; border-radius: 8px; }
 .map-toolbar { gap: 20px; align-items: center; }
 .map-toolbar h1 { font-size: clamp(27px, 3vw, 38px); margin: 0; }
@@ -186,7 +184,6 @@ html[data-theme="dark"] .lab-logo { filter: grayscale(1) brightness(0) invert(1)
   .candidate-expression input { font-size: 19px; }
   .candidate-expression select { flex: 1; }
   .candidate-actions button { min-width: 90px; font-size: 14px; padding: 10px 8px; }
-  .studio-review-pager .button { font-size: 14px; padding: 0 12px; }
   .workspace--stage-2 .studio-heading { align-items: center; flex-wrap: nowrap; margin-bottom: 12px; gap: 8px; }
   .workspace--stage-2 .studio-heading h1 { font-size: 27px; }
   .workspace--stage-2 .studio-heading__actions { flex: 0 0 auto; }

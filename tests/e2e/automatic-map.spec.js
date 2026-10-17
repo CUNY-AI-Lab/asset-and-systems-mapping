@@ -27,8 +27,10 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Work level' })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Add suggestions automatically' })).toBeChecked();
-  await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeEnabled();
+  // The first reading stays an explicit student choice; later levels read in the same click that completes the previous one.
+  await page.getByRole('button', { name: 'Generate guidance' }).click();
   await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeEnabled();
   await expect(page.locator('.review-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('.memo-drawer')).not.toHaveAttribute('open', '');
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic review'));

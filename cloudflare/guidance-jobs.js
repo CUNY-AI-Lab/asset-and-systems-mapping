@@ -19,7 +19,7 @@ export function guidanceJobKey(owner, kind, input, scope) {
 // requiring a deliberate retry, since provider completion may be uncertain.
 export class GuidanceJobs {
   constructor(db, waitUntil, now = Date.now) {
-    this.db = db; this.waitUntil = waitUntil; this.now = now; this.running = new Map();
+    this.db = db; this.waitUntil = waitUntil; this.now = now; this.running = new Map(); this.attempts = new Map();
     db.exec(`CREATE TABLE IF NOT EXISTS cloud_guidance_jobs (
       owner TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,input TEXT NOT NULL,scope TEXT NOT NULL,
       state TEXT NOT NULL,attempts INTEGER NOT NULL,retry_at INTEGER NOT NULL,created_at INTEGER NOT NULL,
@@ -59,7 +59,7 @@ export class GuidanceJobs {
       .run(JSON.stringify({ error, details: { code, shouldRetry: false } }), this.now(), owner, id, attemptId);
   }
   create(owner, kind, input, scope, retry, run, requestToken = crypto.randomUUID()) {
-    if (!['memo', 'connections'].includes(kind) || !input || typeof input !== 'object' || Array.isArray(input)) throw new Error('job_input');
+    if (!['memo', 'connections', 'map-check'].includes(kind) || !input || typeof input !== 'object' || Array.isArray(input)) throw new Error('job_input');
     const encoded = JSON.stringify(input);
     if (new TextEncoder().encode(encoded).byteLength > 768 * 1024) throw new Error('job_input_size');
     const id = guidanceJobKey(owner, kind, input, scope), now = this.now();
@@ -99,10 +99,23 @@ export class GuidanceJobs {
       const attemptId = crypto.randomUUID();
       this.db.prepare("UPDATE cloud_guidance_jobs SET state='running',attempts=attempts+1,updated_at=?,attempt_id=? WHERE owner=? AND id=?").run(this.now(), attemptId, owner, id);
       this.running.set(id, attemptId);
-      const pending = this.execute(owner, id, run, attemptId).finally(() => { if (this.running.get(id) === attemptId) this.running.delete(id); });
+      const pending = this.execute(owner, id, run, attemptId).finally(() => { if (this.running.get(id) === attemptId) { this.running.delete(id); this.attempts.delete(id); } });
+      this.attempts.set(id, pending);
       this.waitUntil(pending);
     }
     return this.view(this.row(owner, id));
+  }
+  // Long-poll support: hold a read until the in-memory attempt settles or the
+  // wait expires. A job owned by another instance has no attempt here and
+  // returns immediately, so the caller falls back to ordinary polling.
+  async wait(id, milliseconds) {
+    const pending = this.attempts.get(id);
+    if (!pending) return false;
+    let timer;
+    try {
+      await Promise.race([pending, new Promise(resolve => { timer = setTimeout(resolve, milliseconds); })]);
+    } finally { clearTimeout(timer); }
+    return true;
   }
   async execute(owner, id, run, attemptId) {
     try {

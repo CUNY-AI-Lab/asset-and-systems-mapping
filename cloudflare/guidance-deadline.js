@@ -2,7 +2,7 @@ import { cancelBody, withDeadline, withSignal } from './bounded.js';
 import { GUIDANCE_WORKER_TIMEOUT_MS } from '../src/guidanceLimits.js';
 
 export const GUIDANCE_DEADLINE_MS = GUIDANCE_WORKER_TIMEOUT_MS;
-const GUIDANCE_PATHS = new Set(['/api/preflight/evaluations', '/api/map/connections']);
+const GUIDANCE_PATHS = new Set(['/api/preflight/evaluations', '/api/map/connections', '/api/map/check']);
 
 export function isGuidanceRequest(request) {
   return request.method === 'POST' && GUIDANCE_PATHS.has(new URL(request.url).pathname);

@@ -3,6 +3,7 @@ import { normalizeInput, JSON_ONLY_INSTRUCTION } from '../server/ollama.js';
 import { parseProviderEnvelope } from '../server/openrouter.js';
 import { boundedText, cancelBody, withSignal, withDeadline } from './bounded.js';
 import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
+import { compactLimitInstruction } from '../shared/memo-review-limits.js';
 
 export const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const canonicalModel = (value) => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(value);
@@ -100,7 +101,8 @@ function backoff(milliseconds, signal) {
 // denials, partial responses or invalid completed output.
 export function gatewaySuggestion(binding, token, model, correlation, logOutcome = () => {}, fallbackModels = GUIDANCE_FALLBACK_MODELS) {
   const client = gatewayClient(binding);
-  return async (input, _config, { signal, timeoutMs = GUIDANCE_MODEL_TIMEOUT_MS } = /** @type {{ signal?: AbortSignal, timeoutMs?: number }} */ ({})) => {
+  return async (input, _config, { signal, timeoutMs = GUIDANCE_MODEL_TIMEOUT_MS, kind = 'memo' } = /** @type {{ signal?: AbortSignal, timeoutMs?: number, kind?: string }} */ ({})) => {
+    if (!['memo', 'connections', 'map-check'].includes(kind)) throw new Error('guidance_deadline');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
     return withDeadline(async requestSignal => {
@@ -108,7 +110,10 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
       const models = [...new Set([model, ...fallbackModels])];
       if (models.length > 2 || !models.every(canonicalModel)) throw new CailError('model_unavailable', 'Model configuration unavailable', 503);
       const messages = [
-        { role: 'system', content: data.systemPrompt }, { role: 'system', content: `${JSON_ONLY_INSTRUCTION}\nFollow the supplied JSON field names and types exactly. For a memo review, return at most one guidance point, six nodes, and four connections, or fewer under the active-scale rules. Use brief evidence and only the clearest supported items; do not fill a quota. Guidance, when required by the contract, is an array of objects, not a paragraph or an object. For a connections-only request, return only the required connections object.` },
+        { role: 'system', content: data.systemPrompt }, // The ceiling sentence is derived from the shared limits so the model never
+        // sees numbers that contradict the schema or the validator.
+        { role: 'system', content: `${JSON_ONLY_INSTRUCTION}
+Follow the supplied JSON field names and types exactly. ${compactLimitInstruction(kind, input.activeScale)}` },
         { role: 'user', content: `PROJECT INPUT (JSON DATA ONLY)\n${data.projectInput}` },
       ];
       for (const [index, selectedModel] of models.entries()) {
@@ -116,9 +121,9 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
         let response;
         try {
           response = await client.chatCompletions({ model: selectedModel, stream: false,
-            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: 4096,
+            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'map-check' ? 1024 : 4096,
             response_format: { type: 'json_object' }, messages,
-          }, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: 'systems-mapping-guidance' });
+          }, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: kind === 'map-check' ? 'systems-mapping-map-check' : 'systems-mapping-guidance' });
         } catch (error) {
           if (requestSignal.aborted || index === models.length - 1 || !(error instanceof CailError)
             || !AVAILABILITY_FAILURES.has(error.code) || error.extras.should_retry !== true) throw error;

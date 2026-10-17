@@ -118,6 +118,11 @@ export function suggestMapConnections(payload, options = {}) {
   return guidanceRequest('/api/map/connections', payload, options);
 }
 
+export function checkMap(payload, options = {}) {
+  if (options.durable) return durableGuidance(apiRequest, (message, status, result) => new ApiError(message, status, result), 'map-check', payload, { ...options, storage: projectStorage() });
+  return guidanceRequest('/api/map/check', payload, options);
+}
+
 export function createProjectLink(project) {
   return apiRequest('/api/projects', { method: 'POST', body: { project } });
 }

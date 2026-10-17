@@ -93,7 +93,7 @@ export class MappingCourse extends DurableObject<Bindings> {
             const current = await currentCoursePrompt(this.ctx.storage);
             if (current.revision !== coursePrompt.revision) throw new CourseAccessError(409, 'course_prompt_changed');
           }
-          return gatewaySuggestion(env.GATEWAY, gatewayJwt, env.GATEWAY_MODEL, correlation, requestLog(env.RELEASE, correlation.request_id).gateway)(input, config, { signal: options.signal, ...(guidanceTimeoutMs ? { timeoutMs: guidanceTimeoutMs } : {}) });
+          return gatewaySuggestion(env.GATEWAY, gatewayJwt, env.GATEWAY_MODEL, correlation, requestLog(env.RELEASE, correlation.request_id).gateway)(input, config, { signal: options.signal, ...(options.kind ? { kind: options.kind } : {}), ...(guidanceTimeoutMs ? { timeoutMs: guidanceTimeoutMs } : {}) });
         },
       });
       await this.system.ready;
@@ -140,18 +140,22 @@ export class MappingCourse extends DurableObject<Bindings> {
       let input: any;
       try { input = creating ? body.input : JSON.parse(body.input); }
       catch { return failure('Generation request unavailable.', 404); }
-      if (!['memo','connections'].includes(body.kind) || !input || typeof input !== 'object') return failure('Choose a supported generation request.', 400);
-      const params = new URLSearchParams({ configKind: body.kind === 'memo' ? 'preflight' : 'builder', scale: input.activeScale || 'micro', stageId: body.kind === 'memo' ? input.stageId || 'review-suggestions' : 'choose-what-to-map' });
+      if (!['memo','connections','map-check'].includes(body.kind) || !input || typeof input !== 'object') return failure('Choose a supported generation request.', 400);
+      const params = new URLSearchParams({ configKind: body.kind === 'memo' ? 'preflight' : 'builder', scale: input.activeScale || 'micro',
+        stageId: body.kind === 'memo' ? input.stageId || 'review-suggestions' : body.kind === 'map-check' ? (input.intent === 'synthesis' ? 'revise-and-export' : 'build-map') : 'choose-what-to-map' });
       const config = await this.request(new Request(url.origin + '/api/config/public?' + params), principal, correlation);
       if (!config.ok) return config;
       const scope = JSON.stringify({ config: await config.json(), model: this.env.GATEWAY_MODEL });
       const run = async (kind: string, savedInput: unknown) => {
         if (principal.expiresAt <= Date.now()) return failure('Sign in again to continue generation.', 401);
-        const target = kind === 'memo' ? '/api/preflight/evaluations' : '/api/map/connections';
+        const target = kind === 'memo' ? '/api/preflight/evaluations' : kind === 'map-check' ? '/api/map/check' : '/api/map/connections';
         // The browser can disconnect while this bounded attempt finishes. Its
         // current verified credentials remain in memory for this attempt only.
         return this.request(new Request(url.origin + target, { method: 'POST', headers: { 'content-type': 'application/json', origin: url.origin }, body: JSON.stringify(savedInput) }), principal, correlation, Date.now() + 90000, true);
       };
+      // A read may hold for up to 20 seconds while the attempt runs here, so the
+      // browser polls about ten times less often per action.
+      if (!creating && !match![2] && url.searchParams.get('wait') === '1' && ['queued', 'running'].includes(body.state)) await this.jobs.wait(match![1], 20000);
       let result;
       try {
         result = creating ? this.jobs.create(owner, body.kind, input, scope, body.retryToken, run, body.requestToken)

@@ -29,13 +29,14 @@ export async function durableGuidance(request, makeError, kind, input, { signal,
   const clear = () => { try { if (hasPendingGuidance(storage, projectId, requestKey)) storage.removeItem(key); } catch { /* Saved server outcome remains authoritative. */ } };
   const call = async (path, options) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new DOMException('Connection timed out', 'TimeoutError')), 12000);
+    const timer = setTimeout(() => controller.abort(new DOMException('Connection timed out', 'TimeoutError')), options.wait ? 30000 : 12000);
     const abort = () => controller.abort(signal.reason);
     if (signal?.aborted) abort();
     else signal?.addEventListener('abort', abort, { once: true });
     try {
+      const { wait: _wait, ...requestOptions } = options;
       return await Promise.race([
-        request(path, { ...options, workspace: storage, signal: controller.signal }),
+        request(path, { ...requestOptions, workspace: storage, signal: controller.signal }),
         new Promise((_, reject) => { if (controller.signal.aborted) reject(controller.signal.reason); else controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true }); }),
       ]);
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
@@ -47,7 +48,10 @@ export async function durableGuidance(request, makeError, kind, input, { signal,
     signal?.throwIfAborted();
     try {
       if (!page) page = await call('/api/cloud/guidance-jobs', { method: 'POST', body: { kind, input, requestToken: record.requestToken, ...(record.retryToken ? { retryToken: record.retryToken } : {}) } });
-      else page = await call(`/api/cloud/guidance-jobs/${page.job.id}${page.job.state === 'retry_wait' && page.job.retryAt <= Date.now() ? '/resume' : ''}`, { method: page.job.state === 'retry_wait' && page.job.retryAt <= Date.now() ? 'POST' : 'GET' });
+      else if (page.job.state === 'retry_wait' && page.job.retryAt <= Date.now()) page = await call(`/api/cloud/guidance-jobs/${page.job.id}/resume`, { method: 'POST' });
+      // A long-poll read holds server-side until the attempt settles, so the
+      // loop issues far fewer authenticated requests per action.
+      else page = await call(`/api/cloud/guidance-jobs/${page.job.id}?wait=1`, { method: 'GET', wait: true });
       networkFailures = 0;
       record.jobId = page.job.id; remember();
     } catch (error) {
@@ -60,8 +64,8 @@ export async function durableGuidance(request, makeError, kind, input, { signal,
     }
     if (page.job.state === 'succeeded') { clear(); return page.result; }
     if (page.job.state === 'failed') { clear(); throw makeError(page.result?.error || 'Generation needs another attempt. Your work is saved.', page.resultStatus || 503, page.result); }
-    onProgress(page.job.state === 'retry_wait' ? `Temporary model interruption. Retrying after the requested delay (attempt ${page.job.attempts + 1} of 3)…` : `Reading memo (attempt ${page.job.attempts} of 3)…`);
-    await pause(2000, signal);
+    onProgress(page.job.state === 'retry_wait' ? `Temporary model interruption. Retrying after the requested delay (attempt ${page.job.attempts + 1} of 3)…` : `${kind === 'map-check' ? 'Checking your map' : 'Reading memo'} (attempt ${page.job.attempts} of 3)…`);
+    await pause(page.job.state === 'retry_wait' ? 2000 : 250, signal);
   }
   throw makeError('Your request is saved. Reopen this map to check its progress.', 503, { details: { code: 'guidance_pending' } });
 }

@@ -97,7 +97,7 @@ test('layout undo restores positions without replacing annotations and the canva
 test('cumulative review exposes level results and reopens earlier revision without completing another level', async ({ page, makeAxeBuilder }, testInfo) => {
   await openProject(page);
   await page.locator('.app-footer').getByRole('button', { name: 'Review and export' }).click();
-  await expect(page.locator('.app-footer strong', { hasText: 'Review and export' })).toBeVisible();
+  await expect(page.locator('.app-footer [data-next-action]')).toHaveAttribute('data-next-action', /continue-level|complete-level|project-complete/);
   await page.locator('.project-overview > summary').click();
   await expect(page.getByRole('region', { name: 'Meso-level results' })).toContainText('1 mesosystem · 2 setting links');
   await expect(page.getByRole('region', { name: 'Macro-level results' })).toContainText('1 broader condition · 3 scope links');
