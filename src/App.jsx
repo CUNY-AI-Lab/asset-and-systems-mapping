@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow, ReviewPager } from './ui/StudioPrimitives.jsx';
+import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
 import { readInstitutionalSession } from './studentSession.js';
 import { userFacingError } from './userFacingError.js';
 import { courseWorkspacePath } from './courseContext.js';
@@ -9,6 +9,7 @@ import { useMapFontMetrics } from './ui/useMapFontMetrics.js';
 import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-judgments.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
+import { nextStep } from './nextStep.js';
 import { hasPendingGuidance } from './durableGuidance.js';
 import { exportMapImage, downloadBlob } from './mapExport.js';
 import MapListView from './MapListView.jsx';
@@ -1422,18 +1423,20 @@ function candidateStepsForScale(scale) {
   return ['nodes', 'edges', 'suggest'];
 }
 
-const CANDIDATE_BATCH_SIZE = 1;
 const MACRO_STRUCTURE_KINDS = MACROSPHERE_NODE_TYPES;
 
-function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy, onRequestRestart }) {
+// The full-screen Choose elements stage is a thin wrapper around the same
+// suggestion list the Studio panel shows beside the map.
+function CandidateStage(props) {
+  return <div className="wide stage-enter"><SuggestionsPanel variant="page" {...props} /></div>;
+}
+
+function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onRefreshCandidates, refreshBusy, onRequestRestart, onHighlight, variant = 'panel' }) {
   const candidateSteps = useMemo(() => candidateStepsForScale(project.activeScale), [project.activeScale]);
   const [step, setStep] = useState(() => candidateSteps[0]);
-  const [candidatePage, setCandidatePage] = useState({ nodes: 0, edges: 0 });
   useEffect(() => {
     if (!candidateSteps.includes(step)) setStep(candidateSteps[0]);
   }, [candidateSteps, step]);
-  const suggestionSetKey = stableId('suggestion-set', JSON.stringify(project.preflight?.memoReview || null));
-  useEffect(() => setCandidatePage({ nodes: 0, edges: 0 }), [project.activeScale, suggestionSetKey]);
   const activeCandidates = useMemo(() => ({
     nodes: project.candidates.nodes.filter((item) => item.scale === project.activeScale),
     edges: project.candidates.edges.filter((item) => item.scale === project.activeScale),
@@ -1610,7 +1613,6 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       item.claimState = status === 'research lead' ? 'research lead' : status === 'confirmed' ? 'student interpretation' : item.claimState;
       item.reviewDecision = status === 'research lead' ? 'set aside' : status === 'confirmed' ? 'added' : 'removed';
     }, `candidate.${status}`, id);
-    setCandidatePage((current) => ({ ...current, [kind]: Math.min((current[kind] || 0) + 1, Math.max(0, activeCandidates[kind].length - 1)) }));
   };
   const edit = (kind, id, field, value) => {
     const current = project.candidates[kind].find((candidate) => candidate.id === id);
@@ -1827,15 +1829,11 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
   </article>;
   });
   const decisionStep = step === 'nodes' || step === 'edges';
-  const candidatePageCount = decisionStep ? Math.max(1, Math.ceil(activeCandidates[step].length / CANDIDATE_BATCH_SIZE)) : 1;
-  const activeCandidatePage = decisionStep ? Math.min(candidatePage[step] || 0, candidatePageCount - 1) : 0;
-  const candidatePageStart = activeCandidatePage * CANDIDATE_BATCH_SIZE;
-  const visibleCandidateItems = decisionStep
-    ? activeCandidates[step].slice(candidatePageStart, candidatePageStart + CANDIDATE_BATCH_SIZE)
-    : [];
-  return <div className="wide stage-enter">
-    <PageHeading title={stepCopy[step].title} actions={decisionStep ? <Action variant="ghost" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Updating…' : 'Update suggestions'}</Action> : null} />
-    <LevelTrail active={project.activeScale} completed={project.completedScales} />
+  return <div className={`suggestions-panel suggestions-panel--${variant}`}>
+    {variant === 'page' && <>
+      <PageHeading title={stepCopy[step].title} actions={decisionStep ? <Action variant="ghost" disabled={Boolean(refreshBusy)} onClick={onRefreshCandidates}>{refreshBusy ? 'Updating…' : 'Update suggestions'}</Action> : null} />
+      <LevelTrail active={project.activeScale} completed={project.completedScales} />
+    </>}
     {candidateSteps.length > 1 && <div className="subnav candidate-steps" role="tablist" aria-label="Choose map items">
       {candidateSteps.map((id) => <button key={id} id={`candidate-tab-${id}`} role="tab" aria-controls="candidate-panel" aria-selected={step === id} tabIndex={step === id ? 0 : -1} data-composite-value={id} className={step === id ? 'is-active' : ''} onKeyDown={(event) => handleCompositeKey(event, candidateSteps, step, setStep)} onClick={() => setStep(id)}>{stepCopy[id].tab}</button>)}
     </div>}
@@ -1843,14 +1841,12 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
       <h2 id="carried-nodes-title">Micro settings</h2>
       {carriedNodes.length ? <div className="connection-node-list" aria-label="Micro-level settings available for mesosystems">{carriedNodes.map((node) => <span key={node.id}>{node.label}</span>)}</div> : <p className="empty-message">None yet. Switch to Micro-level and add settings first.</p>}
     </section>}
-    {decisionStep && <>
-      <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
-    </>}
+    {variant === 'page' && decisionStep && <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />}
     <div id="candidate-panel" role={candidateSteps.length > 1 ? 'tabpanel' : undefined} aria-labelledby={candidateSteps.length > 1 ? `candidate-tab-${step}` : undefined}>
       {decisionStep && <>
         {counts[step].total > 0 && <p className="candidate-progress" role="status">{counts[step].decided} of {counts[step].total} reviewed</p>}
         <div className="candidate-list">
-          {candidateRows(step, visibleCandidateItems, candidatePageStart)}
+          {candidateRows(step, activeCandidates[step], 0)}
           {!counts[step].total && <p className="empty-message">{step === 'nodes'
             ? project.activeScale === 'exosphere'
               ? 'No suggestions. Add a decision setting below.'
@@ -1863,7 +1859,6 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
               ? 'None yet. Ask for suggestions or add one on the map.'
               : 'None yet. Ask for suggestions or add one on the map.'}</p>}
         </div>
-        {candidatePageCount > 1 && <ReviewPager kind={step === 'nodes' ? 'Item' : 'Connection'} index={activeCandidatePage} total={counts[step].total} onPrevious={() => setCandidatePage((current) => ({ ...current, [step]: activeCandidatePage - 1 }))} onNext={() => setCandidatePage((current) => ({ ...current, [step]: activeCandidatePage + 1 }))} />}
       {step === 'nodes' && project.activeScale === 'meso' && <Disclosure title="Add mesosystem" className="manual-addition"><section className="elicitation-panel" aria-labelledby="add-meso-linkage-title">
           <h2 id="add-meso-linkage-title">New mesosystem</h2>
           <p className="lede">Connect at least two Micro settings</p>
@@ -1898,7 +1893,7 @@ function CandidateStage({ project, update, toast, prompt, onPromptChange, busy, 
           </div>
         </section></Disclosure>}
       </>}
-      {step === 'suggest' && <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} />}
+      {step === 'suggest' && <ConnectionStage project={project} prompt={prompt} onPromptChange={onPromptChange} busy={busy} suggestions={suggestions} onSuggest={onSuggest} onEdit={onEdit} onDecision={onDecision} onHighlight={onHighlight} />}
     </div>
   </div>;
 }
@@ -3292,8 +3287,7 @@ function AutoGrowingTextarea({ value, onChange, ...props }) {
   return <textarea {...props} ref={textareaRef} rows="2" value={value} onInput={fitContent} onChange={onChange} />;
 }
 
-function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision }) {
-  const [suggestionPage, setSuggestionPage] = useState(0);
+function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, onSuggest, onEdit, onDecision, onHighlight }) {
   const nodes = nodesForConnectionPrompt(project);
   const nodeIds = new Set(nodes.map((node) => node.id));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -3319,14 +3313,6 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
   const edges = [...new Map([...project.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)), ...keptCandidateEdges]
     .map((edge) => [edge.id, edge])).values()];
   const accepted = suggestions.filter((suggestion) => suggestion.status === 'confirmed' && !exospherePathwayIssue(suggestion)).length;
-  const suggestionPageCount = Math.max(1, Math.ceil(suggestions.length / CANDIDATE_BATCH_SIZE));
-  const activeSuggestionPage = Math.min(suggestionPage, suggestionPageCount - 1);
-  const suggestionPageStart = activeSuggestionPage * CANDIDATE_BATCH_SIZE;
-  const visibleSuggestions = suggestions.slice(suggestionPageStart, suggestionPageStart + CANDIDATE_BATCH_SIZE);
-  useEffect(() => {
-    setSuggestionPage((current) => Math.min(current, Math.max(0, suggestionPageCount - 1)));
-  }, [suggestionPageCount]);
-  useEffect(() => setSuggestionPage(0), [project.activeScale]);
   return <section className="connection-stage" aria-label="More connection suggestions">
     <p className="eyebrow">{nodes.length} selected nodes · {edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired').length} existing connections</p>
     <div className={`connection-stage__layout ${nodes.length > 6 ? 'is-dense' : ''}`}>
@@ -3343,15 +3329,16 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
       </section>
       <section className="connection-preview-panel" aria-labelledby="connection-preview-title">
         <div className="connection-preview-panel__title"><div><p className="eyebrow">Preview only</p><h2 id="connection-preview-title">Connection preview</h2></div>{suggestions.length > 0 && <strong>{accepted} added</strong>}</div>
-        <ConnectionPreview nodes={nodes} edges={edges} suggestions={visibleSuggestions} />
+        <ConnectionPreview nodes={nodes} edges={edges} suggestions={suggestions} />
       </section>
     </div>
     <section className="connection-suggestions" aria-labelledby="connection-suggestions-title">
       <div className="stage-title-row"><div><p className="eyebrow">Review</p><h2 id="connection-suggestions-title">Suggested connections</h2></div></div>
-      {visibleSuggestions.map((item, index) => {
+      {suggestions.map((item, index) => {
         const pathwayIssue = exospherePathwayIssue(item);
-        return <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id}>
-        <div className="candidate-row__count">{String(suggestionPageStart + index + 1).padStart(2, '0')}</div>
+        const highlight = () => onHighlight?.({ nodeIds: [item.source, item.target], edgeIds: [item.id] });
+        return <article className={`candidate-row candidate-row--${item.status.replaceAll(' ', '-')}`} key={item.id} onMouseEnter={highlight} onFocus={highlight} onMouseLeave={() => onHighlight?.(null)} onBlur={() => onHighlight?.(null)}>
+        <div className="candidate-row__count">{String(index + 1).padStart(2, '0')}</div>
         <div className="candidate-row__main">
           <div className="candidate-expression candidate-expression--edge connection-expression">
             <select aria-label={`Starting node for suggestion ${index + 1}`} value={item.source} onChange={(event) => onEdit(item.id, 'source', event.target.value)}>{endpointOptions(project.activeScale === 'exosphere' ? exosphereSources : nodes.filter((node) => node.id !== item.target), item.source).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select>
@@ -3368,7 +3355,6 @@ function ConnectionStage({ project, prompt, onPromptChange, busy, suggestions, o
       </article>;
       })}
       {!suggestions.length && <p className="empty-message">No connections suggested</p>}
-      {suggestionPageCount > 1 && <nav className="candidate-pagination" aria-label="Connection suggestion groups"><span>Suggestions {suggestionPageStart + 1}–{Math.min(suggestionPageStart + CANDIDATE_BATCH_SIZE, suggestions.length)} of {suggestions.length}</span><div><button type="button" disabled={activeSuggestionPage === 0} onClick={() => setSuggestionPage(activeSuggestionPage - 1)}>Previous</button><button type="button" disabled={activeSuggestionPage >= suggestionPageCount - 1} onClick={() => setSuggestionPage(activeSuggestionPage + 1)}>Next</button></div></nav>}
     </section>
   </section>;
 }
@@ -6652,18 +6638,18 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     toast(`Working at ${SCALES[scale].label}. The cumulative map and prior decisions remain.`);
   };
 
-  const primaryLabel = (() => {
-    if (project.stage === 0) return 'Memo review';
-    if (project.stage === 1) return 'Continue →';
-    if (project.stage === 2) return 'Open map';
-    if (project.stage === 3) return 'Review and export';
-    const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
-    return nextScale ? `Continue to ${SCALES[nextScale].label}` : project.completedScales.includes(project.activeScale) ? 'Project complete' : `Complete ${SCALES[project.activeScale].label}`;
-  })();
-
+  // One computed next action replaces the five-step footer. Rules live in
+  // nextStep.js and read saved project state only; stage records are unchanged.
+  const step = nextStep(project, { reviewBusy: Boolean(reviewBusy), retryPending: reviewRetryAt > Date.now(), initialModelRequired });
+  const runNextStep = () => {
+    switch (step.id) {
+      case 'start-review': setStage(1, { completed: true }); break;
+      case 'review-level': setStage(4, { completed: true }); break;
+      case 'project-complete': break;
+      default: void primary();
+    }
+  };
   const backDisabled = project.stage === 0;
-  const canPrimary = !(project.stage === 1 && (Boolean(reviewBusy) || reviewRetryAt > Date.now() || (initialModelRequired && !project.submission.text.trim())))
-    && !(project.stage === 4 && !SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1] && project.completedScales.includes(project.activeScale));
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
     projectActivationGenerationRef.current += 1;
     window.clearTimeout(persistTimer.current);
@@ -7304,7 +7290,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       {['error', 'validation'].includes(saveState.status) && <div className="workspace-save-notice" role="alert"><span>{saveState.status === 'validation' ? 'Finish the map item to save' : 'Changes are not saved'}</span><button type="button" onClick={() => setModal(saveState.status === 'validation' ? 'validation' : 'storage')}>{saveState.status === 'validation' ? 'Review issue' : 'Recover project'}</button></div>}
       {screen}
     </main>
-    <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><span className="step-position">Step {project.stage + 1}/{STAGES.length}</span>{project.stage !== 4 && <strong>{STAGES[project.stage].label}</strong>}</div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" disabled={!canPrimary} onClick={primary}>{primaryLabel}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer>
+    <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong><span className="next-step-detail">{step.detail}</span></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{step.label}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <SuggestionPreference project={project} update={update} />
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>
