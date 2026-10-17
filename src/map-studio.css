@@ -1,0 +1,44 @@
+/* Canvas-first Studio: level rail, work panel and next bar.
+   Layout tokens come from ui/design-system.css; the map grid, inspector slot
+   and full-screen rules stay in styles.css. */
+
+.level-rail ol { display: flex; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface-subtle); }
+.level-rail li { display: flex; }
+.level-rail li + li { border-left: 1px solid var(--line); }
+.level-rail button { display: inline-flex; align-items: center; gap: 8px; min-height: var(--control-height); padding: 0 14px; border: 0; background: transparent; color: var(--muted); font: 600 14px/1.2 var(--body); cursor: pointer; }
+.level-rail button:disabled { color: var(--line-strong); cursor: default; }
+.level-rail button:not(:disabled):hover { background: var(--surface-hover); color: var(--ink); }
+.level-rail button[aria-current="step"] { color: var(--ink); background: var(--pale-blue); box-shadow: inset 0 -3px var(--blue); }
+.level-rail__mark { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; font-size: 12px; }
+.level-rail .is-complete .level-rail__mark, .level-rail button[aria-current="step"] .level-rail__mark { border-color: var(--blue); color: var(--blue); }
+.level-rail button[aria-current="step"] .level-rail__mark { background: var(--blue); color: var(--surface); }
+
+.map-toolbar > div:first-child { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+
+.work-panel__tabs { position: sticky; top: 0; }
+.work-panel__tabs button:disabled { color: var(--line-strong); box-shadow: none; }
+.work-panel__body { padding: 14px 14px 22px; display: grid; gap: 14px; }
+.work-panel__body > .suggestions-panel { display: grid; gap: 12px; }
+.inspector .candidate-row { grid-template-columns: 1fr; }
+.inspector .candidate-row__count { display: none; }
+.inspector .candidate-actions { flex-wrap: wrap; }
+.inspector .candidate-steps { margin: 0; }
+.inspector .revision-grid, .inspector .export-strip { grid-template-columns: 1fr; }
+.inspector .studio-heading h1 { font-size: 22px; }
+.map-layout.has-inspector.is-panel-review { grid-template-columns: minmax(0, 1fr) minmax(380px, 44%); }
+.map-layout.has-inspector.is-panel-suggestions { grid-template-columns: minmax(0, 1fr) minmax(360px, 40%); }
+
+.next-step-detail { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.footer-context { min-width: 0; }
+
+.graph-node.is-dimmed, .graph-edge.is-dimmed, .graph-edge-label.is-dimmed { opacity: .32; }
+@media (forced-colors: active) { .graph-node.is-dimmed .node-card, .graph-edge.is-dimmed path { stroke-dasharray: 4 3; } }
+
+@media (max-width: 900px) {
+  .next-step-detail { display: none; }
+  .level-rail button { padding: 0 10px; font-size: 13px; }
+  .level-rail__mark { display: none; }
+  .inspector.is-expanded { max-height: calc(100dvh - var(--header) - var(--footer) - var(--safe-bottom)); }
+  .inspector .work-panel__expand { position: absolute; top: 6px; right: 10px; }
+  .canvas-wrap.is-inspector-open:not(.is-panel-inspector) .canvas-chrome { visibility: visible; pointer-events: auto; }
+}

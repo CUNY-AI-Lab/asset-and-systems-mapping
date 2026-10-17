@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GraphCanvas, MapStage } from './App.jsx';
 import { createDefaultProject } from './domain.js';
@@ -67,7 +67,7 @@ function projectFixture() {
   return project;
 }
 
-function renderMapStage({ phone = false } = {}) {
+function renderMapStage({ phone = false, extraProps = {} } = {}) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: phone ? 390 : 1280 });
   window.matchMedia = vi.fn((query) => ({
     matches: phone && query.includes('max-width: 600px'),
@@ -90,6 +90,7 @@ function renderMapStage({ phone = false } = {}) {
     commitAnnotationDrafts={vi.fn(() => ({ changed: false }))}
     flushSave={vi.fn()}
     onRequestRestart={vi.fn()}
+    {...extraProps}
   />), update };
 }
 
@@ -306,5 +307,22 @@ describe('map accessibility', () => {
     await waitFor(() => expect(inspector).not.toHaveAttribute('inert'));
     expect(details).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('tab', { name: 'Map' })).toHaveFocus();
+  });
+
+  it('keeps the work panel open for Suggestions and hands selection and Details back to the inspector mode', async () => {
+    const onPanelMode = vi.fn();
+    renderMapStage({ extraProps: { panel: { mode: 'suggestions', content: <p>Suggested items</p> }, onPanelMode, toolbarStart: <nav aria-label="Work level" /> } });
+    const panel = screen.getByRole('complementary', { name: 'Suggestions panel' });
+    expect(panel).not.toHaveAttribute('inert');
+    expect(within(panel).getByText('Suggested items')).toBeVisible();
+    expect(within(panel).getByRole('tab', { name: 'Suggestions' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(panel).queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Work level' })).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('tab', { name: 'Review' }));
+    expect(onPanelMode).toHaveBeenLastCalledWith('review');
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(onPanelMode).toHaveBeenLastCalledWith('inspector');
+    fireEvent.click(document.querySelector('[data-graph-id="node-rosa"]'));
+    expect(onPanelMode).toHaveBeenLastCalledWith('inspector');
   });
 });
