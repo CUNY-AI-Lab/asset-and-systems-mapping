@@ -33,27 +33,22 @@ Asset mapping gives this inquiry a practical starting point: residents' skills, 
 
 ## Student experience
 
-Students repeat five stages at each level. The stage menu provides a short purpose statement, and the footer identifies the current step and next action.
+After the memo exists, the student stays on the map. The canvas is the organizing surface for all four levels; the five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) are still kept per level for instructor aggregates, submitted revisions and exports, but the student sees them as panels around one map rather than as separate screens.
 
-| Stage | Student action | Result |
-| --- | --- | --- |
-| **Add memo** | Set the inquiry and upload or paste source material. | A shared memo and focus for the project. |
-| **Review memo** | Read the evidence and, if useful, request guidance after reviewing the transfer disclosure. | Optional suggestions and questions to assess. |
-| **Choose elements** | Edit suggestions, add supported items, and set open questions aside. | Explicit decisions about what enters the map. |
-| **Build map** | Arrange elements, inspect connections, and record evidence or notes. | An editable map that carries work across levels. |
-| **Revise and export** | Review the current level alongside earlier results, explain changes, and prepare an export. | A revised interpretation and a portable copy of the cumulative work. |
+| Surface | What it does |
+| --- | --- |
+| **Add memo** | The one full-screen stage. Set the inquiry and paste or upload the memo. |
+| **Level rail** | Micro · Meso · Exo · Macro above the canvas, with locked, current and complete states. Choosing a level switches work level; the cumulative map stays visible. |
+| **Suggestions** | Memo review and candidate decisions side by side: generate or refresh guidance, then **Add to map**, **Set aside**, or **Remove** each item in one list. "Add suggestions automatically" lives here. |
+| **Inspector** | Evidence, annotations and connections for the selected item, plus **Ask the map** on the Map tab and **Check this item / connection** for a selection. |
+| **Review** | The cumulative overview, the level reflection or Macro synthesis, submit revision, project link and exports. |
+| **Next action** | The footer shows one computed next step (read the memo, decide suggestions, add the structure the level still needs, record evidence, or continue) instead of a step counter. |
 
-Suggestions begin off the map and appear in groups of four. **Add to map**, **Set aside — needs evidence**, and **Remove** make each decision explicit. Generating guidance never commits a suggestion or edits the memo. Editing the memo preserves prior decisions and marks existing guidance for refresh.
+The first memo reading is an explicit choice (**Generate guidance**). Completing a level starts the next level's reading in the same click, so the Suggestions panel is already filling when the student arrives. Generating guidance never commits a suggestion or edits the memo.
 
-The memo stays available in a collapsed drawer after the first stage. Level explanations introduce what the student will use, add, and carry forward; the analytical boundary opens on request. Every stage remains available without a model response or instructor approval.
+### Map Check
 
-Each level keeps its own stage and revision note. Switching levels restores that context while preserving the cumulative graph. Completing the revision stage advances from Micro through Macro; completing Macro marks the project complete while leaving it available for revision and export. Students can also revisit an earlier level directly from the cumulative review without marking another level complete.
-
-### Reviewing results across levels
-
-**Cumulative map** provides a compact overview in the map inspector and revision stage. It opens into results for each available level: mapped elements, direct relationships or scope links, items to check for evidence, and suggestions set aside. Saved revision notes remain available with their level. The overview also counts recorded links that cross levels.
-
-These counts support review; they are not a score or proof of quality. An item is flagged for evidence review when it lacks a recorded passage or retains an unresolved, inferred, or contested status. At Macro-level, synthesis prompts ask students to answer the inquiry, weigh stronger and weaker claims, identify missing perspectives, and choose the next investigation or action.
+Map Check asks the course model to reason over the map the student has built, not to reread the memo. Three bounded checks exist: **Ask what's missing** at the current level, **Check this item** or **connection** for a selection, and **Draft a synthesis scaffold** on the Macro review. Each returns at most four short notes tied to map IDs, commits nothing, and runs as one attempt with the same course prompt appendix, limits and support IDs as memo guidance. Choosing an item in a note highlights it on the canvas.
 
 ## Working with the map
 

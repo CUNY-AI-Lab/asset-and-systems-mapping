@@ -164,3 +164,47 @@ database automatically because a code release failed. See the official
 After release, complete a real CUNY login, model action with a fabricated memo,
 map save/reload, export, second-account isolation, membership revocation and
 logout checks before describing this version as accepted for classroom use.
+
+## Dev Worker
+
+`wrangler.dev.jsonc` deploys the same code as `systems-mapping-dev` at
+`https://systems-mapping-dev.ailab-452.workers.dev`. It has its own Durable
+Object namespace, rate-limit counters and `PUBLIC_ORIGIN`; it shares nothing
+with production storage. The `IDENTITY` binding keeps `id: "systems-mapping"`,
+so the app's `cail:systems-mapping` audience check still verifies, and sets
+`worker: "systems-mapping-dev"`, from which Doorway derives the sign-in
+callback. No Doorway, Admission or Gateway change is needed for a dev Worker.
+
+Release from a clean, committed checkout with `pnpm deploy:dev`, which builds
+the account frontend, deploys with `RELEASE` set to the full commit, and runs
+the readiness receipt against the dev origin. `pnpm check:cloudflare:dev` is
+the dry run. Real CUNY sign-in, a model action and a saved-map reload on the
+dev origin remain separate human acceptance, as for production.
+
+First deployment: 2026-10-17 from commit `c894c9655fa100cf88fa0d74538096c0886cbbed`,
+version `790fe04e-c73d-43b4-bd2f-b51556a391e3`; health, release marker and the
+anonymous 401 passed. Production was not redeployed.
+
+## Guidance jobs: long-poll reads
+
+`GET /api/cloud/guidance-jobs/<id>?wait=1` holds inside the Durable Object for
+up to 20 seconds while the attempt it owns is running, then returns the current
+page. The browser uses this form with a 30-second request budget and a short
+pause between reads, so one guidance action costs about one authenticated read
+every 20 seconds instead of one every 2 seconds. Retry waits and resumes are
+unchanged. A job whose attempt runs on another instance returns at once and the
+browser falls back to ordinary polling.
+
+## Map Check
+
+`POST /api/map/check` (job kind `map-check`) sends the carried map as
+`carriedNodes` and `carriedConnections`, memberships as `scopes`, an optional
+focus, the student judgments and at most 4,000 characters of memo excerpt. It
+never sends the whole memo. The response is `{ notes: [{ kind, point, refs }] }`
+with 1 to 4 notes, each `ref` an ID from the request; the validator rejects
+anything else and no corrective paid retry is made. Intents: `gaps` and
+`connection` use the `build-map` stage guidance; `synthesis` is Macro-only and
+uses `revise-and-export`. The published course appendix applies through the
+builder prompt. Output budget is 1,024 completion tokens; the Gateway session
+label is `systems-mapping-map-check`. Logging is unchanged: outcomes only.
+
