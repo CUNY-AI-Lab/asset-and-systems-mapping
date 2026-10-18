@@ -16,17 +16,20 @@ html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__ac
 .account-save{font-size:.75rem;max-width:10rem;line-height:1.2;color:var(--muted)}
 @media(max-width:900px){.account-save{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
 
-/* Signed-out landing: the hero sits a third of the way down instead of centred, and the
-   Noll drawing takes the remaining two thirds with no frame or background of its own. */
-.account-landing{align-content:start;grid-template-rows:minmax(0,.4fr) auto minmax(0,3fr);margin-top:0;margin-bottom:0;padding:0 0 16px;min-height:0}
-.account-landing__hero{grid-row:2;display:grid}
-.account-landing__noll{grid-row:3;min-height:clamp(200px,34vh,460px);margin-top:clamp(96px,11vh,150px)}
+/* Signed-out landing. The hero starts a fifth of the way down the viewport (the shell header
+   is 85px of that), and the Noll drawing takes whatever height remains, so the page never
+   scrolls. Two classes so this outranks the later design-system .access-main rule. */
+.access-main.account-landing{flex:1;min-height:0;display:grid;align-content:start;grid-template-rows:auto minmax(0,1fr);margin:0 auto;padding:max(16px,calc(20dvh - 85px)) 0 12px}
+.account-landing__hero{grid-row:1;display:grid}
+.account-landing__noll{grid-row:2;min-height:160px;margin-top:clamp(96px,11vh,150px)}
 .noll-sketch{position:relative;display:grid;color:var(--ink)}
-.noll-sketch__surface{display:block;width:100%;height:100%;min-height:inherit;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:inherit;cursor:pointer;appearance:none;touch-action:manipulation}
+.noll-sketch__surface{position:relative;display:block;width:100%;height:100%;min-height:inherit;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:inherit;cursor:pointer;appearance:none;touch-action:manipulation;overflow:hidden}
 .noll-sketch__surface:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
-.noll-sketch__surface canvas{display:block;width:100%;height:100%}
+/* Out of flow: the canvas's device-pixel size must never feed back into the layout height. */
+.noll-sketch__surface canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
 .noll-sketch__credit{position:absolute;right:0;bottom:0;margin:0;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase;pointer-events:none}
 @media (max-width:600px){
-  .account-landing__noll{min-height:200px;margin-top:96px}
+  .access-main.account-landing{padding-top:max(16px,calc(18dvh - 110px))}
+  .account-landing__noll{min-height:160px;margin-top:96px}
   .noll-sketch__credit{font-size:10px}
 }
