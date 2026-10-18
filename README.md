@@ -54,7 +54,7 @@ Map Check asks the course model to reason over the map the student has built, no
 
 The canvas uses concentric ecological regions and restrained level colors. **All layers** shows cumulative work; the layer selector isolates one level without deleting hidden records. **List** provides an alternative way to inspect map items.
 
-Selecting an element opens its inspector. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
+Selecting an element opens its inspector. On desktop the whole layer stays on the canvas: the selection and its one-hop neighbourhood stay bright, every incident relationship shows its label, and everything else dims until **Show full map**. Phones keep the compact detail view that shows one relationship at a time. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
 
 The default view keeps detailed evidence, map controls, and cumulative results collapsed until needed. **Details** opens map notes and controls even when no element is selected. Closing the inspector returns keyboard focus to the selected canvas item or the list control that opened it.
 
@@ -81,7 +81,7 @@ optimistic revisions. An unsynced browser copy is preserved when a save fails
 or another session changes the map. Explicit project links keep their existing
 sharing, expiry, and revocation behavior and reopen after CUNY sign-in.
 
-**Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
+Exports live behind one **Export & share** disclosure on the Review panel, grouped as *Show the map* (PNG, PDF, project link) and *Save or reuse* (JSON, CSV, Markdown, import). **Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
 
 - **JSON** preserves a reopenable project with stable IDs and layout, subject to the selected audience's redactions. Import validates the file before replacing the open project.
 - **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.

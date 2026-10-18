@@ -13,6 +13,7 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.getByRole('article',{name:'East Harlem disability resources'}).getByRole('button',{name:'Open project'}).click();
   await expect(page.getByRole('heading',{name:'Review and export'})).toBeVisible();
+  await page.locator('.export-dropdown > summary').click();
   for (const [label,ext] of [['PNG image','png'],['PDF','pdf']]) {
     const pending=page.waitForEvent('download');await page.getByRole('button',{name:label,exact:true}).click();
     const download=await pending;const path=testInfo.outputPath(`cumulative-map.${ext}`);await download.saveAs(path);

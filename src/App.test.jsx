@@ -3503,7 +3503,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(rectsIntersect(labelBounds[0], labelBounds[1])).toBe(false);
   });
 
-  it('keeps a dense Micro overview in its band and opens one clear between-endpoint relationship at a time', async () => {
+  it('keeps a dense Micro overview in its band and lights every incident relationship on selection', async () => {
     const project = makeDenseFocusedMesoProject(5);
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
@@ -3525,31 +3525,32 @@ Overall, the posting history documents a working student repeatedly turning to R
       }));
     });
 
+    const renderedBefore = [...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id'));
+    const renderedEdgeIds = new Set([...document.querySelectorAll('.graph-edge')].map((edge) => edge.getAttribute('data-graph-id')));
+    const incident = project.graph.edges.filter((edge) => renderedEdgeIds.has(edge.id) && (edge.source === 'node-dense-focus' || edge.target === 'node-dense-focus'));
     const inspector = openNodeInspector('node-dense-focus');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
+    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
+
+    // Desktop keeps the whole band on the canvas, dims what is outside the one-hop
+    // neighbourhood, and labels every incident relationship at once.
+    expect(mapCanvas()).not.toHaveClass('is-detail-view');
+    expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id'))).toEqual(renderedBefore);
     const labels = [...document.querySelectorAll('.graph-edge-label')];
-    expect(labels).toHaveLength(1);
-    const label = labels[0];
-    const edge = project.graph.edges.find((candidate) => candidate.id === label.getAttribute('data-edge-id'));
-    const bounds = svgRectBounds(label.querySelector('.edge-label-bg'));
-    const visibleBounds = transformedRectBounds(bounds);
-    const source = renderedNodePosition(edge.source);
-    const target = renderedNodePosition(edge.target);
-    const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
-    const delta = { x: target.x - source.x, y: target.y - source.y };
-    const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
-    expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
-    expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(edge.verb);
-    [...document.querySelectorAll('.graph-node')].forEach((node) => {
-      expect(rectsIntersect(bounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false);
+    expect(labels.map((label) => label.getAttribute('data-edge-id')).sort()).toEqual(incident.map((edge) => edge.id).sort());
+    labels.forEach((label) => {
+      const edge = incident.find((candidate) => candidate.id === label.getAttribute('data-edge-id'));
+      expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(edge.verb);
     });
-    expect(projection).toBeGreaterThan(0);
-    expect(projection).toBeLessThan(1);
-    expect(visibleBounds.left).toBeGreaterThanOrEqual(0);
-    expect(visibleBounds.right).toBeLessThanOrEqual(840);
-    expect(visibleBounds.top).toBeGreaterThanOrEqual(0);
-    expect(visibleBounds.bottom).toBeLessThanOrEqual(540);
+    const neighbourhood = new Set(['node-dense-focus', ...incident.flatMap((edge) => [edge.source, edge.target])]);
+    [...document.querySelectorAll('.graph-node')].forEach((node) => {
+      if (neighbourhood.has(node.getAttribute('data-graph-id'))) expect(node).not.toHaveClass('is-dimmed');
+      else expect(node).toHaveClass('is-dimmed');
+    });
+    [...document.querySelectorAll('.graph-edge')].forEach((edge) => {
+      if (incident.some((candidate) => candidate.id === edge.getAttribute('data-graph-id'))) expect(edge).not.toHaveClass('is-dimmed');
+      else expect(edge).toHaveClass('is-dimmed');
+    });
     expect(storedProject().graph.nodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })))
       .toEqual(graphBefore.nodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })));
   });
@@ -4196,7 +4197,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     const inspector = screen.getByLabelText('Map inspector');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
-    expect(mapCanvas()).toHaveClass('is-detail-view');
+    // Desktop dims the rest of the layer instead of entering detail.
+    expect(mapCanvas()).not.toHaveClass('is-detail-view');
+    expect(document.querySelector('.graph-node.is-dimmed')).not.toBeNull();
 
     resizeTo(390);
     await waitFor(() => {
@@ -4222,10 +4225,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
 
     resizeTo(1024);
-    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
+    await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
+    expect(document.querySelector('.graph-node.is-dimmed')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     await waitFor(() => {
-      expect(mapCanvas()).not.toHaveClass('is-detail-view');
+      expect(document.querySelector('.is-dimmed')).toBeNull();
       expectVisibleNodesAndConnectionLabelsInsideCanvas();
     });
     const visibleIds = [...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id'));
@@ -4235,7 +4239,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().viewport).toEqual(durableViewport);
   });
 
-  it('shows a distant cross-layer ecology relationship in a compact readable detail without changing its durable map', async () => {
+  it('shows a distant cross-layer ecology relationship in a compact readable phone detail without changing its durable map', async () => {
+    installPhoneLayout();
     const project = makeCrossLayerEcologyProject();
     const durableGraph = structuredClone(project.graph);
     const durableViewport = { ...project.viewport };
@@ -4297,7 +4302,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(mapCanvas()).not.toHaveClass('is-detail-view');
       expectVisibleNodesAndConnectionLabelsInsideCanvas();
     });
-    durableGraph.nodes.forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
+    // Phone overview geometry is transient; the durable graph is asserted below.
     expect(document.querySelector('.ecology-layers')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Arrange map' })).toBeVisible();
     expect(storedProject().graph).toEqual(durableGraph);
@@ -4306,7 +4311,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
   it.each([
     ['micro', 'determines daytime course availability for'],
-  ])('keeps the complete %s relationship label clear of both endpoint cards in desktop detail', async (activeScale, verb) => {
+  ])('keeps the complete %s relationship label clear of both endpoint cards when selected on desktop', async (activeScale, verb) => {
     const project = makeMapProject('exosphere');
     project.activeScale = activeScale;
     const edge = project.graph.edges.find((candidate) => candidate.scale === activeScale);
@@ -4320,7 +4325,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const expectClearOverviewLabel = (label) => {
       const labelBounds = svgRectBounds(label.querySelector('.edge-label-bg'));
       const visibleBounds = transformedRectBounds(labelBounds);
-      expect(['direct', 'between-endpoints']).toContain(label.getAttribute('data-edge-route'));
+      expect(['direct', 'between-endpoints', 'between-endpoints-tight']).toContain(label.getAttribute('data-edge-route'));
       expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(verb);
       expect(label).not.toHaveTextContent('…');
       const source = renderedNodePosition(edge.source);
@@ -4338,7 +4343,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(visibleBounds.top).toBeGreaterThanOrEqual(0);
       expect(visibleBounds.bottom).toBeLessThanOrEqual(540);
       const path = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d');
-      if (label.getAttribute('data-edge-route') === 'between-endpoints') {
+      if (label.getAttribute('data-edge-route').startsWith('between-endpoints')) {
         expect(path).toContain(`L ${label.getAttribute('data-anchor-x')} ${label.getAttribute('data-anchor-y')} L`);
       } else {
         expect(path).toMatch(/^M -?[\d.]+ -?[\d.]+ L -?[\d.]+ -?[\d.]+$/);
@@ -4352,42 +4357,27 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.keyDown(renderedEdge, { key: 'Enter' });
     const inspector = screen.getByLabelText('Map inspector');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
+    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
 
-    const detailLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    const labelBounds = {
-      left: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('x')),
-      top: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('y')),
-      right: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('x')) + Number(detailLabel.querySelector('.edge-label-bg').getAttribute('width')),
-      bottom: Number(detailLabel.querySelector('.edge-label-bg').getAttribute('y')) + Number(detailLabel.querySelector('.edge-label-bg').getAttribute('height')),
-    };
-    const endpointBounds = [edge.source, edge.target].map((nodeId) => {
-      const group = document.querySelector(`.graph-node[data-graph-id="${nodeId}"]`);
-      return translatedRectBounds(group, group.querySelector('.node-card'));
+    // Desktop keeps the whole layer on the canvas; the selected relationship keeps its
+    // complete, clear label while everything outside it dims.
+    expect(mapCanvas()).not.toHaveClass('is-detail-view');
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(activeGraph.nodes.length);
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(activeGraph.edges.length);
+    expect([...document.querySelectorAll('.graph-edge-label')].map((label) => label.getAttribute('data-edge-id'))).toEqual([edge.id]);
+    expectClearOverviewLabel(document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`));
+    expect(document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`)).not.toHaveClass('is-dimmed');
+    activeGraph.nodes.forEach((node) => {
+      const rendered = document.querySelector(`.graph-node[data-graph-id="${node.id}"]`);
+      if ([edge.source, edge.target].includes(node.id)) expect(rendered).not.toHaveClass('is-dimmed');
+      else expect(rendered).toHaveClass('is-dimmed');
     });
-
-    expect(detailLabel).toHaveAttribute('data-edge-route', 'between-endpoints');
-    expect(svgTextLines(detailLabel.querySelector('.edge-label')).join('')).toBe(verb);
-    expect(detailLabel).not.toHaveTextContent('…');
-    expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort())
-      .toEqual([edge.source, edge.target].sort());
-    endpointBounds.forEach((nodeBounds) => expect(rectsIntersect(labelBounds, nodeBounds)).toBe(false));
-    const view = viewportTransform();
-    expect(labelBounds.left * view.zoom + view.panX).toBeGreaterThanOrEqual(0);
-    expect(labelBounds.right * view.zoom + view.panX).toBeLessThanOrEqual(840);
-    expect(labelBounds.top * view.zoom + view.panY).toBeGreaterThanOrEqual(0);
-    expect(labelBounds.bottom * view.zoom + view.panY).toBeLessThanOrEqual(540);
-    const detailPath = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d');
-    expect(detailPath).toContain(`L ${detailLabel.getAttribute('data-anchor-x')} ${detailLabel.getAttribute('data-anchor-y')} L`);
-    const [pathStart, pathAnchor, pathEnd] = focusedRoutePoints(detailPath);
-    expect(segmentCrossesRectInterior(pathStart, pathAnchor, endpointBounds[1])).toBe(false);
-    expect(segmentCrossesRectInterior(pathAnchor, pathEnd, endpointBounds[0])).toBe(false);
     expect(storedProject().graph).toEqual(graphBefore);
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
-    await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
-    const restoredLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    expectClearOverviewLabel(restoredLabel);
+    await waitFor(() => expect(document.querySelector('.map-focus-bar')).toBeNull());
+    expect(document.querySelector('.is-dimmed')).toBeNull();
+    expectClearOverviewLabel(document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`));
     expect(document.querySelectorAll('.graph-node')).toHaveLength(activeGraph.nodes.length);
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(activeGraph.edges.length);
     expect(storedProject().graph).toEqual(graphBefore);
@@ -4409,7 +4399,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     const labelForEdge = () => document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    expect(labelForEdge()).toHaveAttribute('data-edge-route', 'between-endpoints');
+    expect(labelForEdge()).toHaveAttribute('data-edge-route', expect.stringMatching(/^between-endpoints/));
     const canvas = mapCanvas();
     const targetElement = document.querySelector(`.graph-node[data-graph-id="${target.id}"]`);
     canvas.getScreenCTM = () => ({ inverse: () => ({}) });
@@ -4445,7 +4435,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
   });
 
-  it('fits a maximum-length relationship label inside desktop detail without covering either endpoint', async () => {
+  it('fits a maximum-length relationship label inside phone detail without covering either endpoint', async () => {
+    installPhoneLayout();
     const project = makeMapProject('exosphere');
     project.activeScale = 'micro';
     const edge = project.graph.edges.find((candidate) => candidate.scale === 'micro');
@@ -4465,7 +4456,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       const detailLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
       const labelBounds = svgRectBounds(detailLabel.querySelector('.edge-label-bg'));
       const visibleBounds = transformedRectBounds(labelBounds);
-      expect(detailLabel).toHaveAttribute('data-edge-route', 'between-endpoints');
+      expect(detailLabel).toHaveAttribute('data-edge-route', expect.stringMatching(/^between-endpoints/));
       expect(svgTextLines(detailLabel.querySelector('.edge-label')).join('')).toBe(maximumLengthVerb);
       expect(detailLabel.getAttribute('data-full-label')).toBe(maximumLengthVerb);
       expect(detailLabel).not.toHaveTextContent('…');
@@ -4489,7 +4480,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('pages through every relationship in a dense desktop node focus without shrinking or obscuring the map', async () => {
+  it('pages through every relationship in a dense phone node focus without shrinking or obscuring the map', async () => {
+    installPhoneLayout();
     const project = makeDenseFocusedMesoProject();
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
@@ -4512,7 +4504,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         .toEqual([edge.source, edge.target].sort());
       const bounds = svgRectBounds(label.querySelector('.edge-label-bg'));
       const visibleBounds = transformedRectBounds(bounds);
-      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
+      expect(label).toHaveAttribute('data-edge-route', expect.stringMatching(/^between-endpoints/));
       expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(edge.verb);
       expect(label).not.toHaveTextContent('…');
       [...document.querySelectorAll('.graph-node')].forEach((node) => {
@@ -4551,7 +4543,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('refits a focused node after an incident relationship is added but preserves its viewport for annotation-only updates', async () => {
+  it('refits a phone-focused node after an incident relationship is added but preserves its viewport for annotation-only updates', async () => {
+    installPhoneLayout();
     const project = makeDenseFocusedMesoProject(2);
     const secondNeighbor = project.graph.nodes.find((node) => node.id === 'node-dense-neighbor-2');
     project.graph.edges = project.graph.edges.slice(0, 1);
@@ -4660,7 +4653,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(savedPositions);
   });
 
-  it('focuses a node on its one-hop neighborhood and restores the active-scale view without changing graph data', async () => {
+  it('dims everything outside the one-hop neighborhood of a node and restores the active-scale view without changing graph data', async () => {
     const project = await openMapProject();
     const active = graphForScale(project, 'all');
     const focusNode = active.nodes.find((node) => active.edges.some((edge) => edge.source === node.id || edge.target === node.id));
@@ -4670,39 +4663,29 @@ Overall, the posting history documents a working student repeatedly turning to R
     const inspector = openNodeInspector(focusNode.id);
     const focusBar = document.querySelector('.map-focus-bar');
     expect(focusBar).toHaveTextContent(`Showing connections for ${focusNode.label}.`);
-    expect(focusBar).toHaveTextContent(`Relationship 1 of ${incident.length}`);
+    expect(focusBar).not.toHaveTextContent('Relationship 1 of');
+    expect(screen.queryByRole('button', { name: 'Next relationship' })).not.toBeInTheDocument();
     expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(document.querySelector('.map-layout')).toHaveClass('has-inspector');
-    expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort()).toEqual([incident[0].source, incident[0].target].sort());
-    expect([...document.querySelectorAll('.graph-edge')].map((edge) => edge.getAttribute('data-graph-id'))).toEqual([incident[0].id]);
-    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(1);
-    const focusedNodeBounds = [...document.querySelectorAll('.graph-node')].map((group) => translatedRectBounds(group, group.querySelector('.node-card')));
-    const focusedLabelBounds = [...document.querySelectorAll('.graph-edge-label')].map((label) => {
-      const background = label.querySelector('.edge-label-bg');
-      const bounds = {
-        left: Number(background.getAttribute('x')),
-        top: Number(background.getAttribute('y')),
-        right: Number(background.getAttribute('x')) + Number(background.getAttribute('width')),
-        bottom: Number(background.getAttribute('y')) + Number(background.getAttribute('height')),
-      };
-      expect(label).toHaveAttribute('data-edge-route', 'between-endpoints');
-      expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(label.getAttribute('data-full-label'));
-      expect(label).not.toHaveTextContent('…');
-      focusedNodeBounds.forEach((nodeBounds) => expect(rectsIntersect(bounds, nodeBounds)).toBe(false));
-      return bounds;
+    // Every element stays on the canvas: the one-hop neighbourhood stays bright, the rest dims,
+    // and every incident relationship shows its label at once.
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(active.nodes.length);
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(active.edges.length);
+    const neighbourhood = new Set([focusNode.id, ...incident.flatMap((edge) => [edge.source, edge.target])]);
+    [...document.querySelectorAll('.graph-node')].forEach((node) => {
+      if (neighbourhood.has(node.getAttribute('data-graph-id'))) expect(node).not.toHaveClass('is-dimmed');
+      else expect(node).toHaveClass('is-dimmed');
     });
-    expect(focusedLabelBounds).toHaveLength(1);
-    expectVisibleNodesAndConnectionLabelsInsideCanvas();
-    if (incident.length > 1) {
-      fireEvent.click(screen.getByRole('button', { name: 'Next relationship' }));
-      await waitFor(() => expect(focusBar).toHaveTextContent(`Relationship 2 of ${incident.length}`));
-      expect([...document.querySelectorAll('.graph-edge')].map((edge) => edge.getAttribute('data-graph-id'))).toEqual([incident[1].id]);
-      expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort()).toEqual([incident[1].source, incident[1].target].sort());
-    }
+    [...document.querySelectorAll('.graph-edge')].forEach((edge) => {
+      if (incident.some((candidate) => candidate.id === edge.getAttribute('data-graph-id'))) expect(edge).not.toHaveClass('is-dimmed');
+      else expect(edge).toHaveClass('is-dimmed');
+    });
+    expect([...document.querySelectorAll('.graph-edge-label')].map((label) => label.getAttribute('data-edge-id')).sort()).toEqual(incident.map((edge) => edge.id).sort());
     expect(storedProject().graph).toEqual(graphBefore);
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     expect(document.querySelector('.map-focus-bar')).toBeNull();
+    expect(document.querySelector('.is-dimmed')).toBeNull();
     expect(screen.getByLabelText('Map inspector')).toHaveAttribute('aria-hidden', 'true');
     expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
     expect(document.querySelectorAll('.graph-node')).toHaveLength(active.nodes.length);
@@ -5007,7 +4990,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const stages = screen.getByRole('dialog', { name: 'Progress' });
     fireEvent.click(within(stages).getByRole('button', { name: /review and export/i }));
     expect(await screen.findByRole('heading', { name: 'Review and export' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
+    fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
 
     const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
     expect(within(dialog).getByText('The export was not created because one map item needs attention.')).toBeVisible();
@@ -5422,7 +5405,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(screen.getByText('Memo imported')).toBeInTheDocument();
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
+      fireEvent.click(screen.getByRole('button', { name: /^CSV/ }));
       expect(blobs).toHaveLength(1);
       expect(blobs[0].type).toBe('text/csv');
       const csv = blobs[0].parts.join('');
@@ -5438,7 +5421,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(csv).not.toContain('claim_state');
       expect(csv).not.toContain('"confirmed"');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Markdown' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Markdown/ }));
       expect(blobs).toHaveLength(2);
       const markdown = blobs[1].parts.join('');
       expect(markdown).toContain('## Memo');

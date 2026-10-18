@@ -290,7 +290,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.getByRole('button', { name: 'Progress', exact: true }).click();
     await page.getByRole('dialog', { name: 'Progress' }).getByRole('button', { name: 'Review and export', exact: true }).click();
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'JSON', exact: true }).click();
+    await page.locator('.export-dropdown > summary').click();
+    await page.getByRole('button', { name: /^JSON/ }).click();
     const exported = JSON.parse(await readFile(await (await download).path(), 'utf8'));
     expect(exported.mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
     expect(exported.graph.nodes.map(node => node.id)).toEqual(stored.graph.nodes.map(node => node.id));

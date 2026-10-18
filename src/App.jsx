@@ -4022,10 +4022,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const activeFocusPage = Math.min(focusPage, focusPageCount - 1);
   const focusedEdgeIds = useMemo(() => {
     if (!focus) return new Set();
-    if (focus.kind === 'edge') return new Set(focusIncidentEdges.map((edge) => edge.id));
+    if (focus.kind === 'edge' || !phoneLayout) return new Set(focusIncidentEdges.map((edge) => edge.id));
     const start = activeFocusPage * FOCUSED_RELATIONSHIPS_PER_PAGE;
     return new Set(focusIncidentEdges.slice(start, start + FOCUSED_RELATIONSHIPS_PER_PAGE).map((edge) => edge.id));
-  }, [activeFocusPage, focus, focusIncidentEdges]);
+  }, [activeFocusPage, focus, focusIncidentEdges, phoneLayout]);
   useEffect(() => {
     if (focusPage < focusPageCount) return;
     setFocusPage(Math.max(0, focusPageCount - 1));
@@ -4040,7 +4040,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     });
     // Focusing a structure lights its whole field: the structure and every
     // mapped element inside its reach.
-    if (focus.kind === 'node' && focusIncidentEdges.length === 0) {
+    if (focus.kind === 'node') {
       const focusedNode = scaleNodes.find((node) => node.id === focus.id);
       (focusedNode?.scopeNodeIds || []).forEach((memberId) => {
         if (scaleNodeIds.has(memberId)) ids.add(memberId);
@@ -4049,7 +4049,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     return ids;
   }, [focus, focusedEdgeIds, focusIncidentEdges.length, scaleEdges, scaleNodes, scaleNodeIds]);
   const focusActive = focusedNodeIds.size > 0;
-  const visibleNodes = useMemo(() => focusActive ? scaleNodes.filter((node) => focusedNodeIds.has(node.id)) : scaleNodes, [focusActive, scaleNodes, focusedNodeIds]);
+  const visibleNodes = useMemo(() => phoneLayout && focusActive ? scaleNodes.filter((node) => focusedNodeIds.has(node.id)) : scaleNodes, [phoneLayout, focusActive, scaleNodes, focusedNodeIds]);
   const phoneFocusedEdge = phoneLayout && focus?.kind === 'edge' ? scaleEdges.find((edge) => edge.id === focus.id) : null;
   const phoneOverviewScope = phoneLayout && mapMode === 'network' && !phoneFocusedEdge && visibleNodes.length
     ? `${visibleScale}:${focus?.kind || 'overview'}:${focus?.id || 'all'}:${visibleNodes.map((node) => `${node.id}:${node.label}`).join('|')}`
@@ -4073,12 +4073,12 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     ? scaleEdges.find((edge) => focusedEdgeIds.has(edge.id))
     : null;
   const focusedRelationshipPositions = useMemo(() => (
-    mapMode === 'ecology' && focusActive && visibleNodes.length === 2
+    phoneLayout && mapMode === 'ecology' && focusActive && visibleNodes.length === 2
       ? arrangedFocusedRelationshipPositions(visibleNodes, focusedRelationshipEdge, phoneLayout)
       : null
   ), [focusActive, focusedRelationshipEdge, fontRevision, mapMode, phoneLayout, visibleNodes]);
   const focusedEcologyPositions = useMemo(() => (
-    mapMode === 'ecology' && focusActive && !phoneRelationshipDetail
+    phoneLayout && mapMode === 'ecology' && focusActive && !phoneRelationshipDetail
       ? focusedRelationshipPositions || arrangedFocusedEcologyPositions(visibleNodes, phoneLayout)
       : null
   ), [focusActive, focusedRelationshipPositions, fontRevision, mapMode, phoneLayout, phoneRelationshipDetail, visibleNodes]);
@@ -4090,10 +4090,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     ...(phoneEcologyPositions?.get(node.id) || {}),
     ...(focusedEcologyPositions?.get(node.id) || {}),
     ...(phoneRelationshipPositions?.get(node.id) || {}),
-    visualDimmed: highlightActive && !highlightNodeIds.has(node.id),
-  })), [automaticPositions, focusedEcologyPositions, highlightActive, highlightNodeIds, phoneEcologyPositions, phoneOverviewPositions, phoneRelationshipPositions, visibleNodes]);
+    visualDimmed: highlightActive ? !highlightNodeIds.has(node.id) : !phoneLayout && focusActive && !focusedNodeIds.has(node.id),
+  })), [automaticPositions, focusedEcologyPositions, highlightActive, highlightNodeIds, phoneLayout, focusActive, focusedNodeIds, phoneEcologyPositions, phoneOverviewPositions, phoneRelationshipPositions, visibleNodes]);
   const visibleEdges = useMemo(() => {
-    const shown = focusActive ? scaleEdges.filter((edge) => focusedEdgeIds.has(edge.id)) : scaleEdges;
+    const shown = phoneLayout && focusActive ? scaleEdges.filter((edge) => focusedEdgeIds.has(edge.id)) : scaleEdges;
     const overview = !focusActive && visibleScale === 'all';
     const denseMicroOverview = !focusActive
       && visibleScale === 'micro'
@@ -4109,14 +4109,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       const group = layerLayouts.get(edge.scale) || [edge];
       return {
         ...edge,
-        showLabel: (visibleScale !== 'all' || focusActive) && !denseMicroOverview,
+        showLabel: focusActive ? focusedEdgeIds.has(edge.id) : visibleScale !== 'all' && !denseMicroOverview,
         visualMuted: overview,
-        visualDimmed: highlightActive && !highlightEdgeIds.has(edge.id) && !(highlightNodeIds.has(edge.source) && highlightNodeIds.has(edge.target)),
+        visualDimmed: highlightActive ? !highlightEdgeIds.has(edge.id) && !(highlightNodeIds.has(edge.source) && highlightNodeIds.has(edge.target)) : !phoneLayout && focusActive && !focusedEdgeIds.has(edge.id),
         layerEdgeSlot: group.findIndex((candidate) => candidate.id === edge.id),
         layerEdgeCount: group.length,
       };
     });
-  }, [focusActive, scaleEdges, focusedEdgeIds, visibleScale, highlightActive, highlightEdgeIds, highlightNodeIds]);
+  }, [phoneLayout, focusActive, scaleEdges, focusedEdgeIds, visibleScale, highlightActive, highlightEdgeIds, highlightNodeIds]);
   const visibleRelationshipBounds = useMemo(() => {
     const positions = new Map(displayedNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     const bounds = focusedEcologyCalloutBounds(visibleEdges, displayedNodes, positions, phoneLayout);
@@ -4888,7 +4888,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const inspectorTabs = ['meso', 'macrosphere'].includes(visibleScale) && !selectedEdge
     ? INSPECTOR_TABS.filter((tab) => tab !== 'relationships')
     : INSPECTOR_TABS;
-  const focusHasRelationshipPages = focus?.kind === 'node' && focusIncidentEdges.length > 0;
+  const focusHasRelationshipPages = phoneLayout && focus?.kind === 'node' && focusIncidentEdges.length > 0;
   const mapOverviewHint = visibleScale === 'meso'
     ? 'Select a mesosystem to view its settings'
     : visibleScale === 'macrosphere'
@@ -5198,7 +5198,17 @@ function ReviewPanel({ onProjectLink, project, update, replaceProject, toast, lo
       </section>
       <details className="history-panel"><summary><span>Revision history</span><strong>{project.events.length} changes</strong></summary><ol className="timeline">{[...project.events].reverse().slice(0, 14).map((event) => { const presented = revisionEventCopy(event); return <li key={event.id}><span className="timeline__dot" /><div><strong>{presented.label}</strong>{presented.detail && <p>{presented.detail}</p>}<small>{new Date(event.at).toLocaleString()} · {event.actor}</small></div></li>; })}</ol></details>
     </div>
-    <section className="export-strip"><div><h2>Export full map</h2><p>Download PNG or PDF to show the map, JSON to reopen, CSV for data, or Markdown to read</p></div><div className="export-actions"><button className="button button--secondary" onClick={() => exportProject('png')}>PNG image</button><button className="button button--secondary" onClick={() => exportProject('pdf')}>PDF</button><button className="button button--secondary" onClick={onProjectLink}>Project link</button><button className="button button--secondary" onClick={() => exportProject('json')}><Icon name="download" />JSON</button><button className="button button--secondary" onClick={() => exportProject('csv')}><Icon name="download" />CSV</button><button className="button button--secondary" onClick={() => exportProject('markdown')}><Icon name="download" />Markdown</button><label className="button button--ghost"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label></div>{importError && <p className="error-text">{importError}</p>}</section>
+    <section className="export-strip export-strip--compact" aria-label="Export and share">
+      <details className="export-dropdown" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); const details = event.currentTarget; details.open = false; details.querySelector('summary')?.focus(); } }}>
+        <summary><Icon name="download" /><span>Export &amp; share</span><span aria-hidden="true">▾</span></summary>
+        <div className="export-dropdown__options">
+          <fieldset><legend>Show the map</legend><button type="button" onClick={() => exportProject('png')}>PNG image</button><button type="button" onClick={() => exportProject('pdf')}>PDF</button><button type="button" onClick={onProjectLink}>Project link</button></fieldset>
+          <fieldset><legend>Save or reuse</legend><button type="button" onClick={() => exportProject('json')}>JSON <small>Reopen later</small></button><button type="button" onClick={() => exportProject('csv')}>CSV <small>Map data</small></button><button type="button" onClick={() => exportProject('markdown')}>Markdown <small>Readable text</small></button></fieldset>
+          <label className="export-dropdown__import"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label>
+        </div>
+      </details>
+      {importError && <p className="error-text" role="alert">{importError}</p>}
+    </section>
   </div>;
 }
 
