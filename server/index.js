@@ -211,6 +211,9 @@ const { app, close, ready } = createSystemsMappingApp({
   publicDemo,
   retentionHoldUntil,
   ...suggestionOptions,
+  // Prototype telemetry is best-effort; the default of 60 events per minute per client suits one
+  // student. Test suites that drive many flows from one address raise it.
+  prototypeEventLimit: optionalInteger('PROTOTYPE_EVENT_LIMIT', { fallback: undefined, min: 1, max: 1000 }),
   studentSessionTtlMs: optionalDuration('STUDENT_SESSION_TTL_MS', { min: 1000, max: 7 * 24 * 60 * 60 * 1000 }),
   sessionTtlMs: optionalDuration('TEACHER_SESSION_TTL_MS', { min: 60_000, max: 30 * 24 * 60 * 60 * 1000 }),
 });
