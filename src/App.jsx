@@ -3903,11 +3903,12 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const highlightEdgeIds = useMemo(() => new Set(highlight?.edgeIds || []), [highlight]);
   const highlightActive = highlightNodeIds.size > 0 || highlightEdgeIds.size > 0;
   const showMapRefs = (refs, primary) => {
-    const nodeIds = refs.filter((ref) => project.graph.nodes.some((node) => node.id === ref));
-    const edgeIds = refs.filter((ref) => project.graph.edges.some((edge) => edge.id === ref));
+    const edges = project.graph.edges.filter((edge) => refs.includes(edge.id));
+    const nodeIds = [...new Set([...refs.filter((ref) => project.graph.nodes.some((node) => node.id === ref)), ...edges.flatMap((edge) => [edge.source, edge.target])])];
+    const edgeIds = edges.map((edge) => edge.id);
     onHighlight?.({ nodeIds, edgeIds });
     const label = mapItemLabel(primary);
-    setAnnouncement((current) => ({ revision: (current?.revision || 0) + 1, text: `Highlighting ${label} and ${refs.length - 1} related ${refs.length === 2 ? 'item' : 'items'} on the map.` }));
+    setAnnouncement(refs.length === 1 ? `Highlighting ${label} on the map.` : `Highlighting ${label} and ${refs.length - 1} related ${refs.length === 2 ? 'item' : 'items'} on the map.`);
   };
   const [phoneViewport, setPhoneViewport] = useState(null);
   const [mapViewport, setMapViewport] = useState(null);
@@ -4356,6 +4357,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (openInspector && !inspectorRef.current?.contains(document.activeElement)) selectionTriggerRef.current = document.activeElement;
     setTraceHistory([]);
     setAddMode(null);
+    onHighlight?.(null);
     setSelection({ kind, id });
     setInspectorTab(kind === 'edge' ? 'relationships' : 'node');
     setAnnotationDisclosure('analytical');
@@ -4368,7 +4370,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       setDrawerOpen(true);
       focusInspector();
     }
-  }, [focusInspector, panelContent, onPanelMode]);
+  }, [focusInspector, panelContent, onPanelMode, onHighlight]);
   const closeInspector = useCallback(() => {
     setDrawerOpen(false);
     window.requestAnimationFrame(() => {

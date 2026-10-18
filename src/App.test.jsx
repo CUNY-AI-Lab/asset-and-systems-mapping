@@ -5197,6 +5197,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(within(askPanel).getAllByRole('listitem')[0]).getByRole('button', { name: first.label }));
     expect(document.querySelector(`[data-graph-id="${first.id}"]`)).not.toHaveClass('is-dimmed');
     expect(document.querySelector(`[data-graph-id="${second.id}"]`)).toHaveClass('is-dimmed');
+    expect(document.querySelector('.canvas-wrap [aria-live="polite"]')).toHaveTextContent(`Highlighting ${first.label} on the map.`);
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${second.id}"]`), { key: 'Enter' });
+    expect(document.querySelector(`[data-graph-id="${second.id}"]`)).not.toHaveClass('is-dimmed');
     fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
     expect(storedProject().graph).toEqual(graphBefore);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(1);
