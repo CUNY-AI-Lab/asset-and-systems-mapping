@@ -20,7 +20,7 @@ export function drawNoll(ctx, width, height, ink, random = Math.random) {
   const cx = width / 2;
   const cy = height / 2;
   // Noll scaled to the shorter side; a wide, shallow stage lets the curve use more of its width.
-  const scale = Math.min(width * 0.4, height * 0.62);
+  const scale = Math.min(width * 0.4, height * 0.56);
   const count = 80 + Math.floor(random() * 40);
   const points = [];
   for (let index = 0; index < count; index += 1) {
