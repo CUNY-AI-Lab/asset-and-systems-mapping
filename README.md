@@ -42,7 +42,7 @@ After the memo exists, the student stays on the map. The canvas is the organizin
 | **Add memo** | The one full-screen stage. Set the inquiry and paste or upload the memo. |
 | **Level rail** | Micro · Meso · Exo · Macro above the canvas, with locked, current and complete states. Choosing a level switches work level; the cumulative map stays visible. |
 | **Suggestions** | Memo review and candidate decisions side by side: generate or refresh guidance, then **Add to map**, **Set aside**, or **Remove** each item in one list. "Add suggestions automatically" lives here. |
-| **Inspector** | Evidence, annotations and connections for the selected item, plus **Ask the map** on the Map tab and **Check this item / connection** for a selection. |
+| **Inspector** | Supporting evidence and **Your interpretation** for the selected item or connection. **Evidence and questions** and **Edit item details** open when needed. **Ask the map** and selection checks remain available. |
 | **Review** | The cumulative overview, the level reflection or Macro synthesis, submit revision, project link and exports. |
 | **Next action** | The footer shows one computed next step (read the memo, decide suggestions, add the structure the level still needs, record evidence, or continue) instead of a step counter. |
 
@@ -58,7 +58,9 @@ The canvas uses concentric ecological regions and restrained level colors. **All
 
 Selecting an element opens its inspector. On desktop the whole layer stays on the canvas: the selection and its one-hop neighbourhood stay bright, every incident relationship shows its label, and everything else dims until **Show full map**. Phones keep the compact detail view that shows one relationship at a time. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
 
-The default view keeps detailed evidence, map controls, and cumulative results collapsed until needed. **Details** opens map notes and controls even when no element is selected. Closing the inspector returns keyboard focus to the selected canvas item or the list control that opened it.
+The map fills the available browser height. All work panels share a narrow sidebar: drag its left edge to resize it, or focus the divider and use the arrow keys (Home restores the default width). The browser remembers the chosen width; text and controls wrap as it changes. At medium and phone widths the sidebar overlays the canvas. **Hide sidebar** restores the full map, and exports close with the sidebar.
+
+The default view keeps detailed evidence, item settings, map controls, and cumulative results collapsed until needed. **Details** opens map notes and controls even when no element is selected. Closing the inspector returns keyboard focus to the selected canvas item or the list control that opened it.
 
 | Task | Control |
 | --- | --- |
@@ -67,7 +69,7 @@ The default view keeps detailed evidence, map controls, and cumulative results c
 | Move an element | Drag the element. |
 | Restore an overview | Choose **Fit map** or press `0` with focus in the canvas. |
 | Reorganize the layout | Choose **Arrange map**. |
-| Undo or redo a layout change | Open **Details → Map** for layout controls, or use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
+| Undo or redo a layout change | Open **Details → Map → Map controls** for layout controls, or use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
 | Expand the workspace | Choose **Full screen map**; press `Escape` to exit. |
 
 Layout history covers element moves and automatic arrangements during the current map visit. Undo restores positions and the recorded view while preserving evidence, labels, and notes edited afterward. It is not a general project-history rollback. Layout, viewport, and annotations save with the project; the undo stack is temporary.

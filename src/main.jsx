@@ -8,6 +8,7 @@ import './styles.css';
 import './map-review.css';
 import './map-studio.css';
 import './ui/design-system.css';
+import './workspace-layout.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

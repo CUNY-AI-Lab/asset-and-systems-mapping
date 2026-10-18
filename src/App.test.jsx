@@ -735,6 +735,12 @@ function openMapInspector() {
   return screen.getByLabelText('Map inspector');
 }
 
+function openEvidenceRecords(inspector) {
+  const summary = within(inspector).getByText('Evidence and questions');
+  if (!summary.closest('details').open) fireEvent.click(summary);
+  return within(inspector).getByRole('region', { name: 'Evidence records' });
+}
+
 function annotationStatus(field) {
   const ids = field.getAttribute('aria-describedby')?.split(/\s+/).filter(Boolean) || [];
   const statusId = ids.find((id) => id.startsWith('annotation-status_'));
@@ -744,12 +750,12 @@ function annotationStatus(field) {
 function selectAnnotationTarget(target) {
   if (target === 'node') {
     const inspector = openNodeInspector();
-    return within(inspector).getByRole('textbox', { name: /^Annotation/ });
+    return within(inspector).getByRole('textbox', { name: /^Your interpretation/ });
   }
   if (target === 'edge') {
     const inspector = openEdgeInspector();
-    const panel = within(inspector).getByRole('tabpanel', { name: 'Relationships' });
-    return within(panel).getByRole('textbox', { name: 'Annotation' });
+    const panel = within(inspector).getByRole('tabpanel', { name: 'Connections' });
+    return within(panel).getByRole('textbox', { name: 'Your interpretation' });
   }
   const inspector = openMapInspector();
   return within(inspector).getByRole('textbox', { name: /^Map note/ });
@@ -3659,7 +3665,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       origin: 'student entry',
     }));
     const added = storedProject().graph.nodes.find((node) => node.label === 'Peer navigator');
-    fireEvent.click(within(inspector).getByText('Summary'));
+    fireEvent.click(within(inspector).getByText('Edit item details'));
     expect(within(inspector).getByRole('combobox', { name: 'Person’s involvement with Peer navigator' })).toHaveValue('indirect');
     expect(within(inspector).getByRole('button', { name: `Remove ${setting.label} from settings for Peer navigator` })).toBeVisible();
     fireEvent.change(within(inspector).getByRole('combobox', { name: 'Person’s involvement with Peer navigator' }), { target: { value: 'unclear' } });
@@ -4629,8 +4635,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expectVisibleNodesAndConnectionLabelsInsideCanvas();
     const refittedViewport = viewportTransform();
 
-    const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Relationships' });
-    const annotation = within(relationshipPanel).getByRole('textbox', { name: 'Annotation' });
+    const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Connections' });
+    const annotation = within(relationshipPanel).getByRole('textbox', { name: 'Your interpretation' });
     fireEvent.change(annotation, { target: { value: 'Annotation-only edits must not recenter the focused relationship.' } });
     expect(annotationStatus(annotation)).toHaveTextContent('Saving…');
     await waitFor(() => expect(annotationStatus(annotation)).toBeNull());
@@ -4654,7 +4660,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.keyDown(edge, { key: 'Enter' });
     const inspector = screen.getByLabelText('Map inspector');
     expect(inspector).toHaveClass('is-open');
-    expect(within(inspector).getByRole('tab', { name: 'Relationships' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(inspector).getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
 
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
@@ -4776,11 +4782,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(Number(card.getAttribute('height'))).toBeGreaterThan(phone ? 82 : 72);
     expect(within(inspector).getByRole('heading', { name: longNodeLabel })).toHaveTextContent(longNodeLabel);
 
-    fireEvent.click(within(inspector).getByRole('tab', { name: 'Relationships' }));
-    const relationshipButton = within(within(inspector).getByLabelText('Relationship list')).getAllByRole('button')
-      .find((button) => button.textContent.includes(longEdgeLabel));
-    fireEvent.click(relationshipButton);
-    expect(within(within(inspector).getByLabelText('Relationship list')).getAllByRole('button')).toHaveLength(1);
+    openEdgeInspector(incidentEdge.id);
+    expect(within(inspector).getByText(/This connection says:/)).toHaveTextContent(longEdgeLabel);
     const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
     const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
     const edgeText = renderedEdge.querySelector('.edge-label');
@@ -4788,9 +4791,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(svgTextLines(edgeText).join('')).toBe(longEdgeLabel);
     expect(renderedEdge).not.toHaveTextContent('…');
     expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
-    const summary = [...inspector.querySelectorAll('.node-summary')]
-      .find((details) => details.querySelector('summary')?.textContent.includes(longEdgeLabel));
-    expect(summary.querySelector('summary strong')).toHaveTextContent(longEdgeLabel);
+    expect(within(inspector).getByText(/This connection says:/)).not.toHaveTextContent('…');
   });
 
   it('preserves every character in maximum-length unbroken map labels', async () => {
@@ -5193,7 +5194,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(askPanel).getByRole('button', { name: "Ask what's missing" }));
     expect(await within(askPanel).findByText(`Which decision setting reaches ${first.label}?`)).toBeVisible();
     expect(within(askPanel).getAllByRole('listitem')).toHaveLength(2);
-    expect(within(askPanel).getByText(/adds nothing to it/)).toBeVisible();
+    expect(within(askPanel).getByText(/Your map changes only when you edit it/)).toBeVisible();
     fireEvent.click(within(within(askPanel).getAllByRole('listitem')[0]).getByRole('button', { name: first.label }));
     expect(document.querySelector(`[data-graph-id="${first.id}"]`)).not.toHaveClass('is-dimmed');
     expect(document.querySelector(`[data-graph-id="${second.id}"]`)).toHaveClass('is-dimmed');
@@ -5385,11 +5386,11 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(project.graph.nodes.map(({ id, x, y }) => ({ id, x, y })));
       expect(storedProject().viewport).toEqual(project.viewport);
       const inspector = openNodeInspector(restoredNode.id);
-      expect(within(inspector).getByRole('textbox', { name: /^Annotation/ })).toHaveValue('Restored node annotation');
-      fireEvent.click(within(inspector).getByRole('tab', { name: 'Relationships' }));
-      const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Relationships' });
+      expect(within(inspector).getByRole('textbox', { name: /^Your interpretation/ })).toHaveValue('Restored node annotation');
+      fireEvent.click(within(inspector).getByRole('tab', { name: 'Connections' }));
+      const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Connections' });
       fireEvent.click(within(within(relationshipPanel).getByLabelText('Relationship list')).getAllByRole('button')[0]);
-      expect(within(relationshipPanel).getByRole('textbox', { name: 'Annotation' })).toHaveValue('Restored relationship annotation');
+      expect(within(relationshipPanel).getByRole('textbox', { name: 'Your interpretation' })).toHaveValue('Restored relationship annotation');
       fireEvent.click(within(inspector).getByRole('tab', { name: 'Map' }));
       expect(within(inspector).getByRole('textbox', { name: /^Map note/ })).toHaveValue('Restored whole-map annotation');
     };
@@ -5711,7 +5712,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     let inspector = openNodeInspector(node.id);
-    let evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    let evidence = openEvidenceRecords(inspector);
     fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
     fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
     let records = [...evidence.querySelectorAll('.claim-evidence-record')];
@@ -5752,7 +5753,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     openProjectFromList(project.title);
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     inspector = openNodeInspector(node.id);
-    evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    evidence = openEvidenceRecords(inspector);
     expect(evidence.querySelectorAll('.claim-evidence-record')).toHaveLength(1);
     expect(within(evidence).getByRole('textbox', { name: /^Memo passage or evidence/ })).toHaveValue('A program calendar confirms the schedule.');
     expect(within(evidence).getByRole('textbox', { name: /^Uncertainty/ })).toHaveValue('Attendance is not yet documented.');
@@ -5878,14 +5879,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     let inspector = openNodeInspector(node.id);
     fireEvent.change(within(inspector).getByRole('combobox', { name: `Person’s involvement with ${node.label}` }), { target: { value: 'indirect' } });
     fireEvent.change(within(inspector).getByRole('combobox', { name: `Add a setting for ${node.label}` }), { target: { value: setting.id } });
-    let evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    let evidence = openEvidenceRecords(inspector);
     fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
     fireEvent.change(within(evidence).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: 'The memo places this item in the school setting.' } });
 
     inspector = openEdgeInspector(edge.id);
-    evidence = within(inspector).getByRole('region', { name: 'Evidence records' });
+    evidence = openEvidenceRecords(inspector);
     fireEvent.click(within(evidence).getByRole('button', { name: 'Add record' }));
     fireEvent.change(within(evidence).getByRole('textbox', { name: /^Memo passage or evidence/ }), { target: { value: 'The memo describes this direct connection.' } });
+    fireEvent.click(within(inspector).getByText('Connection details'));
     const process = within(inspector).getByText('Process and time').closest('details');
     fireEvent.click(within(process).getByText('Process and time'));
     fireEvent.change(within(process).getByLabelText('Frequency'), { target: { value: 'Every Tuesday' } });
