@@ -281,7 +281,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     failCloudWrites = true;
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill('Unsynced work is recovered after a storage interruption.');
     await page.getByRole('textbox', { name: 'Map note', exact: true }).press('Tab');
-    await browserExpect(page.getByRole('alert')).toContainText('Synthetic storage interruption');
+    await browserExpect(page.getByRole('alert')).toContainText('Your unsynced copy remains on this device');
     failCloudWrites = false;
     await page.reload();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
