@@ -1,12 +1,14 @@
+import type { CourseAccess } from './course-access';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
 import { boundedRpc } from './bounded.js';
 import { readCookie, type IdentityClient } from './login';
+import { validSessionToken } from './session-contract/session.js';
 import publicJwks from './jwks.json';
 
-export type Principal = { subject: string; admin: boolean; expiresAt: number; gatewayJwt: string };
+export type Principal = { subject: string; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
 export type IdentityEnv = {
   IDENTITY: IdentityClient;
-  ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown> };
+  ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccess?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
   CAIL_IDENTITY_JWKS?: string;
 };
 export const authFailure = (status: number, code: string) => Response.json({
@@ -26,13 +28,15 @@ export async function authorize(request: Request, env: IdentityEnv): Promise<Pri
   const [appConfig, gatewayConfig] = await verifierConfigs(env);
   if (!appConfig.ok || !gatewayConfig.ok || !env.IDENTITY || !env.ADMISSION_RESOLVER) return authFailure(503, 'identity_verification_misconfigured');
   const cookie = readCookie(request);
-  if (!cookie || cookie.length > 200) return authFailure(401, 'authentication_required');
+  if (!validSessionToken(cookie)) return authFailure(401, 'authentication_required');
   let grants;
   try { grants = await boundedRpc(env.IDENTITY.identities(cookie), request.signal); }
   catch { return authFailure(503, 'identity_unavailable'); }
   if (!grants || typeof grants !== 'object') return authFailure(503, 'identity_unavailable');
   if (grants.ok !== true) return authFailure(grants.status === 403 ? 403 : grants.status === 401 ? 401 : 503,
     grants.status === 403 ? 'admission_required' : grants.status === 401 ? 'session_invalid' : 'identity_unavailable');
+  if (typeof grants.appJwt !== 'string' || !grants.appJwt || grants.appJwt.length > 16384) return authFailure(503, 'identity_unavailable');
+  if (typeof grants.gatewayJwt !== 'string' || !grants.gatewayJwt || grants.gatewayJwt.length > 16384) return authFailure(401, 'invalid_credential');
   const appIdentity = await verifyIdentityJwt(grants.appJwt, appConfig.config);
   const gatewayIdentity = await verifyIdentityJwt(grants.gatewayJwt, gatewayConfig.config);
   if (!appIdentity || !gatewayIdentity || appIdentity.subject !== gatewayIdentity.subject) return authFailure(401, 'invalid_credential');

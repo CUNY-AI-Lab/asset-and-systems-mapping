@@ -25,16 +25,22 @@ describe('student-facing copy', () => {
     });
   });
 
-  it('defines each candidate decision in plain language', () => {
+  it('uses action labels without repeated candidate explanations', () => {
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
-    expect(source).toContain('Add puts a suggestion on the map, Set aside keeps it as a question for later, and Remove leaves it off.');
-    expect(source).not.toContain('Keep means add this suggestion to the map. Suggestions begin on Keep so you can review them together.');
+    expect(source).toContain('Choose what belongs on the map');
+    expect(source).toContain('Item settings');
+    expect(source).not.toContain('Add puts a suggestion on the map');
+    expect(source).not.toContain('Only what you add joins the map');
+    expect(source).not.toContain('Runs on the class server. Your memo goes to no outside model');
   });
 
   it('keeps the shared student actions concise and separate from teacher and model setup', () => {
     const descriptions = SYSTEMS_MAPPING_STAGES.map(({ description }) => description);
-    expect(descriptions[0]).toBe('Set your focus and add the memo you will use across all four levels.');
-    descriptions.forEach((description) => expect(description.length).toBeLessThanOrEqual(100));
+    expect(descriptions[0]).toBe('Set your focus and add a memo for all four levels');
+    descriptions.forEach((description) => {
+      expect(description.length).toBeLessThanOrEqual(65);
+      expect(description).not.toContain('.');
+    });
     expect(descriptions.join(' ')).not.toMatch(/choose a level|new memo|teacher|instructor|model|provider|prompt|submission|approval/i);
   });
 
@@ -51,20 +57,17 @@ describe('student-facing copy', () => {
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one map item/i);
   });
 
-  it('gives every level one explicit progression contract', () => {
-    const contracts = Object.fromEntries(SYSTEMS_MAPPING_LEVELS.map((level) => [level.id, level]));
+  it('keeps level distinctions without the repeated Uses/Adds/Boundary panel', () => {
     SYSTEMS_MAPPING_LEVELS.forEach((level) => {
       expect(level.reviewInstruction, `${level.id} review instruction`).toBeTruthy();
       expect(level.chooseInstruction, `${level.id} choose instruction`).toBeTruthy();
-      expect(level.uses, `${level.id} uses`).toBeTruthy();
-      expect(level.adds, `${level.id} adds`).toBeTruthy();
-      expect(level.boundary, `${level.id} boundary`).toBeTruthy();
+      expect(level).not.toHaveProperty('uses');
+      expect(level).not.toHaveProperty('adds');
+      expect(level).not.toHaveProperty('boundary');
     });
-    expect(contracts.meso.boundary).toMatch(/do not add.*relationship edges/i);
-    expect(contracts.exosphere.uses).toBe('Micro-level settings');
-    expect(contracts.exosphere.boundary).toMatch(/participates.*Micro-level.*broader conditions.*Macro-level/i);
-    expect(contracts.macrosphere.uses).toBe('Map items from earlier levels');
-    expect(contracts.macrosphere.boundary).toMatch(/Micro-level.*participates.*Exo-level.*decisions/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').description).toMatch(/at least two immediate settings/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'exosphere').description).toMatch(/decision/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws/i);
   });
 
   it('uses decision-setting language for Exo-level and plain Meso explanation copy', () => {

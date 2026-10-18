@@ -30,6 +30,9 @@ const serverEnvironment = {
   OLLAMA_ENABLED: 'false',
   OLLAMA_API_KEY: '',
   OPENROUTER_ENABLED: 'false',
+  // Two browser projects share one loopback client; the production limit of 60 events per minute
+  // would reject telemetry mid-suite and surface as console errors.
+  PROTOTYPE_EVENT_LIMIT: '1000',
   OPENROUTER_API_KEY: '',
 };
 

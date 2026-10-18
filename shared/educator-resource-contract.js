@@ -199,11 +199,51 @@ function normalizeProgressionPart(value, name, stageIds, allowedScaleIds) {
   });
 }
 
+// Preserve this legacy field as JSON data only; it does not alter course behavior.
+function cloneIntakeQuestions(value) {
+  const ancestors = new WeakSet();
+  let remaining = 60_000;
+  const charge = (size) => {
+    remaining -= size;
+    if (remaining < 0) fail('course progression is too large.');
+  };
+  const visit = (item, depth = 0) => {
+    if (depth > 64) fail('intakeQuestions exceeds the supported JSON depth.');
+    if (item === null || typeof item === 'string' || typeof item === 'boolean'
+      || (typeof item === 'number' && Number.isFinite(item))) {
+      charge(JSON.stringify(item).length);
+      return;
+    }
+    if (!item || typeof item !== 'object' || ancestors.has(item)) fail('intakeQuestions must contain finite JSON data.');
+    if (!Array.isArray(item) && ![Object.prototype, null].includes(Object.getPrototypeOf(item))) {
+      fail('intakeQuestions must contain finite JSON data.');
+    }
+    const fields = Object.getOwnPropertyDescriptors(item);
+    if (Object.getOwnPropertySymbols(item).length) fail('intakeQuestions must contain finite JSON data.');
+    const keys = Object.keys(fields).filter((key) => !Array.isArray(item) || key !== 'length');
+    if (Array.isArray(item) && (keys.length !== item.length || keys.some((key, index) => key !== String(index)))) {
+      fail('intakeQuestions must contain finite JSON data.');
+    }
+    ancestors.add(item);
+    charge(2 + Math.max(0, keys.length - 1));
+    for (const key of keys) {
+      const field = fields[key];
+      if (!Object.hasOwn(field, 'value') || !field.enumerable) fail('intakeQuestions must contain finite JSON data.');
+      if (!Array.isArray(item)) charge(JSON.stringify(key).length + 1);
+      visit(field.value, depth + 1);
+    }
+    ancestors.delete(item);
+  };
+  visit(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
 export function normalizeCourseProgression(value, { stageIds = [], scaleIds = [] } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('course progression must be an object.');
   const expectedKeys = ['schemaVersion', 'parts'];
+  const optionalKeys = ['intakeQuestions'];
   const keys = Object.keys(value);
-  if (keys.some((key) => !expectedKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
+  if (keys.some((key) => !expectedKeys.includes(key) && !optionalKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
     fail('course progression fields do not match the supported schema.');
   }
   if (value.schemaVersion !== COURSE_PROGRESSION_SCHEMA_VERSION) {
@@ -220,10 +260,19 @@ export function normalizeCourseProgression(value, { stageIds = [], scaleIds = []
   if (suppliedScaleIds.length !== scaleIds.length || scaleIds.some((scaleId) => !suppliedScaleIds.includes(scaleId))) {
     fail('course progression parts do not cover the registered scales.');
   }
+  const legacyFields = {};
+  if (Object.hasOwn(value, 'intakeQuestions')) {
+    const field = Object.getOwnPropertyDescriptor(value, 'intakeQuestions');
+    if (!Object.hasOwn(field, 'value')) fail('intakeQuestions must contain finite JSON data.');
+    legacyFields.intakeQuestions = cloneIntakeQuestions(field.value);
+  }
   const normalized = Object.freeze({
     schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
     parts: Object.freeze(parts),
+    ...legacyFields,
   });
-  if (JSON.stringify(normalized).length > 60_000) fail('course progression is too large.');
+  const serialized = JSON.stringify(normalized);
+  if (serialized.length > 60_000 || (Object.hasOwn(legacyFields, 'intakeQuestions')
+    && new TextEncoder().encode(serialized).length > 60_000)) fail('course progression is too large.');
   return normalized;
 }

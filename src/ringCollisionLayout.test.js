@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  projectRectangleToRing,
+  rectangleFitsRing,
   rectangleFitsRingBand,
   rectanglesOverlap,
   resolveRingConstrainedCollisions,
@@ -11,6 +13,68 @@ const BANDS = Object.freeze({
   meso: Object.freeze({ innerRx: 600, innerRy: 420, outerRx: 910, outerRy: 650 }),
   exosphere: Object.freeze({ innerRx: 910, innerRy: 650, outerRx: 1_220, outerRy: 880 }),
   macrosphere: Object.freeze({ innerRx: 1_220, innerRy: 880, outerRx: 1_540, outerRy: 1_140 }),
+});
+
+describe('exact rectangle ring projection', () => {
+  const desktop = { width: 224, height: 72, center: CENTER, band: BANDS.micro, boundaryPadding: 16 };
+
+  it('keeps the complete diagonal desktop Micro card inside its outer contour', () => {
+    // The former shrunk-axis projection returned (1890,1490), whose
+    // furthest card corner had an outer-ellipse metric of 1.05137.
+    expect(rectangleFitsRing({ x: 1_890, y: 1_490 }, desktop)).toBe(false);
+    const position = projectRectangleToRing({ x: 2_100, y: 1_700 }, desktop);
+    expect(position).not.toBeNull();
+    expect(rectangleFitsRing(position, desktop)).toBe(true);
+    const corners = [-1, 1].flatMap((xSign) => [-1, 1].map((ySign) => ({
+      x: position.x + xSign * desktop.width / 2,
+      y: position.y + ySign * desktop.height / 2,
+    })));
+    corners.forEach(({ x, y }) => expect(
+      ((x - CENTER.x) / (BANDS.micro.outerRx - 16)) ** 2
+        + ((y - CENTER.y) / (BANDS.micro.outerRy - 16)) ** 2,
+    ).toBeLessThanOrEqual(1 + 1e-10));
+  });
+
+  it('projects a Meso card out of the inner ellipse while respecting every outer corner', () => {
+    const options = { ...desktop, band: BANDS.meso };
+    expect(rectangleFitsRing(CENTER, options)).toBe(false);
+    const position = projectRectangleToRing({ x: 1_850, y: 1_450 }, options);
+    expect(position).not.toBeNull();
+    expect(rectangleFitsRing(position, options)).toBe(true);
+    const nearestX = Math.max(0, Math.abs(position.x - CENTER.x) - options.width / 2);
+    const nearestY = Math.max(0, Math.abs(position.y - CENTER.y) - options.height / 2);
+    expect((nearestX / (BANDS.meso.innerRx + 16)) ** 2
+      + (nearestY / (BANDS.meso.innerRy + 16)) ** 2).toBeGreaterThanOrEqual(1 - 1e-10);
+  });
+
+  it('searches alternate rays when the requested Meso direction has no rectangle clearance', () => {
+    const options = {
+      width: 272, height: 112, center: CENTER, boundaryPadding: 16,
+      band: { innerRx: 300, innerRy: 380, outerRx: 410, outerRy: 620 },
+    };
+    const position = projectRectangleToRing({ x: 2_100, y: CENTER.y }, options);
+    expect(position).not.toBeNull();
+    expect(Math.abs(position.y - CENTER.y)).toBeGreaterThan(0);
+    expect(rectangleFitsRing(position, options)).toBe(true);
+  });
+
+  it('returns null for a card that cannot fit the skinny compact phone Meso band', () => {
+    const options = {
+      width: 272, height: 112, center: CENTER, boundaryPadding: 16,
+      band: { innerRx: 300, innerRy: 380, outerRx: 410, outerRy: 500 },
+    };
+    expect(rectangleFitsRing({ x: CENTER.x, y: 748 }, options)).toBe(false);
+    expect(projectRectangleToRing({ x: CENTER.x, y: 700 }, options)).toBeNull();
+  });
+
+  it('is deterministic and stable without rounding already valid or projected positions', () => {
+    const valid = { x: 1_337.1234, y: 1_183.4321 };
+    expect(projectRectangleToRing(valid, desktop)).toEqual(valid);
+    const request = { x: 2_100, y: 1_700 };
+    const projected = projectRectangleToRing(request, desktop);
+    expect(projectRectangleToRing(request, desktop)).toEqual(projected);
+    expect(projectRectangleToRing(projected, desktop)).toEqual(projected);
+  });
 });
 
 function card(id, scale, x = CENTER.x, y = CENTER.y, overrides = {}) {

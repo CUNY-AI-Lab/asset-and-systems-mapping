@@ -23,7 +23,9 @@
     "test:watch": "vitest",
     "build:cloudflare": "VITE_ACCOUNT_WORKSPACE=true vite build --outDir dist-cloudflare",
     "typecheck:cloudflare": "tsc -p cloudflare/tsconfig.json",
-    "check:cloudflare": "pnpm typecheck:cloudflare && pnpm build:cloudflare && wrangler deploy --dry-run --outdir .wrangler/dry-run"
+    "check:cloudflare": "pnpm typecheck:cloudflare && pnpm build:cloudflare && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "check:cloudflare:dev": "pnpm typecheck:cloudflare && pnpm build:cloudflare && wrangler deploy -c wrangler.dev.jsonc --dry-run --outdir .wrangler/dry-run-dev",
+    "deploy:dev": "pnpm build:cloudflare && wrangler deploy -c wrangler.dev.jsonc --var RELEASE:$(git rev-parse HEAD) && node scripts/verify-cloudflare-release.mjs $(git rev-parse HEAD) https://systems-mapping-dev.ailab-452.workers.dev"
   },
   "dependencies": {
     "@cuny-ai-lab/cail-identity": "5.2.6",
@@ -31,7 +33,7 @@
     "@fontsource-variable/source-serif-4": "^5.3.0",
     "@hono/node-server": "2.1.0",
     "@vitejs/plugin-react": "6.0.5",
-    "hono": "4.13.1",
+    "hono": "4.13.7",
     "mammoth": "1.12.0",
     "pg": "^8.22.0",
     "react": "19.2.8",

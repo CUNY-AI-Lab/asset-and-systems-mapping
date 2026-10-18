@@ -27,6 +27,7 @@ import {
   exportFileName,
   extractCandidates,
   isDiscreteMicroNodeLabel,
+  isStatementMapElementLabel,
   isExosphereDecisionPathway,
   isInstitutionScopedPolicyLabel,
   isMesosystemLabel,
@@ -159,6 +160,15 @@ function mappedEdge({ id, source, target, verb, scale = 'exosphere' }) {
 }
 
 describe('mapping domain', () => {
+  it('recognizes clauses without trimming them into invented names', () => {
+    for (const label of ['A neighbor brings mail upstairs', 'The agency cut weekly allocations', 'A resident needs help with travel', 'Workers are paid near the wage floor']) {
+      expect(isStatementMapElementLabel(label), label).toBe(true);
+      expect(isDiscreteMicroNodeLabel(label), label).toBe(false);
+    }
+    for (const label of ['Neighbor', 'Home care agency', 'New York State Office for People with Developmental Disabilities', 'Department of Public Works', 'Rising housing costs']) {
+      expect(isStatementMapElementLabel(label), label).toBe(false);
+    }
+  });
   it('uses normalized student-facing level titles without changing internal IDs', () => {
     expect(SCALE_ORDER).toEqual(['micro', 'meso', 'exosphere', 'macrosphere']);
     expect(Object.fromEntries(SCALE_ORDER.map((scale) => [scale, SCALES[scale].label]))).toEqual({
@@ -281,7 +291,7 @@ describe('mapping domain', () => {
     expect(studentText).toContain(carriedNodes[1].label);
     expect(studentText).not.toContain(carriedNodes[0].id);
     expect(studentText).not.toContain(carriedNodes[1].id);
-    expect(review.guidance[0].point).toContain('as one mesosystem');
+    expect(review.guidance[0].point).toBe('Review how these settings interact');
     expect(review.example).toBeNull();
     expect(JSON.stringify(review)).not.toContain('"verb"');
     expect(studentText).not.toMatch(/offline reader|connects .* through/i);
@@ -637,8 +647,7 @@ describe('mapping domain', () => {
     expect(Object.keys(review.connections[0]).sort()).toEqual(['rationale', 'source', 'target', 'verb']);
     review.nodes.forEach((node) => expect(node.basis).toBe('memo'));
     const guidanceText = review.guidance.map(({ point }) => point).join(' ');
-    expect(guidanceText).toContain('outside offices or decision-making bodies');
-    expect(guidanceText).toContain('participates in directly remains in Micro');
+    expect(guidanceText).toContain('Identify outside decisions affecting mapped settings');
     expect(guidanceText).toContain('School');
   });
 
@@ -659,7 +668,7 @@ describe('mapping domain', () => {
       expect(node.scope).toEqual(carriedNodes.map(({ id, label }) => ({ id, label })));
     });
     expect(review.readiness.ready).toBe(true);
-    expect(review.guidance.map(({ point }) => point).join(' ')).toContain('broader law, policy, economic condition, or cultural belief');
+    expect(review.guidance.map(({ point }) => point).join(' ')).toContain('Connect broader conditions to affected map items');
   });
 
   it('validates structure scopes on graph nodes', () => {
@@ -1777,6 +1786,18 @@ describe('mapping domain', () => {
       annotation: { id: stableId('annotation', 'edge:edge_setting_to_setting:relationship'), text: '' },
     }];
     expect(() => validateProject(settingEdge)).toThrow(/must not encode an interrelation between two Micro settings/);
+  });
+
+  it('retains a pending connection for repair when a student removes its endpoint', () => {
+    const project = projectWithGraph();
+    project.graph = { nodes: [], edges: [] };
+    const connection = project.candidates.edges[0];
+    connection.status = 'pending';
+    project.candidates.nodes.find(node => node.id === connection.target).status = 'rejected';
+    expect(() => validateProject(project)).not.toThrow();
+    expect(parseProject(serializeProject(project)).candidates.edges[0]).toMatchObject({ id: connection.id, status: 'pending' });
+    connection.status = 'confirmed';
+    expect(() => validateProject(project)).toThrow(/must reference a live Micro node/);
   });
 
   it('round-trips exact layout, viewport, and every annotation surface', () => {

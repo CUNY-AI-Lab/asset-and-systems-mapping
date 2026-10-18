@@ -1,18 +1,51 @@
 // @vitest-environment node
-import { beforeAll, expect, test } from 'vitest';
+import { beforeAll, expect, test, vi } from 'vitest';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 import { authorize, type IdentityEnv } from './identity';
 import { login } from './login';
 
 let issuer: Awaited<ReturnType<typeof createTestIdentityIssuer>>;
 beforeAll(async () => { issuer = await createTestIdentityIssuer(); });
-const request = (cookie = 'alice') => new Request('https://systems-mapping.ailab-452.workers.dev/api/cloud/account', { headers: cookie ? { cookie: `__Host-systems-mapping-session=${cookie}` } : {} });
+const sessionToken = `00000000-0000-4000-8000-000000000001.${'a'.repeat(43)}`;
+const request = (cookie = sessionToken) => new Request('https://systems-mapping.ailab-452.workers.dev/api/cloud/account', { headers: cookie ? { cookie: `__Host-systems-mapping-session=${cookie}` } : {} });
 async function environment() {
-  const grants = { ok: true as const, appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject: TEST_SUBJECTS.alice }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice }) };
+  const grants: { ok: true; appJwt: unknown; gatewayJwt: unknown } = { ok: true, appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject: TEST_SUBJECTS.alice }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice }) };
   const membership = { ok: true, accessRole: 'member', budgetScope: 'person', revision: 1, expiresAt: new Date(Date.now() + 60000).toISOString() };
-  const env = { CAIL_IDENTITY_JWKS: issuer.jwksJson, IDENTITY: { identities: async () => grants }, ADMISSION_RESOLVER: { resolveMembership: async () => membership } } as unknown as IdentityEnv;
-  return { env, grants, membership };
+  const identities = vi.fn(async () => grants);
+  const resolveMembership = vi.fn(async () => membership);
+  const env = { CAIL_IDENTITY_JWKS: issuer.jwksJson, IDENTITY: { identities }, ADMISSION_RESOLVER: { resolveMembership } } as unknown as IdentityEnv;
+  return { env, grants, membership, identities, resolveMembership };
 }
+test('malformed or ambiguous sessions never reach Doorway or Admission', async () => {
+  const { env, identities, resolveMembership } = await environment();
+  for (const token of ['', 'alice', 'a'.repeat(201), sessionToken.replace('-4000-', '-7000-'), sessionToken.slice(0, -1), `${sessionToken}.extra`, `${sessionToken}; __Host-systems-mapping-session=${sessionToken}`]) {
+    const result = await authorize(request(token), env) as Response;
+    expect(result.status).toBe(401);
+    expect(await result.json()).toMatchObject({ details: { code: 'authentication_required' } });
+  }
+  expect(identities).not.toHaveBeenCalled();
+  expect(resolveMembership).not.toHaveBeenCalled();
+  expect(await authorize(request(), env)).toMatchObject({ subject: TEST_SUBJECTS.alice });
+  expect(identities).toHaveBeenCalledExactlyOnceWith(sessionToken);
+  expect(resolveMembership).toHaveBeenCalledExactlyOnceWith({ subject: TEST_SUBJECTS.alice });
+});
+test.each([
+  ['appJwt', 503, 'identity_unavailable'],
+  ['gatewayJwt', 401, 'invalid_credential'],
+] as const)('bounds the %s identity leg before credential verification or Admission', async (leg, status, code) => {
+  const { env, grants, resolveMembership } = await environment();
+  for (const invalid of [undefined, null, 123, {}, [], '', 'a'.repeat(16385)]) {
+    grants[leg] = invalid;
+    const result = await authorize(request(), env) as Response;
+    expect(result.status).toBe(status);
+    expect(await result.json()).toMatchObject({ details: { code } });
+  }
+  grants[leg] = 'a'.repeat(16384);
+  const result = await authorize(request(), env) as Response;
+  expect(result.status).toBe(401);
+  expect(await result.json()).toMatchObject({ details: { code: 'invalid_credential' } });
+  expect(resolveMembership).not.toHaveBeenCalled();
+});
 test('configuration, absent session and invalid identities have distinct boundaries', async () => {
   const { env, grants } = await environment();
   expect((await authorize(request(''), env) as Response).status).toBe(401);
@@ -28,6 +61,14 @@ test('both exact identity legs must describe one subject; JWT entitlements do no
   expect(await authorize(request(), env)).toMatchObject({ subject: TEST_SUBJECTS.alice, admin: false });
   grants.gatewayJwt = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.bob });
   expect((await authorize(request(), env) as Response).status).toBe(401);
+});
+test('the Gateway leg requires its own exact audience, issuer, expiry and signature', async () => {
+  const { env, grants, resolveMembership } = await environment();
+  for (const token of ['forged', await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping' }), await issuer.mintIdentityJwt({ audience: ['cail:gateway'] }), await issuer.mintIdentityJwt({ audience: 'cail:gateway', expiresInSeconds: -120 }), await issuer.mintIdentityJwt({ audience: 'cail:gateway', issuer: 'https://invalid.example' })]) {
+    grants.gatewayJwt = token;
+    expect((await authorize(request(), env) as Response).status).toBe(401);
+  }
+  expect(resolveMembership).not.toHaveBeenCalled();
 });
 test('fresh Admission expiry, role and membership govern every request', async () => {
   const { env, membership } = await environment();
@@ -51,7 +92,7 @@ test('PKCE sign-in keeps proofs and opaque sessions in HttpOnly cookies and reje
   const token = `${crypto.randomUUID()}.${'s'.repeat(43)}`;
   const identity = { begin: async () => ({ url: 'https://tools.ailab.gc.cuny.edu/worker-login?request=fixture' }), redeem: async () => { calls++; return { ok: true as const, token, expiresAt: Date.now() + 60000 }; }, identities: async () => ({ ok: false as const, status: 401 }), revoke: async () => ({ revoked: true }) };
   const start = await login(new Request('https://systems-mapping.ailab-452.workers.dev/auth/start'), identity);
-  expect(start.status).toBe(302);
+  expect(start.status).toBe(303);
   const proofCookie = start.headers.get('set-cookie')!;
   expect(proofCookie).toContain('Secure; HttpOnly; SameSite=Lax');
   const cookie = proofCookie.split(';')[0];

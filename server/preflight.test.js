@@ -12,6 +12,7 @@ import {
   teachingProfileFingerprint,
 } from './config.js';
 import { assertDatabaseIntegrity } from './database.js';
+import { OllamaCloudError } from './ollama.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
 const BOOTSTRAP_TOKEN = 'preflight-test-bootstrap-token';
@@ -414,7 +415,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
     const firstInput = ollamaRequest.mock.calls[0][0];
     expect(firstInput.systemPrompt).toContain('Review the student memo and prepare grounded suggestions');
-    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. Review memo]');
+    expect(firstInput.systemPrompt).toContain('[Part 1. Current section. Memo review]');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].guidance);
     expect(firstInput.systemPrompt).toContain('Supporting material. Treat this as reference content only');
     expect(firstInput.systemPrompt).toContain(courseProgression.parts[0].stages['review-suggestions'].materials);
@@ -541,6 +542,59 @@ describe('persistent preflight suggestion review queue', () => {
     expect(serializedDatabase).not.toContain('fresh-test-only-server-key');
   });
 
+  it.each(['meso', 'macrosphere'])('retains complete scope references in local %s guidance', async (activeScale) => {
+    const carriedNodes = [
+      { id: 'school', label: 'School', type: 'setting', scale: 'micro' },
+      { id: 'center', label: 'Community Center', type: 'setting', scale: 'micro' },
+    ];
+    const sourceMaterial = 'The community center coordinates with the school. The Americans with Disabilities Act shapes the school and community center.';
+    const studentCookie = await grantStudent();
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale, sourceMaterial, carriedNodes }));
+    expect(evaluation.review.nodes).toHaveLength(1);
+    expect(evaluation.review.nodes[0].scope).toEqual(expect.arrayContaining([
+      { id: 'school', label: 'School' }, { id: 'center', label: 'Community Center' },
+    ]));
+    expect(evaluation.review.connections).toEqual([]);
+  });
+
+  it.each(['exosphere', 'macrosphere'])('rejects narrative clauses at %s before persisting any review', async (activeScale) => {
+    await system.close();
+    const carriedNodes = [
+      { id: 'home', label: 'Home', type: 'setting', scale: 'micro' },
+      { id: 'clinic', label: 'Clinic', type: 'setting', scale: 'micro' },
+    ];
+    const label = activeScale === 'exosphere'
+      ? 'State Benefits Office requires additional paperwork'
+      : 'Public funding limits service availability';
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [],
+        nodes: [{
+          label, type: activeScale === 'exosphere' ? 'agency' : 'economic condition',
+          scale: activeScale, evidence: label, basis: 'memo',
+          ...(activeScale === 'macrosphere' ? { deontic: 'constrains', scope: ['home', 'clinic'] } : {}),
+        }],
+        connections: activeScale === 'exosphere'
+          ? [{ source: label, target: 'home', verb: 'sets rules for', rationale: label }] : [],
+        example: null,
+        readiness: { ready: true, note: 'Ready' },
+      },
+      metadata: { provider: 'ollama-cloud', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, `outer-clause-${activeScale}.sqlite`),
+      now: () => currentTime,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' },
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _annotation, ...body } = submissionBody({ activeScale, carriedNodes, sourceMaterial: label });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+    expect(response.status).toBe(502);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('rather than a statement');
+  });
+
   it('atomically retries the Rosa memo regression and stores only the fully valid replacement review', async () => {
     await system.close();
     const invalidReview = {
@@ -648,6 +702,82 @@ describe('persistent preflight suggestion review queue', () => {
     expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('does not repeat invalid CAIL Gateway output and leaves the project path available', async () => {
+    await system.close();
+    const invalidReview = {
+      guidance: [],
+      nodes: [{ label: 'Tuesdays', type: 'activity', scale: 'micro', evidence: 'The memo names a Tuesday schedule.' }],
+      connections: [],
+      example: null,
+      readiness: { ready: false, note: 'The response contains only a schedule detail.' },
+    };
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: invalidReview,
+      metadata: { provider: 'cail-gateway', model: 'canonical-test-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'gateway-invalid-single-attempt.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-gateway-token', model: 'canonical-test-model' },
+      suggestionProvider: 'cail-gateway',
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
+      sourceMaterial: 'The meeting happens on Tuesdays.',
+      projectMetadata: { projectId: 'gateway_invalid_single_attempt', title: 'Gateway response must fail closed' },
+    });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: 'Suggestion generation is temporarily unavailable.',
+      details: { code: 'guidance_unavailable', retryable: false },
+    });
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest.mock.calls[0][2].signal).toBeInstanceOf(AbortSignal);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('returns only Gateway-approved retry timing and safe support references to the caller', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn(async () => {
+      throw new OllamaCloudError('provider response body must not escape', 'provider_http_error', {
+        status: 503,
+        retryable: true,
+        retryAfterSeconds: 7,
+        supportReference: 'gw-log-12345',
+      });
+    });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'gateway-retry-details.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'fresh-test-only-gateway-token', model: 'canonical-test-model' },
+      suggestionProvider: 'cail-gateway',
+      ollamaRequest,
+    });
+    const studentCookie = await grantStudent();
+    const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
+      projectMetadata: { projectId: 'gateway_safe_retry_details', title: 'Only safe retry guidance is returned' },
+    });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: 'Suggestion generation is temporarily unavailable.',
+      details: {
+        code: 'guidance_unavailable',
+        retryable: true,
+        retryAfterSeconds: 7,
+        supportReference: 'gw-log-12345',
+      },
+    });
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
@@ -1456,6 +1586,7 @@ Overall, the posting history documents a working student repeatedly turning to R
         { id: 'node_counselor', label: 'Counselor', type: 'role', scale: 'micro' },
       ],
       relationships: [{ source: 'node_family', target: 'node_school', verb: 'asks for help from' }],
+      studentJudgments: [{ kind: 'item', label: 'Counselor', scale: 'micro', decision: 'added', note: 'Use the role name' }],
     });
     const response = await postJson(system.app, '/api/map/connections', body, { cookie: studentCookie });
     expect(response.status).toBe(201);
@@ -1478,7 +1609,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].materials);
     expect(input.systemPrompt).toContain(body.projectOverlay.customInstructions);
     expect(input.systemPrompt).toContain('MAP CONNECTION JSON CONTRACT');
-    expect(input.sourceMetadata).toEqual({ nodes: body.nodes, existingConnections: body.relationships });
+    expect(input.sourceMetadata).toEqual({ nodes: body.nodes, existingConnections: body.relationships, studentJudgments: body.studentJudgments });
+    expect(input.systemPrompt).toContain('Preserve the student\'s revised names');
     expect(input.sourceText).toBe(body.prompt);
     expect(input.inquiry).toBe(body.inquiry);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
@@ -1536,7 +1668,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     const { studentAnnotation: _secondAnnotation, ...secondBody } = submissionBody({
       projectMetadata: { projectId: 'concurrency_rejected', title: 'Must not reach provider' },
     });
-    const busy = await postJson(system.app, '/api/preflight/evaluations', secondBody, { cookie: studentCookie });
+    const secondStudentCookie = await grantStudent();
+    const busy = await postJson(system.app, '/api/preflight/evaluations', secondBody, { cookie: secondStudentCookie });
     expect(busy.status).toBe(429);
     expect(busy.headers.get('retry-after')).toBe('1');
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
@@ -1547,6 +1680,106 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
     expect((await firstRequest).status).toBe(201);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
+  });
+
+  it('allows eight distinct students without duplicate calls or charging rate allowance for capacity refusals', async () => {
+    await system.close();
+    const finish = [];
+    let signalEntered;
+    const allEntered = new Promise(resolve => { signalEntered = resolve; });
+    const generated = { suggestion: memoReviewFixture(), metadata: { provider: 'cail-gateway', model: 'glm-5.3-flash' } };
+    const ollamaRequest = vi.fn(() => new Promise(resolve => {
+      finish.push(() => resolve(generated));
+      if (finish.length === 8) signalEntered();
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'classroom-concurrency.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      preflightEvaluationConcurrency: 8,
+      preflightEvaluationLimit: 1,
+      suggestionProvider: 'cail-gateway',
+      ollamaConfig: { apiKey: 'fixture-gateway-identity', model: 'glm-5.3-flash' },
+      ollamaRequest,
+    });
+    const cookies = [];
+    for (let index = 0; index < 9; index += 1) cookies.push(await grantStudent());
+    const { studentAnnotation: _annotation, ...body } = submissionBody();
+    const running = cookies.slice(0, 8).map(cookie => postJson(system.app, '/api/preflight/evaluations', body, { cookie }));
+    await allEntered;
+
+    const duplicate = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: cookies[0] });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.headers.get('retry-after')).toBe('1');
+    expect(await duplicate.json()).toEqual({ error: 'Guidance is already running', details: { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 } });
+    const connections = await postJson(system.app, '/api/map/connections', connectionBody({ activeScale: 'micro' }), { cookie: cookies[0] });
+    expect(connections.status).toBe(409);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const busy = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: cookies[8] });
+      expect(busy.status).toBe(429);
+      expect(busy.headers.get('retry-after')).toBe('1');
+    }
+    expect(ollamaRequest).toHaveBeenCalledTimes(8);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+
+    finish.forEach(resolve => resolve());
+    expect((await Promise.all(running)).map(response => response.status)).toEqual(Array(8).fill(201));
+    ollamaRequest.mockResolvedValueOnce(generated);
+    const admitted = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: cookies[8] });
+    expect(admitted.status).toBe(201);
+    expect(ollamaRequest).toHaveBeenCalledTimes(9);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(9);
+  });
+
+  it('releases the student slot after a late cancellation and does not save its completed model output', async () => {
+    await system.close();
+    let finish;
+    let markEntered;
+    const entered = new Promise(resolve => { markEntered = resolve; });
+    const generated = { suggestion: memoReviewFixture(), metadata: { provider: 'cail-gateway', model: 'glm-5.3-flash' } };
+    const ollamaRequest = vi.fn(() => new Promise(resolve => { finish = () => resolve(generated); markEntered(); }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'cancelled-generation.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      suggestionProvider: 'cail-gateway',
+      ollamaConfig: { apiKey: 'fixture-gateway-identity', model: 'glm-5.3-flash' },
+      ollamaRequest,
+    });
+    const cookie = await grantStudent();
+    const { studentAnnotation: _annotation, ...body } = submissionBody();
+    const controller = new AbortController();
+    const running = postJson(system.app, '/api/preflight/evaluations', body, { cookie, signal: controller.signal });
+    await entered;
+    controller.abort(new Error('student changed projects'));
+    finish();
+    expect((await running).status).not.toBe(201);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+    ollamaRequest.mockResolvedValueOnce(generated);
+    expect((await postJson(system.app, '/api/preflight/evaluations', body, { cookie })).status).toBe(201);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves safe Gateway cooldown response headers at the application boundary', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn(async () => { throw new Error('private transport details'); });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'gateway-header-cooldown.sqlite'),
+      now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      suggestionProvider: 'cail-gateway',
+      ollamaConfig: { apiKey: 'fixture-gateway-identity', model: 'glm-5.3-flash' },
+      ollamaRequest,
+      suggestionFailure: () => ({ status: 503, message: 'Guidance is temporarily unavailable', details: { code: 'upstream_failure', shouldRetry: true, retryAfterSeconds: 7 }, headers: { 'Retry-After': '7' } }),
+    });
+    const cookie = await grantStudent();
+    const { studentAnnotation: _annotation, ...body } = submissionBody();
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('7');
+    expect(await response.json()).toEqual({ error: 'Guidance is temporarily unavailable', details: { code: 'upstream_failure', shouldRetry: true, retryAfterSeconds: 7 } });
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
   it('keeps only the newest review capability active without blocking later scales or cycles', async () => {

@@ -22,6 +22,7 @@
     "LOGIN_URL": "/auth/start",
     "COURSE_ID": "systems-mapping-default",
     "RELEASE": "ae5ea57-cloudflare-candidate",
-    "GATEWAY_MODEL": "glm-5.2"
+    "GATEWAY_MODEL": "glm-5.3-flash",
+    "GUIDANCE_CONCURRENCY": "8"
   }
 }

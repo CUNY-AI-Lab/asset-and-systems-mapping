@@ -1,12 +1,16 @@
+import { appendCoursePrompt } from '../shared/course-prompt.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
+import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
+import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import {
   containsRetiredSystemsLanguage,
   deterministicMemoReview,
   EXOSPHERE_NODE_TYPES,
   isDiscreteMicroNodeLabel,
+  isStatementMapElementLabel,
   isObviousLowerLevelMacroLabel,
   isNamedInstitutionLabel,
   isMesosystemLabel,
@@ -64,7 +68,8 @@ import {
   prototypeEventAudit,
   studentWorkflowEvaluationReport,
 } from './database.js';
-import { OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
+import { OllamaCloudError, OLLAMA_CLOUD_LIMITS, requestOllamaSuggestion } from './ollama.js';
+import { parseRetentionHoldUntil, retentionCleanupAllowed } from './retention.js';
 
 const DEFAULT_TEACHER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_STUDENT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -132,13 +137,10 @@ const MEMO_REVIEW_LIMITS = Object.freeze({
 // of strong, concrete items instead of triaging everything the model can find.
 // Macrosphere structures carry a scope (mapped elements they condition)
 // instead of connections.
-const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
-  micro: Object.freeze({ nodes: 10, connections: 8 }),
-  meso: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
-  exosphere: Object.freeze({ nodes: 6, connections: 5 }),
-  macrosphere: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
-});
+// MEMO_REVIEW_SCALE_LIMITS lives in shared/memo-review-limits.js so the
+// Gateway adapter's compact instruction cannot drift from the validator.
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
+  STUDENT_JUDGMENT_INSTRUCTION,
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
@@ -165,6 +167,7 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
+  STUDENT_JUDGMENT_INSTRUCTION,
   'MAP CONNECTION JSON CONTRACT',
   'The student has already chosen the nodes. Use only the exact node IDs supplied in the project input; never write a pronoun, alias, schedule phrase, or new noun phrase as an endpoint.',
   'Use the student description to suggest only direct, evidence-backed connections among those accepted nodes. Do not add nodes or facts that the student did not provide.',
@@ -177,6 +180,20 @@ const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   'At Micro, use a short plain active verb phrase for a concrete action or exchange that matters to the mapped situation. Do not use mere co-residence or co-presence, vague collaboration, or generic planning unless the student description makes that tie analytically consequential and names what passes between the endpoints.',
   'rationale must quote or closely paraphrase the exact student-description evidence for the relationship.',
   'Do not add confidence scores, evidence claims, Markdown, or prose outside the object.',
+].join('\n');
+const MAP_CHECK_SCHEMA_INSTRUCTION = [
+  STUDENT_JUDGMENT_INSTRUCTION,
+  'MAP CHECK JSON CONTRACT',
+  'The student has already built this part of the map. carriedNodes and carriedConnections ARE the map. memoDetails.intent names the check: gaps, connection, or synthesis. memoDetails.focus identifies the selected item when there is one. memoDetails.scopes lists mesosystem and condition memberships as exact IDs.',
+  'Never propose new map elements, relationships, labels, or evidence text. Point the student at what to verify, ask, or weigh. Use human-readable labels in point text and exact supplied IDs only in refs.',
+  `Return one object with exactly one key: notes. notes is an array of 1 to ${MAP_CHECK_LIMITS.notes} objects, each with exactly the keys kind, point, refs.`,
+  'kind: for gaps, "gap" or "question"; for connection, "evidence" or "question"; for synthesis, "claim" or "question".',
+  `point: at most ${MAP_CHECK_LIMITS.point} characters of plain instructional language. Do not score, grade, praise, or use rubric labels.`,
+  `refs: 1 to ${MAP_CHECK_LIMITS.refs} exact IDs from carriedNodes or carriedConnections that the note is about.`,
+  'For gaps: name what the active level still needs given the carried map, such as a mesosystem that links only one setting, an outside decision setting without a pathway into a Micro setting, a condition that reaches only one item, or a relationship whose verb does not say what passes between its endpoints. Ask one question the memo could answer.',
+  'For connection: for the focused item, say what evidence would strengthen or challenge it, which direction, frequency, or condition remains unclear, and what the student should look for in the memo or in a further source.',
+  'For synthesis: offer at most two claims the map now supports in answer to the inquiry, each tied to the items that support it, and the questions that remain open.',
+  'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
 const PROTOTYPE_EVENTS = new Set([
   'project_started',
@@ -251,6 +268,20 @@ class HttpError extends Error {
     this.details = details;
     this.headers = headers;
   }
+}
+
+function generationFailureDetails(error, provider) {
+  if (provider !== 'cail-gateway') return undefined;
+  const details = { code: 'guidance_unavailable', retryable: error?.retryable === true };
+  if (details.retryable && Number.isSafeInteger(error?.retryAfterSeconds)
+    && error.retryAfterSeconds >= 1) {
+    details.retryAfterSeconds = error.retryAfterSeconds;
+  }
+  if (error instanceof OllamaCloudError && typeof error.supportReference === 'string'
+    && /^[A-Za-z0-9._-]{1,100}$/u.test(error.supportReference)) {
+    details.supportReference = error.supportReference;
+  }
+  return details;
 }
 
 class MemoReviewSemanticError extends Error {
@@ -714,7 +745,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       throw new MemoReviewSemanticError(`nodes[${index}] is not a complete node object.`);
     }
     const canonicalLabel = normalizeMapElementLabel(label, { micro: activeScale === 'micro' });
-    if (!canonicalLabel || canonicalLabel !== label) throw new MemoReviewSemanticError(`nodes[${index}].label is not a complete, concrete map element.`);
+    if (!canonicalLabel || canonicalLabel !== label || isStatementMapElementLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label must name a complete map element rather than a statement.`);
     if (node.scale !== activeScale) throw new MemoReviewSemanticError(`nodes[${index}].scale does not match the active scale.`);
     if (!isNodeTypeAllowedAtScale(node.type, activeScale)) throw new MemoReviewSemanticError(`nodes[${index}].type does not belong at ${activeScale}.`);
     if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is a reference, action, clause, fragment, or non-entity Micro label.`);
@@ -1133,7 +1164,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments',
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
@@ -1183,6 +1214,9 @@ function validatePreflightEvaluationRequest(value) {
   if (!SYSTEMS_MAPPING_STAGE_IDS.includes(stageId)) throw new HttpError(400, 'stageId is not supported.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const sourceRecord = validateSourceRecord(value.sourceRecord);
+  let studentJudgments;
+  try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
+  catch { throw new HttpError(400, 'Student judgments are invalid.'); }
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
   return {
@@ -1191,6 +1225,7 @@ function validatePreflightEvaluationRequest(value) {
     stageId,
     inquiry,
     sourceRecord,
+    studentJudgments,
     sourceMaterial,
     projectOverlay,
     customInstructions,
@@ -1200,7 +1235,10 @@ function validatePreflightEvaluationRequest(value) {
 }
 
 function validateConnectionSuggestionRequest(value) {
-  assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay']);
+  assertOnlyKeys(value, ['activeScale', 'inquiry', 'prompt', 'nodes', 'relationships', 'projectOverlay', 'studentJudgments']);
+  let studentJudgments;
+  try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
+  catch { throw new HttpError(400, 'Student judgments are invalid.'); }
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   if (value.activeScale === 'meso') throw new HttpError(400, 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.');
   if (value.activeScale === 'macrosphere') throw new HttpError(400, 'Macrosphere uses structure scopes and does not use relationship edges.');
@@ -1245,11 +1283,106 @@ function validateConnectionSuggestionRequest(value) {
     activeScale: value.activeScale,
     inquiry,
     prompt,
+    studentJudgments,
     nodes,
     relationships,
     projectOverlay,
     customInstructions,
   };
+}
+
+function validateMapCheckRequest(value) {
+  assertOnlyKeys(value, ['activeScale', 'intent', 'inquiry', 'memoExcerpt', 'nodes', 'relationships', 'scopes', 'focus', 'projectOverlay', 'studentJudgments']);
+  let studentJudgments;
+  try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
+  catch { throw new HttpError(400, 'Student judgments are invalid.'); }
+  if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
+  if (typeof value.intent !== 'string' || !Object.hasOwn(MAP_CHECK_INTENTS, value.intent)) throw new HttpError(400, 'intent is not supported.');
+  if (value.intent === 'synthesis' && value.activeScale !== 'macrosphere') throw new HttpError(400, 'A synthesis check belongs at Macro-level.');
+  const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
+  const memoExcerpt = requireSnapshotText(value.memoExcerpt, 'memoExcerpt', { min: 0, max: MAP_CHECK_LIMITS.memoExcerpt });
+  if (!Array.isArray(value.nodes) || value.nodes.length < 1 || value.nodes.length > 50) {
+    throw new HttpError(400, 'nodes must contain between 1 and 50 items.');
+  }
+  const nodes = value.nodes.map((node, index) => {
+    const name = `nodes[${index}]`;
+    assertOnlyNamedKeys(node, ['id', 'label', 'type', 'scale'], name);
+    requireObjectKeys(node, ['id', 'label', 'type', 'scale'], name);
+    const scale = requireSnapshotText(node.scale, `${name}.scale`, { max: 40 });
+    if (!PREFLIGHT_SCALES.has(scale)) throw new HttpError(400, `${name}.scale is not supported.`);
+    return {
+      id: requireSnapshotText(node.id, `${name}.id`, { max: 200 }),
+      label: requireSnapshotText(node.label, `${name}.label`, { max: 200 }),
+      type: requireSnapshotText(node.type, `${name}.type`, { max: 100 }),
+      scale,
+    };
+  });
+  const nodeIds = new Set(nodes.map(({ id }) => id));
+  if (nodeIds.size !== nodes.length) throw new HttpError(400, 'nodes must not contain duplicate IDs.');
+  if (!Array.isArray(value.relationships) || value.relationships.length > 100) {
+    throw new HttpError(400, 'relationships must be an array of no more than 100 items.');
+  }
+  const relationshipIds = new Set();
+  const relationships = value.relationships.map((relationship, index) => {
+    const name = `relationships[${index}]`;
+    assertOnlyNamedKeys(relationship, ['id', 'source', 'target', 'verb'], name);
+    requireObjectKeys(relationship, ['id', 'source', 'target', 'verb'], name);
+    const id = requireSnapshotText(relationship.id, `${name}.id`, { max: 200 });
+    if (relationshipIds.has(id) || nodeIds.has(id)) throw new HttpError(400, `${name}.id must be unique.`);
+    relationshipIds.add(id);
+    const source = requireSnapshotText(relationship.source, `${name}.source`, { max: 200 });
+    const target = requireSnapshotText(relationship.target, `${name}.target`, { max: 200 });
+    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
+      throw new HttpError(400, `${name} must connect two different supplied nodes.`);
+    }
+    return { id, source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { max: 100 }) };
+  });
+  if (!Array.isArray(value.scopes) || value.scopes.length > 50) throw new HttpError(400, 'scopes must be an array of no more than 50 items.');
+  const scopes = value.scopes.map((scope, index) => {
+    const name = `scopes[${index}]`;
+    assertOnlyNamedKeys(scope, ['id', 'memberIds'], name);
+    requireObjectKeys(scope, ['id', 'memberIds'], name);
+    const id = requireSnapshotText(scope.id, `${name}.id`, { max: 200 });
+    if (!nodeIds.has(id)) throw new HttpError(400, `${name}.id must name a supplied node.`);
+    if (!Array.isArray(scope.memberIds) || scope.memberIds.length < 1 || scope.memberIds.length > 40) throw new HttpError(400, `${name}.memberIds must contain between 1 and 40 node IDs.`);
+    const memberIds = scope.memberIds.map((memberId, memberIndex) => requireSnapshotText(memberId, `${name}.memberIds[${memberIndex}]`, { max: 200 }));
+    if (new Set(memberIds).size !== memberIds.length || memberIds.some((memberId) => !nodeIds.has(memberId) || memberId === id)) throw new HttpError(400, `${name}.memberIds must be distinct supplied nodes.`);
+    return { id, memberIds };
+  });
+  let focus = null;
+  if (value.focus !== null && value.focus !== undefined) {
+    assertOnlyNamedKeys(value.focus, ['kind', 'id'], 'focus');
+    requireObjectKeys(value.focus, ['kind', 'id'], 'focus');
+    if (!['node', 'relationship', 'scope'].includes(value.focus.kind)) throw new HttpError(400, 'focus.kind is not supported.');
+    const id = requireSnapshotText(value.focus.id, 'focus.id', { max: 200 });
+    if (value.focus.kind === 'relationship' ? !relationshipIds.has(id) : !nodeIds.has(id)) throw new HttpError(400, 'focus.id must name a supplied map item.');
+    focus = { kind: value.focus.kind, id };
+  }
+  if (value.intent === 'connection' && !focus) throw new HttpError(400, 'A connection check needs a focused map item.');
+  const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
+  return { activeScale: value.activeScale, intent: value.intent, inquiry, memoExcerpt, studentJudgments, nodes, relationships, scopes, focus, projectOverlay, customInstructions };
+}
+
+function validateGeneratedMapCheck(value, intent, refIds) {
+  validateBoundedJson(value, 'generated map check', { maxSerialized: 16_000, maxObjectKeys: 40 });
+  assertOnlyNamedKeys(value, ['notes'], 'generated map check');
+  requireObjectKeys(value, ['notes'], 'generated map check');
+  if (!Array.isArray(value.notes) || value.notes.length < 1 || value.notes.length > MAP_CHECK_LIMITS.notes) {
+    throw new HttpError(400, `generated map check must contain between 1 and ${MAP_CHECK_LIMITS.notes} notes.`);
+  }
+  const kinds = new Set(MAP_CHECK_INTENTS[intent]);
+  return value.notes.map((note, index) => {
+    const name = `notes[${index}]`;
+    assertOnlyNamedKeys(note, ['kind', 'point', 'refs'], name);
+    requireObjectKeys(note, ['kind', 'point', 'refs'], name);
+    if (!kinds.has(note.kind)) throw new HttpError(400, `${name}.kind is not allowed for a ${intent} check.`);
+    const point = requireSnapshotText(note.point, `${name}.point`, { max: MAP_CHECK_LIMITS.point }).trim();
+    if (/[\u0000-\u001f\u007f]/.test(point)) throw new HttpError(400, `${name}.point contains control characters.`);
+    if (!Array.isArray(note.refs) || note.refs.length < 1 || note.refs.length > MAP_CHECK_LIMITS.refs) throw new HttpError(400, `${name}.refs must contain between 1 and ${MAP_CHECK_LIMITS.refs} map IDs.`);
+    const refs = note.refs.map((ref, refIndex) => requireSnapshotText(ref, `${name}.refs[${refIndex}]`, { max: 200 }));
+    if (new Set(refs).size !== refs.length || refs.some((ref) => !refIds.has(ref))) throw new HttpError(400, `${name}.refs must name distinct supplied map items.`);
+    return { kind: note.kind, point, refs };
+  });
 }
 
 function validateGeneratedConnections(value, nodes, activeScale) {
@@ -1812,7 +1945,7 @@ async function listModules(db, where = '', parameters = []) {
   `).all(...parameters)).map(moduleRow);
 }
 
-async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null) {
+async function effectiveSnapshot(db, configKind, scale, includeModules = false, profileOverride = null, stageId = null, coursePrompt = null) {
   if (!CONFIG_KINDS.includes(configKind)) throw new HttpError(400, 'configKind must be preflight or builder.');
   if (!EFFECTIVE_SCALES.includes(scale)) throw new HttpError(400, 'scale must be micro, meso, exosphere, or macrosphere.');
   const effectiveStageId = canonicalStageId(stageId || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
@@ -1820,13 +1953,13 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
   const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
   if (!teachingProfile) throw new HttpError(503, 'No course settings are published. Publish a draft in the Teacher Console, then try again.');
-  const effectivePrompt = composeEffectivePrompt({
+  const effectivePrompt = appendCoursePrompt(composeEffectivePrompt({
     configKind,
     scale,
     modules,
     teachingProfile: teachingProfile.profile,
     stageId: effectiveStageId,
-  });
+  }), coursePrompt?.amendment);
   const snapshot = {
     configKind,
     scale,
@@ -1834,10 +1967,11 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
     effectivePrompt,
     fixedGuardrails: FIXED_GUARDRAILS.join('\n'),
     fingerprint: fingerprint(effectivePrompt),
-    revision: Math.max(teachingProfile.revision, ...modules.map((module) => module.revision)),
+    revision: Math.max(teachingProfile.revision, ...modules.map((module) => module.revision), coursePrompt?.revision ?? 0),
     moduleVersions: [
       ...modules.map(({ id, revision, fingerprint: moduleFingerprint }) => ({ id, revision, fingerprint: moduleFingerprint })),
       { id: `teaching-profile.${teachingProfile.id}`, revision: teachingProfile.revision, fingerprint: teachingProfile.fingerprint },
+      ...(coursePrompt ? [{ id: 'course-appendix', revision: coursePrompt.revision, fingerprint: fingerprint(coursePrompt.amendment) }] : []),
     ],
     courseParts: coursePartsForTeachingProfile(teachingProfile.profile),
   };
@@ -2005,15 +2139,19 @@ function rateLimiter({ limit, windowMs, now, maxKeys = 512 }) {
 
 function concurrencyLimiter(limit) {
   let active = 0;
+  const activeKeys = new Set();
   return {
-    acquire() {
-      if (active >= limit) return null;
+    has(key) { return activeKeys.has(key); },
+    acquire(key) {
+      if (active >= limit || key !== undefined && activeKeys.has(key)) return null;
       active += 1;
+      if (key !== undefined) activeKeys.add(key);
       let released = false;
       return () => {
         if (released) return;
         released = true;
         active -= 1;
+        if (key !== undefined) activeKeys.delete(key);
       };
     },
   };
@@ -2060,21 +2198,23 @@ async function recordPrototypeEvent(db, {
   recordedAt,
   retentionMs,
   maxRows,
+  retentionHoldUntil = null,
 }) {
   const metadataJson = JSON.stringify(metadata);
   await inTransaction(db, async () => {
     await db.advisoryTransactionLock?.('prototype-events');
-    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows });
+    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows, retentionHoldUntil });
     await db.prepare(`
       INSERT INTO prototype_events
         (session_kind, session_ref, event_name, stage, metadata_json, recorded_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(sessionKind, sessionRef, event, stage, metadataJson, recordedAt);
-    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows });
+    await prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows, retentionHoldUntil });
   });
 }
 
-function prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows }) {
+function prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows, retentionHoldUntil = null }) {
+  if (!retentionCleanupAllowed(retentionHoldUntil, recordedAt)) return 0;
   const pruneExpired = db.prepare('DELETE FROM prototype_events WHERE recorded_at < ?').run(recordedAt - retentionMs);
   const pruneRows = () => db.prepare(`
     DELETE FROM prototype_events WHERE id IN (
@@ -2087,6 +2227,7 @@ function prunePrototypeEvents(db, { recordedAt, retentionMs, maxRows }) {
 }
 
 function purgeExpiredPreflightSubmissions(db, options) {
+  if (!retentionCleanupAllowed(options.retentionHoldUntil ?? null, options.purgedAt)) return 0;
   if (db.dialect !== 'postgres') return purgeExpiredPreflightSubmissionsSqlite(db, options);
   return purgeExpiredPreflightSubmissionsAsync(db, options);
 }
@@ -2205,6 +2346,7 @@ async function purgeExpiredPreflightSubmissionsAsync(db, {
 }
 
 function purgeExpiredPreflightEvaluations(db, options) {
+  if (!retentionCleanupAllowed(options.retentionHoldUntil ?? null, options.expiredAt)) return 0;
   if (db.dialect !== 'postgres') {
     const rows = db.prepare(`
       SELECT id FROM preflight_evaluations
@@ -2237,13 +2379,14 @@ async function purgeExpiredPreflightEvaluationsAsync(db, { expiredAt, limit }) {
 }
 
 export function createSystemsMappingApp(options = {}) {
+  const now = options.now ?? Date.now;
+  const retentionHoldUntil = parseRetentionHoldUntil(options.retentionHoldUntil, { now });
   const db = options.db || openDataStore({
     databaseUrl: options.databaseUrl,
     dbPath: options.dbPath,
     postgres: options.postgres,
   });
   const ownsDatabase = !options.db;
-  const now = options.now ?? Date.now;
   const hostedMode = options.hostedMode ?? Boolean(options.databaseUrl || options.publicOrigin);
   let publicOrigin = null;
   if (options.publicOrigin !== undefined && options.publicOrigin !== null) {
@@ -2339,6 +2482,7 @@ export function createSystemsMappingApp(options = {}) {
     { max: 10 },
   );
   const connectionSuggestionLimit = positiveInteger(options.connectionSuggestionLimit, 'connectionSuggestionLimit', 20, { max: 100 });
+  const mapCheckLimit = positiveInteger(options.mapCheckLimit, 'mapCheckLimit', 20, { max: 100 });
   const connectionSuggestionWindowMs = positiveInteger(
     options.connectionSuggestionWindowMs,
     'connectionSuggestionWindowMs',
@@ -2424,6 +2568,7 @@ export function createSystemsMappingApp(options = {}) {
       recordedAt,
       retentionMs: prototypeRetentionMs,
       maxRows: prototypeMaxRows,
+      retentionHoldUntil,
     });
     return continueWith(prototypeResult, () => continueWith(
       purgeExpiredPreflightSubmissions(db, {
@@ -2431,14 +2576,16 @@ export function createSystemsMappingApp(options = {}) {
         pendingRetentionDays: preflightPendingRetentionDays,
         decidedRetentionDays: preflightDecidedRetentionDays,
         limit: preflightRetentionPurgeLimit,
+        retentionHoldUntil,
       }),
       () => purgeExpiredPreflightEvaluations(db, {
         expiredAt: recordedAt,
         limit: preflightEvaluationPurgeLimit,
+        retentionHoldUntil,
       }),
     ));
   });
-  const ready = db.dialect === 'postgres'
+  const ready = ['postgres', 'durable-sqlite'].includes(db.dialect)
     ? Promise.resolve(db.ready).then(pruneAtStartup)
     : (pruneAtStartup(), Promise.resolve());
 
@@ -2464,6 +2611,11 @@ export function createSystemsMappingApp(options = {}) {
   });
   const connectionSuggestionLimiter = rateLimiter({
     limit: connectionSuggestionLimit,
+    windowMs: connectionSuggestionWindowMs,
+    now,
+  });
+  const mapCheckLimiter = rateLimiter({
+    limit: mapCheckLimit,
     windowMs: connectionSuggestionWindowMs,
     now,
   });
@@ -2519,6 +2671,7 @@ export function createSystemsMappingApp(options = {}) {
     recordedAt: clockValue(now),
     retentionMs: prototypeRetentionMs,
     maxRows: prototypeMaxRows,
+    retentionHoldUntil,
   });
 
   const ensureNotBlocked = (limiter, key, message) => {
@@ -2746,11 +2899,10 @@ export function createSystemsMappingApp(options = {}) {
         `inquiry must contain no more than ${OLLAMA_CLOUD_LIMITS.inquiryBytes} UTF-8 bytes for this suggestion runtime.`,
       );
     }
-    const rate = preflightEvaluationLimiter.take(student.sessionRef);
-    if (!rate.allowed) {
-      throw tooManyAttempts(rate.retryAfterSeconds, 'You have requested guidance several times in this class session. Try again later.');
+    if (preflightEvaluationCapacity.has(student.sessionRef)) {
+      throw new HttpError(409, 'Guidance is already running', { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 }, { 'Retry-After': '1' });
     }
-    const release = preflightEvaluationCapacity.acquire();
+    const release = preflightEvaluationCapacity.acquire(student.sessionRef);
     if (!release) throw tooManyAttempts(1, 'Guidance is busy. Try again shortly.');
 
     const evaluationId = randomBytes(24).toString('base64url');
@@ -2760,7 +2912,14 @@ export function createSystemsMappingApp(options = {}) {
     let configSnapshot;
     let runtimeMetadata;
     try {
-      const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true, null, input.stageId);
+      // Capacity refusals and duplicate clicks do not consume the student's
+      // generation allowance. No promise or model output is shared across requests.
+      const rate = preflightEvaluationLimiter.take(student.sessionRef);
+      if (!rate.allowed) {
+        throw tooManyAttempts(rate.retryAfterSeconds, 'You have requested guidance several times in this class session. Try again later.');
+      }
+      context.req.raw.signal.throwIfAborted();
+      const effective = await effectiveSnapshot(db, 'preflight', input.activeScale, true, null, input.stageId, context.env?.verifiedAccount?.coursePrompt);
       configSnapshot = evaluationConfigSnapshot(
         effective,
         input.projectOverlay,
@@ -2778,7 +2937,7 @@ export function createSystemsMappingApp(options = {}) {
             systemPrompt,
             activeScale: input.activeScale,
             inquiry: input.inquiry,
-            sourceMetadata: input.sourceRecord,
+            sourceMetadata: { ...input.sourceRecord, studentJudgments: input.studentJudgments },
             sourceText: input.sourceMaterial,
             ...(input.activeScale === 'meso' || input.carriedNodes.length ? { carriedNodes: input.carriedNodes } : {}),
             ...(input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
@@ -2788,11 +2947,15 @@ export function createSystemsMappingApp(options = {}) {
           try {
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
           } catch (error) {
-            if (!(error instanceof MemoReviewSemanticError) || suggestionProvider === 'cail-gateway') throw error;
+            if (!(error instanceof MemoReviewSemanticError)) throw error;
+            // CAIL Gateway owns provider/model failover. Do not silently issue a
+            // second potentially billable request when its completed output is
+            // unusable; keep the project editable and let the student choose.
+            if (suggestionProvider === 'cail-gateway') throw error;
             generated = await ollamaRequest({
               ...providerInput,
               systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}`,
-            }, ollamaConfig);
+            }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
           }
           suggestion = {
@@ -2809,7 +2972,7 @@ export function createSystemsMappingApp(options = {}) {
         } catch (error) {
           if (options.suggestionFailure) {
             const safe = options.suggestionFailure(error, context);
-            throw new HttpError(safe.status, safe.message, safe.details);
+            throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
           }
           // Code-only server log; provider bodies and memo content never land in logs.
           console.warn(
@@ -2818,7 +2981,11 @@ export function createSystemsMappingApp(options = {}) {
             error?.status ?? '',
             error instanceof MemoReviewSemanticError ? error.message : '',
           );
-          throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
+          throw new HttpError(
+            502,
+            'Suggestion generation is temporarily unavailable.',
+            generationFailureDetails(error, suggestionProvider),
+          );
         }
       } else {
         const deterministic = deterministicMemoReview({ ...input.sourceRecord, text: input.sourceMaterial }, input.activeScale, {
@@ -2827,7 +2994,17 @@ export function createSystemsMappingApp(options = {}) {
           });
         let review;
         try {
-          review = validateGeneratedMemoReviewAtomically(deterministic, input.activeScale, input.carriedNodes, input.carriedConnections);
+          // The local reader already resolves scope labels for its client
+          // output; the provider contract accepts the same references as IDs.
+          // Preserve every item and scope member, then apply the same validator.
+          const providerReview = {
+            ...deterministic,
+            nodes: deterministic.nodes.map((node) => ({
+              ...node,
+              ...(Array.isArray(node.scope) ? { scope: node.scope.map(member => typeof member === 'string' ? member : member.id) } : {}),
+            })),
+          };
+          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections);
         } catch (error) {
           if (!(error instanceof MemoReviewSemanticError)) throw error;
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
@@ -2845,9 +3022,10 @@ export function createSystemsMappingApp(options = {}) {
         });
       }
 
+      context.req.raw.signal.throwIfAborted();
       await inTransaction(db, async () => {
         await db.advisoryTransactionLock?.('preflight-evaluations:issue');
-        await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit });
+        await purgeExpiredPreflightEvaluations(db, { expiredAt: createdAt, limit: preflightEvaluationPurgeLimit, retentionHoldUntil });
         // Only the newest review capability is usable for a class session. Older
         // unused reviews are no longer reachable from the student project and
         // must not accumulate into a workflow-blocking "active" ceiling.
@@ -2889,18 +3067,22 @@ export function createSystemsMappingApp(options = {}) {
     if (!ollamaConfig) throw new HttpError(503, 'Connection suggestions are not available for this class.');
     const body = await parseJsonBody(context, JSON_BODY_LIMIT_BYTES);
     const input = validateConnectionSuggestionRequest(body);
-    const sourceMetadata = { nodes: input.nodes, existingConnections: input.relationships };
+    const sourceMetadata = { nodes: input.nodes, existingConnections: input.relationships, studentJudgments: input.studentJudgments };
     if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
       throw new HttpError(413, 'Use fewer nodes or existing connections for this request.');
     }
-    const rate = connectionSuggestionLimiter.take(student.sessionRef);
-    if (!rate.allowed) {
-      throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
+    if (preflightEvaluationCapacity.has(student.sessionRef)) {
+      throw new HttpError(409, 'Guidance is already running', { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 }, { 'Retry-After': '1' });
     }
-    const release = preflightEvaluationCapacity.acquire();
+    const release = preflightEvaluationCapacity.acquire(student.sessionRef);
     if (!release) throw tooManyAttempts(1, 'Connection suggestions are busy. Try again shortly.');
     try {
-      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, 'choose-what-to-map');
+      const rate = connectionSuggestionLimiter.take(student.sessionRef);
+      if (!rate.allowed) {
+        throw tooManyAttempts(rate.retryAfterSeconds, 'Connection suggestion limit reached for this class session. Try again later.');
+      }
+      context.req.raw.signal.throwIfAborted();
+      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, 'choose-what-to-map', context.env?.verifiedAccount?.coursePrompt);
       const systemPrompt = input.customInstructions
         ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`
         : `${effective.effectivePrompt}\n\n${CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION}`;
@@ -2921,7 +3103,7 @@ export function createSystemsMappingApp(options = {}) {
           }
           return proposed;
         };
-        let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
+        let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount, kind: 'connections' });
         try {
           connections = validateWholeResponse(generated.suggestion);
         } catch (error) {
@@ -2929,18 +3111,82 @@ export function createSystemsMappingApp(options = {}) {
           generated = await ollamaRequest({
             ...providerInput,
             systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\nReturn one complete replacement JSON object. Do not patch, explain, filter, or reuse any part of the rejected response. Every relationship must use exact supplied node IDs, must be new, and must satisfy the active-scale contract.\nValidation failure: ${error.message}`,
-          }, ollamaConfig);
+          }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
           connections = validateWholeResponse(generated.suggestion);
         }
       } catch (error) {
         if (options.suggestionFailure) {
           const safe = options.suggestionFailure(error, context);
-          throw new HttpError(safe.status, safe.message, safe.details);
+          throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
         }
         console.warn('connection suggestion generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
-        throw new HttpError(502, 'Connection suggestions are temporarily unavailable.');
+        throw new HttpError(
+          502,
+          'Connection suggestions are temporarily unavailable.',
+          generationFailureDetails(error, suggestionProvider),
+        );
       }
+      context.req.raw.signal.throwIfAborted();
       return context.json({ connections }, 201);
+    } finally {
+      release();
+    }
+  });
+
+  // Map Check reasons over the student's carried map instead of rereading the
+  // memo. It returns bounded notes tied to map IDs and never commits anything.
+  app.post('/api/map/check', async (context) => {
+    const student = await currentStudentSession(context, db, now);
+    if (!student) throw new HttpError(401, 'Student class access is required.');
+    if (!ollamaConfig) throw new HttpError(503, 'Map checks are not available for this class.');
+    const body = await parseJsonBody(context, JSON_BODY_LIMIT_BYTES);
+    const input = validateMapCheckRequest(body);
+    const sourceMetadata = { intent: input.intent, focus: input.focus, scopes: input.scopes, studentJudgments: input.studentJudgments };
+    if (Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
+      throw new HttpError(413, 'Use fewer scopes for this request.');
+    }
+    if (preflightEvaluationCapacity.has(student.sessionRef)) {
+      throw new HttpError(409, 'Guidance is already running', { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 }, { 'Retry-After': '1' });
+    }
+    const release = preflightEvaluationCapacity.acquire(student.sessionRef);
+    if (!release) throw tooManyAttempts(1, 'Map checks are busy. Try again shortly.');
+    try {
+      const rate = mapCheckLimiter.take(student.sessionRef);
+      if (!rate.allowed) {
+        throw tooManyAttempts(rate.retryAfterSeconds, 'Map check limit reached for this class session. Try again later.');
+      }
+      context.req.raw.signal.throwIfAborted();
+      const stageId = input.intent === 'synthesis' ? 'revise-and-export' : 'build-map';
+      const effective = await effectiveSnapshot(db, 'builder', input.activeScale, false, null, stageId, context.env?.verifiedAccount?.coursePrompt);
+      const systemPrompt = input.customInstructions
+        ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${MAP_CHECK_SCHEMA_INSTRUCTION}`
+        : `${effective.effectivePrompt}\n\n${MAP_CHECK_SCHEMA_INSTRUCTION}`;
+      let notes;
+      try {
+        const providerInput = {
+          systemPrompt,
+          activeScale: input.activeScale,
+          inquiry: input.inquiry,
+          sourceMetadata,
+          sourceText: input.memoExcerpt.trim() || 'No memo excerpt was supplied. Reason only from the carried map, the inquiry, and the student judgments.',
+          carriedNodes: input.nodes,
+          carriedConnections: input.relationships,
+        };
+        const refIds = new Set([...input.nodes.map(({ id }) => id), ...input.relationships.map(({ id }) => id)]);
+        // One attempt per explicit action. Invalid output is a visible failure,
+        // never a second paid request.
+        const generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount, kind: 'map-check' });
+        notes = validateGeneratedMapCheck(generated.suggestion, input.intent, refIds);
+      } catch (error) {
+        if (options.suggestionFailure) {
+          const safe = options.suggestionFailure(error, context);
+          throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
+        }
+        console.warn('map check generation failed:', error?.code ?? error?.name ?? 'unknown', error?.status ?? '');
+        throw new HttpError(502, 'Map checks are temporarily unavailable.', generationFailureDetails(error, suggestionProvider));
+      }
+      context.req.raw.signal.throwIfAborted();
+      return context.json({ intent: input.intent, notes }, 201);
     } finally {
       release();
     }
@@ -2959,7 +3205,7 @@ export function createSystemsMappingApp(options = {}) {
     const submittedAt = clockValue(now);
     const consumedEvaluation = await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('preflight-submissions:consume');
-      await purgeExpiredPreflightEvaluations(db, { expiredAt: submittedAt, limit: preflightEvaluationPurgeLimit });
+      await purgeExpiredPreflightEvaluations(db, { expiredAt: submittedAt, limit: preflightEvaluationPurgeLimit, retentionHoldUntil });
       const evaluation = await db.prepare(`
         SELECT project_metadata_json AS projectMetadata, active_scale AS activeScale,
           inquiry, source_record_json AS sourceRecord, source_material AS sourceMaterial,
@@ -3069,10 +3315,12 @@ export function createSystemsMappingApp(options = {}) {
     const expiresAt = savedAt + savedProjectTtlMs;
     await inTransaction(db, async () => {
       await db.advisoryTransactionLock?.('saved-projects:capacity');
-      await db.prepare(`
-        DELETE FROM saved_projects
-        WHERE expires_at IS NOT NULL AND expires_at <= ?
-      `).run(savedAt);
+      if (retentionCleanupAllowed(retentionHoldUntil, savedAt)) {
+        await db.prepare(`
+          DELETE FROM saved_projects
+          WHERE expires_at IS NOT NULL AND expires_at <= ?
+        `).run(savedAt);
+      }
       const total = await db.prepare('SELECT COUNT(*) AS count FROM saved_projects').get();
       if ((total?.count ?? 0) >= savedProjectMaxTotal) {
         throw new HttpError(507, 'The class workspace cannot store more project links right now.');
@@ -3274,6 +3522,7 @@ export function createSystemsMappingApp(options = {}) {
       pendingRetentionDays: preflightPendingRetentionDays,
       decidedRetentionDays: preflightDecidedRetentionDays,
       limit: preflightRetentionPurgeLimit,
+      retentionHoldUntil,
     }));
     const where = status === 'all' ? '' : 'WHERE ps.status = ?';
     const parameters = status === 'all' ? [200] : [status, 200];
@@ -3531,7 +3780,7 @@ export function createSystemsMappingApp(options = {}) {
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
     const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
-    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId);
+    const snapshot = await effectiveSnapshot(db, configKind, scale, false, profile, stageId, context.env?.verifiedAccount?.coursePrompt);
     const part = profile.profile.parts.find(({ scaleIds }) => scaleIds.includes(scale));
     const settings = part?.stages?.[stageId];
     if (!part || !settings) throw new HttpError(400, 'The selected part does not include this level and section. Choose a level and section listed under that part.');
@@ -3575,7 +3824,7 @@ export function createSystemsMappingApp(options = {}) {
     const configKind = context.req.query('configKind') || 'preflight';
     const scale = context.req.query('scale') || 'micro';
     const stageId = canonicalStageId(context.req.query('stageId') || (configKind === 'builder' ? 'build-map' : 'review-suggestions'));
-    return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false, null, stageId)));
+    return context.json(publicSnapshotMetadata(await effectiveSnapshot(db, configKind, scale, false, null, stageId, context.env?.verifiedAccount?.coursePrompt)));
   });
 
   app.all('/api/*', (context) => context.json({ error: 'API route not found.' }, 404));

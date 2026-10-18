@@ -1,0 +1,93 @@
+/* Canvas-first Studio: level rail, work panel and next bar.
+   Layout tokens come from ui/design-system.css; the map grid, inspector slot
+   and full-screen rules stay in styles.css. */
+
+.level-rail ol { display: flex; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface-subtle); }
+.level-rail li { display: flex; }
+.level-rail li + li { border-left: 1px solid var(--line); }
+.level-rail button { display: inline-flex; align-items: center; gap: 8px; min-height: var(--control-height); padding: 0 14px; border: 0; background: transparent; color: var(--muted); font: 600 14px/1.2 var(--body); cursor: pointer; }
+.level-rail button:disabled { color: var(--line-strong); cursor: default; }
+.level-rail button:not(:disabled):hover { background: var(--surface-hover); color: var(--ink); }
+.level-rail button[aria-current="step"] { color: var(--ink); background: var(--pale-blue); box-shadow: inset 0 -3px var(--blue); }
+.level-rail__mark { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; font-size: 12px; }
+.level-rail .is-complete .level-rail__mark, .level-rail button[aria-current="step"] .level-rail__mark { border-color: var(--blue); color: var(--blue); }
+.level-rail button[aria-current="step"] .level-rail__mark { background: var(--blue); color: var(--surface); }
+
+.map-toolbar > div:first-child { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+
+.work-panel__tabs { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface-subtle); }
+.work-panel__tabs button { min-height: var(--control-height); padding: 0 14px; border: 0; background: transparent; color: var(--muted); font: 600 14px/1.2 var(--body); cursor: pointer; }
+.work-panel__tabs button + button { border-left: 1px solid var(--line); }
+.work-panel__tabs button[aria-selected="true"] { color: var(--ink); background: var(--pale-blue); box-shadow: inset 0 -3px var(--blue); }
+.work-panel__tabs button:disabled { color: var(--line-strong); cursor: default; box-shadow: none; }
+.work-panel__body { padding: 14px 14px 22px; display: grid; gap: 14px; }
+.work-panel__body > .suggestions-panel { display: grid; gap: 12px; }
+.inspector .candidate-row { grid-template-columns: 1fr; }
+.inspector .candidate-row__count { display: none; }
+.inspector .candidate-actions { flex-wrap: wrap; }
+.inspector .candidate-steps { margin: 0; }
+.inspector .revision-grid, .inspector .export-strip { grid-template-columns: 1fr; }
+.inspector .studio-heading h1 { font-size: 22px; }
+.map-layout.has-inspector.is-panel-review { grid-template-columns: minmax(0, 1fr) minmax(380px, 44%); }
+.map-layout.has-inspector.is-panel-suggestions { grid-template-columns: minmax(0, 1fr) minmax(360px, 40%); }
+
+.next-step-detail { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.footer-context { min-width: 0; }
+
+.graph-node.is-dimmed, .graph-edge.is-dimmed, .graph-edge-label.is-dimmed { opacity: .32; }
+@media (forced-colors: active) { .graph-node.is-dimmed .node-card, .graph-edge.is-dimmed path { stroke-dasharray: 4 3; } }
+
+@media (max-width: 900px) {
+  .next-step-detail { display: none; }
+  .level-rail button { padding: 0 10px; font-size: 13px; }
+  .level-rail__mark { display: none; }
+  /* The phone map stage is a fixed-height column; keep the Studio chrome to
+     one extra row so the canvas keeps its reading size. */
+  .work-panel__tabs { flex: 1 0 100%; display: flex; }
+  .work-panel__tabs button { flex: 1; padding: 0 6px; font-size: 13px; }
+  .inspector.is-expanded { max-height: calc(100dvh - var(--header) - var(--footer) - var(--safe-bottom)); }
+  .inspector .work-panel__expand { position: absolute; top: 6px; right: 10px; }
+  .canvas-wrap.is-inspector-open:not(.is-panel-inspector) .canvas-chrome { visibility: visible; pointer-events: auto; }
+}
+
+@media (max-width: 600px) {
+  /* The phone controls row is a three-column grid (toggle, layer, search); the
+     tabs take their own full row beneath it. The overview hint gives its
+     height back to the canvas so labels keep their reading size. */
+  .map-toolbar > div:first-child { flex-wrap: nowrap; }
+  .map-toolbar { gap: 8px; margin-bottom: 8px; }
+  .map-toolbar h1 { font-size: 18px; white-space: nowrap; }
+  .level-rail ol { overflow: visible; }
+  .level-rail button { min-height: 40px; min-width: 40px; padding: 0 6px; font-size: 11px; }
+  .work-panel__tabs { grid-column: 1 / -1; grid-row: 2; display: flex; }
+  .work-panel__tabs button { min-height: 40px; }
+  .workspace--studio .map-overview-hint { display: none; }
+}
+
+/* Map Check notes */
+.map-check { display: grid; gap: 10px; padding: 14px 0 4px; border-top: 1px solid var(--line); }
+.map-check .work-panel__title h2 { margin: 0; font-size: 17px; }
+.map-check .work-panel__title .lede { margin: 4px 0 0; font-size: 14px; }
+.map-check__notes { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.map-check__note { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
+.map-check__note p { margin: 0; font-size: 15px; line-height: 1.45; }
+.map-check__kind { color: var(--blue); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.map-check__refs { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-check__disclosure { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+/* Native disclosure keeps export choices compact and keyboard accessible. */
+.export-strip--compact { display: block; padding: 12px 0; border: 0; }
+.export-dropdown { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
+.export-dropdown > summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 14px; cursor: pointer; font-weight: 600; list-style: none; }
+.export-dropdown > summary::-webkit-details-marker { display: none; }
+.export-dropdown > summary > :last-child { margin-left: auto; }
+.export-dropdown[open] > summary { border-bottom: 1px solid var(--line); }
+.export-dropdown__options { padding: 10px; display: grid; gap: 10px; }
+.export-dropdown fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.export-dropdown legend { padding: 0 4px 6px; color: var(--muted); font-size: 13px; }
+.export-dropdown button, .export-dropdown__import { min-height: 44px; padding: 8px 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: inherit; cursor: pointer; }
+.export-dropdown button small { display: block; color: var(--muted); font-size: 12px; }
+.export-dropdown button:hover, .export-dropdown__import:hover { background: var(--surface-hover); }
+.export-dropdown__import { display: flex; align-items: center; gap: 8px; position: relative; }
+.export-dropdown__import input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.export-dropdown__import:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }

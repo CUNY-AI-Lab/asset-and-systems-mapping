@@ -1,0 +1,97 @@
+import {
+  assertNoAccessibilityViolations,
+  captureSourceRenderedScreenshot,
+  expect,
+  scanAccessibility,
+  test,
+} from './support/test.js';
+
+// UI fixtures exercise the real built application without creating accounts,
+// calling a model, or writing feedback to a live course.
+const submission = {
+  id: 'teacher-layout-fixture',
+  projectId: 'teacher-layout-project',
+  projectMetadata: { title: 'Access memo', participantName: 'East Harlem group' },
+  activeScale: 'micro',
+  coursePart: { id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] },
+  status: 'pending',
+  revision: 1,
+  submittedAt: '2026-10-02T18:00:00.000Z',
+  sourceMaterial: 'Rosa attends a weekly group at East Side Center. Jo brings a chair near the door. Rosa visits a clinic each month and carries her appointment card between the two places.',
+  studentAnnotation: 'I want to check who arranges the appointment time',
+  inquiry: 'Who helps Rosa attend appointments?',
+  suggestion: {
+    guidance: [{ point: 'Who checks the appointment time?', evidenceExcerpt: 'Rosa carries her appointment card between the two places.' }],
+    nodes: [{ label: 'Rosa', scale: 'micro', evidence: 'Rosa attends a weekly group at East Side Center.' }],
+    connections: [],
+  },
+};
+
+async function openTeacherFixture(page, submissions) {
+  await page.route('**/api/auth/accounts', (route) => route.fulfill({ json: { teacherAccess: { mode: 'manual', claimEnabled: false } } }));
+  await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { id: 'teacher-layout-user', displayName: 'Course instructor' } } }));
+  await page.route('**/api/teacher/preflight-submissions?status=pending', (route) => route.fulfill({ json: { submissions } }));
+  await page.route(`**/api/teacher/preflight-submissions/${submission.id}`, (route) => route.fulfill({ json: { submission, reviewEvents: [] } }));
+  await page.goto('/');
+  await expect(page).toHaveTitle('Systems Mapping');
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
+}
+
+async function assertFittedLayout(page) {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  const headers = await page.locator('.review-column-heading h2').evaluateAll((elements) => elements.map((element) => {
+    const style = getComputedStyle(element);
+    return { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight };
+  }));
+  expect(new Set(headers.map((header) => JSON.stringify(header))).size).toBe(1);
+}
+
+test('teacher console empty queue is compact and returns to the application', async ({ page, makeAxeBuilder }, testInfo) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  await openTeacherFixture(page, []);
+  await expect(page.getByText('No submissions yet', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Submissions', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Work', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Feedback', exact: true })).toHaveCount(0);
+  expect(await page.locator('.teacher-review-grid').evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(200);
+  await assertFittedLayout(page);
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'teacher empty queue'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'teacher empty queue');
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'teacher empty queue dark'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'teacher empty queue dark');
+  await page.getByRole('button', { name: 'Back to class access', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Class code' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('teacher console stages work and feedback with normalized headings', async ({ page, makeAxeBuilder }, testInfo) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  await openTeacherFixture(page, [submission]);
+  await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Feedback', exact: true })).toBeVisible();
+  await expect(page.getByText(submission.sourceMaterial, { exact: true })).toBeVisible();
+  await assertFittedLayout(page);
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'teacher selected submission'));
+  await page.getByRole('heading', { name: 'Work', exact: true }).scrollIntoViewIfNeeded();
+  await captureSourceRenderedScreenshot(page, testInfo, 'teacher selected work');
+  await page.getByLabel('Feedback for the student', { exact: true }).fill('Check who confirms the appointment time');
+  await page.getByRole('button', { name: 'Add feedback and a question', exact: true }).click();
+  await expect(page.getByLabel('Question for the student', { exact: true })).toBeVisible();
+  await page.getByLabel('Question for the student', { exact: true }).fill('Who calls the clinic?');
+  await page.getByRole('heading', { name: 'Feedback', exact: true }).scrollIntoViewIfNeeded();
+  await captureSourceRenderedScreenshot(page, testInfo, 'teacher selected feedback');
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'teacher selected feedback dark'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'teacher selected feedback dark');
+  expect(errors).toEqual([]);
+});

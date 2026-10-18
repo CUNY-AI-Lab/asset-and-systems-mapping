@@ -85,4 +85,13 @@ describe('server-only runtime configuration', () => {
     expect(invalidEndpoint.stderr).toContain('OLLAMA_CLOUD_URL must be https://ollama.com.');
     expect(invalidEndpoint.stderr).not.toContain('fresh-test-only-key-material');
   });
+
+  it('rejects an invalid migration retention hold before database access', () => {
+    const invalidHold = runIndex({ ...HOSTED_ENV, SYSTEMS_MAPPING_CLASS_CODE: 'CALI2026Map7Qv9Wx3Z',
+      SYSTEMS_MAPPING_RETENTION_HOLD_UNTIL: 'indefinitely' });
+    expect(invalidHold.status).not.toBe(0);
+    expect(invalidHold.stderr).toContain('SYSTEMS_MAPPING_RETENTION_HOLD_UNTIL must be a valid UTC ISO timestamp');
+    expect(invalidHold.stderr).not.toContain(HOSTED_ENV.DATABASE_URL);
+    expect(invalidHold.stderr).not.toContain('could not initialize its persistence layer');
+  });
 });

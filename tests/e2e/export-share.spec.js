@@ -1,0 +1,41 @@
+import { readFile } from 'node:fs/promises';
+import { test, expect, captureSourceRenderedScreenshot, scanAccessibility, assertNoAccessibilityViolations } from './support/test.js';
+import { serializedEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
+import { STORAGE_KEY } from '../../src/projectLibrary.js';
+
+test('downloads map images and PDFs, and copies a saved link while preserving its access and expiry', async ({ page, context, makeAxeBuilder }, testInfo) => {
+  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+  const fixture=JSON.parse(serializedEastHarlemDisabilityProject());fixture.stage=4;
+  await page.addInitScript(({key,value})=>localStorage.setItem(key,value),{key:STORAGE_KEY,value:JSON.stringify(fixture)});
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  await page.goto('/');
+  await page.getByRole('textbox',{name:'Class code'}).fill('101');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  await page.getByRole('article',{name:'East Harlem disability resources'}).getByRole('button',{name:'Open project'}).click();
+  await expect(page.getByRole('heading',{name:'Review and export'})).toBeVisible();
+  await page.locator('.export-dropdown > summary').click();
+  for (const [label,ext] of [['PNG image','png'],['PDF','pdf']]) {
+    const pending=page.waitForEvent('download');await page.getByRole('button',{name:label,exact:true}).click();
+    const download=await pending;const path=testInfo.outputPath(`cumulative-map.${ext}`);await download.saveAs(path);
+    const data=await readFile(path);
+    expect(data.length).toBeGreaterThan(1000);
+    expect(data.subarray(0,ext==='png'?8:8).toString(ext==='png'?'hex':'ascii')).toBe(ext==='png'?'89504e470d0a1a0a':'%PDF-1.4');
+    await testInfo.attach(`Map ${ext}`,{path,contentType:ext==='png'?'image/png':'application/pdf'});
+  }
+  assertNoAccessibilityViolations(await scanAccessibility(page,makeAxeBuilder,testInfo,'Map exports'));
+  await captureSourceRenderedScreenshot(page,testInfo,'Map exports');
+  await page.getByRole('button',{name:'Project link',exact:true}).click();
+  await page.getByRole('button',{name:'Create project link',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Project link'});
+  await expect(dialog.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();
+  const expiry=await dialog.innerText();
+  await dialog.getByRole('button',{name:'Copy link',exact:true}).click();
+  const link=await page.evaluate(()=>navigator.clipboard.readText());
+  expect(link).toMatch(/\/p\/[A-Za-z0-9_-]{20,64}$/);
+  expect(await dialog.innerText()).toBe(expiry);
+  const visitor=await context.browser().newContext();
+  const other=await visitor.newPage();await other.goto(link);
+  await expect(other.getByRole('textbox',{name:'Class code'})).toBeVisible();
+  await visitor.close();
+  expect(errors).toEqual([]);
+});

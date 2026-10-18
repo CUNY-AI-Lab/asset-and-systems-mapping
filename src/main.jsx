@@ -6,6 +6,8 @@ import App from './App.jsx';
 import AccountWorkspace from './AccountWorkspace.jsx';
 import './styles.css';
 import './map-review.css';
+import './map-studio.css';
+import './ui/design-system.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

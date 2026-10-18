@@ -50,11 +50,18 @@ const JSON_ONLY_INSTRUCTION = [
 ].join(' ');
 
 export class OllamaCloudError extends Error {
-  constructor(message, code, { status } = {}) {
+  constructor(message, code, { status, retryable, retryAfterSeconds, supportReference } = {}) {
     super(message);
     this.name = 'OllamaCloudError';
     this.code = code;
     if (Number.isInteger(status)) this.status = status;
+    if (typeof retryable === 'boolean') this.retryable = retryable;
+    if (Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1) {
+      this.retryAfterSeconds = retryAfterSeconds;
+    }
+    if (typeof supportReference === 'string' && /^[A-Za-z0-9._-]{1,100}$/u.test(supportReference)) {
+      this.supportReference = supportReference;
+    }
   }
 }
 

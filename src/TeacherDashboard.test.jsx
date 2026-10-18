@@ -2,6 +2,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import TeacherDashboard from './TeacherDashboard.jsx';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -197,7 +198,63 @@ describe('TeacherDashboard', () => {
 
   afterEach(() => {
     cleanup();
+    releaseAccountStorage();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps institutional instructor recovery pinned to the current course', async () => {
+    useAccountStorage('instructor-recovery-account', null, { kind: 'course', id: 'seminar-one' });
+    const fetch = vi.fn(async () => jsonResponse({ user: null }));
+    vi.stubGlobal('fetch', fetch);
+    render(<TeacherDashboard institutionalMode onConfigurationChanged={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Instructor access required' })).toBeVisible();
+    const login = screen.getByRole('link', { name: 'CUNY Login' });
+    expect(login).toHaveAttribute('href', '/auth/start?returnTo=%2F%3Fcourse%3Dseminar-one');
+    expect(fetch.mock.calls[0][1].headers['x-systems-course']).toBe('seminar-one');
+  });
+
+  it.each(['server response', 'network failure', 'invalid response'])('keeps startup diagnostics out of the visible %s error', async failure => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (failure === 'network failure') throw new Error('ECONNRESET at private.internal:5432');
+      if (failure === 'invalid response') return new Response('private database diagnostic', { headers: { 'content-type': 'application/json' } });
+      return jsonResponse({ error: 'DATABASE_FAILED: private database diagnostic', details: { code: 'database_failed' } }, 503);
+    }));
+    render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('The Teacher Console could not be opened. Reload this page to try again.');
+    expect(document.body).not.toHaveTextContent(/DATABASE_FAILED|private\.internal|private database|ECONNRESET/);
+  });
+
+  it('gives submissions a useful recovery action without exposing the response body', async () => {
+    const working = authenticatedFetch();
+    await renderAuthenticated(vi.fn((path, options) => path === '/api/teacher/preflight-submissions?status=pending'
+      ? Promise.resolve(jsonResponse({ error: 'internal_queue_failure at private.internal' }, 503))
+      : working(path, options)));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Submissions could not be loaded. Select Refresh to try again.');
+    expect(document.body).not.toHaveTextContent(/internal_queue_failure|private\.internal/);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+  });
+
+  it('does not expose diagnostics when course settings cannot be loaded', async () => {
+    const working = authenticatedFetch({ queue: [] });
+    await renderAuthenticated(vi.fn((path, options) => path === '/api/teacher/profiles'
+      ? Promise.resolve(jsonResponse({ error: 'course_settings_failure: private database detail' }, 503))
+      : working(path, options)));
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Course settings could not be loaded. Reopen the Teacher Console to try again.');
+    expect(document.body).not.toHaveTextContent(/course_settings_failure|private database/);
+  });
+
+  it('keeps the instructor workspace available when sign-out cannot be confirmed', async () => {
+    const working = authenticatedFetch({ queue: [] });
+    const request = vi.fn((path, options) => path === '/api/auth/logout'
+      ? Promise.reject(new Error('logout_transport_failure: private session diagnostic'))
+      : working(path, options));
+    await renderAuthenticated(request);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sign-out could not be confirmed. Try signing out again before leaving this device.');
+    expect(screen.getByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    expect(document.body).not.toHaveTextContent(/logout_transport_failure|private session/);
   });
 
   it('renders an account-bound reset form and clears it after a successful passphrase change', async () => {
@@ -225,13 +282,13 @@ describe('TeacherDashboard', () => {
 
   it('defaults to the pending review queue and offers three advisory feedback modes', async () => {
     const fetchMock = await renderAuthenticated();
-    expect(screen.getByText('Manage course settings and any review records already available.')).toBeVisible();
-    const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
+    expect(screen.queryByText('Review student work and manage course settings')).not.toBeInTheDocument();
+    const reviewTab = screen.getByRole('tab', { name: 'Submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(reviewTab).toHaveAttribute('aria-selected', 'true');
     expect(reviewTab).toHaveAttribute('tabindex', '0');
     expect(guidanceTab).toHaveAttribute('tabindex', '-1');
-    expect(screen.getByRole('heading', { name: 'Available review records' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Submissions' })).toBeVisible();
     expect(await screen.findByRole('button', { name: /East Harlem Disability Services team/ })).toHaveAttribute('aria-current', 'true');
     expect(screen.getAllByText('Part 1 · Meso-level')).not.toHaveLength(0);
 
@@ -240,7 +297,7 @@ describe('TeacherDashboard', () => {
     expect(within(feedbackGroup).getByRole('button', { name: 'Add feedback' })).toBeVisible();
     expect(within(feedbackGroup).getByRole('button', { name: 'Add feedback and a question' })).toBeVisible();
     expect(within(feedbackGroup).getByRole('button', { name: 'Recommend another pass' })).toBeVisible();
-    expect(screen.getByText('Give the student one point to consider next. They can continue working while feedback is pending and decide how to use your response.')).toBeVisible();
+    expect(screen.getByText('Offer one next step')).toBeVisible();
     expect(screen.getByText(submissionDetail.inquiry)).toBeVisible();
     expect(screen.getByText(submissionDetail.studentAnnotation)).toBeVisible();
     const modelReview = screen.getByText('Review details').closest('details');
@@ -252,11 +309,47 @@ describe('TeacherDashboard', () => {
     expect(screen.getByRole('heading', { name: 'Map ideas' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Questions to consider' })).toBeVisible();
     expect(screen.getAllByText('Prior access shaped who knew which services to request.')).not.toHaveLength(0);
-    expect(screen.getByRole('heading', { name: 'Write to student' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Work' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Feedback' })).toBeVisible();
     expect(screen.getByLabelText('Feedback for the student')).toBeVisible();
-    expect(screen.getByText(/Give the student one point/)).toBeVisible();
+    expect(screen.queryByText(/Give the student one point/)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/history?limit=60');
+  });
+
+  it('shows one compact empty state without blank work or feedback columns', async () => {
+    await renderAuthenticated(authenticatedFetch({ queue: [] }));
+    expect(await screen.findByText('No submissions yet')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Student work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Feedback' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Choose an available review record.')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Submissions' }).closest('.teacher-review-grid')).toHaveClass('teacher-review-grid--queue-only');
+  });
+
+  it('reveals work and feedback only after the selected submission loads', async () => {
+    let finishDetail;
+    const detailResponse = new Promise((resolve) => { finishDetail = resolve; });
+    const ordinaryFetch = authenticatedFetch();
+    const fetchMock = vi.fn((path, options) => path === `/api/teacher/preflight-submissions/${submissionSummary.id}`
+      ? detailResponse
+      : ordinaryFetch(path, options));
+    await renderAuthenticated(fetchMock);
+    expect(await screen.findByText('Loading submission…')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Feedback' })).not.toBeInTheDocument();
+    finishDetail(jsonResponse({ submission: submissionDetail, reviewEvents: [] }));
+    await waitForSubmission();
+    expect(screen.getByRole('heading', { name: 'Work' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Feedback' })).toBeVisible();
+    expect(screen.queryByText('Loading submission…')).not.toBeInTheDocument();
+  });
+
+  it('omits an absent student note instead of adding an empty field', async () => {
+    await renderAuthenticated(authenticatedFetch({ detail: { ...submissionDetail, studentAnnotation: null } }));
+    await waitForSubmission();
+    expect(screen.queryByRole('heading', { name: 'Student note' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No student note was submitted.')).not.toBeInTheDocument();
   });
 
   it('falls back to the project title when no student or group name was provided', async () => {
@@ -337,7 +430,7 @@ describe('TeacherDashboard', () => {
 
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     expect(loginBody).toEqual({ userId: 'local-teacher-id', passphrase: 'a locally chosen phrase' });
-    expect(await screen.findByText('No review records are available. The current student workflow does not send work to this queue.')).toBeVisible();
+    expect(await screen.findByText('No submissions yet')).toBeVisible();
     expect(screen.queryByText(/send your work here|submit your map for review/i)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([path]) => path)).toContain('/api/teacher/preflight-submissions?status=pending');
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
@@ -418,8 +511,10 @@ describe('TeacherDashboard', () => {
     fireEvent.click(within(feedbackGroup).getByRole('button', { name: 'Add feedback' }));
     fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
 
-    expect(await screen.findByText('No review records are available. The current student workflow does not send work to this queue.')).toBeVisible();
-    expect(screen.getByText('Feedback recorded. This review record is no longer pending.')).toBeVisible();
+    expect(await screen.findByText('No submissions yet')).toBeVisible();
+    expect(screen.getByText('Feedback saved')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Work' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Feedback' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Latest feedback' })).toBeVisible();
     expect(screen.getByText(event.instructorAnnotation)).toBeVisible();
     expect(decisionBody).toEqual({ decision: 'approve', instructorAnnotation: event.instructorAnnotation, expectedRevision: 2 });
@@ -468,7 +563,7 @@ describe('TeacherDashboard', () => {
   it('lazy-loads compact Part, Level, and Section controls with version details collapsed', async () => {
     const fetchMock = await renderAuthenticated();
     await waitForSubmission();
-    const reviewTab = screen.getByRole('tab', { name: 'Review submissions' });
+    const reviewTab = screen.getByRole('tab', { name: 'Submissions' });
     const guidanceTab = screen.getByRole('tab', { name: 'Course settings' });
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/profiles');
 
@@ -502,7 +597,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByLabelText('Course material for this section')).toHaveValue(partTwoStages['review-suggestions'].materials);
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByRole('heading', { name: 'Preview this section' }).closest('aside');
-    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · Review memo');
+    expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · Memo review');
     expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one map item.');
     fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();
@@ -562,7 +657,8 @@ describe('TeacherDashboard', () => {
   });
 
   it('creates, saves, and publishes selected-section guidance without editing the published version in place', async () => {
-    const draftProfile = { ...activeProfile, id: 'draft-profile-identifier-000001', name: 'Evidence guidance', status: 'draft', parentId: activeProfile.id };
+    const intakeQuestions = [{ id: 'question-1', text: '  Keep this legacy question unchanged\n', required: false }];
+    const draftProfile = { ...activeProfile, profile: { ...profileValue, intakeQuestions }, id: 'draft-profile-identifier-000001', name: 'Evidence guidance', status: 'draft', parentId: activeProfile.id };
     let profiles = [activeProfile];
     const requests = [];
     const fetchMock = vi.fn(async (path, options = {}) => {
@@ -618,6 +714,7 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByText('Draft revision 2 saved.')).toBeVisible();
     expect(screen.getByText('Draft saved')).toBeVisible();
     const savedBody = requests.find(([path, method]) => path === `/api/teacher/profiles/${draftProfile.id}` && method === 'PUT')?.[2];
+    expect(savedBody.profile.intakeQuestions).toEqual(intakeQuestions);
     expect(savedBody.profile.parts[0]).toMatchObject({ id: 'part-1', label: 'Part 1', scaleIds: ['micro', 'meso'] });
     expect(savedBody.profile.parts[0].stages['review-suggestions']).toEqual({
       guidance: 'Return first to evidence that names a relationship.\n\nMicro-level: Ask the student to name the direct action.',

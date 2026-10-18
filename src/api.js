@@ -1,4 +1,8 @@
 import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
+import { courseRequestHeaders, initialApiCourseSelection } from './courseContext.js';
+import { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
+import { durableGuidance } from './durableGuidance.js';
+export { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 export class ApiError extends Error {
   constructor(message, status, payload = null) {
     super(message);
@@ -8,13 +12,28 @@ export class ApiError extends Error {
   }
 }
 
+export class TimeoutError extends Error {
+  constructor(timeoutMs = GUIDANCE_REQUEST_TIMEOUT_MS) {
+    super('Guidance request timed out');
+    this.name = 'TimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export async function apiRequest(path, options = {}) {
-  const { body, headers: suppliedHeaders, ...requestOptions } = options;
+  const { body, headers: suppliedHeaders, workspace = projectStorage(), ...requestOptions } = options;
+  // Capture the workspace once, before any asynchronous work. Supplied headers
+  // cannot redirect a pending request into a different account or course.
+  const selection = workspace?.courseSelection || initialApiCourseSelection();
+  const headers = { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(suppliedHeaders || {}) };
+  for (const name of Object.keys(headers)) {
+    if (['x-systems-account-cache', 'x-systems-course'].includes(name.toLowerCase())) delete headers[name];
+  }
+  Object.assign(headers, courseRequestHeaders(selection), workspace?.cacheKey ? { 'x-systems-account-cache': workspace.cacheKey } : {});
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...requestOptions,
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}),
-      ...(projectStorage()?.cacheKey ? { 'x-systems-account-cache': projectStorage().cacheKey } : {}), ...(suppliedHeaders || {}) },
+    headers,
     body: body && typeof body !== 'string' ? JSON.stringify(body) : body,
   });
   const contentType = response.headers.get('content-type') || '';
@@ -22,7 +41,7 @@ export async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const requestId = payload?.details?.requestId;
     const support = typeof requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId) ? ` Support ID: ${requestId}` : '';
-    if (response.status === 401 && projectStorage()?.prefix && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl());
+    if (response.status === 401 && workspace?.cacheKey && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl(selection));
     throw new ApiError((payload?.error || `Request failed (${response.status})`) + support, response.status, payload);
   }
   return payload;
@@ -49,12 +68,59 @@ export function endStudentAccess() {
   return apiRequest('/api/student/logout', { method: 'POST' });
 }
 
+async function guidanceRequest(path, payload, options = {}) {
+  const { timeoutMs = GUIDANCE_REQUEST_TIMEOUT_MS, signal, ...requestOptions } = options;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > GUIDANCE_REQUEST_TIMEOUT_MS) {
+    throw new RangeError(`timeoutMs must be an integer from 1 to ${GUIDANCE_REQUEST_TIMEOUT_MS}`);
+  }
+  const abortReason = () => signal.reason ?? new DOMException('Request cancelled', 'AbortError');
+  if (signal?.aborted) throw abortReason();
+  const controller = new AbortController();
+  let timer;
+  let onAbort;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new TimeoutError(timeoutMs);
+      // Settle the deadline first so an abort-aware fetch cannot replace the
+      // typed timeout with a generic AbortError.
+      reject(error);
+      controller.abort(error);
+    }, timeoutMs);
+    if (signal) {
+      onAbort = () => {
+        const reason = abortReason();
+        reject(reason);
+        controller.abort(reason);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+  try {
+    // apiRequest includes body parsing; the deadline covers both phases and
+    // still settles if a transport or body reader ignores cancellation.
+    return await Promise.race([
+      apiRequest(path, { ...requestOptions, method: 'POST', body: payload, signal: controller.signal }),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
+}
+
 export function createPreflightEvaluation(payload, options = {}) {
-  return apiRequest('/api/preflight/evaluations', { ...options, method: 'POST', body: payload });
+  if (options.durable) return durableGuidance(apiRequest, (message, status, result) => new ApiError(message, status, result), 'memo', payload, { ...options, storage: projectStorage() });
+  return guidanceRequest('/api/preflight/evaluations', payload, options);
 }
 
 export function suggestMapConnections(payload, options = {}) {
-  return apiRequest('/api/map/connections', { ...options, method: 'POST', body: payload });
+  if (options.durable) return durableGuidance(apiRequest, (message, status, result) => new ApiError(message, status, result), 'connections', payload, { ...options, storage: projectStorage() });
+  return guidanceRequest('/api/map/connections', payload, options);
+}
+
+export function checkMap(payload, options = {}) {
+  if (options.durable) return durableGuidance(apiRequest, (message, status, result) => new ApiError(message, status, result), 'map-check', payload, { ...options, storage: projectStorage() });
+  return guidanceRequest('/api/map/check', payload, options);
 }
 
 export function createProjectLink(project) {

@@ -22,3 +22,10 @@ Preserve recovery copies and optimistic revisions. An account change must not
 make an old browser tab write into the new account. A code rollback never
 authorizes a database rollback. Report source tests, hosted CI, deployed source,
 and real signed-in model acceptance as separate evidence.
+
+The student interface is canvas-first: after the memo, every level renders the
+map with Suggestions, Inspector and Review panels (`src/App.jsx` `MapStage`,
+`src/MapStudio.jsx`, `src/nextStep.js`). Stage numbers and labels are still the
+record of progress and must not be renumbered. `wrangler.dev.jsonc` deploys the
+separate `systems-mapping-dev` Worker; production releases stay manual.
+

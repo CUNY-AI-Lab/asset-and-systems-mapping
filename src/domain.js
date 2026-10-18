@@ -446,6 +446,15 @@ function isTemporalOnlyMapElementLabel(label, rejectScheduleHead = false) {
   return sawTemporal || (numericTokens >= 2 && rangeConnector);
 }
 
+// Validation rejects the whole generated batch; it never trims a sentence
+// into an invented actor or silently drops individual model suggestions.
+const MAP_ELEMENT_CLAUSE = /(?:\b(?:who|which|that)\s+(?:is|are|was|were|has|have|can|will|brings|carries|needs|does)\b|\s+(?:is|are|was|were|has|have|had|can|could|must|should|will|would|does|did)\s+|\s+(?:brings?|brought|carries|carried|needs?|needed|requires?|required|books?|booked|pads?|padded|reminds?|reminded|cooks?|cooked|watches|watched|handles?|handled|commutes?|commuted|sleeps?|slept|sits|cut|cuts|lost|pays?|paid|drives?|drove|presumes?|presumed|decides?|decided|limits?|limited|plans?|planned|sends?|sent|keeps?|kept|waits?|waited|appeals?|appealed)\s+\S+)/iu;
+
+export function isStatementMapElementLabel(value) {
+  return typeof value === 'string' && (MAP_ELEMENT_CLAUSE.test(value)
+    || /^(?:when|because|although|while|if|unless)\s+/iu.test(value));
+}
+
 export function normalizeMapElementLabel(value, { micro = false } = {}) {
   if (typeof value !== 'string') return null;
   let label = normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '');
@@ -515,6 +524,8 @@ export function normalizeMicroNodeLabel(value) {
 export function isDiscreteMicroNodeLabel(value) {
   const label = cleanMicroNodeLabel(value);
   return Boolean(label && label === normalizeWhitespace(value).replace(/^["'“”‘’\s]+|["'“”‘’\s.!?;,]+$/g, '')
+    && !MAP_ELEMENT_CLAUSE.test(label)
+    && !/^(?:when|because|although|while|if|unless)\s+/iu.test(label)
     && normalizeMicroNodeLabel(label) === label
     && !MICRO_NODE_ABSTRACT_LABEL.test(label)
     && !MICRO_NODE_COORDINATED_ENTITY_NOUNS.test(label)
@@ -1359,41 +1370,37 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
   }
   const guidance = activeScale === 'micro'
     ? [...(reviewNodes.length ? [{
-      point: truncateCollapsedText(`The memo names ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'node' : 'nodes'}: ${reviewNodes.map((node) => node.label).join(', ')}.`, PROJECT_LIMITS.memoGuidanceText),
+      point: 'Check these items against the memo',
       ...(reviewNodes[0].evidence ? { evidenceExcerpt: truncateCollapsedText(reviewNodes[0].evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
-    }] : []), ...connectionDetails.slice(0, 3).map((connection) => ({
-      point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
+    }] : []), ...connectionDetails.slice(0, 2).map((connection) => ({
+      point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}`, PROJECT_LIMITS.memoGuidanceText),
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
     }))]
     : activeScale === 'meso'
       ? reviewNodes.slice(0, 3).map((node) => ({
-        point: truncateCollapsedText(`Review ${naturalList(node.scope.map((member) => member.label))} as one mesosystem.`, PROJECT_LIMITS.memoGuidanceText),
+        point: 'Review how these settings interact',
         ...(node.evidence ? { evidenceExcerpt: truncateCollapsedText(node.evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
       }))
-      : connectionDetails.slice(0, 3).map((connection) => ({
-      point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}.`, PROJECT_LIMITS.memoGuidanceText),
+      : connectionDetails.slice(0, 2).map((connection) => ({
+      point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}`, PROJECT_LIMITS.memoGuidanceText),
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
       }));
   // The outer levels are produced by elicitation, not extraction: the memo
   // rarely names the institutions and structures behind it, so the review
   // walks the standard categories the way an eco-map instrument does.
   if (activeScale === 'exosphere') {
-    const anchors = carriedNodes.slice(0, 3).map((node) => node.label).join(', ');
-    guidance.push({ point: truncateCollapsedText(anchors
-      ? `For ${anchors}, identify outside offices or decision-making bodies whose actions change what happens in an immediate setting. A named institution the person participates in directly remains in Micro.`
-      : 'Identify outside offices or decision-making bodies whose actions change what happens in an immediate setting. A named institution the person participates in directly remains in Micro.', PROJECT_LIMITS.memoGuidanceText) });
+    guidance.push({ point: 'Identify outside decisions affecting mapped settings' });
   }
   if (activeScale === 'macrosphere') {
-    guidance.push({ point: truncateCollapsedText('Identify a broader law, policy, economic condition, or cultural belief only when it shapes multiple parts of the map. After naming the condition, choose the map items it affects.', PROJECT_LIMITS.memoGuidanceText) });
+    guidance.push({ point: 'Connect broader conditions to affected map items' });
   }
   if (!guidance.length) {
     guidance.push({ point: activeScale === 'micro'
-      ? 'No clearly named people, roles, activities, objects, or immediate settings were found. You can continue and add Micro elements yourself.'
+      ? 'Add an item supported by the memo'
       : activeScale === 'meso'
-        ? 'No interrelation among two or more Micro settings was found. You can continue and identify the settings that form a mesosystem.'
-        : 'No clear connections were found. You can continue and describe them yourself.' });
+        ? 'Connect two mapped settings'
+        : 'Add a supported connection' });
   }
-  guidance.splice(4);
   const first = connectionDetails[0] || null;
   const example = activeScale === 'meso' && reviewNodes[0]
     ? truncateCollapsedText(`${reviewNodes[0].label} includes ${naturalList(reviewNodes[0].scope.map((member) => member.label))}.`, PROJECT_LIMITS.memoReviewExample)
@@ -1409,28 +1416,9 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       : activeScale === 'macrosphere'
         ? reviewNodes.length >= 1
         : (reviewNodes.length + carriedNodes.length) >= 2 && connections.length >= 1;
-  const outerNote = activeScale === 'macrosphere'
-    ? `The memo names ${reviewNodes.length} possible broader ${reviewNodes.length === 1 ? 'condition' : 'conditions'} and identifies at least two affected map items for each one. Continue to choose which belong.`
-    : reviewNodes.length
-      ? `The memo names ${reviewNodes.length} new ${reviewNodes.length === 1 ? 'institution' : 'institutions'} and ${connections.length} supported ${connections.length === 1 ? 'connection' : 'connections'} to Micro settings. Continue to choose what belongs.`
-      : `The memo describes ${connections.length} supported Exo-level ${connections.length === 1 ? 'connection' : 'connections'} to Micro settings already on your map. Continue to choose which ones belong.`;
   const readiness = {
     ready,
-    note: truncateCollapsedText(ready
-      ? activeScale === 'micro'
-        ? reviewNodes.length
-          ? `The memo names ${reviewNodes.length} possible nodes. Continue to choose which ones belong in the Micro map.`
-          : 'No new Micro nodes were found. Review any new direct relationships before continuing.'
-        : activeScale === 'meso'
-          ? `The review identifies ${reviewNodes.length} possible ${reviewNodes.length === 1 ? 'mesosystem' : 'mesosystems'} among settings carried from Micro. Continue to choose which belong in the map.`
-          : outerNote
-      : activeScale === 'micro'
-        ? 'Fewer than two possible nodes were found. You can continue, or name more people, roles, groups, or settings in the memo.'
-        : activeScale === 'meso'
-          ? 'No interrelation among two or more Micro settings was found. You can continue and identify the settings that form a mesosystem.'
-          : activeScale === 'macrosphere'
-            ? 'No broader condition with enough evidence was found. Revise the memo, or add a condition yourself and mark it as needing more evidence.'
-            : 'No supported outside decision setting was found. You can continue and ask which outside office, funder, or service system changes what happens in an immediate setting.', PROJECT_LIMITS.memoGuidanceText),
+    note: ready ? 'Map is ready' : 'Review needs more evidence',
   };
   return { guidance, nodes: reviewNodes, connections, example: ['micro', 'meso'].includes(activeScale) ? null : example, readiness };
 }
@@ -1883,8 +1871,12 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
       if (sourceNode?.scale !== 'micro') invalidProject(`${itemPath}.source`, 'must reference a Micro node for a direct Micro relationship');
       if (targetNode?.scale !== 'micro') invalidProject(`${itemPath}.target`, 'must reference a Micro node for a direct Micro relationship');
       const relationshipIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
-      if (relationshipIsLive && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live Micro node');
-      if (relationshipIsLive && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live Micro node');
+      // Removing an item is a valid student choice. A pending candidate
+      // connection can remain available for repair, but cannot enter the map.
+      const needsLiveEndpoints = relationshipIsLive
+        && !(path === 'project.candidates.edges' && edge.status === 'pending');
+      if (needsLiveEndpoints && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live Micro node');
+      if (needsLiveEndpoints && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live Micro node');
       if (relationshipIsLive && isMicroSettingNode(sourceNode) && isMicroSettingNode(targetNode)) invalidProject(itemPath, 'must not encode an interrelation between two Micro settings as a Micro relationship');
     }
     if (edge.scale === 'exosphere') {
@@ -2031,7 +2023,7 @@ function validateMemoReview(review, path) {
     assertObject(node, nodePath);
     assertKnownKeys(node, ['label', 'type', 'scale', 'evidence', 'basis', 'deontic', 'scope'], nodePath);
     assertString(node.label, `${nodePath}.label`, false, 200);
-    if (normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label) invalidProject(`${nodePath}.label`, 'must name a complete, concrete map element rather than a reference, modifier, action fragment, or time expression');
+    if (normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label || isStatementMapElementLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name a complete map element rather than a statement, reference, modifier, action fragment, or time expression');
     if (containsRetiredSystemsLanguage(node.label)) invalidProject(`${nodePath}.label`, 'must use a literal, conventional name for the map element');
     assertEnum(node.type, NODE_TYPES, `${nodePath}.type`);
     assertEnum(node.scale, SCALE_ORDER, `${nodePath}.scale`);
@@ -2647,7 +2639,9 @@ function migrateScaleTypeSemantics(project) {
       const targetScale = targetNode?.scale;
       const edgeIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
       const unavailableEndpoint = [sourceNode, targetNode].some((node) => !node || node.status === 'rejected' || node.claimState === 'retired');
-      if (edgeIsLive && unavailableEndpoint) {
+      const repairableCandidate = container === 'candidates' && edge.status === 'pending'
+        && sourceNode && targetNode && sourceScale === 'micro' && targetScale === 'micro';
+      if (edgeIsLive && unavailableEndpoint && !repairableCandidate) {
         edge.status = 'rejected';
         edge.claimState = 'retired';
         appendSemanticMigrationNote(edge, 'Retired during migration because a relationship endpoint is not a live, concrete map element.');

@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  apiRequest,
+  ApiError,
+  createPreflightEvaluation,
   deleteProjectLink,
+  GUIDANCE_REQUEST_TIMEOUT_MS,
   revokeProjectLink,
+  suggestMapConnections,
+  TimeoutError,
   updateProjectLink,
 } from './api.js';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
+import { parseCourseSelection } from './courseContext.js';
 
 function successfulFetch() {
   return vi.fn(async () => ({
@@ -12,6 +20,76 @@ function successfulFetch() {
     json: async () => ({ accepted: true }),
   }));
 }
+
+describe('course API scope', () => {
+  afterEach(() => {
+    releaseAccountStorage();
+    window.localStorage.clear();
+    window.history.replaceState(null, '', '/');
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps public Node requests unchanged even when the URL contains a course', async () => {
+    vi.stubEnv('VITE_ACCOUNT_WORKSPACE', 'false');
+    window.history.replaceState(null, '', '/?course=course-a');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/config/public');
+    expect(fetch.mock.calls[0][1].headers).toEqual({});
+  });
+
+  it('sends the selected course on every Cloudflare request before bootstrap', async () => {
+    vi.stubEnv('VITE_ACCOUNT_WORKSPACE', 'true');
+    window.history.replaceState(null, '', '/?course=course-a');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/cloud/account');
+    expect(fetch.mock.calls[0][1].headers).toEqual({ 'x-systems-course': 'course-a' });
+  });
+
+  it('rejects invalid and duplicate Cloudflare selections without a general request', async () => {
+    vi.stubEnv('VITE_ACCOUNT_WORKSPACE', 'true');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    for (const search of ['?course=', '?course=a&course=a']) {
+      window.history.replaceState(null, '', `/${search}`);
+      await expect(apiRequest('/api/cloud/account')).rejects.toMatchObject({ status: 403, payload: { details: { code: 'course_invalid' } } });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('pins requests to their account adapter despite URL or global storage changes', async () => {
+    const original = useAccountStorage('server-cache-a', null, parseCourseSelection('?course=course-a'));
+    window.history.replaceState(null, '', '/?course=course-b');
+    useAccountStorage('server-cache-b', null, parseCourseSelection('?course=course-b'));
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/cloud/projects/map-a', {
+      method: 'PUT', body: { project: '{}' }, workspace: original,
+      headers: { 'X-Systems-Course': 'course-b', 'x-systems-account-cache': 'server-cache-b' },
+    });
+    expect(fetch.mock.calls[0][1].headers).toEqual({
+      'Content-Type': 'application/json', 'x-systems-course': 'course-a', 'x-systems-account-cache': 'server-cache-a',
+    });
+    expect(fetch.mock.calls[0][1]).not.toHaveProperty('workspace');
+  });
+
+  it('keeps all ordinary child APIs in the established course after URL changes', async () => {
+    useAccountStorage('server-cache-a', null, parseCourseSelection('?course=course-a'));
+    window.history.replaceState(null, '', '/?course=course-b');
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await apiRequest('/api/student/session');
+    await updateProjectLink('token', '{}', 1);
+    await createPreflightEvaluation({});
+    expect(fetch).toHaveBeenCalledTimes(3);
+    for (const [, options] of fetch.mock.calls) {
+      expect(options.headers['x-systems-course']).toBe('course-a');
+      expect(options.headers['x-systems-account-cache']).toBe('server-cache-a');
+    }
+  });
+});
 
 describe('project link API helpers', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -64,5 +142,170 @@ describe('project link API helpers', () => {
 
     expect(() => updateProjectLink('token', '{}', 0)).toThrow('positive integer');
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('bounded guidance requests', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const helpers = [
+    ['memo guidance', createPreflightEvaluation, '/api/preflight/evaluations'],
+    ['connection guidance', suggestMapConnections, '/api/map/connections'],
+  ];
+
+  it.each(helpers)('times out hanging %s fetches even when transport ignores Abort', async (_, request, path) => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetch);
+    const pending = request({ inquiry: 'Access' }, { timeoutMs: 25 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError', timeoutMs: 25 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe(path);
+    expect(fetch.mock.calls[0][1]).not.toHaveProperty('timeoutMs');
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(fetch.mock.calls[0][1].signal.reason).toBeInstanceOf(TimeoutError);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(helpers)('includes hanging %s response-body parsing within the same deadline', async (_, request) => {
+    vi.useFakeTimers();
+    const json = vi.fn(() => new Promise(() => {}));
+    const fetch = vi.fn(async () => ({ ok: true, headers: { get: () => 'application/json' }, json }));
+    vi.stubGlobal('fetch', fetch);
+    const pending = request({}, { timeoutMs: 25 });
+    const assertion = expect(pending).rejects.toBeInstanceOf(TimeoutError);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(json).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('ends the complete action at 30 seconds', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetch);
+    const pending = createPreflightEvaluation({});
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError', timeoutMs: 30_000 });
+    expect(GUIDANCE_REQUEST_TIMEOUT_MS).toBe(30_000);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps typed timeout errors when an abort-aware transport rejects with AbortError', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_, options) => new Promise((__, reject) => {
+      options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    })));
+    const assertion = expect(createPreflightEvaluation({}, { timeoutMs: 25 })).rejects.toBeInstanceOf(TimeoutError);
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+  });
+
+  it.each(helpers)('cancels %s immediately when the external signal aborts, even if fetch ignores Abort', async (_, request) => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetch);
+    const external = new AbortController();
+    const add = vi.spyOn(external.signal, 'addEventListener');
+    const remove = vi.spyOn(external.signal, 'removeEventListener');
+    const pending = request({}, { signal: external.signal });
+    const reason = new DOMException('Project changed', 'AbortError');
+    const assertion = expect(pending).rejects.toBe(reason);
+    external.abort(reason);
+    await assertion;
+    expect(fetch.mock.calls[0][1].signal.reason).toBe(reason);
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels a hanging JSON body without waiting for the deadline', async () => {
+    vi.useFakeTimers();
+    const json = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, headers: { get: () => 'application/json' }, json })));
+    const external = new AbortController();
+    const pending = createPreflightEvaluation({}, { signal: external.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(json).toHaveBeenCalledTimes(1);
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    external.abort();
+    await assertion;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(helpers)('does not issue %s fetches for an already aborted signal', async (_, request) => {
+    vi.useFakeTimers();
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    const external = new AbortController();
+    const reason = new DOMException('Project closed', 'AbortError');
+    external.abort(reason);
+    await expect(request({}, { signal: external.signal })).rejects.toBe(reason);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(helpers)('cleans up timers and external listeners after successful %s requests', async (_, request) => {
+    vi.useFakeTimers();
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    const external = new AbortController();
+    const add = vi.spyOn(external.signal, 'addEventListener');
+    const remove = vi.spyOn(external.signal, 'removeEventListener');
+    await expect(request({ inquiry: 'Access' }, { signal: external.signal, timeoutMs: 25 })).resolves.toEqual({ accepted: true });
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'same-origin', body: JSON.stringify({ inquiry: 'Access' }) });
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
+    expect(vi.getTimerCount()).toBe(0);
+    external.abort();
+    await vi.advanceTimersByTimeAsync(25);
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(false);
+  });
+
+  it('preserves ApiError failures and cleans up the request boundary', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 503, headers: { get: () => 'application/json' },
+      json: async () => ({ error: 'Guidance unavailable' }),
+    })));
+    const external = new AbortController();
+    const remove = vi.spyOn(external.signal, 'removeEventListener');
+    const pending = createPreflightEvaluation({}, { signal: external.signal });
+    await expect(pending).rejects.toBeInstanceOf(ApiError);
+    await expect(pending).rejects.toMatchObject({ status: 503, payload: { error: 'Guidance unavailable' } });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([0, -1, 1.5, Infinity, NaN, 100_001])('rejects an invalid deadline %s before starting a request', async (timeoutMs) => {
+    vi.useFakeTimers();
+    const fetch = successfulFetch();
+    vi.stubGlobal('fetch', fetch);
+    await expect(createPreflightEvaluation({}, { timeoutMs })).rejects.toBeInstanceOf(RangeError);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not impose the guidance deadline on ordinary API calls', async () => {
+    vi.useFakeTimers();
+    let resolveFetch;
+    const fetch = vi.fn(() => new Promise(resolve => { resolveFetch = resolve; }));
+    vi.stubGlobal('fetch', fetch);
+    const pending = apiRequest('/api/student/session');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(fetch.mock.calls[0][1]).not.toHaveProperty('signal');
+    resolveFetch({ ok: true, headers: { get: () => 'application/json' }, json: async () => ({ access: null }) });
+    await expect(pending).resolves.toEqual({ access: null });
   });
 });

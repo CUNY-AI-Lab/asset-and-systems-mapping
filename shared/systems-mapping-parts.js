@@ -7,9 +7,6 @@ export const SYSTEMS_MAPPING_LEVELS = Object.freeze([
     prompt: 'Which settings does the focal person participate in directly, and what people, groups, roles, activities, objects, and resources are part of those settings?',
     reviewInstruction: 'Find immediate settings in which the focal person participates. Then identify specific people, groups, roles, activities, objects, or resources present there and any direct interactions supported by the memo.',
     chooseInstruction: 'Each Micro-level item names one immediate setting, person, group, role, activity, object, or resource. Direct relationships describe supported interactions among those items.',
-    uses: 'Memo evidence',
-    adds: 'Immediate settings, their elements, and direct relationships',
-    boundary: 'Place interrelations between two settings at Meso-level.',
     checklist: Object.freeze([
       'Name each immediate setting and each relevant person, group, role, activity, object, or resource as a discrete map item.',
       'Describe what happens between Micro-level items with one direct verb.',
@@ -24,9 +21,6 @@ export const SYSTEMS_MAPPING_LEVELS = Object.freeze([
     prompt: 'Which two or more Micro-level settings form a mesosystem?',
     reviewInstruction: 'Find evidence that at least two Micro-level settings in which the focal person participates interact.',
     chooseInstruction: 'Each mesosystem uses at least two Micro-level settings already on the map and explains their interrelation without adding a directional relationship.',
-    uses: 'Micro-level settings',
-    adds: 'Mesosystems and explanations of how settings interact',
-    boundary: 'Do not add people, institutions, services, or relationship edges at Meso-level.',
     checklist: Object.freeze([
       'Use the exact names of settings already mapped at Micro-level.',
       'Group two or more settings into each mesosystem.',
@@ -41,9 +35,6 @@ export const SYSTEMS_MAPPING_LEVELS = Object.freeze([
     prompt: 'Which outside decision settings affect what happens in the focal person’s immediate settings?',
     reviewInstruction: 'Find a named outside decision setting, the Micro-level setting its action changes, and what changes for the focal person there.',
     chooseInstruction: 'Each Exo-level item names an outside decision setting and connects it to the Micro-level setting its action changes.',
-    uses: 'Micro-level settings',
-    adds: 'Outside decision settings and connections into Micro-level',
-    boundary: 'If the focal person participates in a setting directly, place it at Micro-level. Place broader conditions at Macro-level.',
     checklist: Object.freeze([
       'Name the outside office, agency, funder, service system, or decision-making body.',
       'Connect each outside decision setting to an immediate setting it affects.',
@@ -58,9 +49,6 @@ export const SYSTEMS_MAPPING_LEVELS = Object.freeze([
     prompt: 'Which broader laws, public policies, economic conditions, histories, and cultural beliefs affect multiple map items?',
     reviewInstruction: 'Find a broader law, public policy, economic condition, history, or cultural belief that affects at least two existing map items.',
     chooseInstruction: 'Each Macro-level item names one broader condition and identifies at least two existing map items it affects.',
-    uses: 'Map items from earlier levels',
-    adds: 'Broader conditions and affected map items',
-    boundary: 'Place a named organization at Micro-level when the focal person participates there and at Exo-level when its decisions reach an immediate setting from outside.',
     checklist: Object.freeze([
       'Name broader laws, public policies, economic conditions, histories, cultural beliefs, and structures.',
       'Identify at least two map items affected by each condition and the evidence supporting that claim.',

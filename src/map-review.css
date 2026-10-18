@@ -31,11 +31,6 @@
 .project-overview__levels details { margin-top: 8px; font-size: 13px; }
 .project-overview__levels summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
 .project-overview__reflection { white-space: pre-wrap; overflow-wrap: anywhere; }
-.level-progression__boundary { margin-top: 10px; color: var(--muted); font-size: 13px; }
-.level-progression__boundary summary { cursor: pointer; min-height: 36px; padding: 7px 0; font-weight: 650; }
-.level-progression__boundary p { margin: 4px 0; }
-.stage-menu__description { display: grid; gap: 4px; padding: 10px 0; }
-.stage-menu .stage-menu__description small { color: var(--muted); font: 400 13px/1.4 var(--body); }
 .map-help { margin: 0 0 16px; padding: 0; font-size: 13px; }
 .map-help summary { min-height: 44px; padding: 10px 0; cursor: pointer; font-weight: 650; }
 .map-help dl { display: grid; gap: 10px; margin: 4px 0; }
