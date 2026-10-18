@@ -206,9 +206,24 @@ describe('map accessibility', () => {
 
     const node = screen.getByRole('button', { name: /Rosa, person, Micro-level/i });
     fireEvent.keyDown(node, { key: 'Enter' });
+    fireEvent.click(screen.getByText('Edit item details'));
     await waitFor(() => expect(screen.getByRole('group', { name: 'Move Rosa without dragging' })).toBeVisible());
     fireEvent.click(screen.getByRole('button', { name: 'Move Rosa right' }));
     expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it('introduces the selected item and keeps optional editing controls collapsed', () => {
+    renderMapStage();
+    fireEvent.keyDown(screen.getByRole('button', { name: /Rosa, person, Micro-level/i }), { key: 'Enter' });
+    const panel = screen.getByRole('tabpanel', { name: 'Item' });
+    expect(within(panel).getByText(/Explain why this item matters/)).toBeVisible();
+    expect(within(panel).getByRole('textbox', { name: 'Your interpretation' })).toBeVisible();
+    expect(within(panel).getByRole('button', { name: 'Remove from map' })).not.toBeVisible();
+    expect(within(panel).getByRole('button', { name: 'Add record' })).not.toBeVisible();
+    fireEvent.click(within(panel).getByText('Evidence and questions'));
+    expect(within(panel).getByRole('button', { name: 'Add record' })).toBeVisible();
+    fireEvent.click(within(panel).getByText('Edit item details'));
+    expect(within(panel).getByRole('button', { name: 'Remove from map' })).toBeVisible();
   });
 
   it('zooms around the pointer with a wheel and supports two-pointer pinch', () => {

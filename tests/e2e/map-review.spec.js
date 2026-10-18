@@ -84,6 +84,7 @@ test('layout undo restores positions without replacing annotations and the canva
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const inspector = page.getByRole('complementary', { name: 'Map inspector' });
   await inspector.getByRole('textbox', { name: 'Map note', exact: true }).fill('Layout changes must preserve this interpretation.');
+  await inspector.getByText('Map controls', { exact: true }).click();
   await inspector.getByRole('button', { name: 'Undo layout' }).click();
   await expect(inspector.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue('Layout changes must preserve this interpretation.');
   await inspector.getByRole('button', { name: 'Done', exact: true }).click();

@@ -28,8 +28,6 @@
 .inspector .candidate-steps { margin: 0; }
 .inspector .revision-grid, .inspector .export-strip { grid-template-columns: 1fr; }
 .inspector .studio-heading h1 { font-size: 22px; }
-.map-layout.has-inspector.is-panel-review { grid-template-columns: minmax(0, 1fr) minmax(380px, 44%); }
-.map-layout.has-inspector.is-panel-suggestions { grid-template-columns: minmax(0, 1fr) minmax(360px, 40%); }
 
 .next-step-detail { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .footer-context { min-width: 0; }

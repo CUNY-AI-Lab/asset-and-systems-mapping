@@ -1,3 +1,4 @@
+import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
 import React, { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
 import { readInstitutionalSession } from './studentSession.js';
@@ -499,10 +500,10 @@ export function mapCheckPayload(project, intent, focus = null) {
 
 const MAP_CHECK_KIND_LABELS = Object.freeze({ gap: 'Gap', question: 'Question', evidence: 'Evidence to find', claim: 'Claim the map supports' });
 
-function MapCheckPanel({ heading, lede, actionLabel, check, onRun, onShow, labelFor, disabled = false }) {
+function MapCheckPanel({ heading, lede, actionLabel, check, onRun, onShow, labelFor, disabled = false, compact = false }) {
   const headingId = useId();
   return <section className="map-check" aria-labelledby={headingId}>
-    <div className="work-panel__title"><h2 id={headingId}>{heading}</h2><p className="lede">{lede}</p></div>
+    <div className={compact ? 'sr-only' : 'work-panel__title'}><h2 id={headingId}>{heading}</h2><p className="lede">{lede}</p></div>
     <Action variant="secondary" disabled={disabled || Boolean(check?.busy)} onClick={onRun}>{check?.busy ? 'Checking the map…' : actionLabel}</Action>
     {check?.busy && <p role="status">Checking your map…</p>}
     {check?.error && <p role="alert" className="teacher-message teacher-message--error">{check.error}</p>}
@@ -513,7 +514,7 @@ function MapCheckPanel({ heading, lede, actionLabel, check, onRun, onShow, label
         <div className="map-check__refs" aria-label="Map items this note is about">{note.refs.map((ref) => <button type="button" key={ref} className="scope-chip" onClick={() => onShow?.(note.refs, ref)}>{labelFor(ref)}</button>)}</div>
       </li>)}</ol>
       : <p className="empty-message">No notes returned. Your map is unchanged.</p>)}
-    <p className="map-check__disclosure">The course model reads your map, not your memo, and adds nothing to it. Decide what to verify or change.</p>
+    <p className="map-check__disclosure">AI suggestions for you to consider. Your map changes only when you edit it.</p>
   </section>;
 }
 
@@ -3881,8 +3882,7 @@ function blankManualNode(scale) {
 }
 
 function MapStage({ project, update, toast, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart, onReview, panel = null, onPanelMode, toolbarStart = null, highlight = null, onHighlight, mapCheck = null, onMapCheck, mapItemLabel = (id) => id }) {
-  // The Studio work panel shares the inspector's slot. Suggestions and Review
-  // keep the slot open; the inspector drawer keeps its own open/closed state.
+  // Every work panel can collapse without changing the current stage or map selection.
   const panelMode = panel?.mode ?? 'inspector';
   const panelContent = Boolean(panel) && panelMode !== 'inspector';
   const [selection, setSelection] = useState(null);
@@ -3898,7 +3898,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const [showRemoved, setShowRemoved] = useState(false);
   const [inspectorTab, setInspectorTab] = useState('map');
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const sheetOpen = panelContent || drawerOpen;
+  const [collapsedPanel, setCollapsedPanel] = useState(null);
+  const sheetOpen = panelContent ? collapsedPanel !== panelMode : drawerOpen;
+  const layoutRef = useRef(null);
+  const sidebarSize = useSidebarSize(layoutRef);
+  useEffect(() => { setCollapsedPanel(null); }, [panelMode, project.activeScale]);
   const highlightNodeIds = useMemo(() => new Set(highlight?.nodeIds || []), [highlight]);
   const highlightEdgeIds = useMemo(() => new Set(highlight?.edgeIds || []), [highlight]);
   const highlightActive = highlightNodeIds.size > 0 || highlightEdgeIds.size > 0;
@@ -3914,7 +3918,6 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const [mapViewport, setMapViewport] = useState(null);
   const [ringExpansion, setRingExpansion] = useState(1);
   const [automaticPositions, setAutomaticPositions] = useState(null);
-  const [annotationDisclosure, setAnnotationDisclosure] = useState('analytical');
   const [legendOpen, setLegendOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -4336,12 +4339,15 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     window.requestAnimationFrame(() => {
       const inspector = inspectorRef.current;
       (inspector?.querySelector('[role="tab"][aria-selected="true"]')
-        || inspector?.querySelector('button, input, select, textarea'))?.focus();
+        || inspector?.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
+      const scroll = inspector?.querySelector('.inspector__scroll');
+      if (scroll) scroll.scrollTop = 0;
     });
   }, []);
   // Panel tabs live in the toolbar so they stay reachable while the inspector
   // drawer is closed. Choosing Inspector opens the drawer like Details does.
   const changePanel = (mode) => {
+    setCollapsedPanel(null);
     if (mode === 'inspector') {
       if (!selection) setInspectorTab('map');
       setLegendOpen(false);
@@ -4360,7 +4366,6 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     onHighlight?.(null);
     setSelection({ kind, id });
     setInspectorTab(kind === 'edge' ? 'relationships' : 'node');
-    setAnnotationDisclosure('analytical');
     if (openInspector) {
       setFocus({ kind, id });
       setFocusPage(0);
@@ -4372,6 +4377,8 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     }
   }, [focusInspector, panelContent, onPanelMode, onHighlight]);
   const closeInspector = useCallback(() => {
+    inspectorRef.current?.querySelectorAll('.export-dropdown[open]').forEach((details) => { details.open = false; });
+    setCollapsedPanel(panelMode);
     setDrawerOpen(false);
     window.requestAnimationFrame(() => {
       const targets = canvasWrapRef.current?.querySelectorAll('[data-graph-id]') || [];
@@ -4379,7 +4386,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       const trigger = selectionTriggerRef.current;
       (target || (trigger?.isConnected ? trigger : null) || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
     });
-  }, [selection]);
+  }, [selection, panelMode]);
   const showFullMap = useCallback(() => {
     onHighlight?.(null);
     setTraceHistory([]);
@@ -4956,10 +4963,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       event.preventDefault(); fitMap();
     }
   }}>
-    <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
-    <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls">{panel && <WorkPanelTabs mode={panelMode} onChange={changePanel} disabled={panel.disabled || []} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, changePanel)} />}<MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
+    <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls"><button type="button" className="sidebar-toggle" aria-controls="map-inspector" aria-expanded={sheetOpen} onClick={() => sheetOpen ? closeInspector() : changePanel(panelMode)}>{sheetOpen ? 'Hide sidebar' : 'Show sidebar'}</button>{panel && <WorkPanelTabs mode={panelMode} onChange={changePanel} disabled={panel.disabled || []} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, changePanel)} />}<MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>
     {focusActive ? <div className="map-focus-bar" role="status"><div className="map-focus-bar__summary"><span>{focusSummary}</span>{focusHasRelationshipPages && <small aria-live="polite">Relationship {activeFocusPage + 1} of {focusIncidentEdges.length}</small>}</div><div className="map-focus-bar__actions">{focusHasRelationshipPages && focusPageCount > 1 ? <><button type="button" aria-label="Previous relationship" disabled={activeFocusPage === 0} onClick={() => changeFocusPage(activeFocusPage - 1)}>Previous</button><button type="button" aria-label="Next relationship" disabled={activeFocusPage === focusPageCount - 1} onClick={() => changeFocusPage(activeFocusPage + 1)}>Next</button></> : null}<button type="button" onClick={showFullMap}>Show full map</button></div></div> : <p className="map-overview-hint">{mapOverviewHint}</p>}
-    <div className={`map-layout ${sheetOpen ? 'has-inspector' : ''} is-panel-${panelMode}`}>
+    <div ref={layoutRef} style={{ '--sidebar-width': `${sidebarSize.width}px` }} className={`map-layout ${sheetOpen ? 'has-inspector' : ''} is-panel-${panelMode}`}>
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && sheetOpen ? 'is-inspector-open' : ''} is-panel-${panelMode} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <MemoGraphCanvas nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && drawerOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
@@ -4969,7 +4975,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         {legendOpen && <aside id="map-key-panel" className="map-legend" role="dialog" aria-labelledby="map-key-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-key-title">Map key</strong><button type="button" onClick={closeLegend} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend /></aside>}
         <div className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcement.revision}>{announcement.message}</span></div>
       </section> : <MapListView nodes={project.graph.nodes} edges={project.graph.edges} visibleScale={visibleScale} showRemoved={showRemoved} onSelect={selectItem} />}
-      <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && drawerOpen && !panelContent) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
+      <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
+        {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}
+        <div className="inspector__scroll">
+        {panelContent && <div className="work-panel__close"><button type="button" onClick={closeInspector}>Close sidebar</button></div>}
+        <MemoDrawer project={project} update={update} onRequestRestart={onRequestRestart} />
         {panelContent ? <div className="work-panel__body">{panel.content}</div> : <>
         <div className="inspector__head">
           <h2>{selectedNode?.label || (selectedEdge ? `${selectedEdge.sourceLabel} → ${selectedEdge.targetLabel}` : 'Map details')}</h2>
@@ -4979,7 +4989,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           </div>
         </div>
         {previousTraceLabel && <button type="button" className="map-trace-back" onClick={returnToPreviousItem}>Back to {previousTraceLabel}</button>}
-        <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{inspectorTabs.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, inspectorTabs, inspectorTab, setTab)}>{tab === 'relationships' ? 'Relationships' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
+        <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{inspectorTabs.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, inspectorTabs, inspectorTab, setTab)}>{tab === 'relationships' ? 'Connections' : tab === 'node' ? 'Item' : 'Map'}</button>)}</div>
         {addMode === 'node' && <div className="add-form">
           <h3>New node</h3>
           <Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
@@ -5002,10 +5012,16 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         </div>}
         {addMode === 'edge' && ['micro', 'exosphere'].includes(project.activeScale) && <div className="add-form"><h3>New relationship</h3><Field label={project.activeScale === 'exosphere' ? 'Outside decision setting' : 'From'}><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship">{project.activeScale === 'exosphere' ? <select value={scaleLexiconVerb('exosphere', newEdge.verb) || SCALE_VERB_LEXICONS.exosphere[0]} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))}>{SCALE_VERB_LEXICONS.exosphere.map((verb) => <option key={verb}>{verb}</option>)}</select> : <input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge((current) => ({ ...current, verb: event.target.value }))} />}</Field><Field label={project.activeScale === 'exosphere' ? 'Affected Micro setting' : 'To'}><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Evidence or question"><textarea maxLength={PROJECT_LIMITS.noteText} rows="3" value={newEdge.evidence} onChange={(event) => setNewEdge((current) => ({ ...current, evidence: event.target.value }))} /></Field><button className="button" type="button" onClick={addEdge}>Add relationship</button></div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-node">{selectedNode ? <>
+          <p className="inspector-guide">Explain why this item matters to your inquiry. Start with the evidence, then add your interpretation.</p>
+          <div className="inspector-evidence"><span>Supporting evidence</span><p>{selectedNode.evidence || 'No evidence yet. Add a source or a question below.'}</p></div>
+          <AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Your interpretation" value={selectedNode.annotations.analytical.text} placeholder="What does this item help explain? What is still uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} />
           <MapConnections nodeId={selectedNode.id} index={connectionIndex} onFollow={followMapItem} />
-          {onMapCheck && <MapCheckPanel heading="Check this item" lede="What would strengthen or challenge it?" actionLabel="Check this item" check={mapCheck?.intent === 'connection' && mapCheck.focus?.id === selectedNode.id ? mapCheck : null} onRun={() => onMapCheck('connection', { kind: (selectedNode.scopeNodeIds || []).length ? 'scope' : 'node', id: selectedNode.id })} onShow={showMapRefs} labelFor={mapItemLabel} />}
+          <details className="inspector-disclosure"><summary>Evidence and questions</summary><div>
+            <ClaimEvidenceEditor ownerId={`node:${selectedNode.id}`} records={selectedNode.claimEvidence || []} onChange={(records) => editNode('claimEvidence', records)} />
+            <AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence note" value={selectedNode.annotations.evidence.text} placeholder="How does this source support or limit your interpretation?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} />
+          </div></details>
           <details className="node-summary">
-            <summary><span>Summary</span><strong>{selectedNode.type}</strong></summary>
+            <summary><span>Edit item details</span></summary>
             <div className="node-summary__body">
               <Field label="Label">{selectedNode.scale === 'meso'
                 ? <CommitInput maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={isMesosystemLabel} onCommit={(value) => editNode('label', value)} onInvalid={() => toast('Give the mesosystem a clear name, such as “coordination between home and school.”', 'error')} />
@@ -5045,27 +5061,39 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
               {selectedNode.scale === 'meso' && <Field label="Interaction" hint="Coordination or conflict the memo supports."><textarea rows="4" maxLength={PROJECT_LIMITS.noteText} value={selectedNode.mesoExplanation || ''} onChange={(event) => editNode('mesoExplanation', event.target.value)} /></Field>}
               <div className="provenance-block"><span>Evidence</span><p>{selectedNode.evidence || 'No evidence added yet.'}</p>{selectedNode.notes && <><span>Annotation</span><p>{selectedNode.notes}</p></>}</div>
             </div>
-          </details>
           <div className="node-position-controls"><span>Position on map</span><div role="group" aria-label={`Move ${selectedNode.label} without dragging`}><button type="button" aria-label={`Move ${selectedNode.label} left`} onClick={() => moveSelectedNodeBy(-24, 0, 'left')}>←</button><button type="button" aria-label={`Move ${selectedNode.label} up`} onClick={() => moveSelectedNodeBy(0, -24, 'up')}>↑</button><button type="button" aria-label={`Move ${selectedNode.label} down`} onClick={() => moveSelectedNodeBy(0, 24, 'down')}>↓</button><button type="button" aria-label={`Move ${selectedNode.label} right`} onClick={() => moveSelectedNodeBy(24, 0, 'right')}>→</button></div></div>
           <button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button>
-          <ClaimEvidenceEditor ownerId={`node:${selectedNode.id}`} records={selectedNode.claimEvidence || []} onChange={(records) => editNode('claimEvidence', records)} />
-          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'analytical'} aria-controls="node-analytical-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'analytical' ? null : 'analytical')}><span>Annotation</span><Icon name={annotationDisclosure === 'analytical' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'analytical' && <div id="node-analytical-annotation"><AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Annotation" value={selectedNode.annotations.analytical.text} onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} /></div>}</section>
-          <section className="annotation-disclosure"><button type="button" aria-expanded={annotationDisclosure === 'evidence'} aria-controls="node-evidence-annotation" onClick={() => setAnnotationDisclosure((current) => current === 'evidence' ? null : 'evidence')}><span>Evidence note</span><Icon name={annotationDisclosure === 'evidence' ? 'close' : 'plus'} /></button>{annotationDisclosure === 'evidence' && <div id="node-evidence-annotation"><AnnotationField key={selectedNode.annotations.evidence.id} annotationId={selectedNode.annotations.evidence.id} label="Evidence note" value={selectedNode.annotations.evidence.text} placeholder="How does the evidence support, limit, or complicate this node?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.evidence.id, text)} {...annotationProps} /></div>}</section>
-        </> : <p className="empty-message">Choose a node on the map to inspect and annotate it.</p>}</div>}
-        {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships"><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} className={selectedEdge?.id === edge.id ? 'is-selected' : ''} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span></button>)}</div>{selectedEdge ? <><details className="node-summary"><summary><span>Summary</span><strong>{selectedEdge.verb}</strong></summary><div className="node-summary__body"><div className="provenance-block"><span>Evidence</span><p>{selectedEdge.evidence || 'No evidence added yet.'}</p></div></div></details><button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button><ClaimEvidenceEditor ownerId={`edge:${selectedEdge.id}`} records={selectedEdge.claimEvidence || []} onChange={(records) => editEdge('claimEvidence', records)} />{['micro', 'exosphere'].includes(selectedEdge.scale) && <RelationshipProcessEditor edge={selectedEdge} onChange={(process) => editEdge('relationshipProcess', process)} />}<AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Annotation" value={selectedEdge.annotation.text} placeholder="What does this relationship explain, and what remains uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} /></> : <p className="empty-message">Choose a relationship on the map or from this list to annotate it.</p>}{selectedEdge && onMapCheck && <MapCheckPanel heading="Check this connection" lede="What evidence would strengthen or challenge it?" actionLabel="Check this connection" check={mapCheck?.intent === 'connection' && mapCheck.focus?.id === selectedEdge.id ? mapCheck : null} onRun={() => onMapCheck('connection', { kind: 'relationship', id: selectedEdge.id })} onShow={showMapRefs} labelFor={mapItemLabel} />}</div>}
+          </details>
+          {onMapCheck && <MapCheckPanel compact heading="Check this item" lede="What would strengthen or challenge it?" actionLabel="Check this item" check={mapCheck?.intent === 'connection' && mapCheck.focus?.id === selectedNode.id ? mapCheck : null} onRun={() => onMapCheck('connection', { kind: (selectedNode.scopeNodeIds || []).length ? 'scope' : 'node', id: selectedNode.id })} onShow={showMapRefs} labelFor={mapItemLabel} />}
+        </> : <p className="empty-message">Select an item on the map to see its evidence and explain what it means for your inquiry.</p>}</div>}
+        {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-relationships">
+          {!selectedEdge && <><p className="inspector-guide">Choose a connection to explain how these items affect one another.</p><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} onClick={() => selectItem('edge', edge.id)}><span>{edge.sourceLabel} <strong>{edge.verb}</strong> {edge.targetLabel}</span></button>)}</div></>}
+          {selectedEdge ? <>
+            <p className="inspector-guide">This connection says: <strong>{selectedEdge.sourceLabel} {selectedEdge.verb} {selectedEdge.targetLabel}.</strong> Explain how the evidence supports that claim.</p>
+            <div className="inspector-evidence"><span>Supporting evidence</span><p>{selectedEdge.evidence || 'No evidence yet. Add a source or a question below.'}</p></div>
+            <AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Your interpretation" value={selectedEdge.annotation.text} placeholder="What does this connection explain? What is still uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} />
+            <details className="inspector-disclosure"><summary>Evidence and questions</summary><div><ClaimEvidenceEditor ownerId={`edge:${selectedEdge.id}`} records={selectedEdge.claimEvidence || []} onChange={(records) => editEdge('claimEvidence', records)} /></div></details>
+            <details className="inspector-disclosure"><summary>Connection details</summary><div>
+              {['micro', 'exosphere'].includes(selectedEdge.scale) && <RelationshipProcessEditor edge={selectedEdge} onChange={(process) => editEdge('relationshipProcess', process)} />}
+              <button className="map-item-action" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Remove from map'}</button>
+            </div></details>
+            {onMapCheck && <MapCheckPanel compact heading="Check this connection" lede="What evidence would strengthen or challenge it?" actionLabel="Check this connection" check={mapCheck?.intent === 'connection' && mapCheck.focus?.id === selectedEdge.id ? mapCheck : null} onRun={() => onMapCheck('connection', { kind: 'relationship', id: selectedEdge.id })} onShow={showMapRefs} labelFor={mapItemLabel} />}
+          </> : <p className="empty-message">You can also select a line directly on the map.</p>}
+        </div>}
         {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role="tabpanel" aria-labelledby="map-inspector-tab-map">
+          <p className="inspector-guide">Select an item or a connecting line to work on its meaning and evidence. Use this view for patterns across the whole map.</p>
           <details className="map-help"><summary>Map controls</summary><dl>
             <div><dt>Pan</dt><dd>Drag empty space, hold Space and drag, or use the middle mouse button.</dd></div>
             <div><dt>Zoom</dt><dd>Scroll or pinch; use + and − while the canvas is focused.</dd></div>
             <div><dt>Move an item</dt><dd>Drag it, or focus it and use arrow keys. Shift moves it farther.</dd></div>
             <div><dt>Fit map</dt><dd>Show the current map in the available space. Press 0 on the canvas.</dd></div>
             <div><dt>Undo layout</dt><dd>Use Ctrl/⌘ Z on the canvas; Shift redoes the change. Text fields keep their own undo.</dd></div>
-          </dl></details>
-          <div className="layout-history" role="group" aria-label="Layout history"><button type="button" disabled={!layoutHistory.past.length} onClick={() => restoreLayout('undo')}>Undo layout</button><button type="button" disabled={!layoutHistory.future.length} onClick={() => restoreLayout('redo')}>Redo layout</button></div>
+          </dl><div className="layout-history" role="group" aria-label="Layout history"><button type="button" disabled={!layoutHistory.past.length} onClick={() => restoreLayout('undo')}>Undo layout</button><button type="button" disabled={!layoutHistory.future.length} onClick={() => restoreLayout('redo')}>Redo layout</button></div></details>
           <ProjectOverview project={project} />
           {onMapCheck && <MapCheckPanel heading="Ask the map" lede={`What does ${SCALES[project.activeScale]?.label || project.activeScale} still need?`} actionLabel="Ask what's missing" check={mapCheck?.intent === 'gaps' && mapCheck.scale === project.activeScale ? mapCheck : null} onRun={() => onMapCheck('gaps')} onShow={showMapRefs} labelFor={mapItemLabel} />}
           <div className="map-summary">{visibleScale === 'meso' ? <><strong>{mesoLinkageCount}</strong><span>{mesoLinkageCount === 1 ? 'mesosystem' : 'mesosystems'}</span><strong>{mesoSettingCount}</strong><span>Micro {mesoSettingCount === 1 ? 'setting' : 'settings'}</span></> : <><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></>}</div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
         </>}
+        </div>
       </aside>
     </div>
   </div>;
