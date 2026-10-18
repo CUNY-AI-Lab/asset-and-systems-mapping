@@ -9,6 +9,7 @@ import { apiRequest, ApiError } from './api.js';
 import { courseWorkspacePath, parseCourseSelection } from './courseContext.js';
 import { userFacingError } from './userFacingError.js';
 import CoursePromptEditor from './CoursePromptEditor.jsx';
+import NollSketch from './NollSketch.jsx';
 import './account-workspace.css';
 
 export default function AccountWorkspace() {
@@ -177,11 +178,14 @@ export default function AccountWorkspace() {
   if (active) return <App key={active} startInWorkspace onAccountDashboard={dashboard} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} />;
   if (teacher) return <App startInTeacher onAccountDashboard={dashboard} />;
   return <AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} onTeacher={account?.role === 'instructor' ? () => setTeacher(true) : undefined}>
-    <main id="workspace" className={signedOut ? 'access-main account-workspace' : 'studio-dashboard account-workspace'}>
+    <main id="workspace" className={signedOut ? 'access-main account-workspace account-landing' : 'studio-dashboard account-workspace'}>
       {signedOut ? <>
-        <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
-        <LevelTrail />
-        <Action as="a" className="account-login" href={institutionalLoginUrl(courseSelection)}>CUNY Login</Action>
+        <div className="account-landing__hero">
+          <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
+          <LevelTrail />
+          <Action as="a" className="account-login" href={institutionalLoginUrl(courseSelection)}>CUNY Login</Action>
+        </div>
+        <NollSketch className="account-landing__noll" />
       </> : account ? <>
         {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul>{courses.map(course => <li key={course.id}><a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>{course.role === 'instructor' && <span> · Instructor</span>}</li>)}</ul></section>}
         {courseError && <p role="status">{courseError}</p>}

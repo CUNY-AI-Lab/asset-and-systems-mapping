@@ -33,6 +33,8 @@ Asset mapping gives this inquiry a practical starting point: residents' skills, 
 
 ## Student experience
 
+The Cloudflare sign-in page shows the title, the four levels and **CUNY Login** a third of the way down, with a generative drawing after A. Michael Noll's *Gaussian Quadratic* (Bell Labs, 1965) filling the space below (`src/NollSketch.jsx`). The drawing is transparent against the page, takes the current ink colour in light and dark mode, and redraws every ten seconds or on click.
+
 After the memo exists, the student stays on the map. The canvas is the organizing surface for all four levels; the five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) are still kept per level for instructor aggregates, submitted revisions and exports, but the student sees them as panels around one map rather than as separate screens.
 
 | Surface | What it does |
