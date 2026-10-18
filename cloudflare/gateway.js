@@ -1,6 +1,6 @@
 import { CailError, createCailClient } from '@cuny-ai-lab/cail-client';
 import { normalizeInput, JSON_ONLY_INSTRUCTION } from '../server/ollama.js';
-import { parseProviderEnvelope } from '../server/openrouter.js';
+import { OpenRouterError, parseProviderEnvelope } from '../server/openrouter.js';
 import { boundedText, cancelBody, withSignal, withDeadline } from './bounded.js';
 import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
 import { compactLimitInstruction } from '../shared/memo-review-limits.js';
@@ -59,6 +59,17 @@ function gatewayRetryDelay(error, now) {
 }
 
 export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
+  // Completed output failures are distinct from transport failures. Only fixed
+  // classifications and schema paths cross this boundary, never response text.
+  const semantic = error?.name === 'MemoReviewSemanticError' && error?.code === 'MEMO_REVIEW_SEMANTIC_INVALID';
+  const outputFailure = error instanceof OpenRouterError || error instanceof SyntaxError || semantic;
+  if (outputFailure) {
+    const field = semantic ? /^(guidance|nodes|connections)(?:\[\d{1,2}\])?(?:\.(?:label|type|scale|scope|basis|deontic|verb))?/.exec(String(error.message))?.[0] : undefined;
+    return { status: 502, message: 'The model returned a response the map could not use. Your work is saved.',
+      details: { code: error?.code === 'response_too_large' ? 'guidance_output_truncated' : semantic ? 'guidance_contract_invalid' : 'guidance_output_invalid',
+        shouldRetry: false, requestId: fallbackRequestId, ...(field ? { validationField: field } : {}) } };
+  }
+
   if (error?.name === 'TimeoutError') return {
     status: 504,
     message: 'Couldn’t generate guidance — Try again',

@@ -2,6 +2,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { correlationFromHeaders } from '@cuny-ai-lab/cail-log';
 import { CailError } from '@cuny-ai-lab/cail-client';
+import { OpenRouterError } from '../server/openrouter.js';
 import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvelope } from './gateway.js';
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
@@ -178,4 +179,17 @@ test('Gateway Retry-After survives the service-binding response without another 
   catch (error) { failure = safeGatewayFailure(error, correlation.request_id); }
   expect(failure).toMatchObject({ status: 503, details: { shouldRetry: true, retryAfterSeconds: 9 }, headers: { 'Retry-After': '9' } });
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test('classifies completed output failures without exposing response text or retrying them', () => {
+  for (const [error, code] of [
+    [new OpenRouterError('private provider response', 'response_too_large'), 'guidance_output_truncated'],
+    [new OpenRouterError('private provider response', 'invalid_response'), 'guidance_output_invalid'],
+    [Object.assign(new Error('nodes[2].label contains private text'), { name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID' }), 'guidance_contract_invalid'],
+  ]) {
+    const safe = safeGatewayFailure(error, correlation.request_id);
+    expect(safe).toMatchObject({ status: 502, details: { code, shouldRetry: false, requestId: correlation.request_id } });
+    expect(JSON.stringify(safe)).not.toContain('private');
+    if (code === 'guidance_contract_invalid') expect(safe.details.validationField).toBe('nodes[2].label');
+  }
 });
