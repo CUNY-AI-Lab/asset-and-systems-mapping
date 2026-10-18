@@ -18,6 +18,9 @@ const messagesByCode = Object.freeze({
   quota_exceeded: 'You have reached the model usage limit. Continue editing your map and try again later.',
   guidance_in_progress: 'Guidance is already being generated. Wait for it to finish before trying again.',
   guidance_timeout: 'Guidance took too long. Try again.',
+  guidance_output_truncated: 'The model response was cut short. Your work is saved. Try again when ready.',
+  guidance_output_invalid: 'The model returned an unreadable response. Your work is saved. Try again when ready.',
+  guidance_contract_invalid: 'The model response did not fit the map rules. Your work is saved. Try again when ready.',
   guidance_cancelled: 'Guidance was cancelled. Try again when you are ready.',
 });
 
