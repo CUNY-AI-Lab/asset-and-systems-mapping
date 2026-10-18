@@ -39,6 +39,7 @@ let accessResponder;
 let preflightEvaluationResponder;
 let connectionSuggestionResponder;
 let mapCheckResponder;
+let publicConfigurationResponder;
 let prototypeResponder;
 let fetchMock;
 
@@ -250,7 +251,7 @@ function defaultFetch(path, options = {}) {
   if (requestPath === '/api/preflight/evaluations' && options.method === 'POST') return preflightEvaluationResponder(JSON.parse(options.body));
   if (requestPath === '/api/map/connections' && options.method === 'POST') return connectionSuggestionResponder(JSON.parse(options.body));
   if (requestPath === '/api/map/check' && options.method === 'POST') return mapCheckResponder(JSON.parse(options.body));
-  if (requestPath.startsWith('/api/config/public?')) return jsonResponse(publicConfiguration(requestPath));
+  if (requestPath.startsWith('/api/config/public?')) return publicConfigurationResponder(requestPath);
   if (requestPath === '/api/prototype/events') return prototypeResponder(options);
   return jsonResponse({ error: `Unexpected fetch: ${requestPath}` }, 500);
 }
@@ -916,6 +917,7 @@ function bytesContain(haystack, needle) {
 describe('Systems Mapping workflow', () => {
   beforeEach(() => {
     mapCheckResponder = () => jsonResponse({ error: 'Map check not stubbed' }, 500);
+    publicConfigurationResponder = (path) => jsonResponse(publicConfiguration(path));
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1024 });
     window.history.replaceState(null, '', '/');
     window.localStorage.clear();
@@ -2771,6 +2773,57 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3 }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual(['micro', 'meso']);
+  });
+
+  it('waits for the next level course appendix before reading the memo automatically', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    const deferred = () => { let resolve; const promise = new Promise((settle) => { resolve = settle; }); return { promise, resolve }; };
+    const mesoConfiguration = deferred();
+    const mesoReview = deferred();
+    publicConfigurationResponder = (path) => {
+      const params = new URL(path, 'http://local.test').searchParams;
+      if (params.get('scale') !== 'meso') return jsonResponse(publicConfiguration(path));
+      // The Meso appendix differs from Micro and arrives late, as it does when the course
+      // prompt carries level-specific parts.
+      return mesoConfiguration.promise.then(() => jsonResponse({ ...publicConfiguration(path), fingerprint: `${params.get('configKind')}-meso-fingerprint` }));
+    };
+    preflightEvaluationResponder = (body) => {
+      const review = body.activeScale === 'micro' ? {
+        ...memoReviewFixture(),
+        nodes: [
+          { label: 'Home', type: 'setting', scale: 'micro', evidence: 'The resident lives at home' },
+          { label: 'Clinic', type: 'setting', scale: 'micro', evidence: 'The resident visits the clinic' },
+        ],
+        connections: [],
+      } : memoReviewFixture(body.activeScale, body.carriedNodes);
+      const response = jsonResponse({ evaluation: evaluationRecord(body, { review }) }, 201);
+      return body.activeScale === 'meso' ? mesoReview.promise.then(() => response) : response;
+    };
+    const footer = () => within(document.querySelector('.app-footer'));
+    const evaluationScales = () => fetchMock.mock.calls
+      .filter(([path]) => String(path) === '/api/preflight/evaluations')
+      .map(([, options]) => JSON.parse(options.body).activeScale);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    await waitFor(() => expect(footer().getByRole('button', { name: 'Continue →' })).toBeEnabled());
+    fireEvent.click(footer().getByRole('button', { name: 'Continue →' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 3 }));
+    fireEvent.click(footer().getByRole('button', { name: 'Review and export' }));
+    fireEvent.click(footer().getByRole('button', { name: 'Continue to Meso-level' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1 }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path).startsWith('/api/config/public?') && String(path).includes('scale=meso'))).toBe(true));
+
+    // No Meso read is issued while the Meso appendix is still loading: a read keyed to the
+    // Micro appendix would be discarded once the Meso one landed.
+    expect(evaluationScales()).toEqual(['micro']);
+    mesoConfiguration.resolve();
+    await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.fingerprint).toBe('preflight-meso-fingerprint'));
+    await waitFor(() => expect(evaluationScales()).toEqual(['micro', 'meso']));
+    mesoReview.resolve();
+    await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3 }));
+    expect(storedProject().graph.nodes.some((node) => node.scale === 'meso')).toBe(true);
   });
 
   it('adds requested connection suggestions automatically without marking them reviewed', async () => {

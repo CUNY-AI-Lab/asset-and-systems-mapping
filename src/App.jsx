@@ -5563,6 +5563,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     workspaceRef.current?.focus({ preventScroll: true });
   }, [project.stage, project.activeScale, teacherOpen, workspaceStarted, mapPreviewOpen]);
 
+  // Records which project, level and stage the last course-appendix refresh settled for,
+  // whether or not the snapshot changed. The automatic level read waits on it so a read
+  // is never keyed to the previous level's governance while the new one is in flight.
+  const [governanceSettled, setGovernanceSettled] = useState(null);
   const refreshPublicConfigurations = useCallback(async () => {
     const projectId = project.id;
     const scale = project.activeScale;
@@ -5583,6 +5587,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       return true;
     } catch {
       return false;
+    } finally {
+      setGovernanceSettled({ projectId, scale, stageId });
     }
   }, [project.id, project.activeScale, project.stage]);
   useEffect(() => {
@@ -6529,11 +6535,20 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
   useEffect(() => {
     if (!pendingLevelRead || project.activeScale !== pendingLevelRead || project.stage !== 1) return;
+    // The course appendix is refetched for each level and stage. A read issued before
+    // that refresh settles is keyed to the previous level's governance, and its result is
+    // discarded if the snapshot changes mid-flight. Wait for the refresh of this level and
+    // stage to settle; this effect re-runs when it does.
+    const refreshing = workspaceStarted && accessState.status === 'granted';
+    const settled = governanceSettled?.projectId === project.id
+      && governanceSettled.scale === project.activeScale
+      && governanceSettled.stageId === STAGES[project.stage]?.id;
+    if (refreshing && !settled) return;
     setPendingLevelRead(null);
     if (!project.submission.text.trim() || reviewInFlightRef.current || !requiresLevelModel(project)) return;
     void primary();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingLevelRead, project.activeScale, project.stage]);
+  }, [pendingLevelRead, project.activeScale, project.stage, project.teacherGovernance, governanceSettled]);
   const backDisabled = project.stage === 0;
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
     projectActivationGenerationRef.current += 1;
