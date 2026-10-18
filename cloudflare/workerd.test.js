@@ -295,7 +295,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     expect(exported.mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
     expect(exported.graph.nodes.map(node => node.id)).toEqual(stored.graph.nodes.map(node => node.id));
     await page.setViewportSize({ width: 390, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    // The phone layout lands after the media-query listener re-renders, so poll rather than read once.
+    await browserExpect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
     await page.screenshot({ path: '/tmp/cail-systems-cloudflare-phone.png' });
     await context.clearCookies();
