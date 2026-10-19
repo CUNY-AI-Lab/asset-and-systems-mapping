@@ -187,11 +187,12 @@ export default function AccountWorkspace() {
         </div>
         <NollSketch className="account-landing__noll" />
       </> : account ? <>
-        {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul>{courses.map(course => <li key={course.id}><a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>{course.role === 'instructor' && <span> · Instructor</span>}</li>)}</ul></section>}
+        {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul>{courses.map(course => <li key={course.id}><a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>{course.role === 'instructor' && <span> · {course.guestInstructor ? 'Guest instructor' : 'Instructor'}</span>}</li>)}</ul></section>}
         {courseError && <p role="status">{courseError}</p>}
         <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : 'Continue a map or start a new one'} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
         {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} openLabel="Open" />)}</div>
           : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
+        {account.course?.guestInstructor && <p>Guest instructor · This course’s settings and demonstration content are available to you.</p>}
         {account.course && account.role === 'instructor' && <CoursePromptEditor key={account.cacheKey} course={account.course} request={request} />}
         <Disclosure title="Account" className="account-details">
           <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}</p>

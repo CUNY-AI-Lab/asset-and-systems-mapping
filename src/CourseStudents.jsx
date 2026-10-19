@@ -7,6 +7,7 @@ const levelNames = { micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere
 
 export default function CourseStudents() {
   const [students, setStudents] = useState([]);
+  const [demonstrations, setDemonstrations] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
@@ -15,15 +16,16 @@ export default function CourseStudents() {
     const current = ++generation.current;
     setBusy(true); setError('');
     // A refresh clears previously authorized roster content while rechecking access.
-    if (!cursor) { setStudents([]); setNextCursor(null); }
+    if (!cursor) { setStudents([]); setDemonstrations([]); setNextCursor(null); }
     try {
       const page = await apiRequest('/api/cloud/course-students' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''));
       if (current !== generation.current) return;
       setStudents(previous => cursor ? [...new Map([...previous, ...page.students].map(student => [student.memberId, student])).values()] : page.students);
+      setDemonstrations(page.demonstrationStudents || []);
       setNextCursor(page.nextCursor);
     } catch (failure) {
       if (current !== generation.current) return;
-      setStudents([]); setNextCursor(null);
+      setStudents([]); setDemonstrations([]); setNextCursor(null);
       setError(userFacingError(failure, 'Student progress is temporarily unavailable. Refresh to check again.'));
     } finally { if (current === generation.current) setBusy(false); }
   };
@@ -33,12 +35,12 @@ export default function CourseStudents() {
     <p>Students appear after signing into Systems Mapping. Progress reflects their saved course maps. Submitted revision counts begin when students use Submit revision in Progress; autosaves and generation attempts stay separate.</p>
     {error && <p role="alert">{error}</p>}
     {busy && <p role="status">Loading student progress…</p>}
-    {!busy && !error && !students.length && <p>Students will appear here after their first sign-in.</p>}
-    {students.map(student => <article key={student.memberId} className="course-student">
+    {!busy && !error && !students.length && !demonstrations.length && <p>Students will appear here after their first sign-in.</p>}
+    {[...demonstrations, ...students].map(student => <article key={student.memberId} className="course-student">
       <h3>{student.displayName || 'Student — name unavailable'}</h3>
-      <p>First signed in {new Date(student.firstSeen).toLocaleString()}</p>
+      {student.demonstration ? <p>Demonstration data · illustrative progress and revision counts</p> : <p>First signed in {new Date(student.firstSeen).toLocaleString()}</p>}
       {student.projects.length ? <ul>{student.projects.map(project => <li key={project.id}>
-        <strong>{project.title || 'Untitled systems map'}</strong><p>Saved {new Date(project.updatedAt).toLocaleString()} · Revision {project.revision}</p>
+        <strong>{project.title || 'Untitled systems map'}</strong><p>{student.demonstration ? 'Example map' : `Saved ${new Date(project.updatedAt).toLocaleString()}`} · Revision {project.revision}</p>
         {project.submittedRevisions?.length ? <details><summary>Submitted revisions by level and stage</summary><ul>{project.submittedRevisions.map(entry => <li key={`${entry.scale}-${entry.stage}`}>{levelNames[entry.scale]} · {SYSTEMS_MAPPING_STAGES[entry.stage]?.label}: {entry.count} submitted {entry.count === 1 ? 'revision' : 'revisions'}</li>)}</ul></details> : <p>Submitted revisions: 0</p>}
         <ul>{project.levels.map(level => <li key={level.scale}>{levelNames[level.scale]}: {level.completed ? 'Completed' : level.started ? SYSTEMS_MAPPING_STAGES[level.stage]?.label || 'In progress' : 'Upcoming'}</li>)}</ul>
       </li>)}</ul> : <p>Signed in · First course map pending</p>}

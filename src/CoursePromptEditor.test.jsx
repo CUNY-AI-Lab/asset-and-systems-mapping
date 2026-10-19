@@ -88,3 +88,31 @@ describe('course guidance editor', () => {
     expect(document.body).not.toHaveTextContent('not_owner');
   });
 });
+
+
+it('compares historical guidance and restores it through a new version with the current revision', async () => {
+  const historical = { ...original, revision: 1, amendment: 'Earlier course guidance.' };
+  const request = vi.fn(async (path, options) => path.endsWith('/history') ? { history: [original, historical] }
+    : { prompt: options?.method === 'PUT' ? { ...original, ...options.body, revision: 4 } : original });
+  await mount(request);
+  fireEvent.click(screen.getByRole('button', { name: 'Load version history' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Compare version 1' }));
+  expect(screen.getByLabelText('Published guidance')).toHaveValue(original.amendment);
+  fireEvent.click(screen.getByRole('button', { name: 'Restore into draft' }));
+  expect(screen.getByLabelText('Additional course guidance')).toHaveValue(historical.amendment);
+  fireEvent.click(screen.getByRole('button', { name: 'Save guidance' }));
+  await screen.findByText('Course guidance saved.');
+  expect(request).toHaveBeenLastCalledWith('/api/cloud/course-prompt', {
+    method: 'PUT', body: { amendment: historical.amendment, expectedRevision: 3, changeNote: 'Restore version 1' },
+  });
+});
+
+it('inspects base and effective prompts as read-only text', async () => {
+  const request = vi.fn(async path => path.startsWith('/api/teacher/prompt-preview')
+    ? { basePrompt: 'Fixed rules', effectivePrompt: 'Fixed rules plus course guidance', baseFingerprint: 'base-version', effectiveFingerprint: 'effective-version' }
+    : { prompt: original });
+  await mount(request);
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect system prompt' }));
+  expect(await screen.findByLabelText('Base system prompt')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText('Effective system prompt')).toHaveValue('Fixed rules plus course guidance');
+});

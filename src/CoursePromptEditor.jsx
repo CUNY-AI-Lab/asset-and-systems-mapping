@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
 import { Action, Disclosure } from './ui/StudioPrimitives.jsx';
+import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { userFacingError } from './userFacingError.js';
 
 export default function CoursePromptEditor({ course, request }) {
@@ -12,6 +13,13 @@ export default function CoursePromptEditor({ course, request }) {
   const [status, setStatus] = useState('Loading course guidance…');
   const [conflict, setConflict] = useState(false);
   const [latest, setLatest] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [selectedRevision, setSelectedRevision] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [previewKind, setPreviewKind] = useState('preflight');
+  const [previewScale, setPreviewScale] = useState('micro');
+  const [previewStage, setPreviewStage] = useState('review-suggestions');
+
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +53,7 @@ export default function CoursePromptEditor({ course, request }) {
       setLatest(null);
       setConflict(false);
       setStatus('Course guidance saved.');
+      setHistory(null); setSelectedRevision(null); setPreview(null);
     } catch (failure) {
       setStatus('');
       if (failure.status === 409) {
@@ -64,6 +73,19 @@ export default function CoursePromptEditor({ course, request }) {
     } catch (failure) {
       setError(userFacingError(failure, 'The latest guidance could not be loaded. Your draft is still here. Try again.'));
     } finally { setBusy(false); }
+  };
+
+  const loadHistory = async () => {
+    setBusy(true); setError('');
+    try { const result = await request('/api/cloud/course-prompt/history'); setHistory(result.history); }
+    catch (failure) { setError(userFacingError(failure, 'Version history could not be loaded. Try again.')); }
+    finally { setBusy(false); }
+  };
+  const inspectPrompt = async () => {
+    setBusy(true); setError('');
+    try { setPreview(await request(`/api/teacher/prompt-preview?configKind=${previewKind}&scale=${previewScale}&stageId=${previewStage}`)); }
+    catch (failure) { setError(userFacingError(failure, 'The system prompt could not be loaded. Try again.')); }
+    finally { setBusy(false); }
   };
 
   return <Disclosure title="Course guidance" className="course-prompt-editor">
@@ -86,6 +108,41 @@ export default function CoursePromptEditor({ course, request }) {
       <p>Compare this version with your draft above. Saving your draft replaces this version.</p>
       <Action disabled={busy || !changeNote.trim()} onClick={() => save(latest.revision)}>Save my draft as next version</Action>
     </section>}
+    {prompt && <section aria-label="Guidance version history">
+      <p>Published version {prompt.revision}. Saving guidance publishes it for subsequent requests in this course.</p>
+      <Action variant="secondary" disabled={busy} onClick={loadHistory}>Load version history</Action>
+      {history && <ul>{history.map(version => <li key={version.revision}>
+        <Action variant="secondary" disabled={busy} onClick={() => setSelectedRevision(version)}>Compare version {version.revision}</Action>
+        <span> {version.changeNote} · {version.updatedByName || 'Course instructor'} · {version.updatedAt}</span>
+      </li>)}</ul>}
+      {history?.length === 0 && <p>Publish course guidance to begin its version history.</p>}
+      {selectedRevision && <div>
+        <label className="field">Published guidance<textarea value={prompt.amendment} readOnly rows={5} /></label>
+        <label className="field">Version {selectedRevision.revision} guidance<textarea value={selectedRevision.amendment} readOnly rows={5} /></label>
+        <Action variant="secondary" disabled={busy || selectedRevision.amendment === prompt.amendment} onClick={() => {
+          setAmendment(selectedRevision.amendment); setChangeNote(`Restore version ${selectedRevision.revision}`);
+          setStatus('Earlier guidance copied into your draft. Review it, then save to publish a new version.');
+        }}>Restore into draft</Action>
+      </div>}
+    </section>}
+    <section aria-label="System prompt inspection">
+      <label className="field">Prompt purpose<select disabled={busy} value={previewKind} onChange={event => { setPreviewKind(event.target.value); setPreviewStage(event.target.value === 'preflight' ? 'review-suggestions' : 'build-map'); setPreview(null); }}>
+        <option value="preflight">Memo review</option><option value="builder">Map building</option>
+      </select></label>
+      <label className="field">Prompt level<select disabled={busy} value={previewScale} onChange={event => { setPreviewScale(event.target.value); setPreview(null); }}>
+        {['micro', 'meso', 'exosphere', 'macrosphere'].map(scale => <option key={scale} value={scale}>{scale}</option>)}
+      </select></label>
+      <label className="field">Prompt stage<select disabled={busy} value={previewStage} onChange={event => { setPreviewStage(event.target.value); setPreview(null); }}>
+        {SYSTEMS_MAPPING_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
+      </select></label>
+      <Action variant="secondary" disabled={busy} onClick={inspectPrompt}>Inspect system prompt</Action>
+      {preview && <div>
+        <label className="field">Base system prompt<textarea readOnly value={preview.basePrompt} rows={12} /></label>
+        <p>Base version: {preview.baseFingerprint}</p>
+        <label className="field">Effective system prompt<textarea readOnly value={preview.effectivePrompt} rows={12} /></label>
+        <p>Effective version: {preview.effectiveFingerprint}</p>
+      </div>}
+    </section>
     {status && <p role="status">{status}</p>}
     {error && <p role="alert" className="account-error">{error}</p>}
   </Disclosure>;
