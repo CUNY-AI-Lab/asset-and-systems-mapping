@@ -3631,6 +3631,17 @@ export function createSystemsMappingApp(options = {}) {
     return context.json(await teacherPreflightDetail(db, submissionId));
   });
 
+  app.get('/api/teacher/prompt-preview', async (context) => {
+    const kind = context.req.query('configKind') || 'preflight';
+    const scale = context.req.query('scale') || 'micro';
+    const stageId = context.req.query('stageId') || undefined;
+    const base = await effectiveSnapshot(db, kind, scale, false, null, stageId);
+    const effective = await effectiveSnapshot(db, kind, scale, false, null, stageId, context.env?.verifiedAccount?.coursePrompt);
+    return context.json({ basePrompt: base.effectivePrompt, effectivePrompt: effective.effectivePrompt,
+      baseFingerprint: base.fingerprint, effectiveFingerprint: effective.fingerprint,
+      moduleVersions: effective.moduleVersions, configKind: kind, scale, stageId: effective.stageId });
+  });
+
   app.get('/api/teacher/profiles', async (context) => {
     const profiles = await listTeachingProfiles(db);
     return context.json({

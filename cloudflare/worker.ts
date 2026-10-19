@@ -15,6 +15,7 @@ import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
 import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
 import { GuidanceJobs } from './guidance-jobs.js';
+import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
 
 const HEADERS = {
@@ -173,17 +174,17 @@ export class MappingCourse extends DurableObject<Bindings> {
     }
     if (path === '/api/cloud/course-prompt' || path === '/api/cloud/course-prompt/history') {
       if (!principal.course) return failure('Open a course to view its guidance.', 404);
-      return coursePromptRequest(request, this.ctx.storage, principal.course.owner, principal.course);
+      return coursePromptRequest(request, this.ctx.storage, principal.course.capabilities, principal.course);
     }
     if (path === '/api/cloud/account' && request.method === 'GET') {
       if (principal.course) await this.visit(principal.course);
       this.db.prepare('INSERT OR IGNORE INTO cloud_accounts VALUES (?,?)').run(owner, crypto.randomUUID());
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
         role: principal.admin ? 'instructor' : 'student',
-        course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
+        course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, guestInstructor: principal.course.guestInstructor, capabilities: principal.course.capabilities, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
     }
     if (path === '/api/cloud/course-students' && request.method === 'GET') {
-      if (!principal.course?.owner) return courseFailure(new CourseAccessError(403, 'not_owner'));
+      if (!principal.course?.capabilities.rosterRead) return courseFailure(new CourseAccessError(403, 'not_owner'));
       if ([...url.searchParams.keys()].some(key => key !== 'cursor') || url.searchParams.getAll('cursor').length > 1) return courseFailure(new CourseAccessError(400, 'cursor_invalid'));
       try {
         const roster = await courseRoster(this.env, principal.subject, principal.course, url.searchParams.get('cursor') ?? undefined, request.signal);
@@ -202,7 +203,8 @@ export class MappingCourse extends DurableObject<Bindings> {
           });
           return [{ memberId: member.memberId, displayName: member.displayName, displayNameSource: member.displayNameSource, ...visit, projectCount, projects }];
         });
-        return Response.json({ students, nextCursor: roster.nextCursor });
+        return Response.json({ students, demonstrationStudents: principal.course.classId === DEMO_COURSE_ID
+          ? [demonstrationProgress()] : [], nextCursor: roster.nextCursor });
       } catch (error) { return courseFailure(error); }
     }
     const revisionPath = /^\/api\/cloud\/projects\/([A-Za-z0-9_-]{1,128})\/submitted-revisions$/.exec(path);
@@ -326,7 +328,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
           if (!(principal instanceof Response) && request.headers.has('x-systems-course')) {
             try {
               const course = await resolveCourseAccess(env, principal.subject, selectedCourse ?? '', request.signal);
-              principal = { ...principal, admin: course.owner, expiresAt: Math.min(principal.expiresAt, Date.parse(course.expiresAt)), course };
+              principal = { ...principal, admin: course.capabilities.instructorPanel, expiresAt: Math.min(principal.expiresAt, Date.parse(course.expiresAt)), course };
             } catch (error) { principal = courseFailure(error); }
           }
           const limit = await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal instanceof Response ? null : principal.subject) });
@@ -343,7 +345,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
                       try { course = await resolveCourseAccess(env, principal.subject, classId, signal); }
                       catch (error) { if (error instanceof CourseAccessError && error.status === 403) continue; throw error; }
                       await boundedRpc(env.COURSES.getByName(`systems-mapping:course:${classId}`).visit(course), signal);
-                      found.push({ id: course.classId, name: course.className, term: course.term, section: course.section, role: course.owner ? 'instructor' : 'student' });
+                      found.push({ id: course.classId, name: course.className, term: course.term, section: course.section, guestInstructor: course.guestInstructor, role: course.capabilities.instructorPanel ? 'instructor' : 'student' });
                     }
                   }
                   return found;
