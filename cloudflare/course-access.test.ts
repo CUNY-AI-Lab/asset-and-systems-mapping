@@ -298,11 +298,13 @@ test('unknown errors and malformed codes never expose diagnostics', async () => 
 
 
 test('guest instructors receive explicit capabilities without ownership or student enrollment', async () => {
-  const value = receipt({ participant: false, owner: false, guestInstructor: true });
+  const demoId = 'cail-teaching-tools-demo';
+  const value = receipt({ classId: demoId, participant: false, owner: false, guestInstructor: true });
   const { env, resolve } = environment(value);
-  await expect(resolveCourseAccess(env, subject, classId)).resolves.toMatchObject({ guestInstructor: true, owner: false, participant: false, capabilities: { promptWrite: true } });
+  env.COURSE_IDS = demoId;
+  await expect(resolveCourseAccess(env, subject, demoId)).resolves.toMatchObject({ guestInstructor: true, owner: false, participant: false, capabilities: { promptWrite: true } });
   resolve.mockResolvedValueOnce({ ok: false, code: 'revoked', retryable: false });
-  await expect(resolveCourseAccess(env, subject, classId)).rejects.toMatchObject({ status: 403 });
+  await expect(resolveCourseAccess(env, subject, demoId)).rejects.toMatchObject({ status: 403 });
   for (const invalid of [
     receipt({ capabilities: { instructorPanel: true, rosterRead: true, promptRead: true, promptWrite: true } }),
     receipt({ guestInstructor: true, participant: true }),

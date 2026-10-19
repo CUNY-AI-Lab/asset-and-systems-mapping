@@ -1,3 +1,4 @@
+import { DEMO_COURSE_ID } from './demo-course';
 import { withDeadline, withSignal } from './bounded.js';
 
 /** Systems Mapping counterpart of Admission's private course wire v2.
@@ -78,7 +79,7 @@ function validReceipt(value: unknown, classId: string, now: number): value is Co
     && typeof value.participant === 'boolean' && typeof value.owner === 'boolean' && typeof value.guestInstructor === 'boolean' && (value.participant || value.owner || value.guestInstructor)
     && exactFields(value.capabilities, ['instructorPanel', 'rosterRead', 'promptRead', 'promptWrite'])
     && Object.values(value.capabilities).every(flag => flag === (value.owner || value.guestInstructor))
-    && (!value.guestInstructor || (!value.owner && !value.participant))
+    && (!value.guestInstructor || (!value.owner && !value.participant && value.classId === DEMO_COURSE_ID))
     && canonicalDate(value.startsAt) && canonicalDate(value.checkedAt) && canonicalDate(value.expiresAt)
     && Date.parse(value.checkedAt) <= now + 5000 && now - Date.parse(value.checkedAt) < 30000
     && Date.parse(value.expiresAt) > now && Date.parse(value.checkedAt) < Date.parse(value.expiresAt)
