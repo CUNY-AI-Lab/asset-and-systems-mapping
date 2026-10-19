@@ -21,12 +21,11 @@ test('map and notebook preserve reflection and viewport across every level and r
   for (const level of ['micro', 'meso', 'exosphere', 'macrosphere']) {
     await page.getByRole('combobox', { name: 'Work level' }).selectOption(level);
     await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
-    if (!(await notebook.locator('.notebook-entries').evaluate(el => el.open))) await notebook.locator('.notebook-entries > summary').click();
     await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');
     const field = notebook.getByRole('textbox', { name: 'Your reflection' });
     await expect(field).toBeVisible();
     expect(await notebook.locator('textarea:visible').count()).toBe(1);
-    await expect(notebook.locator('.memo-drawer')).not.toHaveAttribute('open', '');
+    await expect(notebook.locator('.memo-drawer')).toHaveCount(0);
     await field.fill(`My ${level} interpretation remains mine.\nAn open question stays open.`);
     await nav.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.locator('.graph-canvas')).toBeVisible();

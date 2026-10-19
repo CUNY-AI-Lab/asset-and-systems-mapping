@@ -12,17 +12,14 @@ export const REFLECTION_PROMPTS = Object.freeze({
 // Viewing this component never parses, reformats or overwrites student prose.
 export default function ReflectionEntry({ project, update }) {
   return <section className="reflection-entry" aria-labelledby="reflection-title">
-    <h2 id="reflection-title">Reflection</h2>
-    <p className="reflection-prompt">{REFLECTION_PROMPTS[project.activeScale]}</p>
+    <h2 id="reflection-title" className="sr-only">Reflection</h2>
     <label className="field">
-      <span className="field__label">Your reflection <small>(optional)</small></span>
-      <textarea className="reflection" rows="5" maxLength={PROJECT_LIMITS.promptText}
-        value={project.reflection} placeholder="A pattern, a revision, or a question to carry forward…"
+      <span className="reflection-prompt">{REFLECTION_PROMPTS[project.activeScale]}</span>
+      <textarea className="reflection" aria-label="Your reflection (optional)" rows="5" maxLength={PROJECT_LIMITS.promptText}
+        value={project.reflection} placeholder="Write a reflection (optional)…"
         onChange={(event) => update((draft) => { draft.reflection = event.target.value; })}
         onBlur={() => update(() => {}, 'reflection.revised', 'Level reflection revised')} />
     </label>
-    <details className="reflection-help"><summary>Prompts to help you reflect</summary>
-      <ul><li>Which part of the map supports your interpretation?</li><li>What changed your mind, or whose perspective is missing?</li><li>What would you investigate or revise next?</li></ul>
-    </details>
+
   </section>;
 }

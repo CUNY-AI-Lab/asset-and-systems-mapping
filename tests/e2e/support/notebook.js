@@ -12,8 +12,6 @@ export async function mapCommand(page, name) {
 
 export async function notebookSection(page, mode) {
   await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Notebook', exact: true }).click();
-  const entries = page.locator('.notebook-entries');
-  if (!(await entries.evaluate(el => el.open))) await entries.locator(':scope > summary').click();
   await page.getByRole('combobox', { name: 'Notebook section' }).selectOption(mode);
 }
 

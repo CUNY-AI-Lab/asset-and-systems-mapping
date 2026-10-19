@@ -29,8 +29,9 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect(page.getByRole('combobox', { name: 'Work level' })).toBeVisible();
   expect((await readProject(page)).instructor.requireStudentConfirmation).toBe(false);
   // The first reading stays an explicit student choice; later levels read in the same click that completes the previous one.
+  await expect(page.locator('#map-inspector .button:not(.button--ghost):visible')).toHaveCount(1);
   await page.getByRole('button', { name: 'Generate guidance' }).click();
-  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
+  await expect(page.locator('.notebook-refresh > summary')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeEnabled();
   await expect(page.locator('.review-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('.memo-drawer')).not.toHaveAttribute('open', '');
@@ -76,7 +77,7 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await page.getByRole('button', { name: 'Open project', exact: true }).click();
   expect((await readProject(page)).graph).toEqual(cumulative);
   expect((await readProject(page)).instructor.requireStudentConfirmation).toBe(true);
-  await notebookSection(page, 'inspector');
+  await notebookSection(page, 'review');
   await expect(page.getByRole('complementary', { name: 'Notebook' })).toBeVisible();
   await preferences(page);
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();

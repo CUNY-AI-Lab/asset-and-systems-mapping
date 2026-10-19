@@ -216,13 +216,13 @@ describe('map accessibility', () => {
     renderMapStage();
     fireEvent.keyDown(screen.getByRole('button', { name: /Rosa, person, Micro-level/i }), { key: 'Enter' });
     const panel = screen.getByRole('tabpanel', { name: 'Item' });
-    expect(within(panel).getByText(/Explain why this item matters/)).toBeVisible();
+    expect(within(panel).queryByText(/Explain why this item matters/)).not.toBeInTheDocument();
     expect(within(panel).getByRole('textbox', { name: 'Your interpretation' })).toBeVisible();
     expect(within(panel).getByRole('button', { name: 'Remove from map' })).not.toBeVisible();
     expect(within(panel).getByRole('button', { name: 'Add record' })).not.toBeVisible();
+    fireEvent.click(within(panel).getByText('Edit item details'));
     fireEvent.click(within(panel).getByText('Evidence and questions'));
     expect(within(panel).getByRole('button', { name: 'Add record' })).toBeVisible();
-    fireEvent.click(within(panel).getByText('Edit item details'));
     expect(within(panel).getByRole('button', { name: 'Remove from map' })).toBeVisible();
   });
 

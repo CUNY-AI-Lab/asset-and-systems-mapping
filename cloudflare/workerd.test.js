@@ -221,6 +221,7 @@ test('a known availability refusal uses the admitted backup and records the mode
 
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome account flow preserves map edits and exported content across reload and account switching', async () => {
   const fixture = JSON.parse(serializedEastHarlemDisabilityProject());
+  fixture.mapAnnotation.text = 'A saved map note from an earlier version.';
   fixture.id = 'browser-map';
   expect((await request('/api/cloud/projects/browser-map', 'alice', { method: 'PUT', body: JSON.stringify({ project: serializeProject(fixture), revision: 0 }) })).status).toBe(200);
   const browser = await chromium.launch({ headless: true });
@@ -265,7 +266,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await notebookSection(page, 'inspector');
+    await notebookSection(page, 'review');
+    await page.locator('.saved-map-note > summary').click();
     const note = page.getByRole('textbox', { name: 'Map note', exact: true });
     await note.fill('Account map edit survives restart and export.');
     await projectMenu(page, 'Projects');
@@ -278,7 +280,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.reload();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await notebookSection(page, 'inspector');
+    await notebookSection(page, 'review');
+    await page.locator('.saved-map-note > summary').click();
     failCloudWrites = true;
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill('Unsynced work is recovered after a storage interruption.');
     await page.getByRole('textbox', { name: 'Map note', exact: true }).press('Tab');
@@ -336,6 +339,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
 
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO access states preserve account drafts without offering a class code', async () => {
   const fixture = JSON.parse(serializedEastHarlemDisabilityProject());
+  fixture.mapAnnotation.text = 'A saved map note from an earlier version.';
   fixture.id = 'browser-sso-map';
   fixture.title = 'SSO recovery map';
   expect((await request(`/api/cloud/projects/${fixture.id}`, 'alice', {
@@ -421,7 +425,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     sessionMode = 'expiring';
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await notebookSection(page, 'inspector');
+    await notebookSection(page, 'review');
+    await page.locator('.saved-map-note > summary').click();
     const draft = 'Map note retained when CUNY sign-in expires';
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill(draft);
     // Leave the annotation focused: expiry must flush its pending edit before
@@ -437,7 +442,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     sessionMode = 'success';
     await openAccountMap();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await notebookSection(page, 'inspector');
+    await notebookSection(page, 'review');
+    await page.locator('.saved-map-note > summary').click();
     await browserExpect(page.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue(draft);
     await browserExpect.poll(async () => JSON.parse((await (await request(`/api/cloud/projects/${fixture.id}`)).json()).project).mapAnnotation.text).toBe(draft);
     expect(await page.evaluate(() => window.__ssoClassCodeShown)).toBe(false);

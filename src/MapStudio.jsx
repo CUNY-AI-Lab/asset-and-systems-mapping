@@ -35,15 +35,12 @@ export function LevelSelect({ levels, onSelect }) {
 }
 
 export function NotebookSection({ mode, onChange, disabled = [] }) {
-  return <details className="notebook-entries"><summary>Notebook entries</summary>
-    <label className="field"><span className="field__label">Notebook section</span>
-      <select value={mode} onChange={(event) => { onChange(event.target.value); event.currentTarget.closest('details').open = false; }}>
-        <option value="suggestions">Memo and suggestions</option>
-        <option value="inspector" disabled={disabled.includes('inspector')}>Map notes</option>
-        <option value="review" disabled={disabled.includes('review')}>Reflection</option>
-      </select>
-    </label>
-  </details>;
+  return <label className="notebook-section"><span className="sr-only">Notebook section</span>
+    <select value={mode} onChange={(event) => onChange(event.target.value)}>
+      <option value="suggestions">Memo and suggestions</option>
+      <option value="review" disabled={disabled.includes('review')}>Reflection</option>
+    </select>
+  </label>;
 }
 
 export function LevelRail({ levels, onSelect }) {

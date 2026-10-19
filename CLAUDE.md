@@ -26,7 +26,7 @@ and real signed-in model acceptance as separate evidence.
 The student interface uses Map / Notebook: the mounted canvas and one current
 notebook task share each level (`src/App.jsx` `MapStage`, `src/MapStudio.jsx`,
 `src/ReflectionEntry.jsx`, `src/nextStep.js`). Map tools and Project menus
-consolidate secondary controls. Reflection is one optional string per level;
+consolidate secondary controls. Notebook has two writing tasks: memo/suggestions and reflection; selected-item editing is contextual. Map tools must use their own flex layout, not legacy toolbar grid selectors. Full screen must close Notebook, switch List to Canvas, fill the viewport, and expose an exit. Reflection is one optional string per level;
 preserve older labeled Macro prose without parsing or rewriting it. Stage numbers and labels are still the
 record of progress and must not be renumbered. `wrangler.dev.jsonc` deploys the
 separate `systems-mapping-dev` Worker; production releases stay manual.

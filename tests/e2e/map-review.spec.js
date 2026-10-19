@@ -27,7 +27,7 @@ test('students trace scopes in both directions, cross filtered layers, and retur
   await page.evaluate(() => window.scrollTo(0, 0));
   const footerTop = await page.locator('.app-footer').evaluate((element) => element.getBoundingClientRect().top);
   await openTools(page);
-  for (const name of ['Fit map', 'Map notes']) {
+  for (const name of ['Fit map', 'Full screen map']) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox();
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(footerTop);
   }
@@ -86,35 +86,36 @@ test('layout undo restores positions without replacing annotations and the canva
   await canvas.press('0');
   const nodes = page.locator('.graph-node');
   const positions = () => nodes.evaluateAll((items) => items.map((item) => [item.getAttribute('data-graph-id'), item.getAttribute('transform')]));
+  // Phone overview is already arranged. Move an item so undo has a real change.
+  const initialPositions = await positions();
+  await page.locator('[data-graph-id="node_e2e_resident"]').press('Shift+ArrowRight');
+  await expect.poll(positions).not.toEqual(initialPositions);
   const before = await positions();
   await mapCommand(page, 'Arrange map');
-  await notebookSection(page, 'inspector');
-  const inspector = page.getByRole('complementary', { name: 'Notebook' });
-  await inspector.getByRole('textbox', { name: 'Map note', exact: true }).fill('Layout changes must preserve this interpretation.');
-  await inspector.getByText('Map controls', { exact: true }).click();
-  await inspector.getByRole('button', { name: 'Undo layout' }).click();
-  await expect(inspector.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue('Layout changes must preserve this interpretation.');
-  await inspector.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect.poll(positions).not.toEqual(before);
+  const arranged = await positions();
+  await notebookSection(page, 'review');
+  const field = page.getByRole('textbox', { name: 'Your reflection (optional)' });
+  await field.fill('Layout changes must preserve this interpretation.');
+  await showMap(page);
+  await canvas.press('Control+z');
   await expect.poll(positions).toEqual(before);
-  await expect.poll(async () => (await readProject(page)).mapAnnotation.text).toBe('Layout changes must preserve this interpretation.');
+  await expect.poll(async () => (await readProject(page)).reflection).toBe('Layout changes must preserve this interpretation.');
   await canvas.press('Control+Shift+z');
-  await notebookSection(page, 'inspector');
-  await expect(inspector.getByRole('button', { name: 'Undo layout' })).toBeEnabled();
+  await expect.poll(positions).toEqual(arranged);
 });
 
-test('cumulative review exposes level results and reopens earlier revision without completing another level', async ({ page, makeAxeBuilder }, testInfo) => {
+test('reflection reopens earlier levels without exposing repeated summaries or completing another level', async ({ page, makeAxeBuilder }, testInfo) => {
   await openProject(page);
   await notebookSection(page, 'review');
   await expect(page.locator('#map-inspector [data-next-action]')).toHaveAttribute('data-next-action', /continue-level|complete-level|project-complete/);
-  await page.locator('.notebook-review-tools > summary').click();
-  await page.locator('.project-overview > summary').click();
-  await expect(page.getByRole('region', { name: 'Meso-level results' })).toContainText('1 mesosystem · 2 setting links');
-  await expect(page.getByRole('region', { name: 'Macro-level results' })).toContainText('1 broader condition · 3 scope links');
+  await expect(page.locator('.revision-status, .project-overview')).toHaveCount(0);
   const completed = (await readProject(page)).completedScales;
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Cumulative revision'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Cumulative revision');
-  await page.getByRole('button', { name: 'Review Micro-level', exact: true }).click();
-  await expect(page.getByLabel('Current Micro-level map summary')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
+  await notebookSection(page, 'review');
+  await expect(page.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('micro');
   expect((await readProject(page)).completedScales).toEqual(completed);
 });
@@ -158,7 +159,7 @@ test('Space and middle-button drags pan over nodes without moving them, and Esca
 
 test('manual additions keep canonical level values and save an outside institution at Exo-level', async ({ page }) => {
   await openProject(page, 'micro');
-  await notebookSection(page, 'inspector');
+  await mapCommand(page, 'Add item');
   const inspector = page.getByRole('complementary', { name: 'Notebook' });
   await inspector.getByRole('button', { name: 'Add', exact: true }).click();
   await inspector.getByRole('button', { name: 'Node', exact: true }).click();

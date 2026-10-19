@@ -37,7 +37,6 @@ function openDetails(selector) {
 }
 function notebookOption(label) {
   workActions();
-  openDetails('.notebook-entries');
   return screen.getByRole('option', { name: label, exact: true });
 }
 function openExports() {
@@ -317,8 +316,6 @@ function openProjectFromList(title = null) {
 function openNotebookSection(mode) {
   const nav = screen.getByRole('navigation', { name: 'Workspace', exact: true });
   fireEvent.click(within(nav).getByRole('button', { name: 'Notebook', exact: true }));
-  const entries = document.querySelector('.notebook-entries');
-  if (!entries.open) fireEvent.click(entries.querySelector('summary'));
   fireEvent.change(screen.getByRole('combobox', { name: 'Notebook section' }), { target: { value: mode } });
 }
 
@@ -329,6 +326,11 @@ function workActions() {
   return within(document.querySelector('#map-inspector'));
 }
 
+function memoNextAction() {
+  workActions();
+  return document.querySelector('#map-inspector .notebook-next') || document.querySelector('#map-inspector [data-next-action]');
+}
+
 function mapLayer() {
   const menu = document.querySelector('.notebook-map-tools');
   if (menu && !menu.open) fireEvent.click(menu.querySelector('summary'));
@@ -336,6 +338,7 @@ function mapLayer() {
 }
 
 function footerAction(id) {
+  if (id === 'review-level') return within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true });
   const nav = screen.queryByRole('navigation', { name: 'Workspace', exact: true });
   if (nav) fireEvent.click(within(nav).getByRole('button', { name: 'Notebook', exact: true }));
   return document.querySelector(`[data-next-action="${id}"]`);
@@ -803,11 +806,13 @@ function openEdgeInspector(edgeId = document.querySelector('.graph-edge')?.getAt
 }
 
 function openMapInspector() {
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
+  fireEvent.click(mapTool('Add item'));
   return screen.getByLabelText('Notebook');
 }
 
 function openEvidenceRecords(inspector) {
+  const editor = inspector.querySelector('.node-summary') || [...inspector.querySelectorAll('details')].find(el => el.querySelector('summary')?.textContent === 'Connection details');
+  if (editor && !editor.open) fireEvent.click(editor.querySelector('summary'));
   const summary = within(inspector).getByText('Evidence and questions');
   if (!summary.closest('details').open) fireEvent.click(summary);
   return within(inspector).getByRole('region', { name: 'Evidence records' });
@@ -826,11 +831,12 @@ function selectAnnotationTarget(target) {
   }
   if (target === 'edge') {
     const inspector = openEdgeInspector();
-    const panel = within(inspector).getByRole('tabpanel', { name: 'Connections' });
+    const panel = within(inspector).getByRole('region', { name: 'Connections' });
     return within(panel).getByRole('textbox', { name: 'Your interpretation' });
   }
-  const inspector = openMapInspector();
-  return within(inspector).getByRole('textbox', { name: /^Map note/ });
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
+  openDetails('.saved-map-note');
+  return screen.getByRole('textbox', { name: /^Map note/ });
 }
 
 function storedAnnotation(target, project) {
@@ -1096,7 +1102,7 @@ describe('Systems Mapping workflow', () => {
     await screen.findByRole('heading',{name:'Systems map'});
     expect(submit).not.toHaveBeenCalled();
     openNotebookSection('review');
-    openDetails('.notebook-review-tools');
+    openDetails('.reflection-help:has(.map-check)');
     fireEvent.click(screen.getByRole('button',{name:'Submit revision',exact:true}));
     await waitFor(()=>expect(submit).toHaveBeenCalledTimes(1));
     expect(submit.mock.calls[0][0]).toMatchObject({id:project.id,activeScale:project.activeScale,stage:4});
@@ -1153,7 +1159,8 @@ describe('Systems Mapping workflow', () => {
 
   it.each(['node', 'edge', 'map'])('preserves a pending institutional %s annotation before sign-in expires', async (target) => {
     vi.useFakeTimers();
-    const project = seedProject(makeMapProject());
+    const legacy = makeMapProject(); legacy.mapAnnotation.text = 'A saved map note.';
+    const project = seedProject(legacy);
     studentSession = grantedAccess(60_000);
     render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
     for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
@@ -1166,7 +1173,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedAnnotation(target, project)).toBe(note);
     expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(project.graph.nodes.map(({ id }) => id));
     expect(storedProject().graph.edges.map(({ id }) => id)).toEqual(project.graph.edges.map(({ id }) => id));
-    expect(storedProject().stage).toBe(project.stage);
+    expect(storedProject().stage).toBe(target === 'map' ? 4 : project.stage);
   });
 
   it('bounds institutional guidance auth revalidation and allows outage recovery without class codes', async () => {
@@ -1222,7 +1229,7 @@ describe('Systems Mapping workflow', () => {
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 750)); });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Generate guidance' })).toBeVisible();
-    expect(screen.getAllByRole('button', { name: 'Continue →' }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: 'Continue →' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
   });
 
@@ -1231,21 +1238,22 @@ describe('Systems Mapping workflow', () => {
     project.stage = 1; project.furthestStage = 1;
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    await screen.findByRole('button', { name: 'Refresh' });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('Update suggestions');
+    openDetails('.notebook-refresh');
+    fireEvent.click(screen.getByRole('button', { name: 'Reread memo' }));
     await waitFor(() => expect(document.querySelector('.review-details')).toBeInTheDocument());
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations')).toHaveLength(1);
     const drawer = document.querySelector('.memo-drawer');
     fireEvent.click(drawer.querySelector('summary'));
     fireEvent.change(within(drawer).getByRole('textbox', { name: /^Memo/ }), { target: { value: project.submission.text + ' Another family requests advice.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reread memo' }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations')).toHaveLength(2));
   });
 
   it('sends explicit choices forward and preserves revised labels and removals after a selective response', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →', exact: true }));
+    fireEvent.click(memoNextAction());
     const nodeLabels = () => screen.getAllByRole('textbox', { name: 'Node label' });
     fireEvent.change(nodeLabels()[0], { target: { value: 'Neighborhood school' } });
     fireEvent.click(within(nodeLabels()[0].closest('article')).getByRole('button', { name: 'Add to map' }));
@@ -1418,9 +1426,9 @@ describe('Systems Mapping workflow', () => {
     expect(guidance.querySelectorAll('.studio-feedback')).toHaveLength(2);
     expect(within(guidance).getByText('The memo grounds the referral in a specific handoff.')).toBeVisible();
     expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toHaveTextContent('2 items · 1 connection');
-    expect(within(guidance).getByText('School', { selector: 'strong' })).toBeVisible();
-    expect(within(guidance).getByText('Committee', { selector: 'strong' })).toBeVisible();
+    expect(screen.queryByText('2 items · 1 connection')).not.toBeInTheDocument();
+    expect(within(guidance).queryByText('School', { selector: 'strong' })).not.toBeInTheDocument();
+    expect(within(guidance).queryByText('Committee', { selector: 'strong' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'Suggestions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Return to your memo' })).not.toBeInTheDocument();
     expect(screen.queryByText('Instructor guidance')).not.toBeInTheDocument();
@@ -1585,7 +1593,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
-    expect(notebookOption('Map notes')).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
     expect(storedProject().preflight).toBeNull();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
 
@@ -1611,9 +1619,8 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Reflection' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /Your reflection/ })).toBeVisible();
 
-    const currentMap = screen.getByLabelText('Current Micro-level map summary');
-    expect(currentMap).toHaveTextContent(`${micro.nodes.length} nodes`);
-    expect(currentMap).toHaveTextContent(`${micro.edges.length} direct relationships`);
+    expect(screen.queryByLabelText('Current Micro-level map summary')).not.toBeInTheDocument();
+    expect(storedProject().graph.edges.filter(edge => edge.scale === 'micro')).toHaveLength(micro.edges.length);
     expect(document.querySelector('.release-summary')).toBeNull();
     expect(storedProject().graph).toEqual(graphBefore);
   });
@@ -1955,7 +1962,7 @@ describe('Systems Mapping workflow', () => {
   it('keeps Map and all five stages available with guidance present and never mentions instructor review', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Suggestions', exact: true })).toBeVisible();
     expect(document.querySelector('.workspace').textContent).not.toMatch(/instructor review|send to instructor|note for instructor/i);
     screen.getAllByRole('button', { name: 'Continue →' }).forEach((button) => expect(button).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
@@ -1977,15 +1984,15 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(reviewProject);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
-    const reviewForward = workActions().getByRole('button', { name: 'Continue →' });
+    const reviewForward = memoNextAction();
     expect(reviewForward).toBeDisabled();
     fireEvent.click(reviewForward);
     expect(screen.queryByRole('heading', { name: 'Suggestions' })).not.toBeInTheDocument();
     expect(storedProject().stage).toBe(1);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     await act(async () => { releaseReview(); await Promise.resolve(); });
-    await waitFor(() => expect(reviewForward).toBeEnabled());
-    fireEvent.click(reviewForward);
+    await waitFor(() => expect(memoNextAction()).toBeEnabled());
+    fireEvent.click(memoNextAction());
     expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
 
     cleanup();
@@ -2224,8 +2231,8 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     expect(within(screen.getByRole('article', { name: project.title })).getByText(/Review/)).toBeVisible();
     openProjectFromList(project.title);
-    expect(await screen.findByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toHaveTextContent('2 items · 1 connection');
+    expect(await screen.findByRole('heading', { name: 'Suggestions', exact: true })).toBeVisible();
+    expect(screen.queryByText('2 items · 1 connection')).not.toBeInTheDocument();
   });
 
   it('sends the exact carried Micro node IDs when Meso guidance is generated', async () => {
@@ -2427,7 +2434,7 @@ describe('Systems Mapping workflow', () => {
         connections: [],
       } }) }, 201);
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     if (failure === 'failure') await screen.findByText('Guidance is temporarily unavailable. Try again later.');
     else expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
@@ -2435,7 +2442,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
     expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
-    expect(notebookOption('Map notes')).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
     openProjectMenu('Progress');
     const progress = screen.getByRole('dialog', { name: 'Progress' });
     for (const label of ['Choose elements', 'Build map', 'Review and export']) {
@@ -2479,7 +2486,7 @@ describe('Systems Mapping workflow', () => {
   it('marks guidance refreshable after a memo edit without erasing the guidance or any work', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    expect(screen.getByRole('region', { name: 'Coverage and uncertainty' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Suggestions', exact: true })).toBeVisible();
     expect(screen.queryByText(/Update suggestions for your revised memo/)).not.toBeInTheDocument();
 
     const drawer = document.querySelector('.memo-drawer');
@@ -2490,7 +2497,8 @@ describe('Systems Mapping workflow', () => {
 
     expect(await screen.findByText(/Update suggestions for your revised memo/)).toBeVisible();
     expect(await memoReviewDetails()).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+    openDetails('.notebook-refresh');
+    expect(screen.getByRole('button', { name: 'Reread memo' })).toBeEnabled();
     screen.getAllByRole('button', { name: 'Continue →' }).forEach((button) => expect(button).toBeEnabled());
     await waitFor(() => expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture()));
   });
@@ -2531,7 +2539,7 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 1;
 
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     await waitFor(() => {
       expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
@@ -2568,9 +2576,10 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph.edges).toEqual([expect.objectContaining({ verb: 'refers directly to', scale: 'micro', status: 'confirmed' })]);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/connections')).toHaveLength(0);
 
-    fireEvent.click(workActions().getByRole('button', { name: 'Reflect on this level' }));
+    workActions();
     expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
-    expect(screen.getByLabelText('Current Micro-level map summary')).toHaveTextContent('2 nodes · 1 direct relationship');
+    expect(storedProject().graph.nodes.filter(node => node.scale === 'micro')).toHaveLength(2);
+    expect(storedProject().graph.edges.filter(edge => edge.scale === 'micro')).toHaveLength(1);
   });
 
   it('records focal participation and immediate setting membership while reviewing Micro suggestions', async () => {
@@ -2622,7 +2631,7 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     openProjectFromList();
     expect(screen.getByRole('checkbox', { name: 'Add suggestions automatically' })).not.toBeChecked();
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     expect(storedProject().graph.nodes).toHaveLength(0);
     expect(storedProject().candidates.nodes.every((node) => node.status === 'pending')).toBe(true);
@@ -2632,12 +2641,12 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(2));
     const initialIds = storedProject().graph.nodes.map(({ id }) => id);
     openProjectMenu('Progress');
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Memo review', exact: true }));
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(initialIds);
     expect(storedProject().graph.edges).toHaveLength(1);
@@ -2649,7 +2658,7 @@ describe('Systems Mapping workflow', () => {
     saved.candidates.edges[0] = { ...saved.candidates.edges[0], status: 'rejected', reviewDecision: 'removed', claimState: 'retired' };
     cleanup();
     await resumeSavedProject(saved);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.filter((node) => node.status === 'confirmed')).toHaveLength(0);
     expect(storedProject().graph.edges.filter((edge) => edge.status === 'confirmed')).toHaveLength(0);
@@ -2680,8 +2689,8 @@ describe('Systems Mapping workflow', () => {
       if (index === 0) {
         fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
         await waitFor(() => expect(storedProject()?.preflight?.memoReview, `${scale}: ${document.querySelector('[role="status"]')?.textContent}`).toBeTruthy());
-        await waitFor(() => expect(workActions().getByRole('button', { name: 'Continue →' })).toBeEnabled());
-        fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+        await waitFor(() => expect(memoNextAction()).toBeEnabled());
+        fireEvent.click(memoNextAction());
       }
       // Later levels read the memo in the same click that completed the previous level.
       await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: scale, stage: 3 }));
@@ -2697,7 +2706,7 @@ describe('Systems Mapping workflow', () => {
       }
       prior = structuredClone(graph);
       if (index < 3) {
-        fireEvent.click(workActions().getByRole('button', { name: 'Reflect on this level' }));
+        workActions();
         fireEvent.click(workActions().getByRole('button', { name: /^Continue to / }));
         if (scale === 'meso') {
           const dialog = await screen.findByRole('dialog', { name: 'Review Micro and Meso' });
@@ -2717,7 +2726,7 @@ describe('Systems Mapping workflow', () => {
   }, 20000);
 
 
-  it('uses Continue to generate and validate the first model review before automatically building the map', async () => {
+  it('reads the memo before offering the single action that builds its map', async () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     project.preflight = null;
@@ -2725,7 +2734,8 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('button', { name: 'Continue without model' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue →', exact: true }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture());
@@ -2734,7 +2744,7 @@ describe('Systems Mapping workflow', () => {
     expect([...storedProject().graph.nodes, ...storedProject().graph.edges].every(item => item.claimState === 'inference' && item.reviewDecision === 'pending')).toBe(true);
   });
 
-  it('deduplicates Continue and Generate guidance while the first model response is pending', async () => {
+  it('offers one disabled read action while the first model response is pending', async () => {
     const project = createDefaultProject();
     project.stage = 1;
     project.furthestStage = 1;
@@ -2743,16 +2753,17 @@ describe('Systems Mapping workflow', () => {
       releaseReview = () => resolve(jsonResponse({ evaluation: evaluationRecord(body) }, 201));
     });
     await resumeSavedProject(project);
-    const continueButton = workActions().getByRole('button', { name: 'Continue →' });
+    const continueButton = memoNextAction();
     fireEvent.click(continueButton);
     fireEvent.click(continueButton);
     fireEvent.click(screen.getByRole('button', { name: 'Reading memo…' }));
     expect(continueButton).toBeDisabled();
     expect(storedProject().stage).toBe(1);
     expect(storedProject().preflight).toBeNull();
-    expect(notebookOption('Map notes')).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     await act(async () => { releaseReview(); await Promise.resolve(); });
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue →', exact: true }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes).toHaveLength(2);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
@@ -2768,7 +2779,7 @@ describe('Systems Mapping workflow', () => {
     });
     await resumeSavedProject(project);
     vi.useFakeTimers();
-    const continueButton = workActions().getByRole('button', { name: 'Continue →' });
+    const continueButton = memoNextAction();
     fireEvent.click(continueButton);
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(GUIDANCE_REQUEST_TIMEOUT_MS); });
@@ -2780,7 +2791,7 @@ describe('Systems Mapping workflow', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
     expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.');
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
-    expect(notebookOption('Map notes')).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
 
     await act(async () => { releaseReview(); await Promise.resolve(); });
     expect(storedProject().preflight).toBeNull();
@@ -2790,7 +2801,7 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body) }, 201);
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(storedProject().preflight).not.toBeNull());
-    fireEvent.click(continueButton);
+    fireEvent.click(memoNextAction());
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes).toHaveLength(2);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(2);
@@ -2802,7 +2813,7 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 1;
     preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance took too long', details: { code: 'guidance_timeout', shouldRetry: false } }, 504);
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.'));
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
@@ -2819,15 +2830,16 @@ describe('Systems Mapping workflow', () => {
       readiness: { ready: false, note: 'More evidence needed' },
     } }) }, 201);
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue →', exact: true }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
     expect(storedProject().preflight.memoReview.nodes).toEqual([]);
     expect(storedProject().events.find(event => event.action === 'preflight.completed')).toMatchObject({
       sourceFingerprint: storedProject().preflight.sourceFingerprint,
     });
-    fireEvent.click(workActions().getByRole('button', { name: 'Reflect on this level' }));
+    workActions();
     fireEvent.click(workActions().getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3 }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual(['micro', 'meso']);
@@ -2868,7 +2880,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(footer().getByRole('button', { name: 'Continue →' })).toBeEnabled());
     fireEvent.click(footer().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 3 }));
-    fireEvent.click(footer().getByRole('button', { name: 'Reflect on this level' }));
+    footer();
     fireEvent.click(footer().getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1 }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path).startsWith('/api/config/public?') && String(path).includes('scale=meso'))).toBe(true));
@@ -2888,7 +2900,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     await waitFor(() => expect(storedProject().stage).toBe(3));
     openProjectMenu('Progress');
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Choose elements', exact: true }));
@@ -2934,7 +2946,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByRole('checkbox', { name: 'Add suggestions automatically' })).toBeChecked();
-    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(memoNextAction());
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
@@ -3618,7 +3630,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const project = makeDenseFocusedMesoProject(5);
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
-    fireEvent.change(mapLayer(), { target: { value: 'micro' } });
+    if (storedProject().releasedScales.length > 1) fireEvent.change(mapLayer(), { target: { value: 'micro' } });
     fireEvent.click(mapTool('Arrange map'));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
     fireEvent.click(mapTool('Fit map'));
@@ -3737,11 +3749,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     cleanup();
     const project = await openMapProject(makeMapProject('meso'));
-    inspector = openMapInspector();
-    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
-    actions = document.getElementById('inspector-add-actions');
-    expect(within(actions).queryByRole('button', { name: 'Node' })).not.toBeInTheDocument();
-    expect(within(actions).queryByRole('button', { name: 'Relationship' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add item' })).not.toBeInTheDocument();
   });
 
   it('renders Meso linkage nodes in the Meso annulus with derived bridge lines and no relationship labels', async () => {
@@ -3790,7 +3798,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const inspector = screen.getByLabelText('Notebook');
 
     expect(scale).toHaveValue('all');
-    expect(within(scale).getAllByRole('option').map((option) => option.value)).toEqual([...project.releasedScales, 'all']);
+    expect(within(scale).getAllByRole('option').map((option) => option.value)).toEqual(['all', ...project.releasedScales]);
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     fireEvent.change(scale, { target: { value: activeScale } });
@@ -4669,8 +4677,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin);
     const manuallyAdjustedViewport = viewportTransform();
 
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
-    inspector = screen.getByLabelText('Notebook');
+    inspector = openMapInspector();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     const addActions = document.getElementById('inspector-add-actions');
     fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
@@ -4682,18 +4689,19 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
 
     await waitFor(() => expect(storedProject().graph.edges).toHaveLength(2));
-    await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent('Relationship 1 of 2'));
     await waitFor(() => expect(viewportTransform()).not.toEqual(manuallyAdjustedViewport));
     expectVisibleNodesAndConnectionLabelsInsideCanvas();
     const refittedViewport = viewportTransform();
 
-    const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Connections' });
+    const relationshipPanel = within(inspector).getByRole('region', { name: 'Connections' });
     const annotation = within(relationshipPanel).getByRole('textbox', { name: 'Your interpretation' });
     fireEvent.change(annotation, { target: { value: 'Annotation-only edits must not recenter the focused relationship.' } });
     expect(annotationStatus(annotation)).toHaveTextContent('Saving…');
     await waitFor(() => expect(annotationStatus(annotation)).toBeNull());
     expect(viewportTransform()).toEqual(refittedViewport);
 
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent('Relationship 1 of 2'));
     const addedEdge = storedProject().graph.edges.at(-1);
     fireEvent.click(screen.getByRole('button', { name: 'Next relationship' }));
     await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent('Relationship 2 of 2'));
@@ -4712,7 +4720,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.keyDown(edge, { key: 'Enter' });
     const inspector = screen.getByLabelText('Notebook');
     expect(inspector).toHaveClass('is-open');
-    expect(within(inspector).getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(inspector).getByRole('region', { name: 'Connections' })).toBeVisible();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
 
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
@@ -4772,9 +4780,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const graphBefore = structuredClone(storedProject().graph);
 
     const inspector = openNodeInspector(focusNode.id);
-    const focusBar = document.querySelector('.map-focus-bar');
-    expect(focusBar).toHaveTextContent(`Showing connections for ${focusNode.label}.`);
-    expect(focusBar).not.toHaveTextContent('Relationship 1 of');
+    expect(document.querySelector('.map-focus-bar')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Next relationship' })).not.toBeInTheDocument();
     expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(document.querySelector('.map-layout')).toHaveClass('has-inspector');
@@ -4794,6 +4800,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect([...document.querySelectorAll('.graph-edge-label')].map((label) => label.getAttribute('data-edge-id')).sort()).toEqual(incident.map((edge) => edge.id).sort());
     expect(storedProject().graph).toEqual(graphBefore);
 
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    expect(document.querySelector('.map-focus-bar')).toHaveTextContent(`Showing connections for ${focusNode.label}.`);
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     expect(document.querySelector('.map-focus-bar')).toBeNull();
     expect(document.querySelector('.is-dimmed')).toBeNull();
@@ -4835,7 +4843,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(inspector).getByRole('heading', { name: longNodeLabel })).toHaveTextContent(longNodeLabel);
 
     openEdgeInspector(incidentEdge.id);
-    expect(within(inspector).getByText(/This connection says:/)).toHaveTextContent(longEdgeLabel);
+    expect(within(inspector).getByRole('heading', { name: new RegExp(longEdgeLabel) })).toHaveTextContent(longEdgeLabel);
     const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
     const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
     const edgeText = renderedEdge.querySelector('.edge-label');
@@ -4843,7 +4851,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(svgTextLines(edgeText).join('')).toBe(longEdgeLabel);
     expect(renderedEdge).not.toHaveTextContent('…');
     expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
-    expect(within(inspector).getByText(/This connection says:/)).not.toHaveTextContent('…');
+    expect(within(inspector).getByRole('heading', { name: new RegExp(longEdgeLabel) })).not.toHaveTextContent('…');
   });
 
   it('preserves every character in maximum-length unbroken map labels', async () => {
@@ -4976,7 +4984,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
-    expect(workActions().getByRole('button', { name: 'Continue →' })).toBeEnabled();
+    expect(memoNextAction()).toBeEnabled();
   });
 
   it('restores an immediate memo journal and current step after reload when a full save is unavailable', async () => {
@@ -5024,7 +5032,8 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it.each(['node', 'edge', 'map'])('shows annotation saving only while work is pending and persists the text for %s', async (target) => {
-    const project = await openMapProject();
+    const legacy = makeMapProject(); legacy.mapAnnotation.text = 'A saved map note.';
+    const project = await openMapProject(legacy);
     const field = selectAnnotationTarget(target);
     const text = `${target} annotation saved locally`;
     fireEvent.change(field, { target: { value: text } });
@@ -5034,7 +5043,8 @@ Overall, the posting history documents a working student repeatedly turning to R
   });
 
   it.each(['node', 'edge', 'map'])('changes queued %s annotation status to the actual persistence error', async (target) => {
-    const project = seedProject(makeMapProject());
+    const legacy = makeMapProject(); legacy.mapAnnotation.text = 'A saved map note.';
+    const project = seedProject(legacy);
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); });
     render(<App />);
     await showResumeScreen();
@@ -5226,36 +5236,20 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(viewportWrites).toHaveLength(1);
   });
 
-  it('asks the map for gaps from the inspector, highlights the referenced items, and never edits the project', async () => {
-    const project = makeMapProject('exosphere');
-    const [first, second] = project.graph.nodes;
-    mapCheckResponder = (body) => {
-      expect(body).toMatchObject({ activeScale: 'exosphere', intent: 'gaps', focus: null });
-      expect(body).not.toHaveProperty('sourceMaterial');
-      expect(body.nodes.map(({ id }) => id)).toEqual(project.graph.nodes.map(({ id }) => id));
-      expect(body.memoExcerpt.length).toBeLessThanOrEqual(4000);
-      return jsonResponse({ intent: 'gaps', notes: [
-        { kind: 'gap', point: `Which decision setting reaches ${first.label}?`, refs: [first.id] },
-        { kind: 'question', point: 'What passes between the two settings?', refs: [first.id, second.id] },
-      ] }, 201);
-    };
+  it('opens one reflection task without the removed map-note step or a model request', async () => {
+    const project = makeMapProject('micro');
+    project.mapAnnotation.text = 'An existing cross-map observation.';
     await openMapProject(project);
-    const graphBefore = structuredClone(storedProject().graph);
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
-    const askPanel = screen.getByRole('region', { name: 'Ask the map' });
-    fireEvent.click(within(askPanel).getByRole('button', { name: "Ask what's missing" }));
-    expect(await within(askPanel).findByText(`Which decision setting reaches ${first.label}?`)).toBeVisible();
-    expect(within(askPanel).getAllByRole('listitem')).toHaveLength(2);
-    expect(within(askPanel).getByText(/Your map changes only when you edit it/)).toBeVisible();
-    fireEvent.click(within(within(askPanel).getAllByRole('listitem')[0]).getByRole('button', { name: first.label }));
-    expect(document.querySelector(`[data-graph-id="${first.id}"]`)).not.toHaveClass('is-dimmed');
-    expect(document.querySelector(`[data-graph-id="${second.id}"]`)).toHaveClass('is-dimmed');
-    expect(document.querySelector('.canvas-wrap [aria-live="polite"]')).toHaveTextContent(`Highlighting ${first.label} on the map.`);
-    fireEvent.keyDown(document.querySelector(`[data-graph-id="${second.id}"]`), { key: 'Enter' });
-    expect(document.querySelector(`[data-graph-id="${second.id}"]`)).not.toHaveClass('is-dimmed');
-    fireEvent.click(mapTool('Fit map'));
-    expect(storedProject().graph).toEqual(graphBefore);
-    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
+    expect(screen.queryByText('Ask the map')).not.toBeInTheDocument();
+    expect(screen.queryByText('Notebook entries')).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('#map-inspector textarea:not(details textarea)')).toHaveLength(1);
+    openDetails('.saved-map-note');
+    expect(screen.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue(project.mapAnnotation.text);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(0);
+    expect(storedProject().mapAnnotation.text).toBe(project.mapAnnotation.text);
   });
 
   it('checks a selected relationship with its own focus and reports a failed check without a second request', async () => {
@@ -5267,6 +5261,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
     await openMapProject(project);
     fireEvent.keyDown(document.querySelector(`[data-graph-id="${edge.id}"]`), { key: 'Enter' });
+    fireEvent.click(screen.getByText('Connection details', { selector: 'summary' }));
     const panel = await screen.findByRole('region', { name: 'Check this connection' });
     fireEvent.click(within(panel).getByRole('button', { name: 'Check this connection' }));
     expect(await within(panel).findByRole('alert')).toHaveTextContent(/could not be completed/);
@@ -5277,7 +5272,7 @@ Overall, the posting history documents a working student repeatedly turning to R
   it('offers the synthesis scaffold only on the Macro review', async () => {
     const exo = makeRevisionProject('exosphere');
     await resumeSavedProject(exo);
-    expect(screen.queryByRole('button', { name: 'Draft a synthesis scaffold' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suggest questions' })).not.toBeInTheDocument();
     cleanup();
     const macro = makeRevisionProject('macrosphere');
     mapCheckResponder = (body) => {
@@ -5285,13 +5280,13 @@ Overall, the posting history documents a working student repeatedly turning to R
       return jsonResponse({ intent: 'synthesis', notes: [{ kind: 'claim', point: 'Outside decisions reach the family through the school.', refs: [macro.graph.nodes[0].id] }] }, 201);
     };
     await resumeSavedProject(macro);
-    openDetails('.notebook-review-tools');
-    fireEvent.click(screen.getByRole('button', { name: 'Draft a synthesis scaffold' }));
+    openDetails('.reflection-help:has(.map-check)');
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest questions' }));
     expect(await screen.findByText('Outside decisions reach the family through the school.')).toBeVisible();
     expect(screen.getByText('Claim the map supports')).toBeVisible();
   });
 
-  it('keeps the closed phone inspector out of navigation and provides roving tabs plus deterministic focus return', async () => {
+  it('keeps the closed phone inspector out of navigation and returns focus without extra target tabs', async () => {
     installPhoneLayout();
     Object.defineProperty(window, 'requestAnimationFrame', {
       configurable: true,
@@ -5323,47 +5318,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(inspector).not.toHaveAttribute('inert');
 
-    const addDisclosure = within(inspector).getByRole('button', { name: 'Add' });
-    expect(addDisclosure).toHaveAttribute('aria-controls', 'inspector-add-actions');
-    expect(addDisclosure).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(addDisclosure);
-    expect(addDisclosure).toHaveAttribute('aria-expanded', 'true');
-    const addActions = document.getElementById('inspector-add-actions');
-    expect(within(addActions).getByRole('button', { name: 'Node' })).toBeVisible();
-    expect(within(addActions).getByRole('button', { name: 'Relationship' })).toBeVisible();
-    fireEvent.click(addDisclosure);
-    expect(addDisclosure).toHaveAttribute('aria-expanded', 'false');
-    expect(document.getElementById('inspector-add-actions')).toBeNull();
-
-    const tabs = within(within(inspector).getByRole('tablist', { name: 'Annotation target' })).getAllByRole('tab');
-    const [nodeTab, relationshipsTab, mapTab] = tabs;
-    const expectOnlyTabStop = (expected) => {
-      expect(tabs.filter((tab) => tab.tabIndex === 0)).toEqual([expected]);
-    };
-    expectOnlyTabStop(nodeTab);
-    nodeTab.focus();
-    fireEvent.keyDown(nodeTab, { key: 'ArrowRight' });
-    await waitFor(() => {
-      expect(relationshipsTab).toHaveAttribute('aria-selected', 'true');
-      expect(relationshipsTab).toHaveFocus();
-    });
-    expectOnlyTabStop(relationshipsTab);
-
-    fireEvent.keyDown(relationshipsTab, { key: 'End' });
-    await waitFor(() => {
-      expect(mapTab).toHaveAttribute('aria-selected', 'true');
-      expect(mapTab).toHaveFocus();
-    });
-    expectOnlyTabStop(mapTab);
-
-    fireEvent.keyDown(mapTab, { key: 'Home' });
-    await waitFor(() => {
-      expect(nodeTab).toHaveAttribute('aria-selected', 'true');
-      expect(nodeTab).toHaveFocus();
-    });
-    expectOnlyTabStop(nodeTab);
-
-    fireEvent.keyDown(nodeTab, { key: 'Escape' });
+    expect(within(inspector).queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+    expect(within(inspector).queryByRole('tablist')).not.toBeInTheDocument();
+    fireEvent.keyDown(within(inspector).getByRole('button', { name: 'Done' }), { key: 'Escape' });
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
     expect(inspector).toHaveAttribute('inert');
 
@@ -5431,7 +5388,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const assertRestored = async () => {
       render(<App />);
       await showResumeScreen();
-      expect(within(screen.getByRole('article', { name: project.title })).getByText(/Map/)).toBeVisible();
+      expect(screen.getByRole('article', { name: project.title })).toBeVisible();
       openProjectFromList(project.title);
       expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
       const renderedNode = document.querySelector(`[data-graph-id="${restoredNode.id}"]`);
@@ -5440,11 +5397,11 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(storedProject().viewport).toEqual(project.viewport);
       const inspector = openNodeInspector(restoredNode.id);
       expect(within(inspector).getByRole('textbox', { name: /^Your interpretation/ })).toHaveValue('Restored node annotation');
-      fireEvent.click(within(inspector).getByRole('tab', { name: 'Connections' }));
-      const relationshipPanel = within(inspector).getByRole('tabpanel', { name: 'Connections' });
-      fireEvent.click(within(within(relationshipPanel).getByLabelText('Relationship list')).getAllByRole('button')[0]);
+      openEdgeInspector(restoredEdge.id);
+      const relationshipPanel = within(inspector).getByRole('region', { name: 'Connections' });
       expect(within(relationshipPanel).getByRole('textbox', { name: 'Your interpretation' })).toHaveValue('Restored relationship annotation');
-      fireEvent.click(within(inspector).getByRole('tab', { name: 'Map' }));
+      fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
+      openDetails('.saved-map-note');
       expect(within(inspector).getByRole('textbox', { name: /^Map note/ })).toHaveValue('Restored whole-map annotation');
     };
 
@@ -5511,9 +5468,9 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     try {
       await resumeSavedProject(project);
-      openDetails('.notebook-review-tools');
-      expect(screen.getByLabelText('Current Micro-level map summary')).toBeVisible();
-      expect(screen.getByText('Memo imported')).toBeInTheDocument();
+      openDetails('.reflection-help:has(.map-check)');
+      expect(screen.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
+      expect(storedProject().events.some(event => event.action === 'source.imported')).toBe(true);
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();
       openExports();
@@ -5876,7 +5833,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(edge).toBeTruthy();
     edge.relationshipProcess = { frequency: '', duration: '', direction: '', conditions: '', changeOverTime: '' };
     await openMapProject(project);
-    fireEvent.change(mapLayer(), { target: { value: scale } });
+    if (storedProject().releasedScales.length > 1) fireEvent.change(mapLayer(), { target: { value: scale } });
 
     let inspector = openEdgeInspector(edge.id);
     let process = within(inspector).getByText('Process and time').closest('details');
@@ -5901,7 +5858,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await showResumeScreen();
     openProjectFromList(project.title);
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
-    fireEvent.change(mapLayer(), { target: { value: scale } });
+    if (storedProject().releasedScales.length > 1) fireEvent.change(mapLayer(), { target: { value: scale } });
     inspector = openEdgeInspector(edge.id);
     process = within(inspector).getByText('Process and time').closest('details');
     fireEvent.click(within(process).getByText('Process and time'));

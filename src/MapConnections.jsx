@@ -2,7 +2,7 @@ import React from 'react';
 import { describeMapConnection } from './mapInsights.js';
 import { systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 
-export default function MapConnections({ nodeId, index, onFollow }) {
+export default function MapConnections({ nodeId, index, onFollow, compact = false }) {
   const links = index.byNode.get(nodeId) || [];
   const groups = new Map();
   links.forEach((link) => {
@@ -11,9 +11,9 @@ export default function MapConnections({ nodeId, index, onFollow }) {
     groups.get(item.group).push({ ...item, key: link.id });
   });
   return <details className="map-connections" key={nodeId}>
-    <summary>Connections across map <span>{links.length}</span></summary>
+    <summary>{compact ? 'Connected items' : <>Connections across map <span>{links.length}</span></>}</summary>
     <div className="map-connections__body">
-      <p>Follow a recorded connection to inspect its evidence and context.</p>
+      {!compact && <p>Follow a recorded connection to inspect its evidence and context.</p>}
       {!links.length && <p>No connections recorded yet. Add a relationship or include this item in a setting or scope.</p>}
       {[...groups].map(([group, items]) => <section key={group} aria-label={group}>
         <h3>{group}</h3>
