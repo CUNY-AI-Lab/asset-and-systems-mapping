@@ -787,12 +787,18 @@ function Modal({ open, title, onClose, children, wide = false }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         onClose();
         return;
       }
       if (event.key !== 'Tab') return;
-      const focusable = [...(modalRef.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])') || [])];
+      const focusable = [...(modalRef.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, a[href], [tabindex]:not([tabindex="-1"])') || [])].filter((element) => {
+        if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+        for (let parent = element.parentElement; parent && parent !== modalRef.current; parent = parent.parentElement) {
+          if (parent.tagName === 'DETAILS' && !parent.open && element !== parent.querySelector(':scope > summary')) return false;
+        }
+        return true;
+      });
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -809,7 +815,7 @@ function Modal({ open, title, onClose, children, wide = false }) {
     window.setTimeout(() => closeRef.current?.focus(), 0);
     return () => {
       document.removeEventListener('keydown', onKey);
-      previous?.focus?.();
+      (previous?.closest('details:not([open])')?.querySelector(':scope > summary') || previous)?.focus?.();
     };
   }, [open, onClose]);
   if (!open) return null;
@@ -5214,7 +5220,7 @@ function ReviewPanel({ exportOnly = false, onProjectLink, project, update, repla
     </>}
     {exportOnly && <>
     <section className="export-strip export-strip--compact" aria-label="Export and share">
-      <details className="export-dropdown" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); const details = event.currentTarget; details.open = false; details.querySelector('summary')?.focus(); } }}>
+      <details className="export-dropdown" onKeyDown={(event) => { if (event.key === 'Escape' && event.currentTarget.open) { event.preventDefault(); event.stopPropagation(); const details = event.currentTarget; details.open = false; details.querySelector('summary')?.focus(); } }}>
         <summary><Icon name="download" /><span>Export &amp; share</span><span aria-hidden="true">▾</span></summary>
         <div className="export-dropdown__options">
           <Field label="Export audience"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}</option>)}</select></Field>

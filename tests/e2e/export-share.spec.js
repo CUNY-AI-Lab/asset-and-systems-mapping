@@ -15,7 +15,23 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   await page.getByRole('article',{name:'East Harlem disability resources'}).getByRole('button',{name:'Open project'}).click();
   await expect(page.getByRole('heading',{name:'Reflection'})).toBeVisible();
   await projectMenu(page, 'Export & share');
-  await page.locator('.export-dropdown > summary').click();
+  const exportsDialog = page.getByRole('dialog', { name: 'Export & share' });
+  const closeExports = exportsDialog.getByRole('button', { name: 'Close Export & share' });
+  const formats = page.locator('.export-dropdown > summary');
+  await expect(closeExports).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(formats).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(closeExports).toBeFocused();
+  await formats.click();
+  await page.keyboard.press('Escape');
+  await expect(exportsDialog).toBeVisible();
+  await expect(page.locator('.export-dropdown')).not.toHaveAttribute('open', '');
+  await page.keyboard.press('Escape');
+  await expect(exportsDialog).not.toBeVisible();
+  await expect(page.locator('.project-menu > summary')).toBeFocused();
+  await projectMenu(page, 'Export & share');
+  await formats.click();
   for (const [label,ext] of [['PNG image','png'],['PDF','pdf']]) {
     const pending=page.waitForEvent('download');await page.getByRole('button',{name:label,exact:true}).click();
     const download=await pending;const path=testInfo.outputPath(`cumulative-map.${ext}`);await download.saveAs(path);
