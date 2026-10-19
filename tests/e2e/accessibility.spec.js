@@ -1,3 +1,4 @@
+import { openTools, mapCommand, notebookSection, showMap, projectMenu, preferences } from './support/notebook.js';
 import {
   assertNoAccessibilityViolations,
   captureSourceRenderedScreenshot,
@@ -323,15 +324,16 @@ test.describe('student accessibility', () => {
     await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
     await expect(page.locator('.graph-canvas')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pan' })).toHaveCount(0);
-    await expect(page.getByRole('group', { name: 'Map display' })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Map navigation' })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Map actions' })).toBeVisible();
+
+
+
     violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Cumulative map canvas'));
 
     const layerSelect = page.getByRole('combobox', { name: 'Show map layer' });
     for (const layer of ['micro', 'meso', 'exosphere', 'macrosphere', 'all']) {
+      await openTools(page);
       await layerSelect.selectOption(layer);
-      await page.getByRole('button', { name: 'Fit map' }).click();
+      await mapCommand(page, 'Fit map');
       await expect.poll(() => clippedSemanticItems(page), { message: `${layer} semantic map content should fit` }).toEqual([]);
       await expect.poll(() => controlDockIssues(page), { message: `${layer} control docks should stay distinct` }).toEqual([]);
       await expect.poll(() => layerLabelNodeCollisions(page), { message: `${layer} level labels should not overlap nodes` }).toEqual([]);
@@ -345,19 +347,19 @@ test.describe('student accessibility', () => {
       }
     }
 
-    await page.getByRole('button', { name: 'Map key' }).click();
+    await mapCommand(page, 'Map key');
     await expect(page.locator('.map-legend')).toBeVisible();
     violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Map key'));
     await page.getByRole('button', { name: 'Close map key' }).click();
 
-    await page.getByRole('button', { name: 'List' }).click();
+    await mapCommand(page, 'List');
     await expect(page.getByRole('heading', { name: 'Map list' })).toBeVisible();
     violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Map list'));
 
-    await page.getByRole('button', { name: 'Canvas' }).click();
-    await page.getByRole('button', { name: 'Fit map' }).click();
+    await mapCommand(page, 'Canvas');
+    await mapCommand(page, 'Fit map');
     const fullScreenButton = page.getByRole('button', { name: 'Full screen map' });
-    await fullScreenButton.click();
+    await mapCommand(page, 'Full screen map');
     await expect(page.locator('.map-stage')).toHaveClass(/is-fullscreen/);
     await expect(page.locator('.graph-canvas')).toBeFocused();
     await expect.poll(() => clippedSemanticItems(page), { message: 'Full-screen semantic map content should fit' }).toEqual([]);
@@ -370,7 +372,7 @@ test.describe('student accessibility', () => {
     const beforeZoomOut = await ecologyRingGeometry(page);
     const expectedMacroRadius = testInfo.project.name.includes('phone') ? 630 : 1540;
     expect(beforeZoomOut.rings.macrosphere.rx, 'Macro ring must retain at least its baseline radius while allowing measured capacity growth').toBeGreaterThanOrEqual(expectedMacroRadius);
-    await page.getByRole('button', { name: 'Zoom out' }).click();
+    await mapCommand(page, 'Zoom out');
     const afterZoomOut = await ecologyRingGeometry(page);
     expect(afterZoomOut.zoom).toBeLessThan(beforeZoomOut.zoom);
     expect(afterZoomOut.expansion).toBeGreaterThan(1);
@@ -387,7 +389,7 @@ test.describe('student accessibility', () => {
 
     await page.keyboard.press('Escape');
     await expect(page.locator('.map-stage')).not.toHaveClass(/is-fullscreen/);
-    await expect(page.getByRole('button', { name: 'Full screen map' })).toBeFocused();
+    await expect(page.locator('.notebook-map-tools > summary')).toBeFocused();
     assertNoAccessibilityViolations(violations);
   });
 

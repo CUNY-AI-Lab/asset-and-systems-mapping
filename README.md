@@ -35,18 +35,18 @@ Asset mapping gives this inquiry a practical starting point: residents' skills, 
 
 The Cloudflare sign-in page shows the title, the four levels and **CUNY Login** a third of the way down, with a generative drawing after A. Michael Noll's *Gaussian Quadratic* (Bell Labs, 1965) filling the space below (`src/NollSketch.jsx`). The drawing is transparent against the page, takes the current ink colour in light and dark mode, and redraws every ten seconds or on click.
 
-After the memo exists, the student stays on the map. The canvas is the organizing surface for all four levels; the five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) are still kept per level for instructor aggregates, submitted revisions and exports, but the student sees them as panels around one map rather than as separate screens.
+The workspace has two views: **Map** and **Notebook**. The five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) remain per level for instructor aggregates, submitted revisions and exports. Switching views preserves the current stage, map position and writing, and makes no model request.
 
 | Surface | What it does |
 | --- | --- |
-| **Add memo** | The one full-screen stage. Set the inquiry and paste or upload the memo. |
-| **Level rail** | Micro · Meso · Exo · Macro above the canvas, with locked, current and complete states. Choosing a level switches work level; the cumulative map stays visible. |
-| **Suggestions** | Memo review and candidate decisions side by side: generate or refresh guidance, then **Add to map**, **Set aside**, or **Remove** each item in one list. "Add suggestions automatically" lives here. |
-| **Inspector** | Supporting evidence and **Your interpretation** for the selected item or connection. **Evidence and questions** and **Edit item details** open when needed. **Ask the map** and selection checks remain available. |
-| **Review** | The cumulative overview, the level reflection or Macro synthesis, submit revision, project link and exports. |
-| **Next action** | The footer shows one computed next step (read the memo, decide suggestions, add the structure the level still needs, record evidence, or continue) instead of a step counter. |
+| **Add memo** | Set the inquiry and paste or upload the memo. |
+| **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
+| **Map** | Canvas, direct selection and a collapsed **Map tools** menu for search, layers, list, zoom, arrange, key and full screen. |
+| **Notebook** | One current task: memo guidance, one suggestion at a time, the selected item's interpretation, or a reflection. **Notebook entries** opens access to earlier tasks. The memo stays collapsed above the task. |
+| **Reflection** | One optional text field with a question suited to the current level. Additional prompts and review tools stay collapsed. Existing Macro synthesis text remains intact. |
+| **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
 
-The first memo reading is an explicit choice (**Generate guidance**). Completing a level starts the next level's reading in the same click, so the Suggestions panel is already filling when the student arrives. Generating guidance never commits a suggestion or edits the memo.
+The notebook contains the current next action. The compact footer only switches **Map / Notebook**. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
 
 ### Map Check
 
@@ -58,9 +58,9 @@ The canvas uses concentric ecological regions and restrained level colors. **All
 
 Selecting an element opens its inspector. On desktop the whole layer stays on the canvas: the selection and its one-hop neighbourhood stay bright, every incident relationship shows its label, and everything else dims until **Show full map**. Phones keep the compact detail view that shows one relationship at a time. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
 
-The map fills the available browser height. All work panels share a narrow sidebar: drag its left edge to resize it, or focus the divider and use the arrow keys (Home restores the default width). The browser remembers the chosen width; text and controls wrap as it changes. At medium and phone widths the sidebar overlays the canvas. **Hide sidebar** restores the full map, and exports close with the sidebar.
+The map fills the available browser height. On wide screens, the Notebook is a narrow resizable dock (260–360px). Drag its left edge or use the focused divider's arrow keys; Home restores the default width. Text and controls wrap as it changes. At 1100px and below, Notebook occupies the workspace while the mounted map is hidden. **Map** restores the canvas and its view.
 
-The default view keeps detailed evidence, item settings, map controls, and cumulative results collapsed until needed. **Details** opens map notes and controls even when no element is selected. Closing the inspector returns keyboard focus to the selected canvas item or the list control that opened it.
+Selecting an item opens its interpretation in Notebook. Detailed evidence, item settings, other notes and cumulative results stay collapsed until needed. **Map tools → Map notes** opens the map annotation. **Done** returns focus to the selected canvas item or list control.
 
 | Task | Control |
 | --- | --- |
@@ -69,7 +69,7 @@ The default view keeps detailed evidence, item settings, map controls, and cumul
 | Move an element | Drag the element. |
 | Restore an overview | Choose **Fit map** or press `0` with focus in the canvas. |
 | Reorganize the layout | Choose **Arrange map**. |
-| Undo or redo a layout change | Open **Details → Map → Map controls** for layout controls, or use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
+| Undo or redo a layout change | Open **Map tools → Map notes → Map controls** for layout controls, or use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
 | Expand the workspace | Choose **Full screen map**; press `Escape` to exit. |
 
 Layout history covers element moves and automatic arrangements during the current map visit. Undo restores positions and the recorded view while preserving evidence, labels, and notes edited afterward. It is not a general project-history rollback. Layout, viewport, and annotations save with the project; the undo stack is temporary.
@@ -85,7 +85,7 @@ optimistic revisions. An unsynced browser copy is preserved when a save fails
 or another session changes the map. Explicit project links keep their existing
 sharing, expiry, and revocation behavior and reopen after CUNY sign-in.
 
-Exports live behind one **Export & share** disclosure on the Review panel, grouped as *Show the map* (PNG, PDF, project link) and *Save or reuse* (JSON, CSV, Markdown, import). **Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
+Exports live behind the **Project → Export & share** dialog, with the format options initially collapsed, grouped as *Show the map* (PNG, PDF, project link) and *Save or reuse* (JSON, CSV, Markdown, import). **Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
 
 - **JSON** preserves a reopenable project with stable IDs and layout, subject to the selected audience's redactions. Import validates the file before replacing the open project.
 - **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.

@@ -10,7 +10,7 @@ function Sidebar() {
   return <div ref={ref}><SidebarResizeHandle {...size} /></div>;
 }
 it('reserves map space at desktop and narrow widths', () => {
-  expect(sidebarBounds(1440)).toEqual({ min: 260, max: 520 });
+  expect(sidebarBounds(1440)).toEqual({ min: 260, max: 360 });
   expect(sidebarBounds(320)).toEqual({ min: 260, max: 272 });
   expect(sidebarBounds(280)).toEqual({ min: 232, max: 232 });
 });

@@ -9,6 +9,7 @@ import './map-review.css';
 import './map-studio.css';
 import './ui/design-system.css';
 import './workspace-layout.css';
+import './notebook.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

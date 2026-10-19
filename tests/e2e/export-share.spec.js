@@ -1,3 +1,4 @@
+import { openTools, mapCommand, notebookSection, showMap, projectMenu, preferences } from './support/notebook.js';
 import { readFile } from 'node:fs/promises';
 import { test, expect, captureSourceRenderedScreenshot, scanAccessibility, assertNoAccessibilityViolations } from './support/test.js';
 import { serializedEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
@@ -12,7 +13,8 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   await page.getByRole('textbox',{name:'Class code'}).fill('101');
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.getByRole('article',{name:'East Harlem disability resources'}).getByRole('button',{name:'Open project'}).click();
-  await expect(page.getByRole('heading',{name:'Review and export'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Reflection'})).toBeVisible();
+  await projectMenu(page, 'Export & share');
   await page.locator('.export-dropdown > summary').click();
   for (const [label,ext] of [['PNG image','png'],['PDF','pdf']]) {
     const pending=page.waitForEvent('download');await page.getByRole('button',{name:label,exact:true}).click();

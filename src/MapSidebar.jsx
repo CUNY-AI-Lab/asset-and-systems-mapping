@@ -4,7 +4,7 @@ const WIDTH_KEY = 'systems-mapping.sidebar-width';
 export const DEFAULT_SIDEBAR_WIDTH = 304;
 
 export function sidebarBounds(available) {
-  const max = Math.max(200, Math.min(520, available <= 1100 ? available - 48 : available * .45));
+  const max = Math.max(200, Math.min(360, available <= 1100 ? available - 48 : available * .45));
   return { min: Math.min(260, max), max: Math.floor(max) };
 }
 

@@ -1,9 +1,50 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 // Presentational shell for the canvas-first Studio. Decision logic lives in
 // nextStep.js; stage records stay the source of truth in App.jsx.
 
 const SHORT = { micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere: 'Macro' };
+
+export function ProjectMenu({ children }) {
+  const menu = useRef(null);
+  useEffect(() => {
+    const dismiss = (event) => {
+      if (menu.current?.open && !menu.current.contains(event.target)) menu.current.open = false;
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, []);
+  return <details ref={menu} className="project-menu" onClick={(event) => {
+    const button = event.target.closest('button');
+    if (button?.parentElement === event.currentTarget.querySelector(':scope > div')) event.currentTarget.open = false;
+  }} onKeyDown={(event) => {
+    if (event.key === 'Escape' && event.currentTarget.open) {
+      event.preventDefault(); event.stopPropagation();
+      event.currentTarget.open = false;
+      event.currentTarget.querySelector('summary')?.focus();
+    }
+  }}><summary>Project</summary><div>{children}</div></details>;
+}
+
+export function LevelSelect({ levels, onSelect }) {
+  return <label className="notebook-level"><span className="sr-only">Work level</span>
+    <select value={levels.find((level) => level.current)?.scale} onChange={(event) => onSelect(event.target.value)}>
+      {levels.map((level) => <option key={level.scale} value={level.scale} disabled={level.state === 'locked'}>{SHORT[level.scale]}{level.complete ? ' · complete' : ''}</option>)}
+    </select>
+  </label>;
+}
+
+export function NotebookSection({ mode, onChange, disabled = [] }) {
+  return <details className="notebook-entries"><summary>Notebook entries</summary>
+    <label className="field"><span className="field__label">Notebook section</span>
+      <select value={mode} onChange={(event) => { onChange(event.target.value); event.currentTarget.closest('details').open = false; }}>
+        <option value="suggestions">Memo and suggestions</option>
+        <option value="inspector" disabled={disabled.includes('inspector')}>Map notes</option>
+        <option value="review" disabled={disabled.includes('review')}>Reflection</option>
+      </select>
+    </label>
+  </details>;
+}
 
 export function LevelRail({ levels, onSelect }) {
   return <nav className="level-rail" aria-label="Work level">

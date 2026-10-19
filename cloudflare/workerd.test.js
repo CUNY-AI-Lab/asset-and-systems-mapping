@@ -1,3 +1,4 @@
+import { notebookSection, projectMenu } from '../tests/e2e/support/notebook.js';
 // @vitest-environment node
 import { beforeAll, afterAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
@@ -264,10 +265,10 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await notebookSection(page, 'inspector');
     const note = page.getByRole('textbox', { name: 'Map note', exact: true });
     await note.fill('Account map edit survives restart and export.');
-    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await projectMenu(page, 'Projects');
     await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
@@ -277,7 +278,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.reload();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await notebookSection(page, 'inspector');
     failCloudWrites = true;
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill('Unsynced work is recovered after a storage interruption.');
     await page.getByRole('textbox', { name: 'Map note', exact: true }).press('Tab');
@@ -287,8 +288,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect.poll(async () => JSON.parse((await (await request('/api/cloud/projects/browser-map')).json()).project).mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
     await page.screenshot({ path: '/tmp/cail-systems-cloudflare-desktop.png' });
-    await page.getByRole('button', { name: 'Progress', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Progress' }).getByRole('button', { name: 'Review and export', exact: true }).click();
+    await projectMenu(page, 'Export & share');
     const download = page.waitForEvent('download');
     await page.locator('.export-dropdown > summary').click();
     await page.getByRole('button', { name: /^JSON/ }).click();
@@ -314,7 +314,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.reload();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await projectMenu(page, 'Projects');
     await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe('/');
     await browserExpect(page.getByRole('article', { name: 'East Harlem disability resources' })).toBeVisible();
@@ -421,7 +421,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     sessionMode = 'expiring';
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await notebookSection(page, 'inspector');
     const draft = 'Map note retained when CUNY sign-in expires';
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill(draft);
     // Leave the annotation focused: expiry must flush its pending edit before
@@ -437,7 +437,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     sessionMode = 'success';
     await openAccountMap();
     await browserExpect(page.locator('.graph-node')).toHaveCount(9);
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await notebookSection(page, 'inspector');
     await browserExpect(page.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue(draft);
     await browserExpect.poll(async () => JSON.parse((await (await request(`/api/cloud/projects/${fixture.id}`)).json()).project).mapAnnotation.text).toBe(draft);
     expect(await page.evaluate(() => window.__ssoClassCodeShown)).toBe(false);

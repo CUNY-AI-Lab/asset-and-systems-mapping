@@ -30,6 +30,43 @@ async function memoReviewDetails() {
   return details;
 }
 
+function openDetails(selector) {
+  const details = document.querySelector(selector);
+  if (details && !details.open) fireEvent.click(details.querySelector('summary'));
+  return details;
+}
+function notebookOption(label) {
+  workActions();
+  openDetails('.notebook-entries');
+  return screen.getByRole('option', { name: label, exact: true });
+}
+function openExports() {
+  openProjectMenu('Export & share');
+  openDetails('.export-dropdown');
+}
+function candidateLabels() {
+  const labels = [];
+  const previous = screen.queryByRole('button', {name: 'Previous suggestion'});
+  while (previous && !previous.disabled) fireEvent.click(previous);
+  do {
+    labels.push(screen.getByRole('textbox', { name: 'Node label' }).value);
+    const next = screen.queryByRole('button', {name: 'Next suggestion'});
+    if (!next || next.disabled) break;
+    fireEvent.click(next);
+  } while (labels.length < 50);
+  while (previous && !previous.disabled) fireEvent.click(previous);
+  return labels;
+}
+function acceptAllCandidates() {
+  do {
+    const row = document.querySelector('.candidate-list article');
+    fireEvent.click(within(row).getByRole('button', {name: 'Add to map'}));
+    const next = screen.queryByRole('button', {name: 'Next suggestion'});
+    if (!next || next.disabled) break;
+    fireEvent.click(next);
+  } while (true);
+}
+
 const STORAGE_KEY = 'systems-mapping-studio.project.v6';
 const LEGACY_V5_STORAGE_KEY = 'systems-mapping-studio.project.v5';
 const PERSIST_DEBOUNCE_MS = 450;
@@ -277,16 +314,51 @@ function openProjectFromList(title = null) {
   fireEvent.click(within(card).getByRole('button', { name: 'Open project' }));
 }
 
+function openNotebookSection(mode) {
+  const nav = screen.getByRole('navigation', { name: 'Workspace', exact: true });
+  fireEvent.click(within(nav).getByRole('button', { name: 'Notebook', exact: true }));
+  const entries = document.querySelector('.notebook-entries');
+  if (!entries.open) fireEvent.click(entries.querySelector('summary'));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Notebook section' }), { target: { value: mode } });
+}
+
+function workActions() {
+  const nav = screen.queryByRole('navigation', { name: 'Workspace', exact: true });
+  if (!nav) return within(document.querySelector('.app-footer'));
+  fireEvent.click(within(nav).getByRole('button', { name: 'Notebook', exact: true }));
+  return within(document.querySelector('#map-inspector'));
+}
+
+function mapLayer() {
+  const menu = document.querySelector('.notebook-map-tools');
+  if (menu && !menu.open) fireEvent.click(menu.querySelector('summary'));
+  return screen.getByRole('combobox', { name: 'Show map layer' });
+}
+
 function footerAction(id) {
-  return document.querySelector(`.app-footer [data-next-action="${id}"]`);
+  const nav = screen.queryByRole('navigation', { name: 'Workspace', exact: true });
+  if (nav) fireEvent.click(within(nav).getByRole('button', { name: 'Notebook', exact: true }));
+  return document.querySelector(`[data-next-action="${id}"]`);
 }
 
 function openWorkLevelMenu() {
-  return screen.getByRole('navigation', { name: 'Work level' });
+  return screen.getByRole('combobox', { name: 'Work level' });
+}
+
+function openProjectMenu(name) {
+  const summary = document.querySelector('.project-menu > summary');
+  if (summary && !summary.parentElement.open) fireEvent.click(summary);
+  fireEvent.click(screen.getByRole('button', { name, exact: true }));
+}
+
+function mapTool(name) {
+  const menu = document.querySelector('.notebook-map-tools');
+  if (menu && !menu.open) fireEvent.click(menu.querySelector('summary'));
+  return screen.getByRole('button', { name, exact: true });
 }
 
 function openProjectLink() {
-  fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+  openProjectMenu('Progress');
   fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Project link' }));
   return screen.getByRole('dialog', { name: 'Project link' });
 }
@@ -719,7 +791,7 @@ function openNodeInspector(nodeId = document.querySelector('.graph-node')?.getAt
   if (!node) throw new Error(`Visible node not found: ${nodeId}`);
   node.focus();
   fireEvent.keyDown(node, { key: 'Enter' });
-  return screen.getByLabelText('Map inspector');
+  return screen.getByLabelText('Notebook');
 }
 
 function openEdgeInspector(edgeId = document.querySelector('.graph-edge')?.getAttribute('data-graph-id')) {
@@ -727,12 +799,12 @@ function openEdgeInspector(edgeId = document.querySelector('.graph-edge')?.getAt
   if (!edge) throw new Error(`Visible relationship not found: ${edgeId}`);
   fireEvent.pointerDown(edge, { pointerId: 91, button: 0 });
   fireEvent.pointerUp(edge, { pointerId: 91, button: 0 });
-  return screen.getByLabelText('Map inspector');
+  return screen.getByLabelText('Notebook');
 }
 
 function openMapInspector() {
-  fireEvent.click(screen.getByRole('button', { name: 'Details' }));
-  return screen.getByLabelText('Map inspector');
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
+  return screen.getByLabelText('Notebook');
 }
 
 function openEvidenceRecords(inspector) {
@@ -1023,7 +1095,8 @@ describe('Systems Mapping workflow', () => {
     render(<App startInWorkspace onAccountDashboard={vi.fn()} onSubmitRevision={submit} />);
     await screen.findByRole('heading',{name:'Systems map'});
     expect(submit).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('tab',{name:'Review',exact:true}));
+    openNotebookSection('review');
+    openDetails('.notebook-review-tools');
     fireEvent.click(screen.getByRole('button',{name:'Submit revision',exact:true}));
     await waitFor(()=>expect(submit).toHaveBeenCalledTimes(1));
     expect(submit.mock.calls[0][0]).toMatchObject({id:project.id,activeScale:project.activeScale,stage:4});
@@ -1172,23 +1245,25 @@ describe('Systems Mapping workflow', () => {
   it('sends explicit choices forward and preserves revised labels and removals after a selective response', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →', exact: true }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →', exact: true }));
     const nodeLabels = () => screen.getAllByRole('textbox', { name: 'Node label' });
     fireEvent.change(nodeLabels()[0], { target: { value: 'Neighborhood school' } });
     fireEvent.click(within(nodeLabels()[0].closest('article')).getByRole('button', { name: 'Add to map' }));
-    expect(nodeLabels()[1]).toHaveValue('Committee');
-    fireEvent.click(within(nodeLabels()[1].closest('article')).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
+    expect(nodeLabels()[0]).toHaveValue('Committee');
+    fireEvent.click(within(nodeLabels()[0].closest('article')).getByRole('button', { name: 'Remove' }));
     preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, { review: {
       guidance: [{ point: 'Check the new item against the memo' }],
       nodes: [{ label: 'Caregiver', type: 'role', scale: 'micro', evidence: 'A family requests an evaluation' }],
       connections: [], example: null, readiness: { ready: true, note: 'Ready' },
     } }) }, 201);
-    fireEvent.click(screen.getByRole('button', { name: 'Update suggestions' }));
+    openDetails('.notebook-refresh');
+    fireEvent.click(screen.getByRole('button', { name: 'Reread memo' }));
     await waitFor(() => {
       const result = storedProject().preflight.memoReview.nodes.map(item => item.label);
       expect(result, [...document.querySelectorAll('[role="status"]')].map(item => item.textContent).join(' | ')).toEqual(['Caregiver']);
     });
-    await waitFor(() => expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toContain('Caregiver'));
+    await waitFor(() => expect(storedProject().candidates.nodes.map((item) => item.label)).toContain('Caregiver'));
     const request = fetchMock.mock.calls.find(([path]) => path === '/api/preflight/evaluations');
     expect(JSON.parse(request[1].body).studentJudgments).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Neighborhood school', decision: 'added' }),
@@ -1233,7 +1308,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Untitled systems map');
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+    openProjectMenu('Projects');
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(screen.getAllByRole('article')).toHaveLength(2);
     expect(screen.getByRole('article', { name: 'Untitled systems map' })).toBeVisible();
@@ -1333,7 +1408,7 @@ describe('Systems Mapping workflow', () => {
     expect(memo.closest('label')).toHaveTextContent(`${memoWordCount} words`);
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     const stageMenu = screen.getByRole('dialog', { name: 'Progress' });
     ['Add memo', 'Memo review', 'Choose elements', 'Build map', 'Review and export'].forEach((label) => expect(within(stageMenu).getByText(label)).toBeVisible());
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
@@ -1386,17 +1461,17 @@ describe('Systems Mapping workflow', () => {
   });
 
   it('opens a non-advancing map preview after model guidance and returns to the current memo stage', async () => {
-    const project = projectWithMemoReview({ stage: 0, furthestStage: 0 });
+    const project = projectWithMemoReview({ stage: 1, furthestStage: 1 });
     await resumeSavedProject(project);
 
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     expect(screen.getByRole('group', { name: /Micro-level map\. 0 nodes and 0 connections/ })).toBeVisible();
-    expect(storedProject().stage).toBe(0);
+    expect(storedProject().stage).toBe(1);
     expect(storedProject().furthestStage).toBe(project.furthestStage);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back to Memo' }));
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
-    expect(storedProject().stage).toBe(0);
+    fireEvent.click(screen.getByRole('navigation', { name: 'Workspace', exact: true }).querySelector('button:last-child'));
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
+    expect(storedProject().stage).toBe(1);
     expect(storedProject().furthestStage).toBe(project.furthestStage);
   });
 
@@ -1510,11 +1585,11 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
-    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
+    expect(notebookOption('Map notes')).toBeDisabled();
     expect(storedProject().preflight).toBeNull();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+    openProjectMenu('Projects');
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     expect(screen.getByRole('article', { name: project.title })).toBeVisible();
     expect(screen.getByRole('article', { name: `${project.title} — new map` })).toBeVisible();
@@ -1533,8 +1608,8 @@ describe('Systems Mapping workflow', () => {
     expect(graphBefore.edges.some((edge) => edge.scale === 'meso')).toBe(false);
 
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Review and export' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /What changed in your Micro-level map/ })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Reflection' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /Your reflection/ })).toBeVisible();
 
     const currentMap = screen.getByLabelText('Current Micro-level map summary');
     expect(currentMap).toHaveTextContent(`${micro.nodes.length} nodes`);
@@ -1543,38 +1618,18 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('supports a final Macrosphere synthesis across levels, evidence, limits, and next steps', async () => {
-    const project = projectWithMemoReview();
-    project.activeScale = 'macrosphere';
-    project.releasedScales = ['micro', 'meso', 'exosphere', 'macrosphere'];
-    project.completedScales = ['micro', 'meso', 'exosphere'];
-    project.stage = 4;
-    project.furthestStage = 4;
-    project.candidates = { nodes: [], edges: [] };
-    project.graph = { nodes: [], edges: [] };
-    project.reflection = '';
+  it('supports a final Macrosphere synthesis in one field without losing earlier notes', async () => {
+    const project = makeRevisionProject('macrosphere');
+    const existing = 'Strongest claim: The memo names the handoff.\nMissing perspectives or limits: Ask the resident.';
+    project.reflection = existing;
+    project.levelProgress.macrosphere.reflection = existing;
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Cross-level synthesis' })).toBeVisible();
-    expect(document.querySelectorAll('.studio-disclosure[open]')).toHaveLength(0);
-    expect(screen.getByRole('textbox', { name: 'Your answer to the focus question' })).toBeVisible();
-    for (const title of ['Evidence', 'Next step', 'Changes']) {
-      fireEvent.click([...document.querySelectorAll('.studio-disclosure > summary')].find(summary => summary.textContent === title));
-    }
-    const responses = {
-      'Your answer to the focus question': 'Access depends on linked family, school, agency, and policy decisions.',
-      'Strongest claim and why': 'The referral handoff is strongest because the memo names it directly.',
-      'Weakest claim and why': 'The funding influence needs another source.',
-      'Missing perspectives or limits': 'The student voice and service-provider records are missing.',
-      'Next step': 'Interview the student and verify agency timelines.',
-      'What changed across revisions': 'The map moved from individual delay to cross-level coordination.',
-    };
-    Object.entries(responses).forEach(([label, value]) => fireEvent.change(screen.getByRole('textbox', { name: label }), { target: { value } }));
-    await waitFor(() => expect(storedProject().reflection).toContain('Answer to focus question: Access depends on linked family, school, agency, and policy decisions.'));
-    expect(storedProject().reflection).toContain('Strongest claim: The referral handoff is strongest because the memo names it directly.');
-    expect(storedProject().reflection).toContain('Weakest claim: The funding influence needs another source.');
-    expect(storedProject().reflection).toContain('Missing perspectives or limits: The student voice and service-provider records are missing.');
-    expect(storedProject().reflection).toContain('Next investigation or action: Interview the student and verify agency timelines.');
-    expect(storedProject().reflection).toContain('What changed over time: The map moved from individual delay to cross-level coordination.');
+    const field = screen.getByRole('textbox', { name: /Your reflection/ });
+    expect(field).toHaveValue(existing);
+    expect(document.querySelectorAll('.reflection-entry textarea')).toHaveLength(1);
+    fireEvent.change(field, { target: { value: existing + '\nNext: Verify agency timelines.' } });
+    await waitFor(() => expect(storedProject().reflection).toBe(existing + '\nNext: Verify agency timelines.'));
+    expect(storedProject().levelProgress.macrosphere.reflection).toBe(existing + '\nNext: Verify agency timelines.');
   });
 
   it.each([
@@ -1591,10 +1646,7 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = () => new Promise(() => {});
     await resumeSavedProject(project);
 
-    const nextLevel = screen.getByText('Next level').closest('section');
-    expect(within(nextLevel).getByRole('heading', { name: { meso: 'Meso-level', exosphere: 'Exo-level', macrosphere: 'Macro-level' }[expectedScale] })).toBeVisible();
-    expect(nextLevel).toHaveTextContent(nextCopy);
-    const continueButton = within(document.querySelector('.app-footer')).getByRole('button', { name: cta });
+    const continueButton = workActions().getByRole('button', { name: cta });
     expect(continueButton).toBeEnabled();
     document.documentElement.scrollTop = 240;
     document.body.scrollTop = 240;
@@ -1625,7 +1677,7 @@ describe('Systems Mapping workflow', () => {
     expect(stored.releasedScales).toEqual([...releasedBefore, expectedScale]);
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     const levelLabels = { micro: 'Micro-level', meso: 'Meso-level', exosphere: 'Exo-level', macrosphere: 'Macro-level' };
-    expect(document.querySelector('.level-rail [aria-current="step"]')).toHaveTextContent({ micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere: 'Macro' }[expectedScale]);
+    expect(screen.getByRole('combobox', { name: 'Work level' })).toHaveValue(expectedScale);
     expect(document.documentElement.scrollTop).toBe(0);
     expect(document.body.scrollTop).toBe(0);
     expect(screen.queryByRole('region', { name: `${levelLabels[expectedScale]} progression` })).not.toBeInTheDocument();
@@ -1651,7 +1703,7 @@ describe('Systems Mapping workflow', () => {
     const releasedBefore = [...project.releasedScales];
     await resumeSavedProject(project);
 
-    const completeButton = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Complete Macro-level' });
+    const completeButton = workActions().getByRole('button', { name: 'Complete Macro-level' });
     expect(completeButton).toBeEnabled();
     fireEvent.click(completeButton);
 
@@ -1663,8 +1715,8 @@ describe('Systems Mapping workflow', () => {
     expect(stored.preflight).toEqual(preflightBefore);
     expect(stored.reflection).toBe(reflectionBefore);
     expect(stored.releasedScales).toEqual(releasedBefore);
-    expect(screen.getByRole('heading', { name: 'Cross-level synthesis' })).toBeVisible();
-    expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Project complete' })).toBeDisabled();
+    expect(screen.getByRole('heading', { name: 'Reflection' })).toBeVisible();
+    expect(workActions().getByRole('button', { name: 'Project complete' })).toBeDisabled();
   });
 
   it('revisits a released work level without changing the visible map layer or cumulative data', async () => {
@@ -1683,18 +1735,19 @@ describe('Systems Mapping workflow', () => {
     const graphBefore = structuredClone(project.graph);
     const candidatesBefore = structuredClone(project.candidates);
     await openMapProject(project);
-    const visibleLayer = screen.getByRole('combobox', { name: 'Show map layer' });
+    const visibleLayer = mapLayer();
     fireEvent.change(visibleLayer, { target: { value: 'exosphere' } });
 
     expect(screen.queryByRole('button', { name: 'Teacher Console' })).not.toBeInTheDocument();
     const dialog = openWorkLevelMenu();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Micro-level' }));
+    fireEvent.change(dialog, { target: { value: 'micro' } });
 
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 3 }));
     expect(storedProject().graph).toEqual(graphBefore);
     expect(storedProject().candidates).toEqual(candidatesBefore);
-    expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('exosphere');
-    expect(screen.getByRole('button', { name: 'Progress', exact: true })).toBeVisible();
+    expect(mapLayer()).toHaveValue('exosphere');
+    openProjectMenu('Progress');
+    expect(screen.getByRole('dialog', { name: 'Progress' })).toBeVisible();
   });
 
   it('persists the optional student or group name and shows it in the project-link summary', async () => {
@@ -1839,7 +1892,7 @@ describe('Systems Mapping workflow', () => {
     dialog = await screen.findByRole('dialog', { name: 'Project link' });
     await waitFor(() => expect(within(dialog).getByRole('status')).toHaveTextContent('The linked version is open. The earlier device copy remains in Projects.'));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close Project link' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+    openProjectMenu('Projects');
     expect(await screen.findByRole('article', { name: 'Linked classroom version' })).toBeVisible();
     expect(screen.getByRole('article', { name: 'Local East Harlem map — device copy' })).toBeVisible();
   });
@@ -1907,7 +1960,7 @@ describe('Systems Mapping workflow', () => {
     screen.getAllByRole('button', { name: 'Continue →' }).forEach((button) => expect(button).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Map' })).toBeEnabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     const stageMenu = screen.getByRole('dialog', { name: 'Progress' });
     SYSTEMS_MAPPING_STAGES.forEach(({ label }) => expect(within(stageMenu).getByRole('button', { name: new RegExp(label, 'i') })).toBeEnabled());
   });
@@ -1924,16 +1977,16 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(reviewProject);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
-    const reviewForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' });
+    const reviewForward = workActions().getByRole('button', { name: 'Continue →' });
     expect(reviewForward).toBeDisabled();
     fireEvent.click(reviewForward);
-    expect(screen.queryByRole('heading', { name: 'Choose items' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Suggestions' })).not.toBeInTheDocument();
     expect(storedProject().stage).toBe(1);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     await act(async () => { releaseReview(); await Promise.resolve(); });
     await waitFor(() => expect(reviewForward).toBeEnabled());
     fireEvent.click(reviewForward);
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
 
     cleanup();
     window.localStorage.clear();
@@ -1962,10 +2015,10 @@ describe('Systems Mapping workflow', () => {
     connectionProject.stage = 2;
     connectionProject.furthestStage = 2;
     await resumeSavedProject(connectionProject);
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'suggest' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     expect(screen.getByRole('button', { name: 'Generating suggestions…' })).toBeDisabled();
-    const connectionForward = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' });
+    const connectionForward = workActions().getByRole('button', { name: 'Finish review' });
     expect(connectionForward).toBeEnabled();
     fireEvent.click(connectionForward);
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
@@ -1983,8 +2036,8 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByText(/add items on the map/i)).toBeVisible();
-    expect(within(screen.getByRole('tablist', { name: 'Choose map items' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Items', 'Connections', 'Ask']);
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    expect(within(screen.getByRole('combobox', { name: 'Suggestion type' })).getAllByRole('option').map((option) => option.textContent)).toEqual(['Items', 'Connections', 'Ask']);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
   });
@@ -2013,7 +2066,7 @@ describe('Systems Mapping workflow', () => {
     }] }, 201);
     await resumeSavedProject(project);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'suggest' } });
     expect(screen.getByRole('heading', { name: 'More relationships' })).toBeVisible();
     expect(screen.queryByText('Describe a missing relationship')).not.toBeInTheDocument();
     const prompt = 'Families rely on schools, but delayed referrals make services harder to reach in this session.';
@@ -2039,7 +2092,7 @@ describe('Systems Mapping workflow', () => {
     expect(addSuggestion).not.toHaveClass('is-active');
     fireEvent.click(addSuggestion);
     expect(addSuggestion).toHaveClass('is-active');
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ verb: 'informs', status: 'confirmed', claimState: 'student interpretation' }),
@@ -2078,7 +2131,7 @@ describe('Systems Mapping workflow', () => {
     ] }, 201);
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'suggest' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
 
     const firstVerb = await screen.findByRole('textbox', { name: 'Connection for suggestion 1' });
@@ -2374,7 +2427,7 @@ describe('Systems Mapping workflow', () => {
         connections: [],
       } }) }, 201);
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     if (failure === 'failure') await screen.findByText('Guidance is temporarily unavailable. Try again later.');
     else expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
@@ -2382,8 +2435,8 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
     expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
-    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    expect(notebookOption('Map notes')).toBeDisabled();
+    openProjectMenu('Progress');
     const progress = screen.getByRole('dialog', { name: 'Progress' });
     for (const label of ['Choose elements', 'Build map', 'Review and export']) {
       fireEvent.click(within(progress).getByRole('button', { name: label, exact: true }));
@@ -2416,7 +2469,7 @@ describe('Systems Mapping workflow', () => {
     incoming.updatedAt = new Date(Date.now() + 1000).toISOString();
     fireEvent(window, new StorageEvent('storage', { key: STORAGE_KEY, newValue: serializeProject(incoming) }));
     expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Review and export' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Reflection' })).not.toBeInTheDocument();
     await waitFor(() => expect(storedProject()).toMatchObject({ title: incoming.title, stage: 1 }));
     expect(storedProject().preflight).toBeNull();
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
@@ -2478,8 +2531,8 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 1;
 
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     await waitFor(() => {
       expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
       expect(storedProject().graph).toEqual(graphBefore);
@@ -2492,9 +2545,9 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     expect(project.preflight.memoReview.connections[0].verb).toBe('refers students to');
     fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
-    expect(screen.getByRole('tab', { name: 'Connections' })).toBeVisible();
-    expect(screen.getByRole('tab', { name: 'Ask' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Connections' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Ask' })).toBeInTheDocument();
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.stage).toBe(2);
@@ -2505,20 +2558,18 @@ describe('Systems Mapping workflow', () => {
         verb: 'refers students to', scale: 'micro', status: 'pending', claimState: 'inference',
       })]);
     });
-    within(document.querySelector('.candidate-list')).getAllByRole('article').forEach((row) => {
-      fireEvent.click(within(row).getByRole('button', { name: 'Add to map' }));
-    });
-    fireEvent.click(screen.getByRole('tab', { name: 'Connections' }));
+    acceptAllCandidates();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'edges' } });
     const relationshipEditor = screen.getByRole('textbox', { name: 'Direct connection' });
     fireEvent.change(relationshipEditor, { target: { value: 'refers directly to' } });
     fireEvent.click(within(relationshipEditor.closest('article')).getByRole('button', { name: 'Add to map' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.edges).toEqual([expect.objectContaining({ verb: 'refers directly to', scale: 'micro', status: 'confirmed' })]);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/connections')).toHaveLength(0);
 
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Review and export' }));
-    expect(await screen.findByRole('heading', { name: 'Review and export' })).toBeVisible();
+    fireEvent.click(workActions().getByRole('button', { name: 'Reflect on this level' }));
+    expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
     expect(screen.getByLabelText('Current Micro-level map summary')).toHaveTextContent('2 nodes · 1 direct relationship');
   });
 
@@ -2526,7 +2577,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
 
     await waitFor(() => expect(storedProject().candidates.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(['School', 'Committee'])));
     const schoolCandidate = storedProject().candidates.nodes.find((node) => node.label === 'School');
@@ -2537,6 +2588,7 @@ describe('Systems Mapping workflow', () => {
     const schoolRow = screen.getByDisplayValue('School').closest('article');
     expect(within(schoolRow).queryByRole('combobox', { name: 'Add a setting for School' })).not.toBeInTheDocument();
     fireEvent.click(within(schoolRow).getByRole('button', { name: 'Add to map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
     const committeeRow = screen.getByDisplayValue('Committee').closest('article');
     fireEvent.click(within(committeeRow).getByText('Details', { selector: 'summary' }));
     fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Person’s involvement with Committee' }), { target: { value: 'indirect' } });
@@ -2547,7 +2599,7 @@ describe('Systems Mapping workflow', () => {
     }));
 
     fireEvent.click(within(committeeRow).getByRole('button', { name: 'Add to map' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().graph.nodes.find((node) => node.label === 'Committee')).toMatchObject({
       focalParticipation: 'indirect',
@@ -2570,8 +2622,8 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     openProjectFromList();
     expect(screen.getByRole('checkbox', { name: 'Add suggestions automatically' })).not.toBeChecked();
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     expect(storedProject().graph.nodes).toHaveLength(0);
     expect(storedProject().candidates.nodes.every((node) => node.status === 'pending')).toBe(true);
   });
@@ -2580,12 +2632,12 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(2));
     const initialIds = storedProject().graph.nodes.map(({ id }) => id);
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Memo review', exact: true }));
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(initialIds);
     expect(storedProject().graph.edges).toHaveLength(1);
@@ -2597,7 +2649,7 @@ describe('Systems Mapping workflow', () => {
     saved.candidates.edges[0] = { ...saved.candidates.edges[0], status: 'rejected', reviewDecision: 'removed', claimState: 'retired' };
     cleanup();
     await resumeSavedProject(saved);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.filter((node) => node.status === 'confirmed')).toHaveLength(0);
     expect(storedProject().graph.edges.filter((edge) => edge.status === 'confirmed')).toHaveLength(0);
@@ -2628,8 +2680,8 @@ describe('Systems Mapping workflow', () => {
       if (index === 0) {
         fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
         await waitFor(() => expect(storedProject()?.preflight?.memoReview, `${scale}: ${document.querySelector('[role="status"]')?.textContent}`).toBeTruthy());
-        await waitFor(() => expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled());
-        fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+        await waitFor(() => expect(workActions().getByRole('button', { name: 'Continue →' })).toBeEnabled());
+        fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
       }
       // Later levels read the memo in the same click that completed the previous level.
       await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: scale, stage: 3 }));
@@ -2645,8 +2697,8 @@ describe('Systems Mapping workflow', () => {
       }
       prior = structuredClone(graph);
       if (index < 3) {
-        fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Review and export' }));
-        fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: /^Continue to / }));
+        fireEvent.click(workActions().getByRole('button', { name: 'Reflect on this level' }));
+        fireEvent.click(workActions().getByRole('button', { name: /^Continue to / }));
         if (scale === 'meso') {
           const dialog = await screen.findByRole('dialog', { name: 'Review Micro and Meso' });
           await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 4 }));
@@ -2671,9 +2723,9 @@ describe('Systems Mapping workflow', () => {
     project.preflight = null;
     await resumeSavedProject(project);
     expect(screen.queryByRole('button', { name: 'Continue without model' })).not.toBeInTheDocument();
-    expect(within(document.querySelector('.app-footer')).getByText('Memo review', { selector: 'strong' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     expect(storedProject().preflight.memoReview).toEqual(memoReviewFixture());
@@ -2691,14 +2743,14 @@ describe('Systems Mapping workflow', () => {
       releaseReview = () => resolve(jsonResponse({ evaluation: evaluationRecord(body) }, 201));
     });
     await resumeSavedProject(project);
-    const continueButton = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' });
+    const continueButton = workActions().getByRole('button', { name: 'Continue →' });
     fireEvent.click(continueButton);
     fireEvent.click(continueButton);
     fireEvent.click(screen.getByRole('button', { name: 'Reading memo…' }));
     expect(continueButton).toBeDisabled();
     expect(storedProject().stage).toBe(1);
     expect(storedProject().preflight).toBeNull();
-    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
+    expect(notebookOption('Map notes')).toBeDisabled();
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
     await act(async () => { releaseReview(); await Promise.resolve(); });
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -2716,7 +2768,7 @@ describe('Systems Mapping workflow', () => {
     });
     await resumeSavedProject(project);
     vi.useFakeTimers();
-    const continueButton = within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' });
+    const continueButton = workActions().getByRole('button', { name: 'Continue →' });
     fireEvent.click(continueButton);
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(GUIDANCE_REQUEST_TIMEOUT_MS); });
@@ -2728,7 +2780,7 @@ describe('Systems Mapping workflow', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
     expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.');
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
-    expect(screen.getByRole('tab', { name: 'Inspector' })).toBeDisabled();
+    expect(notebookOption('Map notes')).toBeDisabled();
 
     await act(async () => { releaseReview(); await Promise.resolve(); });
     expect(storedProject().preflight).toBeNull();
@@ -2750,7 +2802,7 @@ describe('Systems Mapping workflow', () => {
     project.furthestStage = 1;
     preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance took too long', details: { code: 'guidance_timeout', shouldRetry: false } }, 504);
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Guidance took too long. Try again.'));
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
     expect(storedProject()).toMatchObject({ stage: 1, preflight: null, graph: { nodes: [], edges: [] } });
@@ -2767,7 +2819,7 @@ describe('Systems Mapping workflow', () => {
       readiness: { ready: false, note: 'More evidence needed' },
     } }) }, 201);
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
@@ -2775,8 +2827,8 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().events.find(event => event.action === 'preflight.completed')).toMatchObject({
       sourceFingerprint: storedProject().preflight.sourceFingerprint,
     });
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Review and export' }));
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue to Meso-level' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Reflect on this level' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3 }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual(['micro', 'meso']);
   });
@@ -2807,7 +2859,7 @@ describe('Systems Mapping workflow', () => {
       const response = jsonResponse({ evaluation: evaluationRecord(body, { review }) }, 201);
       return body.activeScale === 'meso' ? mesoReview.promise.then(() => response) : response;
     };
-    const footer = () => within(document.querySelector('.app-footer'));
+    const footer = () => workActions();
     const evaluationScales = () => fetchMock.mock.calls
       .filter(([path]) => String(path) === '/api/preflight/evaluations')
       .map(([, options]) => JSON.parse(options.body).activeScale);
@@ -2816,7 +2868,7 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(footer().getByRole('button', { name: 'Continue →' })).toBeEnabled());
     fireEvent.click(footer().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 3 }));
-    fireEvent.click(footer().getByRole('button', { name: 'Review and export' }));
+    fireEvent.click(footer().getByRole('button', { name: 'Reflect on this level' }));
     fireEvent.click(footer().getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1 }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path).startsWith('/api/config/public?') && String(path).includes('scale=meso'))).toBe(true));
@@ -2836,11 +2888,11 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     project.instructor.requireStudentConfirmation = false;
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Choose elements', exact: true }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'suggest' } });
     connectionSuggestionResponder = (body) => jsonResponse({ connections: [{
       source: body.nodes[1].id, target: body.nodes[0].id, verb: 'supports', rationale: 'Support described in the memo',
     }] }, 201);
@@ -2870,7 +2922,7 @@ describe('Systems Mapping workflow', () => {
       edges: [],
     };
     await resumeSavedProject(project);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(2));
     expect(storedProject().stage).toBe(3);
     expect(storedProject().graph.nodes.every((node) => node.reviewDecision === 'pending')).toBe(true);
@@ -2882,7 +2934,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
 
     expect(screen.getByRole('checkbox', { name: 'Add suggestions automatically' })).toBeChecked();
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue →' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
@@ -2924,10 +2976,10 @@ describe('Systems Mapping workflow', () => {
 
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
 
     const expectedLabels = ['Adult Participants', 'Accessible van'];
-    expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toEqual(expectedLabels);
+    expect(candidateLabels()).toEqual(expectedLabels);
     await waitFor(() => {
       expect(storedProject().candidates.nodes.map(({ label }) => label)).toEqual(expectedLabels);
       expect(storedProject().candidates.nodes.every((node) => node.scale === 'micro')).toBe(true);
@@ -2935,10 +2987,8 @@ describe('Systems Mapping workflow', () => {
       expect(storedProject().candidates.edges).toEqual([]);
     });
 
-    within(document.querySelector('.candidate-list')).getAllByRole('article').forEach((row) => {
-      fireEvent.click(within(row).getByRole('button', { name: 'Add to map' }));
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    acceptAllCandidates();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => {
       expect(storedProject().graph.nodes.map(({ label }) => label)).toEqual(expectedLabels);
@@ -2985,10 +3035,10 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
 
     const expectedLabels = review.nodes.map(({ label }) => label);
-    expect(screen.getAllByRole('textbox', { name: 'Node label' }).map((input) => input.value)).toEqual(expectedLabels);
+    expect(candidateLabels()).toEqual(expectedLabels);
     expect(screen.queryByDisplayValue('Strong Coverage of Administrative Systems')).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('Student Life—graduation Processing')).not.toBeInTheDocument();
     await waitFor(() => {
@@ -3071,9 +3121,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     await resumeSavedProject(project);
     expect(screen.getByRole('heading', { name: 'Suggestions' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Continue →', exact: true }));
+    openDetails('.carried-node-summary');
     const carried = screen.getByLabelText('Micro-level settings available for mesosystems');
     microNodes.forEach((node) => expect(within(carried).getByText(node.label)).toBeVisible());
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     expect(screen.queryByRole('tablist', { name: 'Choose map items' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Direct connection' })).not.toBeInTheDocument();
     expect(screen.queryByText(/More connections|More direct relationships/)).not.toBeInTheDocument();
@@ -3094,7 +3145,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
 
     fireEvent.click(within(screen.getAllByRole('article')[0]).getByRole('button', { name: 'Add to map' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     const stored = storedProject();
     expect(stored.graph.nodes.filter((node) => node.scale === 'micro').map(({ id }) => id)).toEqual(microNodes.map(({ id }) => id));
@@ -3176,14 +3227,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     const institutionRow = screen.getByRole('textbox', { name: 'Node label' }).closest('article');
     fireEvent.click(within(institutionRow).getByRole('button', { name: 'Add to map' }));
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.label === outerLabel)).toMatchObject({ status: 'confirmed' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Connections' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'edges' } });
     const relationshipRow = screen.getByLabelText('How decision reaches Micro setting').closest('article');
     fireEvent.click(within(relationshipRow).getByRole('button', { name: 'Add to map' }));
     await waitFor(() => {
       expect(within(relationshipRow).getByRole('button', { name: 'Add to map' })).toHaveClass('is-active');
       expect(storedProject().candidates.edges[0]).toMatchObject({ status: 'confirmed' });
     });
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph.nodes.find((node) => node.id === existing.id)).toMatchObject(originalIdentity);
     expect(storedProject().graph.nodes.filter((node) => node.id === existing.id)).toHaveLength(1);
@@ -3259,7 +3310,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     expect(() => parseProject(serializeProject(project))).not.toThrow();
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
 
     const stored = storedProject();
@@ -3314,7 +3365,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(() => validateProject(stored)).not.toThrow();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
     const reopened = storedProject();
@@ -3346,7 +3397,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph.nodes.find((node) => node.id === mappedSetting.id)?.type).toBe(mappedSetting.type);
     expect(() => validateProject(storedProject())).not.toThrow();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
     const reopened = storedProject();
@@ -3435,8 +3486,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     await resumeSavedProject(project);
     const rows = screen.getAllByRole('article');
     fireEvent.click(within(rows[0]).getByRole('button', { name: 'Remove' }));
-    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Add to map' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
+    fireEvent.click(within(document.querySelector('.candidate-list article')).getByRole('button', { name: 'Add to map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     await waitFor(() => {
       expect(storedProject().graph.nodes.find((node) => node.id === project.candidates.nodes[0].id)).toMatchObject({ status: 'rejected', claimState: 'retired' });
     });
@@ -3466,13 +3518,13 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.furthestStage = 2;
     await resumeSavedProject(project);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Connections' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'edges' } });
     const row = screen.getAllByRole('article')[0];
     fireEvent.click(within(row).getByRole('button', { name: 'Add to map' }));
     expect(within(row).getByRole('button', { name: 'Add to map' })).toHaveClass('is-active');
     await waitFor(() => expect(storedProject().candidates.edges[0]).toMatchObject({ status: 'confirmed', claimState: 'student interpretation' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().graph.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ verb: 'receives an invitation from', status: 'confirmed', claimState: 'student interpretation' }),
     ])));
@@ -3495,7 +3547,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const expected = withDefaultNodeLayout(accepted.map(({ x: _x, y: _y, ...node }) => node));
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
 
     await waitFor(() => expect(storedProject().stage).toBe(3));
     const committed = storedProject().graph.nodes;
@@ -3566,11 +3618,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     const project = makeDenseFocusedMesoProject(5);
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'micro' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'micro' } });
+    fireEvent.click(mapTool('Arrange map'));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
+    fireEvent.click(mapTool('Fit map'));
+    fireEvent.click(mapTool('Full screen map'));
 
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
@@ -3700,7 +3752,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
-    const scale = screen.getByRole('combobox', { name: 'Show map layer' });
+    const scale = mapLayer();
     expect(scale).toHaveValue('all');
     fireEvent.change(scale, { target: { value: 'meso' } });
     expect(document.querySelector('[data-ecology-layer="meso"]')).toHaveClass('is-visible');
@@ -3731,11 +3783,11 @@ Overall, the posting history documents a working student repeatedly turning to R
   it.each(['exosphere', 'macrosphere'])('renders the %s ecological backdrop and changes layer filters without mutating graph data', async (activeScale) => {
     const project = await openMapProject(makeMapProject(activeScale));
     const graphBefore = structuredClone(storedProject().graph);
-    const scale = screen.getByRole('combobox', { name: 'Show map layer' });
+    const scale = mapLayer();
     const active = graphForScale(project);
     const meso = graphForScale(project, 'meso');
     const all = graphForScale(project, 'all');
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
 
     expect(scale).toHaveValue('all');
     expect(within(scale).getAllByRole('option').map((option) => option.value)).toEqual([...project.releasedScales, 'all']);
@@ -3795,7 +3847,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'ecology');
-    expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('all');
+    expect(mapLayer()).toHaveValue('all');
     await waitFor(() => {
       expect(viewportTransform()).not.toEqual(durableViewport);
       expectVisibleNodesAndConnectionLabelsInsideCanvas();
@@ -3812,7 +3864,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(makeMapProject('meso'));
     const mapStage = document.querySelector('.map-stage');
     const canvasWrap = document.querySelector('.canvas-wrap');
-    const enter = screen.getByRole('button', { name: 'Full screen map' });
+    const enter = mapTool('Full screen map');
 
     fireEvent.click(enter);
     expect(mapStage).toHaveClass('is-fullscreen');
@@ -3826,7 +3878,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(canvasWrap).not.toHaveClass('is-fullscreen');
       expect(document.body).not.toHaveClass('map-fullscreen-open');
     });
-    expect(screen.getByRole('button', { name: 'Full screen map' })).toHaveFocus();
+    expect(document.querySelector('.notebook-map-tools > summary')).toHaveFocus();
   });
 
   it('zooms out to 0.15 and keeps keyboard and pointer panning available at the overview limit', async () => {
@@ -3835,7 +3887,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
     const canvas = mapCanvas();
-    const zoomOut = screen.getByRole('button', { name: 'Zoom out' });
+    const zoomOut = mapTool('Zoom out');
 
     for (let index = 0; index < 12; index += 1) fireEvent.click(zoomOut);
     await waitFor(() => expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin));
@@ -3863,30 +3915,30 @@ Overall, the posting history documents a working student repeatedly turning to R
   it('fits visible nodes and connection labels without requiring complete rings in normal and full-screen views', async () => {
     const project = makeMapProject('macrosphere');
     await openMapProject(project);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'exosphere' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'exosphere' } });
+    fireEvent.click(mapTool('Arrange map'));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     expect(document.querySelectorAll('.graph-edge-label').length).toBeGreaterThan(0);
     const fittedFilteredViewport = { ...storedProject().viewport };
 
-    fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
+    fireEvent.click(mapTool('Full screen map'));
     expect(document.querySelector('.map-stage')).toHaveClass('is-fullscreen');
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     expect(storedProject().viewport).toEqual(fittedFilteredViewport);
     fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('all'));
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
+    await waitFor(() => expect(mapLayer()).toHaveValue('all'));
+    fireEvent.click(mapTool('Arrange map'));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(2));
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     const fittedAllViewport = { ...storedProject().viewport };
 
-    fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
+    fireEvent.click(mapTool('Full screen map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     expect(storedProject().viewport).toEqual(fittedAllViewport);
   });
@@ -3897,8 +3949,8 @@ Overall, the posting history documents a working student repeatedly turning to R
   ])('keeps arranged ecological nodes clear of one another and every layer label on %s', async (_viewport, phone) => {
     if (phone) installPhoneLayout();
     await openMapProject(makeMapProject('exosphere'));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
+    fireEvent.click(mapTool('Arrange map'));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
 
     const translatedRect = (group, rect) => {
@@ -3938,8 +3990,8 @@ Overall, the posting history documents a working student repeatedly turning to R
   it('keeps level badges in their own ordered rings and expands the shared ring geometry with explicit zoom out', async () => {
     installPhoneLayout(390);
     await openMapProject(makePhoneEcologyOverviewProject());
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
+    fireEvent.click(mapTool('Fit map'));
 
     const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
     const readGeometry = () => {
@@ -3997,7 +4049,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       [...levels.map((level) => before.labels.get(level).y)].sort((left, right) => left - right),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+    fireEvent.click(mapTool('Zoom out'));
     const after = readGeometry();
     expect(Number(mapCanvas().getAttribute('data-ring-expansion'))).toBeGreaterThan(1);
     levels.forEach((level) => {
@@ -4012,7 +4064,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const resizeTo = installResponsiveLayout();
     const project = makePhoneEcologyOverviewProject();
     await openMapProject(project);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
     const durableGraph = structuredClone(storedProject().graph);
 
     resizeTo(390);
@@ -4034,12 +4086,12 @@ Overall, the posting history documents a working student repeatedly turning to R
     const durableGraph = structuredClone(storedProject().graph);
     const durableViewport = { ...storedProject().viewport };
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
     await waitFor(() => {
       expect(document.querySelectorAll('.graph-node')).toHaveLength(6);
       expectVisibleNodesAndConnectionLabelsInsideCanvas();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
 
     const view = viewportTransform();
@@ -4076,7 +4128,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const resizeTo = installResponsiveLayout();
     const project = makeDenseEcologyOverviewProject();
     await openMapProject(project);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
     const durableGraph = structuredClone(storedProject().graph);
     const durableViewport = { ...storedProject().viewport };
     const desktopPositions = new Map(project.graph.nodes.map(({ id }) => [id, renderedNodePosition(id)]));
@@ -4123,8 +4175,8 @@ Overall, the posting history documents a working student repeatedly turning to R
 
   it('keeps keyboard-moved ecological nodes out of their layer label', async () => {
     await openMapProject(makeMapProject('exosphere'));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
+    fireEvent.click(mapTool('Arrange map'));
     const node = [...document.querySelectorAll('.graph-node--exosphere')]
       .sort((left, right) => renderedNodePosition(left.getAttribute('data-graph-id')).y - renderedNodePosition(right.getAttribute('data-graph-id')).y)[0];
     for (let step = 0; step < 80; step += 1) fireEvent.keyDown(node, { key: 'ArrowUp', shiftKey: true });
@@ -4162,7 +4214,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
 
     const view = viewportTransform();
@@ -4214,7 +4266,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     expect(project.graph.nodes.some((node) => renderedNodePosition(node.id).x !== node.x)).toBe(true);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     resizeTo(1024);
     await waitFor(() => expect(viewportTransform()).toEqual(durableViewport));
     durablePositions.forEach(({ id, x, y }) => expect(renderedNodePosition(id)).toEqual({ x, y }));
@@ -4253,7 +4305,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const edge = document.querySelector('.graph-edge');
     edge.focus();
     fireEvent.keyDown(edge, { key: 'Enter' });
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
     // Desktop dims the rest of the layer instead of entering detail.
@@ -4308,7 +4360,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const edge = document.querySelector('.graph-edge');
     edge.focus();
     fireEvent.keyDown(edge, { key: 'Enter' });
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => {
       expect(inspector).toHaveAttribute('aria-hidden', 'true');
@@ -4316,7 +4368,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
 
     expect(document.querySelector('.ecology-layers')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Arrange map' })).not.toBeInTheDocument();
+    expect(mapTool('Arrange map')).toBeDisabled();
     const assertDetailInsideCanvas = () => {
       const view = viewportTransform();
       [...document.querySelectorAll('.graph-node')].forEach((group) => {
@@ -4351,7 +4403,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(durableGraph);
     expect(storedProject().viewport).toEqual(durableViewport);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     assertDetailInsideCanvas();
     expect(storedProject().graph).toEqual(durableGraph);
     expect(storedProject().viewport).toEqual(durableViewport);
@@ -4363,7 +4415,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
     // Phone overview geometry is transient; the durable graph is asserted below.
     expect(document.querySelector('.ecology-layers')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Arrange map' })).toBeVisible();
+    expect(mapTool('Arrange map')).toBeVisible();
     expect(storedProject().graph).toEqual(durableGraph);
     expect(storedProject().viewport).toEqual(durableViewport);
   });
@@ -4378,7 +4430,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     edge.verb = verb;
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: activeScale } });
+    fireEvent.change(mapLayer(), { target: { value: activeScale } });
 
     const overviewLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
     const expectClearOverviewLabel = (label) => {
@@ -4414,7 +4466,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const renderedEdge = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
     renderedEdge.focus();
     fireEvent.keyDown(renderedEdge, { key: 'Enter' });
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
 
@@ -4507,7 +4559,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const renderedEdge = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
     renderedEdge.focus();
     fireEvent.keyDown(renderedEdge, { key: 'Enter' });
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
 
@@ -4529,9 +4581,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       });
     };
     await waitFor(assertMaximumLabelVisible);
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     await waitFor(assertMaximumLabelVisible);
-    const zoomOut = screen.getByRole('button', { name: 'Zoom out' });
+    const zoomOut = mapTool('Zoom out');
     for (let step = 0; step < 30 && !zoomOut.disabled; step += 1) fireEvent.click(zoomOut);
     expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin);
     expect(zoomOut).toBeDisabled();
@@ -4612,13 +4664,13 @@ Overall, the posting history documents a working student repeatedly turning to R
     let inspector = openNodeInspector('node-dense-focus');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
-    const zoomOut = screen.getByRole('button', { name: 'Zoom out' });
+    const zoomOut = mapTool('Zoom out');
     for (let step = 0; step < 30 && !zoomOut.disabled; step += 1) fireEvent.click(zoomOut);
     expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin);
     const manuallyAdjustedViewport = viewportTransform();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
-    inspector = screen.getByLabelText('Map inspector');
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
+    inspector = screen.getByLabelText('Notebook');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     const addActions = document.getElementById('inspector-add-actions');
     fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
@@ -4654,11 +4706,11 @@ Overall, the posting history documents a working student repeatedly turning to R
   it('opens a relationship with Enter and keeps its complete phone detail in view after Done', async () => {
     installPhoneLayout();
     await openMapProject(makeMapProject('exosphere'));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'exosphere' } });
+    fireEvent.change(mapLayer(), { target: { value: 'exosphere' } });
     const edge = document.querySelector('.graph-edge[tabindex="0"]');
     edge.focus();
     fireEvent.keyDown(edge, { key: 'Enter' });
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     expect(inspector).toHaveClass('is-open');
     expect(within(inspector).getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
@@ -4693,8 +4745,8 @@ Overall, the posting history documents a working student repeatedly turning to R
 
   it('renders exact saved in-band ecological positions after reload', async () => {
     await openMapProject(makeMapProject('exosphere'));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
+    fireEvent.click(mapTool('Arrange map'));
     await waitFor(() => expect(eventRequests('map_arranged')).toHaveLength(1));
     await waitFor(() => expect(storedProject().events.some((event) => event.action === 'map.arranged')).toBe(true));
     const savedPositions = storedProject().graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
@@ -4704,7 +4756,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await showResumeScreen();
     openProjectFromList('NYC systems and assets map');
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: 'all' } });
+    fireEvent.change(mapLayer(), { target: { value: 'all' } });
 
     savedPositions.forEach(({ id, x, y }) => {
       expect(document.querySelector(`[data-graph-id="${id}"]`)).toHaveAttribute('transform', `translate(${x} ${y})`);
@@ -4745,7 +4797,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
     expect(document.querySelector('.map-focus-bar')).toBeNull();
     expect(document.querySelector('.is-dimmed')).toBeNull();
-    expect(screen.getByLabelText('Map inspector')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByLabelText('Notebook')).toHaveAttribute('aria-hidden', 'true');
     expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
     expect(document.querySelectorAll('.graph-node')).toHaveLength(active.nodes.length);
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(active.edges.length);
@@ -4829,7 +4881,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(before.graph).toEqual(project.graph);
     expect(before.viewport).toEqual(project.viewport);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Arrange map' }));
+    fireEvent.click(mapTool('Arrange map'));
 
     await waitFor(() => expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.arranged', detail: 'All layers arranged' }));
     const arranged = storedProject();
@@ -4924,7 +4976,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
-    expect(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Continue →' })).toBeEnabled();
+    expect(workActions().getByRole('button', { name: 'Continue →' })).toBeEnabled();
   });
 
   it('restores an immediate memo journal and current step after reload when a full save is unavailable', async () => {
@@ -4949,7 +5001,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     render(<App startInWorkspace />);
     expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Add memo' }));
     expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
@@ -5040,10 +5092,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: '' } });
     await screen.findByRole('button', { name: 'Review issue' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     const stages = screen.getByRole('dialog', { name: 'Progress' });
     fireEvent.click(within(stages).getByRole('button', { name: /review and export/i }));
-    expect(await screen.findByRole('heading', { name: 'Review and export' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
+    openExports();
     fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
 
     const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
@@ -5102,7 +5155,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const start = renderedNodePosition(node.id);
     const dragZoom = viewportTransform().zoom;
     const draggedPosition = { x: Math.round(start.x + 24 / dragZoom), y: Math.round(start.y + 16 / dragZoom) };
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     svg.getScreenCTM = () => ({ inverse: () => ({}) });
     svg.createSVGPoint = () => ({
       x: 0,
@@ -5140,18 +5193,17 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(inspector).not.toHaveAttribute('aria-hidden');
 
     const mapControls = document.querySelector('.canvas-chrome');
-    expect(mapControls).toHaveAttribute('aria-hidden', 'true');
-    expect(mapControls).toHaveAttribute('inert');
+    expect(mapControls).toBeNull();
+    expect(document.querySelector('.notebook-map-tools')).not.toHaveAttribute('open');
     expect(screen.queryByRole('toolbar', { name: 'Map view controls' })).not.toBeInTheDocument();
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => {
       expect(inspector).toHaveAttribute('aria-hidden', 'true');
-      expect(mapControls).not.toHaveAttribute('aria-hidden');
-      expect(mapControls).not.toHaveAttribute('inert');
+      expect(document.querySelector('.canvas-chrome')).toBeNull();
       expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveFocus();
     });
 
-    const zoomIn = screen.getByRole('button', { name: 'Zoom in' });
+    const zoomIn = mapTool('Zoom in');
     const durableViewport = viewportTransform();
     expect(zoomIn).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Pan' })).not.toBeInTheDocument();
@@ -5189,7 +5241,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     };
     await openMapProject(project);
     const graphBefore = structuredClone(storedProject().graph);
-    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
     const askPanel = screen.getByRole('region', { name: 'Ask the map' });
     fireEvent.click(within(askPanel).getByRole('button', { name: "Ask what's missing" }));
     expect(await within(askPanel).findByText(`Which decision setting reaches ${first.label}?`)).toBeVisible();
@@ -5201,7 +5253,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelector('.canvas-wrap [aria-live="polite"]')).toHaveTextContent(`Highlighting ${first.label} on the map.`);
     fireEvent.keyDown(document.querySelector(`[data-graph-id="${second.id}"]`), { key: 'Enter' });
     expect(document.querySelector(`[data-graph-id="${second.id}"]`)).not.toHaveClass('is-dimmed');
-    fireEvent.click(screen.getByRole('button', { name: 'Fit map' }));
+    fireEvent.click(mapTool('Fit map'));
     expect(storedProject().graph).toEqual(graphBefore);
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(1);
   });
@@ -5233,6 +5285,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       return jsonResponse({ intent: 'synthesis', notes: [{ kind: 'claim', point: 'Outside decisions reach the family through the school.', refs: [macro.graph.nodes[0].id] }] }, 201);
     };
     await resumeSavedProject(macro);
+    openDetails('.notebook-review-tools');
     fireEvent.click(screen.getByRole('button', { name: 'Draft a synthesis scaffold' }));
     expect(await screen.findByText('Outside decisions reach the family through the school.')).toBeVisible();
     expect(screen.getByText('Claim the map supports')).toBeVisible();
@@ -5250,7 +5303,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const nodeElement = document.querySelector(`[data-graph-id="${node.id}"]`);
     const position = renderedNodePosition(node.id);
     const svg = mapCanvas();
-    const inspector = screen.getByLabelText('Map inspector');
+    const inspector = screen.getByLabelText('Notebook');
     svg.getScreenCTM = () => ({ inverse: () => ({}) });
     svg.createSVGPoint = () => ({
       x: 0,
@@ -5258,7 +5311,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       matrixTransform() { return { x: this.x, y: this.y }; },
     });
 
-    const keyButton = screen.getByRole('button', { name: 'Map key' });
+    const keyButton = mapTool('Map key');
     fireEvent.click(keyButton);
     expect(screen.getByLabelText('Map key')).toBeVisible();
     expect(inspector).toHaveAttribute('aria-hidden', 'true');
@@ -5458,10 +5511,12 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     try {
       await resumeSavedProject(project);
+      openDetails('.notebook-review-tools');
       expect(screen.getByLabelText('Current Micro-level map summary')).toBeVisible();
       expect(screen.getByText('Memo imported')).toBeInTheDocument();
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();
+      openExports();
       fireEvent.click(screen.getByRole('button', { name: /^CSV/ }));
       expect(blobs).toHaveLength(1);
       expect(blobs[0].type).toBe('text/csv');
@@ -5518,7 +5573,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 2;
     project.furthestStage = 2;
     await resumeSavedProject(project);
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     const candidateRow = screen.getByRole('article');
     fireEvent.click(candidateRow.querySelector('.candidate-evidence summary'));
     fireEvent.change(within(candidateRow).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies this policy condition.' } });
@@ -5531,7 +5586,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(addSelect, { target: { value: microNodes[1].id } });
     expect(within(reachEditor).getByRole('button', { name: `Remove ${microNodes[0].label} from map items affected by Universal Pre-K Law` })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Add to map' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => {
       const stored = storedProject();
@@ -5625,7 +5680,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 2;
     project.furthestStage = 2;
     await resumeSavedProject(project);
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     const panel = screen.getByRole('region', { name: 'New decision setting' });
     fireEvent.change(within(panel).getByLabelText('Type'), { target: { value: 'agency' } });
     fireEvent.change(within(panel).getByLabelText('Name'), { target: { value: 'Transportation access' } });
@@ -5687,7 +5742,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.furthestStage = 2;
 
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByRole('tab', { name: 'Connections' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'edges' } });
     const row = screen.getByRole('combobox', { name: 'Outside decision setting' }).closest('article');
     expect(within(row).getByRole('option', { name: `Needs repair: ${invalidTarget.label}` })).toBeInTheDocument();
     expect(within(row).getByText(/Choose an affected Micro setting already on the map/)).toBeVisible();
@@ -5735,7 +5790,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     ]));
     const retainedId = storedProject().graph.nodes.find((item) => item.id === node.id).claimEvidence[1].id;
 
-    records = [...within(screen.getByLabelText('Map inspector')).getByRole('region', { name: 'Evidence records' }).querySelectorAll('.claim-evidence-record')];
+    records = [...within(screen.getByLabelText('Notebook')).getByRole('region', { name: 'Evidence records' }).querySelectorAll('.claim-evidence-record')];
     fireEvent.click(within(records[0]).getByRole('button', { name: 'Remove record' }));
     await waitFor(() => {
       const saved = storedProject().graph.nodes.find((item) => item.id === node.id).claimEvidence;
@@ -5821,7 +5876,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(edge).toBeTruthy();
     edge.relationshipProcess = { frequency: '', duration: '', direction: '', conditions: '', changeOverTime: '' };
     await openMapProject(project);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: scale } });
+    fireEvent.change(mapLayer(), { target: { value: scale } });
 
     let inspector = openEdgeInspector(edge.id);
     let process = within(inspector).getByText('Process and time').closest('details');
@@ -5846,7 +5901,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await showResumeScreen();
     openProjectFromList(project.title);
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Show map layer' }), { target: { value: scale } });
+    fireEvent.change(mapLayer(), { target: { value: scale } });
     inspector = openEdgeInspector(edge.id);
     process = within(inspector).getByText('Process and time').closest('details');
     fireEvent.click(within(process).getByText('Process and time'));
@@ -5905,9 +5960,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       });
     });
 
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back' }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    openNotebookSection('suggestions');
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
+    fireEvent.click(workActions().getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
 
     await waitFor(() => {
@@ -5937,16 +5992,16 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(within(inspector).getByRole('textbox', { name: /^Interaction/ }), { target: { value: explanation } });
     await waitFor(() => expect(storedProject().candidates.nodes[0].mesoExplanation).toBe(explanation));
 
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Back' }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    openNotebookSection('suggestions');
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     const reviewedNode = screen.getByDisplayValue(node.label).closest('article');
     expect(within(reviewedNode).getByRole('textbox', { name: /^Interaction/ })).toHaveValue(explanation);
-    fireEvent.click(within(document.querySelector('.app-footer')).getByRole('button', { name: 'Open map' }));
+    fireEvent.click(workActions().getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id).mesoExplanation).toBe(explanation));
   });
 
-  it('lists every node suggestion at once and keeps later suggestions while decisions are made', async () => {
+  it('reviews one node at a time and preserves every decision across the queue', async () => {
     const { project, candidate } = makeCandidateValidationProject();
     project.candidates.nodes = Array.from({ length: 9 }, (_, index) => ({
       ...structuredClone(candidate),
@@ -5961,12 +6016,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(screen.queryByRole('button', { name: 'Continue', exact: true })).not.toBeInTheDocument();
 
     const list = document.querySelector('.candidate-list');
-    expect(within(list).getAllByRole('article')).toHaveLength(9);
+    expect(within(list).getAllByRole('article')).toHaveLength(1);
     expect(screen.queryByRole('navigation', { name: 'Suggestions' })).not.toBeInTheDocument();
     for (let i = 1; i <= 9; i++) {
-      const row = screen.getByDisplayValue('Peer navigator ' + i).closest('article');
+      const row = within(list).getByRole('article');
+      expect(within(row).getByRole('heading')).toHaveTextContent('Peer navigator ' + i);
       fireEvent.click(within(row).getByRole('button', { name: i === 2 ? 'Set aside' : 'Add to map' }));
-      expect(within(list).getAllByRole('article')).toHaveLength(9);
+      expect(within(list).getAllByRole('article')).toHaveLength(1);
+      if (i < 9) fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
     }
     await waitFor(() => {
       expect(storedProject().candidates.nodes).toHaveLength(9);
@@ -6002,7 +6059,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     }, 201);
     await resumeSavedProject(project);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Ask' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'suggest' } });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest connections' }));
     expect(await screen.findByDisplayValue('supports pathway 1')).toBeVisible();
     expect(within(document.querySelector('.connection-suggestions')).getAllByRole('article')).toHaveLength(9);
@@ -6022,7 +6079,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       claimState: 'research lead',
       reviewDecision: 'set aside',
     }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
     expect(storedProject().graph).toEqual(graphBefore);
@@ -6039,21 +6096,21 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.levelProgress.micro = { stage: 4, reflection: 'Micro reflection' };
     project.levelProgress.meso = { stage: 3, reflection: 'Meso reflection' };
     await resumeSavedProject(project);
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
 
     openWorkLevelMenu();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Work level' })).getByRole('button', { name: 'Meso-level' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'meso' } });
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3, reflection: 'Meso reflection' }));
 
     openWorkLevelMenu();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Work level' })).getByRole('button', { name: 'Micro-level' }));
-    expect(await screen.findByRole('heading', { name: 'Review and export' })).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'micro' } });
+    expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 4, reflection: 'Micro reflection' }));
 
     openWorkLevelMenu();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Work level' })).getByRole('button', { name: 'Exo-level' }));
-    expect(await screen.findByRole('heading', { name: 'Choose items' })).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'exosphere' } });
+    expect(await screen.findByRole('heading', { name: 'Suggestions' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'exosphere', stage: 2, reflection: 'Exo reflection' }));
     expect(storedProject().levelProgress).toMatchObject({
       micro: { stage: 4, reflection: 'Micro reflection' },
@@ -6104,7 +6161,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.completedScales = ['micro', 'exosphere'];
     await openMapProject(project);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+    openProjectMenu('Progress');
     const levels = within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('region', { name: 'Level progression' });
     expect(within(levels).getByText(/Micro-level/).closest('li')).toHaveTextContent('Complete');
     expect(within(levels).getByText('Meso-level').closest('li')).toHaveTextContent('Available');
@@ -6117,7 +6174,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const cumulative = graphForScale(project, 'all');
     await openMapProject(project);
 
-    expect(screen.getByRole('combobox', { name: 'Show map layer' })).toHaveValue('all');
+    expect(mapLayer()).toHaveValue('all');
     expect(document.querySelectorAll('.graph-node')).toHaveLength(cumulative.nodes.length);
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(cumulative.edges.length);
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${cumulative.nodes.length} nodes and ${cumulative.edges.length}`));
