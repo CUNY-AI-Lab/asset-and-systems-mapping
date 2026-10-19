@@ -35,3 +35,11 @@ test('clears previously displayed student data when fresh owner authorization fa
   expect(screen.queryByRole('heading', { name: 'Alice Student' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'More students' })).toBeNull();
 });
+
+
+test('labels illustrative demo progress without claiming a student sign-in', async () => {
+  apiRequest.mockResolvedValueOnce({ students: [{ ...student, demonstration: true, displayName: 'Example student', firstSeen: null }], nextCursor: null });
+  render(<CourseStudents />);
+  await screen.findByText('Demonstration data · illustrative progress and revision counts');
+  expect(screen.queryByText(/First signed in/)).toBeNull();
+});

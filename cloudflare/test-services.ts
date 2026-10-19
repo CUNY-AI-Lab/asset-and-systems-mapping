@@ -23,25 +23,27 @@ export class Identity extends WorkerEntrypoint<FixtureEnv> {
   async revoke(token: string) { revoked.add(token); return { revoked: true }; }
 }
 export class Admission extends WorkerEntrypoint<FixtureEnv> {
-  async listCourseRoster({ subject, app, classId }: { subject: string; app: string; classId: string }) {
-    const access = await this.resolveCourseAccess({ subject, app, classId });
+  async listCourseRosterV2({ subject, app, classId }: { subject: string; app: string; classId: string }) {
+    const access = await this.resolveCourseAccessV2({ subject, app, classId });
     if (!access.ok) return access;
-    if (!access.owner) return { ok: false, code: 'not_owner', retryable: false };
+    if (!access.capabilities.rosterRead) return { ok: false, code: 'not_owner', retryable: false };
     return { ok: true, classId, checkedAt: access.checkedAt, expiresAt: access.expiresAt, revision: 1, nextCursor: null,
       participants: [{ memberId: 'systems-mapping-member-v1-' + 'a'.repeat(64), displayName: 'Alice Student', displayNameSource: 'verified_profile', startsAt: access.startsAt, expiresAt: access.expiresAt }] };
   }
-  async resolveCourseAccess({ subject, app, classId }: { subject: string; app: string; classId: string }) {
+  async resolveCourseAccessV2({ subject, app, classId }: { subject: string; app: string; classId: string }) {
     courseLookups++;
     if (courseOutage) throw new Error('private fixture outage');
     const tokens = JSON.parse(this.env.TEST_TOKENS);
     const who = Object.keys(tokens).find(name => tokens[name].subject === subject);
     const owner = who === 'instructor' && classId === 'synthetic-course-a';
+    const guestInstructor = who === 'guest' && classId === 'cail-teaching-tools-demo';
     const participant = who === 'alice' && ['synthetic-course-a', 'synthetic-course-b'].includes(classId)
       || who === 'bob' && classId === 'synthetic-course-b' || who === 'admin' && classId === 'synthetic-course-a';
-    if (app !== 'systems-mapping' || courseDenied || (denyOnCourseLookup > 0 && courseLookups >= denyOnCourseLookup) || (!owner && !participant)) return { ok: false, code: 'not_enrolled', retryable: false };
+    if (app !== 'systems-mapping' || courseDenied || (denyOnCourseLookup > 0 && courseLookups >= denyOnCourseLookup) || (!owner && !participant && !guestInstructor)) return { ok: false, code: 'not_enrolled', retryable: false };
     return { ok: true, classId, className: 'Synthetic ' + classId, term: 'Test term', section: 'Test section',
       memberId: 'systems-mapping-member-v1-' + (who === 'alice' ? 'a' : who === 'bob' ? 'b' : who === 'instructor' ? 'c' : 'd').repeat(64),
-      displayName: null, displayNameSource: 'unavailable', participant, owner,
+      displayName: null, displayNameSource: 'unavailable', participant, owner, guestInstructor,
+      capabilities: { instructorPanel: owner || guestInstructor, rosterRead: owner || guestInstructor, promptRead: owner || guestInstructor, promptWrite: owner || guestInstructor },
       startsAt: new Date(Date.now() - 60000).toISOString(), checkedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1 };
   }
   async resolveMembership({ subject }: { subject: string }) {

@@ -70,3 +70,24 @@ pnpm build
 ```
 
 `check:cloudflare` invokes Wrangler with `--dry-run`; it does not deploy. The course Worker harness uses synthetic identities, course receipts, stored projects and model responses. It exercises course/general storage and link isolation, current enrollment, exact-course ownership, unavailable authority, atomic prompt conflicts, persisted history, student metadata and model prompt selection. These checks establish local behavior only. They do not confirm real CUNY sign-in, Maria's authority, a live roster, the proposed upstream namespace or live course activation.
+
+## Guest instructors
+
+The course resolver uses Admission's V2 methods. A guest instructor is a
+separate course assignment with explicit instructor-panel, roster-read,
+prompt-read and prompt-write capabilities. The application checks a fresh
+receipt on each request. Guest assignments do not imply ownership, student
+membership, or general administrator access.
+
+The production course allowlist includes `cail-teaching-tools-demo` and the
+existing Understanding Systems course. Demo invitations are issued through
+CAIL Admin MCP, bound to verified CUNY identities, and revocable in Admission.
+The persistent grant remains active until revocation; resolver receipts and
+SSO sessions retain finite expiration times.
+
+Course guidance history compares an earlier published revision with the
+current revision. Restore copies the earlier text into a draft, and saving
+creates a new revision with a change note and concurrency check. System prompt
+inspection shows read-only base and effective prompts and their fingerprints.
+The Teacher Console's course-settings drafts remain scoped to the selected
+course's Durable Object.

@@ -8,7 +8,7 @@ import publicJwks from './jwks.json';
 export type Principal = { subject: string; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
 export type IdentityEnv = {
   IDENTITY: IdentityClient;
-  ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccess?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
+  ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccessV2?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
   CAIL_IDENTITY_JWKS?: string;
 };
 export const authFailure = (status: number, code: string) => Response.json({

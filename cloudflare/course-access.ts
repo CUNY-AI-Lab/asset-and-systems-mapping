@@ -1,6 +1,6 @@
 import { withDeadline, withSignal } from './bounded.js';
 
-/** Systems Mapping counterpart of Admission's private course wire v1.
+/** Systems Mapping counterpart of Admission's private course wire v2.
  * Admission gives each application its own member IDs and roster cursors. */
 export const COURSE_APP = 'systems-mapping' as const;
 
@@ -15,6 +15,8 @@ export interface CourseAccess {
   displayNameSource: 'verified_profile' | 'unavailable';
   participant: boolean;
   owner: boolean;
+  guestInstructor: boolean;
+  capabilities: { instructorPanel: boolean; rosterRead: boolean; promptRead: boolean; promptWrite: boolean };
   startsAt: string;
   checkedAt: string;
   expiresAt: string;
@@ -22,8 +24,8 @@ export interface CourseAccess {
 }
 
 export interface AdmissionCourseResolver {
-  resolveCourseAccess?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
-  listCourseRoster?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit: number; cursor?: string }): Promise<unknown>;
+  resolveCourseAccessV2?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
+  listCourseRosterV2?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit: number; cursor?: string }): Promise<unknown>;
 }
 
 export interface CourseAccessEnv {
@@ -44,7 +46,7 @@ const classIdPattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const memberIdPattern = /^systems-mapping-member-v1-[0-9a-f]{64}$/;
 const subjectPattern = /^cail-[0-9a-f]{32}$/;
 const failureCodes = new Set(['invalid', 'not_admitted', 'not_enrolled', 'scheduled', 'expired', 'revoked', 'not_owner', 'cursor_invalid', 'stale_cursor']);
-const accessFields = ['ok', 'classId', 'className', 'term', 'section', 'memberId', 'displayName', 'displayNameSource', 'participant', 'owner', 'startsAt', 'checkedAt', 'expiresAt', 'revision'];
+const accessFields = ['ok', 'classId', 'className', 'term', 'section', 'memberId', 'displayName', 'displayNameSource', 'participant', 'owner', 'guestInstructor', 'capabilities', 'startsAt', 'checkedAt', 'expiresAt', 'revision'];
 
 export const validCourseId = (value: unknown): value is string =>
   typeof value === 'string' && value === value.trim() && classIdPattern.test(value) && value !== 'search';
@@ -73,7 +75,10 @@ function validReceipt(value: unknown, classId: string, now: number): value is Co
     && typeof value.memberId === 'string' && value.memberId === value.memberId.trim() && memberIdPattern.test(value.memberId)
     && ((value.displayName === null && value.displayNameSource === 'unavailable')
       || (boundedText(value.displayName, 160) && value.displayNameSource === 'verified_profile'))
-    && typeof value.participant === 'boolean' && typeof value.owner === 'boolean' && (value.participant || value.owner)
+    && typeof value.participant === 'boolean' && typeof value.owner === 'boolean' && typeof value.guestInstructor === 'boolean' && (value.participant || value.owner || value.guestInstructor)
+    && exactFields(value.capabilities, ['instructorPanel', 'rosterRead', 'promptRead', 'promptWrite'])
+    && Object.values(value.capabilities).every(flag => flag === (value.owner || value.guestInstructor))
+    && (!value.guestInstructor || (!value.owner && !value.participant))
     && canonicalDate(value.startsAt) && canonicalDate(value.checkedAt) && canonicalDate(value.expiresAt)
     && Date.parse(value.checkedAt) <= now + 5000 && now - Date.parse(value.checkedAt) < 30000
     && Date.parse(value.expiresAt) > now && Date.parse(value.checkedAt) < Date.parse(value.expiresAt)
@@ -106,13 +111,13 @@ export interface CourseStudent {
 }
 
 export async function courseRoster(env: CourseAccessEnv, subject: string, course: CourseAccess, cursor: string | undefined, signal?: AbortSignal): Promise<{ participants: CourseStudent[]; nextCursor: string | null }> {
-  if (!course.owner) throw new CourseAccessError(403, 'not_owner');
+  if (!course.capabilities.rosterRead) throw new CourseAccessError(403, 'not_owner');
   if (cursor !== undefined && !/^[A-Za-z0-9_-]{1,2048}$/.test(cursor)) throw new CourseAccessError(400, 'cursor_invalid');
   let value: unknown;
   try {
     value = await withDeadline(timed => withSignal(Promise.resolve().then(() => {
       if (timed.aborted) throw timed.reason;
-      return env.ADMISSION_RESOLVER!.listCourseRoster!({ subject, app: COURSE_APP, classId: course.classId, limit: 40, ...(cursor === undefined ? {} : { cursor }) });
+      return env.ADMISSION_RESOLVER!.listCourseRosterV2!({ subject, app: COURSE_APP, classId: course.classId, limit: 40, ...(cursor === undefined ? {} : { cursor }) });
     }), timed), signal, 5000);
   } catch { throw new CourseAccessError(503, 'course_access_unavailable'); }
   const denial = denialCode(value);
@@ -154,14 +159,14 @@ export async function resolveCourseAccess(env: CourseAccessEnv, subject: string,
     value = await withDeadline(timed => {
       if (timed.aborted) throw timed.reason;
       const resolver = env.ADMISSION_RESOLVER;
-      if (!resolver || !resolver.resolveCourseAccess) throw new Error('resolver unavailable');
+      if (!resolver || !resolver.resolveCourseAccessV2) throw new Error('resolver unavailable');
       // Cloudflare exposes callable RPC methods as proxies, whose typeof may
       // be "object". Invoking inside the bounded thunk validates callability.
       // The thunk keeps missing methods, synchronous throws and cancellation in
       // the same bounded failure path as an asynchronous authority outage.
       return withSignal(Promise.resolve().then(() => {
         if (timed.aborted) throw timed.reason;
-        return resolver.resolveCourseAccess!({ subject, app: COURSE_APP, classId });
+        return resolver.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId });
       }), timed);
     }, signal, 5000);
   } catch {

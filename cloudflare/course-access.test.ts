@@ -11,13 +11,13 @@ const receipt = (overrides: Record<string, unknown> = {}) => ({
   ok: true, classId, className: 'Synthetic course A', term: 'Fall 2026', section: '01',
   memberId: `systems-mapping-member-v1-${'a'.repeat(64)}`,
   displayName: null, displayNameSource: 'unavailable', participant: true, owner: false,
-  startsAt: iso(-60000), checkedAt: iso(0), expiresAt: iso(60000), revision: 1, ...overrides,
+  startsAt: iso(-60000), checkedAt: iso(0), expiresAt: iso(60000), revision: 1, guestInstructor: false, capabilities: { instructorPanel: Boolean(overrides.owner || overrides.guestInstructor), rosterRead: Boolean(overrides.owner || overrides.guestInstructor), promptRead: Boolean(overrides.owner || overrides.guestInstructor), promptWrite: Boolean(overrides.owner || overrides.guestInstructor) }, ...overrides,
 });
 
 function environment(...values: [unknown?]) {
   const value = values.length ? values[0] : receipt();
   const resolve = vi.fn(async () => value);
-  const env: CourseAccessEnv = { COURSE_ACCESS_ENABLED: 'true', COURSE_IDS: classId, ADMISSION_RESOLVER: { resolveCourseAccess: resolve } };
+  const env: CourseAccessEnv = { COURSE_ACCESS_ENABLED: 'true', COURSE_IDS: classId, ADMISSION_RESOLVER: { resolveCourseAccessV2: resolve } };
   return { env, resolve };
 }
 
@@ -30,7 +30,7 @@ test('fresh exact owner roster accepts verified names and rejects stale or forei
   const member = { memberId: course.memberId, displayName: 'Alice Student', displayNameSource: 'verified_profile', startsAt: iso(-60000), expiresAt: iso(60000) };
   const page = { ok: true, classId, checkedAt: iso(0), expiresAt: iso(60000), revision: 1, participants: [member], nextCursor: null };
   const roster = vi.fn(async () => page);
-  env.ADMISSION_RESOLVER!.listCourseRoster = roster;
+  env.ADMISSION_RESOLVER!.listCourseRosterV2 = roster;
   await expect(courseRoster(env, subject, course, undefined)).resolves.toEqual({ participants: [member], nextCursor: null });
   expect(roster).toHaveBeenCalledWith({ subject, app: COURSE_APP, classId, limit: 40 });
   for (const invalid of [
@@ -42,13 +42,13 @@ test('fresh exact owner roster accepts verified names and rejects stale or forei
     roster.mockResolvedValueOnce(invalid);
     await expect(courseRoster(env, subject, course, undefined)).rejects.toMatchObject({ status: 503 });
   }
-  await expect(courseRoster(env, subject, { ...course, owner: false }, undefined)).rejects.toMatchObject({ status: 403 });
+  await expect(courseRoster(env, subject, { ...course, owner: false, capabilities: { ...course.capabilities, rosterRead: false } }, undefined)).rejects.toMatchObject({ status: 403 });
 });
 
 test('a stalled roster call settles at its deadline', async () => {
   const { env } = environment(receipt({ owner: true }));
   const course = await resolveCourseAccess(env, subject, classId);
-  env.ADMISSION_RESOLVER!.listCourseRoster = () => new Promise(() => {});
+  env.ADMISSION_RESOLVER!.listCourseRosterV2 = () => new Promise(() => {});
   const result = expect(courseRoster(env, subject, course, undefined)).rejects.toMatchObject({ status: 503 });
   await vi.advanceTimersByTimeAsync(5000);
   await result;
@@ -219,7 +219,7 @@ test('a global administrator or display name cannot replace current course owner
   const { env } = environment(receipt({ displayName: 'Maria', displayNameSource: 'verified_profile' }));
   const result = await resolveCourseAccess({ ...env, admin: true } as CourseAccessEnv, subject, classId);
   expect(result.owner).toBe(false);
-  env.ADMISSION_RESOLVER!.resolveCourseAccess = async () => ({ ok: false, code: 'not_enrolled', retryable: false });
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2 = async () => ({ ok: false, code: 'not_enrolled', retryable: false });
   await expect(resolveCourseAccess({ ...env, admin: true } as CourseAccessEnv, subject, classId)).rejects.toMatchObject({ status: 403 });
 });
 
@@ -294,4 +294,18 @@ test('unknown errors and malformed codes never expose diagnostics', async () => 
       error: 'Course access is temporarily unavailable. Try again shortly.', details: { code: 'course_access_unavailable' },
     });
   }
+});
+
+
+test('guest instructors receive explicit capabilities without ownership or student enrollment', async () => {
+  const value = receipt({ participant: false, owner: false, guestInstructor: true });
+  const { env, resolve } = environment(value);
+  await expect(resolveCourseAccess(env, subject, classId)).resolves.toMatchObject({ guestInstructor: true, owner: false, participant: false, capabilities: { promptWrite: true } });
+  resolve.mockResolvedValueOnce({ ok: false, code: 'revoked', retryable: false });
+  await expect(resolveCourseAccess(env, subject, classId)).rejects.toMatchObject({ status: 403 });
+  for (const invalid of [
+    receipt({ capabilities: { instructorPanel: true, rosterRead: true, promptRead: true, promptWrite: true } }),
+    receipt({ guestInstructor: true, participant: true }),
+    { ...value, capabilities: { ...value.capabilities, promptWrite: 'true' } },
+  ]) await expect(resolveCourseAccess(environment(invalid).env, subject, classId)).rejects.toMatchObject({ status: 503 });
 });

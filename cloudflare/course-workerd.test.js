@@ -5,7 +5,7 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { createDefaultProject, serializeProject } from '../src/domain.js';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
-const sessions = Object.fromEntries(['alice', 'bob', 'admin', 'instructor'].map(name => [name, crypto.randomUUID() + '.' + 's'.repeat(43)]));
+const sessions = Object.fromEntries(['alice', 'bob', 'admin', 'instructor', 'guest'].map(name => [name, crypto.randomUUID() + '.' + 's'.repeat(43)]));
 let harness, worker, services;
 const request = (path, who = 'alice', options = {}) => worker.fetch(ORIGIN + path, { redirect: 'manual', ...options, headers: { cookie: `__Host-systems-mapping-session=${sessions[who] || ''}`, origin: ORIGIN, ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
 const control = value => services.fetch('https://fixtures.test/control', { method: 'POST', body: JSON.stringify(value) });
@@ -14,12 +14,12 @@ const newProject = () => { const project = createDefaultProject(); project.id = 
 beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
-  for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333'], ['instructor', 'cail-44444444444444444444444444444444']]) tokens[name] = {
+  for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333'], ['instructor', 'cail-44444444444444444444444444444444'], ['guest', 'cail-55555555555555555555555555555555']]) tokens[name] = {
     subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   };
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mapping-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
-    vars: { PUBLIC_ORIGIN: ORIGIN, LOGIN_URL: '/auth/start', COURSE_ID: 'test-course', COURSE_ACCESS_ENABLED: 'true', COURSE_IDS: 'synthetic-course-a,synthetic-course-b', RELEASE: 'test-release', GATEWAY_MODEL: 'glm-5.3-flash', GUIDANCE_CONCURRENCY: '8', CAIL_IDENTITY_JWKS: issuer.jwksJson },
+    vars: { PUBLIC_ORIGIN: ORIGIN, LOGIN_URL: '/auth/start', COURSE_ID: 'test-course', COURSE_ACCESS_ENABLED: 'true', COURSE_IDS: 'synthetic-course-a,synthetic-course-b,cail-teaching-tools-demo', RELEASE: 'test-release', GATEWAY_MODEL: 'glm-5.3-flash', GUIDANCE_CONCURRENCY: '8', CAIL_IDENTITY_JWKS: issuer.jwksJson },
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-fixture' }],
@@ -224,4 +224,27 @@ test('submitted revision metrics require current course ownership and ignore sav
   expect((await scoped('/api/cloud/projects/revision-test/submitted-revisions')).status).toBe(403);
   expect((await scoped('/api/cloud/course-students')).status).toBe(403);
   await control({courseDenied:true}); expect((await submit(4)).status).toBe(403);
+});
+
+
+test('guest instructor can inspect and publish demo guidance while other courses remain private', async () => {
+  const demo = 'cail-teaching-tools-demo';
+  const account = await scoped('/api/cloud/account', 'guest', demo);
+  expect(account.status).toBe(200);
+  expect((await account.json()).account).toMatchObject({ role: 'instructor', course: { guestInstructor: true } });
+  expect((await scoped('/api/teacher/profiles', 'guest', demo)).status).toBe(200);
+  const preview = await scoped('/api/teacher/prompt-preview?configKind=preflight&scale=micro', 'guest', demo);
+  expect(preview.status).toBe(200);
+  expect((await preview.json()).basePrompt.length).toBeGreaterThan(100);
+  const demoRoster = await scoped('/api/cloud/course-students', 'guest', demo);
+  expect(demoRoster.status).toBe(200);
+  expect((await demoRoster.json()).demonstrationStudents[0]).toMatchObject({ demonstration: true, firstSeen: null, displayName: 'Example student' });
+  expect((await savePrompt('Use the synthetic demo.', 0, 'guest', demo)).status).toBe(200);
+  expect((await savePrompt('Conflicting draft', 0, 'guest', demo)).status).toBe(409);
+  const versions = await (await scoped(promptPath + '/history', 'guest', demo)).json();
+  expect(versions.history[0]).toMatchObject({ revision: 1, amendment: 'Use the synthetic demo.' });
+  expect((await scoped(promptPath, 'guest', 'synthetic-course-a')).status).toBe(403);
+  expect((await request('/api/teacher/profiles', 'guest')).status).toBe(403);
+  await control({ courseDenied: true });
+  expect((await scoped(promptPath, 'guest', demo)).status).toBe(403);
 });
