@@ -92,7 +92,7 @@ test('instructor console stages work and feedback with normalized headings', asy
   await page.getByRole('heading', { name: 'Work', exact: true }).scrollIntoViewIfNeeded();
   await captureSourceRenderedScreenshot(page, testInfo, 'teacher selected work');
   await page.getByLabel('Feedback for the student', { exact: true }).fill('Check who confirms the appointment time');
-  await page.getByRole('button', { name: 'Add feedback and a question', exact: true }).click();
+  await page.getByRole('button', { name: 'Feedback and question', exact: true }).click();
   await expect(page.getByLabel('Question for the student', { exact: true })).toBeVisible();
   await page.getByLabel('Question for the student', { exact: true }).fill('Who calls the clinic?');
   await page.getByRole('heading', { name: 'Feedback', exact: true }).scrollIntoViewIfNeeded();
@@ -133,12 +133,12 @@ test('instructor edits Field Notes by scale and publishes the saved questions', 
   expect(await page.locator('.course-prompt-editor textarea:visible').count()).toBe(1);
   for (const [scale, question] of Object.entries(questions)) {
     await page.getByLabel('Scale', { exact: true }).selectOption(scale);
-    await page.getByLabel('Field Notes prompt').fill(question);
+    await page.getByRole('textbox', { name: 'Field Notes prompt', exact: true }).fill(question);
   }
   await page.getByLabel('Scale', { exact: true }).selectOption('micro');
-  await expect(page.getByLabel('Field Notes prompt')).toHaveValue(questions.micro);
+  await expect(page.getByRole('textbox', { name: 'Field Notes prompt', exact: true })).toHaveValue(questions.micro);
   await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeEnabled();
-  await page.getByText('Versions and change history', { exact: true }).click();
+  await page.getByText('Versions', { exact: true }).click();
   await page.getByLabel('Change note (optional)', { exact: true }).fill('Adapt the questions to the field site');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await expect(page.getByText('Draft revision 2 saved.')).toBeVisible();
@@ -150,8 +150,8 @@ test('instructor edits Field Notes by scale and publishes the saved questions', 
   await captureSourceRenderedScreenshot(page, testInfo, 'Field Notes instructor editor');
   await page.getByLabel('Change note (optional)', { exact: true }).fill('Publish the questions for this fieldwork cycle');
   await page.getByRole('button', { name: 'Publish changes', exact: true }).click();
-  await expect(page.getByText('Changes published. Students will see the updated prompts.')).toBeVisible();
-  await expect(page.getByLabel('Field Notes prompt')).toHaveAttribute('readonly', '');
+  await expect(page.getByText('Published. Students will see the updated prompts.')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Field Notes prompt', exact: true })).toHaveAttribute('readonly', '');
 });
 
 test('lesson customization opens an editable copy and publishes directly from the prompt editor', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
@@ -205,7 +205,7 @@ test('lesson customization opens an editable copy and publishes directly from th
   await page.keyboard.press('Escape');
   await expect(account).toBeFocused();
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).not.toBeVisible();
-  await expect(page.getByLabel('Field Notes prompt')).toHaveAttribute('readonly', '');
+  await expect(page.getByRole('textbox', { name: 'Field Notes prompt', exact: true })).toHaveAttribute('readonly', '');
   await expect(page.getByLabel('Draft name')).toHaveCount(0);
   await expect(page.getByLabel('Version', { exact: true })).not.toBeVisible();
   expect(await page.locator('.course-settings textarea:visible').count()).toBe(1);
@@ -214,7 +214,7 @@ test('lesson customization opens an editable copy and publishes directly from th
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Course customization published'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Course customization published');
   await page.getByRole('button', { name: 'Edit prompts', exact: true }).click();
-  const field = page.getByLabel('Field Notes prompt');
+  const field = page.getByRole('textbox', { name: 'Field Notes prompt', exact: true });
   await expect(field).not.toHaveAttribute('readonly', '');
   const question = 'Using our library case and this week’s reading, whose direct relationships are missing?\n\nPlan an observation and identify a link between the focal person’s everyday settings to investigate at Meso.';
   await field.fill(question);
@@ -226,7 +226,7 @@ test('lesson customization opens an editable copy and publishes directly from th
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Course customization preview'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Course customization preview');
   await page.getByRole('button', { name: 'Publish changes', exact: true }).click();
-  await expect(page.getByText('Changes published. Students will see the updated prompts.')).toBeVisible();
+  await expect(page.getByText('Published. Students will see the updated prompts.')).toBeVisible();
   await expect(field).toHaveAttribute('readonly', '');
   expect(writes.map(write => write.method)).toEqual(['CREATE', 'SAVE', 'PUBLISH']);
   expect(writes[1].profile.fieldNotesQuestions.micro).toBe(question);
