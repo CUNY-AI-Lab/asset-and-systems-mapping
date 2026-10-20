@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
 import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { fieldNotesQuestions } from '../shared/field-notes.js';
+import { FIELD_NOTES_CONTEXT_INSTRUCTION, validateFieldNotesContext } from '../shared/field-notes-context.js';
 import {
   containsRetiredSystemsLanguage,
   deterministicMemoReview,
@@ -142,6 +143,7 @@ const MEMO_REVIEW_LIMITS = Object.freeze({
 // Gateway adapter's compact instruction cannot drift from the validator.
 const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   STUDENT_JUDGMENT_INSTRUCTION,
+  FIELD_NOTES_CONTEXT_INSTRUCTION,
   'MEMO REVIEW JSON CONTRACT',
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
@@ -1165,7 +1167,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments', 'fieldNotes',
   ]);
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
@@ -1218,6 +1220,9 @@ function validatePreflightEvaluationRequest(value) {
   let studentJudgments;
   try { studentJudgments = validateStudentJudgments(value.studentJudgments); }
   catch { throw new HttpError(400, 'Student judgments are invalid.'); }
+  let fieldNotes;
+  try { fieldNotes = validateFieldNotesContext(value.fieldNotes, value.activeScale); }
+  catch { throw new HttpError(400, 'Previous-level Field Notes must be a bounded excerpt from the preceding scale.'); }
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
   return {
@@ -1227,6 +1232,7 @@ function validatePreflightEvaluationRequest(value) {
     inquiry,
     sourceRecord,
     studentJudgments,
+    fieldNotes,
     sourceMaterial,
     projectOverlay,
     customInstructions,
@@ -2890,6 +2896,10 @@ export function createSystemsMappingApp(options = {}) {
     if (!student) throw new HttpError(401, 'Student class access is required.');
     const body = await parseJsonBody(context, PREFLIGHT_SUBMISSION_BODY_LIMIT_BYTES);
     const input = validatePreflightEvaluationRequest(body);
+    const sourceMetadata = { ...input.sourceRecord, studentJudgments: input.studentJudgments, ...(input.fieldNotes ? { fieldNotes: input.fieldNotes } : {}) };
+    if (ollamaConfig && Buffer.byteLength(JSON.stringify(sourceMetadata), 'utf8') > OLLAMA_CLOUD_LIMITS.sourceMetadataBytes) {
+      throw new HttpError(413, 'The combined memo details, map choices and Field Notes excerpt exceed 16 KiB. Shorten the submitted metadata; your saved memo and notes are unchanged.');
+    }
     if (ollamaConfig && Buffer.byteLength(input.sourceMaterial, 'utf8') > OLLAMA_CLOUD_LIMITS.sourceTextBytes) {
       throw new HttpError(
         413,
@@ -2940,7 +2950,7 @@ export function createSystemsMappingApp(options = {}) {
             systemPrompt,
             activeScale: input.activeScale,
             inquiry: input.inquiry,
-            sourceMetadata: { ...input.sourceRecord, studentJudgments: input.studentJudgments },
+            sourceMetadata,
             sourceText: input.sourceMaterial,
             ...(input.activeScale === 'meso' || input.carriedNodes.length ? { carriedNodes: input.carriedNodes } : {}),
             ...(input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),

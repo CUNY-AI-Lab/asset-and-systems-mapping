@@ -6,6 +6,7 @@ import { GUIDANCE_REQUEST_TIMEOUT_MS } from './api.js';
 import { INSTITUTIONAL_SESSION_TIMEOUT_MS } from './studentSession.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
+import { fieldNotesExcerpt } from '../shared/field-notes-context.js';
 import {
   configFingerprint,
   createDefaultProject,
@@ -1678,6 +1679,9 @@ describe('Systems Mapping workflow', () => {
     ['exosphere', 'macrosphere', 'Continue to Macro-level', 'Identify broader conditions that affect several map items'],
   ])('completing %s preserves accumulated work and continues at %s', async (activeScale, expectedScale, cta, nextCopy) => {
     const project = makeRevisionProject(activeScale);
+    const note = `At ${activeScale}, ask what evidence supports the next map addition. This is a question, not a new memo fact.`;
+    project.reflection = note;
+    project.levelProgress[activeScale].reflection = note;
     const graphBefore = structuredClone(project.graph);
     const candidatesBefore = structuredClone(project.candidates);
     const releasedBefore = [...project.releasedScales];
@@ -1709,11 +1713,16 @@ describe('Systems Mapping workflow', () => {
       reflection: '',
     }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual([expectedScale]));
+    const payload = JSON.parse(fetchMock.mock.calls.find(([path]) => path === '/api/preflight/evaluations')[1].body);
+    expect(payload.fieldNotes).toEqual({ scale: activeScale, text: note, truncated: false });
+    expect(payload.sourceMaterial).toBe(project.submission.text);
+    expect(JSON.stringify(payload.sourceRecord)).not.toContain(note);
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
     const stored = storedProject();
     expect(stored.candidates).toEqual(candidatesBefore);
     expect(stored.completedScales).toEqual(expect.arrayContaining([activeScale]));
     expect(stored.graph).toEqual(graphBefore);
+    expect(stored.levelProgress[activeScale].reflection).toBe(note);
     expect(stored.releasedScales).toEqual([...releasedBefore, expectedScale]);
     expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
     const levelLabels = { micro: 'Micro-level', meso: 'Meso-level', exosphere: 'Exo-level', macrosphere: 'Macro-level' };
@@ -1721,6 +1730,42 @@ describe('Systems Mapping workflow', () => {
     expect(document.documentElement.scrollTop).toBe(0);
     expect(document.body.scrollTop).toBe(0);
     expect(screen.queryByRole('region', { name: `${levelLabels[expectedScale]} progression` })).not.toBeInTheDocument();
+    const handoff = openDetails('.field-notes-continuity');
+    expect(within(handoff).getByText(note)).toBeVisible();
+  });
+
+  it('preserves a full long note across a failed next review, reload, and back-navigation', async () => {
+    const project = makeRevisionProject('exosphere');
+    const note = '😀'.repeat(32_000);
+    project.reflection = note;
+    project.levelProgress.exosphere.reflection = note;
+    project.levelProgress.micro.reflection = 'Keep the earlier question reachable.';
+    preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance is temporarily unavailable. Try again later.' }, 503);
+    await resumeSavedProject(project);
+    expect(screen.getByText(/memo review receives an opening excerpt/)).toBeVisible();
+    fireEvent.click(workActions().getByRole('button', { name: 'Continue to Macro-level' }));
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeEnabled();
+    const calls = fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations');
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0][1].body).fieldNotes).toEqual(fieldNotesExcerpt('exosphere', note));
+    await waitFor(() => expect(storedProject().activeScale).toBe('macrosphere'));
+    const saved = storedProject();
+    expect(saved.levelProgress.exosphere.reflection).toBe(note);
+    expect(saved.graph).toEqual(project.graph);
+    const handoff = openDetails('.field-notes-continuity');
+    expect(within(handoff).getByText(/Only this opening excerpt accompanies guidance/)).toBeVisible();
+    cleanup();
+    await resumeSavedProject(parseProject(JSON.stringify(saved)));
+    openNotebookSection('review');
+    fireEvent.click(screen.getByText('Notes from other scales'));
+    expect(screen.getByText('Keep the earlier question reachable.')).toBeVisible();
+    expect(document.querySelector('.field-notes-archive').textContent.includes(note)).toBe(true);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'exosphere' } });
+    openNotebookSection('review');
+    expect(screen.getByRole('textbox', { name: /Field notes/ })).toHaveValue(note);
+    expect(screen.getByText(/memo review receives an opening excerpt/)).toBeVisible();
+    expect(storedProject().levelProgress.exosphere.reflection).toBe(note);
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations')).toHaveLength(1);
   });
 
   it('shows the Micro-level review without a redundant progression panel', async () => {

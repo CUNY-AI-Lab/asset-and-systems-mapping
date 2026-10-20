@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { COURSE_PROGRESSION_SCHEMA_VERSION } from '../shared/educator-resource-contract.js';
 import { createSystemsMappingApp } from './app.js';
-import { fingerprint, moduleSeeds } from './config.js';
-import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
+import { DEFAULT_TEACHING_PROFILE, fingerprint, moduleSeeds, teachingProfileFingerprint } from './config.js';
+import { DEFAULT_FIELD_NOTES_QUESTIONS, LEGACY_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
 const BOOTSTRAP_TOKEN = 'profile-test-bootstrap-token';
@@ -270,6 +270,30 @@ describe('teaching profiles', () => {
       SELECT revision FROM teaching_profiles WHERE id = 'systems-mapping-default'
     `).get().revision).toBe(2);
     expect(upgradeEvents()).toHaveLength(1);
+  });
+
+  it('migrates old default questions once while preserving custom questions, stage guidance, and history', () => {
+    const legacy = structuredClone(DEFAULT_TEACHING_PROFILE);
+    legacy.fieldNotesQuestions = { ...LEGACY_FIELD_NOTES_QUESTIONS, meso: 'What did the resident say about this linkage?' };
+    legacy.parts[0].stages['review-suggestions'].guidance = 'Instructor-authored review guidance.';
+    system.db.prepare("UPDATE teaching_profiles SET profile_json = ?, fingerprint = ? WHERE id = 'systems-mapping-default'")
+      .run(JSON.stringify(legacy), teachingProfileFingerprint(legacy));
+    const beforeEvents = system.db.prepare("SELECT * FROM teaching_profile_events WHERE profile_id = 'systems-mapping-default' ORDER BY id").all();
+    system.close();
+    system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
+    const read = () => system.db.prepare("SELECT revision, profile_json AS profileJson FROM teaching_profiles WHERE id = 'systems-mapping-default'").get();
+    expect(read().revision).toBe(2);
+    const migrated = JSON.parse(read().profileJson);
+    expect(migrated.fieldNotesQuestions).toEqual({ ...DEFAULT_FIELD_NOTES_QUESTIONS, meso: legacy.fieldNotesQuestions.meso });
+    expect(migrated.parts).toEqual(legacy.parts);
+    const events = system.db.prepare("SELECT * FROM teaching_profile_events WHERE profile_id = 'systems-mapping-default' ORDER BY id").all();
+    expect(events.slice(0, beforeEvents.length)).toEqual(beforeEvents);
+    expect(events).toHaveLength(beforeEvents.length + 1);
+    expect(JSON.parse(events.at(-1).profile_json)).toEqual(migrated);
+    system.close();
+    system = createSystemsMappingApp({ dbPath: databasePath, teacherBootstrapToken: BOOTSTRAP_TOKEN });
+    expect(read().revision).toBe(2);
+    expect(system.db.prepare("SELECT count(*) AS count FROM teaching_profile_events WHERE profile_id = 'systems-mapping-default'").get().count).toBe(events.length);
   });
 
   it('updates untouched prompt defaults without overwriting instructor-authored module content', () => {

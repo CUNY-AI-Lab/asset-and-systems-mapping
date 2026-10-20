@@ -21,6 +21,7 @@ import MapTools from './MapTools.jsx';
 import ProjectOverview from './ProjectOverview.jsx';
 import ReflectionEntry from './ReflectionEntry.jsx';
 import { hasFieldNotes } from '../shared/field-notes.js';
+import { previousFieldNotes } from '../shared/field-notes-context.js';
 import { indexMapConnections, isLiveMapItem } from './mapInsights.js';
 import { projectRectangleToRing, rectangleFitsRing, resolveRingConstrainedCollisions } from './ringCollisionLayout.js';
 import { measureMapText, wrapMapText } from './mapTextGeometry.js';
@@ -422,6 +423,7 @@ function carriedReviewConnections(project) {
 export function preflightEvaluationPayload(project) {
   const carriedNodes = carriedReviewNodes(project);
   const carriedConnections = carriedReviewConnections(project);
+  const fieldNotes = previousFieldNotes(project);
   return {
     projectMetadata: projectMetadataForReview(project),
     activeScale: project.activeScale,
@@ -431,6 +433,7 @@ export function preflightEvaluationPayload(project) {
     sourceMaterial: project.submission.text,
     projectOverlay: projectOverlayForEvaluation(project.configs.preflight),
     studentJudgments: studentJudgments(project),
+    ...(fieldNotes ? { fieldNotes } : {}),
     ...(project.activeScale === 'meso' || carriedNodes.length ? { carriedNodes } : {}),
     ...(carriedConnections.length ? { carriedConnections } : {}),
   };
@@ -1311,8 +1314,15 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
+  const fieldNotes = previousFieldNotes(project);
   return <section className="suggestions-review" aria-label="Memo review">
     {!review && <div className="work-panel__title"><h2>{project.stage >= 2 ? 'Suggestions' : 'Memo review'}</h2><p className="lede">{REVIEW_LEDES[project.activeScale]}</p></div>}
+    {fieldNotes && <details className="field-notes-continuity">
+      <summary>From your {SCALES[fieldNotes.scale].label} Field Notes</summary>
+      <p>These questions accompany this level’s memo review. They are separate from the memo’s evidence.</p>
+      <blockquote>{fieldNotes.text}</blockquote>
+      {fieldNotes.truncated && <p>Only this opening excerpt accompanies guidance. Your full note is saved under Field Notes → Notes from other scales.</p>}
+    </details>}
     <div className="review-intro">
       {!review && <Action data-next-action="read-memo" variant={requiresLevelModel(project) ? "primary" : "ghost"} disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Reading memo…' : reviewFailure ? 'Try again' : 'Generate guidance'}</Action>}
     </div>
