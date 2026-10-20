@@ -40,6 +40,13 @@ async function openTeacherFixture(page, submissions) {
   await expect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
 }
 
+// Playwright 1.62's WebKit screenshot synchronization injects an inert `body {}`
+// stylesheet even with animations allowed. CSP correctly blocks it once per
+// capture. Match that exact count; every additional application error still fails.
+function screenshotWarnings(browserName, captures) {
+  return browserName === 'webkit' ? Array(captures).fill("Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.") : [];
+}
+
 async function assertFittedLayout(page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(overflow).toBe(false);
@@ -50,7 +57,7 @@ async function assertFittedLayout(page) {
   expect(new Set(headers.map((header) => JSON.stringify(header))).size).toBe(1);
 }
 
-test('teacher console empty queue is compact and returns to the application', async ({ page, makeAxeBuilder }, testInfo) => {
+test('teacher console empty queue is compact and returns to the application', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -69,10 +76,10 @@ test('teacher console empty queue is compact and returns to the application', as
   await captureSourceRenderedScreenshot(page, testInfo, 'teacher empty queue dark');
   await page.getByRole('button', { name: 'Back to class access', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Class code' })).toBeVisible();
-  expect(errors).toEqual([]);
+  expect(errors).toEqual(screenshotWarnings(browserName, 2));
 });
 
-test('teacher console stages work and feedback with normalized headings', async ({ page, makeAxeBuilder }, testInfo) => {
+test('teacher console stages work and feedback with normalized headings', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -94,7 +101,7 @@ test('teacher console stages work and feedback with normalized headings', async 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'teacher selected feedback dark'));
   await captureSourceRenderedScreenshot(page, testInfo, 'teacher selected feedback dark');
-  expect(errors).toEqual([]);
+  expect(errors).toEqual(screenshotWarnings(browserName, 3));
 });
 
 test('instructor edits Field Notes by scale and publishes the saved questions', async ({ page, makeAxeBuilder }, testInfo) => {
