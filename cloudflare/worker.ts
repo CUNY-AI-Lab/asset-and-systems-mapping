@@ -17,13 +17,14 @@ import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from 
 import { GuidanceJobs } from './guidance-jobs.js';
 import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
+import { handleBugReport, type BugReportService } from './bug-reports';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 };
-type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'>;
+type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'> & { BUG_REPORTS?: BugReportService };
 const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
   ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
 }, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
@@ -324,6 +325,15 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
         else {
           let principal = await authorize(request, env);
+          // A report about course access must not depend on that course's grant.
+          // Keep the ordinary full SSO check and existing per-account limiter.
+          if (url.pathname === '/api/bug-reports' || url.pathname === '/api/bug-reports/session') {
+            const limit = await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal instanceof Response ? null : principal.subject) });
+            response = !limit.success ? failure('Please wait a moment and try again.', 429, 60)
+              : principal instanceof Response ? principal
+              : await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, subject: principal.subject, release: env.RELEASE, service: env.BUG_REPORTS });
+            return securedResponse(response, correlation.request_id);
+          }
           const selectedCourse = request.headers.get('x-systems-course');
           if (!(principal instanceof Response) && request.headers.has('x-systems-course')) {
             try {

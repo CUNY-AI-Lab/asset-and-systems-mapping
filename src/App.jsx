@@ -1000,7 +1000,7 @@ function AccessFrame({ children, onTeacher, dark, onToggleTheme }) {
     <header className="access-header">
       <LabLink />
       <strong>Systems Mapping</strong>
-      <div className="access-header__actions"><ThemeToggle dark={dark} onToggle={onToggleTheme} showLabel />{onTeacher && <button type="button" className="access-header__teacher" onClick={onTeacher}>Teacher Console</button>}</div>
+      <div className="access-header__actions"><ThemeToggle dark={dark} onToggle={onToggleTheme} showLabel />{onTeacher && <button type="button" className="access-header__teacher" onClick={onTeacher}>Instructor Console</button>}</div>
     </header>
     {children}
   </div>;
@@ -5384,7 +5384,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const finishPasswordReset = useCallback(() => {
     setPasswordResetToken(null);
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-    toast('Passphrase updated. Sign in to Teacher Console.', 'success');
+    toast('Passphrase updated. Sign in to Instructor Console.', 'success');
   }, [toast]);
 
   const stageAnnotationDraft = useCallback((annotationId, text) => {
@@ -7190,11 +7190,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 
   if (teacherOpen) return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Teacher Console home"><strong>Systems Mapping</strong><small>Teacher Console</small></a></div>
+      <div className="brand"><LabLink /><a href="#workspace" className="brand__home" aria-label="Systems Mapping Instructor Console home"><strong>Systems Mapping</strong><small>Instructor Console</small></a></div>
       <div className="header-actions"><ThemeToggle dark={dark} onToggle={toggleTheme} /><button className="text-button" type="button" onClick={() => workspaceStarted ? setTeacherOpen(false) : onAccountDashboard ? void onAccountDashboard() : setTeacherOpen(false)}><Icon name="back" />{workspaceStarted ? 'Back to project' : onAccountDashboard ? 'Projects' : 'Back to class access'}</button></div>
     </header>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className="workspace workspace--teacher">
-      <Suspense fallback={<p role="status">Loading Teacher Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} institutionalMode={Boolean(onAccountDashboard)} /></Suspense>
+      <Suspense fallback={<p role="status">Loading Instructor Console…</p>}><TeacherDashboard resetToken={passwordResetToken} onResetComplete={finishPasswordReset} onConfigurationChanged={refreshAfterTeacherChange} institutionalMode={Boolean(onAccountDashboard)} /></Suspense>
     </main>
   </div>;
 

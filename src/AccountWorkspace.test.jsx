@@ -93,7 +93,7 @@ describe('Account dashboard controls', () => {
     fireEvent.click(summary);
     await waitFor(() => expect(summary.parentElement).toHaveAttribute('open'));
     expect(screen.getByText('Model usage approximately 90% remaining')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Teacher Console' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Instructor Console' }));
     await screen.findByRole('heading', { name: 'Teacher workspace' });
   });
 
@@ -141,7 +141,7 @@ describe('Account dashboard controls', () => {
     render(<AccountWorkspace />);
     await screen.findByRole('heading', { name: 'Projects' });
     expect(screen.queryByText('Course guidance', { selector: 'summary' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Teacher Console' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Instructor Console' })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([path]) => path === '/api/cloud/course-prompt')).toBe(false);
   });
 

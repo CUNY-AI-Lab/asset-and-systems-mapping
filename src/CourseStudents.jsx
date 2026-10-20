@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { apiRequest } from './api.js';
 import { userFacingError } from './userFacingError.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
+import { useVisibleRefresh } from './useVisibleRefresh.js';
 
 const levelNames = { micro: 'Micro', meso: 'Meso', exosphere: 'Exo', macrosphere: 'Macro' };
 
-export default function CourseStudents() {
+export default function CourseStudents({ active = true }) {
   const [students, setStudents] = useState([]);
   const [demonstrations, setDemonstrations] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
@@ -29,10 +30,12 @@ export default function CourseStudents() {
       setError(userFacingError(failure, 'Student progress is temporarily unavailable. Refresh to check again.'));
     } finally { if (current === generation.current) setBusy(false); }
   };
-  useEffect(() => { load(); return () => { generation.current++; }; }, []);
+  useEffect(() => { if (active) void load(); return () => { generation.current++; }; }, [active]);
+  useVisibleRefresh(() => { if (!busy) void load(); }, active);
   return <section className="course-students" aria-labelledby="course-students-title">
     <div className="review-column-heading"><h2 id="course-students-title">Students and saved progress</h2><button type="button" className="button button--ghost" disabled={busy} onClick={() => load()}>Refresh students</button></div>
     <p>Students appear after signing into Systems Mapping. Progress reflects their saved course maps. Submitted revision counts begin when students use Submit revision in Progress; autosaves and generation attempts stay separate.</p>
+    <p className="field__hint">Updates every 30 seconds while open. Private maps and Field Notes are not shown here.</p>
     {error && <p role="alert">{error}</p>}
     {busy && <p role="status">Loading student progress…</p>}
     {!busy && !error && !students.length && !demonstrations.length && <p>Students will appear here after their first sign-in.</p>}

@@ -4,6 +4,7 @@ import { ApiError, apiRequest, resetTeacherPassword } from './api.js';
 import { userFacingError } from './userFacingError.js';
 import { institutionalLoginUrl, projectStorage } from './accountStorage.js';
 import CourseStudents from './CourseStudents.jsx';
+import { useVisibleRefresh } from './useVisibleRefresh.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { SYSTEMS_MAPPING_LEVELS, systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 import { fieldNotesQuestions, FIELD_NOTES_QUESTION_LIMIT } from '../shared/field-notes.js';
@@ -287,10 +288,10 @@ function AccountAccess({ teacherAccess, onAuthenticated }) {
     accessTabRefs.current.get(nextMode)?.focus();
   };
   return <div className="teacher-access">
-    <p className="eyebrow">Teacher Console</p>
-    <h1>{mode === 'login' ? 'Sign in to Teacher Console' : 'Set up teacher account'}</h1>
+    <p className="eyebrow">Instructor Console</p>
+    <h1>{mode === 'login' ? 'Sign in to Instructor Console' : 'Set up teacher account'}</h1>
     <p className="lede">Enter the account ID provided by your school or program.</p>
-    <div className="model-switch teacher-access-switch" role="tablist" aria-label="Teacher Console action">
+    <div className="model-switch teacher-access-switch" role="tablist" aria-label="Instructor Console action">
       <button ref={(node) => node ? accessTabRefs.current.set('login', node) : accessTabRefs.current.delete('login')} id="teacher-access-tab-login" aria-controls="teacher-access-panel" type="button" role="tab" aria-selected={mode === 'login'} tabIndex={mode === 'login' ? 0 : -1} className={mode === 'login' ? 'is-active' : ''} onKeyDown={(event) => moveMode(event, 'login')} onClick={() => setMode('login')}>Sign in</button>
       <button ref={(node) => node ? accessTabRefs.current.set('claim', node) : accessTabRefs.current.delete('claim')} id="teacher-access-tab-claim" aria-controls="teacher-access-panel" type="button" role="tab" aria-selected={mode === 'claim'} tabIndex={mode === 'claim' ? 0 : -1} className={mode === 'claim' ? 'is-active' : ''} disabled={!teacherAccess.claimEnabled} onKeyDown={(event) => moveMode(event, 'claim')} onClick={() => setMode('claim')}>Set up account</button>
     </div>
@@ -330,7 +331,7 @@ function PasswordReset({ token, onComplete }) {
     }
   };
   return <div className="teacher-access">
-    <p className="eyebrow">Teacher Console</p>
+    <p className="eyebrow">Instructor Console</p>
     <h1>Choose new passphrase</h1>
     <p className="lede">This password reset link can be used once. After you save the new passphrase, sign in with your teacher account ID.</p>
     <form className="access-form" onSubmit={submit}>
@@ -342,7 +343,7 @@ function PasswordReset({ token, onComplete }) {
   </div>;
 }
 
-function ReviewSubmissions() {
+function ReviewSubmissions({ active = true }) {
   const [submissions, setSubmissions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -358,12 +359,22 @@ function ReviewSubmissions() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(null);
+  const queueGeneration = useRef(0);
+  const detailGeneration = useRef(0);
+  const feedbackPending = Boolean(decision || instructorAnnotation || focusedQuestion);
+  const feedbackPendingRef = useRef(feedbackPending);
+  feedbackPendingRef.current = feedbackPending;
 
-  const loadQueue = async (preferredId) => {
+  const loadQueue = async (preferredId, { automatic = false } = {}) => {
+    const generation = ++queueGeneration.current;
     setQueueLoading(true);
     setQueueError(null);
     try {
       const result = await apiRequest('/api/teacher/preflight-submissions?status=pending');
+      if (generation !== queueGeneration.current) return null;
+      // Feedback may start after an automatic request begins. Keep that draft
+      // and its selected work; authorization failures still clear remote data.
+      if (automatic && feedbackPendingRef.current) return null;
       const nextSubmissions = Array.isArray(result?.submissions) ? result.submissions : [];
       setSubmissions(nextSubmissions);
       const requestedId = preferredId === undefined ? selectedId : preferredId;
@@ -377,22 +388,30 @@ function ReviewSubmissions() {
       }
       return nextSubmissions;
     } catch (error) {
+      if (generation !== queueGeneration.current) return null;
+      detailGeneration.current++;
+      setSubmissions([]); setSelectedId(null); setDetail(null); setReviewHistory([]); setLastDecision(null); setDetailLoading(false); setDetailError(null);
       setQueueError(userFacingError(error, 'Submissions could not be loaded. Select Refresh to try again.'));
       return null;
     } finally {
-      setQueueLoading(false);
+      if (generation === queueGeneration.current) setQueueLoading(false);
     }
   };
 
-  useEffect(() => { loadQueue(null); }, []);
+  useEffect(() => {
+    if (active && !feedbackPending) void loadQueue(undefined, { automatic: true });
+    return () => { queueGeneration.current++; };
+  }, [active]);
+  useVisibleRefresh(() => { if (!queueLoading && !detailLoading && !busy) void loadQueue(undefined, { automatic: true }); }, active && !feedbackPending);
   useEffect(() => {
     if (!selectedId) return undefined;
     let current = true;
+    const generation = ++detailGeneration.current;
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
     apiRequest(`/api/teacher/preflight-submissions/${encodeURIComponent(selectedId)}`).then((result) => {
-      if (!current) return;
+      if (!current || generation !== detailGeneration.current) return;
       setDetail(result.submission);
       setReviewHistory(Array.isArray(result.reviewEvents) ? result.reviewEvents : []);
       setDecision('');
@@ -401,9 +420,9 @@ function ReviewSubmissions() {
       setConflict(null);
       setMessage(null);
     }).catch((error) => {
-      if (current) setDetailError(userFacingError(error, 'This submission could not be loaded. Select Refresh, then open it again.'));
+      if (current && generation === detailGeneration.current) setDetailError(userFacingError(error, 'This submission could not be loaded. Select Refresh, then open it again.'));
     }).finally(() => {
-      if (current) setDetailLoading(false);
+      if (current && generation === detailGeneration.current) setDetailLoading(false);
     });
     return () => { current = false; };
   }, [selectedId]);
@@ -471,6 +490,7 @@ function ReviewSubmissions() {
     <div className={`teacher-review-grid${detail ? '' : ' teacher-review-grid--queue-only'}`}>
       <aside className="submission-queue" aria-labelledby="review-submissions-heading">
         <ReviewColumnHeading id="review-submissions-heading" actions={<button type="button" className="button button--ghost" disabled={queueLoading} onClick={() => loadQueue()}>{queueLoading ? 'Refreshing…' : 'Refresh'}</button>}>Submissions</ReviewColumnHeading>
+        {(submissions.length > 0 || feedbackPending) && <p className="field__hint">{feedbackPending ? 'Automatic refresh pauses while you draft feedback.' : 'Submitted reviews update every 30 seconds while this tab is open.'}</p>}
         {queueError && <p className="teacher-message teacher-message--error" role="alert">{queueError}</p>}
         {queueLoading && !submissions.length ? <p className="empty-message" role="status">Loading submissions…</p> : null}
         {!queueLoading && !submissions.length && !queueError ? <p className="empty-message">No submissions yet</p> : null}
@@ -549,7 +569,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
 
   useEffect(() => {
     setLoading(true);
-    loadCatalog().catch((error) => setMessage({ type: 'error', text: userFacingError(error, 'Course settings could not be loaded. Reopen the Teacher Console to try again.') })).finally(() => setLoading(false));
+    loadCatalog().catch((error) => setMessage({ type: 'error', text: userFacingError(error, 'Course settings could not be loaded. Reopen the Instructor Console to try again.') })).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -866,6 +886,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
   const [section, setSection] = useState('reviews');
   const [guidanceVisited, setGuidanceVisited] = useState(false);
   const [studentsVisited, setStudentsVisited] = useState(false);
+  const [studentsOpen, setStudentsOpen] = useState(false);
   const sectionTabRefs = useRef(new Map());
   const accountRef = useRef(null);
   useEffect(() => {
@@ -897,15 +918,15 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
     sectionTabRefs.current.get(next.id)?.focus();
   };
   return <div className={`teacher-dashboard${section === 'guidance' ? ' teacher-dashboard--settings' : ''}`}>
-    <PageHeading title="Teacher Console" actions={<details ref={accountRef} className="teacher-account"><summary>Account</summary><div><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div></details>} />
+    <PageHeading title="Instructor Console" actions={<details ref={accountRef} className="teacher-account"><summary>Account</summary><div><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div></details>} />
     {sessionError && <p className="teacher-message teacher-message--error" role="alert">{sessionError}</p>}
-    <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
+    <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Instructor Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}>
-      {institutionalMode && projectStorage().courseSelection?.kind === 'course' && <details className="course-progress-disclosure" onToggle={event => { if (event.currentTarget.open) setStudentsVisited(true); }}>
+      {institutionalMode && projectStorage().courseSelection?.kind === 'course' && <details className="course-progress-disclosure" onToggle={event => { setStudentsOpen(event.currentTarget.open); if (event.currentTarget.open) setStudentsVisited(true); }}>
         <summary>Students and saved progress</summary>
-        {studentsVisited && <CourseStudents />}
+        {studentsVisited && <CourseStudents active={section === 'reviews' && studentsOpen} />}
       </details>}
-      <ReviewSubmissions />
+      <ReviewSubmissions active={section === 'reviews'} />
     </div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
   </div>;
@@ -924,7 +945,7 @@ export default function TeacherDashboard({ onConfigurationChanged, resetToken = 
     return result.teacherAccess;
   };
   useEffect(() => {
-    Promise.all([refreshAccess(), apiRequest('/api/auth/me')]).then(([, result]) => setUser(result.user)).catch((error) => setFatal(userFacingError(error, 'The Teacher Console could not be opened. Reload this page to try again.'))).finally(() => setLoading(false));
+    Promise.all([refreshAccess(), apiRequest('/api/auth/me')]).then(([, result]) => setUser(result.user)).catch((error) => setFatal(userFacingError(error, 'The Instructor Console could not be opened. Reload this page to try again.'))).finally(() => setLoading(false));
   }, [institutionalMode]);
   const authenticated = (nextUser) => setUser(nextUser);
   const logout = async () => {
@@ -940,8 +961,8 @@ export default function TeacherDashboard({ onConfigurationChanged, resetToken = 
     catch (error) { setFatal(userFacingError(error, 'You are signed out, but the sign-in form could not be loaded. Reload this page to continue.')); }
   };
   if (resetToken && !institutionalMode) return <PasswordReset token={resetToken} onComplete={onResetComplete} />;
-  if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Teacher Console…</p></div>;
-  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Teacher Console unavailable</h1><p className="lede">Check the course server, then reopen the Teacher Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
+  if (loading) return <div className="teacher-access"><p className="empty-message">Opening the Instructor Console…</p></div>;
+  if (fatal) return <div className="teacher-access"><p className="eyebrow">Server connection required</p><h1>Instructor Console unavailable</h1><p className="lede">Check the course server, then reopen the Instructor Console.</p><p className="teacher-message teacher-message--error" role="alert">{fatal}</p></div>;
   if (!user && institutionalMode) return <div className="teacher-access"><h1>Instructor access required</h1><a className="button" href={institutionalLoginUrl()}>CUNY Login</a></div>;
   return user ? <AuthenticatedDashboard user={user} onLogout={logout} onConfigurationChanged={onConfigurationChanged} institutionalMode={institutionalMode} sessionError={sessionError} /> : <AccountAccess teacherAccess={teacherAccess} onAuthenticated={authenticated} />;
 }

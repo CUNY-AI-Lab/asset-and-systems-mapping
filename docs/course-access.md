@@ -89,5 +89,5 @@ Course guidance history compares an earlier published revision with the
 current revision. Restore copies the earlier text into a draft, and saving
 creates a new revision with a change note and concurrency check. System prompt
 inspection shows read-only base and effective prompts and their fingerprints.
-The Teacher Console's course-settings drafts remain scoped to the selected
+The Instructor Console's course-settings drafts remain scoped to the selected
 course's Durable Object.

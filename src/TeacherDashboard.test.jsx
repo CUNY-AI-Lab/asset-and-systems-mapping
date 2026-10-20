@@ -1,6 +1,6 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import TeacherDashboard from './TeacherDashboard.jsx';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
@@ -220,7 +220,7 @@ async function openPromptCustomization(fetchMock) {
 async function renderAuthenticated(fetchMock = authenticatedFetch()) {
   vi.stubGlobal('fetch', fetchMock);
   render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
-  expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Instructor Console' })).toBeVisible();
   return fetchMock;
 }
 
@@ -263,7 +263,7 @@ describe('TeacherDashboard', () => {
       : working(path, options));
     vi.stubGlobal('fetch', request);
     render(<TeacherDashboard institutionalMode onConfigurationChanged={vi.fn()} />);
-    await screen.findByRole('heading', { name: 'Teacher Console' });
+    await screen.findByRole('heading', { name: 'Instructor Console' });
     const roster = screen.getByText('Students and saved progress', { selector: 'summary' });
     expect(roster.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
@@ -279,7 +279,7 @@ describe('TeacherDashboard', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     expect(screen.getByText('Students will appear here after their first sign-in.')).not.toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
-    expect(rosterReads()).toHaveLength(1);
+    await waitFor(() => expect(rosterReads()).toHaveLength(2));
   });
 
   it.each(['server response', 'network failure', 'invalid response'])('keeps startup diagnostics out of the visible %s error', async failure => {
@@ -289,7 +289,7 @@ describe('TeacherDashboard', () => {
       return jsonResponse({ error: 'DATABASE_FAILED: private database diagnostic', details: { code: 'database_failed' } }, 503);
     }));
     render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
-    expect(await screen.findByRole('alert')).toHaveTextContent('The Teacher Console could not be opened. Reload this page to try again.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('The Instructor Console could not be opened. Reload this page to try again.');
     expect(document.body).not.toHaveTextContent(/DATABASE_FAILED|private\.internal|private database|ECONNRESET/);
   });
 
@@ -309,7 +309,7 @@ describe('TeacherDashboard', () => {
       ? Promise.resolve(jsonResponse({ error: 'course_settings_failure: private database detail' }, 503))
       : working(path, options)));
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Course settings could not be loaded. Reopen the Teacher Console to try again.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Course settings could not be loaded. Reopen the Instructor Console to try again.');
     expect(document.body).not.toHaveTextContent(/course_settings_failure|private database/);
   });
 
@@ -322,7 +322,7 @@ describe('TeacherDashboard', () => {
     fireEvent.click(screen.getByText('Account', { selector: 'summary' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Sign-out could not be confirmed. Try signing out again before leaving this device.');
-    expect(screen.getByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Instructor Console' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
     expect(document.body).not.toHaveTextContent(/logout_transport_failure|private session/);
   });
@@ -492,13 +492,13 @@ describe('TeacherDashboard', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
 
-    expect(await screen.findByRole('heading', { name: 'Sign in to Teacher Console' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Sign in to Instructor Console' })).toBeVisible();
     expect(screen.queryByText('Maria Mavrides Calderon')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Teacher account ID'), { target: { value: '  local-teacher-id  ' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'a locally chosen phrase' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Instructor Console' })).toBeVisible();
     expect(loginBody).toEqual({ userId: 'local-teacher-id', passphrase: 'a locally chosen phrase' });
     expect(await screen.findByText('No submissions yet')).toBeVisible();
     expect(screen.queryByText(/send your work here|submit your map for review/i)).not.toBeInTheDocument();
@@ -521,7 +521,7 @@ describe('TeacherDashboard', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
 
-    expect(await screen.findByRole('heading', { name: 'Sign in to Teacher Console' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Sign in to Instructor Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Set up account' }));
     fireEvent.change(screen.getByLabelText('Teacher account ID'), { target: { value: 'local-teacher-id' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'another local phrase' } });
@@ -532,8 +532,64 @@ describe('TeacherDashboard', () => {
 
     fireEvent.change(screen.getByLabelText('One-time setup code'), { target: { value: 'operator-only-bootstrap-token' } });
     fireEvent.click(screen.getByRole('button', { name: 'Set up account' }));
-    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Instructor Console' })).toBeVisible();
     expect(claimBody).toEqual({ userId: 'local-teacher-id', passphrase: 'another local phrase', bootstrapToken: 'operator-only-bootstrap-token' });
+  });
+
+  it('refreshes the visible review queue on return, preserves feedback drafts and clears unauthorized work', async () => {
+    const working = authenticatedFetch();
+    let denied = false;
+    const fetchMock = vi.fn((path, options) => denied && path === '/api/teacher/preflight-submissions?status=pending'
+      ? Promise.resolve(jsonResponse({ error: 'Instructor access changed' }, 403)) : working(path, options));
+    await renderAuthenticated(fetchMock); await waitForSubmission();
+    const reads = () => fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/preflight-submissions?status=pending').length;
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(reads()).toBe(2));
+    const feedback = screen.getByLabelText('Feedback for the student');
+    fireEvent.change(feedback, { target: { value: 'Preserve this instructor draft.' } });
+    fireEvent(window, new Event('focus'));
+    expect(reads()).toBe(2);
+    expect(feedback).toHaveValue('Preserve this instructor draft.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    await screen.findByLabelText('Field Notes prompt');
+    fireEvent(window, new Event('focus'));
+    expect(reads()).toBe(2);
+    fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
+    expect(feedback).toHaveValue('Preserve this instructor draft.');
+    fireEvent.change(feedback, { target: { value: '' } });
+    denied = true;
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('This account cannot use this feature'));
+    expect(screen.queryByText(submissionDetail.sourceMaterial)).not.toBeInTheDocument();
+    expect(screen.queryByText(submissionDetail.studentAnnotation)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Work', exact: true })).not.toBeInTheDocument();
+  });
+
+  it.each([200, 403])('protects a draft typed during an automatic queue read while honoring a later %s response', async (status) => {
+    const working = authenticatedFetch();
+    let deferQueue = false;
+    let resolveRefresh;
+    const fetchMock = vi.fn((path, options) => deferQueue && path === '/api/teacher/preflight-submissions?status=pending'
+      ? new Promise(resolve => { resolveRefresh = resolve; }) : working(path, options));
+    await renderAuthenticated(fetchMock); await waitForSubmission();
+    deferQueue = true;
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(resolveRefresh).toBeTypeOf('function'));
+    fireEvent.change(screen.getByLabelText('Feedback for the student'), { target: { value: 'Feedback started while the poll was pending.' } });
+    const replacement = { ...submissionSummary, id: 'submission-02' };
+    await act(async () => {
+      resolveRefresh(jsonResponse(status === 200 ? { submissions: [replacement] } : { error: 'Instructor access changed' }, status));
+    });
+    if (status === 200) {
+      expect(screen.getByLabelText('Feedback for the student')).toHaveValue('Feedback started while the poll was pending.');
+      expect(screen.getByText(submissionDetail.sourceMaterial)).toBeVisible();
+      expect(fetchMock.mock.calls.some(([path]) => path === '/api/teacher/preflight-submissions/submission-02')).toBe(false);
+      expect(screen.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+    } else {
+      expect(screen.getByRole('alert')).toHaveTextContent('This account cannot use this feature');
+      expect(screen.queryByText(submissionDetail.sourceMaterial)).not.toBeInTheDocument();
+      expect(screen.queryByText(submissionDetail.studentAnnotation)).not.toBeInTheDocument();
+    }
   });
 
   it('requires a focus for the student before feedback is recorded', async () => {
@@ -765,7 +821,7 @@ describe('TeacherDashboard', () => {
     const onConfigurationChanged = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard onConfigurationChanged={onConfigurationChanged} />);
-    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Instructor Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
     fireEvent.click(await screen.findByText('Versions and change history'));
@@ -921,7 +977,7 @@ describe('TeacherDashboard', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
-    expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Instructor Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     await screen.findByRole('heading', { name: 'Course settings' });
     fireEvent.click(await screen.findByText('Versions and change history'));

@@ -1518,7 +1518,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(stored).not.toContain('coordinates access with');
   });
 
-  it('uses student wording and current Teacher Console settings to suggest map connections without applying or storing them', async () => {
+  it('uses student wording and current Instructor Console settings to suggest map connections without applying or storing them', async () => {
     const localCookie = await grantStudent();
     const unavailable = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: localCookie });
     expect(unavailable.status).toBe(503);

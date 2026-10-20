@@ -248,3 +248,46 @@ test('guest instructor can inspect and publish demo guidance while other courses
   await control({ courseDenied: true });
   expect((await scoped(promptPath, 'guest', demo)).status).toBe(403);
 });
+
+test('all instructor customizations survive save, restart and publication, and prior versions can restore the course', async () => {
+  const owner = (path, options = {}) => scoped(path, 'instructor', 'synthetic-course-a', options);
+  const write = (path, method, body) => owner(path, { method, body: JSON.stringify(body) });
+  const catalog = await (await owner('/api/teacher/profiles')).json();
+  const original = (await (await owner('/api/teacher/profiles/' + catalog.activeProfileId)).json()).profile;
+  const create = await write('/api/teacher/profiles', 'POST', { name: 'Synthetic full control matrix', note: 'Exercise every supported setting', sourceProfileId: original.id });
+  expect(create.status).toBe(201);
+  const draft = (await create.json()).profile;
+  const profile = structuredClone(draft.profile);
+  profile.fieldNotesQuestions = Object.fromEntries(['micro', 'meso', 'exosphere', 'macrosphere'].map(scale => [scale, `Synthetic ${scale} question for the course case?`]));
+  for (const part of profile.parts) for (const step of Object.keys(part.stages)) {
+    part.stages[step] = { guidance: `Synthetic ${part.id} ${step} instructor guidance.`, materials: `Synthetic ${part.id} ${step} course reading.` };
+  }
+  const saved = await write('/api/teacher/profiles/' + draft.id, 'PUT', { name: 'Renamed synthetic matrix', profile, note: 'Save all questions and section settings', expectedRevision: draft.revision });
+  expect(saved.status).toBe(200);
+  const revision = (await saved.json()).profile.revision;
+  await worker.evictDurableObject('COURSES', { name: 'systems-mapping:course:synthetic-course-a' });
+  const readback = await (await owner('/api/teacher/profiles/' + draft.id)).json();
+  expect(readback.profile).toMatchObject({ name: 'Renamed synthetic matrix', profile, revision, status: 'draft' });
+  expect(readback.events.some(event => event.note === 'Save all questions and section settings')).toBe(true);
+  for (const part of profile.parts) for (const scale of part.scaleIds) for (const [stageId, values] of Object.entries(part.stages)) {
+    const preview = await owner(`/api/teacher/profiles/${draft.id}/preview?configKind=builder&scale=${scale}&stageId=${stageId}`);
+    expect(preview.status).toBe(200);
+    const body = await preview.json();
+    expect(body).toMatchObject({ ...values, revision, scale, stageId, part: { id: part.id } });
+    expect(Object.keys(body).sort()).toEqual(['guidance', 'materials', 'part', 'revision', 'scale', 'stageId']);
+  }
+  const publicPath = '/api/config/public?configKind=preflight&scale=micro';
+  expect((await (await scoped(publicPath)).json()).fieldNotesQuestions).not.toEqual(profile.fieldNotesQuestions);
+  for (const who of ['alice', 'admin']) expect((await scoped('/api/teacher/profiles/' + draft.id, who)).status).toBe(403);
+  expect((await scoped('/api/teacher/profiles/' + draft.id, 'instructor', 'synthetic-course-b')).status).toBe(403);
+  expect((await write(`/api/teacher/profiles/${draft.id}/publish`, 'POST', { note: 'Publish the complete synthetic matrix', expectedRevision: revision })).status).toBe(200);
+  await worker.evictDurableObject('COURSES', { name: 'systems-mapping:course:synthetic-course-a' });
+  expect((await (await scoped(publicPath)).json()).fieldNotesQuestions).toEqual(profile.fieldNotesQuestions);
+  expect((await (await scoped(publicPath, 'bob', 'synthetic-course-b')).json()).fieldNotesQuestions).not.toEqual(profile.fieldNotesQuestions);
+  const restored = (await (await write('/api/teacher/profiles', 'POST', { name: 'Restore earlier course settings', note: 'Restore using an explicit new draft', sourceProfileId: original.id })).json()).profile;
+  expect(restored.profile).toEqual(original.profile);
+  expect((await write(`/api/teacher/profiles/${restored.id}/publish`, 'POST', { note: 'Restore earlier questions and settings', expectedRevision: restored.revision })).status).toBe(200);
+  expect((await (await owner('/api/teacher/profiles')).json()).activeProfileId).toBe(restored.id);
+  await control({ courseDenied: true });
+  expect((await owner('/api/teacher/profiles/' + restored.id)).status).toBe(403);
+});

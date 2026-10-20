@@ -1081,7 +1081,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('link', { name: 'CUNY Login' })).toHaveAttribute('href', `/auth/start?returnTo=${encodeURIComponent(`/p/${token}`)}`);
     expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Ask your teacher/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Teacher Console')).not.toBeInTheDocument();
+    expect(screen.queryByText('Instructor Console')).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/student/access')).toBe(false);
   });
 
@@ -1778,7 +1778,7 @@ describe('Systems Mapping workflow', () => {
     const visibleLayer = mapLayer();
     fireEvent.change(visibleLayer, { target: { value: 'exosphere' } });
 
-    expect(screen.queryByRole('button', { name: 'Teacher Console' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Instructor Console' })).not.toBeInTheDocument();
     const dialog = openWorkLevelMenu();
     fireEvent.change(dialog, { target: { value: 'micro' } });
 
