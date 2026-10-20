@@ -6,6 +6,12 @@ test('map and notebook preserve Field Notes and viewport across every scale and 
   test.setTimeout(120_000);
   const errors = [];
   const guidance = [];
+  const lessonPrompt = 'Use our library case and this week’s reading.\n\nWhose direct relationships are missing, and what would you observe before naming a Meso linkage?';
+  await page.route('**/api/config/public?**', async route => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({ response, json: { ...config, fieldNotesQuestions: { ...config.fieldNotesQuestions, micro: lessonPrompt } } });
+  });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('request', (request) => { if (/preflight\/evaluations|guidance-jobs|map\/check/.test(request.url())) guidance.push(request.url()); });
   await page.addInitScript(({ key, value }) => {
@@ -24,6 +30,10 @@ test('map and notebook preserve Field Notes and viewport across every scale and 
     await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');
     const field = notebook.getByRole('textbox', { name: 'Field notes' });
     await expect(field).toBeVisible();
+    if (level === 'micro') {
+      await expect(page.locator('.reflection-prompt')).toHaveText(lessonPrompt);
+      expect(await page.locator('.reflection-prompt').innerText()).toBe(lessonPrompt);
+    }
     expect(await notebook.locator('textarea:visible').count()).toBe(1);
     await expect(notebook.locator('.memo-drawer')).toHaveCount(0);
     await field.fill(`My ${level} interpretation remains mine.\nAn open question stays open.`);
