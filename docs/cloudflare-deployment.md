@@ -59,7 +59,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   are 401. Admission denial/expiry is 403; uncertainty is 503.
 - `ADMISSION_RESOLVER` binds to `cail-tools-admission#AdmissionResolver` and is
   checked on every protected request. Current Admission administrators may
-  use the shared Teacher Console; members cannot. No legacy teacher account
+  use the shared Instructor Console; members cannot. No legacy teacher account
   is automatically linked by name or email.
 - `GATEWAY` binds to `cail-model-api`. Exact installed artifacts are CAIL Client
   6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `glm-5.3-flash`,

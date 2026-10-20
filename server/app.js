@@ -1953,7 +1953,7 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
   if (!systemsMappingStage(effectiveStageId)) throw new HttpError(400, 'stageId is not supported.');
   const modules = await listModules(db, 'WHERE pm.config_kind = ? AND pm.scale IN (?, ?)', [configKind, 'global', scale]);
   const teachingProfile = profileOverride ?? await activeTeachingProfile(db);
-  if (!teachingProfile) throw new HttpError(503, 'No course settings are published. Publish a draft in the Teacher Console, then try again.');
+  if (!teachingProfile) throw new HttpError(503, 'No course settings are published. Publish a draft in the Instructor Console, then try again.');
   const effectivePrompt = appendCoursePrompt(composeEffectivePrompt({
     configKind,
     scale,
@@ -3509,7 +3509,7 @@ export function createSystemsMappingApp(options = {}) {
 
   app.use('/api/teacher/*', async (context, next) => {
     const session = await currentTeacherSession(context, db, now);
-    if (!session) throw new HttpError(401, 'Sign in to use the Teacher Console.');
+    if (!session) throw new HttpError(401, 'Sign in to use the Instructor Console.');
     context.set('teacher', session.user);
     await next();
   });

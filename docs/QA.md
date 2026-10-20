@@ -101,7 +101,7 @@ Use a disposable database and temporary teacher claim values, never the handoff 
 7. Complete Meso and confirm automatic advancement to Exosphere. Place nodes and connections inside indirect institutional or environmental spheres.
 8. Complete Exosphere and confirm automatic advancement to Macrosphere. Add broader legal, political, cultural, and economic structures around or across existing spheres. Complete Macrosphere and confirm that another Macrosphere cycle begins.
 9. Filter to each level and back to all available levels. Confirm that hidden records are unchanged and that records appear in their assigned spheres.
-10. Open Teacher Console. Confirm that Course settings uses compact Part and Section controls, that one edit is shared across both levels in the Part, and that **Preview level** changes context without changing saved text.
+10. Open Instructor Console. Confirm that Course settings uses compact Part and Section controls, that one edit is shared across both levels in the Part, and that **Preview level** changes context without changing saved text.
 11. Inspect the saved preview response and rendered panel. Confirm that they contain only guidance, course material, Part, section, contextual level, and revision—not the effective prompt, guardrails, internal modules, or fingerprints.
 12. Confirm that retained review records and outstanding evaluations do not block navigation, mapping, or another cycle.
 13. Capture the successful cycle from the built application at desktop, 320, 390, and 430 px. Inspect for clipping, truncation, line/text collisions, icon/text overlap, horizontal overflow, and relevant console errors. Generated or composited visuals do not satisfy this gate.

@@ -80,14 +80,14 @@ optional bounded retry delay. The shared wire contract and central schema/admin
 implementation belong to `cail-tools-admission`; this app cannot list or triage
 reports and has no administrator service capability.
 
-**Production remains disabled.** Both active Wrangler configurations have their
-existing bindings unchanged and contain no `BUG_REPORTS` binding. The review-only
-proposal is in `../systems-evidence/authenticated-report-binding-proposal.patch`.
-Applying it would grant Systems a new persistent, app-scoped capability to the
-existing Admission service. That requires explicit approval under the user's
-restriction on new bindings/security permissions. No alternate existing identity
-or resolver capability is repurposed to bypass this boundary. Missing capability
-fails closed. No commit, push, merge or deployment is part of this local work.
+**The narrow production capability is approved.** The user explicitly approved
+Systems' app-scoped `BUG_REPORTS` binding to the existing Admission service, and
+it is configured in `wrangler.jsonc`. The development configuration has no such
+binding. Production activation still requires checked, merged application source
+and a live compatible receiver. No identity or resolver capability is repurposed;
+missing or unavailable reporting capability fails closed. The review-only patch
+in `../systems-evidence/authenticated-report-binding-proposal.patch` records the
+original proposal and is not an active configuration.
 
 ## Validation
 

@@ -36,8 +36,8 @@ async function openTeacherFixture(page, submissions) {
   await page.goto('/');
   await expect(page).toHaveTitle('Systems Mapping');
   await expect(page.locator('vite-error-overlay')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Instructor Console', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Instructor Console', exact: true })).toBeVisible();
 }
 
 // Playwright 1.62's WebKit screenshot synchronization injects an inert `body {}`
@@ -57,7 +57,7 @@ async function assertFittedLayout(page) {
   expect(new Set(headers.map((header) => JSON.stringify(header))).size).toBe(1);
 }
 
-test('teacher console empty queue is compact and returns to the application', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
+test('instructor console empty queue is compact and returns to the application', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -79,7 +79,7 @@ test('teacher console empty queue is compact and returns to the application', as
   expect(errors).toEqual(screenshotWarnings(browserName, 2));
 });
 
-test('teacher console stages work and feedback with normalized headings', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
+test('instructor console stages work and feedback with normalized headings', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });

@@ -4,7 +4,7 @@
 
 Systems Mapping helps students turn a place-based inquiry into an evidence-informed account of people, settings, institutions, and broader conditions. Students build one cumulative map, revisit their interpretations, and explain how connections operate across four ecological levels. The map, supporting evidence, and revision notes form a record of their reasoning.
 
-The prototype combines a guided student workspace with a Teacher Console for course guidance and materials. Model assistance is optional: students decide which suggestions belong on the map and can complete every stage through their own reading and analysis. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
+The prototype combines a guided student workspace with a Instructor Console for course guidance and materials. Model assistance is optional: students decide which suggestions belong on the map and can complete every stage through their own reading and analysis. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
 
 A separate [Cloudflare version](./docs/cloudflare-deployment.md) adds CUNY Login,
 private account maps, browser recovery copies, and CAIL Gateway model requests.
@@ -43,14 +43,14 @@ The workspace has two views: **Map** and **Notebook**. The five stage records (`
 | **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
 | **Map** | Canvas, direct selection and a collapsed **Map tools** menu for search, layers, list, zoom, arrange, key and full screen. |
 | **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens only that item’s interpretation; the memo appears only with suggestions. |
-| **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Teacher Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
+| **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Instructor Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
 | **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
 
 The notebook contains the current next action. The compact footer only switches **Map / Notebook**. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
 
 Field Notes are required to complete a scale; students can return to Map at any time. They use the existing immediate draft journal and per-scale project saves. A separate historical recovery cache is [proposed](docs/field-notes-recovery-proposal.md), not implemented.
 
-Instructors customize the question from **Teacher Console → Course settings → Edit prompts**. Choose a scale, connect the prompt to the lesson's case or reading, optionally open Student preview, then Publish changes. Draft creation and saving are handled within that flow; version history and model settings remain collapsed. See [instructor settings](docs/instructor-settings.md).
+Instructors customize the question from **Instructor Console → Course settings → Edit prompts**. Choose a scale, connect the prompt to the lesson's case or reading, optionally open Student preview, then Publish changes. Draft creation and saving are handled within that flow; version history and model settings remain collapsed. See [instructor settings](docs/instructor-settings.md).
 
 ### Map Check
 
@@ -125,7 +125,7 @@ pnpm dev
 
 The server loads optional settings from `.env`. Use [`.env.example`](./.env.example) as the configuration reference. Model providers are disabled by default, so the local workflow can be evaluated without external model access.
 
-## Teacher Console
+## Instructor Console
 
 Teachers manage guidance and course material by **Part** and **stage**. Micro and Meso share Part 1 settings; Exo and Macro share Part 2 settings. The runtime still applies the distinct analytical rules for each level.
 

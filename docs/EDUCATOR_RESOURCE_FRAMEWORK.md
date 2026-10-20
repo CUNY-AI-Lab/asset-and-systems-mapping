@@ -24,7 +24,7 @@ Systems Mapping assigns two fields to each Part-and-section pair. The values are
 - **What guidance should students receive in this section?** lets the instructor set the pedagogical direction for that part of the activity.
 - **What course material should support this section?** lets the instructor paste a relevant excerpt or reference text. The application marks this material as reference content rather than instructions that can override fixed rules.
 
-At runtime, Systems Mapping includes only the active Part-and-section guidance and course material. Prose from another section stays out of that request. The Teacher Console keeps this manageable with compact Part and Section controls. Its separate **Preview level** selector supplies level context for a preview only; it never selects or creates another saved setting. STEM Splitter can register its listening sequence and reuse the same two fields when its current console is migrated. Its present four-part amendment remains the compatibility boundary until then.
+At runtime, Systems Mapping includes only the active Part-and-section guidance and course material. Prose from another section stays out of that request. The Instructor Console keeps this manageable with compact Part and Section controls. Its separate **Preview level** selector supplies level context for a preview only; it never selects or creates another saved setting. STEM Splitter can register its listening sequence and reuse the same two fields when its current console is migrated. Its present four-part amendment remains the compatibility boundary until then.
 
 ## Draft, preview, and publish
 
@@ -44,7 +44,7 @@ Publishing retires the previous version without erasing it. A teacher can clone 
 
 The shared layer owns validation, stable identifiers, draft revisions, publication, retirement, history, runtime disclosures, and configuration fingerprints. Each application keeps its own student workflow, instructor decisions, domain records, fixed prompt, output schema, and activity-specific preview.
 
-Systems Mapping uses this split in the Teacher Console. The portable contract lives in `shared/educator-resource-contract.js`. Its STEM Splitter adapter registers four sections and composes them into STEM Splitter's existing versioned amendment format. That adapter does not replace STEM Splitter's present console or persistence yet. It fixes the boundary for a later migration without adding another configuration matrix.
+Systems Mapping uses this split in the Instructor Console. The portable contract lives in `shared/educator-resource-contract.js`. Its STEM Splitter adapter registers four sections and composes them into STEM Splitter's existing versioned amendment format. That adapter does not replace STEM Splitter's present console or persistence yet. It fixes the boundary for a later migration without adding another configuration matrix.
 
 Instructor review and evaluation capacity remain separate from progression. No pending review or outstanding evaluation may block a stage, level, or cycle. This pass removes only the course-wide active-evaluation ceiling; per-session supersession and retention purges remain unchanged.
 

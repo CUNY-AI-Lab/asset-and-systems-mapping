@@ -12,7 +12,7 @@ Current authority: the direct decision recorded in `docs/MICRO_MESO_CORRECTION_2
 - [ ] Verify that every Meso candidate is a noun-labeled `mesosystem` node scoped to at least two eligible carried Micro settings and that Meso returns, stores, and renders no relationship edge or verb.
 - [ ] Verify that legacy Meso verb edges return to Micro as research leads requiring student review, without invented scopes or silent confirmation.
 - [ ] Run the complete UI/domain/server suites, fresh PostgreSQL integration, production build, dependency audit, leakage scan, and `git diff --check` against the corrected contract.
-- [ ] Run the complete source-built browser journey at desktop and phone sizes, including Micro relationship decisions, Meso linkage scope decisions, filtering, full-screen, pan, zoom, revision/export, and Teacher Console customization.
+- [ ] Run the complete source-built browser journey at desktop and phone sizes, including Micro relationship decisions, Meso linkage scope decisions, filtering, full-screen, pan, zoom, revision/export, and Instructor Console customization.
 - [ ] Commit, push, deploy the corrected tree to Railway, wait for terminal `SUCCESS`, and verify migration, health, access boundaries, exact live assets, logs, and fabricated-memo provider behavior.
 
 ## Historical 2026-08-23 outer-ring grammars candidate
@@ -86,13 +86,13 @@ This section records the release that introduced the four current level names an
 - [x] Remove the buggy course-wide active-evaluation ceiling while leaving per-session supersession, request/provider bounds, submission queues, and retention purges unchanged.
 - [x] Store Course settings once per Part and section. Both levels in a Part share the saved guidance and course material.
 - [x] Treat **Preview level** as runtime context only. Safe preview output contains saved guidance and course material plus Part, section, contextual level, and revision; it excludes the effective prompt, guardrails, internal modules, and fingerprints.
-- [x] Keep the current student flow memo-driven, with no note, question, submission, or review-status field. Teacher Console retains earlier review records and the compatibility API without gating student progress.
+- [x] Keep the current student flow memo-driven, with no note, question, submission, or review-status field. Instructor Console retains earlier review records and the compatibility API without gating student progress.
 - [x] Record the final candidate suite and fresh PostgreSQL counts after the last code change; do not carry forward an earlier count.
   - Evidence: the ordinary suite passed 227 tests with 4 PostgreSQL tests skipped behind their environment guard. A fresh native PostgreSQL 17.5 loopback run passed its 4/4 `*_test` cases, including a populated v8→v9 migration. `pnpm build` passed with `index-DKxOo_cS.js`, `TeacherDashboard-CO55RhLk.js`, and `index-CisvqIv_.css`; `pnpm audit --prod` reported no known vulnerabilities; `git diff --check` passed; and gitleaks found no secrets in the dirty diff or three intended untracked documentation/concept files.
 - [x] Finish and inspect the annotated desktop/phone screenshot package.
-  - Evidence: `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ecological-cycle-qa-2026-08-21/systems-mapping-ecological-cycle-qa-2026-08-21.zip`, SHA-256 `89f959144d0257a0a21d6440f7be3a37e50925f60adc7dd1687caeb246277c11`, contains 40 true PNGs, 4 fabricated memos, and 4 metadata/assertion files. It covers 15 states at desktop and 390 px plus five each at 320 and 430 px, with strict checks finding no truncation, overlap, overflow, console errors, or captured success toasts; graph assertions record Micro 6/0, Meso exact carried IDs, cumulative 21/19, and Teacher Console after authentication. No credentials are packaged.
-- [x] Commit and push the changed tree, update GitHub `main`, deploy that commit to Railway, and record live migration/health/access/Teacher Console route/configuration/logout/bundle evidence.
-  - Evidence: PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged feature commit `e17142b7c4974a8db4fe02bcded47f0ce5ecf497` into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`. Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS`; migration, health, root/security headers, public-demo session/configuration/logout, student-to-teacher API denial, Teacher Console route, exact bundle hashes, and zero HTTP 5xx passed. No teacher credential was used or exposed.
+  - Evidence: `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ecological-cycle-qa-2026-08-21/systems-mapping-ecological-cycle-qa-2026-08-21.zip`, SHA-256 `89f959144d0257a0a21d6440f7be3a37e50925f60adc7dd1687caeb246277c11`, contains 40 true PNGs, 4 fabricated memos, and 4 metadata/assertion files. It covers 15 states at desktop and 390 px plus five each at 320 and 430 px, with strict checks finding no truncation, overlap, overflow, console errors, or captured success toasts; graph assertions record Micro 6/0, Meso exact carried IDs, cumulative 21/19, and Instructor Console after authentication. No credentials are packaged.
+- [x] Commit and push the changed tree, update GitHub `main`, deploy that commit to Railway, and record live migration/health/access/Instructor Console route/configuration/logout/bundle evidence.
+  - Evidence: PR [#9](https://github.com/CUNY-AI-Lab/systems-mapping/pull/9) merged feature commit `e17142b7c4974a8db4fe02bcded47f0ce5ecf497` into `main` at `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`. Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` reached `SUCCESS`; migration, health, root/security headers, public-demo session/configuration/logout, student-to-teacher API denial, Instructor Console route, exact bundle hashes, and zero HTTP 5xx passed. No teacher credential was used or exposed.
 - [x] Run a live model-provider acceptance after the server reports an enabled provider runtime.
   - Evidence: `ollama-cloud` using `deepseek-v4-flash:0731` returned HTTP 201 and schema-valid fabricated East Harlem reviews for all four levels. Micro returned 7 nodes/0 connections; Meso returned 0 nodes/6 exact-carried-ID connections; Exosphere returned 11/5; Macrosphere returned 8/1. The connection-suggestion route returned 6 exact-ID relationships. Provider-failure log searches and HTTP 5xx both returned zero.
 
@@ -106,7 +106,7 @@ This redesign supersedes the earlier "student-safe redirects" contract. Items in
   - Evidence: `src/App.jsx` auto-review effect, `buildCandidatesFromProject`, readiness banner; `src/App.test.jsx`.
 - [x] Keep the memo collapsed but editable on every later stage; memo edits never retire map items or clear candidates — they only mark guidance refreshable by fingerprint.
   - Evidence: `MemoDrawer`, `invalidateSubmissionDerived`, staleness tests in `src/App.test.jsx`.
-- [x] Remove instructor-review UI from the student workflow (no "Add a note", "Note for instructor", "Instructor guidance", or review-status panels). Server review endpoints and the Teacher Console queue remain for retained records.
+- [x] Remove instructor-review UI from the student workflow (no "Add a note", "Note for instructor", "Instructor guidance", or review-status panels). Server review endpoints and the Instructor Console queue remain for retained records.
 - [x] Allow connection suggestions with an empty description: the client sends a bounded excerpt of the memo itself, and the button requires only two nodes.
 - [x] Preserve the 2026-08-19 run as historical evidence: 166 client tests passing (3 PostgreSQL-gated skips), 65 server tests passing, production Vite build succeeding.
 
@@ -123,7 +123,7 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
 - [x] Make suggestion generation server-authoritative.
   - Evidence: the client sends bounded project details and memo text to `POST /api/preflight/evaluations`; the server selects the effective configuration, validates the level-specific result, and returns the bounded review with sanitized runtime metadata.
 - [x] Keep the retained instructor-review API non-gating and separate from the current student UI.
-  - Evidence: the current student flow has no note, question, submission, or review-status field. Retained submissions remain transactional and Teacher Console can still display their records without controlling map access.
+  - Evidence: the current student flow has no note, question, submission, or review-status field. Retained submissions remain transactional and Instructor Console can still display their records without controlling map access.
 - [x] Align teacher control with the five student stages.
   - Evidence: Course settings loads only when selected and opens one Part and section at a time. Each Part-and-section pair contains bounded guidance and course-material fields shared by both levels in that Part. **Preview level** supplies context only. Safe preview output excludes the effective prompt, guardrails, internal modules, and fingerprints. Published records remain read-only, earlier records can be cloned for rollback, and legacy module routes return `410`.
 - [x] Persist the new evaluation and review workflow in both SQLite and PostgreSQL.
@@ -155,7 +155,7 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
 - [x] Rebuild the production bundle after the five-stage Part 1/Part 2 changes; `pnpm build` passed.
 - [x] Preserve the earlier seven-stage Course settings recapture as historical release evidence.
   - Evidence: `/Users/milwright/.codex/visualizations/2026/08/11/019ff16f-b119-7963-9090-525be49b8d8a/systems-mapping-course-settings-2026-08-11.zip` passes `unzip -t` but predates the six-section redesign.
-- [x] Preserve representative six-section, direct-map, empty-map, review, and Teacher Console views across 320, 390, 430, and 1440 px as historical evidence.
+- [x] Preserve representative six-section, direct-map, empty-map, review, and Instructor Console views across 320, 390, 430, and 1440 px as historical evidence.
   - Evidence: `/Users/milwright/.codex/visualizations/2026/08/11/019fe2ef-096c-7093-b898-9a6e64ef1b23/systems-mapping-semester-cycle-qa.zip` contains 7 historical PNGs and passes `unzip -t`.
 - [x] Preserve the earlier five requested views at desktop and mobile sizes, including early and populated multi-level maps.
   - Evidence: `/Users/milwright/Projects/dev/systems-mapping/artifacts/systems-mapping-ui-qa-2026-08-12.zip` contains 10 PNGs—five paired desktop/mobile views—plus annotations. ZIP integrity and visual inspection passed; the developed-map pair records the populated map and visible scale layers.

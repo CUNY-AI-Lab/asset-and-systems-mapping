@@ -152,7 +152,7 @@ test('HTML pages retain a same-origin referrer policy while APIs and auth redire
   }
 });
 
-test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome native sign-out works from student Projects and Teacher Console', async () => {
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome native sign-out works from student Projects and Instructor Console', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const who of ['alice', 'admin']) {
@@ -181,8 +181,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome nati
         await bridge.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
         await page.goto(ORIGIN);
         if (who === 'admin') {
-          await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
-          await browserExpect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
+          await page.getByRole('button', { name: 'Instructor Console', exact: true }).click();
+          await browserExpect(page.getByRole('heading', { name: 'Instructor Console', exact: true })).toBeVisible();
         }
         await page.getByText('Account', { exact: true }).click();
         const signedOut = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/logout' && response.request().method() === 'POST');
@@ -325,8 +325,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.clearCookies();
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.admin, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
-    await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
-    await browserExpect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Instructor Console', exact: true }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Instructor Console', exact: true })).toBeVisible();
     await browserExpect(page.getByRole('tab', { name: 'Submissions', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('tab', { name: 'Course settings', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Course settings', exact: true })).toBeVisible();

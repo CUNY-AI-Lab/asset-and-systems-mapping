@@ -1,11 +1,11 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import CourseStudents from './CourseStudents.jsx';
 import { apiRequest, ApiError } from './api.js';
 
 vi.mock('./api.js', async original => ({ ...await original(), apiRequest: vi.fn() }));
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.resetAllMocks(); });
 const student = { memberId: 'synthetic-student', displayName: 'Alice Student', firstSeen: '2026-10-13T20:00:00Z', projectCount: 0, projects: [] };
 
 test('shows a verified student before a map and saved stage progress after refresh', async () => {
@@ -42,4 +42,38 @@ test('labels illustrative demo progress without claiming a student sign-in', asy
   render(<CourseStudents />);
   await screen.findByText('Demonstration data · illustrative progress and revision counts');
   expect(screen.queryByText(/First signed in/)).toBeNull();
+});
+
+test('refreshes only the visible open roster and clears a revoked roster on return', async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  apiRequest.mockResolvedValue({ students: [student], nextCursor: null });
+  let view;
+  await act(async () => { view = render(<CourseStudents active={false} />); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(apiRequest).not.toHaveBeenCalled();
+  await act(async () => { view.rerender(<CourseStudents active />); });
+  expect(apiRequest).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+  expect(apiRequest).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue('hidden');
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(apiRequest).toHaveBeenCalledTimes(2);
+  apiRequest.mockRejectedValueOnce(new ApiError('Course access changed', 403));
+  visibility.mockReturnValue('visible');
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+  expect(screen.queryByRole('heading', { name: student.displayName })).toBeNull();
+  expect(screen.getByRole('alert')).toBeVisible();
+  await act(async () => { view.rerender(<CourseStudents active={false} />); });
+  await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(30000); });
+  expect(apiRequest).toHaveBeenCalledTimes(3);
+});
+
+test('does not render a late roster response after the disclosure is closed', async () => {
+  let resolve;
+  apiRequest.mockImplementationOnce(() => new Promise(complete => { resolve = complete; }));
+  const view = render(<CourseStudents />);
+  view.rerender(<CourseStudents active={false} />);
+  await act(async () => { resolve({ students: [student], nextCursor: null }); });
+  expect(screen.queryByRole('heading', { name: student.displayName })).toBeNull();
 });
