@@ -63,7 +63,7 @@
 .map-stage--notebook .coverage-banner h2 { font-size: 18px; }
 .reflection-entry { display: grid; gap: 16px; }
 .reflection-entry h2 { margin: 0; font: 600 18px/1.4 var(--body); }
-.reflection-entry .reflection-prompt { margin: 0; font-size: 16px; line-height: 1.5; }
+.reflection-entry .reflection-prompt { margin: 0; font-size: 16px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .reflection-entry .field__label { font-size: 14px; }
 .reflection-entry small { font-weight: 400; color: var(--muted); }
 .reflection-entry textarea { min-height: 144px; font-size: 16px; line-height: 1.5; }

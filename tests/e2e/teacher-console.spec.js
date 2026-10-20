@@ -216,7 +216,7 @@ test('lesson customization opens an editable copy and publishes directly from th
   await page.getByRole('button', { name: 'Edit prompts', exact: true }).click();
   const field = page.getByLabel('Field Notes prompt');
   await expect(field).not.toHaveAttribute('readonly', '');
-  const question = 'Using our library case and this week’s reading, whose direct relationships are missing? Plan an observation and identify a link between the focal person’s everyday settings to investigate at Meso.';
+  const question = 'Using our library case and this week’s reading, whose direct relationships are missing?\n\nPlan an observation and identify a link between the focal person’s everyday settings to investigate at Meso.';
   await field.fill(question);
   await page.getByText('Student preview', { exact: true }).click();
   await expect(page.locator('.course-student-preview__question')).toHaveText(question);
