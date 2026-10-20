@@ -672,7 +672,7 @@ function naturalLanguageList(values) {
   return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
 }
 
-function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections) {
+function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial) {
   const hasExactKeys = (record, required, optional = []) => {
     if (!isPlainObject(record)) return false;
     const allowed = new Set([...required, ...optional]);
@@ -705,6 +705,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   if ((activeScale === 'meso' || activeScale === 'macrosphere') && value.connections.length) {
     throw new MemoReviewSemanticError(`${activeScale} must use scoped nodes and an empty connections array.`);
   }
+  const memoEvidenceText = sourceMaterial.normalize('NFC').replace(/\s+/g, ' ').trim();
   value.guidance.forEach((item, index) => {
     if (!hasExactKeys(item, ['point'], ['evidenceExcerpt'])) {
       throw new MemoReviewSemanticError(`guidance[${index}] does not use the exact guidance fields.`);
@@ -716,6 +717,13 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     if (!point || containsRetiredSystemsLanguage(point)
       || (Object.hasOwn(item, 'evidenceExcerpt') && !evidenceExcerpt)) {
       throw new MemoReviewSemanticError(`guidance[${index}] is not complete text within the response limits.`);
+    }
+    // Quoted evidence is a verifiable source reference. Never accept a note,
+    // proposed investigation or invented passage as a quotation of the memo.
+    // Whitespace and Unicode normalization tolerate document extraction, but
+    // do not paraphrase, repair or selectively drop provider output.
+    if (evidenceExcerpt && !memoEvidenceText.includes(evidenceExcerpt.normalize('NFC').replace(/\s+/g, ' ').trim())) {
+      throw new MemoReviewSemanticError(`guidance[${index}].evidenceExcerpt must quote the supplied memo; Field Notes are not memo evidence.`);
     }
   });
   if (!hasExactKeys(value.readiness, ['ready', 'note'])
@@ -2958,7 +2966,7 @@ export function createSystemsMappingApp(options = {}) {
           let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
           let review;
           try {
-            review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
+            review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
           } catch (error) {
             if (!(error instanceof MemoReviewSemanticError)) throw error;
             // CAIL Gateway owns provider/model failover. Do not silently issue a
@@ -2969,7 +2977,7 @@ export function createSystemsMappingApp(options = {}) {
               ...providerInput,
               systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}`,
             }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
-            review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections);
+            review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
           }
           suggestion = {
             ...review,
@@ -3017,7 +3025,7 @@ export function createSystemsMappingApp(options = {}) {
               ...(Array.isArray(node.scope) ? { scope: node.scope.map(member => typeof member === 'string' ? member : member.id) } : {}),
             })),
           };
-          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections);
+          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
         } catch (error) {
           if (!(error instanceof MemoReviewSemanticError)) throw error;
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');

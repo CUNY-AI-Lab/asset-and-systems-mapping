@@ -4,6 +4,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ReflectionEntry, { REFLECTION_PROMPTS } from './ReflectionEntry.jsx';
 import { createDefaultProject, serializeProject, parseProject } from './domain.js';
+import { LEGACY_FIELD_NOTES_QUESTIONS, PREVIOUS_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 
 afterEach(cleanup);
 
@@ -16,20 +17,41 @@ describe('Field Notes', () => {
     const update = vi.fn();
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getByText('Whose account of the home–school linkage is missing?')).toBeVisible();
+    expect(document.getElementById('field-notes-question').textContent).toBe('Whose account of the home–school linkage is missing?');
     fireEvent.click(screen.getByText('Notes from other scales'));
     expect(screen.getByRole('heading', { name: 'Micro-level' })).toBeVisible();
     expect(screen.getByText(/Ask the home attendant/)).toBeVisible();
     expect(update).not.toHaveBeenCalled();
   });
 
-  it.each(Object.keys(REFLECTION_PROMPTS))('has one required writing field at %s without invoking guidance', (scale) => {
+  it.each([
+    ['micro', 'What did you notice while mapping the Micro scale?', 'Which nodes might help you begin mapping the Meso scale?'],
+    ['meso', 'What did you notice while mapping the Meso scale?', 'Which nodes might help you begin mapping the Exo scale?'],
+    ['exosphere', 'What did you notice while mapping the Exo scale?', 'Which nodes might help you begin mapping the Macro scale?'],
+    ['macrosphere', 'What did you notice while mapping the Macro scale?', null],
+  ])('shows the selected questions at %s in the existing required writing field', (scale, first, second) => {
     const project = createDefaultProject();
     project.activeScale = scale;
     const update = vi.fn();
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getAllByRole('textbox')).toHaveLength(1);
     expect(screen.getByRole('textbox').required).toBe(true);
-    expect(screen.getByText(REFLECTION_PROMPTS[scale])).toBeTruthy();
+    expect(document.getElementById('field-notes-question').textContent.split('\n')).toEqual(second ? [first, second] : [first]);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each([LEGACY_FIELD_NOTES_QUESTIONS, PREVIOUS_FIELD_NOTES_QUESTIONS])('refreshes cached application defaults without rewriting saved answers or profiles (%#)', (questions) => {
+    const project = createDefaultProject();
+    project.activeScale = 'meso';
+    project.reflection = 'My earlier note.\nI have not separated this into two answers.\n😀';
+    project.levelProgress.meso.reflection = project.reflection;
+    project.teacherGovernance = { preflight: { fieldNotesQuestions: { ...questions, exosphere: 'Keep this instructor-authored question exactly.' } } };
+    const original = structuredClone(project);
+    const update = vi.fn();
+    render(<ReflectionEntry project={project} update={update} />);
+    expect(document.getElementById('field-notes-question').textContent).toBe(REFLECTION_PROMPTS.meso);
+    expect(screen.getByRole('textbox')).toHaveValue(original.reflection);
+    expect(project).toEqual(original);
     expect(update).not.toHaveBeenCalled();
   });
 

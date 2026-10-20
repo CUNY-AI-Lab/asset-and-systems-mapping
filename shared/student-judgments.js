@@ -1,7 +1,7 @@
 // Reconstruct project-specific learning from durable, explicit student choices.
 // Automatic inclusion is not approval; model output remains an inference.
 export const STUDENT_JUDGMENT_LIMIT = 24;
-export const GUIDANCE_CONTRACT_VERSION = 'student-judgments-field-notes-v3';
+export const GUIDANCE_CONTRACT_VERSION = 'student-judgments-field-notes-v4';
 
 export function studentJudgments(project) {
   const live = new Map([...project.graph.nodes, ...project.graph.edges].map((item) => [item.id, item]));
