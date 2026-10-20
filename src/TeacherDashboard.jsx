@@ -15,9 +15,9 @@ const DASHBOARD_SECTIONS = [
   { id: 'guidance', label: 'Course settings' },
 ];
 const REVIEW_DECISIONS = [
-  { id: 'approve', label: 'Add feedback' },
-  { id: 'revise_and_approve', label: 'Add feedback and a question' },
-  { id: 'reject', label: 'Recommend another pass' },
+  { id: 'approve', label: 'Feedback only' },
+  { id: 'revise_and_approve', label: 'Feedback and question' },
+  { id: 'reject', label: 'Suggest revision' },
 ];
 
 function Message({ message }) {
@@ -77,12 +77,12 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'preflight',
       activeDetail: scale === 'micro'
-        ? 'The model uses this section\'s guidance and course material to suggest Micro-level elements and direct relationships from the memo.'
+        ? 'Uses these notes to suggest Micro-level elements and direct relationships from the memo.'
         : scale === 'meso'
-          ? 'The model uses this section\'s guidance and course material to suggest Meso-level linkages across at least two Micro-level settings.'
+          ? 'Uses these notes to suggest Meso-level linkages across at least two Micro-level settings.'
           : scale === 'exosphere'
-            ? 'The model uses this section\'s guidance and course material to suggest Exo-level institutions and supported institutional relationships.'
-            : 'The model uses this section\'s guidance and course material to suggest Macro-level conditions and the mapped elements they affect.',
+            ? 'Uses these notes to suggest Exo-level institutions and supported institutional relationships.'
+            : 'Uses these notes to suggest Macro-level conditions and the mapped elements they affect.',
     };
   }
   if (stageId === 'choose-what-to-map') {
@@ -90,18 +90,18 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'builder',
       activeDetail: scale === 'micro'
-        ? 'The model uses this section\'s guidance and course material when students request more Micro-level elements or direct relationships from the memo.'
+        ? 'Uses these notes when students request more Micro-level elements or direct relationships from the memo.'
         : scale === 'meso'
-          ? 'The model uses this section\'s guidance and course material when students request more Meso-level linkages across Micro-level settings.'
+          ? 'Uses these notes when students request more Meso-level linkages across Micro-level settings.'
           : scale === 'exosphere'
-            ? 'The model uses this section\'s guidance and course material when students request more Exo-level institutions or institutional relationships.'
-            : 'The model uses this section\'s guidance and course material when students request more Macro-level conditions or change which mapped elements they affect.',
+            ? 'Uses these notes when students request more Exo-level institutions or institutional relationships.'
+            : 'Uses these notes when students request more Macro-level conditions or change which mapped elements they affect.',
     };
   }
   return {
     active: false,
     configKind: 'preflight',
-    inactiveDetail: 'The application does not call the model in this section.',
+    inactiveDetail: 'This step does not call the model.',
   };
 }
 
@@ -109,7 +109,7 @@ function runtimeEffect(runtime, stageId, scale) {
   const stageUse = stageModelUse(stageId, scale);
   if (!stageUse.active) {
     return {
-      label: 'Course settings are saved but not sent to the model.',
+      label: 'Notes are saved for this step.',
       detail: stageUse.inactiveDetail,
     };
   }
@@ -121,7 +121,7 @@ function runtimeEffect(runtime, stageId, scale) {
   }
   return {
     label: 'Built-in suggestions are active.',
-    detail: 'The console saves this section\'s guidance and course material, but built-in suggestions do not use them.',
+    detail: 'Saved notes do not affect built-in suggestions.',
   };
 }
 
@@ -223,7 +223,7 @@ function SuggestionReview({ suggestion }) {
   return <details className="teacher-model-review">
     <summary>Review details</summary>
     <div className="teacher-model-review__body">
-      <p className="teacher-model-review__note">You decide which suggestions the student should examine next.</p>
+      <p className="teacher-model-review__note">Suggestions are advisory.</p>
       <div className="suggestion-review">
         {annotation(currentReview ? 'Memo evidence' : 'Evidence excerpts', evidence, 'The review did not cite a memo passage.')}
         {annotation(currentReview ? 'Map ideas' : 'Possible next step', mapIdeas, 'The review did not suggest a map item.')}
@@ -490,7 +490,7 @@ function ReviewSubmissions({ active = true }) {
     <div className={`teacher-review-grid${detail ? '' : ' teacher-review-grid--queue-only'}`}>
       <aside className="submission-queue" aria-labelledby="review-submissions-heading">
         <ReviewColumnHeading id="review-submissions-heading" actions={<button type="button" className="button button--ghost" disabled={queueLoading} onClick={() => loadQueue()}>{queueLoading ? 'Refreshing…' : 'Refresh'}</button>}>Submissions</ReviewColumnHeading>
-        {(submissions.length > 0 || feedbackPending) && <p className="field__hint">{feedbackPending ? 'Automatic refresh pauses while you draft feedback.' : 'Submitted reviews update every 30 seconds while this tab is open.'}</p>}
+        {(submissions.length > 0 || feedbackPending) && <p className="field__hint">{feedbackPending ? 'Refresh paused while you draft.' : 'Updates every 30 seconds.'}</p>}
         {queueError && <p className="teacher-message teacher-message--error" role="alert">{queueError}</p>}
         {queueLoading && !submissions.length ? <p className="empty-message" role="status">Loading submissions…</p> : null}
         {!queueLoading && !submissions.length && !queueError ? <p className="empty-message">No submissions yet</p> : null}
@@ -517,13 +517,13 @@ function ReviewSubmissions({ active = true }) {
       {detail && <aside className="instructor-response" aria-labelledby="instructor-response-heading">
         <ReviewColumnHeading id="instructor-response-heading">Feedback</ReviewColumnHeading>
         <form onSubmit={submitDecision}>
-          <p className="instructor-response__prompt">Offer one next step</p>
+
           <label className="field instructor-response__guidance"><span className="field__label">Feedback for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
           <fieldset className="review-decision"><legend>Feedback type</legend><div className="review-decision__actions">{REVIEW_DECISIONS.map((item) => <button key={item.id} type="button" aria-pressed={decision === item.id} className={decision === item.id ? 'is-selected' : ''} onClick={() => { setDecision(item.id); setMessage(null); }}>{item.label}</button>)}</div></fieldset>
           {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Question for the student</span><textarea rows="5" maxLength="1000" value={focusedQuestion} onChange={(event) => setFocusedQuestion(event.target.value)} /></label>}
           <Message message={message} />
-          {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Submission conflict actions"><p>Select Reload current submission to review the newer version. Your feedback will remain in the form.</p><button type="button" className="button button--ghost" onClick={reloadConflict}>Reload current submission</button></div>}
-          <button type="submit" className="button" disabled={busy}>{busy ? 'Recording…' : 'Record feedback'}</button>
+          {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Submission conflict actions"><p>Select Reload current submission to review the newer version. Your feedback stays in the form.</p><button type="button" className="button button--ghost" onClick={reloadConflict}>Reload current submission</button></div>}
+          <button type="submit" className="button" disabled={busy}>{busy ? 'Saving…' : 'Save feedback'}</button>
         </form>
         <DecisionHistory events={reviewHistory} />
       </aside>}
@@ -751,7 +751,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setEvents(result.events || []);
       setNote('');
       setPreview(null);
-      setMessage({ type: 'success', text: 'Changes published. Students will see the updated prompts.' });
+      setMessage({ type: 'success', text: 'Published. Students will see the updated prompts.' });
       await loadCatalog(result.profile.id);
       onConfigurationChanged();
     } catch (error) {
@@ -793,7 +793,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const levelNotePrefix = `${scaleLabel(previewScale)}: `;
   const canAppendLevelNote = editable && selectedStageSettings.guidance.length + levelNotePrefix.length + 2 <= 2500;
   return <section className="model-guidance teaching-profiles course-settings" aria-labelledby="course-settings-heading" aria-busy={busy || loading}>
-    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Adapt Field Notes to your lesson.</p></div></div>
+    <div className="section-heading"><div><h2 id="course-settings-heading">Field Notes prompts</h2><p>One question for each scale.</p></div></div>
     <Message message={message} />
     {detail && draft && <>
       <div className="course-settings__body">
@@ -813,9 +813,9 @@ function TeachingProfiles({ onConfigurationChanged }) {
                 setDraft(current => ({ ...current, profile: { ...current.profile, fieldNotesQuestions: { ...fieldNotesQuestions(current.profile), [previewScale]: question } } }));
               }} />
           </label>
-          <p id="course-prompt-help" className="field__hint">Reference a case, reading, or learning goal.</p>
+          <p id="course-prompt-help" className="field__hint">Students answer this question before completing the scale.</p>
           <details className="course-student-preview"><summary>Student preview</summary>
-            <div className="course-student-preview__page"><h3>Field Notes</h3><p className="course-student-preview__scale">{scaleLabel(previewScale)}</p><p className="course-student-preview__question">{fieldNotesQuestions(draft.profile)[previewScale] || 'Your prompt will appear here.'}</p><p className="field__hint">A response is required before completing this scale.</p></div>
+            <div className="course-student-preview__page"><h3>Field Notes</h3><p className="course-student-preview__scale">{scaleLabel(previewScale)}</p><p className="course-student-preview__question">{fieldNotesQuestions(draft.profile)[previewScale] || 'Your prompt will appear here.'}</p></div>
           </details>
         </fieldset>
         {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>A newer revision is available. Load it only if you want to replace the text in this editor.</p><button type="button" className="button button--ghost" disabled={busy} onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
@@ -828,7 +828,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
         </div>
       </div>
       <div className="course-settings__additional">
-        <details className="course-model-settings"><summary>Model guidance and course materials</summary>
+        <details className="course-model-settings"><summary>Guidance and materials</summary>
           <fieldset className="course-model-fields" disabled={busy || loading}>
         <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
         {selectedPart ? <>
@@ -836,32 +836,30 @@ function TeachingProfiles({ onConfigurationChanged }) {
             <label><span>Part</span><select aria-label="Part" value={selectedPart.id} onChange={(event) => selectPart(event.target.value)}>{profileParts.map((part) => <option key={part.id} value={part.id}>{part.label}</option>)}</select></label>
             <label><span>Mapping step</span><select aria-label="Mapping step" value={selectedStageId} onChange={(event) => { setSelectedStageId(event.target.value); setPreview(null); }}>{SYSTEMS_MAPPING_STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label>
           </div>
-          <p className="field__hint">Guidance and course material for this section apply to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
+          <p className="field__hint">Applies to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
         </> : <p className="teacher-message teacher-message--error" role="alert">The selected version has no course parts.</p>}
         {selectedPart && <section className="course-stage-editor" aria-labelledby={`course-stage-heading-${selectedStage.id}`}>
-          <div><h4 id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.label}</h4><p>{selectedStage.description}</p></div>
-          <label className="field"><span className="field__label">Instructor guidance for this section</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
+          <p className="course-stage-context" id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.description}</p>
+          <label className="field"><span className="field__label">Guidance</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
           {editable && <div className="button-row"><button type="button" className="button button--ghost" disabled={!canAppendLevelNote} onClick={() => changeStage('guidance', appendLevelNote(selectedStageSettings.guidance, previewScale))}>Add {scaleLabel(previewScale)} note</button></div>}
-          <p className="field__hint">Optional level notes can focus a question or course example. Fixed level definitions and map rules stay unchanged.</p>
-          <label className="field"><span className="field__label">Course material for this section</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
-          <p className="field__hint">Paste the relevant course passage or reference text.</p>
+          <p className="field__hint">Level definitions and map rules remain fixed.</p>
+          <label className="field"><span className="field__label">Course material</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
+          <p className="field__hint">Use a course passage or reference.</p>
         </section>}
 
-            <aside className="course-model-preview-panel">
-        <details className="course-model-preview"><summary>Model guidance preview</summary>
-        <h4>Preview this mapping step</h4>
+            <details className="course-model-preview course-model-preview-panel"><summary>Saved guidance preview</summary>
+
         <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${scaleLabel(previewScale)} · ${selectedStage.label}` : ''}</p>
         {previewLevel && <p className="field__hint">{previewLevel.description}</p>}
         {selectedPart && <label className="field"><span className="field__label">Preview level</span><select aria-label="Preview level" value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{selectedPart.scaleIds.map((scale) => <option key={scale} value={scale}>{scaleLabel(scale)}</option>)}</select></label>}
         <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Preview saved section</button>
         {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Instructor guidance</strong><p>{preview.guidance || 'No instructor guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
         </details>
-            </aside>
           </fieldset>
         </details>
     <details className="teacher-history teaching-profile-versioning">
-      <summary>Versions and change history</summary>
-      <div className="teacher-controls teaching-profile-controls">
+      <summary>Versions</summary>
+      <div className="teacher-controls teaching-profile-controls course-version-controls">
         <label><span>Version</span><select aria-label="Version" value={selectedId || ''} disabled={busy || loading} onChange={(event) => {
           if (dirty) { setMessage({ type: 'error', text: 'Save or publish your changes before switching versions.' }); return; }
           setSelectedId(event.target.value);
@@ -870,12 +868,12 @@ function TeachingProfiles({ onConfigurationChanged }) {
       </div>
       {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
         <label className="field"><span className="field__label">Draft name</span><input maxLength="120" disabled={busy || loading} value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
-        <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" disabled={busy || loading} value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
+        <label className="field"><span className="field__label">Planned changes</span><input maxLength="500" disabled={busy || loading} value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
         <button type="submit" className="button" disabled={busy}>Create draft</button>
       </form>}
       {editable && <label className="field"><span className="field__label">Change note (optional)</span><input maxLength="500" disabled={busy || loading} value={note} onChange={(event) => setNote(event.target.value)} /></label>}
       {detail && draft && <label className="field"><span className="field__label">Version name</span><input maxLength="120" readOnly={!editable} disabled={busy || loading} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
-      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{eventActionLabel(event.action)}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
+      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{eventActionLabel(event.action)}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No changes recorded.</p>}
     </details>
       </div>
     </>}
@@ -923,7 +921,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Instructor Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
     <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}>
       {institutionalMode && projectStorage().courseSelection?.kind === 'course' && <details className="course-progress-disclosure" onToggle={event => { setStudentsOpen(event.currentTarget.open); if (event.currentTarget.open) setStudentsVisited(true); }}>
-        <summary>Students and saved progress</summary>
+        <summary>Saved progress</summary>
         {studentsVisited && <CourseStudents active={section === 'reviews' && studentsOpen} />}
       </details>}
       <ReviewSubmissions active={section === 'reviews'} />

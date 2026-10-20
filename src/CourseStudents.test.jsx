@@ -12,17 +12,17 @@ test('shows a verified student before a map and saved stage progress after refre
   apiRequest.mockResolvedValueOnce({ students: [student], nextCursor: null });
   render(<CourseStudents />);
   await screen.findByRole('heading', { name: 'Alice Student' });
-  expect(screen.getByText('Signed in · First course map pending')).toBeInTheDocument();
+  expect(screen.getByText('No saved maps yet.')).toBeInTheDocument();
   apiRequest.mockResolvedValueOnce({ students: [{ ...student, projectCount: 1, projects: [{ id: 'map', title: 'Classroom connections', updatedAt: '2026-10-13T20:30:00Z', revision: 2, levels: [
     { scale: 'micro', completed: true, started: true, stage: 4 },
     { scale: 'meso', completed: false, started: true, stage: 2 },
     { scale: 'exosphere', completed: false, started: false, stage: 1 },
   ] }] }], nextCursor: null });
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh students' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh progress' }));
   await screen.findByText('Classroom connections');
-  expect(screen.getByText('Micro: Completed')).toBeInTheDocument();
-  expect(screen.getByText('Meso: Choose elements')).toBeInTheDocument();
-  expect(screen.getByText('Exo: Upcoming')).toBeInTheDocument();
+  expect(screen.getByText('Micro').closest('li')).toHaveTextContent('Completed');
+  expect(screen.getByText('Meso').closest('li')).toHaveTextContent('Choose elements');
+  expect(screen.getByText('Exo').closest('li')).toHaveTextContent('Upcoming');
 });
 
 test('clears previously displayed student data when fresh owner authorization fails', async () => {
@@ -40,8 +40,8 @@ test('clears previously displayed student data when fresh owner authorization fa
 test('labels illustrative demo progress without claiming a student sign-in', async () => {
   apiRequest.mockResolvedValueOnce({ students: [{ ...student, demonstration: true, displayName: 'Example student', firstSeen: null }], nextCursor: null });
   render(<CourseStudents />);
-  await screen.findByText('Demonstration data · illustrative progress and revision counts');
-  expect(screen.queryByText(/First signed in/)).toBeNull();
+  await screen.findByText('Example progress');
+  expect(screen.queryByText(/First sign-in/)).toBeNull();
 });
 
 test('refreshes only the visible open roster and clears a revoked roster on return', async () => {
