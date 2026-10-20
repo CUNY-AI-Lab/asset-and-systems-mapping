@@ -1,11 +1,15 @@
 // @vitest-environment node
-import { afterAll, beforeAll, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
+const RATE_LIMIT_PERIOD_SECONDS = 60;
+const WINDOW_MS = RATE_LIMIT_PERIOD_SECONDS * 1000;
+const TEST_TIMEOUT_MS = 5000;
 const sessions = Object.fromEntries(['alice', 'bob', 'admin', 'instructor'].map(name => [name, crypto.randomUUID() + '.' + 's'.repeat(43)]));
 let harness, worker;
+let testWindow;
 const account = who => worker.fetch(ORIGIN + '/api/cloud/account', {
   headers: { 'cf-connecting-ip': '203.0.113.10', ...(who ? { cookie: `__Host-systems-mapping-session=${sessions[who] || ''}` } : {}) },
 });
@@ -25,12 +29,29 @@ beforeAll(async () => {
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] },
     exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-load-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-load-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-load-fixture' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876524', simple: { limit: 2, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876524', simple: { limit: 2, period: RATE_LIMIT_PERIOD_SECONDS } }],
   } }, { config: { name: 'systems-load-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } }] });
   await harness.listen();
   worker = harness.getWorker('systems-load-test');
 }, 30000);
 afterAll(async () => { await harness?.close(); });
+
+beforeEach(async () => {
+  testWindow = undefined;
+  // Miniflare uses floor(Date.now() / period): counters reset at wall-clock
+  // boundaries, not 60 seconds after this test's first request. Keep the entire
+  // assertion budget in one window, using the real binding and real clock.
+  const remaining = WINDOW_MS - Date.now() % WINDOW_MS;
+  if (remaining <= TEST_TIMEOUT_MS + 1000) {
+    await new Promise(resolve => setTimeout(resolve, remaining + 100));
+  }
+  testWindow = Math.floor(Date.now() / WINDOW_MS);
+}, 10000);
+afterEach(() => {
+  if (testWindow !== undefined) {
+    expect(Math.floor(Date.now() / WINDOW_MS), 'Rate-limit assertions must stay in the same fixed window').toBe(testWindow);
+  }
+});
 
 test('the real Worker preserves independent account limits on a shared campus IP', async () => {
   expect((await account('alice')).status).toBe(200);
@@ -41,14 +62,14 @@ test('the real Worker preserves independent account limits on a shared campus IP
   expect((await limited.json()).details.retryAfterSeconds).toBe(60);
   expect((await account('bob')).status).toBe(200);
   expect((await account('bob')).status).toBe(200);
-});
+}, TEST_TIMEOUT_MS);
 
 test('anonymous traffic remains limited without spending a signed-in account allowance', async () => {
   expect((await account()).status).toBe(401);
   expect((await account()).status).toBe(401);
   expect((await account()).status).toBe(429);
   expect((await account('admin')).status).toBe(200);
-});
+}, TEST_TIMEOUT_MS);
 
 test('a full shared-IP login bucket cannot block callback recovery or same-origin logout', async () => {
   const request = (path, options = {}) => worker.fetch(ORIGIN + path, {
@@ -83,4 +104,4 @@ test('a full shared-IP login bucket cannot block callback recovery or same-origi
   const wrongMethod = await request('/auth/logout');
   expect(wrongMethod.status).toBe(405);
   expect(wrongMethod.headers.get('allow')).toBe('POST');
-});
+}, TEST_TIMEOUT_MS);
