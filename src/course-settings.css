@@ -1,0 +1,64 @@
+/* Course customization shares the app's type, palette, and control sizes. */
+.teacher-dashboard > .studio-heading { flex-wrap: nowrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.teacher-dashboard > .studio-heading h1 { font-size: 26px; }
+.teacher-dashboard > .studio-heading > .studio-heading__actions { width: auto; }
+.teacher-dashboard--settings { width: min(960px, 100%); }
+.teacher-dashboard__sections { margin-block: 0; }
+.teacher-account { position: relative; }
+.teacher-account > summary { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-size: 14px; list-style: none; }
+.teacher-account > summary::after { content: ''; width: 6px; height: 6px; margin: -4px 0 0 10px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.teacher-account > summary::-webkit-details-marker { display: none; }
+.teacher-account > div { position: absolute; top: calc(100% + 8px); right: 0; z-index: 10; display: grid; gap: 12px; width: min(260px, calc(100vw - 40px)); padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 8%, transparent); }
+.teacher-account strong { overflow-wrap: anywhere; font-size: 15px; font-weight: 600; }
+.teacher-account form { margin: 0; }
+.teacher-account .button { justify-self: start; }
+.course-progress-disclosure { margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.course-progress-disclosure > summary { min-height: 44px; padding-block: 12px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.course-progress-disclosure > .course-students { padding-block: 16px; }
+.course-settings { max-width: 960px; margin-inline: auto; }
+.course-settings > .section-heading { margin: 0; padding: 20px 0; }
+.course-settings > .section-heading h2 { margin: 0; font-size: 22px; }
+.course-settings > .section-heading p { margin: 8px 0 0; color: var(--muted); font-size: 16px; }
+.course-settings > .teacher-message { margin: 16px 0; }
+.course-settings__body { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
+.course-prompt-editor, .course-model-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.course-prompt-editor { display: grid; gap: 20px; padding: 24px; }
+.course-settings__scale { width: min(240px, 100%); }
+.course-prompt-editor .field { margin: 0; }
+.course-prompt-editor textarea { width: 100%; min-height: 180px; padding: 14px; resize: vertical; font-size: 16px; line-height: 1.6; }
+.course-prompt-editor textarea[readonly] { background: var(--surface); color: var(--ink); }
+.course-prompt-editor > .field__hint { max-width: 72ch; margin: -8px 0 0; font-size: 14px; line-height: 1.5; }
+.course-student-preview > summary, .course-settings__additional summary { min-height: 44px; padding-block: 12px; cursor: pointer; font-size: 15px; font-weight: 600; }
+.course-student-preview { border-top: 1px solid var(--line); }
+.course-student-preview__page { max-width: 390px; margin: 12px 0 4px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.course-student-preview__page h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.course-student-preview__scale { margin: 4px 0 20px; color: var(--muted); font-size: 14px; }
+.course-student-preview__question { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; }
+.course-student-preview__page > .field__hint { margin: 20px 0 0; font-size: 13px; line-height: 1.5; }
+.course-settings__actions { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 16px 24px; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); background: var(--surface-subtle); }
+.course-settings__actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.course-settings__status { margin: 0; color: var(--muted); font-size: 14px; }
+.course-settings__additional { margin-top: 24px; }
+.course-settings__additional > details { padding: 0; border: 0; border-top: 1px solid var(--line); background: transparent; }
+.course-settings__additional > details > summary { margin: 0; }
+.course-settings__additional .teacher-controls { margin: 16px 0; }
+.course-settings__additional .field { margin-block: 20px; }
+.course-settings__additional .teacher-message { margin: 16px 0; }
+.course-model-fields textarea { width: 100%; min-height: 132px; resize: vertical; }
+.course-model-preview-panel { margin-block: 24px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
+.course-model-preview-panel .effective-preview { display: block; }
+.course-model-preview-panel h4 { margin: 16px 0; font-size: 16px; }
+.course-settings .teacher-history { padding-bottom: 20px; }
+.course-settings .teacher-history > summary { color: var(--ink); }
+.course-settings .teacher-history li { max-width: 72ch; }
+.course-settings .teacher-history p { font-size: 14px; line-height: 1.5; }
+.course-settings :is(input, select, textarea) { min-width: 0; max-width: 100%; }
+.course-settings :is(p, h2, h3, label) { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .teacher-dashboard > .studio-heading h1 { font-size: 24px; }
+  .course-settings > .section-heading { padding-block: 16px; }
+  .course-prompt-editor { gap: 16px; padding: 16px; }
+  .course-settings__actions { padding: 16px; }
+  .course-settings__actions > div { margin-left: auto; }
+  .course-model-preview-panel { padding: 16px; }
+}
