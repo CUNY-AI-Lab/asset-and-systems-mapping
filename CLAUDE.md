@@ -32,4 +32,5 @@ record of progress and must not be renumbered. `wrangler.dev.jsonc` deploys the
 separate `systems-mapping-dev` Worker; production releases stay manual.
 
 Instructor prompt editing follows `docs/instructor-settings.md`: one scale selector and prompt field, optional student preview, and Publish changes that saves pending edits first. Routine editing generates draft metadata; preserve optimistic revision checks, failed-publication drafts, and the advanced version/history controls.
+Course rosters stay in a collapsed disclosure under Submissions and load on demand; they must not displace the console navigation or course-settings editor.
 

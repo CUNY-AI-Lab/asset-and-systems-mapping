@@ -20,5 +20,6 @@ Published text is read-only until **Edit prompts** creates a draft. While saving
 - Align form content to the left, limit the editor to 960px, and use consistent 16–24px spacing. Controls retain 44px minimum touch targets. Text wraps at narrow widths.
 - Keep one primary action: **Edit prompts** for a published version, **Publish changes** for a draft. **Save draft** is secondary. Account identity and sign-out live in a dismissible **Account** menu.
 - Student preview is optional and collapsed by default. It shows the same plain text students receive; the prompt does not support arbitrary HTML, CSS, or executable customization.
+- The course roster is available on demand under **Submissions → Students and saved progress**. It loads only when opened and never sits above the console's navigation or prompt settings.
 
 The implementation lives in `src/TeacherDashboard.jsx` and the scoped `src/course-settings.css`. The course schema, role checks, publication endpoints, and student Field Notes storage are unchanged.

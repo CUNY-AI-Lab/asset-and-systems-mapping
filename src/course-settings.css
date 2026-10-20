@@ -12,6 +12,9 @@
 .teacher-account strong { overflow-wrap: anywhere; font-size: 15px; font-weight: 600; }
 .teacher-account form { margin: 0; }
 .teacher-account .button { justify-self: start; }
+.course-progress-disclosure { margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.course-progress-disclosure > summary { min-height: 44px; padding-block: 12px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.course-progress-disclosure > .course-students { padding-block: 16px; }
 .course-settings { max-width: 960px; margin-inline: auto; }
 .course-settings > .section-heading { margin: 0; padding: 20px 0; }
 .course-settings > .section-heading h2 { margin: 0; font-size: 22px; }

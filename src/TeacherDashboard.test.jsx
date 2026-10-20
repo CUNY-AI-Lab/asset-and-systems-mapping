@@ -255,6 +255,33 @@ describe('TeacherDashboard', () => {
     expect(fetch.mock.calls[0][1].headers['x-systems-course']).toBe('seminar-one');
   });
 
+  it('keeps the course roster out of prompt settings and loads it only when requested', async () => {
+    useAccountStorage('instructor-settings-account', null, { kind: 'course', id: 'seminar-one' });
+    const working = authenticatedFetch({ queue: [] });
+    const request = vi.fn((path, options) => path === '/api/cloud/course-students'
+      ? Promise.resolve(jsonResponse({ students: [], demonstrationStudents: [], nextCursor: null }))
+      : working(path, options));
+    vi.stubGlobal('fetch', request);
+    render(<TeacherDashboard institutionalMode onConfigurationChanged={vi.fn()} />);
+    await screen.findByRole('heading', { name: 'Teacher Console' });
+    const roster = screen.getByText('Students and saved progress', { selector: 'summary' });
+    expect(roster.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    expect(await screen.findByLabelText('Field Notes prompt')).toBeVisible();
+    expect(roster).not.toBeVisible();
+    expect(request.mock.calls.some(([path]) => path === '/api/cloud/course-students')).toBe(false);
+    fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
+    fireEvent.click(roster);
+    expect(await screen.findByText('Students will appear here after their first sign-in.')).toBeVisible();
+    const rosterReads = () => request.mock.calls.filter(([path]) => path === '/api/cloud/course-students');
+    expect(rosterReads()).toHaveLength(1);
+    expect(rosterReads()[0][1].headers['x-systems-course']).toBe('seminar-one');
+    fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+    expect(screen.getByText('Students will appear here after their first sign-in.')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
+    expect(rosterReads()).toHaveLength(1);
+  });
+
   it.each(['server response', 'network failure', 'invalid response'])('keeps startup diagnostics out of the visible %s error', async failure => {
     vi.stubGlobal('fetch', vi.fn(async () => {
       if (failure === 'network failure') throw new Error('ECONNRESET at private.internal:5432');

@@ -865,6 +865,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
 function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, institutionalMode = false, sessionError = null }) {
   const [section, setSection] = useState('reviews');
   const [guidanceVisited, setGuidanceVisited] = useState(false);
+  const [studentsVisited, setStudentsVisited] = useState(false);
   const sectionTabRefs = useRef(new Map());
   const accountRef = useRef(null);
   useEffect(() => {
@@ -898,9 +899,14 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
   return <div className={`teacher-dashboard${section === 'guidance' ? ' teacher-dashboard--settings' : ''}`}>
     <PageHeading title="Teacher Console" actions={<details ref={accountRef} className="teacher-account"><summary>Account</summary><div><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div></details>} />
     {sessionError && <p className="teacher-message teacher-message--error" role="alert">{sessionError}</p>}
-    {institutionalMode && projectStorage().courseSelection?.kind === 'course' && <CourseStudents />}
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>
-    <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}><ReviewSubmissions /></div>
+    <div id="teacher-section-panel-reviews" role="tabpanel" aria-labelledby="teacher-section-tab-reviews" hidden={section !== 'reviews'}>
+      {institutionalMode && projectStorage().courseSelection?.kind === 'course' && <details className="course-progress-disclosure" onToggle={event => { if (event.currentTarget.open) setStudentsVisited(true); }}>
+        <summary>Students and saved progress</summary>
+        {studentsVisited && <CourseStudents />}
+      </details>}
+      <ReviewSubmissions />
+    </div>
     {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
   </div>;
 }
