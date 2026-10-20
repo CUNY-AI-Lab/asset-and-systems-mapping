@@ -329,7 +329,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await browserExpect(page.getByRole('heading', { name: 'Instructor Console', exact: true })).toBeVisible();
     await browserExpect(page.getByRole('tab', { name: 'Submissions', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('tab', { name: 'Course settings', exact: true }).click();
-    await browserExpect(page.getByRole('heading', { name: 'Course settings', exact: true })).toBeVisible();
+    await browserExpect(page.getByRole('heading', { name: 'Field Notes prompts', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Projects', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
     await page.getByText('Account', { exact: true }).click();
