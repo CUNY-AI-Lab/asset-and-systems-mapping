@@ -11,6 +11,8 @@ async function readProject(page) {
 test('student automatic flow stays simple, editable, and persistent', async ({ page, makeAxeBuilder }, testInfo) => {
   const violations = [];
   const errors = [];
+  const memoReviews = [];
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/preflight/evaluations') memoReviews.push(request.postDataJSON()); });
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto('/');
@@ -55,6 +57,13 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('meso');
   await expect.poll(async () => (await readProject(page)).stage).toBe(3);
+  expect(memoReviews).toHaveLength(2);
+  expect(memoReviews[0]).not.toHaveProperty('fieldNotes');
+  expect(memoReviews[1].fieldNotes).toEqual({
+    scale: 'micro', truncated: false,
+    text: 'Ask participants which actors and direct interactions are missing, then observe coordination between home and the library.',
+  });
+  expect(memoReviews[1].sourceMaterial).toBe(memo);
   await notebookSection(page, 'review');
   await expect(page.getByRole('button', { name: 'Continue to Exo-level', exact: true })).toBeDisabled();
   await page.getByRole('textbox', { name: 'Field notes (required)' }).fill('Ask who sets the schedule across settings and trace the outside office affecting library access.');

@@ -67,6 +67,10 @@
 .reflection-entry .field__label { font-size: 14px; }
 .reflection-entry small { font-weight: 400; color: var(--muted); }
 .reflection-entry textarea { min-height: 144px; font-size: 16px; line-height: 1.5; }
+.field-notes-continuity { margin: 12px 0; border-block: 1px solid var(--line); font-size: 14px; }
+.field-notes-continuity > summary { min-height: 44px; padding-block: 12px; cursor: pointer; font-weight: 600; }
+.field-notes-continuity p { margin: 12px 0; color: var(--muted); line-height: 1.5; }
+.field-notes-continuity blockquote { margin: 12px 0; padding-left: 12px; border-left: 2px solid var(--blue); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 1.5; }
 .reflection-help, .notebook-review-tools { font-size: 14px; }
 .reflection-help > summary, .notebook-review-tools > summary { min-height: 44px; padding: 12px 0; cursor: pointer; color: var(--muted); }
 .reflection-help ul { padding-left: 20px; margin: 0 0 12px; line-height: 1.6; }

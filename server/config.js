@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
+import { DEFAULT_FIELD_NOTES_QUESTIONS, upgradeFieldNotesQuestions } from '../shared/field-notes.js';
 import {
   COURSE_PROGRESSION_SCHEMA_VERSION,
   defineEducatorResource,
@@ -365,12 +365,14 @@ export function upgradeSystemsMappingTeachingProfile(value) {
     const normalized = normalizeSystemsMappingTeachingProfile(value);
     return normalizeSystemsMappingTeachingProfile({
       ...structuredClone(normalized),
+      ...(normalized.fieldNotesQuestions ? { fieldNotesQuestions: upgradeFieldNotesQuestions(normalized.fieldNotesQuestions) } : {}),
       parts: normalized.parts.map((part) => ({ ...structuredClone(part), stages: upgradeUntouchedStageDefaults(part) })),
     });
   }
   if (value?.schemaVersion === LEGACY_PARTS_COURSE_PROGRESSION_SCHEMA_VERSION) {
     const migrated = structuredClone(value);
     migrated.schemaVersion = COURSE_PROGRESSION_SCHEMA_VERSION;
+    if (migrated.fieldNotesQuestions) migrated.fieldNotesQuestions = upgradeFieldNotesQuestions(migrated.fieldNotesQuestions);
     migrated.parts = (migrated.parts || []).map((part) => ({
       ...part,
       scaleIds: (part.scaleIds || []).map((scale) => ({ macro: 'exosphere', integration: 'macrosphere' })[scale] || scale),

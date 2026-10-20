@@ -51,4 +51,18 @@ describe('Field Notes', () => {
     expect(restored.reflection).toBe(old + '\nNext: Ask residents.');
     expect(restored.levelProgress.micro.reflection).toBe('My original Micro reflection.');
   });
+
+  it('explains a clipped handoff while preserving the full saved note and earlier archive', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'exosphere';
+    project.reflection = '😀'.repeat(32_000);
+    project.levelProgress.micro.reflection = 'An earlier question remains available.';
+    const update = vi.fn();
+    render(<ReflectionEntry project={project} update={update} />);
+    expect(screen.getByRole('textbox')).toHaveValue(project.reflection);
+    expect(screen.getByText(/Macro-level memo review receives an opening excerpt/)).toBeVisible();
+    fireEvent.click(screen.getByText('Notes from other scales'));
+    expect(screen.getByText(project.levelProgress.micro.reflection)).toBeVisible();
+    expect(update).not.toHaveBeenCalled();
+  });
 });

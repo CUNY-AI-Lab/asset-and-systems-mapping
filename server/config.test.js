@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FIELD_NOTES_QUESTIONS, LEGACY_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 import {
   composeEffectivePrompt,
   DEFAULT_TEACHING_PROFILE,
@@ -178,5 +179,21 @@ describe('course-setting prompt composition', () => {
     expect(Object.hasOwn(normalized, 'intakeQuestions')).toBe(false);
     expect(JSON.stringify(normalized)).toBe(JSON.stringify(DEFAULT_TEACHING_PROFILE));
     expect(teachingProfileFingerprint(normalized)).toBe(teachingProfileFingerprint(DEFAULT_TEACHING_PROFILE));
+  });
+
+  it.each(['cuny.course-progression.v3', 'cuny.course-progression.v2'])('updates only exact old Field Notes defaults in %s', schemaVersion => {
+    const profile = structuredClone(DEFAULT_TEACHING_PROFILE);
+    profile.schemaVersion = schemaVersion;
+    if (schemaVersion.endsWith('.v2')) profile.parts[1].scaleIds = ['macro', 'integration'];
+    profile.fieldNotesQuestions = { ...LEGACY_FIELD_NOTES_QUESTIONS, meso: 'What does the home–school link still leave uncertain?' };
+    profile.parts[0].stages['review-suggestions'].guidance = 'Keep the instructor’s wording.';
+    const original = structuredClone(profile);
+    const upgraded = upgradeSystemsMappingTeachingProfile(profile);
+    expect(upgraded.fieldNotesQuestions).toEqual({ ...DEFAULT_FIELD_NOTES_QUESTIONS, meso: profile.fieldNotesQuestions.meso });
+    expect(upgraded.parts[0].stages['review-suggestions'].guidance).toBe(profile.parts[0].stages['review-suggestions'].guidance);
+    expect(profile).toEqual(original);
+    expect(upgradeSystemsMappingTeachingProfile(upgraded)).toEqual(upgraded);
+    delete profile.fieldNotesQuestions;
+    expect(upgradeSystemsMappingTeachingProfile(profile)).not.toHaveProperty('fieldNotesQuestions');
   });
 });
