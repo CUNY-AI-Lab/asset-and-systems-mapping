@@ -175,6 +175,48 @@ function authenticatedFetch({ queue, detail = submissionDetail, decision, profil
   return fetchMock;
 }
 
+function promptCustomizationFetch({ failPublicationOnce = false, conflictOnSave = false } = {}) {
+  const fallback = authenticatedFetch();
+  const draftId = 'field-notes-customization-draft';
+  let draft = null;
+  let publicationAttempts = 0;
+  return vi.fn(async (path, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    if (path === '/api/teacher/profiles' && options.method === 'POST') {
+      draft = { ...activeProfile, id: draftId, status: 'draft', name: body.name, profile: structuredClone(activeProfile.profile) };
+      return jsonResponse({ profile: draft, events: [] }, 201);
+    }
+    if (path === '/api/teacher/profiles') return jsonResponse({ resource,
+      runtime: { provider: 'deterministic', model: 'STEM Splitter' },
+      activeProfileId: draft?.status === 'active' ? draftId : activeProfile.id,
+      profiles: [activeProfile, ...(draft ? [draft] : [])],
+    });
+    if (path === `/api/teacher/profiles/${draftId}` && options.method === 'PUT') {
+      if (conflictOnSave) return jsonResponse({ error: 'A newer revision is available.', details: { current: { ...draft, revision: 2 } } }, 409);
+      draft = { ...draft, name: body.name, profile: body.profile, revision: 2 };
+      return jsonResponse({ profile: draft, events: [] });
+    }
+    if (path === `/api/teacher/profiles/${draftId}/publish`) {
+      publicationAttempts += 1;
+      if (failPublicationOnce && publicationAttempts === 1) return jsonResponse({ error: 'Service temporarily unavailable.' }, 503);
+      draft = { ...draft, status: 'active' };
+      return jsonResponse({ profile: draft, events: [] });
+    }
+    if (path === `/api/teacher/profiles/${draftId}`) return jsonResponse({ profile: draft, events: [] });
+    return fallback(path, options);
+  });
+}
+
+async function openPromptCustomization(fetchMock) {
+  await renderAuthenticated(fetchMock);
+  fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
+  const edit = await screen.findByRole('button', { name: 'Edit prompts' });
+  expect(screen.getByLabelText('Field Notes prompt')).toHaveAttribute('readonly');
+  fireEvent.click(edit);
+  await waitFor(() => expect(screen.getByLabelText('Field Notes prompt')).not.toHaveAttribute('readonly'));
+  return screen.getByLabelText('Field Notes prompt');
+}
+
 async function renderAuthenticated(fetchMock = authenticatedFetch()) {
   vi.stubGlobal('fetch', fetchMock);
   render(<TeacherDashboard onConfigurationChanged={vi.fn()} />);
@@ -250,6 +292,7 @@ describe('TeacherDashboard', () => {
       ? Promise.reject(new Error('logout_transport_failure: private session diagnostic'))
       : working(path, options));
     await renderAuthenticated(request);
+    fireEvent.click(screen.getByText('Account', { selector: 'summary' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Sign-out could not be confirmed. Try signing out again before leaving this device.');
     expect(screen.getByRole('heading', { name: 'Teacher Console' })).toBeVisible();
@@ -572,10 +615,10 @@ describe('TeacherDashboard', () => {
     expect(guidanceTab).toHaveFocus();
     expect(guidanceTab).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
-    expect(screen.getByText('Edit the Field Notes question for each scale.')).toBeVisible();
+    expect(screen.getByText('Adapt Field Notes to your lesson.')).toBeVisible();
     expect(await screen.findByLabelText('Scale')).toHaveValue('micro');
     expect(within(screen.getByLabelText('Scale')).getAllByRole('option').map(({ value }) => value)).toEqual(['micro', 'meso', 'exosphere', 'macrosphere']);
-    expect(screen.getByLabelText('Required Field Notes question')).toBeVisible();
+    expect(screen.getByLabelText('Field Notes prompt')).toBeVisible();
     expect(screen.getByLabelText('Mapping step')).not.toBeVisible();
     fireEvent.click(screen.getByText('Model guidance and course materials'));
     fireEvent.click(screen.getByText('Model guidance preview'));
@@ -618,7 +661,7 @@ describe('TeacherDashboard', () => {
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/teacher/profiles')).toHaveLength(1);
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/modules');
 
-    fireEvent.click(screen.getByText('Versions and change history'));
+    fireEvent.click(await screen.findByText('Versions and change history'));
     expect(versionDetails).toHaveAttribute('open');
     expect(screen.getByLabelText('Version')).toBeVisible();
     expect(screen.getByLabelText('Version name')).toBeVisible();
@@ -698,7 +741,7 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Course settings' })).toBeVisible();
-    fireEvent.click(screen.getByText('Versions and change history'));
+    fireEvent.click(await screen.findByText('Versions and change history'));
     fireEvent.click(screen.getByRole('button', { name: 'Create a draft' }));
     fireEvent.change(screen.getByLabelText('Draft name'), { target: { value: 'Evidence guidance' } });
     fireEvent.change(screen.getByLabelText('What do you plan to change?'), { target: { value: 'Focus prompts on relationships' } });
@@ -708,9 +751,9 @@ describe('TeacherDashboard', () => {
     fireEvent.change(screen.getByLabelText('Mapping step'), { target: { value: 'review-suggestions' } });
     const guidanceField = screen.getByLabelText('Instructor guidance for this section');
     fireEvent.change(screen.getByLabelText('Scale'), { target: { value: 'meso' } });
-    fireEvent.change(screen.getByLabelText('Required Field Notes question'), { target: { value: 'Whose account of the home–school linkage will you seek?' } });
+    fireEvent.change(screen.getByLabelText('Field Notes prompt'), { target: { value: 'Whose account of the home–school linkage will you seek?' } });
     fireEvent.change(screen.getByLabelText('Scale'), { target: { value: 'micro' } });
-    fireEvent.change(screen.getByLabelText('Required Field Notes question'), { target: { value: 'Which direct relationships are missing from this setting?' } });
+    fireEvent.change(screen.getByLabelText('Field Notes prompt'), { target: { value: 'Which direct relationships are missing from this setting?' } });
     fireEvent.click(screen.getByText('Model guidance and course materials'));
     fireEvent.click(screen.getByText('Model guidance preview'));
     fireEvent.click(screen.getByRole('button', { name: 'Add Micro-level note' }));
@@ -718,9 +761,9 @@ describe('TeacherDashboard', () => {
     expect(screen.getByText('Optional level notes can focus a question or course example. Fixed level definitions and map rules stay unchanged.')).toBeVisible();
     fireEvent.change(guidanceField, { target: { value: 'Return first to evidence that names a relationship.\n\nMicro-level: Ask the student to name the direct action.' } });
     fireEvent.change(screen.getByLabelText('Course material for this section'), { target: { value: 'Use the class reading on people, organizations, and connections.' } });
-    expect(screen.getByRole('button', { name: 'Publish draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Publish changes' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Preview saved section' })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Focus the evidence prompt' } });
+    fireEvent.change(screen.getByLabelText('Change note (optional)'), { target: { value: 'Focus the evidence prompt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(await screen.findByText('Draft revision 2 saved.')).toBeVisible();
     expect(screen.getByText('Draft saved')).toBeVisible();
@@ -738,14 +781,82 @@ describe('TeacherDashboard', () => {
     });
     expect(savedBody.profile.parts[1]).toEqual(profileValue.parts[1]);
     expect(onConfigurationChanged).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Publish draft' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Publish changes' })).toBeEnabled();
 
-    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Publish the evidence guidance' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Publish draft' }));
-    expect(await screen.findByText('Draft published. These course settings are now current.')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Change note (optional)'), { target: { value: 'Publish the evidence guidance' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
+    expect(await screen.findByText('Changes published. Students will see the updated prompts.')).toBeVisible();
     expect(screen.getByText('Published')).toBeVisible();
     expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
     expect(requests.some(([path, method]) => path === '/api/teacher/modules' && method === 'PUT')).toBe(false);
+  });
+
+  it('edits lesson prompts and publishes in one action without requiring version metadata', async () => {
+    const fetchMock = promptCustomizationFetch();
+    const field = await openPromptCustomization(fetchMock);
+    expect(screen.queryByLabelText('Draft name')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Change note (optional)')).not.toBeVisible();
+    fireEvent.change(field, { target: { value: 'In our clinic case, whose direct relationships are missing?' } });
+    fireEvent.change(screen.getByLabelText('Scale'), { target: { value: 'meso' } });
+    fireEvent.change(field, { target: { value: 'Use this week’s reading to plan an observation of the home–clinic linkage.' } });
+    fireEvent.click(screen.getByText('Student preview', { selector: 'summary' }));
+    expect(within(document.querySelector('.course-student-preview')).getByText('Use this week’s reading to plan an observation of the home–clinic linkage.')).toBeVisible();
+    expect(fetchMock.mock.calls.some(([path]) => /\/preview\?|map\/check|preflight\/evaluations/.test(path))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
+    expect(field).toBeDisabled();
+    expect(await screen.findByText('Changes published. Students will see the updated prompts.')).toBeVisible();
+    const writes = fetchMock.mock.calls.filter(([, options]) => ['PUT', 'POST'].includes(options?.method));
+    expect(writes.map(([path]) => path)).toEqual(['/api/teacher/profiles', '/api/teacher/profiles/field-notes-customization-draft', '/api/teacher/profiles/field-notes-customization-draft/publish']);
+    const saved = JSON.parse(writes[1][1].body);
+    expect(saved).toMatchObject({ expectedRevision: 1, note: 'Update Field Notes for Micro-level, Meso-level.' });
+    expect(saved.profile.fieldNotesQuestions.micro).toContain('our clinic case');
+    expect(saved.profile.parts).toEqual(profileValue.parts);
+    expect(JSON.parse(writes[2][1].body).expectedRevision).toBe(2);
+    expect(field).toHaveAttribute('readonly');
+  });
+
+  it('keeps a saved draft when publishing fails and retries publication only on another click', async () => {
+    const fetchMock = promptCustomizationFetch({ failPublicationOnce: true });
+    const field = await openPromptCustomization(fetchMock);
+    const question = 'Whose daily care work is missing from the case map?';
+    fireEvent.change(field, { target: { value: question } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(field).toHaveValue(question);
+    expect(screen.getByText('Saved draft')).toBeVisible();
+    expect(fetchMock.mock.calls.filter(([path]) => path.endsWith('/publish'))).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
+    expect(await screen.findByText('Changes published. Students will see the updated prompts.')).toBeVisible();
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === 'PUT')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([path]) => path.endsWith('/publish'))).toHaveLength(2);
+  });
+
+  it('finds a blank prompt in another scale and protects unsaved edits from version switching and stale saves', async () => {
+    const fetchMock = promptCustomizationFetch({ conflictOnSave: true });
+    const field = await openPromptCustomization(fetchMock);
+    const question = 'Keep my lesson-specific Micro prompt.';
+    fireEvent.change(field, { target: { value: question } });
+    fireEvent.change(screen.getByLabelText('Scale'), { target: { value: 'meso' } });
+    fireEvent.change(field, { target: { value: '  ' } });
+    fireEvent.change(screen.getByLabelText('Scale'), { target: { value: 'micro' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Add a Field Notes prompt for Meso-level.');
+    expect(screen.getByLabelText('Scale')).toHaveValue('meso');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(false);
+    const beforeUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByText('Versions and change history', { selector: 'summary' }));
+    fireEvent.change(screen.getByLabelText('Version', { exact: true }), { target: { value: activeProfile.id } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Save or publish your changes before switching versions.');
+    expect(field).toHaveValue('  ');
+    fireEvent.change(field, { target: { value: 'Observe the home–clinic linkage.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Another session saved a newer revision before publication.');
+    expect(fetchMock.mock.calls.some(([path]) => path.endsWith('/publish'))).toBe(false);
+    fireEvent.change(screen.getByLabelText('Scale'), { target: { value: 'micro' } });
+    expect(field).toHaveValue(question);
   });
 
   it('preserves unsaved stage guidance when the server reports a newer revision', async () => {
@@ -786,12 +897,12 @@ describe('TeacherDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Teacher Console' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     await screen.findByRole('heading', { name: 'Course settings' });
-    fireEvent.click(screen.getByText('Versions and change history'));
+    fireEvent.click(await screen.findByText('Versions and change history'));
     fireEvent.change(screen.getByLabelText('Version', { exact: true }), { target: { value: draftProfile.id } });
     await waitFor(() => expect(screen.getByLabelText('Version name')).toHaveValue('Question guidance'));
     fireEvent.change(screen.getByLabelText('Mapping step'), { target: { value: 'review-suggestions' } });
     fireEvent.change(screen.getByLabelText('Instructor guidance for this section'), { target: { value: 'My unsaved question remains here.' } });
-    fireEvent.change(screen.getByLabelText('Change note'), { target: { value: 'Try another question' } });
+    fireEvent.change(screen.getByLabelText('Change note (optional)'), { target: { value: 'Try another question' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
 
     expect(await screen.findByText('Another session saved a newer revision of this draft. Your unsaved text remains in the editor.')).toBeVisible();

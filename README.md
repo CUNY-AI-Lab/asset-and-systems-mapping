@@ -50,6 +50,8 @@ The notebook contains the current next action. The compact footer only switches 
 
 Field Notes are required to complete a scale; students can return to Map at any time. They use the existing immediate draft journal and per-scale project saves. A separate historical recovery cache is [proposed](docs/field-notes-recovery-proposal.md), not implemented.
 
+Instructors customize the question from **Teacher Console → Course settings → Edit prompts**. Choose a scale, connect the prompt to the lesson's case or reading, optionally open Student preview, then Publish changes. Draft creation and saving are handled within that flow; version history and model settings remain collapsed. See [instructor settings](docs/instructor-settings.md).
+
 ### Map Check
 
 Map Check asks the course model to reason over the map the student has built, not to reread the memo. Students can request **Check this item** or **Check this connection** inside its editing details. The general “Ask the map” panel has been removed. Each returns at most four short notes tied to map IDs, commits nothing, and runs as one attempt with the same course prompt appendix, limits and support IDs as memo guidance. Choosing an item in a note highlights it on the canvas.

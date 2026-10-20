@@ -130,15 +130,16 @@ test('instructor edits Field Notes by scale and publishes the saved questions', 
   await page.getByRole('tab', { name: 'Course settings' }).click();
   await expect(page.getByLabel('Scale', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Mapping step', { exact: true })).not.toBeVisible();
-  expect(await page.locator('.teaching-profile-editor textarea:visible').count()).toBe(1);
+  expect(await page.locator('.course-prompt-editor textarea:visible').count()).toBe(1);
   for (const [scale, question] of Object.entries(questions)) {
     await page.getByLabel('Scale', { exact: true }).selectOption(scale);
-    await page.getByLabel('Required Field Notes question').fill(question);
+    await page.getByLabel('Field Notes prompt').fill(question);
   }
   await page.getByLabel('Scale', { exact: true }).selectOption('micro');
-  await expect(page.getByLabel('Required Field Notes question')).toHaveValue(questions.micro);
-  await expect(page.getByRole('button', { name: 'Publish draft', exact: true })).toBeDisabled();
-  await page.getByLabel('Change note', { exact: true }).fill('Adapt the questions to the field site');
+  await expect(page.getByLabel('Field Notes prompt')).toHaveValue(questions.micro);
+  await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeEnabled();
+  await page.getByText('Versions and change history', { exact: true }).click();
+  await page.getByLabel('Change note (optional)', { exact: true }).fill('Adapt the questions to the field site');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await expect(page.getByText('Draft revision 2 saved.')).toBeVisible();
   expect(writes).toHaveLength(1);
@@ -147,8 +148,88 @@ test('instructor edits Field Notes by scale and publishes the saved questions', 
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Field Notes instructor editor'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Field Notes instructor editor');
-  await page.getByLabel('Change note', { exact: true }).fill('Publish the questions for this fieldwork cycle');
-  await page.getByRole('button', { name: 'Publish draft', exact: true }).click();
-  await expect(page.getByText('Draft published. These course settings are now current.')).toBeVisible();
-  await expect(page.getByLabel('Required Field Notes question')).toHaveAttribute('readonly', '');
+  await page.getByLabel('Change note (optional)', { exact: true }).fill('Publish the questions for this fieldwork cycle');
+  await page.getByRole('button', { name: 'Publish changes', exact: true }).click();
+  await expect(page.getByText('Changes published. Students will see the updated prompts.')).toBeVisible();
+  await expect(page.getByLabel('Field Notes prompt')).toHaveAttribute('readonly', '');
+});
+
+test('lesson customization opens an editable copy and publishes directly from the prompt editor', async ({ page, makeAxeBuilder, browserName }, testInfo) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  let published = { id: 'published-lesson-prompts', name: 'Course prompts', status: 'active', revision: 1, profile: structuredClone(DEFAULT_TEACHING_PROFILE) };
+  let draft = null;
+  const writes = [];
+  await page.route('**/api/config/public?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: { configKind: params.get('configKind'), scale: params.get('scale'), stageId: params.get('stageId'), fingerprint: 'f'.repeat(64), revision: 2, moduleVersions: [], fieldNotesQuestions: published.profile.fieldNotesQuestions } });
+  });
+  await page.route('**/api/teacher/profiles', async route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      expect(body.sourceProfileId).toBe(published.id);
+      draft = { ...published, id: 'lesson-prompt-draft', name: body.name, status: 'draft' };
+      writes.push({ method: 'CREATE' });
+      return route.fulfill({ status: 201, json: { profile: draft, events: [] } });
+    }
+    await route.fulfill({ json: {
+      resource: SYSTEMS_MAPPING_EDUCATOR_RESOURCE,
+      runtime: { provider: 'deterministic', model: 'STEM Splitter' },
+      activeProfileId: published.id, profiles: [published, ...(draft && draft.id !== published.id ? [draft] : [])],
+    } });
+  });
+  await page.route('**/api/teacher/profiles/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON();
+      expect(body.expectedRevision).toBe(1);
+      draft = { ...draft, name: body.name, profile: body.profile, revision: 2 };
+      writes.push({ method: 'SAVE', profile: draft.profile });
+      return route.fulfill({ json: { profile: draft, events: [] } });
+    }
+    if (path.endsWith('/publish')) {
+      expect(route.request().postDataJSON().expectedRevision).toBe(2);
+      published = { ...draft, status: 'active' };
+      writes.push({ method: 'PUBLISH' });
+      return route.fulfill({ json: { profile: published, events: [] } });
+    }
+    return route.fulfill({ json: { profile: draft && path.endsWith(draft.id) ? draft : published, events: [] } });
+  });
+  await openTeacherFixture(page, []);
+  await page.getByRole('tab', { name: 'Course settings' }).click();
+  await expect(page.getByRole('button', { name: 'Edit prompts', exact: true })).toBeVisible();
+  const account = page.getByText('Account', { exact: true });
+  await account.click();
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(account).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Field Notes prompt')).toHaveAttribute('readonly', '');
+  await expect(page.getByLabel('Draft name')).toHaveCount(0);
+  await expect(page.getByLabel('Version', { exact: true })).not.toBeVisible();
+  expect(await page.locator('.course-settings textarea:visible').count()).toBe(1);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.getByRole('button', { name: 'Edit prompts', exact: true })).toBeInViewport({ ratio: 1 });
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Course customization published'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'Course customization published');
+  await page.getByRole('button', { name: 'Edit prompts', exact: true }).click();
+  const field = page.getByLabel('Field Notes prompt');
+  await expect(field).not.toHaveAttribute('readonly', '');
+  const question = 'Using our library case and this week’s reading, whose direct relationships are missing? Plan an observation and identify a link between the focal person’s everyday settings to investigate at Meso.';
+  await field.fill(question);
+  await page.getByText('Student preview', { exact: true }).click();
+  await expect(page.locator('.course-student-preview__question')).toHaveText(question);
+  await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByLabel('Change note (optional)')).not.toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Course customization preview'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'Course customization preview');
+  await page.getByRole('button', { name: 'Publish changes', exact: true }).click();
+  await expect(page.getByText('Changes published. Students will see the updated prompts.')).toBeVisible();
+  await expect(field).toHaveAttribute('readonly', '');
+  expect(writes.map(write => write.method)).toEqual(['CREATE', 'SAVE', 'PUBLISH']);
+  expect(writes[1].profile.fieldNotesQuestions.micro).toBe(question);
+  expect(writes[1].profile.fieldNotesQuestions.meso).toBe(DEFAULT_TEACHING_PROFILE.fieldNotesQuestions.meso);
+  expect(errors).toEqual(screenshotWarnings(browserName, 2));
 });

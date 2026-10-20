@@ -7,6 +7,7 @@ import CourseStudents from './CourseStudents.jsx';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { SYSTEMS_MAPPING_LEVELS, systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 import { fieldNotesQuestions, FIELD_NOTES_QUESTION_LIMIT } from '../shared/field-notes.js';
+import './course-settings.css';
 
 const DASHBOARD_SECTIONS = [
   { id: 'reviews', label: 'Submissions' },
@@ -532,6 +533,8 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const [preview, setPreview] = useState(null);
   const [selectedPartId, setSelectedPartId] = useState(null);
   const [selectedStageId, setSelectedStageId] = useState(SYSTEMS_MAPPING_STAGES[0].id);
+  const promptRef = useRef(null);
+  const focusPromptOnLoad = useRef(false);
 
   const loadCatalog = async (preferredId = null) => {
     const result = await apiRequest('/api/teacher/profiles');
@@ -566,6 +569,13 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setMessage(null);
     }).catch((error) => setMessage({ type: 'error', text: userFacingError(error, 'These course settings could not be loaded. Select another version, then try again.') })).finally(() => setLoading(false));
   }, [selectedId]);
+
+  useEffect(() => {
+    if (focusPromptOnLoad.current && !loading && !busy && detail?.status === 'draft') {
+      promptRef.current?.focus({ preventScroll: true });
+      focusPromptOnLoad.current = false;
+    }
+  }, [loading, busy, detail]);
 
   const profileParts = Array.isArray(draft?.profile?.parts) ? draft.profile.parts : [];
   const selectedPart = profileParts.find(({ id }) => id === selectedPartId) || profileParts[0] || null;
@@ -622,21 +632,71 @@ function TeachingProfiles({ onConfigurationChanged }) {
     } finally { setBusy(false); }
   };
 
+  const editPrompts = async () => {
+    setBusy(true);
+    focusPromptOnLoad.current = true;
+    try {
+      const result = await apiRequest('/api/teacher/profiles', {
+        method: 'POST',
+        body: {
+          name: detail.name.endsWith(' Field Notes') ? detail.name : `${detail.name.slice(0, 100)} Field Notes`,
+          note: 'Adapt Field Notes to the lesson.',
+          sourceProfileId: detail.id,
+        },
+      });
+      await loadCatalog(result.profile.id);
+    } catch (error) {
+      focusPromptOnLoad.current = false;
+      setMessage({ type: 'error', text: userFacingError(error, 'The prompts could not be opened for editing. Try Edit prompts again.') });
+    } finally { setBusy(false); }
+  };
+
+  const changeNote = () => {
+    if (note.trim()) return note.trim();
+    const original = fieldNotesQuestions(detail.profile);
+    const changed = Object.entries(fieldNotesQuestions(draft.profile))
+      .filter(([scale, question]) => question !== original[scale]).map(([scale]) => scaleLabel(scale));
+    return changed.length ? `Update Field Notes for ${changed.join(', ')}.` : 'Update course settings.';
+  };
+
+  const validDraft = () => {
+    if (!draft?.name.trim()) {
+      setMessage({ type: 'error', text: 'Name the draft before saving it.' });
+      return false;
+    }
+    if (note.trim() && note.trim().length < 3) {
+      setMessage({ type: 'error', text: 'Use at least three characters for the change note, or leave it blank.' });
+      return false;
+    }
+    const missingScale = SYSTEMS_MAPPING_LEVELS.find(({ id }) => !fieldNotesQuestions(draft.profile)[id]?.trim());
+    if (missingScale) {
+      setPreviewScale(missingScale.id);
+      setSelectedPartId(profileParts.find(part => part.scaleIds.includes(missingScale.id))?.id || null);
+      setMessage({ type: 'error', text: `Add a Field Notes prompt for ${missingScale.title}.` });
+      window.requestAnimationFrame(() => promptRef.current?.focus());
+      return false;
+    }
+    return true;
+  };
+
+  const saveDraftVersion = async () => {
+    const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}`, {
+      method: 'PUT',
+      body: { name: draft.name.trim(), profile: draft.profile, note: changeNote(), expectedRevision: detail.revision },
+    });
+    setDetail(result.profile);
+    setDraft({ name: result.profile.name, profile: structuredClone(result.profile.profile) });
+    setEvents(result.events || []);
+    setNote('');
+    setConflict(null);
+    return result;
+  };
+
   const saveDraft = async () => {
-    if (!draft?.name.trim()) return setMessage({ type: 'error', text: 'Name the draft before saving it.' });
-    if (Object.values(fieldNotesQuestions(draft.profile)).some(question => !question.trim())) return setMessage({ type: 'error', text: 'Add a Field Notes question for each scale before saving.' });
-    if (note.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short change note before saving.' });
+    if (!validDraft()) return;
     setBusy(true);
     try {
-      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}`, {
-        method: 'PUT',
-        body: { name: draft.name.trim(), profile: draft.profile, note: note.trim(), expectedRevision: detail.revision },
-      });
-      setDetail(result.profile);
-      setDraft({ name: result.profile.name, profile: structuredClone(result.profile.profile) });
-      setEvents(result.events || []);
-      setNote('');
-      setConflict(null);
+      const result = await saveDraftVersion();
       setMessage({ type: 'success', text: `Draft revision ${result.profile.revision} saved.` });
       await loadCatalog(result.profile.id);
     } catch (error) {
@@ -657,19 +717,21 @@ function TeachingProfiles({ onConfigurationChanged }) {
   };
 
   const publish = async () => {
-    if (note.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short publication note.' });
+    if (!validDraft()) return;
+    const publicationNote = changeNote();
     setBusy(true);
     try {
-      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(detail.id)}/publish`, {
+      const target = dirty ? (await saveDraftVersion()).profile : detail;
+      const result = await apiRequest(`/api/teacher/profiles/${encodeURIComponent(target.id)}/publish`, {
         method: 'POST',
-        body: { note: note.trim(), expectedRevision: detail.revision },
+        body: { note: publicationNote, expectedRevision: target.revision },
       });
       setDetail(result.profile);
       setDraft({ name: result.profile.name, profile: structuredClone(result.profile.profile) });
       setEvents(result.events || []);
       setNote('');
       setPreview(null);
-      setMessage({ type: 'success', text: 'Draft published. These course settings are now current.' });
+      setMessage({ type: 'success', text: 'Changes published. Students will see the updated prompts.' });
       await loadCatalog(result.profile.id);
       onConfigurationChanged();
     } catch (error) {
@@ -690,12 +752,18 @@ function TeachingProfiles({ onConfigurationChanged }) {
     finally { setBusy(false); }
   };
 
-  if (loading && !catalog) return <p className="empty-message">Loading course settings…</p>;
   const profiles = catalog?.profiles || [];
   const editable = detail?.status === 'draft';
   const dirty = Boolean(editable && draft && (
     draft.name !== detail.name || JSON.stringify(draft.profile) !== JSON.stringify(detail.profile)
   ));
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const protectDraft = event => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', protectDraft);
+    return () => window.removeEventListener('beforeunload', protectDraft);
+  }, [dirty]);
+  if (loading && !catalog) return <p className="empty-message">Loading course settings…</p>;
   const selectedStageIndex = Math.max(0, SYSTEMS_MAPPING_STAGES.findIndex(({ id }) => id === selectedStageId));
   const selectedStage = SYSTEMS_MAPPING_STAGES[selectedStageIndex];
   const selectedStageSettings = selectedPart?.stages?.[selectedStage.id] || { guidance: '', materials: '' };
@@ -704,43 +772,44 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const previewLevel = systemsMappingLevel(previewScale);
   const levelNotePrefix = `${scaleLabel(previewScale)}: `;
   const canAppendLevelNote = editable && selectedStageSettings.guidance.length + levelNotePrefix.length + 2 <= 2500;
-  return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
-    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Edit the Field Notes question for each scale.</p></div><button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button></div>
+  return <section className="model-guidance teaching-profiles course-settings" aria-labelledby="course-settings-heading" aria-busy={busy || loading}>
+    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Adapt Field Notes to your lesson.</p></div></div>
     <Message message={message} />
-      {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
-        <label className="field"><span className="field__label">Draft name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
-        <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
-        <button type="submit" className="button" disabled={busy}>Create draft</button>
-      </form>}
-    <details className="teacher-history teaching-profile-versioning">
-      <summary>Versions and change history</summary>
-      <div className="teacher-controls teaching-profile-controls">
-        <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
-      </div>
-
-      {detail && draft && <label className="field"><span className="field__label">Version name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
-      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{eventActionLabel(event.action)}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
-    </details>
-    {detail && draft && <div className="teacher-workbench teaching-profile-workbench">
-      <div className="teaching-profile-editor">
-        <label className="field"><span className="field__label">Scale</span><select aria-label="Scale" value={previewScale} onChange={(event) => {
-          const scale = event.target.value;
-          setPreviewScale(scale);
-          setSelectedPartId(profileParts.find(part => part.scaleIds.includes(scale))?.id || null);
-          setPreview(null);
-        }}>{SYSTEMS_MAPPING_LEVELS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}</select></label>
-        <section className="course-field-notes" aria-labelledby="course-field-notes-title">
-          <h3 id="course-field-notes-title">{scaleLabel(previewScale)} Field Notes</h3>
-          <label className="field"><span className="field__label">Required Field Notes question</span>
-            <textarea rows="6" maxLength={FIELD_NOTES_QUESTION_LIMIT} readOnly={!editable} value={fieldNotesQuestions(draft.profile)[previewScale]}
+    {detail && draft && <>
+      <div className="course-settings__body">
+        <fieldset className="course-prompt-editor" aria-label="Field Notes customization" disabled={busy || loading}>
+          <label className="field course-settings__scale"><span className="field__label">Scale</span><select aria-label="Scale" value={previewScale} onChange={(event) => {
+            const scale = event.target.value;
+            setPreviewScale(scale);
+            setSelectedPartId(profileParts.find(part => part.scaleIds.includes(scale))?.id || null);
+            setPreview(null);
+          }}>{SYSTEMS_MAPPING_LEVELS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}</select></label>
+          <label className="field"><span className="field__label">Field Notes prompt</span>
+            <textarea ref={promptRef} rows="7" maxLength={FIELD_NOTES_QUESTION_LIMIT} readOnly={!editable}
+              aria-describedby="course-prompt-help" aria-invalid={message?.type === 'error' && !fieldNotesQuestions(draft.profile)[previewScale].trim() || undefined}
+              value={fieldNotesQuestions(draft.profile)[previewScale]}
               onChange={(event) => {
                 const question = event.target.value;
                 setDraft(current => ({ ...current, profile: { ...current.profile, fieldNotesQuestions: { ...fieldNotesQuestions(current.profile), [previewScale]: question } } }));
               }} />
           </label>
-          <p className="field__hint">Ask what the current map leaves out, how students will investigate it, and what they will carry into the next scale. A response is required before continuing.</p>
-        </section>
+          <p id="course-prompt-help" className="field__hint">Reference a case, reading, or learning goal.</p>
+          <details className="course-student-preview"><summary>Student preview</summary>
+            <div className="course-student-preview__page"><h3>Field Notes</h3><p className="course-student-preview__scale">{scaleLabel(previewScale)}</p><p className="course-student-preview__question">{fieldNotesQuestions(draft.profile)[previewScale] || 'Your prompt will appear here.'}</p><p className="field__hint">A response is required before completing this scale.</p></div>
+          </details>
+        </fieldset>
+        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>A newer revision is available. Load it only if you want to replace the text in this editor.</p><button type="button" className="button button--ghost" disabled={busy} onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
+        <div className="course-settings__actions">
+          <p className="course-settings__status" role="status">{busy ? 'Saving…' : editable ? dirty ? 'Unsaved changes' : 'Saved draft' : detail.status === 'active' ? 'Published prompts' : 'Previous version'}</p>
+          <div>{editable ? <>
+            <button type="button" className="button button--secondary" disabled={busy || loading || !dirty} onClick={saveDraft}>Save draft</button>
+            <button type="button" className="button" disabled={busy || loading} onClick={publish}>Publish changes</button>
+          </> : <button type="button" className="button" disabled={busy || loading} onClick={editPrompts}>Edit prompts</button>}</div>
+        </div>
+      </div>
+      <div className="course-settings__additional">
         <details className="course-model-settings"><summary>Model guidance and course materials</summary>
+          <fieldset className="course-model-fields" disabled={busy || loading}>
         <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
         {selectedPart ? <>
           <div className="teacher-controls teaching-profile-controls" role="group" aria-label="Course section">
@@ -757,18 +826,8 @@ function TeachingProfiles({ onConfigurationChanged }) {
           <label className="field"><span className="field__label">Course material for this section</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
           <p className="field__hint">Paste the relevant course passage or reference text.</p>
         </section>}
-        </details>
-        {editable && <label className="field"><span className="field__label">Change note</span><input maxLength="500" value={note} onChange={(event) => setNote(event.target.value)} /></label>}
-        {dirty && <p className="field__hint">Save this draft before previewing or publishing it.</p>}
-        {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>Select Load server revision {conflict.revision} only if you want to replace the unsaved draft shown in the editor.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
-        <div className="teacher-actions">
-          {editable && <button type="button" className="button button--secondary" disabled={busy || !dirty} onClick={saveDraft}>Save draft</button>}
-          {editable && <button type="button" className="button" disabled={busy || dirty} onClick={publish}>Publish draft</button>}
-        </div>
-      </div>
-      <aside className="teaching-profile-preview">
-        <h3>Student question</h3>
-        <p>{fieldNotesQuestions(draft.profile)[previewScale]}</p>
+
+            <aside className="course-model-preview-panel">
         <details className="course-model-preview"><summary>Model guidance preview</summary>
         <h4>Preview this mapping step</h4>
         <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${scaleLabel(previewScale)} · ${selectedStage.label}` : ''}</p>
@@ -777,8 +836,29 @@ function TeachingProfiles({ onConfigurationChanged }) {
         <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Preview saved section</button>
         {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Instructor guidance</strong><p>{preview.guidance || 'No instructor guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
         </details>
-      </aside>
-    </div>}
+            </aside>
+          </fieldset>
+        </details>
+    <details className="teacher-history teaching-profile-versioning">
+      <summary>Versions and change history</summary>
+      <div className="teacher-controls teaching-profile-controls">
+        <label><span>Version</span><select aria-label="Version" value={selectedId || ''} disabled={busy || loading} onChange={(event) => {
+          if (dirty) { setMessage({ type: 'error', text: 'Save or publish your changes before switching versions.' }); return; }
+          setSelectedId(event.target.value);
+        }}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
+        <button type="button" className="button button--secondary" disabled={busy || loading || dirty} onClick={() => setCreating(value => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button>
+      </div>
+      {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
+        <label className="field"><span className="field__label">Draft name</span><input maxLength="120" disabled={busy || loading} value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
+        <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" disabled={busy || loading} value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
+        <button type="submit" className="button" disabled={busy}>Create draft</button>
+      </form>}
+      {editable && <label className="field"><span className="field__label">Change note (optional)</span><input maxLength="500" disabled={busy || loading} value={note} onChange={(event) => setNote(event.target.value)} /></label>}
+      {detail && draft && <label className="field"><span className="field__label">Version name</span><input maxLength="120" readOnly={!editable} disabled={busy || loading} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
+      {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{eventActionLabel(event.action)}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
+    </details>
+      </div>
+    </>}
   </section>;
 }
 
@@ -786,6 +866,23 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
   const [section, setSection] = useState('reviews');
   const [guidanceVisited, setGuidanceVisited] = useState(false);
   const sectionTabRefs = useRef(new Map());
+  const accountRef = useRef(null);
+  useEffect(() => {
+    const closeAccount = event => {
+      if (!accountRef.current?.open) return;
+      if (event.type === 'pointerdown' && !accountRef.current.contains(event.target)) accountRef.current.open = false;
+      if (event.type === 'keydown' && event.key === 'Escape') {
+        accountRef.current.open = false;
+        accountRef.current.querySelector('summary')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeAccount);
+    document.addEventListener('keydown', closeAccount);
+    return () => {
+      document.removeEventListener('pointerdown', closeAccount);
+      document.removeEventListener('keydown', closeAccount);
+    };
+  }, []);
   const activateSection = (nextSection) => {
     setSection(nextSection);
     if (nextSection === 'guidance') setGuidanceVisited(true);
@@ -798,8 +895,8 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
     activateSection(next.id);
     sectionTabRefs.current.get(next.id)?.focus();
   };
-  return <div className="teacher-dashboard">
-    <PageHeading title="Teacher Console" actions={<div className="teacher-session"><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div>} />
+  return <div className={`teacher-dashboard${section === 'guidance' ? ' teacher-dashboard--settings' : ''}`}>
+    <PageHeading title="Teacher Console" actions={<details ref={accountRef} className="teacher-account"><summary>Account</summary><div><strong>{user.displayName}</strong>{institutionalMode ? <form method="post" action="/auth/logout"><button type="submit" className="button button--ghost">Sign out</button></form> : <button type="button" className="button button--ghost" onClick={onLogout}>Sign out</button>}</div></details>} />
     {sessionError && <p className="teacher-message teacher-message--error" role="alert">{sessionError}</p>}
     {institutionalMode && projectStorage().courseSelection?.kind === 'course' && <CourseStudents />}
     <div className="model-switch teacher-dashboard__sections" role="tablist" aria-label="Teacher Console sections">{DASHBOARD_SECTIONS.map((item, index) => <button ref={(node) => node ? sectionTabRefs.current.set(item.id, node) : sectionTabRefs.current.delete(item.id)} key={item.id} id={`teacher-section-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`teacher-section-panel-${item.id}`} tabIndex={section === item.id ? 0 : -1} className={section === item.id ? 'is-active' : ''} onKeyDown={(event) => moveSection(event, index)} onClick={() => activateSection(item.id)}>{item.label}</button>)}</div>

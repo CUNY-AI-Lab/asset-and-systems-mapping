@@ -183,7 +183,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome nati
         if (who === 'admin') {
           await page.getByRole('button', { name: 'Teacher Console', exact: true }).click();
           await browserExpect(page.getByRole('heading', { name: 'Teacher Console', exact: true })).toBeVisible();
-        } else await page.getByText('Account', { exact: true }).click();
+        }
+        await page.getByText('Account', { exact: true }).click();
         const signedOut = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/logout' && response.request().method() === 'POST');
         await page.getByRole('button', { name: 'Sign out', exact: true }).click();
         const response = await signedOut;
