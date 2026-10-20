@@ -95,7 +95,7 @@ test('layout undo restores positions without replacing annotations and the canva
   await expect.poll(positions).not.toEqual(before);
   const arranged = await positions();
   await notebookSection(page, 'review');
-  const field = page.getByRole('textbox', { name: 'Your reflection (optional)' });
+  const field = page.getByRole('textbox', { name: 'Field notes (required)' });
   await field.fill('Layout changes must preserve this interpretation.');
   await showMap(page);
   await canvas.press('Control+z');
@@ -115,7 +115,7 @@ test('reflection reopens earlier levels without exposing repeated summaries or c
   await captureSourceRenderedScreenshot(page, testInfo, 'Cumulative revision');
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
   await notebookSection(page, 'review');
-  await expect(page.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('micro');
   expect((await readProject(page)).completedScales).toEqual(completed);
 });

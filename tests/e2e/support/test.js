@@ -93,7 +93,10 @@ export async function captureSourceRenderedScreenshot(page, testInfo, state) {
   await expect(page.locator('.toast.is-visible')).toHaveCount(0, { timeout: 6500 });
   const basename = slug(state);
   const screenshotPath = testInfo.outputPath(`${basename}.png`);
-  await page.screenshot({ path: screenshotPath, fullPage: false, animations: 'disabled' });
+  // WebKit disables animations by injecting a stylesheet, which the app's CSP
+  // correctly blocks. Capture its settled, reduced-motion UI without that injection.
+  const animations = page.context().browser()?.browserType().name() === 'webkit' ? 'allow' : 'disabled';
+  await page.screenshot({ path: screenshotPath, fullPage: false, animations });
   const screenshot = readFileSync(screenshotPath);
   const gitStatus = gitOutput(['status', '--short']).trim();
   const patch = gitOutput(['diff', '--binary', 'HEAD'], 'buffer');

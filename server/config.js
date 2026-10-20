@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 import {
   COURSE_PROGRESSION_SCHEMA_VERSION,
   defineEducatorResource,
@@ -308,6 +309,7 @@ function duplicateStagesAcrossParts(stages) {
 
 export const DEFAULT_TEACHING_PROFILE = Object.freeze(normalizeCourseProgression({
   schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
+  fieldNotesQuestions: DEFAULT_FIELD_NOTES_QUESTIONS,
   parts: progressionParts({
     'part-1': PART_ONE_STAGES,
     'part-2': PART_TWO_STAGES,

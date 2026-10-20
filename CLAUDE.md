@@ -3,7 +3,7 @@
 Read `docs/cloudflare-deployment.md`, `docs/REQUIREMENTS.md`, and
 `docs/MICRO_MESO_CORRECTION_2026-08-24.md` before changing this application.
 The later Micro/Meso correction supersedes the node-only Micro rules in the
-older Maria Zoom notes. Preserve the five stages, permissive progression,
+older Maria Zoom notes. Preserve the five stages and map navigation,
 map geometry, evidence, annotations, import/export and explicit project links.
 
 The Cloudflare entrypoint is a separate version with independent SQLite-backed
@@ -26,7 +26,7 @@ and real signed-in model acceptance as separate evidence.
 The student interface uses Map / Notebook: the mounted canvas and one current
 notebook task share each level (`src/App.jsx` `MapStage`, `src/MapStudio.jsx`,
 `src/ReflectionEntry.jsx`, `src/nextStep.js`). Map tools and Project menus
-consolidate secondary controls. Notebook has two writing tasks: memo/suggestions and reflection; selected-item editing is contextual. Map tools must use their own flex layout, not legacy toolbar grid selectors. Full screen must close Notebook, switch List to Canvas, fill the viewport, and expose an exit. Reflection is one optional string per level;
+consolidate secondary controls. Notebook has two writing tasks: memo/suggestions and Field Notes; selected-item editing is contextual. Map tools must use their own flex layout, not legacy toolbar grid selectors. Full screen must close Notebook, switch List to Canvas, fill the viewport, and expose an exit. Field Notes are one string per scale, required only to complete that scale. Questions are published by scale through teaching profiles; navigation back to Map remains available. Keep the existing draft journal and the `reflection` storage keys;
 preserve older labeled Macro prose without parsing or rewriting it. Stage numbers and labels are still the
 record of progress and must not be renumbered. `wrangler.dev.jsonc` deploys the
 separate `systems-mapping-dev` Worker; production releases stay manual.

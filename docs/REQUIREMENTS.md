@@ -223,3 +223,9 @@ Historical delivery acceptance is recorded: PR #9 is merged on GitHub `main`; Ra
 ## Source authority
 
 `docs/SOURCE_LEDGER.md` remains the authority record. The direct correction supplied on 2026-08-24 and recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md` governs the Micro/Meso boundary. The Maria and Zach Zoom material supplied on 2026-08-21 continues to govern the four level names, their order, and the compatible ecological-layer design. The fuller Drive specification governs compatible general behavior; local wireframes govern compatible presentation; CALI materials provide context; and Zach's August 5 notes remain unconfirmed minutes.
+
+## Field Notes by scale — October 19, 2026
+
+Notebook uses one Field Notes response for each of Micro, Meso, Exo, and Macro. A nonblank response is required before completing a scale; moving between Map and Notebook remains available. Questions address missing perspectives, actors, relationships or conditions, further observation, and the next scale’s mapping work. Micro distinguishes direct relationships from the links among everyday settings investigated at Meso.
+
+The instructor publishes a question for each scale from Course settings. These questions are independent of the five internal mapping steps. Older profiles use the default scale questions; older student answers retain their exact text. Published question changes never replace student answers. The current autosave journal and per-scale storage remain in use. Historical draft recovery is a separate proposal in `field-notes-recovery-proposal.md`.

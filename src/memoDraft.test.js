@@ -32,6 +32,21 @@ beforeEach(() => {
 afterEach(() => releaseAccountStorage());
 
 describe('project-scoped memo journal', () => {
+  it('recovers Field Notes before the full project save without overwriting another scale', () => {
+    const original = project();
+    original.levelProgress.meso.reflection = 'Keep this earlier linkage observation.';
+    saveProjectToLibrary(window.localStorage, original, [], { makeActive: true });
+    const edited = revise(original);
+    edited.reflection = 'A missing direct relationship needs a conversation with the home attendant.';
+    edited.levelProgress[edited.activeScale].reflection = edited.reflection;
+    cacheMemoDraft(window.localStorage, edited, original);
+    const recovered = loadDurableProject(window.localStorage, original.id);
+    expect(recovered.reflection).toBe(edited.reflection);
+    expect(recovered.levelProgress[edited.activeScale].reflection).toBe(edited.reflection);
+    expect(recovered.levelProgress.meso.reflection).toBe(original.levelProgress.meso.reflection);
+    expect(recovered.graph).toEqual(original.graph);
+  });
+
   it('restores an immediate memo and current-step edit before the full save runs', () => {
     const original = project();
     saveProjectToLibrary(window.localStorage, original, [], { makeActive: true });

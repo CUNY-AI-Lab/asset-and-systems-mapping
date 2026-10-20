@@ -20,6 +20,7 @@ import MapSearch from './MapSearch.jsx';
 import MapTools from './MapTools.jsx';
 import ProjectOverview from './ProjectOverview.jsx';
 import ReflectionEntry from './ReflectionEntry.jsx';
+import { hasFieldNotes } from '../shared/field-notes.js';
 import { indexMapConnections, isLiveMapItem } from './mapInsights.js';
 import { projectRectangleToRing, rectangleFitsRing, resolveRingConstrainedCollisions } from './ringCollisionLayout.js';
 import { measureMapText, wrapMapText } from './mapTextGeometry.js';
@@ -1143,7 +1144,7 @@ function projectMarkdown(project) {
     return [`- ${edge.sourceLabel} **${edge.verb}** ${edge.targetLabel} — level: ${SCALES[edge.scale]?.label || edge.scale}; evidence: ${edge.evidence || 'needs evidence'}${process ? `; process: ${process}` : ''}${edge.annotation?.text ? `; annotation: ${edge.annotation.text}` : ''}`, ...evidenceLines(edge.claimEvidence)];
   });
   const redactionLines = project.portableExport?.redactions?.map((entry) => `- ${entry.path}: ${entry.reason}`).join('\n') || '- None';
-  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Reflection\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
+  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Field Notes\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${edge.sourceLabel} ${edge.verb} ${edge.targetLabel}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
 }
 
 export function graphCsv(project) {
@@ -5152,7 +5153,7 @@ const REVISION_EVENT_COPY = Object.freeze({
   'scale.cycle-completed': ['Level cycle saved', true],
   'stage.opened': ['Section opened', true],
   'release.opened': ['Level opened', true],
-  'reflection.revised': ['Revision note saved', false],
+  'reflection.revised': ['Field Notes saved', false],
   'sharing.changed': ['Export audience changed', true],
   'config.revised': ['Model setup changed', false],
   'instructor.setting': ['Course setting changed', false],
@@ -5174,7 +5175,7 @@ function SavedMapNote({ project, children }) {
   return hasNote ? <details className="saved-map-note"><summary>Saved map note</summary>{children}</details> : null;
 }
 
-function ReviewPanel({ savedMapNote = null, exportOnly = false, onProjectLink, project, update, replaceProject, toast, logPrototype, onValidationError, onReviewLevel, onSubmitRevision, revisionSubmitting = false, submitDisabled = false, mapCheck = null, onMapCheck, onShowRefs, mapItemLabel = (id) => id }) {
+function ReviewPanel({ savedMapNote = null, exportOnly = false, onProjectLink, project, update, replaceProject, toast, logPrototype, onValidationError, onReviewLevel, onSubmitRevision, revisionSubmitting = false, submitDisabled = false }) {
   const [importError, setImportError] = useState('');
   const onImport = async (event) => {
     const [file] = event.target.files;
@@ -5209,9 +5210,6 @@ function ReviewPanel({ savedMapNote = null, exportOnly = false, onProjectLink, p
     {!exportOnly && <>
       <ReflectionEntry project={project} update={update} />
       {savedMapNote}
-      {project.activeScale === 'macrosphere' && onMapCheck && <details className="reflection-help"><summary>Questions for your reflection</summary>
-        <MapCheckPanel compact heading="Reflection questions" actionLabel="Suggest questions" check={mapCheck} onRun={() => onMapCheck('synthesis')} onShow={onShowRefs} labelFor={mapItemLabel} />
-      </details>}
       {onSubmitRevision && <button type="button" className="text-button" disabled={revisionSubmitting || submitDisabled} onClick={onSubmitRevision}>{revisionSubmitting ? 'Submitting…' : 'Submit revision'}</button>}
     </>}
     {exportOnly && <>
@@ -5597,7 +5595,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       ]);
       setProject((current) => {
         if (current.id !== projectId || current.activeScale !== scale || STAGES[current.stage]?.id !== stageId) return current;
-        if (current.teacherGovernance?.preflight?.fingerprint === preflight.fingerprint && current.teacherGovernance?.builder?.fingerprint === builder.fingerprint) return current;
+        if (current.teacherGovernance?.preflight?.fingerprint === preflight.fingerprint && current.teacherGovernance?.builder?.fingerprint === builder.fingerprint
+          && JSON.stringify(current.teacherGovernance?.preflight?.fieldNotesQuestions) === JSON.stringify(preflight.fieldNotesQuestions)) return current;
         const next = structuredClone(current);
         next.teacherGovernance = { preflight, builder, refreshedAt: new Date().toISOString() };
         next.updatedAt = new Date().toISOString();
@@ -6444,6 +6443,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       case 3: setStage(4, { completed: true }); break;
       case 4:
         {
+          if (!hasFieldNotes(project)) {
+            toast('Add Field Notes before continuing.', 'error');
+            document.querySelector('.reflection')?.focus();
+            return;
+          }
           if (project.activeScale === 'meso' && !mesoReviewed) { setModal('meso-review'); return; }
           const currentScale = project.activeScale;
           const currentIndex = SCALE_ORDER.indexOf(currentScale);
@@ -6967,11 +6971,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setStage(stageForPanelMode(mode, projectRef.current), { completed: mode === 'review' && project.stage === 3 });
   };
   const suggestionsPanel = <SuggestionsPanel project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onHighlight={(value) => { setStudioHighlight(value); if (value) setNotebookOpen(false); }} />;
-  const reviewPanel = <ReviewPanel onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} onSubmitRevision={onSubmitRevision ? submitRevision : undefined} revisionSubmitting={revisionSubmitting} submitDisabled={Boolean(reviewBusy) || Boolean(connectionBusy)} mapCheck={mapCheck} onMapCheck={runMapCheck} onShowRefs={(refs) => { setStudioHighlight({ nodeIds: refs.filter((ref) => project.graph.nodes.some((node) => node.id === ref)), edgeIds: refs.filter((ref) => project.graph.edges.some((edge) => edge.id === ref)) }); setNotebookOpen(false); }} mapItemLabel={mapItemLabel} />;
+  const reviewPanel = <ReviewPanel onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} onSubmitRevision={onSubmitRevision ? submitRevision : undefined} revisionSubmitting={revisionSubmitting} submitDisabled={Boolean(reviewBusy) || Boolean(connectionBusy)} />;
   const panel = project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
     : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
     : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
-  const studio = <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, onChange: setNotebookOpen, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Reflect on this level' : step.label}</button> }} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={(value) => { setStudioHighlight(value); if (value) setNotebookOpen(false); }} mapCheck={mapCheck} onMapCheck={runMapCheck} mapItemLabel={mapItemLabel} />;
+  const studio = <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, onChange: setNotebookOpen, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={(value) => { setStudioHighlight(value); if (value) setNotebookOpen(false); }} mapCheck={mapCheck} onMapCheck={runMapCheck} mapItemLabel={mapItemLabel} />;
   const intakeOpen = project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
   const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />, studio, studio, studio, studio];

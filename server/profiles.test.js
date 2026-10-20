@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { COURSE_PROGRESSION_SCHEMA_VERSION } from '../shared/educator-resource-contract.js';
 import { createSystemsMappingApp } from './app.js';
 import { fingerprint, moduleSeeds } from './config.js';
+import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
 const BOOTSTRAP_TOKEN = 'profile-test-bootstrap-token';
@@ -151,6 +152,38 @@ describe('teaching profiles', () => {
     const after = await (await request(system.app, '/api/config/public?configKind=preflight&scale=micro', { headers: { cookie: studentCookie } })).json();
     expect(after.fingerprint).not.toBe(before.fingerprint);
     expect(after.moduleVersions.at(-1)).toMatchObject({ id: `teaching-profile.${created.profile.id}`, revision: 2 });
+  });
+
+  it('publishes scale questions independently of model steps and keeps draft questions private', async () => {
+    const read = async (scale, stageId = 'build-map') => (await request(system.app,
+      `/api/config/public?configKind=preflight&scale=${scale}&stageId=${stageId}`,
+      { headers: { cookie: studentCookie } })).json();
+    const before = await read('micro');
+    expect(before.fieldNotesQuestions).toEqual(DEFAULT_FIELD_NOTES_QUESTIONS);
+    const created = await (await jsonRequest(system.app, 'POST', '/api/teacher/profiles', {
+      name: 'Field Notes questions', note: 'Adapt the questions to local fieldwork',
+    }, teacherCookie)).json();
+    const questions = {
+      ...DEFAULT_FIELD_NOTES_QUESTIONS,
+      micro: 'Whose direct interactions are absent, and which everyday settings might connect?',
+      meso: 'Whose account of the home–school linkage will you seek?',
+    };
+    const profile = { ...created.profile.profile, fieldNotesQuestions: questions };
+    const saved = await jsonRequest(system.app, 'PUT', `/api/teacher/profiles/${created.profile.id}`, {
+      name: created.profile.name, profile, note: 'Add fieldwork questions by scale', expectedRevision: 1,
+    }, teacherCookie);
+    expect(saved.status).toBe(200);
+    expect((await read('micro')).fieldNotesQuestions).toEqual(DEFAULT_FIELD_NOTES_QUESTIONS);
+    expect((await jsonRequest(system.app, 'POST', `/api/teacher/profiles/${created.profile.id}/publish`, {
+      note: 'Publish scale questions', expectedRevision: 2,
+    }, teacherCookie)).status).toBe(200);
+    for (const scale of Object.keys(questions)) {
+      for (const step of ['build-map', 'revise-and-export']) {
+        expect((await read(scale, step)).fieldNotesQuestions).toEqual(questions);
+      }
+    }
+    // Student questions do not change the model prompt or spend another model call.
+    expect((await read('micro')).fingerprint).toBe(before.fingerprint);
   });
 
   it('rejects malformed or extended profile documents', async () => {

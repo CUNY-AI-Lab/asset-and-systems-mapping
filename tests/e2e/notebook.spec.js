@@ -2,7 +2,7 @@ import { expect, test, scanAccessibility, assertNoAccessibilityViolations, captu
 import { serializedEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
 
-test('map and notebook preserve reflection and viewport across every level and reload', async ({ page, makeAxeBuilder }, testInfo) => {
+test('map and notebook preserve Field Notes and viewport across every scale and reload', async ({ page, makeAxeBuilder }, testInfo) => {
   test.setTimeout(120_000);
   const errors = [];
   const guidance = [];
@@ -22,7 +22,7 @@ test('map and notebook preserve reflection and viewport across every level and r
     await page.getByRole('combobox', { name: 'Work level' }).selectOption(level);
     await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
     await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');
-    const field = notebook.getByRole('textbox', { name: 'Your reflection' });
+    const field = notebook.getByRole('textbox', { name: 'Field notes' });
     await expect(field).toBeVisible();
     expect(await notebook.locator('textarea:visible').count()).toBe(1);
     await expect(notebook.locator('.memo-drawer')).toHaveCount(0);
@@ -38,11 +38,16 @@ test('map and notebook preserve reflection and viewport across every level and r
   await page.reload();
   await openProject();
   await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
-  await expect(notebook.getByRole('textbox', { name: 'Your reflection' })).toHaveValue('My macrosphere interpretation remains mine.\nAn open question stays open.');
+  await expect(notebook.getByRole('textbox', { name: 'Field notes' })).toHaveValue('My macrosphere interpretation remains mine.\nAn open question stays open.');
+  await notebook.getByText('Notes from other scales', { exact: true }).click();
+  for (const scale of ['micro', 'meso', 'exosphere']) {
+    await expect(notebook.getByText(`My ${scale} interpretation remains mine.\nAn open question stays open.`, { exact: true })).toBeVisible();
+  }
+  await notebook.getByText('Notes from other scales', { exact: true }).click();
   expect(guidance).toEqual([]);
   expect(errors).toEqual([]);
-  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Notebook reflection'));
-  await captureSourceRenderedScreenshot(page, testInfo, 'Notebook reflection');
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Notebook Field Notes'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'Notebook Field Notes');
   await nav.getByRole('button', { name: 'Map', exact: true }).click();
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Compact map'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Compact map');

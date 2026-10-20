@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FIELD_NOTES_QUESTIONS, FIELD_NOTES_QUESTION_LIMIT } from './field-notes.js';
 import {
   COURSE_PROGRESSION_SCHEMA_VERSION,
   defineEducatorResource,
@@ -117,6 +118,24 @@ describe('educator resource contract', () => {
       ...base,
       parts: [base.parts[0], { ...base.parts[1], scaleIds: ['exosphere', 'unsupported'] }],
     }, options)).toThrow(/unsupported scale/);
+  });
+
+  it('requires a bounded nonblank Field Notes question for every registered scale when configured', () => {
+    const scaleIds = Object.keys(DEFAULT_FIELD_NOTES_QUESTIONS);
+    const base = {
+      schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
+      parts: [{ id: 'part-1', label: 'Part 1', scaleIds, stages: { map: { guidance: '', materials: '' } } }],
+    };
+    const options = { stageIds: ['map'], scaleIds };
+    expect(normalizeCourseProgression(base, options)).not.toHaveProperty('fieldNotesQuestions');
+    const normalize = fieldNotesQuestions => normalizeCourseProgression({ ...base, fieldNotesQuestions }, options);
+    expect(normalize(DEFAULT_FIELD_NOTES_QUESTIONS).fieldNotesQuestions).toEqual(DEFAULT_FIELD_NOTES_QUESTIONS);
+    for (const questions of [null, [], {}, { ...DEFAULT_FIELD_NOTES_QUESTIONS, unknown: 'Extra' },
+      { ...DEFAULT_FIELD_NOTES_QUESTIONS, micro: ' \n ' },
+      { ...DEFAULT_FIELD_NOTES_QUESTIONS, micro: 42 },
+      { ...DEFAULT_FIELD_NOTES_QUESTIONS, micro: 'x'.repeat(FIELD_NOTES_QUESTION_LIMIT + 1) }]) {
+      expect(() => normalize(questions)).toThrow();
+    }
   });
 
   it('preserves optional intakeQuestions only as bounded finite JSON data', () => {

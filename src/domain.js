@@ -1,4 +1,5 @@
 import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
+import { FIELD_NOTES_QUESTION_LIMIT } from '../shared/field-notes.js';
 import { SYSTEMS_MAPPING_LEVELS, SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
 
 export const SCALE_ORDER = ['micro', 'meso', 'exosphere', 'macrosphere'];
@@ -2153,7 +2154,7 @@ function validateTeacherGovernance(governance, path) {
   ['preflight', 'builder'].forEach((kind) => {
     const snapshot = governance[kind];
     assertObject(snapshot, `${path}.${kind}`);
-    assertKnownKeys(snapshot, ['configKind', 'scale', 'stageId', 'fingerprint', 'revision', 'moduleVersions', 'guardrailsFingerprint', 'courseParts'], `${path}.${kind}`);
+    assertKnownKeys(snapshot, ['configKind', 'scale', 'stageId', 'fingerprint', 'revision', 'moduleVersions', 'guardrailsFingerprint', 'courseParts', 'fieldNotesQuestions'], `${path}.${kind}`);
     assertEnum(snapshot.configKind, ['preflight', 'builder'], `${path}.${kind}.configKind`);
     if (snapshot.configKind !== kind) invalidProject(`${path}.${kind}.configKind`, `must be ${kind}`);
     assertEnum(snapshot.scale, SCALE_ORDER, `${path}.${kind}.scale`);
@@ -2163,6 +2164,11 @@ function validateTeacherGovernance(governance, path) {
     validateModuleVersions(snapshot.moduleVersions, `${path}.${kind}.moduleVersions`);
     if (snapshot.guardrailsFingerprint !== undefined) assertString(snapshot.guardrailsFingerprint, `${path}.${kind}.guardrailsFingerprint`, false, 500);
     if (snapshot.courseParts !== undefined) validateCourseParts(snapshot.courseParts, `${path}.${kind}.courseParts`);
+    if (snapshot.fieldNotesQuestions !== undefined) {
+      assertObject(snapshot.fieldNotesQuestions, `${path}.${kind}.fieldNotesQuestions`);
+      assertKnownKeys(snapshot.fieldNotesQuestions, SCALE_ORDER, `${path}.${kind}.fieldNotesQuestions`);
+      SCALE_ORDER.forEach(scale => assertString(snapshot.fieldNotesQuestions[scale], `${path}.${kind}.fieldNotesQuestions.${scale}`, false, FIELD_NOTES_QUESTION_LIMIT));
+    }
   });
   assertString(governance.refreshedAt, `${path}.refreshedAt`, false, 100);
 }

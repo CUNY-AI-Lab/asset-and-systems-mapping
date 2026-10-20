@@ -45,7 +45,7 @@ test('full screen opens the canvas from notebook or list and has a visible exit'
   for (const from of ['notebook', 'list']) {
     if (from === 'notebook') {
       await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
-      await expect(page.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
       await expect(page.locator('#map-inspector textarea:visible')).toHaveCount(1);
       await expect(page.getByText('Ask the map', { exact: true })).toHaveCount(0);
       await expect(page.getByText('Notebook entries', { exact: true })).toHaveCount(0);

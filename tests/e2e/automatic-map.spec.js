@@ -48,12 +48,16 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic map'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic map');
   await notebookSection(page, 'review');
+  await expect(page.getByRole('button', { name: 'Continue to Meso-level', exact: true })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Field notes (required)' }).fill('Ask participants which actors and direct interactions are missing, then observe coordination between home and the library.');
   await page.getByRole('button', { name: 'Continue to Meso-level', exact: true }).click();
   // Meso reads the memo and, in automatic mode, commits in the same click.
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('meso');
   await expect.poll(async () => (await readProject(page)).stage).toBe(3);
   await notebookSection(page, 'review');
+  await expect(page.getByRole('button', { name: 'Continue to Exo-level', exact: true })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Field notes (required)' }).fill('Ask who sets the schedule across settings and trace the outside office affecting library access.');
   await page.getByRole('button', { name: 'Continue to Exo-level', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review Micro and Meso' });
   await expect(review).toBeVisible();

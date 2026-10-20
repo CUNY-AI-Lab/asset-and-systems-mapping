@@ -5,6 +5,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
 import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
+import { fieldNotesQuestions } from '../shared/field-notes.js';
 import {
   containsRetiredSystemsLanguage,
   deterministicMemoReview,
@@ -1974,6 +1975,7 @@ async function effectiveSnapshot(db, configKind, scale, includeModules = false, 
       ...(coursePrompt ? [{ id: 'course-appendix', revision: coursePrompt.revision, fingerprint: fingerprint(coursePrompt.amendment) }] : []),
     ],
     courseParts: coursePartsForTeachingProfile(teachingProfile.profile),
+    fieldNotesQuestions: fieldNotesQuestions(teachingProfile.profile),
   };
   if (includeModules) {
     snapshot.modules = modules;
@@ -1992,6 +1994,7 @@ function publicSnapshotMetadata(snapshot) {
     moduleVersions: snapshot.moduleVersions,
     guardrailsFingerprint: fingerprint(snapshot.fixedGuardrails),
     courseParts: snapshot.courseParts,
+    fieldNotesQuestions: snapshot.fieldNotesQuestions,
   };
 }
 

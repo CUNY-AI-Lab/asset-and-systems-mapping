@@ -1,6 +1,7 @@
 import { SCALE_ORDER, SCALES, isExosphereDecisionPathway } from './domain.js';
 import { isLiveMapItem, needsEvidenceReview } from './mapInsights.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
+import { hasFieldNotes } from '../shared/field-notes.js';
 
 // The Studio shows one computed next action instead of a five-step footer.
 // Every rule reads saved project state; none depends on a model response.
@@ -97,13 +98,13 @@ export function nextStep(project, { reviewBusy = false, retryPending = false, in
     const gaps = evidenceGaps(project, scale).length;
     return {
       id: 'review-level',
-      label: 'Review and export',
+      label: 'Field Notes',
       detail: !structure.ready ? `Add ${structure.missing}` : gaps ? `${plural(gaps, 'item')} need${gaps === 1 ? 's' : ''} evidence` : `${label} is ready to review`,
       blocking: false,
       structureReady: structure.ready,
     };
   }
-  if (nextScale) return { id: 'continue-level', label: `Continue to ${SCALES[nextScale].label}`, detail: `${label} reviewed`, blocking: false };
+  if (nextScale) return { id: 'continue-level', label: `Continue to ${SCALES[nextScale].label}`, detail: hasFieldNotes(project) ? `${label} reviewed` : 'Add Field Notes to continue', blocking: !hasFieldNotes(project) };
   if (project.completedScales.includes(scale)) return { id: 'project-complete', label: 'Project complete', detail: 'Export or revise any level', blocking: true };
-  return { id: 'complete-level', label: `Complete ${label}`, detail: 'Finish the cumulative map', blocking: false };
+  return { id: 'complete-level', label: `Complete ${label}`, detail: hasFieldNotes(project) ? 'Finish the cumulative map' : 'Add Field Notes to finish', blocking: !hasFieldNotes(project) };
 }

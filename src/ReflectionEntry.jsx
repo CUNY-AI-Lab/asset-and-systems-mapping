@@ -1,25 +1,27 @@
 import React from 'react';
 import { PROJECT_LIMITS } from './domain.js';
+import { fieldNotesQuestions } from '../shared/field-notes.js';
+import { SYSTEMS_MAPPING_LEVELS } from '../shared/systems-mapping-parts.js';
 
-export const REFLECTION_PROMPTS = Object.freeze({
-  micro: 'What did you notice or reconsider about participation in an everyday setting?',
-  meso: 'What does the connection between these everyday settings help explain?',
-  exosphere: 'How does an outside decision reach an everyday setting, and what remains uncertain?',
-  macrosphere: 'What can your map now explain about your inquiry across the four levels?',
-});
+export { DEFAULT_FIELD_NOTES_QUESTIONS as REFLECTION_PROMPTS } from '../shared/field-notes.js';
 
 // Keep the original string intact, including older labeled Macro syntheses.
 // Viewing this component never parses, reformats or overwrites student prose.
 export default function ReflectionEntry({ project, update }) {
+  const question = fieldNotesQuestions(project.teacherGovernance?.preflight)[project.activeScale];
+  const earlier = SYSTEMS_MAPPING_LEVELS.filter(({ id }) => id !== project.activeScale && project.levelProgress?.[id]?.reflection?.trim());
   return <section className="reflection-entry" aria-labelledby="reflection-title">
-    <h2 id="reflection-title" className="sr-only">Reflection</h2>
+    <h2 id="reflection-title" className="sr-only">Field Notes</h2>
     <label className="field">
-      <span className="reflection-prompt">{REFLECTION_PROMPTS[project.activeScale]}</span>
-      <textarea className="reflection" aria-label="Your reflection (optional)" rows="5" maxLength={PROJECT_LIMITS.promptText}
-        value={project.reflection} placeholder="Write a reflection (optional)…"
+      <span id="field-notes-question" className="reflection-prompt">{question}</span>
+      <textarea className="reflection" aria-label="Field notes (required)" aria-describedby="field-notes-question field-notes-hint" required rows="5" maxLength={PROJECT_LIMITS.promptText}
+        value={project.reflection} placeholder="What is missing, and what will you do next?"
         onChange={(event) => update((draft) => { draft.reflection = event.target.value; })}
-        onBlur={() => update(() => {}, 'reflection.revised', 'Level reflection revised')} />
+        onBlur={() => update(() => {}, 'reflection.revised', 'Field Notes revised')} />
     </label>
-
+    <p id="field-notes-hint" className="field-notes-hint">Required to continue. You can return to the map while you write.</p>
+    {earlier.length > 0 && <details className="field-notes-archive"><summary>Notes from other scales</summary>
+      {earlier.map(({ id, title }) => <section key={id}><h3>{title}</h3><p>{project.levelProgress[id].reflection}</p></section>)}
+    </details>}
   </section>;
 }

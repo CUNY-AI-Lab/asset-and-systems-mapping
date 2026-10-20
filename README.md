@@ -35,22 +35,24 @@ Asset mapping gives this inquiry a practical starting point: residents' skills, 
 
 The Cloudflare sign-in page shows the title, the four levels and **CUNY Login** a third of the way down, with a generative drawing after A. Michael Noll's *Gaussian Quadratic* (Bell Labs, 1965) filling the space below (`src/NollSketch.jsx`). The drawing is transparent against the page, takes the current ink colour in light and dark mode, and redraws every ten seconds or on click.
 
-The workspace has two views: **Map** and **Notebook**. The five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) remain per level for instructor aggregates, submitted revisions and exports. Switching views preserves map position and writing and makes no model request. Opening Notebook after building the map opens the reflection stage directly.
+The workspace has two views: **Map** and **Notebook**. The five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) remain per level for instructor aggregates, submitted revisions and exports. Switching views preserves map position and writing and makes no model request. Opening Notebook after building the map opens Field Notes directly.
 
 | Surface | What it does |
 | --- | --- |
 | **Add memo** | Set the inquiry and paste or upload the memo. |
 | **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
 | **Map** | Canvas, direct selection and a collapsed **Map tools** menu for search, layers, list, zoom, arrange, key and full screen. |
-| **Notebook** | One current task: memo and suggestions, or reflection. A compact selector changes the writing task. Selecting a map item opens only that item’s interpretation; the memo appears only with suggestions. |
-| **Reflection** | One optional text field with a question suited to the current level. Additional prompts and review tools stay collapsed. Existing Macro synthesis text remains intact. |
+| **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens only that item’s interpretation; the memo appears only with suggestions. |
+| **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Teacher Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
 | **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
 
 The notebook contains the current next action. The compact footer only switches **Map / Notebook**. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
 
+Field Notes are required to complete a scale; students can return to Map at any time. They use the existing immediate draft journal and per-scale project saves. A separate historical recovery cache is [proposed](docs/field-notes-recovery-proposal.md), not implemented.
+
 ### Map Check
 
-Map Check asks the course model to reason over the map the student has built, not to reread the memo. Students can request **Check this item** or **Check this connection** inside its editing details, or **Suggest questions** within Macro reflection. The general “Ask the map” panel has been removed. Each returns at most four short notes tied to map IDs, commits nothing, and runs as one attempt with the same course prompt appendix, limits and support IDs as memo guidance. Choosing an item in a note highlights it on the canvas.
+Map Check asks the course model to reason over the map the student has built, not to reread the memo. Students can request **Check this item** or **Check this connection** inside its editing details. The general “Ask the map” panel has been removed. Each returns at most four short notes tied to map IDs, commits nothing, and runs as one attempt with the same course prompt appendix, limits and support IDs as memo guidance. Choosing an item in a note highlights it on the canvas.
 
 ## Working with the map
 
@@ -60,7 +62,7 @@ Selecting an element opens its inspector. On desktop the whole layer stays on th
 
 The map fills the available browser height. On wide screens, the Notebook is a narrow resizable dock (260–360px). Drag its left edge or use the focused divider's arrow keys; Home restores the default width. Text and controls wrap as it changes. At 1100px and below, Notebook occupies the workspace while the mounted map is hidden. **Map** restores the canvas and its view.
 
-Selecting an item opens its interpretation in Notebook. Only connected items and editing details follow the interpretation field. Repeated statistics, target tabs, generic instructions and the separate Map notes task are removed. Existing map notes remain editable under **Saved map note** in reflection; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
+Selecting an item opens its interpretation in Notebook. Only connected items and editing details follow the interpretation field. Repeated statistics, target tabs, generic instructions and the separate Map notes task are removed. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
 
 | Task | Control |
 | --- | --- |

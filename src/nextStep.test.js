@@ -77,7 +77,7 @@ describe('nextStep', () => {
   });
   it('names the missing structure, then evidence gaps, then readiness on the map', () => {
     const project = seeded({ stage: 3 });
-    expect(nextStep(project)).toMatchObject({ id: 'review-level', label: 'Review and export', detail: 'Add an element from your memo', structureReady: false });
+    expect(nextStep(project)).toMatchObject({ id: 'review-level', label: 'Field Notes', detail: 'Add an element from your memo', structureReady: false });
     project.graph.nodes.push({ id: 'clinic', label: 'Clinic', type: 'setting', scale: 'micro', status: 'confirmed', claimState: 'inference' });
     expect(nextStep(project).detail).toBe('1 item needs evidence');
     project.graph.nodes[0].claimState = 'supported';
@@ -85,12 +85,21 @@ describe('nextStep', () => {
     expect(nextStep(project).detail).toBe('Micro-level is ready to review');
   });
   it('continues to the next level, completes Macro once, then stops', () => {
-    const project = seeded({ stage: 4 });
+    const project = seeded({ stage: 4, reflection: 'I will ask who coordinates between these settings.' });
     expect(nextStep(project)).toMatchObject({ id: 'continue-level', label: 'Continue to Meso-level' });
     project.activeScale = 'macrosphere';
     expect(nextStep(project)).toMatchObject({ id: 'complete-level', label: 'Complete Macro-level', blocking: false });
     project.completedScales = ['micro', 'meso', 'exosphere', 'macrosphere'];
     expect(nextStep(project)).toMatchObject({ id: 'project-complete', label: 'Project complete', blocking: true });
+  });
+
+  it.each(['micro', 'meso', 'exosphere', 'macrosphere'])('requires a nonblank Field Note to complete %s while keeping the map available', activeScale => {
+    const project = seeded({ activeScale, stage: 3, reflection: '  \n ' });
+    expect(nextStep(project).blocking).toBe(false);
+    project.stage = 4;
+    expect(nextStep(project).blocking).toBe(true);
+    project.reflection = 'Ask residents about missing pathways before adding new map items.';
+    expect(nextStep(project).blocking).toBe(false);
   });
 });
 

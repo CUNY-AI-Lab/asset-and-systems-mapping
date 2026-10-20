@@ -13,7 +13,7 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   await page.getByRole('textbox',{name:'Class code'}).fill('101');
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.getByRole('article',{name:'East Harlem disability resources'}).getByRole('button',{name:'Open project'}).click();
-  await expect(page.getByRole('heading',{name:'Reflection'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Field Notes'})).toBeVisible();
   await projectMenu(page, 'Export & share');
   const exportsDialog = page.getByRole('dialog', { name: 'Export & share' });
   const closeExports = exportsDialog.getByRole('button', { name: 'Close Export & share' });

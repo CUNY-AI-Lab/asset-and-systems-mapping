@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './api.js';
 import { INSTITUTIONAL_SESSION_TIMEOUT_MS } from './studentSession.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
+import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 import {
   configFingerprint,
   createDefaultProject,
@@ -1616,13 +1617,45 @@ describe('Systems Mapping workflow', () => {
     expect(graphBefore.edges.some((edge) => edge.scale === 'meso')).toBe(false);
 
     await resumeSavedProject(project);
-    expect(screen.getByRole('heading', { name: 'Reflection' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /Your reflection/ })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Field Notes' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /Field notes/ })).toBeVisible();
 
     expect(screen.queryByLabelText('Current Micro-level map summary')).not.toBeInTheDocument();
     expect(storedProject().graph.edges.filter(edge => edge.scale === 'micro')).toHaveLength(micro.edges.length);
     expect(document.querySelector('.release-summary')).toBeNull();
     expect(storedProject().graph).toEqual(graphBefore);
+  });
+
+  it('refreshes a published scale question even when model fingerprints match, preserving the answer', async () => {
+    const project = makeRevisionProject('micro');
+    const previousAnswer = project.reflection;
+    project.teacherGovernance = {
+      preflight: { ...publicConfiguration('/api/config/public?configKind=preflight&scale=micro'), fieldNotesQuestions: DEFAULT_FIELD_NOTES_QUESTIONS },
+      builder: { ...publicConfiguration('/api/config/public?configKind=builder&scale=micro'), fieldNotesQuestions: DEFAULT_FIELD_NOTES_QUESTIONS },
+      refreshedAt: new Date().toISOString(),
+    };
+    const questions = { ...DEFAULT_FIELD_NOTES_QUESTIONS, micro: 'Whose direct relationships are missing from this setting?' };
+    publicConfigurationResponder = path => jsonResponse({ ...publicConfiguration(path), fieldNotesQuestions: questions });
+    await resumeSavedProject(project);
+    expect(await screen.findByText(questions.micro)).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Field notes (required)' })).toHaveValue(previousAnswer);
+    await waitFor(() => expect(storedProject().teacherGovernance.preflight.fieldNotesQuestions).toEqual(questions));
+    expect(storedProject().levelProgress.micro.reflection).toBe(previousAnswer);
+  });
+
+  it('requires nonblank Field Notes for completion while keeping map navigation available', async () => {
+    const project = makeRevisionProject('micro');
+    project.reflection = project.levelProgress.micro.reflection = '';
+    await resumeSavedProject(project);
+    const continueButton = workActions().getByRole('button', { name: 'Continue to Meso-level' });
+    expect(continueButton).toBeDisabled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Field notes (required)' }), { target: { value: '  \n ' } });
+    expect(continueButton).toBeDisabled();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('button', { name: 'Map', exact: true }));
+    expect(mapCanvas()).toBeVisible();
+    workActions();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Field notes (required)' }), { target: { value: 'Ask the attendant about the missing home–clinic handoff.' } });
+    expect(workActions().getByRole('button', { name: 'Continue to Meso-level' })).toBeEnabled();
   });
 
   it('supports a final Macrosphere synthesis in one field without losing earlier notes', async () => {
@@ -1631,7 +1664,7 @@ describe('Systems Mapping workflow', () => {
     project.reflection = existing;
     project.levelProgress.macrosphere.reflection = existing;
     await resumeSavedProject(project);
-    const field = screen.getByRole('textbox', { name: /Your reflection/ });
+    const field = screen.getByRole('textbox', { name: /Field notes/ });
     expect(field).toHaveValue(existing);
     expect(document.querySelectorAll('.reflection-entry textarea')).toHaveLength(1);
     fireEvent.change(field, { target: { value: existing + '\nNext: Verify agency timelines.' } });
@@ -1722,7 +1755,7 @@ describe('Systems Mapping workflow', () => {
     expect(stored.preflight).toEqual(preflightBefore);
     expect(stored.reflection).toBe(reflectionBefore);
     expect(stored.releasedScales).toEqual(releasedBefore);
-    expect(screen.getByRole('heading', { name: 'Reflection' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Field Notes' })).toBeVisible();
     expect(workActions().getByRole('button', { name: 'Project complete' })).toBeDisabled();
   });
 
@@ -2476,7 +2509,7 @@ describe('Systems Mapping workflow', () => {
     incoming.updatedAt = new Date(Date.now() + 1000).toISOString();
     fireEvent(window, new StorageEvent('storage', { key: STORAGE_KEY, newValue: serializeProject(incoming) }));
     expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Reflection' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Field Notes' })).not.toBeInTheDocument();
     await waitFor(() => expect(storedProject()).toMatchObject({ title: incoming.title, stage: 1 }));
     expect(storedProject().preflight).toBeNull();
     expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
@@ -2577,7 +2610,7 @@ describe('Systems Mapping workflow', () => {
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/connections')).toHaveLength(0);
 
     workActions();
-    expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Field Notes' })).toBeVisible();
     expect(storedProject().graph.nodes.filter(node => node.scale === 'micro')).toHaveLength(2);
     expect(storedProject().graph.edges.filter(edge => edge.scale === 'micro')).toHaveLength(1);
   });
@@ -2707,6 +2740,7 @@ describe('Systems Mapping workflow', () => {
       prior = structuredClone(graph);
       if (index < 3) {
         workActions();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Field notes (required)' }), { target: { value: `I will investigate missing ${scale} relationships before the next scale.` } });
         fireEvent.click(workActions().getByRole('button', { name: /^Continue to / }));
         if (scale === 'meso') {
           const dialog = await screen.findByRole('dialog', { name: 'Review Micro and Meso' });
@@ -2840,6 +2874,7 @@ describe('Systems Mapping workflow', () => {
       sourceFingerprint: storedProject().preflight.sourceFingerprint,
     });
     workActions();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Field notes (required)' }), { target: { value: 'I need to observe the settings before naming their links.' } });
     fireEvent.click(workActions().getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 3 }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual(['micro', 'meso']);
@@ -2881,6 +2916,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(footer().getByRole('button', { name: 'Continue →' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 3 }));
     footer();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Field notes (required)' }), { target: { value: 'Ask who coordinates between home and the clinic.' } });
     fireEvent.click(footer().getByRole('button', { name: 'Continue to Meso-level' }));
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'meso', stage: 1 }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path).startsWith('/api/config/public?') && String(path).includes('scale=meso'))).toBe(true));
@@ -5105,7 +5141,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     openProjectMenu('Progress');
     const stages = screen.getByRole('dialog', { name: 'Progress' });
     fireEvent.click(within(stages).getByRole('button', { name: /review and export/i }));
-    expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Field Notes' })).toBeVisible();
     openExports();
     fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
 
@@ -5241,7 +5277,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.mapAnnotation.text = 'An existing cross-map observation.';
     await openMapProject(project);
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
-    expect(screen.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
     expect(screen.queryByText('Ask the map')).not.toBeInTheDocument();
     expect(screen.queryByText('Notebook entries')).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
@@ -5269,21 +5305,12 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(1);
   });
 
-  it('offers the synthesis scaffold only on the Macro review', async () => {
-    const exo = makeRevisionProject('exosphere');
-    await resumeSavedProject(exo);
+  it('keeps Macro Field Notes to one required question without another model prompt', async () => {
+    await resumeSavedProject(makeRevisionProject('macrosphere'));
+    openNotebookSection('review');
+    expect(screen.getByRole('textbox', { name: 'Field notes (required)' })).toBeRequired();
     expect(screen.queryByRole('button', { name: 'Suggest questions' })).not.toBeInTheDocument();
-    cleanup();
-    const macro = makeRevisionProject('macrosphere');
-    mapCheckResponder = (body) => {
-      expect(body).toMatchObject({ intent: 'synthesis', activeScale: 'macrosphere' });
-      return jsonResponse({ intent: 'synthesis', notes: [{ kind: 'claim', point: 'Outside decisions reach the family through the school.', refs: [macro.graph.nodes[0].id] }] }, 201);
-    };
-    await resumeSavedProject(macro);
-    openDetails('.reflection-help:has(.map-check)');
-    fireEvent.click(screen.getByRole('button', { name: 'Suggest questions' }));
-    expect(await screen.findByText('Outside decisions reach the family through the school.')).toBeVisible();
-    expect(screen.getByText('Claim the map supports')).toBeVisible();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(0);
   });
 
   it('keeps the closed phone inspector out of navigation and returns focus without extra target tabs', async () => {
@@ -5469,7 +5496,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     try {
       await resumeSavedProject(project);
       openDetails('.reflection-help:has(.map-check)');
-      expect(screen.getByRole('textbox', { name: 'Your reflection (optional)' })).toBeVisible();
+      expect(screen.getByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
       expect(storedProject().events.some(event => event.action === 'source.imported')).toBe(true);
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();
@@ -6062,7 +6089,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     openWorkLevelMenu();
     fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'micro' } });
-    expect(await screen.findByRole('heading', { name: 'Reflection' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Field Notes' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: 'micro', stage: 4, reflection: 'Micro reflection' }));
 
     openWorkLevelMenu();

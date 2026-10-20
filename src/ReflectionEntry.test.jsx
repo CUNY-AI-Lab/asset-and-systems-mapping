@@ -7,14 +7,28 @@ import { createDefaultProject, serializeProject, parseProject } from './domain.j
 
 afterEach(cleanup);
 
-describe('Notebook reflection', () => {
-  it.each(Object.keys(REFLECTION_PROMPTS))('has one optional writing field at %s without invoking guidance', (scale) => {
+describe('Field Notes', () => {
+  it('shows the published scale question and preserves readable notes from other scales', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'meso';
+    project.teacherGovernance = { preflight: { fieldNotesQuestions: { ...REFLECTION_PROMPTS, meso: 'Whose account of the home–school linkage is missing?' } } };
+    project.levelProgress.micro.reflection = 'Ask the home attendant about direct interactions.\nKeep the observation separate from an inference.';
+    const update = vi.fn();
+    render(<ReflectionEntry project={project} update={update} />);
+    expect(screen.getByText('Whose account of the home–school linkage is missing?')).toBeVisible();
+    fireEvent.click(screen.getByText('Notes from other scales'));
+    expect(screen.getByRole('heading', { name: 'Micro-level' })).toBeVisible();
+    expect(screen.getByText(/Ask the home attendant/)).toBeVisible();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each(Object.keys(REFLECTION_PROMPTS))('has one required writing field at %s without invoking guidance', (scale) => {
     const project = createDefaultProject();
     project.activeScale = scale;
     const update = vi.fn();
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(screen.getByRole('textbox').required).toBe(false);
+    expect(screen.getByRole('textbox').required).toBe(true);
     expect(screen.getByText(REFLECTION_PROMPTS[scale])).toBeTruthy();
     expect(update).not.toHaveBeenCalled();
   });

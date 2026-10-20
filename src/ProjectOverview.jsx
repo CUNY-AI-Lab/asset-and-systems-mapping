@@ -25,7 +25,7 @@ export default function ProjectOverview({ project, onReviewLevel }) {
             </div>
             <p>{counted(level.nodes, resultLabel)} · {counted(linkCount, linkLabel)}</p>
             {reviewSummary && <p className="project-overview__review">{reviewSummary}</p>}
-            {reflection && <details><summary>Revision note</summary><p className="project-overview__reflection">{reflection}</p></details>}
+            {reflection && <details><summary>Field Notes</summary><p className="project-overview__reflection">{reflection}</p></details>}
           </section>;
         })}
       </div>

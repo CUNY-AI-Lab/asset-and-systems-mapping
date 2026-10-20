@@ -5,7 +5,8 @@ import { userFacingError } from './userFacingError.js';
 import { institutionalLoginUrl, projectStorage } from './accountStorage.js';
 import CourseStudents from './CourseStudents.jsx';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
-import { systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
+import { SYSTEMS_MAPPING_LEVELS, systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
+import { fieldNotesQuestions, FIELD_NOTES_QUESTION_LIMIT } from '../shared/field-notes.js';
 
 const DASHBOARD_SECTIONS = [
   { id: 'reviews', label: 'Submissions' },
@@ -623,6 +624,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
 
   const saveDraft = async () => {
     if (!draft?.name.trim()) return setMessage({ type: 'error', text: 'Name the draft before saving it.' });
+    if (Object.values(fieldNotesQuestions(draft.profile)).some(question => !question.trim())) return setMessage({ type: 'error', text: 'Add a Field Notes question for each scale before saving.' });
     if (note.trim().length < 3) return setMessage({ type: 'error', text: 'Add a short change note before saving.' });
     setBusy(true);
     try {
@@ -703,31 +705,47 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const levelNotePrefix = `${scaleLabel(previewScale)}: `;
   const canAppendLevelNote = editable && selectedStageSettings.guidance.length + levelNotePrefix.length + 2 <= 2500;
   return <section className="model-guidance teaching-profiles" aria-labelledby="course-settings-heading">
-    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Set guidance and course material for each section of the exercise.</p></div></div>
-    <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
+    <div className="section-heading"><div><h2 id="course-settings-heading">Course settings</h2><p>Edit the Field Notes question for each scale.</p></div><button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button></div>
     <Message message={message} />
-    <details className="teacher-history teaching-profile-versioning">
-      <summary>Versions and change history</summary>
-      <div className="teacher-controls teaching-profile-controls">
-        <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
-        <button type="button" className="button button--secondary" onClick={() => setCreating((value) => !value)}>{creating ? 'Cancel' : 'Create a draft'}</button>
-      </div>
       {creating && <form className="teaching-profile-create" onSubmit={createDraft}>
         <label className="field"><span className="field__label">Draft name</span><input maxLength="120" value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
         <label className="field"><span className="field__label">What do you plan to change?</span><input maxLength="500" value={newNote} onChange={(event) => setNewNote(event.target.value)} /></label>
         <button type="submit" className="button" disabled={busy}>Create draft</button>
       </form>}
+    <details className="teacher-history teaching-profile-versioning">
+      <summary>Versions and change history</summary>
+      <div className="teacher-controls teaching-profile-controls">
+        <label><span>Version</span><select aria-label="Version" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profileStatusLabel(profile.status)}</option>)}</select></label>
+      </div>
+
       {detail && draft && <label className="field"><span className="field__label">Version name</span><input maxLength="120" readOnly={!editable} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>}
       {events.length ? <ol>{events.map((event) => <li key={event.id}><strong>{eventActionLabel(event.action)}</strong><p>{event.note}</p><small>{event.actorName || 'Original settings'} · version {event.revision}<br />{formatHistoryTime(event.occurredAt)}</small></li>)}</ol> : <p className="empty-message">No change history is available.</p>}
     </details>
     {detail && draft && <div className="teacher-workbench teaching-profile-workbench">
       <div className="teaching-profile-editor">
-        <div className="section-heading"><div><h3>{detail.name}</h3></div></div>
-        <p className="field__hint">Edit the guidance and course material for one section at a time.</p>
+        <label className="field"><span className="field__label">Scale</span><select aria-label="Scale" value={previewScale} onChange={(event) => {
+          const scale = event.target.value;
+          setPreviewScale(scale);
+          setSelectedPartId(profileParts.find(part => part.scaleIds.includes(scale))?.id || null);
+          setPreview(null);
+        }}>{SYSTEMS_MAPPING_LEVELS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}</select></label>
+        <section className="course-field-notes" aria-labelledby="course-field-notes-title">
+          <h3 id="course-field-notes-title">{scaleLabel(previewScale)} Field Notes</h3>
+          <label className="field"><span className="field__label">Required Field Notes question</span>
+            <textarea rows="6" maxLength={FIELD_NOTES_QUESTION_LIMIT} readOnly={!editable} value={fieldNotesQuestions(draft.profile)[previewScale]}
+              onChange={(event) => {
+                const question = event.target.value;
+                setDraft(current => ({ ...current, profile: { ...current.profile, fieldNotesQuestions: { ...fieldNotesQuestions(current.profile), [previewScale]: question } } }));
+              }} />
+          </label>
+          <p className="field__hint">Ask what the current map leaves out, how students will investigate it, and what they will carry into the next scale. A response is required before continuing.</p>
+        </section>
+        <details className="course-model-settings"><summary>Model guidance and course materials</summary>
+        <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
         {selectedPart ? <>
           <div className="teacher-controls teaching-profile-controls" role="group" aria-label="Course section">
             <label><span>Part</span><select aria-label="Part" value={selectedPart.id} onChange={(event) => selectPart(event.target.value)}>{profileParts.map((part) => <option key={part.id} value={part.id}>{part.label}</option>)}</select></label>
-            <label><span>Section</span><select aria-label="Section" value={selectedStageId} onChange={(event) => { setSelectedStageId(event.target.value); setPreview(null); }}>{SYSTEMS_MAPPING_STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label>
+            <label><span>Mapping step</span><select aria-label="Mapping step" value={selectedStageId} onChange={(event) => { setSelectedStageId(event.target.value); setPreview(null); }}>{SYSTEMS_MAPPING_STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label>
           </div>
           <p className="field__hint">Guidance and course material for this section apply to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
         </> : <p className="teacher-message teacher-message--error" role="alert">The selected version has no course parts.</p>}
@@ -739,6 +757,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
           <label className="field"><span className="field__label">Course material for this section</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
           <p className="field__hint">Paste the relevant course passage or reference text.</p>
         </section>}
+        </details>
         {editable && <label className="field"><span className="field__label">Change note</span><input maxLength="500" value={note} onChange={(event) => setNote(event.target.value)} /></label>}
         {dirty && <p className="field__hint">Save this draft before previewing or publishing it.</p>}
         {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>Select Load server revision {conflict.revision} only if you want to replace the unsaved draft shown in the editor.</p><button type="button" className="button button--ghost" onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
@@ -748,12 +767,16 @@ function TeachingProfiles({ onConfigurationChanged }) {
         </div>
       </div>
       <aside className="teaching-profile-preview">
-        <h3>Preview this section</h3>
+        <h3>Student question</h3>
+        <p>{fieldNotesQuestions(draft.profile)[previewScale]}</p>
+        <details className="course-model-preview"><summary>Model guidance preview</summary>
+        <h4>Preview this mapping step</h4>
         <p><strong>{selectedPart?.label}</strong>{selectedPart ? ` · ${scaleLabel(previewScale)} · ${selectedStage.label}` : ''}</p>
         {previewLevel && <p className="field__hint">{previewLevel.description}</p>}
         {selectedPart && <label className="field"><span className="field__label">Preview level</span><select aria-label="Preview level" value={previewScale} onChange={(event) => { setPreviewScale(event.target.value); setPreview(null); }}>{selectedPart.scaleIds.map((scale) => <option key={scale} value={scale}>{scaleLabel(scale)}</option>)}</select></label>}
         <button type="button" className="button button--secondary" disabled={busy || dirty || !selectedPart} onClick={loadPreview}>Preview saved section</button>
         {preview && <div className="effective-preview" aria-label={stageUse.active ? 'Course guidance sent to the model' : 'Saved course notes'}><strong>Saved version {preview.revision}</strong><p>{preview.part.label} · {selectedStage.label} · {scaleLabel(preview.scale)}</p><div className="saved-course-settings"><strong>Instructor guidance</strong><p>{preview.guidance || 'No instructor guidance added.'}</p><strong>Course material</strong><p>{preview.materials || 'No course material added.'}</p></div></div>}
+        </details>
       </aside>
     </div>}
   </section>;

@@ -1,3 +1,5 @@
+import { FIELD_NOTES_QUESTION_LIMIT } from './field-notes.js';
+
 export const EDUCATOR_RESOURCE_SCHEMA_VERSION = 'cuny.educator-resource.v1';
 export const EDUCATOR_VERSION_STATUSES = Object.freeze(['draft', 'active', 'retired']);
 export const EDUCATOR_MODULE_EFFECTS = Object.freeze([
@@ -241,7 +243,7 @@ function cloneIntakeQuestions(value) {
 export function normalizeCourseProgression(value, { stageIds = [], scaleIds = [] } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('course progression must be an object.');
   const expectedKeys = ['schemaVersion', 'parts'];
-  const optionalKeys = ['intakeQuestions'];
+  const optionalKeys = ['intakeQuestions', 'fieldNotesQuestions'];
   const keys = Object.keys(value);
   if (keys.some((key) => !expectedKeys.includes(key) && !optionalKeys.includes(key)) || expectedKeys.some((key) => !keys.includes(key))) {
     fail('course progression fields do not match the supported schema.');
@@ -260,19 +262,28 @@ export function normalizeCourseProgression(value, { stageIds = [], scaleIds = []
   if (suppliedScaleIds.length !== scaleIds.length || scaleIds.some((scaleId) => !suppliedScaleIds.includes(scaleId))) {
     fail('course progression parts do not cover the registered scales.');
   }
-  const legacyFields = {};
+  const optionalFields = {};
+  if (Object.hasOwn(value, 'fieldNotesQuestions')) {
+    const questions = value.fieldNotesQuestions;
+    if (!questions || typeof questions !== 'object' || Array.isArray(questions)
+      || Object.keys(questions).length !== scaleIds.length
+      || Object.keys(questions).some(key => !allowedScaleIds.has(key))) fail('Field Notes questions must cover each registered scale.');
+    optionalFields.fieldNotesQuestions = Object.freeze(Object.fromEntries(scaleIds.map(scale => [
+      scale, text(questions[scale], `fieldNotesQuestions.${scale}`, FIELD_NOTES_QUESTION_LIMIT),
+    ])));
+  }
   if (Object.hasOwn(value, 'intakeQuestions')) {
     const field = Object.getOwnPropertyDescriptor(value, 'intakeQuestions');
     if (!Object.hasOwn(field, 'value')) fail('intakeQuestions must contain finite JSON data.');
-    legacyFields.intakeQuestions = cloneIntakeQuestions(field.value);
+    optionalFields.intakeQuestions = cloneIntakeQuestions(field.value);
   }
   const normalized = Object.freeze({
     schemaVersion: COURSE_PROGRESSION_SCHEMA_VERSION,
     parts: Object.freeze(parts),
-    ...legacyFields,
+    ...optionalFields,
   });
   const serialized = JSON.stringify(normalized);
-  if (serialized.length > 60_000 || (Object.hasOwn(legacyFields, 'intakeQuestions')
+  if (serialized.length > 60_000 || (Object.hasOwn(optionalFields, 'intakeQuestions')
     && new TextEncoder().encode(serialized).length > 60_000)) fail('course progression is too large.');
   return normalized;
 }

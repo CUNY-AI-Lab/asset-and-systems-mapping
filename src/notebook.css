@@ -109,3 +109,11 @@
 .map-stage--notebook .inspector__actions { flex: 0 0 auto; }
 
 .map-stage--notebook textarea::placeholder { font-weight: 400; color: var(--muted); opacity: 1; }
+.field-notes-hint { color: var(--muted); font-size: 13px; line-height: 1.4; margin: 8px 0 0; }
+.field-notes-archive { margin-top: 12px; font-size: 14px; }
+.field-notes-archive > summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
+.field-notes-archive section { padding-block: 12px; border-top: 1px solid var(--line); }
+.field-notes-archive h3 { margin: 0 0 8px; font-size: 14px; }
+.field-notes-archive p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.course-model-settings > summary, .course-model-preview > summary { padding-block: 12px; min-height: 44px; cursor: pointer; }
+.course-field-notes textarea { width: 100%; resize: vertical; }

@@ -42,7 +42,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
       await expect(canvas).not.toBeVisible();
       expect((await notebook.boundingBox()).width).toBeCloseTo(before.width, 0);
     }
-    await notebook.getByRole('textbox', { name: 'Your reflection (optional)' }).fill('A student interpretation with enough detail to wrap comfortably at each viewport. '.repeat(4));
+    await notebook.getByRole('textbox', { name: 'Field notes (required)' }).fill('A student interpretation with enough detail to wrap comfortably at each viewport. '.repeat(4));
     await expect(notebook.locator('textarea:visible')).toHaveCount(1);
     expect(await notebook.locator('.inspector__scroll').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Notebook at ${width}px`));

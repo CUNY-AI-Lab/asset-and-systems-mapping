@@ -169,7 +169,7 @@ describe('hardened Systems Mapping server', () => {
     expect(publicResponse.status).toBe(200);
     const snapshot = await json(publicResponse);
     expect(Object.keys(snapshot).sort()).toEqual([
-      'configKind', 'courseParts', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale', 'stageId',
+      'configKind', 'courseParts', 'fieldNotesQuestions', 'fingerprint', 'guardrailsFingerprint', 'moduleVersions', 'revision', 'scale', 'stageId',
     ]);
     expect(snapshot).toMatchObject({ configKind: 'preflight', scale: 'micro', stageId: 'review-suggestions', revision: 1 });
     expect(snapshot.courseParts).toEqual([
