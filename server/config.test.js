@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FIELD_NOTES_QUESTIONS, LEGACY_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
+import { DEFAULT_FIELD_NOTES_QUESTIONS, LEGACY_FIELD_NOTES_QUESTIONS, PREVIOUS_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 import {
   composeEffectivePrompt,
   DEFAULT_TEACHING_PROFILE,
@@ -181,11 +181,12 @@ describe('course-setting prompt composition', () => {
     expect(teachingProfileFingerprint(normalized)).toBe(teachingProfileFingerprint(DEFAULT_TEACHING_PROFILE));
   });
 
-  it.each(['cuny.course-progression.v3', 'cuny.course-progression.v2'])('updates only exact old Field Notes defaults in %s', schemaVersion => {
+  it.each(['cuny.course-progression.v3', 'cuny.course-progression.v2'].flatMap(schemaVersion =>
+    [LEGACY_FIELD_NOTES_QUESTIONS, PREVIOUS_FIELD_NOTES_QUESTIONS].map(questions => [schemaVersion, questions])))('updates only exact old Field Notes defaults in %s (%#)', (schemaVersion, questions) => {
     const profile = structuredClone(DEFAULT_TEACHING_PROFILE);
     profile.schemaVersion = schemaVersion;
     if (schemaVersion.endsWith('.v2')) profile.parts[1].scaleIds = ['macro', 'integration'];
-    profile.fieldNotesQuestions = { ...LEGACY_FIELD_NOTES_QUESTIONS, meso: 'What does the home–school link still leave uncertain?' };
+    profile.fieldNotesQuestions = { ...questions, meso: 'What does the home–school link still leave uncertain?' };
     profile.parts[0].stages['review-suggestions'].guidance = 'Keep the instructor’s wording.';
     const original = structuredClone(profile);
     const upgraded = upgradeSystemsMappingTeachingProfile(profile);

@@ -1252,6 +1252,49 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations')).toHaveLength(2));
   });
 
+  it.each([['micro', 'meso'], ['meso', 'exosphere'], ['exosphere', 'macrosphere']])(
+    'reuses the %s response at %s only until the saved Field Notes change',
+    async (previousScale, activeScale) => {
+      const project = makeRevisionProject(activeScale);
+      const original = 'I noticed a possible delay while mapping.\nCould the existing settings help investigate it next? I plan to ask the resident.';
+      const revised = original + '\nCorrection: I have not observed a delay; first ask whether reminders arrive.';
+      project.stage = project.levelProgress[activeScale].stage = 1;
+      project.reflection = project.levelProgress[activeScale].reflection = '';
+      project.levelProgress[previousScale].reflection = original;
+      project.preflight = null;
+      const graphBefore = structuredClone(project.graph);
+      const completedReadCount = () => storedProject().events.filter(event => event.action === 'preflight.completed').length;
+      const requests = () => fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations');
+      preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, { review: {
+        guidance: [{ point: body.fieldNotes.text === revised ? 'Ask whether reminders arrive before claiming a delay' : 'Investigate the possible delay without assuming it occurred' }],
+        nodes: [], connections: [], example: null, readiness: { ready: false, note: 'The question needs evidence' },
+      } }) }, 201);
+      await resumeSavedProject(project);
+      fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+      await waitFor(() => expect(storedProject().preflight?.memoReview.guidance[0].point).toContain('possible delay'));
+      const firstReadCount = completedReadCount();
+      openDetails('.notebook-refresh');
+      fireEvent.click(screen.getByRole('button', { name: 'Reread memo' }));
+      await waitFor(() => expect(completedReadCount()).toBe(firstReadCount + 1));
+      expect(requests()).toHaveLength(1);
+      expect(storedProject().graph).toEqual(graphBefore);
+      expect(storedProject().levelProgress[previousScale].reflection).toBe(original);
+
+      fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: previousScale } });
+      openNotebookSection('review');
+      fireEvent.change(screen.getByRole('textbox', { name: /Field notes/ }), { target: { value: revised } });
+      fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: activeScale } });
+      openNotebookSection('suggestions');
+      fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+      await waitFor(() => expect(storedProject().preflight?.memoReview.guidance[0].point).toContain('before claiming a delay'));
+      expect(requests()).toHaveLength(2);
+      expect(requests().map(([, options]) => JSON.parse(options.body).fieldNotes.text)).toEqual([original, revised]);
+      expect(requests().map(([, options]) => JSON.parse(options.body).sourceMaterial)).toEqual([project.submission.text, project.submission.text]);
+      expect(storedProject().graph).toEqual(graphBefore);
+      expect(storedProject().levelProgress[previousScale].reflection).toBe(revised);
+    },
+  );
+
   it('sends explicit choices forward and preserves revised labels and removals after a selective response', async () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);

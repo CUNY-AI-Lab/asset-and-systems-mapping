@@ -1319,7 +1319,6 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     {!review && <div className="work-panel__title"><h2>{project.stage >= 2 ? 'Suggestions' : 'Memo review'}</h2><p className="lede">{REVIEW_LEDES[project.activeScale]}</p></div>}
     {fieldNotes && <details className="field-notes-continuity">
       <summary>From your {SCALES[fieldNotes.scale].label} Field Notes</summary>
-      <p>These questions accompany this level’s memo review. They are separate from the memo’s evidence.</p>
       <blockquote>{fieldNotes.text}</blockquote>
       {fieldNotes.truncated && <p>Only this opening excerpt accompanies guidance. Your full note is saved under Field Notes → Notes from other scales.</p>}
     </details>}
