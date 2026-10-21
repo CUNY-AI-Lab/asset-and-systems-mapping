@@ -311,6 +311,9 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         response = Response.json({ status: ready ? 'ok' : 'unavailable', release: env.RELEASE, auth: 'cuny', storage: 'isolated-cloudflare' }, { status: ready ? 200 : 503 });
       }
       else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL });
+      else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
+        response = Response.json({ enabled: Boolean(env.BUG_REPORTS) }, { headers: { 'Cache-Control': 'no-store' } });
+      }
       else if (url.pathname === '/api/bug-reports' || url.pathname === '/api/bug-reports/session') {
         response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE,
           service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });

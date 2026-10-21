@@ -37,6 +37,10 @@ afterAll(async () => { await harness?.close(); });
 
 test('production entrypoint rejects forged headers, other origins, encoded paths and cross-origin writes', async () => {
   expect((await request('/api/health', '')).status).toBe(200);
+  const reporting = await request('/api/bug-reports/availability', '');
+  expect(reporting.status).toBe(200);
+  expect(await reporting.json()).toEqual({ enabled: false });
+  expect(reporting.headers.get('cache-control')).toBe('private, no-store');
   expect((await request('/api/cloud/account', '', { headers: { 'x-cail-identity-jwt': 'forged', 'x-cail-subject': TEST_SUBJECTS.alice } })).status).toBe(401);
   expect((await worker.fetch('https://other.example/api/cloud/account')).status).toBe(404);
   const malformed = await request('/api/cloud/%70rojects');
