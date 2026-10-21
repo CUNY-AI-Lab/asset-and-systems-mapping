@@ -34,13 +34,13 @@ export default {
       fingerprint: 'fixture-config', guardrailsFingerprint: 'fixture-guardrails', revision: 1, moduleVersions: [],
     });
     if (signedIn && url.pathname === '/api/prototype/events') return Response.json({ ok: true });
-    const service = { submitAuthenticated: async (report: any) => {
+    const service = { submitPublic: async (report: any) => {
       calls.push(report);
       if (mode === 'unavailable') return { ok: false, code: 'unavailable', retryable: true };
       if (mode === 'rate_limited') return { ok: false, code: 'rate_limited', retryable: true, retryAfterSeconds: 1 };
-      const key = `${report.subject}:${report.reportId}`, previous = reports.get(key);
+      const key = report.reportId, previous = reports.get(key);
       if (previous && previous.description !== report.description) return { ok: false, code: 'idempotency_conflict', retryable: false };
-      if (!previous) reports.set(key, { description: report.description, result: { ok: true, status: 'saved', reportId: report.reportId, createdAt: new Date().toISOString() } });
+      if (!previous) reports.set(key, { description: report.description, result: { ok: true, status: 'accepted', reportId: report.reportId } });
       if (mode === 'lost-ack') throw new Error('Injected acknowledgement loss after fixture persistence');
       return reports.get(key).result;
     } };

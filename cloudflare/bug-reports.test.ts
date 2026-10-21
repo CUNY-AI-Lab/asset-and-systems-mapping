@@ -1,100 +1,57 @@
 // @vitest-environment node
-import { test, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { handleBugReport, normalizeReportPath, reportActor, type BugReportService } from './bug-reports.ts';
-const contract = JSON.parse(readFileSync(new URL('./bug-report-v2.json', import.meta.url), 'utf8'));
-const { subject, origin, reportId, description, release } = contract.input;
-const report = { reportId, description, path: '/p/:shared-map', expectedActor: reportActor(subject) };
-const request = (data: unknown = report, headers: Record<string, string> = {}) => new Request(`${origin}/api/bug-reports`, {
-  method: 'POST', headers: { origin, 'content-type': 'application/json', ...headers }, body: JSON.stringify(data),
-});
-function fixture() {
-  const calls: Parameters<BugReportService['submitAuthenticated']>[0][] = [];
-  const options = { origin, subject, release, service: { submitAuthenticated: async (input: Parameters<BugReportService['submitAuthenticated']>[0]) => {
-    calls.push(input); return contract.saved;
-  } } };
-  return { options, calls };
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { handleBugReport, type BugReportService } from './bug-reports.ts';
+const origin='https://report.test';
+const report={reportId:'77000000-0000-4000-8000-000000000001',description:'The button stayed unavailable after the operation.',path:'/'};
+const headers={origin,'content-type':'application/json','cf-connecting-ip':'192.0.2.5'};
+const request=(data:unknown=report,extra:Record<string,string>={})=>new Request(origin+'/api/bug-reports',{method:'POST',headers:{...headers,...extra},body:JSON.stringify(data)});
+type Submission=Parameters<BugReportService['submitPublic']>[0];
+function fixture(){
+ const calls:Submission[]=[];
+ const options={origin,release:'fixture-release',limiter:{limit:async()=>({success:true})},service:{submitPublic:async(input:Submission)=>{calls.push(input);return {ok:true as const,status:'accepted' as const,reportId:input.reportId};}}};
+ return {options,calls};
 }
-test('verified subject and deployment metadata replace browser claims and capability paths are removed', async () => {
-  const { options, calls } = fixture();
-  const token = 'privateProjectBearerToken12345';
-  const response = await handleBugReport(request({ ...report, path: `/p/${token}`, description: '\t First line\r\nsecond line  ' }, { cookie: 'private-session', authorization: 'never-forward', 'x-cail-subject': 'forged' }), options);
-  expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toContain('no-store');
-  expect(await response.json()).toEqual(contract.saved);
-  expect(calls).toEqual([{ reportId, subject, description: 'First line\nsecond line', origin, path: '/p/:shared-map', release }]);
-  expect(JSON.stringify(calls)).not.toMatch(/privateProject|private-session|never-forward|expectedActor/);
+test('anonymous reporting forwards only the description, sanitized context and daily IP digest',async()=>{
+ const {options,calls}=fixture();const response=await handleBugReport(request(report,{cookie:'private-session',authorization:'private-token','x-cail-subject':'forged'}),options);
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),{ok:true,status:'accepted',reportId:report.reportId});assert.equal(calls.length,1);
+ assert.deepEqual(Object.keys(calls[0]).sort(),['description','origin','path','rateDay','rateKey','release','reportId']);assert.match(calls[0].rateKey,/^[a-f0-9]{64}$/);
+ assert.equal(calls[0].rateDay,new Date().toISOString().slice(0,10));assert.doesNotMatch(JSON.stringify(calls),/private-session|private-token|forged|192\.0\.2\.5/);assert.match(response.headers.get('cache-control')!,/no-store/);
 });
-test('the session marker is opaque and stable but a different account cannot submit the old draft', async () => {
-  const { options, calls } = fixture();
-  const session = await handleBugReport(new Request(`${origin}/api/bug-reports/session`), options);
-  expect(await session.json()).toEqual({ ok: true, expectedActor: report.expectedActor });
-  expect(report.expectedActor).toMatch(/^[a-f0-9]{64}$/); expect(report.expectedActor).not.toContain(subject);
-  const changed = await handleBugReport(request(), { ...options, subject: 'cail-22222222222222222222222222222222' });
-  expect(changed.status).toBe(409); expect(await changed.json()).toEqual({ ok: false, code: 'account_changed', retryable: false });
-  expect(calls).toHaveLength(0);
+test('identity, recipients, extra context, controls and oversized bodies never reach the receiver',async()=>{
+ const {options,calls}=fixture();for(const data of [null,[],{...report,subject:'forged'},{...report,email:'a@example.edu'},{...report,recipient:'a@example.edu'},{...report,expectedActor:'a'.repeat(64)},{...report,release:'forged'},{...report,attachment:'private'},{...report,name:'Name'},{...report,reportId:'bad'},{...report,description:'short'},{...report,description:'a'.repeat(4001)},{...report,description:'before\0after'}]) assert.equal((await handleBugReport(request(data),options)).status,400);
+ assert.equal((await handleBugReport(new Request(origin+'/api/bug-reports',{method:'POST',headers,body:' '.repeat(17000)}),options)).status,400);assert.equal(calls.length,0);
 });
-test('unknown fields, forged identity, controls, malformed bodies and excess size never reach the receiver', async () => {
-  const { options, calls } = fixture();
-  for (const data of [null, [], { ...report, subject }, { ...report, name: 'Name' }, { ...report, email: 'x@example.edu' },
-    { ...report, app: 'stem-splitter' }, { ...report, release: 'forged' }, { ...report, createdAt: '2026-01-01' },
-    { ...report, expectedActor: subject }, { ...report, reportId: 'invalid' }, { ...report, description: 'short' },
-    { ...report, description: 'a'.repeat(4001) }, { ...report, description: 'before\u0000after' }]) {
-    expect((await handleBugReport(request(data), options)).status).toBe(400);
-  }
-  const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(' '.repeat(17000))); controller.close(); } });
-  expect((await handleBugReport(new Request(`${origin}/api/bug-reports`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: stream, duplex: 'half' } as RequestInit), options)).status).toBe(400);
-  expect(calls).toHaveLength(0);
+test('only exact same-origin JSON POST reaches the email service',async()=>{
+ const {options,calls}=fixture();for(const extra of [{origin:''},{origin:'null'},{origin:'https://foreign.test'},{'sec-fetch-site':'cross-site'},{referer:'https://foreign.test/private'}]) assert.equal((await handleBugReport(request(report,extra),options)).status,403);
+ assert.equal((await handleBugReport(request(report,{'content-type':'text/plain'}),options)).status,400);assert.equal((await handleBugReport(new Request(origin+'/api/bug-reports'),options)).status,405);assert.equal((await handleBugReport(new Request(origin+'/api/bug-reports/session'),options)).status,404);
+ assert.equal((await handleBugReport(new Request(origin+'/api/bug-reports?secret=x',{method:'POST',headers,body:JSON.stringify(report)}),options)).status,400);assert.equal(calls.length,0);
 });
-test('routes omit queries, fragments and identifiers instead of accepting arbitrary URLs', async () => {
-  const { options, calls } = fixture();
-  for (const path of ['/teacher', '/student', '/p/private-token?secret=yes', '/?course=private', '/#secret', 'https://foreign.example/', '/api/projects/private', '//foreign.example', '/p/%61'.repeat(20)]) {
-    expect(normalizeReportPath(path)).toBeNull(); expect((await handleBugReport(request({ ...report, path }), options)).status).toBe(400);
-  }
-  expect(normalizeReportPath('/p/' + 'a'.repeat(32) + '/')).toBe('/p/:shared-map');
-  expect(calls).toHaveLength(0);
+test('missing capability, release, trusted IP or limiter fails closed; ingress limits remain',async()=>{
+ const {options,calls}=fixture();for(const change of [{service:undefined},{limiter:undefined},{release:undefined},{release:'bad release'}])assert.equal((await handleBugReport(request(),{...options,...change})).status,503);
+ assert.equal((await handleBugReport(request(report,{'cf-connecting-ip':''}),options)).status,503);
+ const response=await handleBugReport(request(),{...options,limiter:{limit:async()=>({success:false})}});assert.equal(response.status,429);assert.equal(response.headers.get('retry-after'),'60');assert.equal(calls.length,0);
 });
-test('same-origin JSON POST and same-origin session reads retain method and CSRF boundaries', async () => {
-  const { options, calls } = fixture();
-  for (const headers of [{ origin: '' }, { origin: 'null' }, { origin: 'https://foreign.example' }, { 'sec-fetch-site': 'cross-site' }, { referer: 'https://foreign.example/private' }]) {
-    expect((await handleBugReport(request(report, headers), options)).status).toBe(403);
-  }
-  expect((await handleBugReport(new Request(`${origin}/api/bug-reports/session`, { headers: { 'sec-fetch-site': 'cross-site' } }), options)).status).toBe(403);
-  for (const suppliedOrigin of ['https://foreign.example', 'null', '']) {
-    expect((await handleBugReport(new Request(`${origin}/api/bug-reports/session`, { headers: { origin: suppliedOrigin } }), options)).status).toBe(403);
-  }
-  const method = await handleBugReport(new Request(`${origin}/api/bug-reports`), options);
-  expect(method.status).toBe(405); expect(method.headers.get('allow')).toBe('POST');
-  expect((await handleBugReport(request(report, { 'content-type': 'text/plain' }), options)).status).toBe(400);
-  expect(calls).toHaveLength(0);
+test('normalization preserves plain text without extra attachments',async()=>{
+ const {options,calls}=fixture();assert.equal((await handleBugReport(request({...report,description:'  A button\r\n<img src=x>\tdid not work.  '}),options)).status,200);assert.equal(calls[0].description,'A button\n<img src=x> did not work.');
 });
-test('missing capability or invalid release fails closed without forwarding', async () => {
-  const { options, calls } = fixture();
-  expect((await handleBugReport(request(), { ...options, service: undefined })).status).toBe(503);
-  for (const release of [undefined, 123, '', 'forged\nheader', 'a'.repeat(81)]) expect((await handleBugReport(request(), { ...options, release: release as string })).status).toBe(503);
-  expect(calls).toHaveLength(0);
+test('ambiguous or malformed acknowledgements never become success or automatic retries',async()=>{
+ const {options}=fixture();for(const result of [null,{ok:true,status:'saved',reportId:report.reportId},{ok:true,status:'accepted',reportId:crypto.randomUUID()}]){
+ let called=0;const service={submitPublic:async()=>{called++;return result;}} as BugReportService;const response=await handleBugReport(request(),{...options,service});assert.deepEqual(await response.json(),{ok:false,code:'delivery_unknown',retryable:false});assert.equal(called,1);}
+ const response=await handleBugReport(request(),{...options,service:{submitPublic:async()=>{throw new Error('private details');}}});assert.deepEqual(await response.json(),{ok:false,code:'delivery_unknown',retryable:false});
 });
-test('lost acknowledgement and malformed success become explicit same-ID retry without service details', async () => {
-  const { options } = fixture();
-  for (const service of [
-    { submitAuthenticated: async () => { throw new Error('private storage details'); } },
-    { submitAuthenticated: async () => ({ ...contract.saved, reportId: crypto.randomUUID() }) },
-    { submitAuthenticated: async () => ({ ...contract.saved, status: 'accepted' }) },
-    { submitAuthenticated: async () => ({ ...contract.saved, createdAt: 'not-a-date' }) },
-  ]) {
-    const response = await handleBugReport(request(), { ...options, service: service as BugReportService });
-    expect(response.status).toBe(503); expect(await response.json()).toEqual(contract.unavailable);
-  }
+test('failure receipts strip private fields and bound retry delays',async()=>{
+ const {options}=fixture();const response=await handleBugReport(request(),{...options,service:{submitPublic:async()=>({ok:false,code:'rate_limited',retryable:true,retryAfterSeconds:60,private:'secret'})}});assert.equal(response.status,429);assert.deepEqual(await response.json(),{ok:false,code:'rate_limited',retryable:true,retryAfterSeconds:60});
+ const unknown=await handleBugReport(request(),{...options,service:{submitPublic:async()=>({ok:false,code:'delivery_unknown',retryable:true})}});assert.deepEqual(await unknown.json(),{ok:false,code:'delivery_unknown',retryable:false});
 });
-test('only typed failure fields and bounded retry delays reach the browser', async () => {
-  const { options } = fixture();
-  for (const [code, status] of [['not_admitted', 403], ['rate_limited', 429], ['unavailable', 503], ['idempotency_conflict', 409]] as const) {
-    const response = await handleBugReport(request(), { ...options, service: { submitAuthenticated: async () => ({ ok: false, code, retryable: true, retryAfterSeconds: 60, private: 'must disappear' }) } });
-    expect(response.status).toBe(status); expect(response.headers.get('retry-after')).toBe('60');
-    expect(await response.json()).toEqual({ ok: false, code, retryable: true, retryAfterSeconds: 60 });
-  }
+test('cancelled requests do not start email submission',async()=>{
+ const {options,calls}=fixture(),controller=new AbortController();controller.abort();await handleBugReport(new Request(request(),{signal:controller.signal}),options);assert.equal(calls.length,0);
 });
-test('an already-cancelled submission never starts the report RPC', async () => {
-  const { options, calls } = fixture(); const controller = new AbortController(); controller.abort();
-  await handleBugReport(new Request(request(), { signal: controller.signal }), options);
-  expect(calls).toHaveLength(0);
+
+test('cancellation during the daily digest does not dispatch an email',async()=>{
+ const {options,calls}=fixture(),controller=new AbortController();
+ const original=crypto.subtle.digest.bind(crypto.subtle);
+ crypto.subtle.digest=async(algorithm,data)=>{const value=await original(algorithm,data);controller.abort();return value;};
+ try {await handleBugReport(new Request(request(),{signal:controller.signal}),options);assert.equal(calls.length,0);}
+ finally {crypto.subtle.digest=original;}
 });

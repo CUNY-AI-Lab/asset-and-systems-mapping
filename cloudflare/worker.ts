@@ -311,6 +311,10 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         response = Response.json({ status: ready ? 'ok' : 'unavailable', release: env.RELEASE, auth: 'cuny', storage: 'isolated-cloudflare' }, { status: ready ? 200 : 503 });
       }
       else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL });
+      else if (url.pathname === '/api/bug-reports' || url.pathname === '/api/bug-reports/session') {
+        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE,
+          service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
+      }
       else if (url.pathname.startsWith('/auth/')) {
         // Limit new handoffs only. A busy shared IP must not prevent callback
         // completion or clearing/revoking this browser's existing session.
@@ -325,15 +329,6 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
         else {
           let principal = await authorize(request, env);
-          // A report about course access must not depend on that course's grant.
-          // Keep the ordinary full SSO check and existing per-account limiter.
-          if (url.pathname === '/api/bug-reports' || url.pathname === '/api/bug-reports/session') {
-            const limit = await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal instanceof Response ? null : principal.subject) });
-            response = !limit.success ? failure('Please wait a moment and try again.', 429, 60)
-              : principal instanceof Response ? principal
-              : await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, subject: principal.subject, release: env.RELEASE, service: env.BUG_REPORTS });
-            return securedResponse(response, correlation.request_id);
-          }
           const selectedCourse = request.headers.get('x-systems-course');
           if (!(principal instanceof Response) && request.headers.has('x-systems-course')) {
             try {
