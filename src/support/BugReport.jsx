@@ -1,11 +1,23 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { mountBugReport } from './form.js';
 import './form.css';
 import './mapping.css';
 
 export default function BugReport() {
   const footer = useRef(null);
+  const [enabled, setEnabled] = useState(false);
   useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    fetch('/api/bug-reports/availability', { cache: 'no-store', signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(value => { if (!controller.signal.aborted) setEnabled(value?.enabled === true); })
+      .catch(() => {})
+      .finally(() => clearTimeout(timeout));
+    return () => { controller.abort(); clearTimeout(timeout); };
+  }, []);
+  useEffect(() => {
+    if (!enabled) return;
     const root = document.documentElement;
     const unmount = mountBugReport(footer.current, { path: () => {
       const path = window.location.pathname;
@@ -20,6 +32,6 @@ export default function BugReport() {
     return () => {
       resize.disconnect(); unmount(); root.classList.remove('has-bug-report'); root.style.removeProperty('--bug-report-height');
     };
-  }, []);
-  return <footer ref={footer} className="bug-report-footer" aria-label="Bug reports" />;
+  }, [enabled]);
+  return enabled ? <footer ref={footer} className="bug-report-footer" aria-label="Bug reports" /> : null;
 }
