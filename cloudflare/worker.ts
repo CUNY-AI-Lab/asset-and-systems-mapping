@@ -112,6 +112,11 @@ export class MappingCourse extends DurableObject<Bindings> {
 
   submissions!: SubmittedRevisions;
 
+  async guestReport(request: Request, rateKey: string): Promise<Response> {
+    if (new URL(request.url).pathname !== '/api/bug-reports/guest' || !/^[0-9a-f]{64}$/.test(rateKey)) return failure('Not found.', 404);
+    return this.reports.request(request, null, null, rateKey);
+  }
+
   async alarm(): Promise<void> {
     this.jobs.purge();
     const next = this.jobs.nextCleanup();
@@ -128,7 +133,7 @@ export class MappingCourse extends DurableObject<Bindings> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
-    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject));
+    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName);
     const expectedCache = request.headers.get('x-systems-account-cache');
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
@@ -324,6 +329,18 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
             response = limit.success ? await login(request, env.IDENTITY, { CAIL_IDENTITY_JWKS: env.CAIL_IDENTITY_JWKS }) : signInFailure(request, 429);
           } catch { response = signInFailure(request, 503); }
         } else response = await login(request, env.IDENTITY, { CAIL_IDENTITY_JWKS: env.CAIL_IDENTITY_JWKS });
+      }
+      else if (url.pathname === '/api/bug-reports/guest') {
+        const ip = request.headers.get('cf-connecting-ip');
+        if (request.method !== 'POST') response = failure('Method not allowed.', 405);
+        else if (!env.REDMINE_API_KEY || !ip || !/^[0-9a-fA-F:.]{3,45}$/.test(ip)) response = failure('Reporting is unavailable.', 503);
+        else {
+          const rateKey = digest(`guest-report-ip:v1\n${env.REDMINE_API_KEY}\n${ip}`);
+          const limit = await boundedRpc(env.REQUEST_LIMIT.limit({ key: `guest-report:${rateKey}` }), request.signal);
+          response = limit.success
+            ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey)
+            : failure('Please wait a moment and try again.', 429, 60);
+        }
       }
       else if (url.pathname.startsWith('/api/')) {
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);

@@ -1,24 +1,39 @@
-/** Shared CAIL report footer: one field, existing SSO, memory-only drafts. */
-export function mountBugReport(container, { loginUrl = '/auth/start', path = () => location.pathname,
-  sessionEndpoint = '/api/bug-reports/session', endpoint = '/api/bug-reports' } = {}) {
-  // Constant markup only. Report and service data are rendered as text/value.
+import { parseGuestContact } from './contact.js';
+
+/** Shared CAIL report footer: verified SSO or .edu contact, memory-only drafts. */
+export function mountBugReport(container, { loginUrl = '/auth/start', loginClassName = '', path = () => location.pathname,
+  sessionEndpoint = '/api/bug-reports/session', endpoint = '/api/bug-reports', guestEndpoint = '/api/bug-reports/guest' } = {}) {
+  // Constant markup only. Names, reports and service replies use text/value.
   container.innerHTML = `<div class="bug-report">
     <button class="bug-report__trigger" type="button" aria-label="Report a bug" aria-haspopup="dialog" aria-expanded="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 2 2 2m4 0 2-2M9 7V6a3 3 0 0 1 6 0v1M6 10H2m4 4H2m4 4H2m16-8h4m-4 4h4m-4 4h4"/><rect x="6" y="7" width="12" height="14" rx="6"/><path d="M12 11v10"/></svg>
       <span class="bug-report__trigger-label" aria-hidden="true"><span>Report a bug</span><span class="bug-report__badge" hidden>Draft</span></span>
     </button>
     <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a bug" tabindex="-1" hidden>
-      <header class="bug-report__heading">
-        <h2>Report a bug</h2>
+      <header class="bug-report__heading"><h2>Report a bug</h2>
         <button class="bug-report__close" type="button" aria-label="Close bug report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
-      <form class="bug-report__form" aria-label="Report a bug">
-        <div class="bug-report__field">
-          <div class="bug-report__label"><label><span class="bug-report__sr-only">What went wrong?</span><textarea name="description" required minlength="10" maxlength="4000" rows="4" readonly placeholder="What went wrong?" aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
+      <form class="bug-report__form" aria-label="Report a bug" novalidate>
+        <div class="bug-report__identity">
+          <p class="bug-report__identity-status" role="status" aria-live="polite">Connecting…</p>
+          <div class="bug-report__session" hidden>
+            <a class="bug-report__login" target="_blank" rel="noopener noreferrer" aria-label="CUNY Login (opens a new tab)">CUNY Login</a>
+            <button class="bug-report__guest-toggle" type="button" aria-expanded="false">No account?</button>
+          </div>
+          <fieldset class="bug-report__contact" hidden disabled><legend class="bug-report__sr-only">Your details</legend>
+            <div class="bug-report__names">
+              <label>First name<input name="firstName" autocomplete="given-name" maxlength="80" required><span class="bug-report__error" data-error="firstName" hidden></span></label>
+              <label>Last name<input name="lastName" autocomplete="family-name" maxlength="80" required><span class="bug-report__error" data-error="lastName" hidden></span></label>
+            </div>
+            <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="you@college.edu" required><span class="bug-report__error" data-error="email" hidden></span></label>
+          </fieldset>
         </div>
-        <details class="bug-report__details"><summary>Details</summary><p id="bug-report-privacy" class="bug-report__help">Private report. Includes account, page, version and time. No files attached. Draft clears on reload.</p></details>
+        <details class="bug-report__details"><summary>Details</summary><p class="bug-report__help">Private report. Includes your name, account or email, page and version. No files attached. Draft clears on reload.</p></details>
+        <div class="bug-report__field">
+          <div class="bug-report__label"><label>What went wrong?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="Explain in detail."></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
+          <span class="bug-report__error" data-error="description" hidden></span>
+        </div>
         <p class="bug-report__status" role="status" aria-live="polite" aria-atomic="true"></p>
-        <div class="bug-report__session" hidden><a target="_blank" rel="noopener noreferrer" aria-label="CUNY Login (opens a new tab)">CUNY Login ↗</a><button type="button">Check sign-in</button></div>
         <div class="bug-report__actions"><button type="submit" disabled>Send</button></div>
       </form>
     </section>
@@ -28,18 +43,28 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
   const badge = trigger.querySelector('.bug-report__badge'), count = form.querySelector('.bug-report__count');
   const instanceId = `bug-report-${crypto.randomUUID()}`;
   panel.id = instanceId; trigger.setAttribute('aria-controls', instanceId);
-  form.querySelector('.bug-report__help').id = `${instanceId}-privacy`;
-  const description = form.elements.namedItem('description'), status = form.querySelector('[role="status"]');
-  description.setAttribute('aria-describedby', `${instanceId}-privacy`);
+  const description = form.elements.namedItem('description'), status = form.querySelector('.bug-report__status');
   const submitButton = form.querySelector('[type="submit"]'), sessionControls = form.querySelector('.bug-report__session');
-  const signIn = sessionControls.querySelector('a'), checkButton = sessionControls.querySelector('button');
+  const signIn = sessionControls.querySelector('a'), guestToggle = sessionControls.querySelector('button');
+  const identity = form.querySelector('.bug-report__identity'), identityStatus = form.querySelector('.bug-report__identity-status');
+  const contactFields = form.querySelector('.bug-report__contact'), details = form.querySelector('details');
+  contactFields.id = `${instanceId}-contact`; guestToggle.setAttribute('aria-controls', contactFields.id);
+  const privacy = form.querySelector('.bug-report__help'); privacy.id = `${instanceId}-privacy`;
+  for (const field of ['firstName', 'lastName', 'email', 'description']) {
+    const error = form.querySelector(`[data-error="${field}"]`); error.id = `${instanceId}-${field}-error`;
+    form.elements.namedItem(field).setAttribute('aria-describedby', `${error.id}${field === 'description' ? ` ${privacy.id}` : ''}`);
+  }
   signIn.href = loginUrl;
-  let actor = null, report = null, snapshot = '', busy = false, checking = false, ready = false;
-  let locked = false, done = false, terminal = false, disposed = false, cooldown = null, controller = null;
+  for (const name of loginClassName.split(/\s+/).filter(Boolean)) signIn.classList.add(name);
+  let actor = null, preferredName = '', session = 'loading', guestOpen = false, draftActor = null;
+  let report = null, reportMode = null, snapshot = '', busy = false, checking = null, lastCheck = 0;
+  let locked = false, done = false, terminal = false, disposed = false, cooldown = null;
   let isOpen = false, layoutFrame = null;
-  const nativePopover = typeof panel.showPopover === 'function';
+  const controllers = new Set(), nativePopover = typeof panel.showPopover === 'function';
   const show = (message, tone = 'info') => { status.textContent = message; panel.dataset.tone = tone; schedulePosition(); };
-  const hasDraft = () => !done && (description.value.length > 0 || report !== null);
+  const guestMode = () => locked ? reportMode === 'guest' : guestOpen && session !== 'signed-in' && !draftActor;
+  const accountChanged = () => Boolean(draftActor && (session !== 'signed-in' || actor !== draftActor));
+  const hasDraft = () => !done && (description.value.length > 0 || report !== null || ['firstName', 'lastName', 'email'].some(key => form.elements.namedItem(key).value.length > 0));
   const draftChanged = () => {
     const pending = hasDraft();
     badge.hidden = !pending && !done; badge.textContent = done ? 'Sent' : 'Draft';
@@ -50,23 +75,44 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     }
   };
   const render = () => {
-    description.readOnly = busy || checking || !ready || locked || done || terminal;
-    submitButton.disabled = busy || checking || !ready || done || terminal || Boolean(cooldown);
-    checkButton.disabled = busy || checking;
-    sessionControls.hidden = ready || done || terminal;
-    form.toggleAttribute('aria-busy', busy || checking);
-    if (busy || checking) form.setAttribute('aria-busy', 'true');
-    panel.dataset.state = done ? 'saved' : busy ? 'sending' : checking ? 'checking' : 'idle';
-    draftChanged();
+    const guest = guestMode(), changed = !guest && accountChanged();
+    description.readOnly = busy || locked || done || terminal;
+    submitButton.disabled = busy || Boolean(checking) || changed || (!guest && session !== 'signed-in') || done || terminal || Boolean(cooldown);
+    identity.hidden = done; details.hidden = done;
+    identityStatus.textContent = session === 'unavailable' ? 'CUNY Login is temporarily unavailable.'
+      : changed ? 'Sign back in with your original account to send this draft.'
+      : session === 'signed-in' && !guest ? (preferredName ? `Reporting as ${preferredName}` : 'Signed in with CUNY Login')
+      : session === 'loading' ? 'Connecting…' : '';
+    identityStatus.hidden = !identityStatus.textContent;
+    sessionControls.hidden = (session === 'signed-in' && !changed) || (locked && guest) || done;
+    guestToggle.disabled = busy || locked || Boolean(draftActor) || terminal;
+    guestToggle.setAttribute('aria-expanded', String(guest));
+    contactFields.hidden = !guest; contactFields.disabled = !guest || busy || locked || done || terminal;
+    form.setAttribute('aria-busy', String(busy || Boolean(checking)));
+    panel.dataset.state = done ? 'saved' : busy ? 'sending' : 'idle';
+    draftChanged(); schedulePosition();
+  };
+  const fieldError = (field, message = '') => {
+    const input = form.elements.namedItem(field), error = form.querySelector(`[data-error="${field}"]`);
+    input.setAttribute('aria-invalid', String(Boolean(message)));
+    error.textContent = message; error.hidden = !message;
     schedulePosition();
   };
-  const needsSignIn = (changed = false) => {
-    ready = false;
-    show(changed
-      ? 'Account changed. Use your original account.'
-      : 'Sign in to report.', 'attention');
-    render();
-  };
+  const contactValue = () => Object.fromEntries(['firstName', 'lastName', 'email'].map(key => [key, form.elements.namedItem(key).value]));
+  function validate() {
+    let first = null;
+    if (guestMode()) {
+      const parsed = parseGuestContact(contactValue());
+      for (const field of ['firstName', 'lastName', 'email']) {
+        const message = parsed.ok ? '' : parsed.errors[field] || '';
+        fieldError(field, message); if (message && !first) first = field;
+      }
+    }
+    const message = description.value.trim().length < 10 || description.value.length > 4000 ? 'Use 10–4,000 characters.' : '';
+    fieldError('description', message); if (message && !first) first = 'description';
+    if (first) form.elements.namedItem(first).focus();
+    return !first;
+  }
   const uncertain = () => {
     locked = true; submitButton.textContent = 'Check status';
     show(`Not confirmed. Check again. Ref: ${report.reportId}.`, 'attention');
@@ -76,54 +122,70 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     cooldown = setTimeout(() => { cooldown = null; if (!disposed) render(); }, seconds * 1000);
   };
   const codeOf = result => result?.code ?? result?.details?.code ?? result?.error?.code;
-  async function fetchJson(url, options = {}) {
-    controller = new AbortController();
-    const deadline = setTimeout(() => controller?.abort(), 30000);
+  async function fetchJson(url, options = {}, timeout = 30000) {
+    const controller = new AbortController(); controllers.add(controller);
+    const deadline = setTimeout(() => controller.abort(), timeout);
     try {
       const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
       return { response, result: await response.json() };
-    } finally { clearTimeout(deadline); controller = null; }
+    } finally { clearTimeout(deadline); controllers.delete(controller); }
   }
-  async function checkSession() {
-    if (busy || checking || done || disposed) return;
-    checking = true; show('Checking…'); render();
-    try {
-      const { response, result } = await fetchJson(sessionEndpoint);
-      if (disposed) return;
-      if (response.ok && result?.ok === true && /^[0-9a-f]{64}$/.test(result.expectedActor)) {
-        if (actor && actor !== result.expectedActor) { needsSignIn(true); return; }
-        actor = result.expectedActor; ready = true;
-        show(locked ? 'Check your report’s status.'
-          : '');
-      } else if (response.status === 401 || response.status === 403) needsSignIn();
-      else { ready = false; show('Sign-in unavailable. Try again.', 'attention'); }
-    } catch { if (!disposed) { ready = false; show('Sign-in unavailable. Try again.', 'attention'); } }
-    finally { checking = false; if (!disposed) render(); }
+  async function checkSession(force = false) {
+    if (checking) return checking;
+    if (busy || done || disposed || terminal || (!force && Date.now() - lastCheck < 2000)) return;
+    checking = (async () => {
+      try {
+        const { response, result } = await fetchJson(sessionEndpoint, {}, 8000);
+        if (disposed) return;
+        if (response.ok && result?.ok === true && /^[0-9a-f]{64}$/.test(result.expectedActor)) {
+          actor = result.expectedActor; session = 'signed-in';
+          preferredName = typeof result.preferredName === 'string' ? result.preferredName.slice(0, 160) : '';
+          if (!locked) guestOpen = false;
+        } else {
+          actor = null; preferredName = '';
+          session = response.status === 401 || response.status === 403 ? 'signed-out' : 'unavailable';
+        }
+      } catch { if (!disposed) { actor = null; preferredName = ''; session = 'unavailable'; } }
+    })();
+    render();
+    try { await checking; }
+    finally { checking = null; lastCheck = Date.now(); if (!disposed) render(); }
   }
+  const refreshSession = () => { if (isOpen && document.visibilityState === 'visible') void checkSession(); };
   async function submit(event) {
     event.preventDefault();
-    if (busy || checking || done || terminal || cooldown || !ready || !actor) return;
-    if (!locked && !form.reportValidity()) return;
+    if (busy || checking || done || terminal || cooldown || (!locked && !validate())) return;
+    await checkSession(true);
+    if (disposed || busy || (!guestMode() && (session !== 'signed-in' || accountChanged()))) return;
     if (!locked) {
+      if (!validate()) return;
       const data = { description: description.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').trim(), path: path() };
+      reportMode = guestMode() ? 'guest' : 'account';
+      if (reportMode === 'guest') Object.assign(data, parseGuestContact(contactValue()).contact);
+      else { data.expectedActor = actor; draftActor = actor; }
       const next = JSON.stringify(data);
-      if (snapshot !== next) { snapshot = next; report = { reportId: crypto.randomUUID(), ...data, expectedActor: actor }; }
+      if (snapshot !== next) { snapshot = next; report = { reportId: crypto.randomUUID(), ...data }; }
     }
     busy = true; show(locked ? 'Checking…' : 'Sending…'); render();
     try {
-      const { response, result } = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
+      const { response, result } = await fetchJson(reportMode === 'guest' ? guestEndpoint : endpoint,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
       if (disposed) return;
       const code = codeOf(result);
       if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
-        done = true; locked = true; submitButton.textContent = 'Sent';
-        show(`Sent. Thank you.`, 'success');
-      } else if (response.status === 401 || code === 'not_admitted' || code === 'admission_required') needsSignIn();
-      else if (code === 'account_changed') needsSignIn(true);
-      else if (code === 'idempotency_conflict') {
+        done = true; locked = true; submitButton.textContent = 'Sent'; show('Sent. Thank you.', 'success');
+      } else if (code === 'account_changed' || response.status === 401 || code === 'not_admitted' || code === 'admission_required') {
+        actor = null; preferredName = ''; session = 'signed-out'; show('Sign in again to send this draft.', 'attention');
+      } else if (code === 'invalid_contact' && !locked) {
+        show('Check your details.', 'attention');
+        for (const field of ['firstName', 'lastName', 'email']) fieldError(field, typeof result.fields?.[field] === 'string' ? result.fields[field].slice(0, 160) : '');
+        const invalid = form.querySelector('input[aria-invalid="true"]');
+        requestAnimationFrame(() => { if (!disposed && isOpen) invalid?.focus(); });
+      } else if (code === 'idempotency_conflict') {
         terminal = true; show('Report changed. Copy your text and start again.', 'attention');
       } else if (code === 'invalid' && !locked) {
-        submitButton.textContent = 'Try again'; show('Use 10–4,000 characters.', 'attention');
+        show('Check your details and description.', 'attention');
       } else if (response.status === 429 || code === 'rate_limited') {
         const delay = result?.retryAfterSeconds ?? result?.details?.retryAfterSeconds ?? Number(response.headers.get('retry-after'));
         const seconds = Number.isSafeInteger(delay) && delay > 0 && delay <= 86400 ? delay : 60;
@@ -135,17 +197,10 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
         terminal = true; show('Couldn’t send. Contact the Lab.', 'attention');
       } else {
         uncertain();
-        const seconds = result?.retryAfterSeconds;
-        if (Number.isSafeInteger(seconds) && seconds > 0 && seconds <= 86400) wait(seconds);
+        if (Number.isSafeInteger(result?.retryAfterSeconds) && result.retryAfterSeconds > 0 && result.retryAfterSeconds <= 86400) wait(result.retryAfterSeconds);
       }
     } catch { if (!disposed) uncertain(); }
-    finally {
-      busy = false;
-      if (!disposed) {
-        render();
-        requestAnimationFrame(() => { if (!disposed && isOpen) status.scrollIntoView({ block: 'nearest' }); });
-      }
-    }
+    finally { busy = false; if (!disposed) render(); }
   }
   function positionPanel() {
     if (!isOpen || disposed) return;
@@ -182,32 +237,62 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     isOpen = true; panel.hidden = false; trigger.setAttribute('aria-expanded', 'true');
     if (nativePopover) panel.showPopover();
     render(); positionPanel(); closeButton.focus({ preventScroll: true });
-    if (!done && !terminal) void checkSession();
+    void checkSession(true);
   }
   const closeClick = () => closePanel();
-  const outside = event => { if (isOpen && !panel.contains(event.target) && !trigger.contains(event.target)) closePanel(false); };
-  const escape = event => {
-    if (isOpen && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePanel(); }
+  const toggleGuest = () => {
+    if (busy || locked || draftActor || terminal) return;
+    guestOpen = !guestOpen; render();
+    if (guestOpen) form.elements.namedItem('firstName').focus();
   };
+  const inputChanged = event => {
+    const field = event.target.name;
+    if (!['firstName', 'lastName', 'email', 'description'].includes(field)) return;
+    if (field === 'description' && !locked) {
+      if (!description.value.trim()) draftActor = null;
+      else if (!draftActor && session === 'signed-in') draftActor = actor;
+    }
+    if (event.target.getAttribute('aria-invalid') === 'true') {
+      if (field === 'description') fieldError(field, description.value.trim().length < 10 ? 'Use 10–4,000 characters.' : '');
+      else { const parsed = parseGuestContact(contactValue()); fieldError(field, parsed.ok ? '' : parsed.errors[field] || ''); }
+    }
+    render();
+  };
+  const fieldBlur = event => {
+    if (guestMode() && event.target.name === 'email' && event.target.value.trim()) {
+      const parsed = parseGuestContact(contactValue()); fieldError('email', parsed.ok ? '' : parsed.errors.email || '');
+    }
+  };
+  const outside = event => { if (isOpen && !panel.contains(event.target) && !trigger.contains(event.target)) closePanel(false); };
+  const escape = event => { if (isOpen && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePanel(); } };
   const beforeUnload = event => { if (hasDraft()) { event.preventDefault(); event.returnValue = ''; } };
   const panelResize = typeof ResizeObserver === 'function' ? new ResizeObserver(schedulePosition) : null;
   panelResize?.observe(panel);
-  form.addEventListener('submit', submit); checkButton.addEventListener('click', checkSession);
-  description.addEventListener('input', draftChanged); trigger.addEventListener('click', togglePanel); closeButton.addEventListener('click', closeClick);
+  form.addEventListener('submit', submit); form.addEventListener('input', inputChanged); form.addEventListener('focusout', fieldBlur);
+  guestToggle.addEventListener('click', toggleGuest); trigger.addEventListener('click', togglePanel); closeButton.addEventListener('click', closeClick);
   document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape, true);
   window.addEventListener('resize', schedulePosition); window.addEventListener('scroll', schedulePosition, true);
   window.visualViewport?.addEventListener('resize', schedulePosition); window.visualViewport?.addEventListener('scroll', schedulePosition);
-  window.addEventListener('beforeunload', beforeUnload); render();
+  window.addEventListener('beforeunload', beforeUnload);
+  window.addEventListener('focus', refreshSession); window.addEventListener('pageshow', refreshSession);
+  document.addEventListener('visibilitychange', refreshSession);
+  const sessionTimer = setInterval(refreshSession, 30000);
+  render();
   const dispose = () => {
-    disposed = true; closePanel(false); panelResize?.disconnect(); controller?.abort(); clearTimeout(cooldown); cancelAnimationFrame(layoutFrame);
-    form.removeEventListener('submit', submit); checkButton.removeEventListener('click', checkSession);
-    description.removeEventListener('input', draftChanged); trigger.removeEventListener('click', togglePanel); closeButton.removeEventListener('click', closeClick);
+    disposed = true; closePanel(false); panelResize?.disconnect();
+    for (const controller of controllers) controller.abort();
+    clearTimeout(cooldown); clearInterval(sessionTimer); cancelAnimationFrame(layoutFrame);
+    form.removeEventListener('submit', submit); form.removeEventListener('input', inputChanged); form.removeEventListener('focusout', fieldBlur);
+    guestToggle.removeEventListener('click', toggleGuest); trigger.removeEventListener('click', togglePanel); closeButton.removeEventListener('click', closeClick);
     document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape, true);
     window.removeEventListener('resize', schedulePosition); window.removeEventListener('scroll', schedulePosition, true);
     window.visualViewport?.removeEventListener('resize', schedulePosition); window.visualViewport?.removeEventListener('scroll', schedulePosition);
-    window.removeEventListener('beforeunload', beforeUnload); delete container.dataset.reportDraft; container.replaceChildren();
+    window.removeEventListener('beforeunload', beforeUnload);
+    window.removeEventListener('focus', refreshSession); window.removeEventListener('pageshow', refreshSession);
+    document.removeEventListener('visibilitychange', refreshSession);
+    delete container.dataset.reportDraft; container.replaceChildren();
   };
   dispose.hasDraft = hasDraft;
-  dispose.sessionChanged = () => { if (!disposed && !done) needsSignIn(); };
+  dispose.sessionChanged = () => checkSession(true);
   return dispose;
 }

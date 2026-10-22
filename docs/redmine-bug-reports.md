@@ -1,6 +1,10 @@
 # System Mapping bug reports
 
-System Mapping reuses Stem Splitter's framework-neutral bug-report form and sends reports through the authenticated Cloudflare Worker. The Worker creates private Bug issues in the CAIL Ticketing Redmine project (project 15, tracker 2).
+System Mapping and Stem Splitter share a framework-neutral bug-report form. Both Workers create private Bug issues in the CAIL Ticketing Redmine project (project 15, tracker 2).
+
+The form recognizes SSO automatically on open, focus, visibility changes and every 30 seconds while visible. It revalidates before sending. The verified SSO name appears above the report description and accompanies authenticated issues. The compact CUNY Login control reuses the home page button style; returning from login refreshes the form without a manual check button.
+
+Signed-out reporters can expand “No account?” for first name, last name and an email ending in `.edu`. Shared client/server validation supplies field-specific errors. These contact details are explicitly self-reported and unverified in Redmine; they grant no app access. The separate guest endpoint retains same-origin checks, request limits, and separate receipt metadata. It limits new reports to ten per email and twenty per salted network reference per 24 hours, without storing a raw IP, name, email or report text in the receipt store.
 
 The Redmine API key is read only from the `REDMINE_API_KEY` Worker secret. Keep it out of source files, `wrangler.jsonc` variables, browser code, and logs. The widget stays hidden until the Worker has that secret.
 

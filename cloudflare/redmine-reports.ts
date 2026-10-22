@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { boundedText, withDeadline, withSignal } from './bounded.js';
 import { durableDatabase } from './database.js';
+import { parseGuestContact, type GuestContact } from '../src/support/contact.js';
 
 type ReportEnv = { REDMINE_API_KEY?: string; RELEASE: string };
 type Receipt = { fingerprint: string; state: string; created_at: string; issue_id: number | null };
@@ -53,15 +54,25 @@ export class RedmineReports {
       created_at TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','saved','rejected','retryable')),
       issue_id INTEGER, PRIMARY KEY(owner,report_id)
     );
-    CREATE INDEX IF NOT EXISTS bug_reports_owner_time ON bug_reports(owner,created_at);`);
+    CREATE INDEX IF NOT EXISTS bug_reports_owner_time ON bug_reports(owner,created_at);
+    CREATE TABLE IF NOT EXISTS bug_report_guests (
+      owner TEXT NOT NULL, report_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+      created_at TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','saved','rejected','retryable')),
+      issue_id INTEGER, rate_key TEXT NOT NULL, PRIMARY KEY(owner,report_id)
+    );
+    CREATE INDEX IF NOT EXISTS bug_report_guests_owner_time ON bug_report_guests(owner,created_at);
+    CREATE INDEX IF NOT EXISTS bug_report_guests_rate_time ON bug_report_guests(rate_key,created_at);`);
   }
 
-  async request(request: Request, owner: string): Promise<Response> {
+  async request(request: Request, accountOwner: string | null, preferredName?: string | null, rateKey?: string): Promise<Response> {
     const url = new URL(request.url);
+    const guest = url.pathname === '/api/bug-reports/guest';
+    if (guest ? accountOwner !== null || !rateKey || !/^[0-9a-f]{64}$/.test(rateKey) : !accountOwner) return fail('forbidden', 403);
+    const table = guest ? 'bug_report_guests' : 'bug_reports';
     if (url.search) return fail('invalid', 400);
     if (!this.env.REDMINE_API_KEY) return fail('disabled', 503);
     if (url.pathname === '/api/bug-reports/session') {
-      return request.method === 'GET' ? Response.json({ ok: true, expectedActor: owner }) : fail('method_not_allowed', 405);
+      return request.method === 'GET' ? Response.json({ ok: true, expectedActor: accountOwner, preferredName: preferredName ?? null }) : fail('method_not_allowed', 405);
     }
     if (request.method !== 'POST') return fail('method_not_allowed', 405);
     let body;
@@ -70,28 +81,40 @@ export class RedmineReports {
       body = await withDeadline(async signal => JSON.parse(await boundedText(request, signal, 32768)), request.signal, 5000);
     } catch { return fail('invalid', 400); }
     if (!body || typeof body !== 'object' || Array.isArray(body)
-      || Object.keys(body).sort().join(',') !== 'description,expectedActor,path,reportId'
+      || Object.keys(body).sort().join(',') !== (guest ? 'description,email,firstName,lastName,path,reportId' : 'description,expectedActor,path,reportId')
       || typeof body.reportId !== 'string' || !UUID.test(body.reportId)
-      || typeof body.expectedActor !== 'string' || !/^[0-9a-f]{64}$/.test(body.expectedActor)
+      || (!guest && (typeof body.expectedActor !== 'string' || !/^[0-9a-f]{64}$/.test(body.expectedActor)))
       || !['/','/teacher.html','/account.html','/p/:shared-map'].includes(body.path)
       || typeof body.description !== 'string' || body.description.length > 4000) return fail('invalid', 400);
-    if (body.expectedActor !== owner) return fail('account_changed', 403);
+    if (!guest && body.expectedActor !== accountOwner) return fail('account_changed', 403);
+    let contact: GuestContact | null = null;
+    if (guest) {
+      const parsed = parseGuestContact(body);
+      if (!parsed.ok) return Response.json({ ok: false, code: 'invalid_contact', fields: parsed.errors }, { status: 400 });
+      contact = parsed.contact;
+    }
+    const owner = contact ? digest(`guest-report-email:v1\n${contact.email}`) : accountOwner!;
     const description = body.description.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').trim();
     if (description.length < 10 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(description)) return fail('invalid', 400);
     const id = body.reportId as string;
-    const fingerprint = digest(`${id}\n${body.path}\n${description}`);
+    const fingerprint = digest(`${id}\n${body.path}\n${description}${contact ? `\n${JSON.stringify(contact)}` : ''}`);
     const lock = `${owner}:${id}`;
     if (this.active.has(lock)) return fail('pending', 202, 5);
     this.active.add(lock);
     try {
       const createdAt = new Date().toISOString();
       const start = this.storage.transactionSync(() => {
-        const existing = this.db.prepare('SELECT fingerprint,state,created_at,issue_id FROM bug_reports WHERE owner=? AND report_id=?').get(owner, id) as Receipt | undefined;
+        const existing = this.db.prepare(`SELECT fingerprint,state,created_at,issue_id FROM ${table} WHERE owner=? AND report_id=?`).get(owner, id) as Receipt | undefined;
         if (existing) return { existing };
-        const recent = this.db.prepare('SELECT count(*) AS n, min(created_at) AS oldest FROM bug_reports WHERE owner=? AND created_at>=?')
+        const recent = this.db.prepare(`SELECT count(*) AS n, min(created_at) AS oldest FROM ${table} WHERE owner=? AND created_at>=?`)
           .get(owner, new Date(Date.now() - 86400000).toISOString());
         if (recent.n >= 10) return { limited: Math.max(60, Math.ceil((Date.parse(recent.oldest) + 86400000 - Date.now()) / 1000)) };
-        this.db.prepare("INSERT INTO bug_reports VALUES (?,?,?,?,'pending',NULL)").run(owner, id, fingerprint, createdAt);
+        if (guest) {
+          const network = this.db.prepare('SELECT count(*) AS n, min(created_at) AS oldest FROM bug_report_guests WHERE rate_key=? AND created_at>=?')
+            .get(rateKey, new Date(Date.now() - 86400000).toISOString());
+          if (network.n >= 20) return { limited: Math.max(60, Math.ceil((Date.parse(network.oldest) + 86400000 - Date.now()) / 1000)) };
+          this.db.prepare("INSERT INTO bug_report_guests VALUES (?,?,?,?,'pending',NULL,?)").run(owner, id, fingerprint, createdAt, rateKey);
+        } else this.db.prepare("INSERT INTO bug_reports VALUES (?,?,?,?,'pending',NULL)").run(owner, id, fingerprint, createdAt);
         return { createdAt };
       });
       if ('limited' in start) return fail('rate_limited', 429, start.limited);
@@ -100,7 +123,7 @@ export class RedmineReports {
       const at = existing?.created_at ?? createdAt;
       const saved = () => Response.json({ ok: true, status: 'saved', reportId: id, createdAt: at });
       const saveReceipt = (issueId: number) => {
-        this.db.prepare("UPDATE bug_reports SET state='saved',issue_id=? WHERE owner=? AND report_id=?").run(issueId, owner, id);
+        this.db.prepare(`UPDATE ${table} SET state='saved',issue_id=? WHERE owner=? AND report_id=?`).run(issueId, owner, id);
         return saved();
       };
       if (existing?.state === 'saved') return saved();
@@ -113,13 +136,14 @@ export class RedmineReports {
           return issueId === null ? fail('pending', 503, 60) : saveReceipt(issueId);
         }
         if (existing?.state === 'retryable') {
-          this.db.prepare("UPDATE bug_reports SET state='pending' WHERE owner=? AND report_id=?").run(owner, id);
+          this.db.prepare(`UPDATE ${table} SET state='pending' WHERE owner=? AND report_id=?`).run(owner, id);
         }
         const page = ({ '/': 'Workspace', '/teacher.html': 'Instructor', '/account.html': 'Account', '/p/:shared-map': 'Shared map' } as Record<string,string>)[body.path];
         const result = await redmine(this.env, 'issues.json', signal, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(id, owner), is_private: true,
-            description: [`CAIL account reference: ${owner.slice(0,16)}`, `Page: ${page}`, `System Mapping release: ${this.env.RELEASE}`,
+            description: [...(contact ? [`Reporter (self-reported): ${contact.firstName} ${contact.lastName}`, `Contact email (unverified): ${contact.email}`]
+              : [`CAIL account reference: ${owner.slice(0,16)}`, ...(preferredName ? [`SSO preferred name: ${preferredName}`] : [])]), `Page: ${page}`, `System Mapping release: ${this.env.RELEASE}`,
               `Reported at: ${at}`, `Report reference: ${id}`, '', description].join('\n'),
           } }),
         });
@@ -128,11 +152,11 @@ export class RedmineReports {
           return Number.isSafeInteger(issueId) && issueId > 0 ? saveReceipt(issueId) : fail('pending', 503, 60);
         }
         if (result.status === 429) {
-          this.db.prepare("UPDATE bug_reports SET state='retryable' WHERE owner=? AND report_id=?").run(owner, id);
+          this.db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).run(owner, id);
           return fail('rate_limited', 429, 60);
         }
         if ([400,401,403,404,422].includes(result.status)) {
-          this.db.prepare("UPDATE bug_reports SET state='rejected' WHERE owner=? AND report_id=?").run(owner, id);
+          this.db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).run(owner, id);
           return fail('redmine_rejected', 502);
         }
         return fail('pending', 503, 60);

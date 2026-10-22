@@ -29,6 +29,7 @@ export default function BugReportWidget() {
     const root = document.documentElement;
     const dispose = mountBugReport(host.current, {
       loginUrl: runtime.loginUrl || '/auth/start',
+      loginClassName: 'button studio-action button--primary',
       path: reportPath,
     });
     root.classList.add('has-bug-report');
