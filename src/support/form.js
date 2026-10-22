@@ -28,7 +28,6 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
             <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="you@college.edu" required><span class="bug-report__error" data-error="email" hidden></span></label>
           </fieldset>
         </div>
-        <details class="bug-report__details"><summary>Details</summary><p class="bug-report__help">Private report. Includes your name, account or email, page and version. No files attached. Draft clears on reload.</p></details>
         <div class="bug-report__field">
           <div class="bug-report__label"><label>What went wrong?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="Explain in detail."></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
           <span class="bug-report__error" data-error="description" hidden></span>
@@ -36,6 +35,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
         <p class="bug-report__status" role="status" aria-live="polite" aria-atomic="true"></p>
         <div class="bug-report__actions"><button type="submit" disabled>Send</button></div>
       </form>
+      <div class="bug-report__support"><a href="mailto:ailab@gc.cuny.edu" aria-label="Email CUNY AI Lab at ailab@gc.cuny.edu">ailab@gc.cuny.edu</a></div>
     </section>
   </div>`;
   const panel = container.querySelector('.bug-report__panel'), form = container.querySelector('form');
@@ -47,12 +47,11 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
   const submitButton = form.querySelector('[type="submit"]'), sessionControls = form.querySelector('.bug-report__session');
   const signIn = sessionControls.querySelector('a'), guestToggle = sessionControls.querySelector('button');
   const identity = form.querySelector('.bug-report__identity'), identityStatus = form.querySelector('.bug-report__identity-status');
-  const contactFields = form.querySelector('.bug-report__contact'), details = form.querySelector('details');
+  const contactFields = form.querySelector('.bug-report__contact');
   contactFields.id = `${instanceId}-contact`; guestToggle.setAttribute('aria-controls', contactFields.id);
-  const privacy = form.querySelector('.bug-report__help'); privacy.id = `${instanceId}-privacy`;
   for (const field of ['firstName', 'lastName', 'email', 'description']) {
     const error = form.querySelector(`[data-error="${field}"]`); error.id = `${instanceId}-${field}-error`;
-    form.elements.namedItem(field).setAttribute('aria-describedby', `${error.id}${field === 'description' ? ` ${privacy.id}` : ''}`);
+    form.elements.namedItem(field).setAttribute('aria-describedby', error.id);
   }
   signIn.href = loginUrl;
   for (const name of loginClassName.split(/\s+/).filter(Boolean)) signIn.classList.add(name);
@@ -78,7 +77,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
     const guest = guestMode(), changed = !guest && accountChanged();
     description.readOnly = busy || locked || done || terminal;
     submitButton.disabled = busy || Boolean(checking) || changed || (!guest && session !== 'signed-in') || done || terminal || Boolean(cooldown);
-    identity.hidden = done; details.hidden = done;
+    identity.hidden = done;
     identityStatus.textContent = session === 'unavailable' ? 'CUNY Login is temporarily unavailable.'
       : changed ? 'Sign back in with your original account to send this draft.'
       : session === 'signed-in' && !guest ? (preferredName ? `Reporting as ${preferredName}` : 'Signed in with CUNY Login')
