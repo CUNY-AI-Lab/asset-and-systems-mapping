@@ -9,28 +9,23 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     </button>
     <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a bug" tabindex="-1" hidden>
       <header class="bug-report__heading">
-        <div><p class="bug-report__eyebrow">CUNY AI Lab · Support</p><h2>Report a bug</h2><p class="bug-report__intro">A private note for the Lab team.</p></div>
+        <h2>Report a bug</h2>
         <button class="bug-report__close" type="button" aria-label="Close bug report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
       <form class="bug-report__form" aria-label="Report a bug">
-        <p class="bug-report__context" role="group" aria-label="Report page context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>This page</span><strong></strong></p>
         <div class="bug-report__field">
-          <div class="bug-report__label"><label>Description of the bug<textarea name="description" required minlength="10" maxlength="4000" rows="4" readonly placeholder="What did you try, and what went wrong?" aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
+          <div class="bug-report__label"><label><span class="bug-report__sr-only">What went wrong?</span><textarea name="description" required minlength="10" maxlength="4000" rows="4" readonly placeholder="What went wrong?" aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
         </div>
-        <p id="bug-report-privacy" class="bug-report__help">An account reference, page category, app version and time are included. No maps, audio or chats are attached.</p>
+        <details class="bug-report__details"><summary>Details</summary><p id="bug-report-privacy" class="bug-report__help">Private report. Includes account, page, version and time. No files attached. Draft clears on reload.</p></details>
         <p class="bug-report__status" role="status" aria-live="polite" aria-atomic="true"></p>
-        <div class="bug-report__session" hidden><a target="_blank" rel="noopener noreferrer">CUNY Login (opens a new tab)</a><button type="button">Check sign-in</button></div>
-        <div class="bug-report__actions"><span class="bug-report__draft-note">Draft kept in this tab until reload.</span><button type="submit" disabled>Send bug report</button></div>
+        <div class="bug-report__session" hidden><a target="_blank" rel="noopener noreferrer" aria-label="CUNY Login (opens a new tab)">CUNY Login ↗</a><button type="button">Check sign-in</button></div>
+        <div class="bug-report__actions"><button type="submit" disabled>Send</button></div>
       </form>
     </section>
   </div>`;
   const panel = container.querySelector('.bug-report__panel'), form = container.querySelector('form');
   const trigger = container.querySelector('.bug-report__trigger'), closeButton = container.querySelector('.bug-report__close');
   const badge = trigger.querySelector('.bug-report__badge'), count = form.querySelector('.bug-report__count');
-  const context = form.querySelector('.bug-report__context strong');
-  // The preview uses fixed labels only; it never renders a URL, token, project name or account identifier.
-  const pageLabels = new Map([['/', 'Workspace'], ['/p/:shared-map', 'Shared map'], ['/account.html', 'My account'],
-    ['/teacher.html', 'Instructor'], ['/classroom.html', 'Class workspace']]);
   const instanceId = `bug-report-${crypto.randomUUID()}`;
   panel.id = instanceId; trigger.setAttribute('aria-controls', instanceId);
   form.querySelector('.bug-report__help').id = `${instanceId}-privacy`;
@@ -62,20 +57,19 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     form.toggleAttribute('aria-busy', busy || checking);
     if (busy || checking) form.setAttribute('aria-busy', 'true');
     panel.dataset.state = done ? 'saved' : busy ? 'sending' : checking ? 'checking' : 'idle';
-    context.textContent = pageLabels.get(locked && report ? report.path : path()) || 'Current page';
     draftChanged();
     schedulePosition();
   };
   const needsSignIn = (changed = false) => {
     ready = false;
     show(changed
-      ? 'The signed-in account changed. Your draft is still here and has not been sent as that account. Sign in to the account that started this draft, then choose Check sign-in.'
-      : 'Sign in with CUNY Login, then choose Check sign-in here. Keep this tab open to preserve your description.', 'attention');
+      ? 'Account changed. Use your original account.'
+      : 'Sign in to report.', 'attention');
     render();
   };
   const uncertain = () => {
-    locked = true; submitButton.textContent = 'Check report status';
-    show(`We could not confirm whether your report was saved. Keep this tab open and check again with the same report. Reference: ${report.reportId}.`, 'attention');
+    locked = true; submitButton.textContent = 'Check status';
+    show(`Not confirmed. Check again. Ref: ${report.reportId}.`, 'attention');
   };
   const wait = seconds => {
     clearTimeout(cooldown);
@@ -92,18 +86,18 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
   }
   async function checkSession() {
     if (busy || checking || done || disposed) return;
-    checking = true; show('Checking CUNY Login…'); render();
+    checking = true; show('Checking…'); render();
     try {
       const { response, result } = await fetchJson(sessionEndpoint);
       if (disposed) return;
       if (response.ok && result?.ok === true && /^[0-9a-f]{64}$/.test(result.expectedActor)) {
         if (actor && actor !== result.expectedActor) { needsSignIn(true); return; }
         actor = result.expectedActor; ready = true;
-        show(locked ? 'Your original account is signed in. Choose Check report status to confirm this report.'
-          : 'Signed in with CUNY Login.');
+        show(locked ? 'Check your report’s status.'
+          : '');
       } else if (response.status === 401 || response.status === 403) needsSignIn();
-      else { ready = false; show('We could not check CUNY Login. Your description is still here. Choose Check sign-in to try again.', 'attention'); }
-    } catch { if (!disposed) { ready = false; show('We could not check CUNY Login. Your description is still here. Choose Check sign-in to try again.', 'attention'); } }
+      else { ready = false; show('Sign-in unavailable. Try again.', 'attention'); }
+    } catch { if (!disposed) { ready = false; show('Sign-in unavailable. Try again.', 'attention'); } }
     finally { checking = false; if (!disposed) render(); }
   }
   async function submit(event) {
@@ -115,30 +109,30 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
       const next = JSON.stringify(data);
       if (snapshot !== next) { snapshot = next; report = { reportId: crypto.randomUUID(), ...data, expectedActor: actor }; }
     }
-    busy = true; show(locked ? 'Checking your report…' : 'Saving your report…'); render();
+    busy = true; show(locked ? 'Checking…' : 'Sending…'); render();
     try {
       const { response, result } = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
       if (disposed) return;
       const code = codeOf(result);
       if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
-        done = true; locked = true; submitButton.textContent = 'Report saved';
-        show(`Your report was saved for the Lab administrators. Thank you. Reference: ${report.reportId}.`, 'success');
+        done = true; locked = true; submitButton.textContent = 'Sent';
+        show(`Sent. Thank you.`, 'success');
       } else if (response.status === 401 || code === 'not_admitted' || code === 'admission_required') needsSignIn();
       else if (code === 'account_changed') needsSignIn(true);
       else if (code === 'idempotency_conflict') {
-        terminal = true; show('This report reference already belongs to different report text. Your description is still here. Keep a copy before starting another report in a new tab.', 'attention');
+        terminal = true; show('Report changed. Copy your text and start again.', 'attention');
       } else if (code === 'invalid' && !locked) {
-        submitButton.textContent = 'Try again'; show('Check the description (10–4000 characters), then try again.', 'attention');
+        submitButton.textContent = 'Try again'; show('Use 10–4,000 characters.', 'attention');
       } else if (response.status === 429 || code === 'rate_limited') {
         const delay = result?.retryAfterSeconds ?? result?.details?.retryAfterSeconds ?? Number(response.headers.get('retry-after'));
         const seconds = Number.isSafeInteger(delay) && delay > 0 && delay <= 86400 ? delay : 60;
-        submitButton.textContent = locked ? 'Check report status' : 'Try again';
-        show(`Please wait ${Math.ceil(seconds / 60)} minute(s) before trying again. Your description is still here.`, 'attention'); wait(seconds);
+        submitButton.textContent = locked ? 'Check status' : 'Try again';
+        show(`Try again in ${Math.ceil(seconds / 60)} min.`, 'attention'); wait(seconds);
       } else if (code === 'forbidden' || response.status === 403) {
-        terminal = true; show('This page could not submit the report. Your description is still here. Keep a copy before reopening the app.', 'attention');
+        terminal = true; show('Couldn’t send. Copy your text before reloading.', 'attention');
       } else if (code === 'redmine_rejected') {
-        terminal = true; show('Redmine could not accept this report. Your description is still here. Contact the Lab team before trying again.', 'attention');
+        terminal = true; show('Couldn’t send. Contact the Lab.', 'attention');
       } else {
         uncertain();
         const seconds = result?.retryAfterSeconds;
