@@ -42,7 +42,22 @@
 .bug-report :is(button, textarea, a):focus-visible { outline: 2px solid var(--report-accent); outline-offset: 3px; }
 .bug-report button:disabled { cursor: default; opacity: .6; }
 .bug-report svg { flex: 0 0 auto; width: 18px; height: 18px; pointer-events: none; }
-.bug-report .bug-report__trigger { border-radius: 999px; padding-inline: 15px; background: transparent; }
+.bug-report .bug-report__trigger { flex: 0 0 auto; gap: 0; min-width: 44px; height: 44px; border-radius: 999px; padding: 12px; background: transparent; }
+.bug-report__trigger-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 0;
+  margin-inline-start: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 200ms ease, margin-inline-start 200ms ease, opacity 150ms ease;
+}
+.bug-report__trigger:focus-visible .bug-report__trigger-label { max-width: 180px; margin-inline-start: 8px; opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .bug-report__trigger:hover .bug-report__trigger-label { max-width: 180px; margin-inline-start: 8px; opacity: 1; }
+}
 .bug-report__trigger[aria-expanded="true"] { border-color: var(--report-accent); background: var(--report-surface); }
 .bug-report__trigger > svg { color: var(--report-accent); }
 .bug-report__badge { padding: 2px 7px; border-radius: 999px; background: var(--report-field); color: var(--report-muted); font-size: 10px; }
