@@ -17,13 +17,15 @@ import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from 
 import { GuidanceJobs } from './guidance-jobs.js';
 import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
+import { RedmineReports } from './redmine-reports';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 };
-type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'>;
+type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'> & { REDMINE_API_KEY?: string };
+const isBugReport = (path: string) => path === '/api/bug-reports' || path === '/api/bug-reports/session';
 const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
   ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
 }, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
@@ -60,6 +62,7 @@ async function boundedJson(request: Request) {
 export class MappingCourse extends DurableObject<Bindings> {
   db;
   jobs!: GuidanceJobs;
+  reports!: RedmineReports;
   system!: ReturnType<typeof createSystemsMappingApp>;
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -77,6 +80,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       CREATE INDEX IF NOT EXISTS cloud_activity_owner ON cloud_activity(owner, at);
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
+      this.reports = new RedmineReports(this.db, ctx.storage, env);
       this.db.finishInitialization();
       this.submissions = new SubmittedRevisions(this.db);
       this.jobs = new GuidanceJobs(this.db, (pending: Promise<unknown>) => ctx.waitUntil(pending));
@@ -124,6 +128,7 @@ export class MappingCourse extends DurableObject<Bindings> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
+    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject));
     const expectedCache = request.headers.get('x-systems-account-cache');
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
@@ -309,7 +314,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         const ready = configured && await boundedRpc(env.COURSES.getByName(env.COURSE_ID).health(), request.signal);
         response = Response.json({ status: ready ? 'ok' : 'unavailable', release: env.RELEASE, auth: 'cuny', storage: 'isolated-cloudflare' }, { status: ready ? 200 : 503 });
       }
-      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL });
+      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL, bugReportEnabled: Boolean(env.REDMINE_API_KEY) });
       else if (url.pathname.startsWith('/auth/')) {
         // Limit new handoffs only. A busy shared IP must not prevent callback
         // completion or clearing/revoking this browser's existing session.
@@ -325,7 +330,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         else {
           let principal = await authorize(request, env);
           const selectedCourse = request.headers.get('x-systems-course');
-          if (!(principal instanceof Response) && request.headers.has('x-systems-course')) {
+          if (!(principal instanceof Response) && request.headers.has('x-systems-course') && !isBugReport(url.pathname)) {
             try {
               const course = await resolveCourseAccess(env, principal.subject, selectedCourse ?? '', request.signal);
               principal = { ...principal, admin: course.capabilities.instructorPanel, expiresAt: Math.min(principal.expiresAt, Date.parse(course.expiresAt)), course };
