@@ -11,6 +11,7 @@
   "durable_objects": { "bindings": [{ "name": "COURSES", "class_name": "MappingCourse" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MappingCourse"] }],
   "services": [
+    {"binding": "BUG_REPORTS", "service": "cail-tools-admission", "entrypoint": "AdmissionBugReports", "props": {"app": "systems-mapping", "origins": ["https://systems-mapping.ailab-452.workers.dev"]}},
     { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "systems-mapping", "worker": "systems-mapping", "workspace": false } },
     { "binding": "GATEWAY", "service": "cail-model-api" }
