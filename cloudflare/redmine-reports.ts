@@ -21,7 +21,8 @@ async function redmine(env: ReportEnv, resource: string, signal: AbortSignal, in
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   headers.set('X-Redmine-API-Key', env.REDMINE_API_KEY);
-  const response = await withSignal(fetch(new URL(resource, BASE), { ...init, headers, redirect: 'error', signal }), signal);
+  // Workers supports manual/follow only. Never forward the API key on redirects.
+  const response = await withSignal(fetch(new URL(resource, BASE), { ...init, headers, redirect: 'manual', signal }), signal);
   const text = await boundedText(response, signal, 2 * 1024 * 1024);
   let data: any = null;
   try { data = JSON.parse(text); } catch { /* Treat unreadable success as uncertain delivery. */ }
@@ -155,7 +156,7 @@ export class RedmineReports {
           this.db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).run(owner, id);
           return fail('rate_limited', 429, 60);
         }
-        if ([400,401,403,404,422].includes(result.status)) {
+        if ([301,302,303,307,308,400,401,403,404,422].includes(result.status)) {
           this.db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).run(owner, id);
           return fail('redmine_rejected', 502);
         }
