@@ -1190,8 +1190,13 @@ async function readMemoFile(file) {
     if (raw.length > MAX_MEMO_CHARACTERS) throw new Error('The memo is too large. Use 500,000 characters or fewer.');
     return { text: raw, notice: `${extension.toUpperCase()} memo imported.` };
   }
-  if (extension === 'pdf') return { text: '', notice: 'This PDF needs text extraction or OCR. Paste the memo text below.' };
-  throw new Error('You can import DOCX, TXT, MD, HTML, or JSON files. For a PDF, paste text that can be read and selected.');
+  if (extension === 'pdf') {
+    const { extractPdfText } = await import('./pdfMemo.js');
+    const text = await extractPdfText(await file.arrayBuffer(), { maxCharacters: MAX_MEMO_CHARACTERS });
+    if (!text.trim()) return { text: '', notice: 'This PDF has no selectable text, which usually means a scan. Paste the memo text below or upload a DOCX.' };
+    return { text, notice: 'PDF text imported; compare against the original.' };
+  }
+  throw new Error('You can import DOCX, PDF, TXT, MD, HTML, or JSON files.');
 }
 
 function IntakeStage({ project, update, toast, onRequestRestart }) {
