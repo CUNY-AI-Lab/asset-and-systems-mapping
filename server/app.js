@@ -5,6 +5,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
 import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
+import { excerptQuotesMemo } from '../shared/memo-quote-match.js';
 import { fieldNotesQuestions } from '../shared/field-notes.js';
 import { FIELD_NOTES_CONTEXT_INSTRUCTION, validateFieldNotesContext } from '../shared/field-notes-context.js';
 import {
@@ -705,7 +706,6 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   if ((activeScale === 'meso' || activeScale === 'macrosphere') && value.connections.length) {
     throw new MemoReviewSemanticError(`${activeScale} must use scoped nodes and an empty connections array.`);
   }
-  const memoEvidenceText = sourceMaterial.normalize('NFC').replace(/\s+/g, ' ').trim();
   value.guidance.forEach((item, index) => {
     if (!hasExactKeys(item, ['point'], ['evidenceExcerpt'])) {
       throw new MemoReviewSemanticError(`guidance[${index}] does not use the exact guidance fields.`);
@@ -720,9 +720,9 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     }
     // Quoted evidence is a verifiable source reference. Never accept a note,
     // proposed investigation or invented passage as a quotation of the memo.
-    // Whitespace and Unicode normalization tolerate document extraction, but
-    // do not paraphrase, repair or selectively drop provider output.
-    if (evidenceExcerpt && !memoEvidenceText.includes(evidenceExcerpt.normalize('NFC').replace(/\s+/g, ' ').trim())) {
+    // Typography, case, whitespace and marked elisions tolerate document
+    // extraction and quoting habits; paraphrase and invented passages still fail.
+    if (evidenceExcerpt && !excerptQuotesMemo(sourceMaterial, evidenceExcerpt)) {
       throw new MemoReviewSemanticError(`guidance[${index}].evidenceExcerpt must quote the supplied memo; Field Notes are not memo evidence.`);
     }
   });

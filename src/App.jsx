@@ -1216,6 +1216,13 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
       if (file.name.length > FILE_NAME_LIMIT) throw new Error(`Choose a memo whose file name is ${FILE_NAME_LIMIT} characters or fewer.`);
       if (file.size > MAX_MEMO_BYTES) throw new Error('Choose a file smaller than 5 MB, or paste a shorter memo.');
       const result = await readMemoFile(file);
+      if (!result.text.trim()) {
+        // A file with no readable text must not replace the visible file name
+        // while the earlier memo text silently stays in the review.
+        setFileNotice(result.notice);
+        toast(result.notice, 'error');
+        return;
+      }
       update((draft) => {
         invalidateSubmissionDerived(draft, 'text', result.text || draft.submission.text);
         draft.submission.title = draft.submission.title || file.name;
