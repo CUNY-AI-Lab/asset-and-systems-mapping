@@ -37,7 +37,7 @@ test('map and notebook preserve Field Notes and viewport across every scale and 
     await expect(field).toBeVisible();
     if (level === 'micro') {
       await expect(page.locator('.reflection-prompt')).toHaveText(lessonPrompt);
-      expect(await page.locator('.reflection-prompt').innerText()).toBe(lessonPrompt);
+      expect(await page.locator('.reflection-prompt').innerText()).toBe(lessonPrompt.replace(/\s+/g, ' '));
     }
     expect(await notebook.locator('textarea:visible').count()).toBe(1);
     await expect(notebook.locator('.memo-drawer')).toHaveCount(0);

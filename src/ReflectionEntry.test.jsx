@@ -29,14 +29,14 @@ describe('Field Notes', () => {
     ['meso', 'What did you notice while mapping the Meso scale?', 'Which nodes might help you begin mapping the Exo scale?'],
     ['exosphere', 'What did you notice while mapping the Exo scale?', 'Which nodes might help you begin mapping the Macro scale?'],
     ['macrosphere', 'What did you notice while mapping the Macro scale?', null],
-  ])('shows the selected questions at %s in the existing required writing field', (scale, first, second) => {
+  ])('shows the selected questions at %s as one paragraph in the required writing field', (scale, first, second) => {
     const project = createDefaultProject();
     project.activeScale = scale;
     const update = vi.fn();
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getAllByRole('textbox')).toHaveLength(1);
     expect(screen.getByRole('textbox').required).toBe(true);
-    expect(document.getElementById('field-notes-question').textContent.split('\n')).toEqual(second ? [first, second] : [first]);
+    expect(document.getElementById('field-notes-question').textContent).toBe([first, second].filter(Boolean).join(' '));
     expect(update).not.toHaveBeenCalled();
   });
 

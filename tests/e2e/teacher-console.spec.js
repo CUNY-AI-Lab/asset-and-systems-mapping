@@ -220,6 +220,7 @@ test('lesson customization opens an editable copy and publishes directly from th
   await field.fill(question);
   await page.getByText('Student preview', { exact: true }).click();
   await expect(page.locator('.course-student-preview__question')).toHaveText(question);
+  expect(await page.locator('.course-student-preview__question').innerText()).toBe(question.replace(/\s+/g, ' '));
   await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeInViewport({ ratio: 1 });
   await expect(page.getByLabel('Change note (optional)')).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
