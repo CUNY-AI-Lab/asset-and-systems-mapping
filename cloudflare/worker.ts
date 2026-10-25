@@ -17,6 +17,7 @@ import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from 
 import { GuidanceJobs } from './guidance-jobs.js';
 import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
+import { RedmineReports } from './redmine-reports';
 import { handleBugReport, type BugReportService } from './bug-reports';
 
 const HEADERS = {
@@ -24,7 +25,8 @@ const HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 };
-type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'> & { BUG_REPORTS?: BugReportService };
+type Bindings = Omit<Env, 'IDENTITY' | 'ADMISSION_RESOLVER'> & IdentityEnv & Pick<CourseAccessEnv, 'COURSE_ACCESS_ENABLED' | 'COURSE_IDS'> & { REDMINE_API_KEY?: string; BUG_REPORT_MODE?: string; BUG_REPORTS?: BugReportService };
+const isBugReport = (path: string) => path === '/api/bug-reports' || path === '/api/bug-reports/session';
 const failure = (error: string, status: number, retryAfterSeconds?: number) => Response.json({ error,
   ...(retryAfterSeconds ? { details: { retryAfterSeconds } } : {}),
 }, { status, ...(retryAfterSeconds ? { headers: { 'Retry-After': String(retryAfterSeconds) } } : {}) });
@@ -61,6 +63,7 @@ async function boundedJson(request: Request) {
 export class MappingCourse extends DurableObject<Bindings> {
   db;
   jobs!: GuidanceJobs;
+  reports!: RedmineReports;
   system!: ReturnType<typeof createSystemsMappingApp>;
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -78,6 +81,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       CREATE INDEX IF NOT EXISTS cloud_activity_owner ON cloud_activity(owner, at);
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
+      this.reports = new RedmineReports(this.db, ctx.storage, env);
       this.db.finishInitialization();
       this.submissions = new SubmittedRevisions(this.db);
       this.jobs = new GuidanceJobs(this.db, (pending: Promise<unknown>) => ctx.waitUntil(pending));
@@ -109,6 +113,11 @@ export class MappingCourse extends DurableObject<Bindings> {
 
   submissions!: SubmittedRevisions;
 
+  async guestReport(request: Request, rateKey: string): Promise<Response> {
+    if (new URL(request.url).pathname !== '/api/bug-reports/guest' || !/^[0-9a-f]{64}$/.test(rateKey)) return failure('Not found.', 404);
+    return this.reports.request(request, null, null, rateKey);
+  }
+
   async alarm(): Promise<void> {
     this.jobs.purge();
     const next = this.jobs.nextCleanup();
@@ -125,6 +134,7 @@ export class MappingCourse extends DurableObject<Bindings> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
+    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName);
     const expectedCache = request.headers.get('x-systems-account-cache');
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
@@ -310,14 +320,18 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         const ready = configured && await boundedRpc(env.COURSES.getByName(env.COURSE_ID).health(), request.signal);
         response = Response.json({ status: ready ? 'ok' : 'unavailable', release: env.RELEASE, auth: 'cuny', storage: 'isolated-cloudflare' }, { status: ready ? 200 : 503 });
       }
-      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL });
       else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
-        response = Response.json({ enabled: Boolean(env.BUG_REPORTS) }, { headers: { 'Cache-Control': 'no-store' } });
+        const contact = env.BUG_REPORT_MODE === 'redmine' || Boolean(env.REDMINE_API_KEY);
+        response = Response.json({ enabled: contact ? Boolean(env.REDMINE_API_KEY) : Boolean(env.BUG_REPORTS),
+          ...(contact ? { mode: 'contact', delivery: 'redmine' } : {}) });
       }
-      else if (url.pathname === '/api/bug-reports' || url.pathname === '/api/bug-reports/session') {
-        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE,
-          service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
+      else if (env.BUG_REPORT_MODE === 'redmine' && !env.REDMINE_API_KEY && url.pathname.startsWith('/api/bug-reports')) {
+        response = failure('Reporting is unavailable.', 503);
       }
+      else if (!env.REDMINE_API_KEY && isBugReport(url.pathname)) {
+        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
+      }
+      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL, bugReportEnabled: Boolean(env.REDMINE_API_KEY) });
       else if (url.pathname.startsWith('/auth/')) {
         // Limit new handoffs only. A busy shared IP must not prevent callback
         // completion or clearing/revoking this browser's existing session.
@@ -328,12 +342,24 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
           } catch { response = signInFailure(request, 503); }
         } else response = await login(request, env.IDENTITY, { CAIL_IDENTITY_JWKS: env.CAIL_IDENTITY_JWKS });
       }
+      else if (url.pathname === '/api/bug-reports/guest') {
+        const ip = request.headers.get('cf-connecting-ip');
+        if (request.method !== 'POST') response = failure('Method not allowed.', 405);
+        else if (!env.REDMINE_API_KEY || !ip || !/^[0-9a-fA-F:.]{3,45}$/.test(ip)) response = failure('Reporting is unavailable.', 503);
+        else {
+          const rateKey = digest(`guest-report-ip:v1\n${env.REDMINE_API_KEY}\n${ip}`);
+          const limit = await boundedRpc(env.REQUEST_LIMIT.limit({ key: `guest-report:${rateKey}` }), request.signal);
+          response = limit.success
+            ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey)
+            : failure('Please wait a moment and try again.', 429, 60);
+        }
+      }
       else if (url.pathname.startsWith('/api/')) {
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
         else {
           let principal = await authorize(request, env);
           const selectedCourse = request.headers.get('x-systems-course');
-          if (!(principal instanceof Response) && request.headers.has('x-systems-course')) {
+          if (!(principal instanceof Response) && request.headers.has('x-systems-course') && !isBugReport(url.pathname)) {
             try {
               const course = await resolveCourseAccess(env, principal.subject, selectedCourse ?? '', request.signal);
               principal = { ...principal, admin: course.capabilities.instructorPanel, expiresAt: Math.min(principal.expiresAt, Date.parse(course.expiresAt)), course };

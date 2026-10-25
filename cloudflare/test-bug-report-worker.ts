@@ -1,7 +1,7 @@
 // Local synthetic/browser fixture only. Release config never references this file.
 import app from './worker';
 let mode = 'saved', denied = false, identityMode = 'valid', binding = true, limited = false;
-let project: any = null;
+let project: any = null, reportMode: string | undefined;
 let calls: any[] = [], identityCalls = 0, membershipCalls = 0, courseCalls = 0;
 const reports = new Map<string, any>();
 export default {
@@ -10,7 +10,7 @@ export default {
     if (url.pathname === '/__bug-fixture') {
       if (request.method === 'POST') {
         const data = await request.json<any>();
-        mode = data.mode ?? 'saved'; denied = Boolean(data.denied); identityMode = data.identityMode ?? 'valid';
+        reportMode = data.reportMode; mode = data.mode ?? 'saved'; denied = Boolean(data.denied); identityMode = data.identityMode ?? 'valid';
         binding = data.binding !== false; limited = Boolean(data.limited); project = data.project ?? null;
         calls = []; identityCalls = 0; membershipCalls = 0; courseCalls = 0;
         if (data.resetReports) reports.clear();
@@ -53,7 +53,7 @@ export default {
     appHeaders.set('cf-connecting-ip', '192.0.2.5');
     if (who) appHeaders.set('cookie', `__Host-systems-mapping-session=${tokens[who].sessionToken}`);
     request = new Request(appOrigin + url.pathname + url.search, { method: request.method, headers: appHeaders, body: request.body, redirect: 'manual' });
-    return app.fetch(request, { ...env, PUBLIC_ORIGIN: appOrigin, BUG_REPORTS: binding ? service : undefined,
+    return app.fetch(request, { ...env, PUBLIC_ORIGIN: appOrigin, BUG_REPORTS: binding ? service : undefined, BUG_REPORT_MODE: reportMode,
       REQUEST_LIMIT: limited ? { limit: async () => ({ success: false }) } : env.REQUEST_LIMIT,
       IDENTITY: { identities: async (token: string) => {
         identityCalls++;

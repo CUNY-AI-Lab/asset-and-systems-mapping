@@ -5,7 +5,7 @@ import { readCookie, type IdentityClient } from './login';
 import { validSessionToken } from './session-contract/session.js';
 import publicJwks from './jwks.json';
 
-export type Principal = { subject: string; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
+export type Principal = { subject: string; preferredName?: string | null; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
 export type IdentityEnv = {
   IDENTITY: IdentityClient;
   ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccessV2?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
@@ -53,5 +53,7 @@ export async function authorize(request: Request, env: IdentityEnv): Promise<Pri
     || typeof value.expiresAt !== 'string' || !Number.isFinite(Date.parse(value.expiresAt))) return authFailure(503, 'admission_unavailable');
   const expiresAt = Date.parse(value.expiresAt);
   if (expiresAt <= Date.now()) return authFailure(403, 'admission_required');
-  return { subject: appIdentity.subject, admin: value.accessRole === 'admin', expiresAt, gatewayJwt: grants.gatewayJwt };
+  const preferredName = typeof appIdentity.name === 'string'
+    ? appIdentity.name.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 160) || null : null;
+  return { subject: appIdentity.subject, preferredName, admin: value.accessRole === 'admin', expiresAt, gatewayJwt: grants.gatewayJwt };
 }

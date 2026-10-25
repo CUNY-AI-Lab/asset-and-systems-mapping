@@ -112,3 +112,9 @@ test('PKCE sign-in keeps proofs and opaque sessions in HttpOnly cookies and reje
     expect(returned.headers.get('location')).toBe(expected);
   }
 });
+
+test('preferred name comes from the verified app identity for a normal member', async () => {
+  const { env, grants } = await environment();
+  grants.appJwt = await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject: TEST_SUBJECTS.alice, name: 'Sam Student' });
+  expect(await authorize(request(), env)).toMatchObject({ preferredName: 'Sam Student', admin: false });
+});

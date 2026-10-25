@@ -36,3 +36,18 @@ The availability route exposes the report form only when the binding exists.
 A production submission and corresponding mailbox readback are separate release
 checks; mocked tests establish neither. Keep the previous deployment available
 for rollback if the receiver refuses reports after activation.
+
+## Production Redmine delivery
+
+`BUG_REPORT_MODE=redmine` selects the SSO / .edu guest form. Set `REDMINE_API_KEY`
+as a secret on `systems-mapping`; a missing key must not fall back to email.
+The shared contact form matches Stem Splitter's `public/bug-report/dev-form.js`
+and `.css`, with the app's CUNY Login class and route supplied by the wrapper.
+The server derives preferred names from verified SSO, rejects non-.edu guest
+contacts, and creates private issues in CAIL Ticketing project 15, Bug tracker 2.
+
+The existing Durable Object adds receipt tables on initialization. Reports and
+contact text live only in the private Redmine issue; receipts store fingerprints,
+rate references, state and issue ID. Pending deliveries are looked up before any
+retry, so uncertain responses cannot create duplicate issues. Verify delivery
+with issue readback after the production form submits an authorized test.

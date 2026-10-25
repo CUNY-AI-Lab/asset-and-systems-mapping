@@ -166,3 +166,12 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
     } finally { await browser.close(); }
   }
 }, 60000);
+
+test('production Redmine mode never falls back to email when its secret is missing', async () => {
+ await control({resetReports:true,reportMode:'redmine'});
+ const response=await request('/api/bug-reports/availability','');
+ expect(await response.json()).toEqual({enabled:false,mode:'contact',delivery:'redmine'});
+ expect((await submit(sample,'')).status).toBe(503);
+ expect((await stats()).calls).toHaveLength(0);
+ await control({resetReports:true});
+});
