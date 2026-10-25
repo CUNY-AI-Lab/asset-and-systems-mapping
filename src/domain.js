@@ -1531,7 +1531,7 @@ const PREFLIGHT_REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
 const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter', 'cail-gateway'];
 const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
-  'evalCount', 'evalDurationNs',
+  'evalCount', 'evalDurationNs', 'correctiveRetries',
 ];
 const FORBIDDEN_PROJECT_KEYS = new Set([
   'password', 'passwordhash', 'passwordsalt', 'passphrase', 'apikey', 'secret', 'secrettoken',

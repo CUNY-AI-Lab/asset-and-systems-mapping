@@ -103,12 +103,6 @@ const LINK_PATH_PATTERN = /^\/p\/([A-Za-z0-9_-]{20,64})\/?$/;
 const LINK_SYNC_DEBOUNCE_MS = 4000;
 const MAX_MEMO_BYTES = 5 * 1024 * 1024;
 const MAX_MEMO_CHARACTERS = 500_000;
-// A quotation the memo supports but not letter for letter. Students see the
-// model's wording as written and a note to check it against their memo.
-const EVIDENCE_MATCH_NOTES = Object.freeze({
-  normalized: 'Punctuation or capitalization differs from your memo. Check the passage.',
-  elided: 'Words were left out. Check the full passage in your memo.',
-});
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 const MAX_EVALUATION_POST_BYTES = 700 * 1024;
 const MAX_EVALUATION_INQUIRY_CHARACTERS = 8_000;
@@ -1343,7 +1337,7 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     <div className="review-intro">
       {!review && <Action data-next-action="read-memo" variant={requiresLevelModel(project) ? "primary" : "ghost"} disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Reading memo…' : reviewFailure ? 'Try again' : 'Generate guidance'}</Action>}
     </div>
-    {busy && reviewProgress && <p role="status">{reviewProgress}</p>}
+    <GuidanceProgress active={busy} message={reviewProgress} />
     {reviewFailure && <p role="alert" className="teacher-message teacher-message--error">{reviewFailure.message}</p>}
     {review && <>
       <h2>Suggestions</h2>
@@ -1353,7 +1347,6 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
         {review.guidance.map((item, index) => <div className="studio-feedback" key={index}>
           <p>{item.point}</p>
           {item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}
-          {item.evidenceExcerpt && item.evidenceMatch && <p className="privacy-note" role="note">{EVIDENCE_MATCH_NOTES[item.evidenceMatch]}</p>}
         </div>)}
         {!review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>}
       </Disclosure>
@@ -7354,3 +7347,4 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 export { AccessFrame, ThemeToggle, GraphCanvas, MapStage };
 export default App;
 import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
+import GuidanceProgress from './GuidanceProgress.jsx';

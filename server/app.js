@@ -149,7 +149,7 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
   'BE SELECTIVE. Propose only the clearest, best-evidenced items and stop: no more than 10 nodes and 8 direct relationships at Micro, 6 mesosystems at Meso, 6 new outside decision settings with 5 pathways at Exosphere, and 6 structures at Macrosphere. Fewer strong items always beat more weak ones. Never propose near-duplicates, spelling variants, or two labels for the same actor.',
-  `guidance must be an array of no more than 3 objects, each with a required point and an optional evidenceExcerpt quoting the memo passage it refers to. Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
+  `guidance must be an array of no more than 3 objects, each with a required point and an optional evidenceExcerpt copied character for character from the memo passage it refers to (shorten by choosing a shorter contiguous passage, never by paraphrase). Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
   `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus scope at Meso, basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. scale must be one of micro, meso, exosphere, macrosphere. evidence must quote or closely paraphrase the memo passage that supports the node — or, for an inferred item, say plainly what the student should verify.`,
   'Except at Meso, each node label MUST be the shortest complete memo-supported referring expression for exactly one accepted map element. Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo; if the referent is not unambiguous, omit it. Never attach location, schedule, action, relationship, or explanatory material merely to make a label longer; keep those details in evidence, and emit a separately supported setting only when it is independently relevant. Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments, relationship propositions, outcomes, or explanations as node labels. At Meso, each node instead names one mesosystem formed by two or more Micro settings. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
   'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
@@ -303,6 +303,7 @@ class MemoReviewSemanticError extends Error {
       'At Exosphere, return named outside decision settings with one supported pathway into one supplied Micro setting.',
       'At Macrosphere, return broader conditions scoped to at least two supplied map items. Return no relationship edge.',
       'Every relationship endpoint must exactly match an accepted node label or supplied node ID. Use only a short, plain active verb phrase for a concrete, supported action or exchange.',
+      'Every guidance evidenceExcerpt must be copied from the memo character for character, including its quotation marks, apostrophes and dashes. To shorten a quotation, choose a shorter contiguous passage; do not paraphrase, and never quote Field Notes or your own earlier output.',
       `Validation failure: ${message}`,
     ].join('\n');
   }
@@ -1476,7 +1477,7 @@ function validatePreflightConsumeRequest(value) {
 
 const OLLAMA_RUNTIME_INTEGER_FIELDS = Object.freeze([
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
-  'evalCount', 'evalDurationNs',
+  'evalCount', 'evalDurationNs', 'correctiveRetries',
 ]);
 
 const MODEL_SUGGESTION_PROVIDERS = new Set(['ollama-cloud', 'openrouter', 'cail-gateway']);
@@ -2981,18 +2982,21 @@ export function createSystemsMappingApp(options = {}) {
           };
           let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
           let review;
+          let correctiveRetries = 0;
           try {
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
           } catch (error) {
             if (!(error instanceof MemoReviewSemanticError)) throw error;
-            // CAIL Gateway owns provider/model failover. Do not silently issue a
-            // second potentially billable request when its completed output is
-            // unusable; keep the project editable and let the student choose.
-            if (suggestionProvider === 'cail-gateway') throw error;
+            // One corrective retry on every provider, including the CAIL Gateway,
+            // which admits it as a new request. The model fixes its own contract
+            // failure (an unsupported quotation, a schedule fragment) instead of
+            // the student; the retry is recorded in runtime metadata, and a second
+            // failure still fails closed with the project editable.
             generated = await ollamaRequest({
               ...providerInput,
               systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}`,
             }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
+            correctiveRetries = 1;
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
           }
           suggestion = {
@@ -3006,6 +3010,7 @@ export function createSystemsMappingApp(options = {}) {
             model: ollamaConfig.model,
             createdAt,
           });
+          if (correctiveRetries) runtimeMetadata.correctiveRetries = correctiveRetries;
         } catch (error) {
           if (options.suggestionFailure) {
             const safe = options.suggestionFailure(error, context);

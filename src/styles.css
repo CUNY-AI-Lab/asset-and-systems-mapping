@@ -1805,3 +1805,12 @@ html[data-theme="dark"] .ecology-layer--macrosphere > ellipse { fill: color-mix(
     max-height: min(42dvh, 430px);
   }
 }
+
+/* Guidance progress: a word or two and an approximate figure while the model works. */
+.guidance-progress { display: grid; gap: 6px; justify-items: start; }
+.guidance-progress__figure { display: inline-flex; align-items: center; gap: 10px; padding: 4px 6px; margin: -4px -6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.guidance-progress__figure:hover, .guidance-progress__figure:focus-visible { background: var(--surface-hover); color: var(--ink); }
+.guidance-progress__track { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.guidance-progress__fill { display: block; height: 100%; border-radius: 3px; background: var(--blue); transition: width .9s ease-out; }
+.guidance-progress__label { font-weight: 600; }
+.guidance-progress__detail { margin: 0; font-size: 13px; color: var(--muted); }
