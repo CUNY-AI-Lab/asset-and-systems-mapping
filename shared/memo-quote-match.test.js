@@ -27,6 +27,15 @@ describe('classifyExcerptMatch', () => {
     expect(classifyExcerptMatch(memo, 'works nights [...] community college')).toBe('elided');
   });
 
+  it('distinguishes literal memo ellipses from leading and trailing omissions', () => {
+    expect(classifyExcerptMatch('Rosa’s husband pauses … then speaks.', "Rosa's husband pauses ... then speaks.")).toBe('normalized');
+    expect(classifyExcerptMatch(memo, "Rosa's husband works nights...")).toBe('elided');
+    expect(classifyExcerptMatch(memo, '...community college.')).toBe('elided');
+    expect(classifyExcerptMatch(memo, '[...] works nights [...]')).toBe('elided');
+    expect(classifyExcerptMatch(memo, '...invented passage...')).toBeNull();
+    expect(classifyExcerptMatch(memo, '...the...')).toBeNull();
+  });
+
   it('rejects paraphrase, invented passages, reordered fragments and trivial fragments', () => {
     for (const excerpt of [
       'Rosa’s husband works days',

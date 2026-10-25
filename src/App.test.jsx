@@ -377,6 +377,16 @@ async function resumeSavedProject(project = createDefaultProject()) {
   return project;
 }
 
+function pendingMemoFile(name = 'memo.txt') {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { file: { name, size: 30, text: () => promise }, resolve, reject };
+}
+
+function uploadMemo(pending) {
+  fireEvent.change(document.querySelector('.upload-zone input[type=file]'), { target: { files: [pending.file] } });
+}
+
 function makeMapProject(activeScale = 'exosphere') {
   const project = createDefaultProject();
   project.instructor.requireStudentConfirmation = true;
@@ -1560,6 +1570,117 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(privacy);
     expect(screen.getByRole('checkbox', { name: 'Includes private information' })).toBeVisible();
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])('keeps the newest concurrent memo import (older finishes first: %s)', async olderFirst => {
+    await resumeSavedProject();
+    const older = pendingMemoFile('older.txt');
+    const newer = pendingMemoFile('newer.txt');
+    uploadMemo(older);
+    uploadMemo(newer);
+    if (olderFirst) await act(async () => older.resolve('Older synthetic memo'));
+    await act(async () => newer.resolve('Newer synthetic memo'));
+    if (!olderFirst) await act(async () => older.resolve('Older synthetic memo'));
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('Newer synthetic memo');
+    await waitFor(() => expect(storedProject().submission.fileName).toBe('newer.txt'));
+    expect(storedProject().events.filter(event => event.action === 'memo.imported').map(event => event.detail)).toEqual(['newer.txt']);
+  });
+
+  it.each([false, true])('preserves edits during import, including edit-and-revert (%s)', async revert => {
+    await resumeSavedProject();
+    const box = screen.getByRole('textbox', { name: /^Memo/ });
+    const original = box.value;
+    const pending = pendingMemoFile();
+    uploadMemo(pending);
+    fireEvent.change(box, { target: { value: 'A newer synthetic edit' } });
+    if (revert) fireEvent.change(box, { target: { value: original } });
+    await act(async () => pending.resolve('Stale imported memo'));
+    expect(box).toHaveValue(revert ? original : 'A newer synthetic edit');
+    expect(screen.queryByText('TXT memo imported.')).not.toBeInTheDocument();
+    await waitFor(() => expect(storedProject().submission.text).toBe(box.value));
+    expect(storedProject().events.some(event => event.action === 'memo.imported')).toBe(false);
+  });
+
+  it('discards an import after leaving intake and reopening the same project', async () => {
+    const project = await resumeSavedProject();
+    const pending = pendingMemoFile();
+    uploadMemo(pending);
+    openProjectMenu('Projects');
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    await screen.findByRole('textbox', { name: /^Memo/ });
+    await act(async () => pending.resolve('Stale import after navigation'));
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(project.submission.text);
+    expect(screen.queryByText('TXT memo imported.')).not.toBeInTheDocument();
+  });
+
+  it('never imports into another project after navigation', async () => {
+    const project = await resumeSavedProject();
+    const pending = pendingMemoFile();
+    uploadMemo(pending);
+    openProjectMenu('Projects');
+    await showResumeScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    await screen.findByRole('textbox', { name: /^Memo/ });
+    const original = screen.getByRole('textbox', { name: /^Memo/ }).value;
+    await act(async () => pending.resolve('Stale import for a different project'));
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(original);
+    expect(storedProject().id).not.toBe(project.id);
+    expect(screen.queryByText('TXT memo imported.')).not.toBeInTheDocument();
+  });
+
+  it.each(['error', 'empty'])('ignores an older import %s after a newer success', async outcome => {
+    await resumeSavedProject();
+    const older = pendingMemoFile('older.txt');
+    const newer = pendingMemoFile('newer.txt');
+    uploadMemo(older);
+    uploadMemo(newer);
+    await act(async () => newer.resolve('Newer memo text'));
+    await act(async () => outcome === 'error' ? older.reject(new Error('synthetic failure')) : older.resolve(''));
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('Newer memo text');
+    expect(document.querySelector('p.privacy-note[role=status]')).toHaveTextContent('TXT memo imported.');
+    expect(screen.queryByText(/could not be imported/)).not.toBeInTheDocument();
+  });
+
+  it('allows selecting the same file again while its first reader is pending', async () => {
+    await resumeSavedProject();
+    const first = pendingMemoFile();
+    const second = pendingMemoFile();
+    uploadMemo(first);
+    uploadMemo(second);
+    await act(async () => second.resolve('Second read of the same file'));
+    await act(async () => first.resolve('First stale read'));
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('Second read of the same file');
+  });
+
+  it('discards an import when institutional access expires', async () => {
+    vi.useFakeTimers();
+    const project = seedProject(createDefaultProject());
+    studentSession = grantedAccess(1000);
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    const pending = pendingMemoFile();
+    uploadMemo(pending);
+    act(() => vi.advanceTimersByTime(1100));
+    await act(async () => pending.resolve('Import from expired access'));
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    expect(storedProject().submission.text).toBe(project.submission.text);
+    expect(storedProject().events.some(event => event.action === 'memo.imported')).toBe(false);
+    expect(screen.queryByText('TXT memo imported.')).not.toBeInTheDocument();
+  });
+
+  it('commits a memo import once under Strict Mode and announces the committed result', async () => {
+    const project = seedProject(createDefaultProject());
+    render(<React.StrictMode><App /></React.StrictMode>);
+    await showResumeScreen();
+    openProjectFromList(project.title);
+    await screen.findByRole('textbox', { name: /^Memo/ });
+    const pending = pendingMemoFile();
+    uploadMemo(pending);
+    await act(async () => pending.resolve('A synthetic Strict Mode import'));
+    expect(document.querySelector('p.privacy-note[role=status]')).toHaveTextContent('TXT memo imported.');
+    await waitFor(() => expect(storedProject().submission.text).toBe('A synthetic Strict Mode import'));
+    expect(storedProject().events.filter(event => event.action === 'memo.imported')).toHaveLength(1);
   });
 
   it('labels the compact memo fork on hover and focus without changing its confirmation', async () => {

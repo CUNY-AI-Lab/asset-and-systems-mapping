@@ -11,8 +11,8 @@
 //   'exact'      the excerpt occurs in the memo as written (whitespace and
 //                Unicode NFC aside, as before)
 //   'normalized' the excerpt occurs once typography and case are canonicalized
-//   'elided'     the excerpt is several fragments joined by "..." or "[...]",
-//                each found in the memo, in order
+//   'elided'     one or more retained fragments with "..." or "[...]"
+//                omission markers, each found in memo order
 //
 // Paraphrase never matches: every fragment must still occur in the memo.
 
@@ -53,8 +53,12 @@ export function classifyExcerptMatch(memo, excerpt) {
   if (!strictExcerpt) return null;
   if (strictQuoteText(memo).includes(strictExcerpt)) return 'exact';
   const source = canonicalQuoteText(memo);
-  const fragments = canonicalQuoteText(excerpt)
-    .split(GAP)
+  const canonicalExcerpt = canonicalQuoteText(excerpt).replace(EDGE_MARKS, '');
+  // A literal ellipsis in the memo is punctuation, not necessarily an omission.
+  if (canonicalExcerpt.length >= MIN_FRAGMENT_CHARACTERS && source.includes(canonicalExcerpt)) return 'normalized';
+  const pieces = canonicalExcerpt.split(GAP);
+  if (pieces.length === 1) return null;
+  const fragments = pieces
     .map(fragment => fragment.replace(EDGE_MARKS, ''))
     .filter(Boolean);
   if (!fragments.length || fragments.some(fragment => fragment.length < MIN_FRAGMENT_CHARACTERS)) return null;
@@ -64,7 +68,7 @@ export function classifyExcerptMatch(memo, excerpt) {
     if (at === -1) return null;
     from = at + fragment.length;
   }
-  return fragments.length === 1 ? 'normalized' : 'elided';
+  return 'elided';
 }
 
 /** True when the memo supports the excerpt at any grade. */

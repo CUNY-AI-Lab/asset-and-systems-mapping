@@ -46,3 +46,48 @@ test('an image-only PDF explains itself and leaves the memo field alone', async 
   await expect(page.getByRole('textbox', { name: /^Memo/ })).toHaveValue('');
   await expect(page.locator('.upload-zone strong')).toHaveText('Upload a memo');
 });
+
+test('a delayed PDF import preserves a newer memo edit', async ({ page }) => {
+  await page.addInitScript(() => {
+    const terminate = Worker.prototype.terminate;
+    Worker.prototype.terminate = function (...args) {
+      window.memoWorkersFinished = (window.memoWorkersFinished || 0) + 1;
+      return terminate.apply(this, args);
+    };
+  });
+  await startProject(page);
+  let entered, release;
+  const started = new Promise(resolve => { entered = resolve; });
+  const pending = new Promise(resolve => { release = resolve; });
+  await page.route('**/pdfMemo-*.js', async route => {
+    entered();
+    await pending;
+    await route.continue();
+  });
+  await page.locator('.upload-zone input[type=file]').setInputFiles(here + 'east-harlem-memo.pdf');
+  await started;
+  const memo = page.getByRole('textbox', { name: /^Memo/ });
+  const edited = 'Synthetic memo edited while the PDF reader was loading.';
+  await memo.fill(edited);
+  release();
+  // The loading task releases its worker in finally. Wait for actual parsing
+  // completion, not a guessed delay, before checking the stale-result guard.
+  await expect.poll(() => page.evaluate(() => window.memoWorkersFinished || 0)).toBe(1);
+  await expect(memo).toHaveValue(edited);
+  await expect(page.locator('p.privacy-note[role=status]').filter({ hasText: 'PDF text imported.' })).toHaveCount(0);
+  await expect.poll(async () => (await readProject(page)).submission.text).toBe(edited);
+  expect((await readProject(page)).events.some(event => event.action === 'memo.imported')).toBe(false);
+});
+
+test('an unreadable PDF preserves the existing memo and file metadata', async ({ page }) => {
+  await startProject(page);
+  const upload = page.locator('.upload-zone input[type=file]');
+  await upload.setInputFiles(here + 'east-harlem-memo.docx');
+  await expect(page.locator('p.privacy-note[role=status]')).toHaveText('DOCX text imported.');
+  await expect.poll(async () => (await readProject(page)).submission.fileName).toBe('east-harlem-memo.docx');
+  const previous = (await readProject(page)).submission;
+  await upload.setInputFiles(here + 'image-only.pdf');
+  await expect(page.locator('p.privacy-note[role=status]')).toContainText('No text could be read from this PDF');
+  await expect(page.getByRole('textbox', { name: /^Memo/ })).toHaveValue(previous.text);
+  expect((await readProject(page)).submission).toEqual(previous);
+});

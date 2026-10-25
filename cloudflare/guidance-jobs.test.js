@@ -39,6 +39,19 @@ test('only explicit retryable refusals resume after backoff and stop at three at
   expect(jobs.read('alice',job.id).job).toMatchObject({ state: 'failed', attempts: 3 });
   jobs.resume('alice',job.id,'scope',run); expect(run).toHaveBeenCalledTimes(3);
 });
+
+test('failed semantic retries retain their safe attempt count across job reloads without replay', async () => {
+  const { jobs, db, pending } = setup();
+  const run = vi.fn(async () => Response.json({ error: 'Suggestions unavailable', details: {
+    code: 'guidance_contract_invalid', shouldRetry: false, correctiveRetries: 1,
+  } }, { status: 502 }));
+  const { job } = jobs.create('alice', 'memo', input, 'scope', undefined, run);
+  await Promise.all(pending);
+  const restored = new GuidanceJobs(db, () => {}, () => 100000);
+  expect(restored.read('alice', job.id)).toMatchObject({ job: { state: 'failed' }, result: { details: { correctiveRetries: 1 } } });
+  restored.resume('alice', job.id, 'scope', run);
+  expect(run).toHaveBeenCalledTimes(1);
+});
 test('ambiguous interruption requires explicit retry and a repeated retry token cannot start again', async () => {
   const { jobs, pending } = setup();
   const run = vi.fn(async () => { throw new DOMException('Uncertain provider completion', 'TimeoutError'); });

@@ -472,6 +472,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('copied from the memo character for character');
+    expect((await response.json()).details.correctiveRetries).toBe(1);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
@@ -498,6 +499,25 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(evaluation.review.guidance[0]).toEqual({ point: 'Investigate how the referral connects these settings', evidenceExcerpt: 'refers a family — “to an agency”' });
     expect(evaluation.runtime.correctiveRetries).toBe(1);
+  });
+
+  it('retains the corrective attempt count when the second Gateway call fails', async () => {
+    await system.close();
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: { ...sparseMemoReviewFixture(), guidance: [{ point: 'Check evidence', evidenceExcerpt: 'An invented quotation' }] }, metadata: {} })
+      .mockRejectedValueOnce(new Error('private provider body'));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'failed-corrective-call.sqlite'), now: () => currentTime,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, suggestionProvider: 'cail-gateway', ollamaRequest,
+      suggestionFailure: () => ({ status: 429, message: 'Usage unavailable', details: { code: 'quota_exceeded', shouldRetry: false } }),
+    });
+    const cookie = await grantStudent();
+    const { studentAnnotation: _annotation, ...body } = submissionBody();
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: 'Usage unavailable', details: { code: 'quota_exceeded', shouldRetry: false, correctiveRetries: 1 } });
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
   it('accepts an actual memo quotation with extraction whitespace even when the note also mentions it', async () => {
@@ -691,7 +711,7 @@ describe('persistent preflight suggestion review queue', () => {
     });
     const malformed = await postJson(system.app, '/api/preflight/evaluations', thirdBody, { cookie: studentCookie });
     expect(malformed.status).toBe(502);
-    expect(await malformed.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
+    expect(await malformed.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.', details: { correctiveRetries: 1 } });
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(3);
 
     const oversizedSource = 'é'.repeat(70_000);
@@ -873,7 +893,7 @@ describe('persistent preflight suggestion review queue', () => {
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
+    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.', details: { correctiveRetries: 1 } });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
@@ -910,7 +930,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({
       error: 'Suggestion generation is temporarily unavailable.',
-      details: { code: 'guidance_unavailable', retryable: false },
+      details: { code: 'guidance_unavailable', retryable: false, correctiveRetries: 1 },
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
@@ -1011,7 +1031,7 @@ describe('persistent preflight suggestion review queue', () => {
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
+    expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.', details: { correctiveRetries: 1 } });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
@@ -1633,7 +1653,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       });
       const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
       expect(response.status).toBe(502);
-      expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.' });
+      expect(await response.json()).toEqual({ error: 'Suggestion generation is temporarily unavailable.', details: { correctiveRetries: 1 } });
     }
 
     expect(ollamaRequest).toHaveBeenCalledTimes(8);
