@@ -15,9 +15,9 @@ export const PREVIOUS_FIELD_NOTES_QUESTIONS = Object.freeze({
 });
 
 export const DEFAULT_FIELD_NOTES_QUESTIONS = Object.freeze({
-  micro: 'What did you notice while mapping the Micro scale?\nWhich nodes might help you begin mapping the Meso scale?',
-  meso: 'What did you notice while mapping the Meso scale?\nWhich nodes might help you begin mapping the Exo scale?',
-  exosphere: 'What did you notice while mapping the Exo scale?\nWhich nodes might help you begin mapping the Macro scale?',
+  micro: 'What did you notice while mapping the Micro scale? Which nodes might help you begin mapping the Meso scale?',
+  meso: 'What did you notice while mapping the Meso scale? Which nodes might help you begin mapping the Exo scale?',
+  exosphere: 'What did you notice while mapping the Exo scale? Which nodes might help you begin mapping the Macro scale?',
   macrosphere: 'What did you notice while mapping the Macro scale?',
 });
 

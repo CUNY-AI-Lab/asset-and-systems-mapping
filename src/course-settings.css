@@ -113,7 +113,7 @@
 .course-student-preview__page { max-width: 390px; margin: 8px 0 0; padding: 20px; border-left: 2px solid var(--line-strong); background: var(--surface); }
 .course-student-preview__page h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .course-student-preview__scale { margin: 4px 0 16px; color: var(--muted); font-size: 14px; }
-.course-student-preview__question { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; }
+.course-student-preview__question { margin: 0; white-space: normal; overflow-wrap: anywhere; font-size: 16px; }
 .course-settings__actions { position: sticky; bottom: var(--bug-report-height, 0px); z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 16px 24px; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); background: var(--surface-subtle); }
 .course-settings__actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .course-settings__status { margin: 0; color: var(--muted); font-size: 14px; }
