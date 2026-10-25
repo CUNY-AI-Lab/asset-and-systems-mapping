@@ -106,8 +106,8 @@ const MAX_MEMO_CHARACTERS = 500_000;
 // A quotation the memo supports but not letter for letter. Students see the
 // model's wording as written and a note to check it against their memo.
 const EVIDENCE_MATCH_NOTES = Object.freeze({
-  normalized: 'Quoted with different punctuation or capitalization than your memo. Check it against the passage.',
-  elided: 'Quoted with words left out. Check it against the full passage in your memo.',
+  normalized: 'Punctuation or capitalization differs from your memo. Check the passage.',
+  elided: 'Words were left out. Check the full passage in your memo.',
 });
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 const MAX_EVALUATION_POST_BYTES = 700 * 1024;
@@ -1199,8 +1199,8 @@ async function readMemoFile(file) {
   if (extension === 'pdf') {
     const { extractPdfText } = await import('./pdfMemo.js');
     const text = await extractPdfText(await file.arrayBuffer(), { maxCharacters: MAX_MEMO_CHARACTERS });
-    if (!text.trim()) return { text: '', notice: 'This PDF has no selectable text, which usually means a scan. Paste the memo text below or upload a DOCX.' };
-    return { text, notice: 'PDF text imported; compare against the original.' };
+    if (!text.trim()) return { text: '', notice: 'No text could be read from this PDF. Paste the memo text or upload a DOCX.' };
+    return { text, notice: 'PDF text imported.' };
   }
   throw new Error('You can import DOCX, PDF, TXT, MD, HTML, or JSON files.');
 }
