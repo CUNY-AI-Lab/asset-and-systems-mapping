@@ -182,14 +182,15 @@ test('Gateway Retry-After survives the service-binding response without another 
 });
 
 test('classifies completed output failures without exposing response text or retrying them', () => {
-  for (const [error, code] of [
+  for (const [error, code, field] of [
     [new OpenRouterError('private provider response', 'response_too_large'), 'guidance_output_truncated'],
     [new OpenRouterError('private provider response', 'invalid_response'), 'guidance_output_invalid'],
-    [Object.assign(new Error('nodes[2].label contains private text'), { name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID' }), 'guidance_contract_invalid'],
+    [Object.assign(new Error('nodes[2].label contains private text'), { name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID' }), 'guidance_contract_invalid', 'nodes[2].label'],
+    [Object.assign(new Error('guidance[0].evidenceExcerpt must quote the supplied memo; private passage'), { name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID' }), 'guidance_contract_invalid', 'guidance[0].evidenceExcerpt'],
   ]) {
     const safe = safeGatewayFailure(error, correlation.request_id);
     expect(safe).toMatchObject({ status: 502, details: { code, shouldRetry: false, requestId: correlation.request_id } });
     expect(JSON.stringify(safe)).not.toContain('private');
-    if (code === 'guidance_contract_invalid') expect(safe.details.validationField).toBe('nodes[2].label');
+    if (code === 'guidance_contract_invalid') expect(safe.details.validationField).toBe(field);
   }
 });

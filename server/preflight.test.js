@@ -490,11 +490,11 @@ describe('persistent preflight suggestion review queue', () => {
       fieldNotes: { scale: 'micro', text: `${evidenceExcerpt}\nI plan to ask how the referral works.`, truncated: false },
     });
     const evaluation = await evaluate(cookie, body);
-    expect(evaluation.review.guidance[0].evidenceExcerpt).toBe(evidenceExcerpt);
+    expect(evaluation.review.guidance[0]).toEqual({ point: 'Investigate how the referral connects these settings', evidenceExcerpt });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts a quotation of a Word memo that differs only in quote marks, dashes, case and elision', async () => {
+  it('accepts a quotation of a Word memo that differs only in quote marks, dashes, case and elision, and flags the match grade', async () => {
     await system.close();
     const evidenceExcerpt = 'the school\'s counselor refers a family - "to an agency" ... after intake';
     const ollamaRequest = vi.fn(async () => ({
@@ -511,8 +511,12 @@ describe('persistent preflight suggestion review queue', () => {
       activeScale: 'micro', sourceMaterial: 'The school’s counselor refers a family — “to an agency” in East Harlem after intake.',
     });
     const evaluation = await evaluate(cookie, body);
-    expect(evaluation.review.guidance[0].evidenceExcerpt).toBe(evidenceExcerpt);
+    // The model's wording is stored as written; the grade says how it matched.
+    expect(evaluation.review.guidance[0]).toEqual({ point: 'Investigate how the referral connects these settings', evidenceExcerpt, evidenceMatch: 'elided' });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    // A stored atomic review replays with its marker intact.
+    const stored = system.db.prepare('SELECT suggestion_json AS suggestion FROM preflight_evaluations ORDER BY rowid DESC LIMIT 1').get();
+    expect(JSON.parse(stored.suggestion).guidance[0].evidenceMatch).toBe('elided');
   });
 
   it('passes current stage guidance, course material, and transient project instructions to Ollama without persisting any prompt', async () => {

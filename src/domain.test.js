@@ -995,6 +995,20 @@ describe('mapping domain', () => {
     privateGuidanceField.preflight.memoReview.guidance[0].criterionId = 'H2';
     expect(() => validateProject(privateGuidanceField)).toThrow(/criterionId is not an allowed schema field/);
 
+    const flaggedQuotation = structuredClone(project);
+    flaggedQuotation.preflight.memoReview.guidance[0].evidenceExcerpt = 'A quotation the memo supports once punctuation is normalized.';
+    flaggedQuotation.preflight.memoReview.guidance[0].evidenceMatch = 'normalized';
+    expect(() => validateProject(flaggedQuotation)).not.toThrow();
+
+    const unknownMatchGrade = structuredClone(flaggedQuotation);
+    unknownMatchGrade.preflight.memoReview.guidance[0].evidenceMatch = 'exact';
+    expect(() => validateProject(unknownMatchGrade)).toThrow(/evidenceMatch must be normalized or elided/);
+
+    const orphanMatchGrade = structuredClone(project);
+    delete orphanMatchGrade.preflight.memoReview.guidance[0].evidenceExcerpt;
+    orphanMatchGrade.preflight.memoReview.guidance[0].evidenceMatch = 'elided';
+    expect(() => validateProject(orphanMatchGrade)).toThrow(/evidenceMatch must be normalized or elided and accompany/);
+
     const selfLoop = structuredClone(project);
     selfLoop.preflight.memoReview.connections[0].target = selfLoop.preflight.memoReview.connections[0].source;
     expect(() => validateProject(selfLoop)).toThrow(/must differ from source/);

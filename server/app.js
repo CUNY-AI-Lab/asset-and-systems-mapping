@@ -5,7 +5,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../shared/student-judgments.js';
 import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
-import { excerptQuotesMemo } from '../shared/memo-quote-match.js';
+import { classifyExcerptMatch } from '../shared/memo-quote-match.js';
 import { fieldNotesQuestions } from '../shared/field-notes.js';
 import { FIELD_NOTES_CONTEXT_INSTRUCTION, validateFieldNotesContext } from '../shared/field-notes-context.js';
 import {
@@ -706,6 +706,9 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   if ((activeScale === 'meso' || activeScale === 'macrosphere') && value.connections.length) {
     throw new MemoReviewSemanticError(`${activeScale} must use scoped nodes and an empty connections array.`);
   }
+  // One match grade per guidance item, recorded on the stored review below so a
+  // reader can tell a verbatim quotation from one matched by normalization.
+  const evidenceMatches = [];
   value.guidance.forEach((item, index) => {
     if (!hasExactKeys(item, ['point'], ['evidenceExcerpt'])) {
       throw new MemoReviewSemanticError(`guidance[${index}] does not use the exact guidance fields.`);
@@ -722,9 +725,12 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     // proposed investigation or invented passage as a quotation of the memo.
     // Typography, case, whitespace and marked elisions tolerate document
     // extraction and quoting habits; paraphrase and invented passages still fail.
-    if (evidenceExcerpt && !excerptQuotesMemo(sourceMaterial, evidenceExcerpt)) {
+    // The excerpt itself is stored as the model wrote it, never rewritten.
+    const evidenceMatch = evidenceExcerpt ? classifyExcerptMatch(sourceMaterial, evidenceExcerpt) : null;
+    if (evidenceExcerpt && !evidenceMatch) {
       throw new MemoReviewSemanticError(`guidance[${index}].evidenceExcerpt must quote the supplied memo; Field Notes are not memo evidence.`);
     }
+    evidenceMatches.push(evidenceMatch);
   });
   if (!hasExactKeys(value.readiness, ['ready', 'note'])
     || typeof value.readiness.ready !== 'boolean'
@@ -910,6 +916,13 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     || normalized.example !== value.example) {
     throw new MemoReviewSemanticError('Readiness or example content changed during semantic normalization.');
   }
+  // A verbatim quotation carries no marker. Anything matched by typography or
+  // elision is flagged so the student and instructor can check it against the
+  // memo rather than take it as a literal citation.
+  normalized.guidance.forEach((item, index) => {
+    const match = evidenceMatches[index];
+    if (item.evidenceExcerpt && match && match !== 'exact') item.evidenceMatch = match;
+  });
   return normalized;
 }
 
@@ -1542,10 +1555,13 @@ function storedAtomicMemoReview(value, activeScale) {
     const scaleLimits = MEMO_REVIEW_SCALE_LIMITS[activeScale] || MEMO_REVIEW_SCALE_LIMITS.micro;
     if (!Array.isArray(value.guidance) || value.guidance.length > MEMO_REVIEW_LIMITS.guidance) fail();
     value.guidance.forEach((item) => {
-      const itemKeys = Object.hasOwn(item, 'evidenceExcerpt') ? ['point', 'evidenceExcerpt'] : ['point'];
+      const itemKeys = Object.hasOwn(item, 'evidenceExcerpt')
+        ? ['point', 'evidenceExcerpt', ...(Object.hasOwn(item, 'evidenceMatch') ? ['evidenceMatch'] : [])]
+        : ['point'];
       if (!exactKeys(item, itemKeys) || !exactText(item.point, MEMO_REVIEW_LIMITS.point)
         || containsRetiredSystemsLanguage(item.point)
-        || (Object.hasOwn(item, 'evidenceExcerpt') && !exactText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence))) fail();
+        || (Object.hasOwn(item, 'evidenceExcerpt') && !exactText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence))
+        || (Object.hasOwn(item, 'evidenceMatch') && !['normalized', 'elided'].includes(item.evidenceMatch))) fail();
     });
     if (!Array.isArray(value.nodes) || value.nodes.length > Math.min(scaleLimits.nodes, MEMO_REVIEW_LIMITS.nodes)) fail();
     const nodeKeys = {

@@ -29,6 +29,10 @@ const messagesByCode = Object.freeze({
 // error, status, and payload for API handling and diagnostic correlation.
 export function userFacingError(error, fallback = 'The request could not be completed. Try again.') {
   const details = error?.payload?.details;
+  // The server names only a fixed schema path, never memo or response text.
+  if (details?.code === 'guidance_contract_invalid' && /^guidance\[\d{1,2}\]\.evidenceExcerpt$/.test(String(details.validationField ?? ''))) {
+    return 'The model quoted a passage that is not in your memo, so its suggestions were not used. Your work is saved. Try again when ready.';
+  }
   if (typeof details?.code === 'string' && Object.hasOwn(messagesByCode, details.code)) return messagesByCode[details.code];
   if (error?.name === 'TimeoutError' || error?.status === 408 || error?.status === 504) return 'The request took too long. Try again.';
   if (error?.name === 'AbortError') return 'The request was cancelled. Try again when you are ready.';

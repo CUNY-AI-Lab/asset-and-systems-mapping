@@ -103,6 +103,12 @@ const LINK_PATH_PATTERN = /^\/p\/([A-Za-z0-9_-]{20,64})\/?$/;
 const LINK_SYNC_DEBOUNCE_MS = 4000;
 const MAX_MEMO_BYTES = 5 * 1024 * 1024;
 const MAX_MEMO_CHARACTERS = 500_000;
+// A quotation the memo supports but not letter for letter. Students see the
+// model's wording as written and a note to check it against their memo.
+const EVIDENCE_MATCH_NOTES = Object.freeze({
+  normalized: 'Quoted with different punctuation or capitalization than your memo. Check it against the passage.',
+  elided: 'Quoted with words left out. Check it against the full passage in your memo.',
+});
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 const MAX_EVALUATION_POST_BYTES = 700 * 1024;
 const MAX_EVALUATION_INQUIRY_CHARACTERS = 8_000;
@@ -1344,7 +1350,11 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
       {stale && <p role="status">Update suggestions for your revised memo</p>}
       <Disclosure title="Guidance and evidence" className="review-details">
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
-        {review.guidance.map((item, index) => <div className="studio-feedback" key={index}><p>{item.point}</p>{item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}</div>)}
+        {review.guidance.map((item, index) => <div className="studio-feedback" key={index}>
+          <p>{item.point}</p>
+          {item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}
+          {item.evidenceExcerpt && item.evidenceMatch && <p className="privacy-note" role="note">{EVIDENCE_MATCH_NOTES[item.evidenceMatch]}</p>}
+        </div>)}
         {!review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>}
       </Disclosure>
     </>}
