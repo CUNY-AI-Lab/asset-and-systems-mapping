@@ -17,7 +17,7 @@ describe('safe error display', () => {
 
   it('names an unsupported memo quotation from the fixed schema path only', () => {
     const quoted = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'guidance[1].evidenceExcerpt' } });
-    expect(userFacingError(quoted)).toBe('The model quoted a passage that is not in your memo, so its suggestions were not used. Your work is saved. Try again when ready.');
+    expect(userFacingError(quoted)).toBe('The suggestions could not be matched to your memo, so they were not shown. Your memo is unchanged and your work is saved. Choose Generate guidance to try again.');
     const otherField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[2].label' } });
     expect(userFacingError(otherField)).toBe('The model response did not fit the map rules. Your work is saved. Try again when ready.');
     const unsafeField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', validationField: 'guidance[0].evidenceExcerpt private memo text' } });
