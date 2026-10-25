@@ -161,6 +161,42 @@ and anonymous project access must return 401. The verification script checks
 these receipts without claiming authenticated acceptance. No Railway command
 or shared Gateway release belongs in this procedure.
 
+### Deploy the verified CI package from an authorized Mac
+
+The checks workflow uploads `systems-mapping-cloudflare-<source-SHA>` only
+after the frozen install, Cloudflare typecheck/build/bundle, unit/Worker tests,
+and browser checks succeed. The package contains the bundled `worker.js`,
+`dist-cloudflare`, the checked production configuration and lockfile,
+`SOURCE_SHA`, `SOURCE_TREE`, and `SHA256SUMS`. It contains no credentials or
+test databases. This avoids reconstructing private registry dependencies on
+the operator's Mac. The artifact inherits the private repository's access
+controls and expires after seven days; it does not deploy automatically.
+
+For a production release, select the successful **main push** run for the exact
+current main SHA. Download its named artifact with `gh run download`, into an
+empty directory. Check `SOURCE_SHA` against current main, `SOURCE_TREE` against
+that commit's Git tree, and run `shasum -a 256 -c SHA256SUMS` inside the package.
+Compare its `wrangler.jsonc` and `pnpm-lock.yaml` against the same source commit.
+Do not deploy a PR merge artifact as a main release or accept a package from
+a failed, incomplete, or different run. Recheck main immediately before upload.
+
+Using the existing authorized Wrangler login and the pinned public Wrangler
+`4.130.0`, run from the verified package directory:
+
+```sh
+wrangler deploy worker.js --no-bundle --config wrangler.jsonc --assets dist-cloudflare --var "RELEASE:$RELEASE_SHA"
+```
+
+`RELEASE_SHA` must be the verified full current-main SHA. First run the same
+command with `--dry-run` to validate the package and production configuration
+without uploading. `--no-bundle` uploads the already checked Worker; it does
+not install private packages. Preserve all bindings, migrations, account and
+origin settings from the checked configuration. Never copy the local OAuth
+credential into CI or create a repository token to make this route work.
+After upload, run `scripts/verify-cloudflare-release.mjs` from the matching
+checkout, verify deployment/version traffic and asset hashes, and retain the
+separate authenticated-acceptance limits below.
+
 Code rollback must retain the Durable Object namespace and compatible schema.
 Cloudflare documents 30-day SQLite point-in-time recovery using bookmarks;
 this is platform capability, not a completed restoration rehearsal. Local
