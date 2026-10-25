@@ -49,3 +49,21 @@ jobs:
           SYSTEMS_MAPPING_BROWSER_ACCEPTANCE: '1'
       - name: Preserve the existing Node browser and accessibility paths
         run: pnpm test:e2e
+      - name: Package the checked Cloudflare Worker and assets
+        run: |
+          # Fail rather than omit a new runtime sidecar from this single-file bundle.
+          test -z "$(find .wrangler/dry-run -type f ! -path .wrangler/dry-run/worker.js ! -path .wrangler/dry-run/worker.js.map ! -path .wrangler/dry-run/README.md -print -quit)"
+          mkdir -p .wrangler/release-package
+          cp .wrangler/dry-run/worker.js wrangler.jsonc pnpm-lock.yaml .wrangler/release-package/
+          cp -R dist-cloudflare .wrangler/release-package/
+          git rev-parse HEAD > .wrangler/release-package/SOURCE_SHA
+          git rev-parse 'HEAD^{tree}' > .wrangler/release-package/SOURCE_TREE
+          cd .wrangler/release-package
+          find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: systems-mapping-cloudflare-${{ github.sha }}
+          path: .wrangler/release-package/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
