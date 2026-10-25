@@ -99,7 +99,7 @@ test('explicit capability links preserve class sharing and optimistic revision s
   const revoked = await request(`/api/projects/${link.token}/revoke`, 'alice', { method: 'POST', body: JSON.stringify({ expectedRevision: 1 }) });
   expect(revoked.status).toBe(200); expect((await request(`/api/projects/${link.token}`, 'bob')).status).toBe(410);
 });
-test('structured model validation and quota refusals make exactly one attempt and preserve safe metadata', async () => {
+test('invalid structured output gets one corrective retry, quota refusals make exactly one attempt, and safe metadata is preserved', async () => {
   const project = newProject();
   // Uses the ordinary product request builder, including current ecological semantics.
   const { preflightEvaluationPayload } = await import('../src/App.jsx');
@@ -111,7 +111,8 @@ test('structured model validation and quota refusals make exactly one attempt an
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(mode === 'invalid' ? 502 : mode === 'quota' ? 429 : 201);
     const stats = await (await services.fetch('https://fixtures.test/control')).json();
-    expect(stats.calls).toBe(1); expect(stats.captured).toMatchObject({ model: 'glm-5.3-flash', identity: true, authorization: false });
+    // A contract failure earns one corrective retry; a quota refusal and a success each make one call.
+    expect(stats.calls).toBe(mode === 'invalid' ? 2 : 1); expect(stats.captured).toMatchObject({ model: 'glm-5.3-flash', identity: true, authorization: false });
     if (mode === 'quota') expect(body.details).toMatchObject({ code: 'quota_exceeded', shouldRetry: false, requestId: '01900000-0000-7000-8000-000000000001' });
   }
   expect((await (await request('/api/cloud/quota')).json()).quota.remaining_percent).toBe(90);
