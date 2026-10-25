@@ -1,28 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalQuoteText, excerptQuotesMemo } from './memo-quote-match.js';
+import { canonicalQuoteText, classifyExcerptMatch, excerptQuotesMemo } from './memo-quote-match.js';
 
 const memo = 'Rosa’s husband works nights for the transit authority — so she “can’t leave the house” after six.\nHer children attend a community college.';
 
-describe('excerptQuotesMemo', () => {
-  it('accepts quotes that differ from a Word memo only in typography or case', () => {
+describe('classifyExcerptMatch', () => {
+  it('grades a verbatim quotation as exact, whitespace and NFC aside', () => {
+    expect(classifyExcerptMatch(memo, 'Rosa’s husband works nights')).toBe('exact');
+    expect(classifyExcerptMatch(memo, 'Her children attend a   community college.')).toBe('exact');
+    expect(classifyExcerptMatch(memo, 'transit authority — so she')).toBe('exact');
+  });
+
+  it('grades quotes that differ from a Word memo only in typography or case as normalized', () => {
     for (const excerpt of [
       "Rosa's husband works nights",
       'she "can\'t leave the house"',
       'transit authority - so she',
       'transit authority—so she',
       'rosa’s husband',
-      'Her children attend a community college.',
       '“Rosa’s husband works nights”',
-    ]) expect(excerptQuotesMemo(memo, excerpt), excerpt).toBe(true);
+    ]) expect(classifyExcerptMatch(memo, excerpt), excerpt).toBe('normalized');
   });
 
-  it('accepts elided quotations whose fragments occur in order', () => {
-    expect(excerptQuotesMemo(memo, 'Rosa’s husband … after six')).toBe(true);
-    expect(excerptQuotesMemo(memo, "Rosa's husband ... can't leave the house")).toBe(true);
-    expect(excerptQuotesMemo(memo, 'works nights [...] community college')).toBe(true);
+  it('grades shortened quotations whose fragments occur in order as elided', () => {
+    expect(classifyExcerptMatch(memo, 'Rosa’s husband … after six')).toBe('elided');
+    expect(classifyExcerptMatch(memo, "Rosa's husband ... can't leave the house")).toBe('elided');
+    expect(classifyExcerptMatch(memo, 'works nights [...] community college')).toBe('elided');
   });
 
-  it('still rejects paraphrase, invented passages, reordered fragments and trivial fragments', () => {
+  it('rejects paraphrase, invented passages, reordered fragments and trivial fragments', () => {
     for (const excerpt of [
       'Rosa’s husband works days',
       'she cannot leave the house',
@@ -31,7 +36,10 @@ describe('excerptQuotesMemo', () => {
       'the ... six',
       '...',
       '',
-    ]) expect(excerptQuotesMemo(memo, excerpt), excerpt).toBe(false);
+    ]) {
+      expect(classifyExcerptMatch(memo, excerpt), excerpt).toBeNull();
+      expect(excerptQuotesMemo(memo, excerpt), excerpt).toBe(false);
+    }
   });
 
   it('canonicalizes both sides the same way', () => {

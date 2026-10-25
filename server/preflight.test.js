@@ -468,8 +468,36 @@ describe('persistent preflight suggestion review queue', () => {
     });
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
     expect(response.status).toBe(502);
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    // One corrective retry names the quotation rule; a repeated failure stores nothing.
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('copied from the memo character for character');
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it('repairs an unsupported quotation with one recorded corrective retry on the Gateway path', async () => {
+    await system.close();
+    const sourceMaterial = 'The school’s counselor refers a family — “to an agency” in East Harlem after intake.';
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({
+        suggestion: { ...sparseMemoReviewFixture(), guidance: [{ point: 'Investigate how the referral connects these settings', evidenceExcerpt: 'The counselor sends families to an agency.' }] },
+        metadata: { provider: 'cail-gateway', model: 'server-model' },
+      })
+      .mockResolvedValueOnce({
+        suggestion: { ...sparseMemoReviewFixture(), guidance: [{ point: 'Investigate how the referral connects these settings', evidenceExcerpt: 'refers a family — “to an agency”' }] },
+        metadata: { provider: 'cail-gateway', model: 'server-model' },
+      });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'gateway-corrective-retry.sqlite'), now: () => currentTime,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' },
+      suggestionProvider: 'cail-gateway', ollamaRequest,
+    });
+    const cookie = await grantStudent();
+    const evaluation = await evaluate(cookie, submissionBody({ activeScale: 'micro', sourceMaterial }));
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(evaluation.review.guidance[0]).toEqual({ point: 'Investigate how the referral connects these settings', evidenceExcerpt: 'refers a family — “to an agency”' });
+    expect(evaluation.runtime.correctiveRetries).toBe(1);
   });
 
   it('accepts an actual memo quotation with extraction whitespace even when the note also mentions it', async () => {
@@ -490,11 +518,11 @@ describe('persistent preflight suggestion review queue', () => {
       fieldNotes: { scale: 'micro', text: `${evidenceExcerpt}\nI plan to ask how the referral works.`, truncated: false },
     });
     const evaluation = await evaluate(cookie, body);
-    expect(evaluation.review.guidance[0].evidenceExcerpt).toBe(evidenceExcerpt);
+    expect(evaluation.review.guidance[0]).toEqual({ point: 'Investigate how the referral connects these settings', evidenceExcerpt });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts a quotation of a Word memo that differs only in quote marks, dashes, case and elision', async () => {
+  it('accepts a quotation of a Word memo that differs only in quote marks, dashes, case and elision, and flags the match grade', async () => {
     await system.close();
     const evidenceExcerpt = 'the school\'s counselor refers a family - "to an agency" ... after intake';
     const ollamaRequest = vi.fn(async () => ({
@@ -511,8 +539,12 @@ describe('persistent preflight suggestion review queue', () => {
       activeScale: 'micro', sourceMaterial: 'The school’s counselor refers a family — “to an agency” in East Harlem after intake.',
     });
     const evaluation = await evaluate(cookie, body);
-    expect(evaluation.review.guidance[0].evidenceExcerpt).toBe(evidenceExcerpt);
+    // The model's wording is stored as written; the grade says how it matched.
+    expect(evaluation.review.guidance[0]).toEqual({ point: 'Investigate how the referral connects these settings', evidenceExcerpt, evidenceMatch: 'elided' });
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    // A stored atomic review replays with its marker intact.
+    const stored = system.db.prepare('SELECT suggestion_json AS suggestion FROM preflight_evaluations ORDER BY rowid DESC LIMIT 1').get();
+    expect(JSON.parse(stored.suggestion).guidance[0].evidenceMatch).toBe('elided');
   });
 
   it('passes current stage guidance, course material, and transient project instructions to Ollama without persisting any prompt', async () => {
@@ -847,7 +879,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
-  it('does not repeat invalid CAIL Gateway output and leaves the project path available', async () => {
+  it('retries invalid CAIL Gateway output once, then fails closed and leaves the project path available', async () => {
     await system.close();
     const invalidReview = {
       guidance: [],
@@ -880,7 +912,8 @@ describe('persistent preflight suggestion review queue', () => {
       error: 'Suggestion generation is temporarily unavailable.',
       details: { code: 'guidance_unavailable', retryable: false },
     });
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(ollamaRequest.mock.calls[0][2].signal).toBeInstanceOf(AbortSignal);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });

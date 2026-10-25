@@ -1531,7 +1531,7 @@ const PREFLIGHT_REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
 const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter', 'cail-gateway'];
 const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
-  'evalCount', 'evalDurationNs',
+  'evalCount', 'evalDurationNs', 'correctiveRetries',
 ];
 const FORBIDDEN_PROJECT_KEYS = new Set([
   'password', 'passwordhash', 'passwordsalt', 'passphrase', 'apikey', 'secret', 'secrettoken',
@@ -2011,10 +2011,14 @@ function validateMemoReview(review, path) {
   review.guidance.forEach((item, index) => {
     const itemPath = `${path}.guidance[${index}]`;
     assertObject(item, itemPath);
-    assertKnownKeys(item, ['point', 'evidenceExcerpt'], itemPath);
+    assertKnownKeys(item, ['point', 'evidenceExcerpt', 'evidenceMatch'], itemPath);
     assertString(item.point, `${itemPath}.point`, false, PROJECT_LIMITS.memoGuidanceText);
     if (containsRetiredSystemsLanguage(item.point)) invalidProject(`${itemPath}.point`, 'must use literal, conventional instructional language');
     if (item.evidenceExcerpt !== undefined) assertString(item.evidenceExcerpt, `${itemPath}.evidenceExcerpt`, false, PROJECT_LIMITS.memoGuidanceEvidence);
+    // Absent means the quotation is verbatim. The marker only accompanies a quotation.
+    if (item.evidenceMatch !== undefined && (item.evidenceExcerpt === undefined || !['normalized', 'elided'].includes(item.evidenceMatch))) {
+      invalidProject(`${itemPath}.evidenceMatch`, 'must be normalized or elided and accompany an evidence excerpt');
+    }
   });
   if (!Array.isArray(review.nodes) || review.nodes.length > PROJECT_LIMITS.memoReviewNodes) {
     invalidProject(`${path}.nodes`, `must be an array of no more than ${PROJECT_LIMITS.memoReviewNodes} nodes`);
@@ -2957,6 +2961,7 @@ function redactEvidenceExcerpts(records, path, redactions, reason) {
   records.forEach((record, index) => {
     if (Object.hasOwn(record, 'evidenceExcerpt')) {
       delete record.evidenceExcerpt;
+      delete record.evidenceMatch;
       addRedaction(redactions, `${path}[${index}].evidenceExcerpt`, reason);
     }
     record.evidenceRefs?.forEach((reference, referenceIndex) => {

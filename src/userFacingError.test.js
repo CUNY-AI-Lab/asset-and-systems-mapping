@@ -15,6 +15,15 @@ describe('safe error display', () => {
     expect(userFacingError(error, fallback)).toBe(fallback);
   });
 
+  it('names an unsupported memo quotation from the fixed schema path only', () => {
+    const quoted = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'guidance[1].evidenceExcerpt' } });
+    expect(userFacingError(quoted)).toBe('The suggestions did not match your memo and were not shown. Your work is saved. Try again when ready.');
+    const otherField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[2].label' } });
+    expect(userFacingError(otherField)).toBe('The model response did not fit the map rules. Your work is saved. Try again when ready.');
+    const unsafeField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', validationField: 'guidance[0].evidenceExcerpt private memo text' } });
+    expect(userFacingError(unsafeField)).toBe('The model response did not fit the map rules. Your work is saved. Try again when ready.');
+  });
+
   it('preserves stable API identifiers and payloads while displaying useful quota copy', () => {
     const payload = { error: 'quota_exceeded', details: { code: 'quota_exceeded', shouldRetry: false, requestId: 'internal-reference' } };
     const error = new ApiError('quota_exceeded', 429, payload);

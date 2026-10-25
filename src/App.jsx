@@ -1193,8 +1193,8 @@ async function readMemoFile(file) {
   if (extension === 'pdf') {
     const { extractPdfText } = await import('./pdfMemo.js');
     const text = await extractPdfText(await file.arrayBuffer(), { maxCharacters: MAX_MEMO_CHARACTERS });
-    if (!text.trim()) return { text: '', notice: 'This PDF has no selectable text, which usually means a scan. Paste the memo text below or upload a DOCX.' };
-    return { text, notice: 'PDF text imported; compare against the original.' };
+    if (!text.trim()) return { text: '', notice: 'No text could be read from this PDF. Paste the memo text or upload a DOCX.' };
+    return { text, notice: 'PDF text imported.' };
   }
   throw new Error('You can import DOCX, PDF, TXT, MD, HTML, or JSON files.');
 }
@@ -1337,14 +1337,17 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     <div className="review-intro">
       {!review && <Action data-next-action="read-memo" variant={requiresLevelModel(project) ? "primary" : "ghost"} disabled={busy || retryPending || !hasMemo || reviewFailure?.retryable === false} onClick={onGenerate}>{busy ? 'Reading memo…' : reviewFailure ? 'Try again' : 'Generate guidance'}</Action>}
     </div>
-    {busy && reviewProgress && <p role="status">{reviewProgress}</p>}
+    <GuidanceProgress active={busy} message={reviewProgress} />
     {reviewFailure && <p role="alert" className="teacher-message teacher-message--error">{reviewFailure.message}</p>}
     {review && <>
       <h2>Suggestions</h2>
       {stale && <p role="status">Update suggestions for your revised memo</p>}
       <Disclosure title="Guidance and evidence" className="review-details">
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
-        {review.guidance.map((item, index) => <div className="studio-feedback" key={index}><p>{item.point}</p>{item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}</div>)}
+        {review.guidance.map((item, index) => <div className="studio-feedback" key={index}>
+          <p>{item.point}</p>
+          {item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}
+        </div>)}
         {!review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>}
       </Disclosure>
     </>}
@@ -7344,3 +7347,4 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 export { AccessFrame, ThemeToggle, GraphCanvas, MapStage };
 export default App;
 import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
+import GuidanceProgress from './GuidanceProgress.jsx';
