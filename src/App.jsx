@@ -1190,8 +1190,13 @@ async function readMemoFile(file) {
     if (raw.length > MAX_MEMO_CHARACTERS) throw new Error('The memo is too large. Use 500,000 characters or fewer.');
     return { text: raw, notice: `${extension.toUpperCase()} memo imported.` };
   }
-  if (extension === 'pdf') return { text: '', notice: 'This PDF needs text extraction or OCR. Paste the memo text below.' };
-  throw new Error('You can import DOCX, TXT, MD, HTML, or JSON files. For a PDF, paste text that can be read and selected.');
+  if (extension === 'pdf') {
+    const { extractPdfText } = await import('./pdfMemo.js');
+    const text = await extractPdfText(await file.arrayBuffer(), { maxCharacters: MAX_MEMO_CHARACTERS });
+    if (!text.trim()) return { text: '', notice: 'This PDF has no selectable text, which usually means a scan. Paste the memo text below or upload a DOCX.' };
+    return { text, notice: 'PDF text imported; compare against the original.' };
+  }
+  throw new Error('You can import DOCX, PDF, TXT, MD, HTML, or JSON files.');
 }
 
 function IntakeStage({ project, update, toast, onRequestRestart }) {
@@ -1216,6 +1221,13 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
       if (file.name.length > FILE_NAME_LIMIT) throw new Error(`Choose a memo whose file name is ${FILE_NAME_LIMIT} characters or fewer.`);
       if (file.size > MAX_MEMO_BYTES) throw new Error('Choose a file smaller than 5 MB, or paste a shorter memo.');
       const result = await readMemoFile(file);
+      if (!result.text.trim()) {
+        // A file with no readable text must not replace the visible file name
+        // while the earlier memo text silently stays in the review.
+        setFileNotice(result.notice);
+        toast(result.notice, 'error');
+        return;
+      }
       update((draft) => {
         invalidateSubmissionDerived(draft, 'text', result.text || draft.submission.text);
         draft.submission.title = draft.submission.title || file.name;

@@ -494,6 +494,27 @@ describe('persistent preflight suggestion review queue', () => {
     expect(ollamaRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts a quotation of a Word memo that differs only in quote marks, dashes, case and elision', async () => {
+    await system.close();
+    const evidenceExcerpt = 'the school\'s counselor refers a family - "to an agency" ... after intake';
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: { ...sparseMemoReviewFixture(), guidance: [{ point: 'Investigate how the referral connects these settings', evidenceExcerpt }] },
+      metadata: { provider: 'cail-gateway', model: 'server-model' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'typographic-source-quote.sqlite'), now: () => currentTime,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' },
+      suggestionProvider: 'cail-gateway', ollamaRequest,
+    });
+    const cookie = await grantStudent();
+    const body = submissionBody({
+      activeScale: 'micro', sourceMaterial: 'The school’s counselor refers a family — “to an agency” in East Harlem after intake.',
+    });
+    const evaluation = await evaluate(cookie, body);
+    expect(evaluation.review.guidance[0].evidenceExcerpt).toBe(evidenceExcerpt);
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('passes current stage guidance, course material, and transient project instructions to Ollama without persisting any prompt', async () => {
     await system.close();
     const ollamaRequest = vi.fn(async () => ({
