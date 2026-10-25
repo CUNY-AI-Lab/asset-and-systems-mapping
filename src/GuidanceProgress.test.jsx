@@ -3,13 +3,13 @@ import { render, screen } from '@testing-library/react';
 import GuidanceProgress, { approximateProgress, phaseFor } from './GuidanceProgress.jsx';
 
 describe('GuidanceProgress', () => {
-  it('moves through short phase words and never completes on its own', () => {
-    expect(phaseFor(0)).toBe('Saving');
-    expect(phaseFor(5)).toBe('Reading memo');
-    expect(phaseFor(20)).toBe('Checking quotes');
-    expect(phaseFor(40)).toBe('Rechecking');
-    expect(phaseFor(90)).toBe('Still working');
-    expect(phaseFor(4, 'Temporary model interruption. Retrying after the requested delay (attempt 2 of 3)…')).toBe('Rechecking');
+  it('uses request status rather than elapsed time to name the work', () => {
+    for (const elapsed of [0, 5, 20, 40, 90, 600]) {
+      expect(phaseFor(elapsed, 'Reading memo (attempt 1 of 3)')).toBe('Generating guidance');
+    }
+    expect(phaseFor(90, 'Saving your generation request…')).toBe('Saving request');
+    expect(phaseFor(0, 'Recovering your saved request…')).toBe('Recovering request');
+    expect(phaseFor(4, 'Temporary model interruption. Retrying after the requested delay (attempt 2 of 3)…')).toBe('Waiting to retry');
     expect(approximateProgress(0)).toBe(0);
     expect(approximateProgress(18)).toBeGreaterThan(50);
     expect(approximateProgress(600)).toBe(95);
@@ -20,7 +20,7 @@ describe('GuidanceProgress', () => {
     const bar = screen.getByRole('progressbar', { name: 'Guidance progress' });
     expect(bar).toHaveAttribute('aria-valuenow', '0');
     expect(screen.getByRole('status')).toHaveTextContent('Reading memo (attempt 1 of 3)');
-    expect(screen.getByRole('button', { expanded: false })).toHaveTextContent('Saving');
+    expect(screen.getByRole('button', { expanded: false })).toHaveTextContent('Generating guidance');
   });
 
   it('renders nothing when idle', () => {

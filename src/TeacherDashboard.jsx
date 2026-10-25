@@ -214,6 +214,8 @@ function SuggestionReview({ suggestion }) {
   const questions = currentReview
     ? uniqueValues([...guidance.map((item) => item?.point), suggestion?.readiness?.note])
     : legacyUncertainties;
+  const gradedQuotations = guidance.filter(item => item?.evidenceExcerpt
+    && ['normalized', 'elided'].includes(item.evidenceMatch));
 
   const annotation = (label, values, emptyText) => <section className="suggestion-annotation">
     <h4>{label}</h4>
@@ -226,6 +228,15 @@ function SuggestionReview({ suggestion }) {
       <p className="teacher-model-review__note">Suggestions are advisory.</p>
       <div className="suggestion-review">
         {annotation(currentReview ? 'Memo evidence' : 'Evidence excerpts', evidence, 'The review did not cite a memo passage.')}
+        {gradedQuotations.length > 0 && <section className="suggestion-annotation">
+          <h4>Quotation matches</h4>
+          <ul>{gradedQuotations.map((item, index) => <li key={index}>
+            <blockquote>{item.evidenceExcerpt}</blockquote>
+            <p>{item.evidenceMatch === 'elided'
+              ? 'Elided quotation: matched passages in memo order with omissions. Check the omitted context.'
+              : 'Normalized quotation: matched after typography or case normalization.'}</p>
+          </li>)}</ul>
+        </section>}
         {annotation(currentReview ? 'Map ideas' : 'Possible next step', mapIdeas, 'The review did not suggest a map item.')}
         {annotation(currentReview ? 'Questions to consider' : 'Open questions', questions, 'The review did not suggest a question.')}
       </div>

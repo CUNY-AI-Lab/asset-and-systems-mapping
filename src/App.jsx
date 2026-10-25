@@ -1199,10 +1199,26 @@ async function readMemoFile(file) {
   throw new Error('You can import DOCX, PDF, TXT, MD, HTML, or JSON files.');
 }
 
-function IntakeStage({ project, update, toast, onRequestRestart }) {
+function IntakeStage({ project, update, toast, onRequestRestart, captureImportScope }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [fileNotice, setFileNotice] = useState('');
-  const setSubmission = (field, value) => update((draft) => { invalidateSubmissionDerived(draft, field, value); });
+  const importRequest = useRef(0);
+  const importFeedback = useRef(null);
+  // Leaving intake, changing projects, or editing the memo invalidates any
+  // pending reader. An old result must never land in the current project.
+  useLayoutEffect(() => () => { importRequest.current += 1; }, [project.id, project.submission.id]);
+  useEffect(() => {
+    const pending = importFeedback.current;
+    if (!pending || pending.request !== importRequest.current || !pending.inScope()
+      || !project.events.some(event => event.id === pending.eventId)) return;
+    importFeedback.current = null;
+    setFileNotice(pending.notice);
+    toast(pending.notice);
+  }, [project.events, toast]);
+  const setSubmission = (field, value) => {
+    importRequest.current += 1;
+    update((draft) => { invalidateSubmissionDerived(draft, field, value); });
+  };
   const setProjectField = (field, value) => update((draft) => {
     draft[field] = value;
     invalidatePreflight(draft);
@@ -1215,12 +1231,21 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
     invalidatePreflight(draft);
   });
   const onFile = async (event) => {
-    const [file] = event.target.files;
+    const input = event.currentTarget;
+    const [file] = input.files;
     if (!file) return;
+    const request = ++importRequest.current;
+    const inScope = captureImportScope();
+    const projectId = project.id;
+    const submission = JSON.stringify(project.submission);
+    // Reset synchronously so selecting the same file starts a new request;
+    // an older reader's finally block must not clear a newer selection.
+    input.value = '';
     try {
       if (file.name.length > FILE_NAME_LIMIT) throw new Error(`Choose a memo whose file name is ${FILE_NAME_LIMIT} characters or fewer.`);
       if (file.size > MAX_MEMO_BYTES) throw new Error('Choose a file smaller than 5 MB, or paste a shorter memo.');
       const result = await readMemoFile(file);
+      if (request !== importRequest.current || !inScope()) return;
       if (!result.text.trim()) {
         // A file with no readable text must not replace the visible file name
         // while the earlier memo text silently stays in the review.
@@ -1228,21 +1253,24 @@ function IntakeStage({ project, update, toast, onRequestRestart }) {
         toast(result.notice, 'error');
         return;
       }
+      const event = createEvent('memo.imported', file.name);
+      importFeedback.current = { request, inScope, eventId: event.id, notice: result.notice };
       update((draft) => {
-        invalidateSubmissionDerived(draft, 'text', result.text || draft.submission.text);
+        invalidateSubmissionDerived(draft, 'text', result.text);
         draft.submission.title = draft.submission.title || file.name;
         draft.submission.location = `Local file: ${file.name}`;
         draft.submission.fileName = file.name;
         draft.submission.fileSize = file.size;
-      }, 'memo.imported', file.name);
-      setFileNotice(result.notice);
-      toast(result.notice);
+      }, 'memo.imported', file.name, 'student', null, {
+        guard: current => request === importRequest.current && inScope() && current.id === projectId
+          && JSON.stringify(current.submission) === submission,
+        event,
+      });
     } catch {
+      if (request !== importRequest.current || !inScope()) return;
       const message = 'The memo file could not be imported. Check its type and size, or paste the memo text instead.';
       setFileNotice(message);
       toast(message, 'error');
-    } finally {
-      event.target.value = '';
     }
   };
   return (
@@ -5672,7 +5700,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     });
   }, [accessState.status, markPrototypeFailure, institutionalMode, pauseAccess]);
 
-  const update = useCallback((mutator, action, detail, actor = 'student', metadata = null) => setProject((current) => {
+  const update = useCallback((mutator, action, detail, actor = 'student', metadata = null, transaction = null) => setProject((current) => {
+    // Import guards run against the actual state, including queued edits. A
+    // pre-created event lets intake announce success only after that commit.
+    if (transaction?.guard && !transaction.guard(current)) return current;
     const next = structuredClone(current);
     mutator(next);
     if (next.levelProgress?.[next.activeScale]) {
@@ -5680,7 +5711,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       next.levelProgress[next.activeScale].reflection = next.reflection;
     }
     next.updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
-    if (action) next.events.push(createEvent(action, detail, actor, metadata));
+    if (action) next.events.push(transaction?.event || createEvent(action, detail, actor, metadata));
     if (next.events.length > 500) next.events = next.events.slice(-500);
     return next;
   }), []);
@@ -7002,7 +7033,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const studio = <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, onChange: setNotebookOpen, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={(value) => { setStudioHighlight(value); if (value) setNotebookOpen(false); }} mapCheck={mapCheck} onMapCheck={runMapCheck} mapItemLabel={mapItemLabel} />;
   const intakeOpen = project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
-  const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} />, studio, studio, studio, studio];
+  const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {
+    const access = accessGenerationRef.current;
+    const activation = projectActivationGenerationRef.current;
+    return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current;
+  }} />, studio, studio, studio, studio];
   const screen = stageScreens[displayedStage];
   const returnFromMapPreview = () => {
     setMapPreviewOpen(false);

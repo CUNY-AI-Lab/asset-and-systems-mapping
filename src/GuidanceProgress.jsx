@@ -1,19 +1,12 @@
 import { useEffect, useState } from 'react';
 
-// The server reports coarse states (saving, reading, retrying); the figure
-// shows an approximate position between them so the wait reads as movement.
-// It never reaches the end on its own: completion comes from the result.
-const PHASES = [
-  { until: 3, label: 'Saving' },
-  { until: 12, label: 'Reading memo' },
-  { until: 28, label: 'Checking quotes' },
-  { until: 55, label: 'Rechecking' },
-  { until: Infinity, label: 'Still working' },
-];
-
-export function phaseFor(elapsedSeconds, message = '') {
-  if (/retry|interruption|reconnect|recover/i.test(message)) return 'Rechecking';
-  return PHASES.find(phase => elapsedSeconds < phase.until).label;
+// Only explicit request status changes the label. Elapsed time is not evidence
+// that the model has reached validation or begun a corrective call.
+export function phaseFor(_elapsedSeconds, message = '') {
+  if (/^Saving/i.test(message)) return 'Saving request';
+  if (/^Recovering/i.test(message)) return 'Recovering request';
+  if (/Retrying/i.test(message)) return 'Waiting to retry';
+  return 'Generating guidance';
 }
 
 /** Asymptotic progress: fast at first, slowing toward 95% while the model works. */
@@ -22,13 +15,11 @@ export function approximateProgress(elapsedSeconds) {
 }
 
 export default function GuidanceProgress({ active, message }) {
-  const [startedAt, setStartedAt] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState(0);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!active) return undefined;
     const started = Date.now();
-    setStartedAt(started);
     setElapsed(0);
     const timer = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);

@@ -2967,6 +2967,7 @@ export function createSystemsMappingApp(options = {}) {
         createdAt,
       );
       if (ollamaConfig) {
+        let correctiveRetries = 0;
         try {
           const systemPrompt = input.customInstructions
             ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION}`
@@ -2982,7 +2983,6 @@ export function createSystemsMappingApp(options = {}) {
           };
           let generated = await ollamaRequest(providerInput, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
           let review;
-          let correctiveRetries = 0;
           try {
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
           } catch (error) {
@@ -2992,11 +2992,11 @@ export function createSystemsMappingApp(options = {}) {
             // failure (an unsupported quotation, a schedule fragment) instead of
             // the student; the retry is recorded in runtime metadata, and a second
             // failure still fails closed with the project editable.
+            correctiveRetries = 1;
             generated = await ollamaRequest({
               ...providerInput,
               systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}`,
             }, ollamaConfig, { signal: context.req.raw.signal, context: context.env?.verifiedAccount });
-            correctiveRetries = 1;
             review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
           }
           suggestion = {
@@ -3014,7 +3014,9 @@ export function createSystemsMappingApp(options = {}) {
         } catch (error) {
           if (options.suggestionFailure) {
             const safe = options.suggestionFailure(error, context);
-            throw new HttpError(safe.status, safe.message, safe.details, safe.headers);
+            throw new HttpError(safe.status, safe.message, {
+              ...safe.details, ...(correctiveRetries ? { correctiveRetries } : {}),
+            }, safe.headers);
           }
           // Code-only server log; provider bodies and memo content never land in logs.
           console.warn(
@@ -3026,7 +3028,8 @@ export function createSystemsMappingApp(options = {}) {
           throw new HttpError(
             502,
             'Suggestion generation is temporarily unavailable.',
-            generationFailureDetails(error, suggestionProvider),
+            correctiveRetries ? { ...generationFailureDetails(error, suggestionProvider), correctiveRetries }
+              : generationFailureDetails(error, suggestionProvider),
           );
         }
       } else {

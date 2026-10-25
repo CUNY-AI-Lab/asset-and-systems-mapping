@@ -75,9 +75,17 @@ subsequent saves. Shared review retention follows the existing product rules.
   a known availability refusal with affirmative Gateway retry advice. This
   is application-level model selection, not a claim of model equivalence or
   Gateway routing configuration. Respect Retry-After within the original
-  deadline. Quota/auth denials, ambiguous failures, timeouts, and invalid
-  completed output never trigger an automatic second paid call.
-  Invalid structured output fails without a corrective paid retry. Bodies and deadlines are bounded;
+  deadline. Quota/auth denials, ambiguous failures and timeouts never trigger an
+  automatic corrective call. A completed memo review that fails semantic
+  validation gets at most one corrective call, separately admitted by Gateway
+  and bounded by the original whole-request deadline. Malformed JSON/parser
+  failures, connection suggestions and Map Check do not receive this memo
+  repair. The successful evaluation records `runtime.correctiveRetries: 1`;
+  a returned failed result records `details.correctiveRetries: 1`, retained in
+  its durable job outcome without storing a partial review. The count records
+  an attempted corrective call, not proof of provider execution or zero cost.
+  An outer cancellation or disconnect can prevent a result from being recorded;
+  Gateway owns per-call usage accounting. Bodies and deadlines are bounded;
   cancellation ends local waiting even when an upstream ignores it. Safe
   error code, retry advice and canonical UUIDv4/v7 support ID reach the UI.
   Quota is an estimated display only; unavailable quota remains unavailable.

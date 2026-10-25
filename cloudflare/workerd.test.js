@@ -110,6 +110,7 @@ test('invalid structured output gets one corrective retry, quota refusals make e
     const response = await request('/api/preflight/evaluations', 'alice', { method: 'POST', body: JSON.stringify(payload), headers: { 'x-request-id': '01900000-0000-7000-8000-000000000001' } });
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(mode === 'invalid' ? 502 : mode === 'quota' ? 429 : 201);
+    if (mode === 'invalid') expect(body.details.correctiveRetries).toBe(1);
     const stats = await (await services.fetch('https://fixtures.test/control')).json();
     // A contract failure earns one corrective retry; a quota refusal and a success each make one call.
     expect(stats.calls).toBe(mode === 'invalid' ? 2 : 1); expect(stats.captured).toMatchObject({ model: 'glm-5.3-flash', identity: true, authorization: false });

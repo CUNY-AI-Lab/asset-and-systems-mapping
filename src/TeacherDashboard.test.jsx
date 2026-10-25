@@ -389,6 +389,22 @@ describe('TeacherDashboard', () => {
     expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain('/api/teacher/history?limit=60');
   });
 
+  it('shows quotation grades and original excerpts to instructors', async () => {
+    const detail = structuredClone(submissionDetail);
+    detail.suggestion.guidance = [
+      { point: 'Check punctuation', evidenceExcerpt: 'The school’s counselor', evidenceMatch: 'normalized' },
+      { point: 'Check context', evidenceExcerpt: 'The school ... supports families', evidenceMatch: 'elided' },
+    ];
+    await renderAuthenticated(authenticatedFetch({ detail }));
+    await waitForSubmission();
+    fireEvent.click(screen.getByText('Review details'));
+    const grades = screen.getByRole('heading', { name: 'Quotation matches' }).closest('section');
+    expect(within(grades).getByText('The school’s counselor')).toBeVisible();
+    expect(within(grades).getByText('The school ... supports families')).toBeVisible();
+    expect(within(grades).getByText(/Normalized quotation:/)).toBeVisible();
+    expect(within(grades).getByText(/Elided quotation:/)).toBeVisible();
+  });
+
   it('shows one compact empty state without blank work or feedback columns', async () => {
     await renderAuthenticated(authenticatedFetch({ queue: [] }));
     expect(await screen.findByText('No submissions yet')).toBeVisible();
