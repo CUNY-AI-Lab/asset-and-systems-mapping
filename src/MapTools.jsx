@@ -50,8 +50,10 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
       <div className="map-tools-commands">
         {onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
         <MapSearch nodes={nodes} onSelect={(kind, id) => run(() => onSelect(kind, id))} />
-        {presentation === 'canvas' && <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button>}
-        {presentation === 'canvas' && <button type="button" onClick={() => run(onLegend)}>Map key</button>}
+        {presentation === 'canvas' && <div className="map-tools-layout-actions">
+          <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button>
+          <button type="button" onClick={() => run(onLegend)}>Map key</button>
+        </div>}
         {!fullscreen && <button type="button" onClick={() => run(onFullscreen)}>Full screen map</button>}
       </div>
       {hasRemoved && <label className="map-tools-removed"><input type="checkbox" checked={showRemoved} onChange={(event) => onShowRemoved(event.target.checked)} />Show removed items</label>}

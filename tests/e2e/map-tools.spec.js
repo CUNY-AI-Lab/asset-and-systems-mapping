@@ -4,7 +4,7 @@ import { serializedEastHarlemDisabilityProject } from './fixtures/east-harlem-di
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: STORAGE_KEY, value: serializedEastHarlemDisabilityProject() });
+  await page.addInitScript(({ key, value }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, value); }, { key: STORAGE_KEY, value: serializedEastHarlemDisabilityProject() });
   await page.goto('/');
   await page.getByRole('textbox', { name: 'Class code' }).fill('101');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -36,6 +36,42 @@ test('expanded map tools stay readable and contained, including at short phone s
     await expect(page.locator('.notebook-map-tools > summary')).toBeFocused();
     await openTools(page);
     await page.locator('.notebook-level').click();
+    await expect(page.locator('.notebook-map-tools')).not.toHaveAttribute('open', '');
+  }
+});
+
+test('map tool action rows align and search remains usable at narrow panel widths', async ({ page }) => {
+  const phone = page.viewportSize().width <= 600;
+  for (const width of phone ? [280] : [280, 240]) {
+    await openTools(page);
+    if (!phone) {
+      const handle = page.getByRole('separator', { name: 'Resize map tools' });
+      await handle.focus();
+      await page.keyboard.press('Home');
+      if (width === 240) for (let step = 0; step < 3; step++) await page.keyboard.press('ArrowRight');
+      await expect(handle).toHaveAttribute('aria-valuenow', String(width));
+    }
+    const body = page.locator('.notebook-tools-body');
+    expect(await body.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    const arrange = await body.getByRole('button', { name: 'Arrange map', exact: true }).boundingBox();
+    const key = await body.getByRole('button', { name: 'Map key', exact: true }).boundingBox();
+    expect(arrange.height).toBeGreaterThanOrEqual(44);
+    expect(arrange.height).toBeCloseTo(key.height, 1);
+    expect(arrange.y).toBeCloseTo(key.y, 1);
+    expect(arrange.width).toBeCloseTo(key.width, 1);
+    const zoom = await body.locator('.map-tools-zoom button').evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height));
+    expect(new Set(zoom).size).toBe(1);
+    await body.locator('.map-search > summary').click();
+    const search = body.getByRole('searchbox', { name: 'Find map item' });
+    await expect(search).toBeFocused();
+    await search.fill('Resident');
+    await expect(body.getByRole('status')).toContainText('1 match');
+    expect(await body.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(body.locator('.map-search > summary')).toBeFocused();
+    await expect(body.locator('.map-search')).not.toHaveAttribute('open', '');
+    await page.locator('.notebook-map-tools > summary').focus();
+    await page.keyboard.press('Escape');
     await expect(page.locator('.notebook-map-tools')).not.toHaveAttribute('open', '');
   }
 });
@@ -75,4 +111,102 @@ test('full screen opens the canvas from notebook or list and has a visible exit'
   // Existing work can continue; generating another reading is optional.
   await expect(page.getByRole('button', { name: 'Generate guidance' })).toHaveClass(/button--ghost/);
   await expect(page.locator('#map-inspector .button:visible:not(.button--ghost)')).toHaveCount(1);
+});
+
+
+for (const layer of ['all', 'micro']) test(`phone ${layer} relationship direction cues remain readable after fit and zoom`, async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('phone'), 'Mobile-only non-scaling arrow rendering');
+  if (layer === 'micro') {
+    await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
+    await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Map', exact: true }).click();
+    await openTools(page);
+    await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('micro');
+    await page.locator('.notebook-map-tools > summary').click();
+  }
+  const graphBefore = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);
+  for (const action of ['Fit map', 'Zoom in', 'Zoom out']) {
+    await mapCommand(page, action);
+    const lines = page.locator('.graph-edge .edge-line');
+    await expect(lines).toHaveCount(layer === 'micro' ? 4 : 5);
+    if (layer === 'micro') await expect(page.locator('.graph-edge:not([data-edge-scale="micro"])')).toHaveCount(0);
+    if (layer === 'micro' && action === 'Fit map') {
+      await expect(page.locator('.graph-node')).toHaveCount(6);
+      const clearance = await page.locator('.graph-canvas').evaluate(svg => {
+        const cards = [...svg.querySelectorAll('.graph-node')].map(node => node.getBoundingClientRect());
+        return [...svg.querySelectorAll('.edge-line')].map(path => {
+          const matrix = path.getScreenCTM();
+          const length = path.getTotalLength();
+          const samples = Array.from({ length: 19 }, (_, i) => {
+            const point = path.getPointAtLength(length * (i + 1) / 20);
+            return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+          });
+          return { length: length * Math.hypot(matrix.a, matrix.b),
+            crossesCard: samples.some(p => cards.some(r => p.x > r.left + 2 && p.x < r.right - 2 && p.y > r.top + 2 && p.y < r.bottom - 2)) };
+        });
+      });
+      for (const edge of clearance) {
+        expect(edge.length).toBeGreaterThan(25);
+        expect(edge.crossesCard).toBe(false);
+      }
+      for (const node of await page.locator('.graph-node').all()) await expect(node).toBeInViewport({ ratio: 1 });
+    }
+    const cues = await lines.evaluateAll(paths => paths.map(path => ({
+      vectorEffect: getComputedStyle(path).vectorEffect,
+      width: parseFloat(getComputedStyle(path).strokeWidth),
+      opacity: getComputedStyle(path.parentElement).opacity,
+      marker: path.getAttribute('marker-end'),
+      endX: Number(path.getAttribute('x2')),
+      endY: Number(path.getAttribute('y2')),
+    })));
+    for (const cue of cues) {
+      expect(cue.vectorEffect).toBe('non-scaling-stroke');
+      expect(cue.width).toBeGreaterThanOrEqual(2);
+      expect(cue.opacity).toBe('1');
+      expect(cue.marker).toBe('url(#arrowhead)');
+      expect(Number.isFinite(cue.endX) && Number.isFinite(cue.endY)).toBe(true);
+    }
+    await expect(page.locator('#arrowhead')).toHaveAttribute('refX', '8');
+    await expect(page.locator('#arrowhead')).toHaveAttribute('markerWidth', '6');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  const graphAfter = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);
+  expect(graphAfter).toEqual(graphBefore);
+});
+
+
+test('phone Micro movement and Arrange preserve readable connector spacing', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('phone'), 'Phone Micro geometry');
+  await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
+    await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Map', exact: true }).click();
+  await openTools(page);
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('micro');
+  await page.locator('.notebook-map-tools > summary').click();
+  const node = page.locator('[data-graph-id="node_e2e_resource_center"]');
+  const position = () => node.evaluate(el => el.getAttribute('transform').match(/[-\d.]+/g).map(Number));
+  await expect(node).toBeInViewport({ ratio: 1 });
+  const before = await position();
+  await node.press('ArrowRight');
+  await expect.poll(async () => (await position())[0]).toBeCloseTo(before[0] + 8, 1);
+  expect((await position())[1]).toBeCloseTo(before[1], 1);
+  const box = await node.boundingBox();
+  const beforeDrag = await position();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 8, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await position())[0]).toBeGreaterThan(beforeDrag[0]);
+  expect((await position())[1]).toBeCloseTo(beforeDrag[1], 0);
+  await mapCommand(page, 'Arrange map');
+  await mapCommand(page, 'Fit map');
+  const lengths = await page.locator('.edge-line').evaluateAll(paths => paths.map(path => path.getTotalLength() * Math.hypot(path.getScreenCTM().a, path.getScreenCTM().b)));
+  expect(Math.min(...lengths)).toBeGreaterThan(25);
+  await expect.poll(async () => page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph.nodes.find(node => node.id === 'node_e2e_resource_center').y, STORAGE_KEY)).toBeCloseTo(before[1], 1);
+  const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);
+  const center = saved.nodes.find(node => node.id === 'node_e2e_resource_center');
+  expect(center).toBeTruthy();
+  // The saved arrangement is the spaced layout, not the old compact grid.
+  expect(Math.abs(center.y - before[1])).toBeLessThan(1);
+  await page.reload();
+  await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY)).toEqual(saved);
 });

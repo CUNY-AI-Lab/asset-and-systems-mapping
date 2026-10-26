@@ -1116,6 +1116,12 @@ label.button:focus-within {
 .graph-edge.is-selected .edge-line { stroke: var(--teal) !important; stroke-width: 4 !important; }
 .graph-edge-label.is-selected .edge-label-bg { stroke: var(--teal); stroke-width: 2; }
 #arrowhead path { fill: var(--muted); }
+/* Preserve readable direction cues when the phone map is fitted down. */
+@media (max-width: 600px) {
+  .graph-canvas .edge-line { stroke-width: 2 !important; }
+  .graph-canvas--ecology .graph-edge.is-muted { opacity: 1; }
+}
+
 /* Navigation, display, and map-changing actions occupy separate docks. The
    empty center stays available for direct drag, wheel, and pinch navigation. */
 .canvas-chrome { position: absolute; z-index: 6; inset: 0; pointer-events: none; }
