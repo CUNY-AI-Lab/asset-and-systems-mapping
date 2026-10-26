@@ -21,7 +21,7 @@ import {
   validateProject,
   withDefaultNodeLayout,
 } from './domain.js';
-import { loadStoredLink, rememberStoredLink } from './projectLibrary.js';
+import { loadLibraryProject, loadProjectLibrary, loadStoredLink, rememberStoredLink } from './projectLibrary.js';
 import { memoDraftKey } from './memoDraft.js';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
@@ -3902,7 +3902,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(recovery);
     expect(screen.getByRole('dialog', { name: 'Save recovery' })).toBeVisible();
     expect(screen.getByText(/You can download a copy, keep working without saving, or try saving again/i)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Download current project' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Download private recovery' })).toBeVisible();
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)).id).toBe(project.id);
   });
 
@@ -5550,6 +5550,71 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelector('.toast')).not.toHaveTextContent('Project imported and validated.');
     expect(storedProject().id).toBe(project.id);
     expect(fetchMock.mock.calls.some(([path, options]) => String(path) === '/api/prototype/events' && JSON.parse(options.body).event === 'project_imported')).toBe(false);
+  });
+
+  it('keeps a separately reopenable recovery when importing an older same-ID project', async () => {
+    const current = makeMapProject();
+    current.submission.text = 'Latest synthetic memo';
+    current.reflection = 'Latest synthetic notes';
+    await resumeSavedProject(current);
+    openExports();
+    const imported = structuredClone(current);
+    imported.submission.text = 'Older synthetic memo';
+    imported.reflection = 'Older synthetic notes';
+    fireEvent.change(document.querySelector('.export-dropdown__import input'), { target: { files: [{ name: 'older.json', size: 1000, text: async () => serializeProject(imported) }] } });
+    await waitFor(() => expect(storedProject().submission.text).toBe('Older synthetic memo'));
+    const records = loadProjectLibrary(window.localStorage, storedProject(), true);
+    const recovery = loadLibraryProject(window.localStorage, records.find(record => record.id.startsWith('recovery_')));
+    expect(recovery.submission.text).toBe(current.submission.text);
+    expect(recovery.reflection).toBe(current.reflection);
+    expect(recovery.graph).toEqual(current.graph);
+    cleanup();
+    render(<App />);
+    await showResumeScreen();
+    openProjectFromList(records.find(record => record.id === recovery.id).title);
+    await waitFor(() => expect(storedProject().id).toBe(recovery.id));
+    expect(storedProject().submission.text).toBe(current.submission.text);
+    expect(loadLibraryProject(window.localStorage, loadProjectLibrary(window.localStorage, storedProject(), true).find(record => record.id === imported.id)).submission.text).toBe('Older synthetic memo');
+  });
+
+  it.each(['course', 'public'])('downloads full private recovery from a cloud error while %s JSON remains redacted', async audience => {
+    const project = makeMapProject();
+    project.sharingTier = audience;
+    project.instructor.maxSharingTier = 'public';
+    project.submission.sensitive = true;
+    project.submission.text = 'PRIVATE synthetic memo';
+    project.reflection = 'PRIVATE current notes';
+    for (const [scale, progress] of Object.entries(project.levelProgress)) progress.reflection = `PRIVATE ${scale} notes`;
+    const blobs = [];
+    vi.stubGlobal('Blob', class { constructor(parts) { blobs.push(parts.join('')); } });
+    const priorCreate = URL.createObjectURL;
+    const priorRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:recovery');
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      seedProject(project);
+      render(<App startInWorkspace cloudError="Synthetic account save failure" />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Download private recovery' }));
+      const recovered = parseProject(blobs[0]);
+      expect(recovered.submission).toEqual(project.submission);
+      expect(recovered.reflection).toBe(project.reflection);
+      expect(recovered.levelProgress).toEqual(project.levelProgress);
+      expect(recovered.graph).toEqual(project.graph);
+      expect(recovered.candidates).toEqual(project.candidates);
+      expect(recovered.sharingTier).toBe(audience);
+      expect(Object.keys(recovered.levelProgress)).toHaveLength(4);
+      openExports();
+      fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
+      const shared = parseProject(blobs[1]);
+      expect(shared.submission.text).toBe('');
+      expect(shared.reflection).toBe('[redacted]');
+      for (const progress of Object.values(shared.levelProgress)) expect(progress.reflection).toBe('[redacted]');
+      expect(blobs[1]).not.toContain('PRIVATE synthetic memo');
+    } finally {
+      if (priorCreate === undefined) delete URL.createObjectURL; else URL.createObjectURL = priorCreate;
+      if (priorRevoke === undefined) delete URL.revokeObjectURL; else URL.revokeObjectURL = priorRevoke;
+    }
   });
 
   it('announces JSON import success only after the imported graph and scale become active', async () => {

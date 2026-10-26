@@ -76,7 +76,7 @@ export function summarizeProject(project) {
   return {
     id: project.id,
     storageKey: projectBodyKey(project.id),
-    title: project.title?.trim() || 'Untitled systems map',
+    title: `${project.title?.trim() || 'Untitled systems map'}${project.id.startsWith('recovery_') ? ' (recovery before import)' : ''}`,
     participantName: project.participantName?.trim() || '',
     activeScale: project.activeScale,
     stage: project.stage,
@@ -186,7 +186,7 @@ function storedActiveProject(storage) {
   }
 }
 
-export function saveProjectToLibrary(storage, project, records, { makeActive = false } = {}) {
+export function saveProjectToLibrary(storage, project, records, { makeActive = false, preserveReplaced = false } = {}) {
   const serialized = serializeProject(project);
   const currentIndex = readLibraryIndex(storage);
   const activeStored = storedActiveProject(storage);
@@ -196,16 +196,29 @@ export function saveProjectToLibrary(storage, project, records, { makeActive = f
     // The active project has one full durable copy. Keeping a second copy here
     // would halve the effective browser quota for existing large projects.
     const targetBodyKey = projectBodyKey(project.id);
+    // Import is an explicit replacement, unlike autosave or reopening a project.
+    // Keep the full prior version under an independent local identity before
+    // replacing its active/body bytes. Never publish this recovery implicitly.
+    const replaced = preserveReplaced ? loadDurableProject(storage, project.id) : null;
+    const recovery = replaced ? { ...structuredClone(replaced), id: `recovery_${crypto.randomUUID()}` } : null;
+    const recoveryBodyKey = recovery ? projectBodyKey(recovery.id) : null;
+    const recoveryRaw = recovery ? serializeProject(recovery) : null;
     const displaced = activeStored?.project.id !== project.id ? activeStored : null;
     // Commit the active singleton last: a failed catalog write must not make
     // reload open a project whose import/switch was reported as unsuccessful.
     const displacedBodyKey = displaced ? projectBodyKey(displaced.project.id) : null;
     const backups = new Map([
       [PROJECT_LIBRARY_KEY, storage.getItem(PROJECT_LIBRARY_KEY)],
+      ...(recovery ? [[recoveryBodyKey, storage.getItem(recoveryBodyKey)]] : []),
       ...(displaced ? [[targetBodyKey, storage.getItem(targetBodyKey)], [displacedBodyKey, storage.getItem(displacedBodyKey)]] : []),
     ]);
     const staged = [];
     try {
+      if (recovery) {
+        storage.setItem(recoveryBodyKey, recoveryRaw);
+        staged.push(recoveryBodyKey);
+        nextRecords = upsertRecord(nextRecords, summarizeProject(recovery));
+      }
       if (displaced) {
         storage.removeItem(targetBodyKey);
         storage.setItem(displacedBodyKey, displaced.raw);

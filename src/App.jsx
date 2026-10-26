@@ -6741,7 +6741,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     if (!previous) return false;
     let records;
     try {
-      records = saveProjectToLibrary(projectStorage(), next, previous.records, { makeActive: true });
+      records = saveProjectToLibrary(projectStorage(), next, previous.records, { makeActive: true, preserveReplaced: true });
     } catch (error) {
       setPersistenceBlocked(true);
       setSaveState((current) => ({
@@ -7240,13 +7240,23 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
   };
 
+  const downloadPrivateRecovery = () => {
+    try {
+      const snapshot = commitPendingAnnotations().project;
+      download(exportFileName(snapshot, 'json', 'private-recovery'), serializeProject(snapshot));
+      toast('Private recovery downloaded. This file includes your memo and Field Notes; keep it private.');
+    } catch (error) {
+      toast('The private recovery download could not be created. Keep this page open and resolve the save warning.', 'error');
+    }
+  };
+
   const recoveryModal = <Modal open={modal === 'storage'} title="Save recovery" onClose={() => setModal(null)}>
     <div className="confirm-panel">
       <p>{saveState.message}</p>
-      <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p>
+      <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p><p>Private recovery includes your full memo, Field Notes, and evidence. Keep this file private; use Export &amp; share for audience-redacted copies.</p>
       <div className="button-stack">
         {saveState.recovery && <button type="button" className="button button--secondary" onClick={() => download('systems-mapping-prior-recovery.json', saveState.recovery)}>Download earlier copy</button>}
-        <button type="button" className="button button--secondary" onClick={() => download(exportFileName(project, 'json', 'recovery'), serializeProject(project))}>Download current project</button>
+        <button type="button" className="button button--secondary" onClick={downloadPrivateRecovery}>Download private recovery</button>
         <button type="button" className="button button--ghost" onClick={continueInMemory}>Keep working without saving</button>
         <button type="button" className="button" onClick={preserveRecoveryAndEnableStorage}>{saveState.recovery ? 'Save earlier copy and try again' : 'Try saving again'}</button>
       </div>
@@ -7296,7 +7306,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}${intakeOpen ? '' : ' workspace--studio'}`}>
       {cloudSaveStatus && <span className="sr-only" role="status">{cloudSaveStatus}</span>}
-      {cloudError && <p className="account-error" role="alert">{cloudError}</p>}
+      {cloudError && <div className="account-error" role="alert"><p>{cloudError}</p><p>Private recovery includes your full memo, Field Notes, and evidence. Keep this file private.</p><button type="button" className="button button--secondary" onClick={downloadPrivateRecovery}>Download private recovery</button></div>}
       {['error', 'validation'].includes(saveState.status) && <div className="workspace-save-notice" role="alert"><span>{saveState.status === 'validation' ? 'Finish the map item to save' : 'Changes are not saved'}</span><button type="button" onClick={() => setModal(saveState.status === 'validation' ? 'validation' : 'storage')}>{saveState.status === 'validation' ? 'Review issue' : 'Recover project'}</button></div>}
       {screen}
     </main>

@@ -61,6 +61,55 @@ class QuotaStorage extends TestStorage {
 describe('local project library', () => {
   beforeEach(() => window.localStorage.clear());
 
+  it.each([false, true])('preserves the full displaced same-ID version across reload (inactive target: %s)', inactive => {
+    const storage = new TestStorage();
+    const current = namedProject('same-id', 'Current work');
+    current.reflection = 'NEW current notes';
+    current.levelProgress.micro.reflection = 'NEW archived notes';
+    let records = saveProjectToLibrary(storage, current, [], { makeActive: true });
+    records = saveProjectToLibrary(storage, current, records);
+    if (inactive) records = saveProjectToLibrary(storage, namedProject('other-id', 'Other work'), records, { makeActive: true });
+    const imported = structuredClone(current);
+    imported.submission.text = 'OLD memo';
+    imported.reflection = 'OLD notes';
+    records = saveProjectToLibrary(storage, imported, records, { makeActive: true, preserveReplaced: true });
+    const active = parseProject(storage.getItem(STORAGE_KEY));
+    expect(active.submission.text).toBe('OLD memo');
+    const reloaded = loadProjectLibrary(storage, active, true);
+    const recoveryRecord = reloaded.find(record => record.id.startsWith('recovery_'));
+    expect(recoveryRecord).toBeDefined();
+    const recovery = loadLibraryProject(storage, recoveryRecord);
+    const { id, exportedAt, ...body } = recovery;
+    const { id: priorId, exportedAt: priorExport, ...prior } = parseProject(serializeProject(current));
+    expect(body).toEqual(prior);
+    records = saveProjectToLibrary(storage, recovery, reloaded, { makeActive: true });
+    expect(parseProject(storage.getItem(STORAGE_KEY)).reflection).toBe('NEW current notes');
+    const importedRecord = loadProjectLibrary(storage, recovery, true).find(record => record.id === imported.id);
+    expect(loadLibraryProject(storage, importedRecord).submission.text).toBe('OLD memo');
+  });
+
+  it.each(['recovery', 'index', 'active'])('leaves the old project intact when import fails at %s', failure => {
+    const storage = new TestStorage();
+    const current = namedProject('same-id', 'Unsynced latest work');
+    let records = saveProjectToLibrary(storage, current, [], { makeActive: true });
+    records = saveProjectToLibrary(storage, current, records);
+    const before = new Map(storage.values);
+    const write = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if ((failure === 'recovery' && key.startsWith(PROJECT_BODY_PREFIX) && !before.has(key))
+        || (failure === 'index' && key === PROJECT_LIBRARY_KEY)
+        || (failure === 'active' && key === STORAGE_KEY)) throw new Error('Synthetic write failure');
+      write(key, value);
+    };
+    const imported = structuredClone(current);
+    imported.submission.text = 'Older memo';
+    expect(() => saveProjectToLibrary(storage, imported, records, { makeActive: true, preserveReplaced: true })).toThrow('Synthetic write failure');
+    expect(parseProject(storage.getItem(STORAGE_KEY)).submission.text).toBe(current.submission.text);
+    const reloaded = loadProjectLibrary(storage, current, true);
+    expect(reloaded.some(record => record.id === current.id)).toBe(true);
+    expect([...storage.values.values()].some(raw => raw.includes('Older memo'))).toBe(false);
+  });
+
   it('keeps independently loadable project bodies while changing the active project', () => {
     const first = namedProject('project_first', 'First project');
     const second = namedProject('project_second', 'Second project');

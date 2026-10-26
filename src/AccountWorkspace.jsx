@@ -113,7 +113,7 @@ export default function AccountWorkspace() {
         setStatus('Saved to your account');
       } catch (failure) {
         blocked.current.add(project.id);
-        setError(`${userFacingError(failure, 'Your map could not be saved to your account.')} Your unsynced copy remains on this device. Export it before reloading.`);
+        setError(`${userFacingError(failure, 'Your map could not be saved to your account.')} Your unsynced copy remains on this device. Download a private recovery copy before reloading.`);
         setStatus('Not saved to your account');
       }
     });
