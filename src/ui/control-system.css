@@ -1,0 +1,91 @@
+/* Shared control dimensions; primary, secondary, and quiet actions keep their colors. */
+:root {
+  --control-height: 44px;
+  --control-font: 14px;
+  --control-weight: 550;
+  --control-leading: 1.35;
+  --control-padding-block: 10px;
+  --control-padding-inline: 14px;
+  --control-radius: 6px;
+  --control-gap: 8px;
+  --control-border: 1px solid var(--line);
+}
+
+:is(.app-shell, .access-shell) :is(button, .button):not(.noll-sketch__surface) {
+  min-width: 0;
+  min-height: var(--control-height);
+  max-width: 100%;
+  height: auto;
+  padding: var(--control-padding-block) var(--control-padding-inline);
+  border-radius: var(--control-radius);
+  font: var(--control-weight) var(--control-font)/var(--control-leading) var(--body);
+  gap: var(--control-gap);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(.app-shell, .access-shell) :is(.button--secondary, .map-tools-add) { border: var(--control-border); }
+:is(.app-shell, .access-shell) :is(.button-row, .footer-actions, .candidate-actions, .layout-history, .map-tools-view, .map-tools-zoom, .studio-project__actions, .project-card__actions, .model-switch, .header-actions, .access-header__actions, .notebook-toolbar-actions) {
+  align-items: stretch;
+  gap: var(--control-gap);
+}
+:is(.app-shell, .access-shell) .button-row:has(> .button + .button) > .button { flex: 1 1 140px; }
+:is(.app-shell, .access-shell) .button-stack > .button { width: 100%; }
+:is(.app-shell, .access-shell) :is(.icon-button, .theme-toggle:not(.theme-toggle--labeled)),
+.app-shell .map-tools-zoom > button:is(:first-child, :last-child) {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  flex: 0 0 var(--control-height);
+  padding: 0;
+}
+.app-shell .map-tools-zoom > button:is(:first-child, :last-child) { font-size: 20px; }
+.app-shell .notebook-footer button[aria-pressed] { border-radius: 0; }
+:is(.app-shell, .access-shell) :is(.project-menu, .notebook-map-tools, .map-search, .export-dropdown) > summary {
+  min-height: var(--control-height);
+  padding: var(--control-padding-block) var(--control-padding-inline);
+  border-radius: var(--control-radius);
+  font: var(--control-weight) var(--control-font)/var(--control-leading) var(--body);
+}
+:is(.app-shell, .access-shell) :is(input:not([type="checkbox"], [type="radio"], [type="file"]), select) {
+  min-height: var(--control-height);
+  border-radius: var(--control-radius);
+}
+:is(.app-shell, .access-shell) :is(button, .button, summary, input, select):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+:is(.app-shell, .access-shell) :is(.project-menu, .notebook-tools-body, .export-dropdown) :is(button, summary, input, select):focus-visible { outline-offset: -2px; }
+:is(.app-shell, .access-shell) button:disabled { opacity: .48; cursor: not-allowed; }
+
+/* Download formats share columns; import stays separate from outgoing actions. */
+.app-shell .modal .export-strip--compact { margin: 0; padding: 0; }
+.app-shell .modal .export-dropdown { border: 0; background: transparent; }
+.app-shell .modal .export-dropdown > summary { padding-inline: 0; border-radius: 0; }
+.app-shell .export-dropdown__options { padding: 16px 0 0; gap: 20px; }
+.app-shell .export-dropdown__options > .field { margin: 0; }
+.app-shell .export-dropdown fieldset {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: var(--control-gap);
+}
+.app-shell .export-dropdown legend { padding: 0 0 8px; font-size: var(--control-font); font-weight: var(--control-weight); }
+.app-shell .export-dropdown button { width: 100%; border: var(--control-border); }
+.app-shell .export-dropdown button:hover:not(:disabled),
+.app-shell .export-dropdown__import:hover { background: var(--surface-hover); }
+.app-shell .export-dropdown button:disabled:hover { background: var(--surface); }
+.app-shell .export-dropdown__import {
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: var(--control-padding-block) var(--control-padding-inline);
+  border: var(--control-border);
+  border-radius: var(--control-radius);
+  font: var(--control-weight) var(--control-font)/var(--control-leading) var(--body);
+  gap: var(--control-gap);
+}
+.app-shell .export-strip > .error-text { margin: 12px 0 0; padding: 12px; border-left: 2px solid var(--bad); overflow-wrap: anywhere; }
+.app-shell .project-link-management { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--control-gap); padding-top: 12px; }
+@media (max-width: 360px) {
+  .app-shell .export-dropdown fieldset { grid-template-columns: 1fr; }
+  .app-shell .project-link-management { grid-template-columns: 1fr; }
+}

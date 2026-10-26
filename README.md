@@ -39,7 +39,7 @@ The workspace has two views: **Map** and **Notebook**. The five stage records (`
 
 | Surface | What it does |
 | --- | --- |
-| **Add memo** | Set the inquiry and paste or upload the memo. |
+| **Memo** | Set the inquiry and paste or upload the memo. |
 | **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
 | **Map** | Canvas, direct selection and a collapsed **Map tools** menu for search, layers, list, zoom, arrange, key and full screen. |
 | **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens that item’s details and interpretation; the memo appears only with suggestions. |
@@ -63,6 +63,8 @@ The canvas uses concentric ecological regions and restrained level colors. **All
 Selecting an element opens its inspector. On desktop the whole layer stays on the canvas: the selection and its one-hop neighbourhood stay bright, every incident relationship shows its label, and everything else dims until **Show full map**. Phones keep the compact detail view that shows one relationship at a time. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
 
 The map fills the available browser height. On wide screens, the Notebook is a narrow resizable dock (260–360px). Drag its left edge or use the focused divider's arrow keys; Home restores the default width. Text and controls wrap as it changes. At 1100px and below, Notebook occupies the workspace while the mounted map is hidden. **Map** restores the canvas and its view.
+
+The separate **Map tools** panel stays at the upper right. Drag its left edge to resize the whole panel, or focus the divider and use Left to widen it and Right to narrow it; Shift makes larger changes. Home or a double-click restores 280px, and End uses the available maximum, up to 480px. The browser remembers this preference separately from Notebook width. Phones keep the compact panel without a resize handle; resizing does not move the map.
 
 Select an item to edit **Label** in the Notebook, or select a connection to edit **Relationship**. Choose **Save** to apply the wording or **Cancel** to restore the saved text. Enter saves; Escape cancels. Moving focus or selecting another item does not save a draft. Candidate Details use the same draft controls.
 

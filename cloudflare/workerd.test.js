@@ -404,10 +404,12 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  const assertSsoOnly = async () => {
+  const assertSsoOnly = async ({ checking = false } = {}) => {
     await browserExpect(page.getByLabel('Class code', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => window.__ssoClassCodeShown)).toBe(false);
-    await browserExpect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/start');
+    const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    if (checking) await browserExpect(login).toHaveCount(0);
+    else await browserExpect(login).toHaveAttribute('href', '/auth/start');
   };
   const openAccountMap = async () => {
     await page.goto(ORIGIN);
@@ -416,7 +418,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
   try {
     await openAccountMap();
     await browserExpect(page.getByRole('status')).toHaveText('Checking sign-in…');
-    await assertSsoOnly();
+    await assertSsoOnly({ checking: true });
     sessionMode = 'missing';
     releaseSession();
     await browserExpect(page.getByRole('alert')).toHaveText('Use CUNY Login to continue');

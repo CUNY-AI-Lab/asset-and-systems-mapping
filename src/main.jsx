@@ -11,6 +11,7 @@ import './map-studio.css';
 import './ui/design-system.css';
 import './workspace-layout.css';
 import './notebook.css';
+import './ui/control-system.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

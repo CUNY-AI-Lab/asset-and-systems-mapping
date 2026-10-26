@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { SCALES } from './domain.js';
 import MapSearch from './MapSearch.jsx';
+import { MapToolsResizeHandle, useMapToolsSize } from './MapToolsResize.jsx';
 
 // Keep this popover outside the legacy toolbar's grid and field rules.
 export default function MapTools({ open, onOpenChange, scales, scale, onScale,
@@ -8,6 +9,8 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
   onAdd, onFit, onArrange, canArrange, onLegend, onFullscreen, fullscreen,
   hasRemoved, showRemoved, onShowRemoved }) {
   const menu = useRef(null);
+  const panelId = useId();
+  const size = useMapToolsSize();
   useEffect(() => {
     if (!open) return undefined;
     const dismiss = (event) => {
@@ -26,7 +29,9 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
       }
     }}>
     <summary>Map tools</summary>
-    <div className="notebook-tools-body">
+    <div id={panelId} className="notebook-tools-panel" style={{ '--map-tools-width': `${size.width}px` }}>
+      <MapToolsResizeHandle panelId={panelId} {...size} />
+      <div className="notebook-tools-body">
       <div className="map-tools-view" role="group" aria-label="Map presentation">
         <button type="button" aria-pressed={presentation === 'canvas'} onClick={() => run(() => onPresentation('canvas'))}>Canvas</button>
         <button type="button" aria-pressed={presentation === 'list'} onClick={() => run(() => onPresentation('list'))}>List</button>
@@ -43,13 +48,14 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
         <button type="button" aria-label="Zoom in" disabled={!canZoomIn} onClick={() => onZoom(0.15)}>+</button>
       </div>}
       <div className="map-tools-commands">
-        {onAdd && <button type="button" onClick={() => run(onAdd)}>Add item</button>}
+        {onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
         <MapSearch nodes={nodes} onSelect={(kind, id) => run(() => onSelect(kind, id))} />
         {presentation === 'canvas' && <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button>}
         {presentation === 'canvas' && <button type="button" onClick={() => run(onLegend)}>Map key</button>}
         {!fullscreen && <button type="button" onClick={() => run(onFullscreen)}>Full screen map</button>}
       </div>
       {hasRemoved && <label className="map-tools-removed"><input type="checkbox" checked={showRemoved} onChange={(event) => onShowRemoved(event.target.checked)} />Show removed items</label>}
+      </div>
     </div>
   </details>;
 }

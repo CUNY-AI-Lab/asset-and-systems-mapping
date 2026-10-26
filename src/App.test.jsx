@@ -1083,13 +1083,13 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('button', { name: 'Switch to light mode' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it.each([false, true])('uses CUNY Login while an institutional session is loading and preserves the project-link return path (teacher: %s)', async (startInTeacher) => {
+  it.each([false, true])('waits for the institutional session before offering CUNY Login (teacher: %s)', async (startInTeacher) => {
     const token = '0123456789abcdefghijklmnopqrstuv';
     window.history.replaceState(null, '', `/p/${token}`);
     fetchMock.mockImplementation((path, options) => String(path) === '/api/student/session' ? new Promise(() => {}) : defaultFetch(path, options));
     render(<App startInWorkspace={!startInTeacher} startInTeacher={startInTeacher} onAccountDashboard={vi.fn()} />);
     expect(screen.getByRole('status')).toHaveTextContent('Checking sign-in');
-    expect(screen.getByRole('link', { name: 'CUNY Login' })).toHaveAttribute('href', `/auth/start?returnTo=${encodeURIComponent(`/p/${token}`)}`);
+    expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Ask your teacher/)).not.toBeInTheDocument();
     expect(screen.queryByText('Instructor Console')).not.toBeInTheDocument();
@@ -1160,7 +1160,7 @@ describe('Systems Mapping workflow', () => {
     studentSession = () => ++reads === 1 ? grantedAccess() : null;
     prototypeResponder = () => jsonResponse({ error: 'Sign-in ended' }, 401);
     render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
-    await screen.findByRole('heading', { name: 'Add your memo' });
+    await screen.findByRole('heading', { name: 'Memo' });
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
     expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
@@ -1345,9 +1345,9 @@ describe('Systems Mapping workflow', () => {
     render(<App />);
     await showResumeScreen();
     expect(screen.getByRole('heading', { name: 'Start your first map' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Add your memo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Memo' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Start new project' }));
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Untitled systems map');
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
   });
@@ -1368,7 +1368,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New project' }));
     expect(screen.queryByRole('dialog', { name: 'Start new project?' })).not.toBeInTheDocument();
 
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Untitled systems map');
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('');
 
@@ -1386,7 +1386,7 @@ describe('Systems Mapping workflow', () => {
     const savedEarlierProject = screen.getByRole('article', { name: earlierProject.title });
     fireEvent.click(within(savedEarlierProject).getByRole('button', { name: 'Open project' }));
 
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(earlierProject.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(earlierProject.submission.text);
   });
@@ -1404,7 +1404,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeVisible();
     const legacyProjectCard = screen.getByRole('article', { name: legacy.title });
     fireEvent.click(within(legacyProjectCard).getByRole('button', { name: 'Open project' }));
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(legacy.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(legacy.submission.text);
     await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 7, title: legacy.title, participantName: '' }));
@@ -1420,7 +1420,7 @@ describe('Systems Mapping workflow', () => {
     await showResumeScreen();
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     openProjectFromList(legacy.title);
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 7, participantName: '' }));
   });
 
@@ -1435,10 +1435,10 @@ describe('Systems Mapping workflow', () => {
     for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('heading', { name: 'Projects' })).toBeVisible();
     openProjectFromList(project.title);
-    expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
 
     act(() => vi.advanceTimersByTime(59_999));
-    expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
     act(() => vi.advanceTimersByTime(1));
     expect(screen.getByRole('heading', { name: 'Systems Mapping' })).toBeVisible();
     expect(screen.getByRole('alert')).toHaveTextContent('Enter your class code to continue');
@@ -1456,7 +1456,7 @@ describe('Systems Mapping workflow', () => {
     project.instructor.requireStudentConfirmation = true;
     await resumeSavedProject(project);
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
-    expect(screen.getByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('NYC systems and assets map');
     expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('');
     expect(screen.getByRole('textbox', { name: /^Focal person/ })).toBeVisible();
@@ -1757,7 +1757,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().events).toHaveLength(2);
     expect(storedProject().events[0]).toMatchObject({ action: 'project.created', detail: 'Started a new map from an existing memo' });
     expect(storedProject().events.at(-1)).toMatchObject({ action: 'map.restarted' });
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
     expect(screen.queryByRole('option', { name: 'Map notes' })).not.toBeInTheDocument();
@@ -3698,7 +3698,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await showResumeScreen();
     openProjectFromList('NYC systems and assets map');
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     await waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(2));
     expect(screen.queryByRole('heading', { name: 'Systems Mapping' })).not.toBeInTheDocument();
   });
@@ -5254,7 +5254,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     project.stage = 0;
     seedProject(project);
     const view = render(<App startInWorkspace />);
-    await screen.findByRole('heading', { name: 'Add your memo' });
+    await screen.findByRole('heading', { name: 'Memo' });
     const setItem = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
       if (key === STORAGE_KEY) throw new DOMException('Full save unavailable');
@@ -5273,7 +5273,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(await screen.findByRole('heading', { name: 'Memo review' })).toBeVisible();
     openProjectMenu('Progress');
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Progress' })).getByRole('button', { name: 'Add memo' }));
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
     expect(storedProject().graph).toEqual(project.graph);
   });
@@ -6373,7 +6373,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     render(<App />);
     await showResumeScreen();
     openProjectFromList(project.title);
-    expect(await screen.findByRole('heading', { name: 'Add your memo' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Evidence/ })).toHaveValue(evidence);
     expect(screen.getByRole('textbox', { name: /^Missing voices/ })).toHaveValue(missing);
   });

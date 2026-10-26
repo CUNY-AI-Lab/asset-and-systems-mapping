@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
+import './NollSketch.css';
 
 // Gaussian Quadratic, after A. Michael Noll (Bell Labs, 1965): a parabola whose points are
 // pushed about by Gaussian noise, joined in order, with a few random cross-connections.
@@ -62,6 +63,7 @@ export default function NollSketch({ className = '', intervalMs = NOLL_INTERVAL_
     const canvas = canvasRef.current;
     if (!canvas || typeof canvas.getContext !== 'function') return;
     const bounds = canvas.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
     const width = Math.max(1, Math.round(bounds.width));
     const height = Math.max(1, Math.round(bounds.height));
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -70,7 +72,9 @@ export default function NollSketch({ className = '', intervalMs = NOLL_INTERVAL_
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    const ink = window.getComputedStyle(canvas).color || 'currentColor';
+    const styles = window.getComputedStyle(canvas);
+    // The button's inherited color may still be transitioning after a theme change.
+    const ink = styles.getPropertyValue('--ink').trim() || styles.color || 'currentColor';
     drawNoll(ctx, width, height, ink);
   }, []);
 
