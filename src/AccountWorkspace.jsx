@@ -198,6 +198,7 @@ export default function AccountWorkspace() {
           <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}</p>
           <form action="/auth/logout" method="post"><Action variant="ghost" type="submit">Sign out</Action></form>
         </Disclosure>
+        <NollSketch className="noll-sketch--page" />
       </> : <p role="status">{status}</p>}
       {error && <p role="alert" className="account-error">{error}</p>}
     </main>

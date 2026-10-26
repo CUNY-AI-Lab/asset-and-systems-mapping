@@ -22,14 +22,7 @@ html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__ac
 .access-main.account-landing{flex:1;min-height:0;display:grid;align-content:start;grid-template-rows:auto minmax(0,1fr);margin:0 auto;padding:max(16px,calc(20dvh - 85px)) 0 12px}
 .account-landing__hero{grid-row:1;display:grid}
 .account-landing__noll{grid-row:2;min-height:160px;margin-top:clamp(96px,11vh,150px)}
-.noll-sketch{position:relative;display:grid;color:var(--ink)}
-.noll-sketch__surface{position:relative;display:block;width:100%;height:100%;min-height:inherit;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:inherit;cursor:pointer;appearance:none;touch-action:manipulation;overflow:hidden}
-.noll-sketch__surface:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
-/* Out of flow: the canvas's device-pixel size must never feed back into the layout height. */
-.noll-sketch__surface canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
-.noll-sketch__credit{position:absolute;right:0;bottom:0;margin:0;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase;pointer-events:none}
 @media (max-width:600px){
   .access-main.account-landing{padding-top:max(16px,calc(18dvh - 110px))}
   .account-landing__noll{min-height:160px;margin-top:96px}
-  .noll-sketch__credit{font-size:10px}
 }

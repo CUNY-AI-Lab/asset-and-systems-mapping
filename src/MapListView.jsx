@@ -197,7 +197,6 @@ export default function MapListView({
     <header className="map-list-view__header">
       <div>
         <h2 id="map-list-view-title">Map list</h2>
-        <p>The same map items in a readable list. Choose an item to open its details.</p>
       </div>
       <span className="map-list-view__count" aria-label={`${itemCount} visible map items`}>{itemCount} shown</span>
     </header>

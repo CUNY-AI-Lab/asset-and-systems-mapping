@@ -20,6 +20,7 @@ import { correspondingNode, nodeLabelIssue, relationshipIssue, reviseMapText } f
 import MapConnections from './MapConnections.jsx';
 import MapSearch from './MapSearch.jsx';
 import MapTools from './MapTools.jsx';
+import NollSketch from './NollSketch.jsx';
 import ProjectOverview from './ProjectOverview.jsx';
 import ReflectionEntry from './ReflectionEntry.jsx';
 import { hasFieldNotes } from '../shared/field-notes.js';
@@ -998,10 +999,11 @@ function InstitutionalAccessScreen({ state, onRetry, onLeave, dark, onToggleThem
     <main className="access-main" id="workspace">
       <PageHeading title="Systems Mapping" />
       {state.message && <p className={`access-message access-message--${state.kind || 'info'}`} role={state.kind === 'error' ? 'alert' : 'status'}>{state.message}</p>}
-      <div className="button-row">
-        <Action as="a" href={institutionalLoginUrl()} onClick={onLeave}>CUNY Login</Action>
+      <div className="button-row institutional-access__actions">
+        {state.status !== 'checking' && <Action as="a" href={institutionalLoginUrl()} onClick={onLeave}>CUNY Login</Action>}
         {state.status === 'unavailable' && <Action variant="secondary" onClick={onRetry}>Try again</Action>}
       </div>
+      <NollSketch className="noll-sketch--page" />
     </main>
   </AccessFrame>;
 }
@@ -1046,6 +1048,7 @@ function ClassAccessScreen({ state, onSubmit, onTeacher, dark, onToggleTheme }) 
         <button className="button access-primary" type="submit" disabled={!code.trim() || state.status === 'checking' || state.status === 'submitting'}>{state.status === 'checking' ? 'Checking class access…' : state.status === 'submitting' ? 'Checking code…' : 'Continue'}</button>
       </form>
       <details className="access-help"><summary>Having trouble?</summary><p>Ask your teacher for the current class code.</p></details>
+      <NollSketch className="noll-sketch--page" />
     </main>
   </AccessFrame>;
 }
@@ -1086,6 +1089,7 @@ function ProjectsScreen({ projects, activeProjectId, saveState, onOpen, onStart,
       {projects.length ? <div className="studio-projects" aria-label="Saved projects">{projects.map((savedProject) => <ProjectRow key={savedProject.id} title={savedProject.title} current={savedProject.id === activeProjectId} subtitle={[SCALES[savedProject.activeScale]?.label, STAGES[savedProject.stage]?.short].filter(Boolean).join(' · ')} detail={projectSavedLabel(savedProject.updatedAt)} onOpen={() => onOpen(savedProject)} />)}</div>
         : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action onClick={onStart}>Start new project</Action>} />}
       <Disclosure title="Workspace details" className="workspace-details"><p>Projects are saved in this browser</p><Action variant="ghost" onClick={onEndAccess}>End class access</Action></Disclosure>
+      <NollSketch className="noll-sketch--page" />
     </main>
   </AccessFrame>;
 }
@@ -1259,7 +1263,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
   };
   return (
     <div className="wide stage-enter intake-stage">
-      <PageHeading title="Add your memo" description="Set the focus for your map" />
+      <PageHeading title="Memo" description="Set the focus for your map" />
       <LevelTrail active={project.activeScale} completed={project.completedScales} />
       <details className="project-details"><summary>Project details</summary><div className="project-context-fields">
         <Field label="Map title (optional)"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>

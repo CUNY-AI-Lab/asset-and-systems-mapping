@@ -106,6 +106,14 @@ Check selected-item and candidate wording editors with keyboard and pointer inpu
 - Arrange and node movement remain usable after saving a long valid label.
 - Save/Cancel controls retain 44-pixel targets and fit at 320, 390, and 430 CSS pixels.
 
+## Map tools resizing QA
+
+- The left-edge handle resizes the entire panel while its right edge stays anchored and the canvas bounds remain unchanged.
+- The **Resize map tools** separator exposes its current width and bounds. Left widens and Right narrows by 16px; Shift changes it by 48px. Home or double-click restores 280px; End selects the available maximum, capped at 480px.
+- Pointer cancellation or Escape during a drag restores the starting width without saving a partial resize. Completed resizing persists independently of Notebook width.
+- At 600px and below, the handle is hidden and the compact width does not overwrite the desktop preference.
+- The intake heading is **Memo**; **Add memo** remains the Progress stage label.
+
 ## Manual checks still required
 
 Automated axe checks identify only a subset of accessibility problems. Before release, verify these behaviors manually with keyboard-only navigation and VoiceOver:

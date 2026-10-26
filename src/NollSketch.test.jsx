@@ -50,6 +50,20 @@ describe('NollSketch', () => {
     expect(drawings()).toBe(1);
   });
 
+  it('uses the current theme ink even when an inherited control color is still transitioning', async () => {
+    let ink = '#121a2b';
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({
+      color: 'rgb(18, 26, 43)',
+      getPropertyValue: name => name === '--ink' ? ink : '',
+    }));
+    render(<NollSketch />);
+    expect(context.strokeStyle).toBe('#121a2b');
+    ink = '#f1f1f1';
+    await act(async () => { document.documentElement.dataset.theme = 'dark'; });
+    expect(context.strokeStyle).toBe('#f1f1f1');
+    delete document.documentElement.dataset.theme;
+  });
+
   it('leaves the background transparent and draws no frame', () => {
     const ctx = recordingContext();
     let seed = 0.5;
