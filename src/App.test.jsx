@@ -1166,10 +1166,11 @@ describe('Systems Mapping workflow', () => {
   it.each(['focus', 'pageshow', 'visibilitychange'])('rechecks a paused institutional workspace on %s without requiring a reload or accepting another endpoint as proof', async event => {
     const project = seedProject(makeMapProject());
     studentSession = null;
-    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
-    await screen.findByRole('link', { name: 'CUNY Login' });
+    // Settle the initial async check and passive listeners before simulating return.
+    await act(async () => { render(<App startInWorkspace onAccountDashboard={vi.fn()} />); });
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
     studentSession = () => grantedAccess();
-    fireEvent(event === 'visibilitychange' ? document : window, new Event(event));
+    await act(async () => { fireEvent(event === 'visibilitychange' ? document : window, new Event(event)); });
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     expect(storedProject()).toMatchObject({ id: project.id, graph: project.graph, stage: project.stage });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session')).toHaveLength(2);
