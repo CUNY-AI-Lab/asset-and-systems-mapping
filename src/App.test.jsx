@@ -1311,6 +1311,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(memoNextAction());
     const nodeLabels = () => screen.getAllByRole('textbox', { name: 'Node label' });
     fireEvent.change(nodeLabels()[0], { target: { value: 'Neighborhood school' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     fireEvent.click(within(nodeLabels()[0].closest('article')).getByRole('button', { name: 'Add to map' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
     expect(nodeLabels()[0]).toHaveValue('Committee');
@@ -2812,6 +2813,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Suggestion type' }), { target: { value: 'edges' } });
     const relationshipEditor = screen.getByRole('textbox', { name: 'Direct connection' });
     fireEvent.change(relationshipEditor, { target: { value: 'refers directly to' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     fireEvent.click(within(relationshipEditor.closest('article')).getByRole('button', { name: 'Add to map' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     await waitFor(() => expect(storedProject().stage).toBe(3));
@@ -3611,6 +3613,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await resumeSavedProject(project);
 
     fireEvent.change(screen.getByDisplayValue(priorLabel), { target: { value: revisedLabel } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     await waitFor(() => {
       const stored = storedProject();
       expect(stored.candidates.nodes.find((node) => node.id === mappedNode.id)?.label).toBe(revisedLabel);
@@ -5303,31 +5306,25 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)).id).toBe(project.id);
   });
 
-  it('retries persistence after a temporarily erased required field is corrected', async () => {
+  it('keeps invalid candidate label drafts local and saves a corrected label explicitly', async () => {
     const { project, candidate } = makeCandidateValidationProject();
     await resumeSavedProject(project);
-    const priorLabel = candidate.label;
     const label = screen.getByRole('textbox', { name: 'Node label' });
-    expect(label).toHaveValue(priorLabel);
     fireEvent.change(label, { target: { value: '' } });
-    const saveAttention = await screen.findByRole('button', { name: 'Review issue' });
-    expect(storedProject().candidates.nodes.find((node) => node.id === candidate.id).label).toBe(priorLabel);
-    fireEvent.click(saveAttention);
-    const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
-    expect(within(dialog).getByText(/Review the item you were editing\. Complete its required name or connection/)).toBeVisible();
-    expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent('Invalid Systems Mapping project:');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Return to project' }));
-
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a label of 1–200 characters.');
+    expect(storedProject().candidates.nodes.find(node => node.id === candidate.id).label).toBe(candidate.label);
+    expect(screen.queryByRole('button', { name: 'Review issue' })).not.toBeInTheDocument();
     fireEvent.change(label, { target: { value: 'Corrected peer navigator' } });
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Review issue' })).not.toBeInTheDocument());
-    await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === candidate.id).label).toBe('Corrected peer navigator'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    await waitFor(() => expect(storedProject().candidates.nodes.find(node => node.id === candidate.id).label).toBe('Corrected peer navigator'));
   });
 
   it('keeps raw project validation text out of the interface when link creation is blocked', async () => {
     const { project } = makeCandidateValidationProject();
     await resumeSavedProject(project);
-    fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: '' } });
+    openDetails('.candidate-note:not(.candidate-evidence)');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Annotation', exact: true }), { target: { value: 'x'.repeat(PROJECT_LIMITS.noteText + 1) } });
     await screen.findByRole('button', { name: 'Review issue' });
 
     openProjectLink();
@@ -5344,7 +5341,8 @@ Overall, the posting history documents a working student repeatedly turning to R
   it('keeps raw project validation text out of the interface when export is blocked', async () => {
     const { project } = makeCandidateValidationProject();
     await resumeSavedProject(project);
-    fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: '' } });
+    openDetails('.candidate-note:not(.candidate-evidence)');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Annotation', exact: true }), { target: { value: 'x'.repeat(PROJECT_LIMITS.noteText + 1) } });
     await screen.findByRole('button', { name: 'Review issue' });
 
     openProjectMenu('Progress');
