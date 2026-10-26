@@ -367,6 +367,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   let sessionMode = 'loading';
+  let sessionReads = 0;
   let releaseSession;
   const sessionGate = new Promise(resolve => { releaseSession = resolve; });
   await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.alice, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
@@ -383,6 +384,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     // Only the local fixture's session response is varied; account storage and
     // identity verification still run through the ordinary Worker entrypoint.
     if (url.pathname === '/api/student/session') {
+      sessionReads += 1;
       if (sessionMode === 'loading') await sessionGate;
       if (sessionMode === 'missing') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access: null }) });
       if (['invalid', 'denied', 'unavailable'].includes(sessionMode)) return route.fulfill({
@@ -448,9 +450,18 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     await page.locator('.saved-map-note > summary').click();
     const draft = 'Map note retained when CUNY sign-in expires';
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill(draft);
-    // Leave the annotation focused: expiry must flush its pending edit before
-    // hiding the editor, not rely on a blur or dashboard navigation to save it.
+    // A fresh grant from the ordinary Worker restores this same map. Leave the
+    // annotation focused so renewal must flush it without a blur or navigation.
+    const readsBeforeRenewal = sessionReads;
+    await browserExpect.poll(() => sessionReads, { timeout: 8000 }).toBe(readsBeforeRenewal + 1);
+    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await browserExpect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).mapAnnotation.text, recoveryKey)).toBe(draft);
+    // A later check that cannot supply a grant must still hide the workspace.
+    // The expiring fixture returns a fresh deadline on each successful read.
+    sessionMode = 'missing';
     await browserExpect(page.getByRole('alert')).toHaveText('Use CUNY Login to continue', { timeout: 8000 });
+    expect(sessionReads).toBe(readsBeforeRenewal + 2);
     await assertSsoOnly();
     const recovery = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), recoveryKey);
     expect(recovery.id).toBe(fixture.id);

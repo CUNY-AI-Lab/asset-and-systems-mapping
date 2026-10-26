@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App, { createBlankProject } from './App.jsx';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './api.js';
-import { INSTITUTIONAL_SESSION_TIMEOUT_MS } from './studentSession.js';
+import { INSTITUTIONAL_RESUME_COOLDOWN_MS, INSTITUTIONAL_SESSION_TIMEOUT_MS } from './studentSession.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { DEFAULT_FIELD_NOTES_QUESTIONS } from '../shared/field-notes.js';
 import { fieldNotesExcerpt } from '../shared/field-notes-context.js';
@@ -1135,6 +1135,164 @@ describe('Systems Mapping workflow', () => {
     expect(reads).toBe(2);
   });
 
+  it('rechecks an expiring institutional grant and resumes the same workspace when the server session is still valid', async () => {
+    vi.useFakeTimers();
+    const project = makeMapProject();
+    project.stage = 0;
+    seedProject(project);
+    let reads = 0;
+    let finishRefresh;
+    fetchMock.mockImplementation((path, options) => {
+      if (String(path) !== '/api/student/session') return defaultFetch(path, options);
+      if (++reads === 1) return jsonResponse({ access: grantedAccess(60_000) });
+      return new Promise(resolve => { finishRefresh = () => resolve(jsonResponse({ access: grantedAccess(60_000) })); });
+    });
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    act(() => vi.advanceTimersByTime(59_800));
+    const memo = `${project.submission.text}\nA draft survives grant refresh.`;
+    fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: memo } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(reads).toBe(2);
+    expect(screen.getByRole('status')).toHaveTextContent('Checking sign-in');
+    expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
+    expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: { text: memo } });
+    await act(async () => { finishRefresh(); });
+    expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
+    expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/auth/me')).toBe(false);
+  });
+
+  it.each(['focus', 'pageshow', 'visibilitychange'])('rechecks a paused institutional workspace on %s without requiring a reload or accepting another endpoint as proof', async event => {
+    const project = seedProject(makeMapProject());
+    studentSession = null;
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    await screen.findByRole('link', { name: 'CUNY Login' });
+    studentSession = () => grantedAccess();
+    fireEvent(event === 'visibilitychange' ? document : window, new Event(event));
+    expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
+    expect(storedProject()).toMatchObject({ id: project.id, graph: project.graph, stage: project.stage });
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session')).toHaveLength(2);
+    expect(fetchMock.mock.calls.some(([path]) => ['/api/auth/me', '/api/student/logout', '/auth/logout'].includes(String(path)))).toBe(false);
+  });
+
+  it.each([401, 403])('requires a current Systems grant when expiry revalidation returns %s even if auth/me would recognize the user', async status => {
+    vi.useFakeTimers();
+    seedProject(makeMapProject());
+    let reads = 0;
+    fetchMock.mockImplementation((path, options) => {
+      if (String(path) === '/api/auth/me') return jsonResponse({ user: { id: 'recognized-synthetic-user' } });
+      if (String(path) === '/api/student/session') return ++reads === 1
+        ? jsonResponse({ access: grantedAccess(60_000) })
+        : jsonResponse({ error: 'Sign-in required' }, status);
+      return defaultFetch(path, options);
+    });
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(screen.getByRole('alert')).toHaveTextContent(status === 403 ? 'CUNY AI Lab access required' : 'Use CUNY Login to continue');
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Systems map' })).not.toBeInTheDocument();
+    expect(reads).toBe(2);
+    expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/auth/me')).toBe(false);
+  });
+
+  it('bounds an expired institutional grant refresh and keeps the map recoverable when verification is unavailable', async () => {
+    vi.useFakeTimers();
+    const project = seedProject(makeMapProject());
+    let reads = 0;
+    fetchMock.mockImplementation((path, options) => String(path) === '/api/student/session'
+      ? ++reads === 1 ? jsonResponse({ access: grantedAccess(60_000) }) : new Promise(() => {})
+      : defaultFetch(path, options));
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(screen.getByRole('status')).toHaveTextContent('Checking sign-in');
+    expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
+    fireEvent.focus(window);
+    fireEvent(window, new Event('pageshow'));
+    expect(reads).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(INSTITUTIONAL_SESSION_TIMEOUT_MS); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign-in check unavailable');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
+    expect(storedProject()).toMatchObject({ id: project.id, graph: project.graph, submission: project.submission });
+  });
+
+  it('bounds return-event retries even when a paused institutional session is rejected immediately', async () => {
+    vi.useFakeTimers();
+    studentSession = null;
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    const reads = () => fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session').length;
+    expect(reads()).toBe(1);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(reads()).toBe(1);
+    visibility.mockReturnValue('visible');
+    for (const event of ['focus', 'pageshow', 'visibilitychange', 'focus', 'pageshow']) {
+      await act(async () => { fireEvent(event === 'visibilitychange' ? document : window, new Event(event)); });
+    }
+    expect(reads()).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(INSTITUTIONAL_RESUME_COOLDOWN_MS - 1); });
+    await act(async () => { fireEvent.focus(window); });
+    expect(reads()).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); fireEvent.focus(window); });
+    expect(reads()).toBe(3);
+    expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+  });
+
+  it('keeps a paused institutional workspace isolated when the account changes during grant refresh', async () => {
+    vi.useFakeTimers();
+    const project = makeMapProject(); project.stage = 0;
+    const accountA = useAccountStorage('synthetic-session-account-a');
+    accountA.setItem(STORAGE_KEY, serializeProject(project));
+    let reads = 0, finishRefresh, checkedCache;
+    fetchMock.mockImplementation((path, options) => {
+      if (String(path) !== '/api/student/session') return defaultFetch(path, options);
+      if (++reads === 1) return jsonResponse({ access: grantedAccess(60_000) });
+      checkedCache = new Headers(options.headers).get('x-systems-account-cache');
+      return new Promise(resolve => { finishRefresh = () => resolve(jsonResponse({ error: 'Account changed', details: { code: 'account_changed' } }, 409)); });
+    });
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(screen.getByRole('status')).toHaveTextContent('Checking sign-in');
+    expect(checkedCache).toBe('synthetic-session-account-a');
+    const accountB = useAccountStorage('synthetic-session-account-b');
+    await act(async () => { finishRefresh(); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign-in check unavailable');
+    expect(screen.queryByRole('textbox', { name: /^Memo/ })).not.toBeInTheDocument();
+    expect(JSON.parse(accountA.getItem(STORAGE_KEY))).toMatchObject({ id: project.id, graph: project.graph, submission: project.submission });
+    expect(accountB.getItem(STORAGE_KEY)).toBeNull();
+    expect(reads).toBe(2);
+    await act(async () => { fireEvent.focus(window); });
+    expect(checkedCache).toBe('synthetic-session-account-a');
+    await act(async () => { finishRefresh(); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign-in check unavailable');
+    expect(accountB.getItem(STORAGE_KEY)).toBeNull();
+    expect(reads).toBe(3);
+  });
+
+  it('ignores an older prototype 401 after an institutional grant has been refreshed', async () => {
+    vi.useFakeTimers();
+    seedProject(createDefaultProject());
+    let reads = 0;
+    studentSession = () => { reads += 1; return grantedAccess(60_000); };
+    render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
+    for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+    const pending = [];
+    prototypeResponder = () => new Promise(resolve => { pending.push(resolve); });
+    fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
+    expect(pending.length).toBeGreaterThan(0);
+    const staleEvents = [...pending];
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(reads).toBe(2);
+    await act(async () => { staleEvents.forEach(resolve => resolve(jsonResponse({ error: 'Old sign-in failure' }, 401))); });
+    expect(screen.getByRole('heading', { name: 'Memo review' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
+    expect(reads).toBe(2);
+  });
+
   it('flushes an institutional draft at expiry before offering CUNY Login without resetting prior work', async () => {
     vi.useFakeTimers();
     const project = makeMapProject();
@@ -1146,12 +1304,12 @@ describe('Systems Mapping workflow', () => {
     act(() => vi.advanceTimersByTime(59_800));
     const revisedMemo = `${project.submission.text}\nA new memo detail remains in the recovery copy`;
     fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: revisedMemo } });
-    act(() => vi.advanceTimersByTime(200));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
     expect(screen.getByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
     expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
     expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
     expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: { text: revisedMemo } });
-    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session')).toHaveLength(2);
   });
 
   it('returns institutional users to CUNY Login after a prototype 401 and a missing server session', async () => {
@@ -1180,7 +1338,7 @@ describe('Systems Mapping workflow', () => {
     const field = selectAnnotationTarget(target);
     const note = `Pending ${target} note for recovery`;
     fireEvent.change(field, { target: { value: note } });
-    act(() => vi.advanceTimersByTime(200));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
     expect(screen.getByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
     expect(storedAnnotation(target, project)).toBe(note);
     expect(storedProject().graph.nodes.map(({ id }) => id)).toEqual(project.graph.nodes.map(({ id }) => id));
