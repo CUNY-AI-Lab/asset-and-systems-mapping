@@ -95,6 +95,17 @@ Automated component and browser checks for this control pass must verify:
 
 Test the compact layouts at 320, 390, and 430 CSS pixels, the desktop layout at 1440 by 1000, and phone full screen. Fit assertions must use the usable map region after accounting for the top-right display dock and both bottom control docks, not merely the SVG's outer rectangle.
 
+## Contextual wording edit QA
+
+Check selected-item and candidate wording editors with keyboard and pointer input:
+
+- **Save** and **Cancel** appear after a draft changes; Enter saves and Escape cancels without triggering map shortcuts.
+- Invalid drafts expose an associated error, retain the saved wording, and return focus to the field.
+- Moving focus does not save a draft. Selecting another map item discards the selected item’s unsaved wording.
+- Successful Save preserves the camera and node positions at desktop and narrow phone widths; the edited text’s card may resize.
+- Arrange and node movement remain usable after saving a long valid label.
+- Save/Cancel controls retain 44-pixel targets and fit at 320, 390, and 430 CSS pixels.
+
 ## Manual checks still required
 
 Automated axe checks identify only a subset of accessibility problems. Before release, verify these behaviors manually with keyboard-only navigation and VoiceOver:

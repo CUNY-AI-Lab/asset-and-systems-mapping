@@ -244,3 +244,11 @@ Generated guidance's optional `evidenceExcerpt` must quote the supplied memo. `s
 A pending memo import is scoped to its project, source record, account/access generation and intake visit. A later file selection or memo edit invalidates it, even when an edit is subsequently reverted. Navigation or account change prevents a late reader from changing another project. Success is announced only after the corresponding import event is committed; empty/error results do not replace an existing memo.
 
 The Instructor Console displays non-exact quotation grades beside unchanged excerpts. Matching tests the contiguous canonical passage before interpreting ellipses as omissions, including leading/trailing omissions; unsupported and reordered text still fails. Progress labels reflect explicit request status or say “Generating guidance”; elapsed time alone never claims quotation checking or a corrective attempt. The bar remains approximate and never completes before a result.
+
+## Contextual wording edits — October 26, 2026
+
+Selected-node labels and selected-edge relationships use explicit **Save** and **Cancel** controls in the existing contextual Notebook details. Candidate Details use the same draft controls. Save trims and validates wording; Enter saves and Escape cancels. Blur and selection changes never commit drafts.
+
+Node labels retain the existing Micro, Meso, Exo, and Macro validation rules and 200-character limit. Relationships remain Micro or Exo records, with a 100-character limit and the existing Exo decision-path vocabulary. Wording edits synchronize corresponding graph and candidate records and refresh relationship endpoint labels without changing record IDs, endpoints, evidence, annotations, origin, review state, memo, Field Notes, or saved layout. Records match by identity, scale, and endpoints, with an unambiguous fallback for candidates whose IDs changed when added to the map. A graph-only manual or accepted Ask connection remains editable without creating a candidate copy.
+
+Text Save does not request arrangement or camera fitting. Cards may resize to display their wording. Explicit Arrange, Fit, and node movement use current measurements. The workspace remains **Map / Notebook**.

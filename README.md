@@ -42,7 +42,7 @@ The workspace has two views: **Map** and **Notebook**. The five stage records (`
 | **Add memo** | Set the inquiry and paste or upload the memo. |
 | **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
 | **Map** | Canvas, direct selection and a collapsed **Map tools** menu for search, layers, list, zoom, arrange, key and full screen. |
-| **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens only that item’s interpretation; the memo appears only with suggestions. |
+| **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens that item’s details and interpretation; the memo appears only with suggestions. |
 | **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Instructor Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
 | **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
 
@@ -64,7 +64,11 @@ Selecting an element opens its inspector. On desktop the whole layer stays on th
 
 The map fills the available browser height. On wide screens, the Notebook is a narrow resizable dock (260–360px). Drag its left edge or use the focused divider's arrow keys; Home restores the default width. Text and controls wrap as it changes. At 1100px and below, Notebook occupies the workspace while the mounted map is hidden. **Map** restores the canvas and its view.
 
-Selecting an item opens its interpretation in Notebook. Only connected items and editing details follow the interpretation field. Repeated statistics, target tabs, generic instructions and the separate Map notes task are removed. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
+Select an item to edit **Label** in the Notebook, or select a connection to edit **Relationship**. Choose **Save** to apply the wording or **Cancel** to restore the saved text. Enter saves; Escape cancels. Moving focus or selecting another item does not save a draft. Candidate Details use the same draft controls.
+
+Labels follow the item’s existing level. Micro relationships accept a verb or phrase; Exo relationships use the available decision-path choices. Invalid drafts leave the saved wording intact and show what needs revision. Saved wording updates any matching suggestion, and renaming an item updates its name in connected relationships. Saving preserves node positions and the current view; the text’s card may resize. Use **Arrange map** to recalculate the arrangement or **Fit map** to refit the view.
+
+The selected item’s interpretation, connected items and other editing details remain in Notebook. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
 
 | Task | Control |
 | --- | --- |
@@ -78,7 +82,7 @@ Selecting an item opens its interpretation in Notebook. Only connected items and
 
 Layout history covers element moves and automatic arrangements during the current map visit. Undo restores positions and the recorded view while preserving evidence, labels, and notes edited afterward. It is not a general project-history rollback. Layout, viewport, and annotations save with the project; the undo stack is temporary.
 
-The application prevents removal or reclassification of an element while another relationship, membership, or scope depends on it. It identifies the dependent work so students can resolve those references explicitly.
+An item’s level is fixed once it is mapped. To correct the level, remove the item and add it at the appropriate level. The application blocks removal, or changing a Micro setting to a non-setting type, while active relationships, memberships, or scopes depend on it. It identifies the dependent work so students can resolve those references explicitly.
 
 ## Saving and sharing
 
