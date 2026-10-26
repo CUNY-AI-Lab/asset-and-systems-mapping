@@ -5218,9 +5218,12 @@ function ReviewPanel({ savedMapNote = null, exportOnly = false, onProjectLink, p
       if (file.name.length > FILE_NAME_LIMIT) throw new Error(`Choose a project whose file name is ${FILE_NAME_LIMIT} characters or fewer.`);
       if (file.size > MAX_PROJECT_BYTES) throw new Error('Choose a Systems Mapping JSON file smaller than 8 MB.');
       const imported = parseProject(await file.text());
-      replaceProject(imported, file.name);
-      setImportError('');
-      toast('Project imported and validated.');
+      if (replaceProject(imported, file.name)) {
+        setImportError('');
+        toast('Project imported and validated.');
+      } else {
+        setImportError('The project was not imported. Your current map remains open. Resolve the save warning and try again.');
+      }
     } catch { const message = 'This project file could not be opened safely. The current map was preserved.'; setImportError(message); toast(message, 'error'); }
     event.target.value = '';
   };
@@ -7012,7 +7015,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const panel = project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
     : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
     : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
-  const studio = <MapStage project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, onChange: setNotebookOpen, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={(value) => { setStudioHighlight(value); if (value) setNotebookOpen(false); }} mapCheck={mapCheck} onMapCheck={runMapCheck} mapItemLabel={mapItemLabel} />;
+  const studio = <MapStage key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, onChange: setNotebookOpen, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={(value) => { setStudioHighlight(value); if (value) setNotebookOpen(false); }} mapCheck={mapCheck} onMapCheck={runMapCheck} mapItemLabel={mapItemLabel} />;
   const intakeOpen = project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
   const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {

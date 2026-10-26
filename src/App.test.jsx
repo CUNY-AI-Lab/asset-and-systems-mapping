@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import App from './App.jsx';
+import App, { createBlankProject } from './App.jsx';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './api.js';
 import { INSTITUTIONAL_SESSION_TIMEOUT_MS } from './studentSession.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
@@ -2770,6 +2770,20 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
+  it('autosaves an empty map with unpublished course guidance without requiring focal framing', async () => {
+    publicConfigurationResponder = path => jsonResponse({
+      ...publicConfiguration(path),
+      moduleVersions: [{ id: 'course-appendix', revision: 0, fingerprint: 'empty-appendix' }],
+    });
+    const project = createBlankProject();
+    await resumeSavedProject(project);
+    await waitFor(() => expect(storedProject().teacherGovernance?.preflight.moduleVersions[0]).toMatchObject({ id: 'course-appendix', revision: 0 }));
+    expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
+    expect(storedProject().inquiry).toBe('');
+    expect(screen.queryByRole('button', { name: 'Review issue' })).not.toBeInTheDocument();
+    expect(() => serializeProject(storedProject())).not.toThrow();
+  });
+
   it.each([
     ['exosphere', 'Exo-level'],
     ['macrosphere', 'Macro-level'],
@@ -5357,6 +5371,39 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument();
     expect(dialog).not.toHaveTextContent('Invalid Systems Mapping project:');
     expect(document.querySelector('.toast')).not.toHaveTextContent('Invalid Systems Mapping project:');
+  });
+
+  it.each(['validation', 'storage'])('does not announce JSON import success when the current map cannot be archived (%s)', async failure => {
+    const { project } = makeCandidateValidationProject();
+    await resumeSavedProject(project);
+    if (failure === 'validation') {
+      openDetails('.candidate-note:not(.candidate-evidence)');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Annotation', exact: true }), { target: { value: 'x'.repeat(PROJECT_LIMITS.noteText + 1) } });
+      await screen.findByRole('button', { name: 'Review issue' });
+    } else {
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Synthetic quota failure', 'QuotaExceededError'); });
+    }
+    openExports();
+    const imported = makeMapProject();
+    imported.id = 'synthetic-imported-map';
+    fireEvent.change(document.querySelector('.export-dropdown__import input'), { target: { files: [{ name: 'synthetic.json', size: 1000, text: async () => serializeProject(imported) }] } });
+    await screen.findByText('The project was not imported. Your current map remains open. Resolve the save warning and try again.');
+    expect(document.querySelector('.toast')).not.toHaveTextContent('Project imported and validated.');
+    expect(storedProject().id).toBe(project.id);
+    expect(fetchMock.mock.calls.some(([path, options]) => String(path) === '/api/prototype/events' && JSON.parse(options.body).event === 'project_imported')).toBe(false);
+  });
+
+  it('announces JSON import success only after the imported graph and scale become active', async () => {
+    await resumeSavedProject(createBlankProject());
+    openExports();
+    const imported = makeMapProject();
+    imported.id = 'synthetic-imported-map';
+    imported.title = 'Imported synthetic map';
+    fireEvent.change(document.querySelector('.export-dropdown__import input'), { target: { files: [{ name: 'synthetic.json', size: 1000, text: async () => serializeProject(imported) }] } });
+    await waitFor(() => expect(storedProject().id).toBe(imported.id));
+    expect(storedProject().graph).toEqual(imported.graph);
+    expect(storedProject().activeScale).toBe(imported.activeScale);
+    expect(document.querySelector('.toast')).toHaveTextContent('Project imported and validated.');
   });
 
   it('moves a node through the CTM path and sends the accepted, minimized prototype-event request', async () => {

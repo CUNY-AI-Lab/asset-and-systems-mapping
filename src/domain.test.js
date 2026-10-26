@@ -128,6 +128,36 @@ function legacyV1Project() {
   return project;
 }
 
+describe('unpublished course appendix provenance', () => {
+  const projectWithAppendix = (revision, id = 'course-appendix') => {
+    const project = createDefaultProject();
+    const moduleVersions = [{ id, revision, fingerprint: 'empty-course-appendix' }];
+    project.teacherGovernance = {
+      preflight: { configKind: 'preflight', scale: 'micro', fingerprint: 'preflight', revision: 1, moduleVersions },
+      builder: { configKind: 'builder', scale: 'micro', fingerprint: 'builder', revision: 1, moduleVersions },
+      refreshedAt: project.updatedAt,
+    };
+    addAuthoritativePreflight(project);
+    project.preflight.configurationSnapshot.shared.moduleVersions = structuredClone(moduleVersions);
+    return project;
+  };
+
+  it.each([0, 1, 2])('round trips appendix revision %s without rewriting saved guidance metadata', revision => {
+    const project = projectWithAppendix(revision);
+    const restored = parseProject(serializeProject(project));
+    expect(restored.teacherGovernance).toEqual(project.teacherGovernance);
+    expect(restored.preflight).toEqual(project.preflight);
+  });
+
+  it.each([-1, 0.5, '0', Number.MAX_SAFE_INTEGER + 1])('rejects invalid appendix revision %s', revision => {
+    expect(() => serializeProject(projectWithAppendix(revision))).toThrow(/revision/);
+  });
+
+  it('still requires positive revisions for every ordinary module', () => {
+    expect(() => serializeProject(projectWithAppendix(0, 'builder.micro.purpose'))).toThrow(/revision/);
+  });
+});
+
 function mappedNode({ id, label, type, scale, scopeNodeIds, deontic }) {
   return withDefaultNodeLayout([{
     id,

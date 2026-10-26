@@ -17,10 +17,12 @@
 .app-shell:has(> .workspace--studio) .app-header--student .brand { width: auto; }
 .app-shell:has(> .workspace--studio) .app-header--student .header-actions { display: flex; width: auto; }
 .workspace.workspace--studio {
-  height: 100dvh; min-height: 0; display: flex;
+  height: 100dvh; max-height: 100dvh; min-height: 0; display: flex; flex-direction: column;
   padding: calc(var(--header) + var(--safe-top) + 8px) calc(10px + var(--safe-right)) calc(var(--footer) + var(--safe-bottom) + 8px) calc(10px + var(--safe-left));
 }
-.workspace--studio .map-stage { width: 100%; max-width: none; min-height: 0; display: flex; flex-direction: column; }
+.workspace--studio > :is(.workspace-save-notice, .account-error) { flex: none; width: 100%; min-width: 0; margin: 0 0 8px; }
+.workspace--studio > .workspace-save-notice { flex-wrap: wrap; gap: 4px 12px; }
+.workspace--studio .map-stage { flex: 1; width: 100%; max-width: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .workspace--studio .map-toolbar { gap: 8px 16px; flex-wrap: wrap; align-items: center; margin: 0 0 8px; padding: 0; }
 .workspace--studio .map-toolbar > div:first-child { gap: 12px; }
 .workspace--studio .map-toolbar h1 { font-size: var(--type-title); font-weight: var(--weight-title); white-space: nowrap; }
