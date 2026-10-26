@@ -95,6 +95,14 @@ optimistic revisions. An unsynced browser copy is preserved when a save fails
 or another session changes the map. Explicit project links keep their existing
 sharing, expiry, and revocation behavior and reopen after CUNY sign-in.
 
+When the last verified institutional grant expires, the workspace preserves
+pending memo and annotation drafts and shows **Checking sign-in…** while
+requesting a current Systems grant. A valid grant restores the work. Missing
+or rejected access keeps the workspace paused; an unavailable check offers
+**Try again**. Returning to a paused page can also recheck access without a
+reload. Recognized identity
+alone does not replace the account and course authorization check.
+
 Exports live behind the **Project → Export & share** dialog, with the format options initially collapsed, grouped as *Show the map* (PNG, PDF, project link) and *Save or reuse* (JSON, CSV, Markdown, import). **Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
 
 - **JSON** preserves a reopenable project with stable IDs and layout, subject to the selected audience's redactions. Import validates the file before replacing the open project.

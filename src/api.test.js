@@ -12,6 +12,7 @@ import {
 } from './api.js';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 import { parseCourseSelection } from './courseContext.js';
+import { readInstitutionalSession } from './studentSession.js';
 
 function successfulFetch() {
   return vi.fn(async () => ({
@@ -20,6 +21,124 @@ function successfulFetch() {
     json: async () => ({ accepted: true }),
   }));
 }
+
+describe('authentication redirect ordering', () => {
+  afterEach(() => {
+    releaseAccountStorage();
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+    window.history.replaceState(null, '', '/');
+  });
+
+  const navigationSpy = () => {
+    const assign = vi.fn();
+    vi.stubGlobal('window', {
+      localStorage: window.localStorage,
+      location: { pathname: '/', search: '', assign },
+    });
+    return assign;
+  };
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  it.each(['session_invalid', 'authentication_required'])('does not navigate for an older %s 401 after a newer verified Systems grant', async code => {
+    const workspace = useAccountStorage('transport-ordering-a', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    let rejectOlder;
+    vi.stubGlobal('fetch', vi.fn(path => String(path) === '/api/student/session'
+      ? Promise.resolve(json({ access: { expiresAt: new Date(Date.now() + 60_000).toISOString() } }))
+      : new Promise(resolve => { rejectOlder = () => resolve(json({ error: 'Old sign-in failure', details: { code } }, 401)); })));
+    const older = apiRequest('/api/prototype/events', { method: 'POST', body: { event: 'synthetic' }, workspace });
+    const failure = expect(older).rejects.toMatchObject({ status: 401, payload: { details: { code } } });
+    await readInstitutionalSession({ workspace });
+    rejectOlder();
+    await failure;
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it.each(['session_invalid', 'authentication_required'])('retains the current %s 401 redirect and rejection after verification', async code => {
+    const workspace = useAccountStorage('transport-current', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    vi.stubGlobal('fetch', vi.fn(async path => String(path) === '/api/student/session'
+      ? json({ access: { expiresAt: new Date(Date.now() + 60_000).toISOString() } })
+      : json({ error: 'Current sign-in failure', details: { code } }, 401)));
+    await readInstitutionalSession({ workspace });
+    await expect(apiRequest('/api/prototype/events', { workspace })).rejects.toMatchObject({ status: 401, payload: { details: { code } } });
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/auth/start?returnTo=%2F%3Fcourse%3Dcourse-a');
+  });
+
+  it('preserves a current 403 as a denied request rather than converting it into success', async () => {
+    const workspace = useAccountStorage('transport-forbidden', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    vi.stubGlobal('fetch', vi.fn(async path => String(path) === '/api/student/session'
+      ? json({ access: { expiresAt: new Date(Date.now() + 60_000).toISOString() } })
+      : json({ error: 'Access required', details: { code: 'admission_required' } }, 403)));
+    await readInstitutionalSession({ workspace });
+    await expect(apiRequest('/api/prototype/events', { workspace })).rejects.toMatchObject({ status: 403, payload: { details: { code: 'admission_required' } } });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it.each(['identity', 'empty', 'expired', 'invalid', 'unavailable'])('does not treat a newer %s response as a verified Systems grant', async kind => {
+    const workspace = useAccountStorage('transport-unverified', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    let rejectOlder;
+    vi.stubGlobal('fetch', vi.fn(path => {
+      if (String(path) === '/api/auth/me') return Promise.resolve(json({ user: { id: 'recognized-synthetic-user' } }));
+      if (String(path) === '/api/student/session') return Promise.resolve(kind === 'unavailable' ? json({ error: 'Unavailable' }, 503)
+        : json({ access: kind === 'empty' ? null : { expiresAt: kind === 'expired' ? new Date(Date.now() - 1).toISOString() : 'invalid' } }));
+      return new Promise(resolve => { rejectOlder = () => resolve(json({ error: 'Sign-in required', details: { code: 'session_invalid' } }, 401)); });
+    }));
+    const older = apiRequest('/api/prototype/events', { workspace });
+    const failure = expect(older).rejects.toMatchObject({ status: 401 });
+    if (kind === 'identity') await apiRequest('/api/auth/me', { workspace });
+    else if (kind === 'empty') await expect(readInstitutionalSession({ workspace })).resolves.toEqual({ access: null });
+    else await expect(readInstitutionalSession({ workspace })).rejects.toBeInstanceOf(ApiError);
+    rejectOlder();
+    await failure;
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not redirect a new account for an older account rejection', async () => {
+    const workspace = useAccountStorage('transport-account-a', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    let rejectOlder;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { rejectOlder = () => resolve(json({ error: 'Old account denied', details: { code: 'session_invalid' } }, 401)); })));
+    const older = apiRequest('/api/cloud/projects', { workspace });
+    const failure = expect(older).rejects.toMatchObject({ status: 401 });
+    useAccountStorage('transport-account-b', null, parseCourseSelection('?course=course-b'));
+    rejectOlder();
+    await failure;
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('does not use another course grant to suppress a current course denial', async () => {
+    const workspace = useAccountStorage('transport-course-scope', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    let rejectOlder;
+    vi.stubGlobal('fetch', vi.fn(path => String(path) === '/api/student/session'
+      ? Promise.resolve(json({ access: { expiresAt: new Date(Date.now() + 60_000).toISOString() } }))
+      : new Promise(resolve => { rejectOlder = () => resolve(json({ error: 'Course A denied', details: { code: 'session_invalid' } }, 401)); })));
+    const older = apiRequest('/api/prototype/events', { workspace });
+    const failure = expect(older).rejects.toMatchObject({ status: 401 });
+    await readInstitutionalSession({ workspace: { ...workspace, courseSelection: parseCourseSelection('?course=course-b') } });
+    rejectOlder();
+    await failure;
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/auth/start?returnTo=%2F%3Fcourse%3Dcourse-a');
+  });
+
+  it('does not navigate for an aborted request whose transport later returns a coded 401', async () => {
+    const workspace = useAccountStorage('transport-aborted', null, parseCourseSelection('?course=course-a'));
+    const assign = navigationSpy();
+    const controller = new AbortController();
+    let rejectOlder;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { rejectOlder = () => resolve(json({ error: 'Abandoned denial', details: { code: 'session_invalid' } }, 401)); })));
+    const older = apiRequest('/api/prototype/events', { workspace, signal: controller.signal });
+    const failure = expect(older).rejects.toMatchObject({ status: 401 });
+    controller.abort();
+    rejectOlder();
+    await failure;
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
 
 describe('course API scope', () => {
   afterEach(() => {
