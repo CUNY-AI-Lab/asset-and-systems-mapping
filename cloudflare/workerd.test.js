@@ -293,6 +293,16 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill('Unsynced work is recovered after a storage interruption.');
     await page.getByRole('textbox', { name: 'Map note', exact: true }).press('Tab');
     await browserExpect(page.getByRole('alert')).toContainText('Your unsynced copy remains on this device');
+    for (const width of [1440, 1024, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      const alert = await page.getByRole('alert').boundingBox();
+      const stage = await page.locator('.map-stage').boundingBox();
+      expect(alert.y + alert.height).toBeLessThanOrEqual(stage.y + 1);
+      expect(stage.width).toBeGreaterThan(width * .94);
+      expect(stage.height).toBeGreaterThan(450);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
     failCloudWrites = false;
     await page.reload();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();

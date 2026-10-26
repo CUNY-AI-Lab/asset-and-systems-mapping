@@ -3,6 +3,8 @@ import { createDefaultProject, parseProject, serializeProject } from './domain.j
 import {
   LINKS_STORAGE_KEY,
   LINK_STORAGE_KEY,
+  PROJECT_LIBRARY_KEY,
+  PROJECT_BODY_PREFIX,
   STORAGE_KEY,
   forgetStoredLink,
   loadLibraryProject,
@@ -122,6 +124,45 @@ describe('local project library', () => {
 
     expect(parseProject(storage.getItem(STORAGE_KEY)).title).toBe(revised.title);
     expect([...storage.values.keys()].filter((key) => key.startsWith('systems-mapping-studio.project-body.'))).toHaveLength(0);
+  });
+
+  it.each(['archive', 'index', 'active'])('preserves the old active map and every existing body when the %s write fails', failure => {
+    const storage = new TestStorage();
+    const first = namedProject('project_first', 'First project');
+    const second = namedProject('project_second', 'Second project');
+    let records = saveProjectToLibrary(storage, first, [], { makeActive: true });
+    records = saveProjectToLibrary(storage, second, records);
+    // A preexisting recovery body may be newer than the active singleton.
+    records = saveProjectToLibrary(storage, { ...first, title: 'Preserve this recovery copy' }, records);
+    const before = new Map(storage.values);
+    const archiveKey = [...before.keys()].find(key => key.startsWith(PROJECT_BODY_PREFIX) && JSON.parse(before.get(key)).id === first.id);
+    storage.failKey = { archive: archiveKey, index: PROJECT_LIBRARY_KEY, active: STORAGE_KEY }[failure];
+    expect(() => saveProjectToLibrary(storage, second, records, { makeActive: true })).toThrow('Quota exceeded');
+    expect(storage.values).toEqual(before);
+    expect(parseProject(storage.getItem(STORAGE_KEY)).id).toBe(first.id);
+  });
+
+  it('keeps the previous active map after a real quota refusal during catalog growth', () => {
+    const first = namedProject('first', 'First');
+    const second = namedProject('second', 'Second');
+    const storage = new QuotaStorage(Infinity);
+    const records = saveProjectToLibrary(storage, first, [], { makeActive: true });
+    const before = new Map(storage.values);
+    // Permit archiving the old body, but leave no space for catalog growth.
+    const archiveKey = PROJECT_BODY_PREFIX + [...first.id].map(character => character.charCodeAt(0).toString(16).padStart(4, '0')).join('');
+    storage.limit = [...before].reduce((size, [key, value]) => size + key.length + value.length, 0) + archiveKey.length + serializeProject(first).length;
+    expect(() => saveProjectToLibrary(storage, second, records, { makeActive: true })).toThrow('Quota exceeded');
+    expect(storage.values).toEqual(before);
+  });
+
+  it('does not replace the active snapshot when a same-ID update cannot write its catalog', () => {
+    const storage = new TestStorage();
+    const project = namedProject('same', 'Saved title');
+    const records = saveProjectToLibrary(storage, project, [], { makeActive: true });
+    const before = new Map(storage.values);
+    storage.failKey = PROJECT_LIBRARY_KEY;
+    expect(() => saveProjectToLibrary(storage, { ...project, title: 'Unsaved title' }, records, { makeActive: true })).toThrow('Quota exceeded');
+    expect(storage.values).toEqual(before);
   });
 
   it('uses collision-free body keys for distinct imported project ids', () => {

@@ -197,35 +197,39 @@ export function saveProjectToLibrary(storage, project, records, { makeActive = f
     // would halve the effective browser quota for existing large projects.
     const targetBodyKey = projectBodyKey(project.id);
     const displaced = activeStored?.project.id !== project.id ? activeStored : null;
-    let previousTargetBody = null;
-
-    if (displaced) {
-      try { previousTargetBody = storage.getItem(targetBodyKey); } catch { /* Continue with the in-memory project. */ }
-      try { storage.removeItem(targetBodyKey); } catch { /* A stale target copy is safe to retain. */ }
-      try {
-        storage.setItem(projectBodyKey(displaced.project.id), displaced.raw);
-      } catch (error) {
-        if (previousTargetBody !== null) {
-          try { storage.setItem(targetBodyKey, previousTargetBody); } catch { /* The active singleton remains intact. */ }
-        }
-        throw error;
-      }
-      nextRecords = upsertRecord(nextRecords, summarizeProject(displaced.project));
-    }
-
+    // Commit the active singleton last: a failed catalog write must not make
+    // reload open a project whose import/switch was reported as unsuccessful.
+    const displacedBodyKey = displaced ? projectBodyKey(displaced.project.id) : null;
+    const backups = new Map([
+      [PROJECT_LIBRARY_KEY, storage.getItem(PROJECT_LIBRARY_KEY)],
+      ...(displaced ? [[targetBodyKey, storage.getItem(targetBodyKey)], [displacedBodyKey, storage.getItem(displacedBodyKey)]] : []),
+    ]);
+    const staged = [];
     try {
+      if (displaced) {
+        storage.removeItem(targetBodyKey);
+        storage.setItem(displacedBodyKey, displaced.raw);
+        staged.push(displacedBodyKey);
+        nextRecords = upsertRecord(nextRecords, summarizeProject(displaced.project));
+      }
+      nextRecords = upsertRecord(nextRecords, summarizeProject(project));
+      writeLibraryIndex(storage, nextRecords, project.id);
+      staged.push(PROJECT_LIBRARY_KEY);
       storage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
-      if (displaced) {
-        try { storage.removeItem(projectBodyKey(displaced.project.id)); } catch { /* The duplicate remains recoverable. */ }
-        if (previousTargetBody !== null) {
-          try { storage.setItem(targetBodyKey, previousTargetBody); } catch { /* The caller reports the persistence failure. */ }
-        }
+      // Release successfully staged values before restoring the original bytes,
+      // so rollback also fits the original quota. Keep untouched backups intact.
+      for (const key of staged) {
+        try { storage.removeItem(key); } catch { /* Restore in place when possible. */ }
+      }
+      for (const [key, raw] of backups) {
+        if (raw === null) { try { storage.removeItem(key); } catch { /* Retain any recoverable copy. */ } }
+      }
+      for (const [key, raw] of backups) {
+        if (raw !== null) { try { storage.setItem(key, raw); } catch { /* The caller keeps the current project open and reports recovery failure. */ } }
       }
       throw error;
     }
-    nextRecords = upsertRecord(nextRecords, summarizeProject(project));
-    writeLibraryIndex(storage, nextRecords, project.id);
     try { storage.removeItem(targetBodyKey); } catch { /* A stale duplicate is safe to retain. */ }
   } else {
     storage.setItem(projectBodyKey(project.id), serialized);

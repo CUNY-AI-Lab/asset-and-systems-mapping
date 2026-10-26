@@ -34,6 +34,27 @@ const promptPath = '/api/cloud/course-prompt';
 const savePrompt = (amendment, expectedRevision, who = 'instructor', course = 'synthetic-course-a') => scoped(promptPath, who, course, { method: 'PUT', body: JSON.stringify({ amendment, expectedRevision, changeNote: 'Synthetic test change' }) });
 beforeEach(async () => { await control({ courseDenied: false, courseOutage: false, denyOnCourseLookup: 0, mode: 'success', resetSessions: true }); });
 
+test('an unpublished course appendix can be saved and reopened in a student map', async () => {
+  const project = newProject();
+  project.id = 'unpublished-appendix-map';
+  project.inquiry = '';
+  project.graph = { nodes: [], edges: [] };
+  const configuration = async kind => {
+    const response = await scoped(`/api/config/public?configKind=${kind}&scale=micro&stageId=add-source`, 'alice', 'synthetic-course-b');
+    expect(response.status).toBe(200);
+    const snapshot = await response.json();
+    expect(snapshot.moduleVersions).toContainEqual(expect.objectContaining({ id: 'course-appendix', revision: 0 }));
+    return snapshot;
+  };
+  project.teacherGovernance = { preflight: await configuration('preflight'), builder: await configuration('builder'), refreshedAt: project.updatedAt };
+  const serialized = serializeProject(project);
+  const saved = await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-b', { method: 'PUT', body: JSON.stringify({ project: serialized, revision: 0 }) });
+  expect(saved.status, await saved.clone().text()).toBe(200);
+  const reopened = await (await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-b')).json();
+  expect(JSON.parse(reopened.project)).toEqual(JSON.parse(serialized));
+  expect((await scoped('/api/teacher/profiles', 'alice', 'synthetic-course-b')).status).toBe(403);
+});
+
 test('durable generation returns one saved result across repeated starts and enforces account/course isolation', async () => {
   const { preflightEvaluationPayload } = await import('../src/App.jsx');
   const project = newProject(); project.id = 'durable-job-map'; project.submission.text = 'A student meets an instructor in a classroom.';

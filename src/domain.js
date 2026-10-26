@@ -2122,7 +2122,9 @@ function validateModuleVersions(moduleVersions, path) {
     assertObject(moduleVersion, itemPath);
     assertKnownKeys(moduleVersion, ['id', 'revision', 'fingerprint'], itemPath);
     assertString(moduleVersion.id, `${itemPath}.id`, false, 200);
-    assertInteger(moduleVersion.revision, `${itemPath}.revision`, 1, Number.MAX_SAFE_INTEGER);
+    // An unpublished course appendix is explicitly revision 0. Preserve that
+    // provenance in saved maps and evaluations; ordinary modules start at 1.
+    assertInteger(moduleVersion.revision, `${itemPath}.revision`, moduleVersion.id === 'course-appendix' ? 0 : 1, Number.MAX_SAFE_INTEGER);
     assertString(moduleVersion.fingerprint, `${itemPath}.fingerprint`, false, 500);
   });
 }
