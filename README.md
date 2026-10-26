@@ -4,7 +4,7 @@
 
 Systems Mapping helps students turn a place-based inquiry into an evidence-informed account of people, settings, institutions, and broader conditions. Students build one cumulative map, revisit their interpretations, and explain how connections operate across four ecological levels. The map, supporting evidence, and revision notes form a record of their reasoning.
 
-The prototype combines a guided student workspace with a Instructor Console for course guidance and materials. Model assistance is optional: students decide which suggestions belong on the map and can complete every stage through their own reading and analysis. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
+The prototype combines a guided student workspace with a Instructor Console for course guidance and materials. A new empty map begins with Generate guidance in Memo review. After a valid response, students review its suggestions and can add supported items themselves, edit labels and relationships, and remove suggestions. Existing saved maps remain available for manual revision. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
 
 A separate [Cloudflare version](./docs/cloudflare-deployment.md) adds CUNY Login,
 private account maps, browser recovery copies, and CAIL Gateway model requests.
