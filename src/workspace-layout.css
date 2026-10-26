@@ -138,3 +138,14 @@ html[data-theme="dark"] .inspector .inspector-done { color: var(--ink); }
   .workspace--studio .sidebar-toggle { padding-inline: 6px; font-size: 12px; }
 }
 @media (forced-colors: active) { .sidebar-resizer span { background: CanvasText; } }
+
+/* Contextual wording edits share the existing inspector and notebook. */
+.map-text-editor { min-width: 0; display: grid; gap: 8px; }
+.map-text-editor .field { margin: 0; }
+.map-text-editor :is(input, select) { width: 100%; min-width: 0; }
+.map-text-editor__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.map-text-editor__actions .button { min-height: 44px; }
+.map-text-editor__error { margin: 0; color: var(--text); font-size: 14px; line-height: 1.45; }
+@media (max-width: 700px) {
+  .map-text-editor :is(input, select) { font-size: 16px; }
+}
