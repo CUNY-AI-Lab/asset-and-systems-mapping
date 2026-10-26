@@ -1,7 +1,7 @@
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
 import React, { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
-import { readInstitutionalSession } from './studentSession.js';
+import { INSTITUTIONAL_RESUME_COOLDOWN_MS, readInstitutionalSession } from './studentSession.js';
 import { userFacingError } from './userFacingError.js';
 import { courseWorkspacePath } from './courseContext.js';
 import { cacheMemoDraft, restoreMemoDraft } from './memoDraft.js';
@@ -5309,6 +5309,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const [teacherOpen, setTeacherOpen] = useState(() => startInTeacher || passwordResetToken !== null);
   const [accessState, setAccessState] = useState({ status: 'checking', access: null, message: 'Loading…', kind: 'info' });
   const [sessionCheck, setSessionCheck] = useState(0);
+  const lastInstitutionalResumeRef = useRef(-Infinity);
   const [workspaceStarted, setWorkspaceStarted] = useState(startInWorkspace);
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false);
   const [hasSavedProject, setHasSavedProject] = useState(initialLoad.hasSavedProject);
@@ -5463,7 +5464,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     const controller = new AbortController();
     const generation = ++accessGenerationRef.current;
     if (institutionalMode) setAccessState({ status: 'checking', access: null, message: 'Checking sign-in…', kind: 'info' });
-    const request = institutionalMode ? readInstitutionalSession({ signal: controller.signal }) : getStudentSession();
+    const request = institutionalMode ? readInstitutionalSession({ signal: controller.signal, workspace: persistenceStorageRef.current }) : getStudentSession();
     request.then((result) => {
       if (!active || generation !== accessGenerationRef.current) return;
       setAccessState(result.access
@@ -5536,7 +5537,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setReviewBusy(null);
     setConnectionBusy(false);
     if (!institutionalMode) setWorkspaceStarted(false);
-    setMapPreviewOpen(false);
+    if (state?.status !== 'checking') setMapPreviewOpen(false);
     setAccessState(state || {
       status: 'expired', access: null,
       message: institutionalMode ? 'Use CUNY Login to continue' : 'Enter your class code to continue.',
@@ -5544,16 +5545,42 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     });
   }, [institutionalMode, flushPersistence]);
 
+  const recheckInstitutionalAccess = useCallback(() => {
+    pauseAccess({ status: 'checking', access: null, message: 'Checking sign-in…', kind: 'info' });
+    setSessionCheck(current => current + 1);
+  }, [pauseAccess]);
+
   useEffect(() => {
     if (accessState.status !== 'granted' || typeof accessState.access?.expiresAt !== 'string') return undefined;
+    // This is the last verified grant's deadline, not proof that the SSO session ended.
+    const expires = institutionalMode ? recheckInstitutionalAccess : pauseAccess;
     const remaining = Date.parse(accessState.access.expiresAt) - Date.now();
     if (!Number.isFinite(remaining) || remaining <= 0) {
-      pauseAccess();
+      expires();
       return undefined;
     }
-    const timer = window.setTimeout(() => pauseAccess(), Math.min(remaining, 2_147_000_000));
+    const timer = window.setTimeout(expires, Math.min(remaining, 2_147_000_000));
     return () => window.clearTimeout(timer);
-  }, [accessState.status, accessState.access?.expiresAt, pauseAccess]);
+  }, [accessState.status, accessState.access?.expiresAt, institutionalMode, pauseAccess, recheckInstitutionalAccess]);
+
+  useEffect(() => {
+    if (!institutionalMode || !['required', 'expired', 'unavailable'].includes(accessState.status)) return undefined;
+    const resume = () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - lastInstitutionalResumeRef.current < INSTITUTIONAL_RESUME_COOLDOWN_MS) return;
+      lastInstitutionalResumeRef.current = now;
+      recheckInstitutionalAccess();
+    };
+    window.addEventListener('focus', resume);
+    window.addEventListener('pageshow', resume);
+    document.addEventListener('visibilitychange', resume);
+    return () => {
+      window.removeEventListener('focus', resume);
+      window.removeEventListener('pageshow', resume);
+      document.removeEventListener('visibilitychange', resume);
+    };
+  }, [institutionalMode, accessState.status, recheckInstitutionalAccess]);
 
   useEffect(() => {
     if (!workspaceStarted || persistenceBlocked) return undefined;
@@ -5670,7 +5697,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       if (error instanceof ApiError && (error.status === 401 || institutionalMode && error.status === 403)) {
         if (accessGeneration !== accessGenerationRef.current) return false;
         try {
-          const currentSession = await (institutionalMode ? readInstitutionalSession() : getStudentSession());
+          const currentSession = await (institutionalMode ? readInstitutionalSession({ workspace: persistenceStorageRef.current }) : getStudentSession());
           if (accessGeneration !== accessGenerationRef.current) return false;
           if (currentSession.access) {
             setAccessState({ status: 'granted', access: currentSession.access, message: null, kind: 'info' });
@@ -5738,7 +5765,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
     if (error instanceof ApiError && (error.status === 401 || institutionalMode && error.status === 403) && accessGeneration === accessGenerationRef.current) {
       try {
-        const session = await (institutionalMode ? readInstitutionalSession() : getStudentSession());
+        const session = await (institutionalMode ? readInstitutionalSession({ workspace: persistenceStorageRef.current }) : getStudentSession());
         if (accessGeneration !== accessGenerationRef.current) return;
         if (session.access) {
           setAccessState({ status: 'granted', access: session.access, message: null, kind: 'info' });

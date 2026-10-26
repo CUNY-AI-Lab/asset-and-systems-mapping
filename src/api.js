@@ -20,11 +20,24 @@ export class TimeoutError extends Error {
   }
 }
 
+const verifiedGrantVersions = new Map();
+const authorizationScope = workspace => workspace?.cacheKey
+  ? JSON.stringify([workspace.cacheKey, workspace.courseSelection?.kind || 'general', workspace.courseSelection?.id || null])
+  : null;
+
+// Called only after the Systems session reader validates a current server grant.
+export function recordVerifiedInstitutionalGrant(workspace) {
+  const scope = authorizationScope(workspace);
+  if (scope) verifiedGrantVersions.set(scope, (verifiedGrantVersions.get(scope) || 0) + 1);
+}
+
 export async function apiRequest(path, options = {}) {
   const { body, headers: suppliedHeaders, workspace = projectStorage(), ...requestOptions } = options;
   // Capture the workspace once, before any asynchronous work. Supplied headers
   // cannot redirect a pending request into a different account or course.
   const selection = workspace?.courseSelection || initialApiCourseSelection();
+  const scope = authorizationScope(workspace);
+  const grantVersion = verifiedGrantVersions.get(scope);
   const headers = { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(suppliedHeaders || {}) };
   for (const name of Object.keys(headers)) {
     if (['x-systems-account-cache', 'x-systems-course'].includes(name.toLowerCase())) delete headers[name];
@@ -41,7 +54,10 @@ export async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const requestId = payload?.details?.requestId;
     const support = typeof requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId) ? ` Support ID: ${requestId}` : '';
-    if (response.status === 401 && workspace?.cacheKey && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl(selection));
+    // Preserve the rejection, but do not navigate for a superseded or abandoned request.
+    const redirectIsCurrent = scope && authorizationScope(projectStorage()) === scope
+      && verifiedGrantVersions.get(scope) === grantVersion && !requestOptions.signal?.aborted;
+    if (response.status === 401 && redirectIsCurrent && ['authentication_required', 'session_invalid'].includes(payload?.details?.code)) window.location.assign(institutionalLoginUrl(selection));
     throw new ApiError((payload?.error || `Request failed (${response.status})`) + support, response.status, payload);
   }
   return payload;

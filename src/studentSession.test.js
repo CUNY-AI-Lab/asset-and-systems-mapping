@@ -42,5 +42,6 @@ describe('institutional session deadline', () => {
     const access = { expiresAt: new Date(Date.now() + 5000).toISOString() };
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ access }), { headers: { 'content-type': 'application/json' } })));
     await expect(readInstitutionalSession()).resolves.toEqual({ access });
+    expect(fetch).toHaveBeenCalledWith('/api/student/session', expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }));
   });
 });

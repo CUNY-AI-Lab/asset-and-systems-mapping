@@ -116,6 +116,14 @@ Check selected-item and candidate wording editors with keyboard and pointer inpu
 
 ## Manual checks still required
 
+For institutional access recovery, verify that **Checking sign-in…** is
+announced as a status without offering a login link while verification is
+pending. Test successful grant renewal and a rejected or unavailable grant
+separately. Pending memo and annotation drafts must survive the transition;
+the workspace may reopen only after a current Systems grant is verified.
+Record synthetic clock/API tests separately from an observed live grant
+boundary, and do not count a successful identity lookup as access acceptance.
+
 Automated axe checks identify only a subset of accessibility problems. Before release, verify these behaviors manually with keyboard-only navigation and VoiceOver:
 
 - skip and landmark navigation follow a useful order;
