@@ -3033,6 +3033,39 @@ function arrangedFocusedEcologyPositions(nodes, phoneLayout = false) {
   return positions;
 }
 
+// Use the same expanded boundary for phone Micro rendering and interaction.
+function phoneMicroBands(bands, allNodes) {
+  const nodes = allNodes.filter(node => node.scale === 'micro');
+  const positions = arrangedPhoneMicroPositions(nodes);
+  const halfWidth = Math.max(0, ...nodes.map(node => Math.abs(positions.get(node.id).x - ECOLOGY_CENTER.x) + mapNodeGeometry(node.label, true).cardWidth / 2));
+  const halfHeight = Math.max(0, ...nodes.map(node => Math.abs(positions.get(node.id).y - ECOLOGY_CENTER.y) + mapNodeGeometry(node.label, true).cardHeight / 2));
+  const dx = Math.max(0, (halfWidth + 20) * Math.SQRT2 - bands.micro.outerRx);
+  const dy = Math.max(0, (halfHeight + 20) * Math.SQRT2 - bands.micro.outerRy);
+  return Object.fromEntries(Object.entries(bands).map(([scale, band]) => [scale, {
+    ...band, outerRx: band.outerRx + dx, outerRy: band.outerRy + dy,
+    innerRx: scale === 'micro' ? 0 : band.innerRx + dx,
+    innerRy: scale === 'micro' ? 0 : band.innerRy + dy,
+  }]));
+}
+
+// Presentation and explicit Arrange share measured connector clearance.
+function arrangedPhoneMicroPositions(nodes) {
+  const ordered = [...nodes].sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+  const rows = Array.from({ length: Math.ceil(ordered.length / 2) }, (_, row) => ordered.slice(row * 2, row * 2 + 2));
+  const heights = rows.map(row => Math.max(...row.map(node => mapNodeGeometry(node.label, true).cardHeight)));
+  const gap = 120;
+  let y = ECOLOGY_CENTER.y - (heights.reduce((sum, height) => sum + height, 0) + gap * Math.max(0, rows.length - 1)) / 2;
+  const positions = new Map();
+  rows.forEach((row, index) => {
+    row.forEach((node, column) => positions.set(node.id, {
+      x: ECOLOGY_CENTER.x + (column - (row.length - 1) / 2) * 352,
+      y: y + heights[index] / 2,
+    }));
+    y += heights[index] + gap;
+  });
+  return positions;
+}
+
 function arrangedPhoneRelationshipPositions(nodes, edge) {
   if (!edge) return null;
   const source = nodes.find((node) => node.id === edge.source);
@@ -3741,7 +3774,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
   }}>
     <title>Interactive systems map</title>
     <defs>
-      <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" /></marker>
+      <marker id="arrowhead" markerWidth={phoneLayout ? 6 : 8} markerHeight={phoneLayout ? 5 : 6} viewBox="0 0 8 6" refX={phoneLayout ? 8 : 7} refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" /></marker>
       {[...microSettingRegionVisuals, ...macroScopeRegionVisuals].map(({ maskId, bounds, exclusions }) => (
         <mask key={maskId} id={maskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x={bounds.left - 2} y={bounds.top - 2} width={bounds.right - bounds.left + 4} height={bounds.bottom - bounds.top + 4} style={{ maskType: 'luminance' }}>
           <rect x={bounds.left - 2} y={bounds.top - 2} width={bounds.right - bounds.left + 4} height={bounds.bottom - bounds.top + 4} fill="white" />
@@ -3763,7 +3796,7 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
       }}>
         <path className="edge-hit" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />
         {selected && <path className="edge-selection-halo" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />}
-        <path className="edge-line" d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
+        <path className="edge-line" vectorEffect={phoneLayout ? "non-scaling-stroke" : undefined} d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrowhead)" />
       </g>)}</g>
       <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
         return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} data-anchor-x={midX} data-anchor-y={midY} data-full-label={edge.verb} className={`graph-edge-label ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`}>
@@ -4012,11 +4045,16 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const layoutEdgeById = useMemo(() => new Map(layoutGraph.edges.map(edge => [edge.id, edge])), [layoutGraph]);
   const ecologyBandNodes = useMemo(() => layoutGraph.nodes.filter(node => node.status !== 'rejected' && node.claimState !== 'retired'), [layoutGraph]);
   const canonicalEcologyPositionKey = useMemo(() => JSON.stringify(ecologyBandNodes.map(node => [node.id, node.x, node.y])), [ecologyBandNodes]);
-  const sharedEcologyBands = useMemo(() => ecologyBands(phoneLayout, ecologyBandNodes.length, ecologyBandNodes), [phoneLayout, fontRevision, ecologyBandNodes]);
+  const sharedEcologyBands = useMemo(() => {
+    const bands = ecologyBands(phoneLayout, ecologyBandNodes.length, ecologyBandNodes);
+    if (!phoneLayout || visibleScale !== 'micro') return bands;
+    return phoneMicroBands(bands, ecologyBandNodes);
+  }, [phoneLayout, fontRevision, ecologyBandNodes, visibleScale]);
   const interactionEcologyBands = useMemo(() => {
     const liveNodes = project.graph.nodes.filter(node => node.status !== 'rejected' && node.claimState !== 'retired');
-    return ecologyBands(phoneLayout, liveNodes.length, liveNodes);
-  }, [phoneLayout, fontRevision, project.graph.nodes]);
+    const bands = ecologyBands(phoneLayout, liveNodes.length, liveNodes);
+    return phoneLayout && visibleScale === 'micro' ? phoneMicroBands(bands, liveNodes) : bands;
+  }, [phoneLayout, fontRevision, project.graph.nodes, visibleScale]);
   const ecologyGeometryKey = JSON.stringify([phoneLayout, fontRevision,
     layoutGraph.nodes.map(node => [node.id, node.scale, node.status === 'rejected' || node.claimState === 'retired']),
     layoutGraph.edges.map(edge => [edge.id, edge.scale, edge.source, edge.target, edge.status === 'rejected' || edge.claimState === 'retired']),
@@ -4125,9 +4163,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     : '';
   const phoneEcologyPositions = useMemo(() => (
     phoneEcologyScope && phoneEcologyCommittedScope !== phoneEcologyScope
-      ? arrangedEcologyPositions(visibleLayoutNodes, true, sharedEcologyBands)
+      ? (visibleScale === 'micro'
+        ? arrangedPhoneMicroPositions(visibleLayoutNodes)
+        : arrangedEcologyPositions(visibleLayoutNodes, true, sharedEcologyBands))
       : null
-  ), [phoneEcologyCommittedScope, phoneEcologyScope, fontRevision, sharedEcologyBands, visibleLayoutNodes]);
+  ), [phoneEcologyCommittedScope, phoneEcologyScope, fontRevision, sharedEcologyBands, visibleLayoutNodes, visibleScale]);
   const phoneRelationshipPositions = useMemo(() => arrangedPhoneRelationshipPositions(visibleLayoutNodes, phoneLayoutEdge), [phoneLayoutEdge, fontRevision, visibleLayoutNodes]);
   const phoneRelationshipDetail = Boolean(phoneRelationshipPositions);
   const focusedRelationshipEdge = focusedEdgeIds.size === 1
@@ -4667,7 +4707,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const liveNodes = project.graph.nodes.filter((node) => showRemoved || node.claimState !== 'retired');
     const nodes = visibleScale === 'all' ? liveNodes : visibleNodes.length ? visibleNodes : liveNodes;
     const positions = mapMode === 'ecology'
-      ? arrangedEcologyPositions(nodes, phoneLayout, interactionEcologyBands)
+      ? phoneLayout && visibleScale === 'micro' ? arrangedPhoneMicroPositions(nodes) : arrangedEcologyPositions(nodes, phoneLayout, interactionEcologyBands)
       : phoneLayout
         ? arrangedPhoneOverviewPositions(nodes)
         : arrangedMapPositions(nodes, visibleScale === 'all', 5, false);
