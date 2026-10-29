@@ -15,7 +15,7 @@ beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
   for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333'], ['instructor', 'cail-44444444444444444444444444444444'], ['guest', 'cail-55555555555555555555555555555555']]) tokens[name] = {
-    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
+    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject, ...(name === 'admin' ? { name: ' \u202eSam\u0085 Student\u2069 ' } : {}) }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   };
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mapping-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
@@ -32,7 +32,7 @@ afterAll(async () => { await harness?.close(); });
 const scoped = (path, who = 'alice', course = 'synthetic-course-a', options = {}) => request(path, who, { ...options, headers: { 'x-systems-course': course, ...options.headers } });
 const promptPath = '/api/cloud/course-prompt';
 const savePrompt = (amendment, expectedRevision, who = 'instructor', course = 'synthetic-course-a') => scoped(promptPath, who, course, { method: 'PUT', body: JSON.stringify({ amendment, expectedRevision, changeNote: 'Synthetic test change' }) });
-beforeEach(async () => { await control({ courseDenied: false, courseOutage: false, denyOnCourseLookup: 0, mode: 'success', resetSessions: true }); });
+beforeEach(async () => { await control({ courseDenied: false, courseOutage: false, denyOnCourseLookup: 0, courseProfile: null, mode: 'success', resetSessions: true }); });
 
 test('an unpublished course appendix can be saved and reopened in a student map', async () => {
   const project = newProject();
@@ -311,4 +311,50 @@ test('all instructor customizations survive save, restart and publication, and p
   expect((await (await owner('/api/teacher/profiles')).json()).activeProfileId).toBe(restored.id);
   await control({ courseDenied: true });
   expect((await owner('/api/teacher/profiles/' + restored.id)).status).toBe(403);
+});
+
+test('an unnamed identity uses only its selected course verified profile while preserving account ownership', async () => {
+  const original = await (await scoped('/api/cloud/account')).json();
+  expect(original.account.preferredName).toBeNull();
+  await control({ courseProfile: { displayName: 'Alice Student', displayNameSource: 'verified_profile' } });
+  const response = await scoped('/api/cloud/account');
+  expect(response.status).toBe(200);
+  const selected = await response.json();
+  expect(selected.account).toMatchObject({ cacheKey: original.account.cacheKey, role: 'student', preferredName: 'Alice Student', course: { id: 'synthetic-course-a' } });
+  const general = await (await request('/api/cloud/account')).json();
+  expect(general.account).toMatchObject({ preferredName: null, course: null });
+  expect(general.account.cacheKey).not.toBe(selected.account.cacheKey);
+  expect((await scoped('/api/cloud/account', 'bob')).status).toBe(403);
+});
+
+test('a sanitized verified sign-in name takes precedence over the course profile', async () => {
+  await control({ courseProfile: { displayName: 'Course Profile Name', displayNameSource: 'verified_profile' } });
+  const response = await scoped('/api/cloud/account', 'admin');
+  expect(response.status).toBe(200);
+  expect((await response.json()).account).toMatchObject({ preferredName: 'Sam Student', role: 'student' });
+});
+
+test.each([
+  [null, 'unavailable', null],
+  [' \u202eRosa\u0085 Rivera\u2069 ', 'verified_profile', 'Rosa Rivera'],
+  ['\u202e\u2069', 'verified_profile', null],
+  ['A'.repeat(160), 'verified_profile', 'A'.repeat(160)],
+])('course account names respect verified source and display sanitization (%j)', async (displayName, displayNameSource, expected) => {
+  await control({ courseProfile: { displayName, displayNameSource } });
+  const response = await scoped('/api/cloud/account');
+  expect(response.status).toBe(200);
+  expect((await response.json()).account.preferredName).toBe(expected);
+});
+
+test.each([
+  ['A'.repeat(161), 'verified_profile'],
+  ['Alice\nStudent', 'verified_profile'],
+  ['   ', 'verified_profile'],
+  ['Unverified Name', 'unavailable'],
+  ['Unverified Name', 'user_input'],
+])('invalid course profile receipts still fail closed (%j)', async (displayName, displayNameSource) => {
+  await control({ courseProfile: { displayName, displayNameSource } });
+  const response = await scoped('/api/cloud/account');
+  expect(response.status).toBe(503);
+  expect((await response.json()).details.code).toBe('course_access_unavailable');
 });

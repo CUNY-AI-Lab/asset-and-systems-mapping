@@ -46,6 +46,12 @@ function securedResponse(response: Response, requestId: string, authentication =
   return new Response(response.body, { status: response.status, headers });
 }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+function accountPreferredName(principal: Principal): string | null {
+  const clean = (value: unknown) => typeof value === 'string'
+    ? value.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 160) || null : null;
+  return clean(principal.preferredName)
+    ?? (principal.course?.displayNameSource === 'verified_profile' ? clean(principal.course.displayName) : null);
+}
 function requestCorrelation(request: Request) {
   const headers = new Headers(request.headers);
   const id = headers.get('x-cail-request-id') ?? headers.get('x-request-id');
@@ -192,7 +198,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       this.db.prepare('INSERT OR IGNORE INTO cloud_accounts VALUES (?,?)').run(owner, crypto.randomUUID());
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
         role: principal.admin ? 'instructor' : 'student',
-        preferredName: principal.preferredName ?? null,
+        preferredName: accountPreferredName(principal),
         course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, guestInstructor: principal.course.guestInstructor, capabilities: principal.course.capabilities, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
     }
     if (path === '/api/cloud/course-students' && request.method === 'GET') {

@@ -9,6 +9,7 @@ let courseDenied = false;
 let courseOutage = false;
 let courseLookups = 0;
 let denyOnCourseLookup = 0;
+let courseProfile = { displayName: null as string | null, displayNameSource: 'unavailable' };
 const revoked = new Set<string>();
 const loginToken = '00000000-0000-4000-8000-000000000001.' + 's'.repeat(43);
 export class Identity extends WorkerEntrypoint<FixtureEnv> {
@@ -42,7 +43,7 @@ export class Admission extends WorkerEntrypoint<FixtureEnv> {
     if (app !== 'systems-mapping' || courseDenied || (denyOnCourseLookup > 0 && courseLookups >= denyOnCourseLookup) || (!owner && !participant && !guestInstructor)) return { ok: false, code: 'not_enrolled', retryable: false };
     return { ok: true, classId, className: 'Synthetic ' + classId, term: 'Test term', section: 'Test section',
       memberId: 'systems-mapping-member-v1-' + (who === 'alice' ? 'a' : who === 'bob' ? 'b' : who === 'instructor' ? 'c' : 'd').repeat(64),
-      displayName: null, displayNameSource: 'unavailable', participant, owner, guestInstructor,
+      ...courseProfile, participant, owner, guestInstructor,
       capabilities: { instructorPanel: owner || guestInstructor, rosterRead: owner || guestInstructor, promptRead: owner || guestInstructor, promptWrite: owner || guestInstructor },
       startsAt: new Date(Date.now() - 60000).toISOString(), checkedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1 };
   }
@@ -57,7 +58,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/header-probe') return Response.json({ present: request.headers.has('x-systems-course'), value: request.headers.get('x-systems-course') });
     if (url.pathname === '/control') {
-      if (request.method === 'POST') { const value = await request.json<{ mode?: string; denied?: boolean; resetSessions?: boolean; courseDenied?: boolean; courseOutage?: boolean; denyOnCourseLookup?: number }>(); mode = value.mode ?? mode; courseDenied = value.courseDenied ?? courseDenied; courseOutage = value.courseOutage ?? courseOutage; denyOnCourseLookup = value.denyOnCourseLookup ?? denyOnCourseLookup; courseLookups = 0; denied = value.denied ?? denied; if (value.resetSessions) revoked.clear(); calls = 0; captured = null; }
+      if (request.method === 'POST') { const value = await request.json<{ mode?: string; denied?: boolean; resetSessions?: boolean; courseDenied?: boolean; courseOutage?: boolean; denyOnCourseLookup?: number; courseProfile?: typeof courseProfile | null }>(); mode = value.mode ?? mode; courseDenied = value.courseDenied ?? courseDenied; courseOutage = value.courseOutage ?? courseOutage; denyOnCourseLookup = value.denyOnCourseLookup ?? denyOnCourseLookup; if (Object.hasOwn(value, 'courseProfile')) courseProfile = value.courseProfile ?? { displayName: null, displayNameSource: 'unavailable' }; courseLookups = 0; denied = value.denied ?? denied; if (value.resetSessions) revoked.clear(); calls = 0; captured = null; }
       return Response.json({ calls, captured, courseLookups });
     }
     if (url.pathname === '/v1/quota') return Response.json({ object: 'quota', managed_by: 'cloudflare', state: 'estimated', unit: 'microdollar', currency: 'USD', limit: 1000, estimated_used: 100, estimated_remaining: 900, used_percent: 10, remaining_percent: 90, window_seconds: 86400, window_technique: 'fixed', calculated_at: Date.now() });
