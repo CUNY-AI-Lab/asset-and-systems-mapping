@@ -481,9 +481,12 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
         connections: expect.any(Array),
       },
     });
-    expect(hostedCapability.review.connections).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceLabel: 'Agency', targetLabel: 'Guidance to the Family', verb: 'provides' }),
+    expect(hostedCapability.review.connections).toEqual([]);
+    expect(hostedCapability.review.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Agency', type: 'agency', scale: 'micro' }),
+      expect.objectContaining({ label: 'Guidance to the Family', type: 'resource', scale: 'micro' }),
     ]));
+    expect(hostedCapability.review.nodes.every(node => node.scale === 'micro')).toBe(true);
     expect(Object.keys(hostedCapability.review).sort()).toEqual([
       'connections', 'example', 'guidance', 'nodes', 'readiness',
     ]);
@@ -568,6 +571,44 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
       decision: 'revise_and_approve',
       purgedBy: 'retention',
     });
+  });
+
+  it('persists Meso relationships between the same carried Micro nodes', async () => {
+    const access = await jsonMutation(system, 'POST', '/api/student/access', { code: HOSTED_CLASS_CODE });
+    expect(access.status).toBe(201);
+    const cookie = access.headers.get('set-cookie').split(';')[0];
+    const projectId = `postgres_micro_meso_${Date.now()}`;
+    const input = preflightEvaluation(projectId);
+    const microResponse = await jsonMutation(system, 'POST', '/api/preflight/evaluations', input, cookie);
+    expect(microResponse.status).toBe(201);
+    const micro = (await microResponse.json()).evaluation;
+    expect(micro.review.connections).toEqual([]);
+    const carriedNodes = micro.review.nodes.map(({ label, type, scale }, index) => ({ id: `postgres_micro_${index}`, label, type, scale }));
+    expect(carriedNodes.length).toBeGreaterThanOrEqual(2);
+    const mesoResponse = await jsonMutation(system, 'POST', '/api/preflight/evaluations', {
+      ...input, activeScale: 'meso', carriedNodes, carriedConnections: [],
+    }, cookie);
+    expect(mesoResponse.status).toBe(201);
+    const meso = (await mesoResponse.json()).evaluation;
+    expect(meso.review.nodes).toEqual([]);
+    const agency = carriedNodes.find(node => node.label === 'Agency');
+    const guidance = carriedNodes.find(node => node.label === 'Guidance to the Family');
+    expect(agency).toBeDefined();
+    expect(guidance).toBeDefined();
+    expect(meso.review.connections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: agency.id, target: guidance.id, sourceLabel: agency.label, targetLabel: guidance.label, verb: 'provides', rationale: 'The agency provides guidance to the family.' }),
+    ]));
+    const ids = new Set(carriedNodes.map(node => node.id));
+    expect(meso.review.connections.every(edge => edge.source !== edge.target && ids.has(edge.source) && ids.has(edge.target))).toBe(true);
+    const stored = await system.db.prepare(`
+      SELECT active_scale AS activeScale, source_material AS sourceMaterial, suggestion_json AS suggestion
+      FROM preflight_evaluations WHERE id = ?
+    `).get(meso.id);
+    expect(stored.activeScale).toBe('meso');
+    expect(stored.sourceMaterial).toBe(input.sourceMaterial);
+    const review = JSON.parse(stored.suggestion);
+    expect(review.nodes).toEqual([]);
+    expect(review.connections).toEqual(meso.review.connections);
   });
 
   it('preserves the local-only student-session and minimized-event contract on PostgreSQL', async () => {
