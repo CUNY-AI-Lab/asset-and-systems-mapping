@@ -3759,10 +3759,11 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     window.cancelAnimationFrame(frameRef.current);
     frameRef.current = null;
     const tap = event.pointerType === 'touch' ? { pointerType: 'touch', timeStamp: event.timeStamp } : null;
+    const select = (kind, id) => tap ? onSelect(kind, id, true, tap) : onSelect(kind, id, true);
     if (!cancelled && interaction.moved && interaction.kind === 'node') onMoveNode(interaction.nodeId, interaction.latestX, interaction.latestY, 'pointer');
-    if (!cancelled && !interaction.moved && interaction.kind === 'node') onSelect('node', interaction.nodeId, true, tap);
-    if (!cancelled && !interaction.moved && interaction.kind === 'node-detail') onSelect('node', interaction.selectionId, true, tap);
-    if (!cancelled && !interaction.moved && interaction.kind === 'edge') onSelect('edge', interaction.selectionId, true, tap);
+    if (!cancelled && !interaction.moved && interaction.kind === 'node') select('node', interaction.nodeId);
+    if (!cancelled && !interaction.moved && interaction.kind === 'node-detail') select('node', interaction.selectionId);
+    if (!cancelled && !interaction.moved && interaction.kind === 'edge') select('edge', interaction.selectionId);
     if (!cancelled && interaction.moved && ['pan', 'edge', 'node-detail'].includes(interaction.kind)) {
       const nextViewport = { ...interaction.originViewport, panX: interaction.latestX, panY: interaction.latestY };
       liveViewportRef.current = nextViewport;
