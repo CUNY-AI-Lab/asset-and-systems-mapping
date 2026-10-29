@@ -606,7 +606,8 @@ describe.runIf(Boolean(databaseUrl))('PostgreSQL runtime integration', () => {
     `).get(meso.id);
     expect(stored.activeScale).toBe('meso');
     expect(stored.sourceMaterial).toBe(input.sourceMaterial);
-    const review = JSON.parse(stored.suggestion);
+    const review = stored.suggestion;
+    expect(review).toEqual(expect.any(Object));
     expect(review.nodes).toEqual([]);
     expect(review.connections).toEqual(meso.review.connections);
   });
