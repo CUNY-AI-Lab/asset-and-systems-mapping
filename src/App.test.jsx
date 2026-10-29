@@ -6721,6 +6721,31 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
       expect(storedProject().graph.edges).toHaveLength(0);
     });
+    it('consumes the target touch click before it can activate the newly mounted Add button', async () => {
+      installPhoneLayout();
+      const project = await openMapProject(meetingProject());
+      const [source, target] = project.graph.nodes;
+      openNodeInspector(source.id);
+      fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
+      const node = document.querySelector(`[data-graph-id="${target.id}"]`);
+      fireEvent.pointerDown(node, { pointerId: 81, pointerType: 'touch', clientX: 250, clientY: 433, button: 0 });
+      fireEvent.pointerUp(node, { pointerId: 81, pointerType: 'touch', clientX: 250, clientY: 433, button: 0 });
+      expect(screen.getByRole('heading', { name: `${source.label} and ${target.label}`, level: 2, exact: true })).toBeVisible();
+      const add = within(screen.getByLabelText('Notebook')).getByRole('button', { name: 'Add', exact: true });
+      // Chromium retargets the touch-generated click to the control that now
+      // occupies the pointer-up location after the editor is mounted.
+      fireEvent.click(add, { detail: 1, clientX: 250, clientY: 433 });
+      expect(add).toHaveAttribute('aria-expanded', 'false');
+      expect(document.querySelector('#inspector-add-actions')).toBeNull();
+      expect(screen.getByRole('combobox', { name: 'From', exact: true })).toHaveValue(source.id);
+      expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
+      // A new intentional tap retains normal button behavior.
+      fireEvent.pointerDown(add, { pointerId: 82, pointerType: 'touch', button: 0 });
+      fireEvent.pointerUp(add, { pointerId: 82, pointerType: 'touch', button: 0 });
+      fireEvent.click(add, { detail: 1 });
+      expect(add).toHaveAttribute('aria-expanded', 'true');
+      expect(storedProject().graph.edges).toHaveLength(0);
+    });
     it('keeps saved coordinates after Exo is released and when revisiting Micro and Meso', async () => {
       const project = meetingProject();
       project.releasedScales.push('exosphere');

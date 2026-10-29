@@ -43,7 +43,7 @@ async function selectResident(page, phone) {
   return resident;
 }
 
-async function dragResident(page, phone) {
+async function dragResident(page, phone, direction = 1) {
   const node = page.locator(`[data-graph-id="${residentId}"]`);
   const before = await node.getAttribute('transform');
   const bounds = await node.boundingBox();
@@ -62,7 +62,7 @@ async function dragResident(page, phone) {
     if (phone) await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...start, id: 1, radiusX: 1, radiusY: 1, force: 1 }] });
     else { await page.mouse.move(start.x, start.y); await page.mouse.down(); }
     for (let step = 1; step <= 6; step += 1) {
-      const point = { x: start.x + step * 5, y: start.y + step * 3 };
+      const point = { x: start.x + direction * step * 5, y: start.y + direction * step * 3 };
       if (phone) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, id: 1, radiusX: 1, radiusY: 1, force: 1 }] });
       else await page.mouse.move(point.x, point.y);
       await settle(page);
@@ -79,7 +79,7 @@ async function dragResident(page, phone) {
   expect(events.some(event => event.type === 'pointerdown' && event.pointerType === (phone ? 'touch' : 'mouse') && event.trusted)).toBe(true);
   expect(events.some(event => event.type === 'pointerup' && event.pointerType === (phone ? 'touch' : 'mouse') && event.trusted)).toBe(true);
   expect(events.filter(event => event.type === 'pointercancel')).toEqual([]);
-  return { before, positions, events };
+  return { before, positions, events, requestedDelta: { x: direction * 30, y: direction * 18 } };
 }
 
 test.beforeEach(async ({ page }) => {
@@ -140,7 +140,9 @@ test('trusted selected-node drags follow movement, save, and reload while connec
       await expect(page.locator('.canvas-wrap')).toBeVisible();
       const before = await savedProject(page);
       const beforeDisplayed = await displayedPositions(page);
-      const evidence = await dragResident(page, phone);
+      // Exercise both directions so repeated viewport checks keep clear of
+      // neighboring cards while verifying each saved arrangement independently.
+      const evidence = await dragResident(page, phone, state === 'returned to Map' ? -1 : 1);
       await expect.poll(async () => nodePosition(await savedProject(page)), { timeout: 6000 }).not.toEqual(nodePosition(before));
       const saved = await savedProject(page);
       const afterDisplayed = await displayedPositions(page);
@@ -167,6 +169,17 @@ test('trusted selected-node drags follow movement, save, and reload while connec
     await expect(page.locator('.map-connect-status')).toHaveCount(0);
     await expect(page.locator(`[data-graph-id="${residentId}"]`)).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.add-form')).toHaveCount(0);
+    await selectResident(page, phone);
+    await page.getByRole('button', { name: 'Connect from Resident', exact: true }).click();
+    const target = page.locator('[data-graph-id="node_e2e_resource_navigator"]');
+    if (phone) await target.tap(); else await target.click();
+    const form = page.locator('.add-form');
+    await expect(form).toBeVisible();
+    await expect(page.locator('.inspector__head h2')).toHaveText('Resident and Resource navigator');
+    await expect(form.getByRole('combobox', { name: 'From', exact: true })).toHaveValue(residentId);
+    await expect(form.getByRole('combobox', { name: 'To', exact: true })).toHaveValue('node_e2e_resource_navigator');
+    await expect(page.locator('#inspector-add-actions')).toHaveCount(0);
+    await captureSourceRenderedScreenshot(page, testInfo, `Native target tap keeps the connection editor ${size.width}x${size.height}`);
   }
   expect(errors).toEqual([]);
 });

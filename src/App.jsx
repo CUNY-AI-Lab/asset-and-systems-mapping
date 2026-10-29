@@ -3758,10 +3758,11 @@ function GraphCanvas({ nodes, edges, selection, onSelect, onMoveNode, viewport, 
     interaction.captureTarget?.releasePointerCapture?.(event.pointerId);
     window.cancelAnimationFrame(frameRef.current);
     frameRef.current = null;
+    const tap = event.pointerType === 'touch' ? { pointerType: 'touch', timeStamp: event.timeStamp } : null;
     if (!cancelled && interaction.moved && interaction.kind === 'node') onMoveNode(interaction.nodeId, interaction.latestX, interaction.latestY, 'pointer');
-    if (!cancelled && !interaction.moved && interaction.kind === 'node') onSelect('node', interaction.nodeId, true);
-    if (!cancelled && !interaction.moved && interaction.kind === 'node-detail') onSelect('node', interaction.selectionId, true);
-    if (!cancelled && !interaction.moved && interaction.kind === 'edge') onSelect('edge', interaction.selectionId, true);
+    if (!cancelled && !interaction.moved && interaction.kind === 'node') onSelect('node', interaction.nodeId, true, tap);
+    if (!cancelled && !interaction.moved && interaction.kind === 'node-detail') onSelect('node', interaction.selectionId, true, tap);
+    if (!cancelled && !interaction.moved && interaction.kind === 'edge') onSelect('edge', interaction.selectionId, true, tap);
     if (!cancelled && interaction.moved && ['pan', 'edge', 'node-detail'].includes(interaction.kind)) {
       const nextViewport = { ...interaction.originViewport, panX: interaction.latestX, panY: interaction.latestY };
       liveViewportRef.current = nextViewport;
@@ -4202,6 +4203,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const restoreFullscreenFocusRef = useRef(false);
   const inspectorRef = useRef(null);
   const selectionTriggerRef = useRef(null);
+  const consumedCanvasTapRef = useRef(null);
   const initialLayoutCheckedRef = useRef('');
   const phoneOverviewViewportKeyRef = useRef('');
   const phoneLayout = usePhoneLayout();
@@ -4687,7 +4689,8 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       [...nodes].find(node => node.getAttribute('data-graph-id') === source.id)?.focus();
     });
   };
-  const selectItem = useCallback((kind, id, openInspector = true) => {
+  const selectItem = useCallback((kind, id, openInspector = true, tap = null) => {
+    if (openInspector && tap?.pointerType === 'touch') consumedCanvasTapRef.current = tap;
     if (connecting) {
       // Pointer-down and arrow-key movement keep the chosen source. Only a
       // completed tap or explicit keyboard activation chooses its target.
@@ -5338,7 +5341,18 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           hasRemoved={hasRemovedItems} showRemoved={showRemoved} onShowRemoved={setShowRemoved} />
     {toolbarStart}
   </div>;
-  return <div className={`map-stage ${notebook ? 'map-stage--notebook' : ''} map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} onKeyDown={(event) => {
+  return <div className={`map-stage ${notebook ? 'map-stage--notebook' : ''} map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
+    onPointerDownCapture={() => { consumedCanvasTapRef.current = null; }}
+    onKeyDownCapture={() => { consumedCanvasTapRef.current = null; }}
+    onClickCapture={(event) => {
+      const tap = consumedCanvasTapRef.current;
+      consumedCanvasTapRef.current = null;
+      // Opening the inspector at pointer-up can put a new control under the
+      // finger. Consume that tap's compatibility click, not a new activation.
+      if (tap && event.detail > 0 && event.timeStamp >= tap.timeStamp && event.timeStamp - tap.timeStamp < 1000) {
+        event.preventDefault(); event.stopPropagation();
+      }
+    }} onKeyDown={(event) => {
     if (event.key === 'Escape' && connecting) { event.preventDefault(); event.stopPropagation(); cancelConnection(); return; }
     if (!event.target.closest?.('.graph-canvas')) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
