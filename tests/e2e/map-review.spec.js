@@ -60,6 +60,9 @@ test('students trace scopes in both directions, cross filtered layers, and retur
 
 test('search finds hidden levels and list inspection restores keyboard focus', async ({ page, makeAxeBuilder }, testInfo) => {
   await openProject(page);
+  const originalGraph = (await readProject(page)).graph;
+  const visibleIds = () => page.locator('.graph-node, .graph-edge').evaluateAll(elements => elements.map(element => element.dataset.graphId).sort());
+  const originalVisibleIds = await visibleIds();
   await openTools(page);
   await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('micro');
   await page.locator('.notebook-map-tools > summary').click();
@@ -71,7 +74,11 @@ test('search finds hidden levels and list inspection restores keyboard focus', a
   await page.getByRole('search', { name: 'Find map elements' }).getByRole('button', { name: /State home care reimbursement policy/ }).click();
   await expect(page.locator('.notebook-map-tools select[aria-label="Show map layer"]')).toHaveValue('all');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.getByRole('button', { name: 'Show full map' }).click();
+  const fullMap = page.getByRole('button', { name: 'Show full map', exact: true });
+  if (await fullMap.isVisible()) await fullMap.click();
+  await expect(page.locator('.canvas-wrap')).toBeVisible();
+  expect(await visibleIds()).toEqual(originalVisibleIds);
+  expect((await readProject(page)).graph).toEqual(originalGraph);
   await mapCommand(page, 'List');
   const item = page.getByRole('button', { name: 'Open details for Apartment building', exact: true });
   await item.click();

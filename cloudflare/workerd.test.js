@@ -62,12 +62,15 @@ test('account projects isolate users, reject stale writes, and survive a real Du
   expect(alice.account.cacheKey).not.toBe(bob.account.cacheKey);
   expect((await request('/api/cloud/projects', 'bob', { headers: { 'x-systems-account-cache': alice.account.cacheKey } })).status).toBe(409);
   const project = newProject();
+  project.layout = { phoneOverview: 'preserve' };
   const put = revision => request('/api/cloud/projects/account-map', 'alice', { method: 'PUT', body: JSON.stringify({ project: serializeProject(project), revision }) });
   expect((await put(0)).status).toBe(200); expect((await put(0)).status).toBe(409);
   expect((await request('/api/cloud/projects/account-map', 'bob')).status).toBe(404);
   expect((await (await request('/api/cloud/projects', 'bob')).json()).projects).toEqual([]);
   await worker.evictDurableObject('COURSES', { name: 'test-course' });
-  expect(JSON.parse((await (await request('/api/cloud/projects/account-map')).json()).project).title).toBe(project.title);
+  const reopened = JSON.parse((await (await request('/api/cloud/projects/account-map')).json()).project);
+  expect(reopened.title).toBe(project.title);
+  expect(reopened.layout).toEqual({ phoneOverview: 'preserve' });
   const raced = await Promise.all([put(1), put(1)]); expect(raced.map(value => value.status).sort()).toEqual([200, 409]);
 });
 test('current membership and instructor authority are checked on the next request', async () => {

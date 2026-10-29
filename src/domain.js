@@ -1479,7 +1479,7 @@ const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId', 'sourceId', 'evidenceRefs'];
 const CLAIM_EVIDENCE_PROVENANCE_FIELDS = ['evidenceId', 'sourceId', 'evidenceLocator', 'evidenceHash'];
 const CLAIM_EVIDENCE_KEYS = ['id', ...CLAIM_EVIDENCE_FIELDS, ...CLAIM_EVIDENCE_PROVENANCE_FIELDS];
-const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
+const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'layout', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
 const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'mesoExplanation', 'claimEvidence', 'origin', 'reviewDecision', 'settingNodeIds', 'focalParticipation', ...EVIDENCE_KEYS];
@@ -2280,6 +2280,11 @@ export function validateProject(project) {
   assertFiniteNumber(project.viewport.panX, 'project.viewport.panX', PROJECT_LIMITS.panMin, PROJECT_LIMITS.panMax);
   assertFiniteNumber(project.viewport.panY, 'project.viewport.panY', PROJECT_LIMITS.panMin, PROJECT_LIMITS.panMax);
   assertFiniteNumber(project.viewport.zoom, 'project.viewport.zoom', PROJECT_LIMITS.zoomMin, PROJECT_LIMITS.zoomMax);
+  if (project.layout !== undefined) {
+    assertObject(project.layout, 'project.layout');
+    assertKnownKeys(project.layout, ['phoneOverview'], 'project.layout');
+    if (project.layout.phoneOverview !== 'preserve') invalidProject('project.layout.phoneOverview', 'must be preserve');
+  }
   validateAnnotation(project.mapAnnotation, 'project.mapAnnotation', `project:${project.id}:map`, annotationOwners);
   assertString(project.reflection, 'project.reflection', true, PROJECT_LIMITS.promptText);
   if (!Array.isArray(project.events)) invalidProject('project.events', 'must be an array');

@@ -3145,6 +3145,12 @@ function arrangedPhoneOverviewPositions(nodes) {
   return positions;
 }
 
+function phoneOverviewProjection(nodes, layout) {
+  // Once a student saves the phone arrangement, its graph coordinates are
+  // authoritative on every device and after reload, even if spread widely.
+  return layout?.phoneOverview === 'preserve' ? null : arrangedPhoneOverviewPositions(nodes);
+}
+
 function arrangedFocusedEcologyPositions(nodes, phoneLayout = false) {
   if (phoneLayout) return arrangedPhoneOverviewPositions(nodes);
   const orderedNodes = [...nodes].sort((left, right) => left.y - right.y || left.label.localeCompare(right.label));
@@ -4256,7 +4262,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   ]);
   const innerMap = ['micro', 'meso'].includes(visibleScale) || !ecologyLayers.some((scale) => ECOLOGY_MAP_SCALES.has(scale));
   const mapMode = innerMap ? 'network' : 'ecology';
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (fullscreen || !restoreFullscreenFocusRef.current) return;
     restoreFullscreenFocusRef.current = false;
     (notebook ? toolbarHost?.querySelector('.notebook-map-tools > summary') || document.querySelector('.notebook-map-tools > summary') : fullscreenToggleRef.current)?.focus();
@@ -4273,8 +4279,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       setAnnouncement('Full screen map closed.');
     };
     document.addEventListener('keydown', onKeyDown);
-    window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
+    const focusFrame = window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.classList.remove('map-fullscreen-open');
       document.removeEventListener('keydown', onKeyDown);
     };
@@ -4353,9 +4360,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     : '';
   const phoneOverviewPositions = useMemo(() => (
     phoneOverviewScope && phoneOverviewCommittedScope !== phoneOverviewScope
-      ? arrangedPhoneOverviewPositions(visibleLayoutNodes)
+      ? phoneOverviewProjection(visibleLayoutNodes, project.layout)
       : null
-  ), [phoneOverviewCommittedScope, phoneOverviewScope, fontRevision, visibleLayoutNodes]);
+  ), [phoneOverviewCommittedScope, phoneOverviewScope, fontRevision, visibleLayoutNodes, project.layout?.phoneOverview]);
   const phoneEcologyScope = phoneLayout && mapMode === 'ecology' && !focusActive && visibleNodes.length
     ? `${visibleScale}:${visibleNodes.map((node) => `${node.id}:${node.scale}`).join('|')}`
     : '';
@@ -4737,14 +4744,14 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     notebook?.onChange(false);
     let nodes = scaleNodes.map((node) => ({ ...node, ...(automaticPositions?.get(node.id) || {}) }));
     if (phoneLayout) {
-      const projection = innerMap ? arrangedPhoneOverviewPositions(scaleNodes) : arrangedEcologyPositions(scaleNodes, true, interactionEcologyBands);
-      nodes = scaleNodes.map(node => ({ ...node, ...(projection.get(node.id) || {}) }));
+      const projection = innerMap ? phoneOverviewProjection(scaleNodes, project.layout) : arrangedEcologyPositions(scaleNodes, true, interactionEcologyBands);
+      nodes = scaleNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     setRingExpansion(1);
     setMapViewport(readingViewport(nodes.length ? nodes : project.graph.nodes, visibleScale, visibleRelationshipBounds));
     setAnnouncement('Full map shown.');
     window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
-  }, [automaticPositions, innerMap, interactionEcologyBands, phoneLayout, project.graph.nodes, readingViewport, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale]);
+  }, [automaticPositions, innerMap, interactionEcologyBands, phoneLayout, project.graph.nodes, project.layout?.phoneOverview, readingViewport, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale]);
   const changeVisibleScale = (nextScale) => {
     phoneOverviewViewportKeyRef.current = '';
     setConnecting(false); setConnectionSource(null); setAddMode(null);
@@ -4765,9 +4772,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       .map((node) => ({ ...node, ...(!['micro', 'meso'].includes(nextScale) ? automaticPositions?.get(node.id) || {} : {}) }));
     if (phoneLayout && nextNodes.length) {
       const projection = ['micro', 'meso'].includes(nextScale)
-        ? arrangedPhoneOverviewPositions(nextNodes)
+        ? phoneOverviewProjection(nextNodes, project.layout)
         : arrangedEcologyPositions(nextNodes, true, interactionEcologyBands);
-      nextNodes = nextNodes.map(node => ({ ...node, ...(projection.get(node.id) || {}) }));
+      nextNodes = nextNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     setVisibleScale(nextScale);
     setFocus(null);
@@ -4834,6 +4841,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       ? { past: from.slice(0, -1), future: [...layoutHistory.future, current] }
       : { past: [...layoutHistory.past, current], future: from.slice(0, -1) });
     update((draft) => {
+      if (phoneLayout && mapMode === 'network') draft.layout = { phoneOverview: 'preserve' };
       draft.graph.nodes.forEach((node) => {
         const position = snapshot.positions.get(node.id);
         if (position) Object.assign(node, position);
@@ -4855,6 +4863,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       : { x, y };
     rememberLayout();
     update((draft) => {
+      if (phoneLayout && mapMode === 'network') draft.layout = { phoneOverview: 'preserve' };
       if (automaticPositions) draft.graph.nodes.forEach((node) => {
         const position = automaticPositions.get(node.id);
         if (position && displayedNodeIds.has(node.id)) Object.assign(node, position);
@@ -4892,6 +4901,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     }
     setMapViewport(null);
     update((draft) => {
+      if (phoneLayout && mapMode === 'network') draft.layout = { phoneOverview: 'preserve' };
       if (phoneOverviewPositions) draft.graph.nodes.forEach((node) => {
         const position = phoneOverviewPositions.get(node.id);
         if (position) Object.assign(node, position);
@@ -4906,7 +4916,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (phoneEcologyPositions) setPhoneEcologyCommittedScope(phoneEcologyScope);
     if (phoneOverviewPositions || phoneEcologyPositions) setAutomaticPositions(null);
     logPrototype('viewport_changed');
-  }, [update, logPrototype, legacyPhoneDrawer, focusedEcologyPositions, minimumInteractiveZoom, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
+  }, [update, logPrototype, legacyPhoneDrawer, phoneLayout, mapMode, focusedEcologyPositions, minimumInteractiveZoom, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
   const zoomBy = (amount) => {
     const requested = legacyPhoneDrawer && phoneViewport ? phoneViewport : mapViewport || project.viewport;
     const current = requested;
@@ -4978,6 +4988,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const nextViewport = readingViewport(arrangedNodes, visibleScale, nextLabelBounds);
     setRingExpansion(1);
     update((draft) => {
+      if (phoneLayout && mapMode === 'network') draft.layout = { phoneOverview: 'preserve' };
       draft.graph.nodes.forEach((node) => {
         const position = positions.get(node.id);
         if (position) Object.assign(node, position);
@@ -4989,7 +5000,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setMapViewport(null);
     if (phoneLayout && mapMode === 'network') setPhoneOverviewCommittedScope(phoneOverviewScope);
     if (phoneLayout && mapMode === 'ecology') setPhoneEcologyCommittedScope(phoneEcologyScope);
-    if (phoneLayout && drawerOpen) setPhoneViewport(nextViewport);
+    if (legacyPhoneDrawer) setPhoneViewport(nextViewport);
     logPrototype('map_arranged');
     setAnnouncement(visibleScale === 'all' ? 'All layers arranged.' : `${SCALES[visibleScale]?.label || visibleScale} arranged.`);
     toast(visibleScale === 'all' ? 'Map arranged by layer.' : 'Map arranged.');

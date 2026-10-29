@@ -1927,6 +1927,7 @@ describe('mapping domain', () => {
     project.graph.nodes[0].annotations.evidence.text = 'Evidence qualification';
     project.graph.edges[0].annotation.text = 'Relationship interpretation';
     project.viewport = { panX: 231.5, panY: -144.25, zoom: 1.75 };
+    project.layout = { phoneOverview: 'preserve' };
     project.mapAnnotation.text = 'The evolving map remains contested.';
 
     const restored = parseProject(serializeProject(project));
@@ -1940,7 +1941,24 @@ describe('mapping domain', () => {
     });
     expect(restored.graph.edges[0].annotation).toEqual(project.graph.edges[0].annotation);
     expect(restored.viewport).toEqual(project.viewport);
+    expect(restored.layout).toEqual(project.layout);
     expect(restored.mapAnnotation).toEqual(project.mapAnnotation);
+  });
+
+  it('preserves the optional phone layout choice through portable export while older projects remain adaptive', () => {
+    const project = projectWithGraph();
+    expect(parseProject(serializeProject(project)).layout).toBeUndefined();
+    project.layout = { phoneOverview: 'preserve' };
+    for (const tier of ['private', 'course']) {
+      const portable = createPortableProject(project, tier);
+      expect(parseProject(JSON.stringify(portable)).layout).toEqual(project.layout);
+    }
+  });
+
+  it.each([null, [], {}, { phoneOverview: true }, { phoneOverview: 'automatic' }, { phoneOverview: 'preserve', privateNote: 'unrelated' }])('rejects invalid or additional phone layout data (%j)', (layout) => {
+    const project = projectWithGraph();
+    project.layout = layout;
+    expect(() => parseProject(JSON.stringify(project))).toThrow(/project\.layout/);
   });
 
   it('rejects non-finite and out-of-range map geometry', () => {

@@ -56,6 +56,7 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   await captureSourceRenderedScreenshot(page, testInfo, 'Micro nodes');
 
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('meso');
+  await showMap(page);
   await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Connect from / })).toHaveCount(0);
   await expect(page.locator('.graph-edge')).toHaveCount(4);
@@ -65,6 +66,7 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   expect(await microCircle(page)).toEqual(initialCircle);
   const before = (await readProject(page)).graph.edges.length;
   const resident = page.locator('[data-graph-id="node_e2e_resident"]');
+  await expect(resident).toBeVisible();
   await resident.focus();
   await resident.press('Enter');
   await page.getByRole('button', { name: 'Connect from Resident', exact: true }).click();

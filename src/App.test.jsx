@@ -6920,6 +6920,61 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true })).toBeVisible();
       expect(storedProject().graph.edges).toHaveLength(0);
     });
+    it('retains a deliberately spread saved phone layout when reopening and adding a node', async () => {
+      installPhoneLayout();
+      const project = meetingProject();
+      project.layout = { phoneOverview: 'preserve' };
+      project.graph.nodes.forEach((node, index) => { node.x = 300 + index * 850; node.y = 240 + index * 350; });
+      const positions = new Map(project.graph.nodes.map(node => [node.id, { x: node.x, y: node.y }]));
+      await openMapProject(project);
+      project.graph.nodes.forEach(node => expect(renderedNodePosition(node.id)).toEqual(positions.get(node.id)));
+      fireEvent.click(mapTool('Add item'));
+      const form = document.querySelector('.add-form');
+      fireEvent.change(within(form).getByRole('textbox', { name: 'Label', exact: true }), { target: { value: 'School counselor' } });
+      fireEvent.click(within(form).getByRole('button', { name: 'Add node', exact: true }));
+      await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(project.graph.nodes.length + 1));
+      project.graph.nodes.forEach(node => expect(renderedNodePosition(node.id)).toEqual(positions.get(node.id)));
+      expect(storedProject().layout).toEqual({ phoneOverview: 'preserve' });
+      const savedPositions = new Map(storedProject().graph.nodes.map(node => [node.id, { x: node.x, y: node.y }]));
+      cleanup();
+      render(<App />);
+      await showResumeScreen();
+      openProjectFromList(project.title);
+      await screen.findByRole('heading', { name: 'Systems map' });
+      fireEvent.click(screen.getByRole('button', { name: 'Map', exact: true }));
+      savedPositions.forEach((position, id) => expect(renderedNodePosition(id)).toEqual(position));
+    });
+    it('reopens a saved compact phone arrangement with the dragged item and its neighbors in the same displayed positions', async () => {
+      installPhoneLayout();
+      const project = await openMapProject(meetingProject());
+      const source = project.graph.nodes[2];
+      openNodeInspector(source.id);
+      const svg = mapCanvas();
+      svg.getScreenCTM = () => ({ inverse: () => ({}) });
+      svg.createSVGPoint = () => ({ x: 0, y: 0, matrixTransform() { return { x: this.x, y: this.y }; } });
+      const start = renderedNodePosition(source.id);
+      const node = document.querySelector(`[data-graph-id="${source.id}"]`);
+      fireEvent.pointerDown(node, { pointerId: 71, button: 0, pointerType: 'touch', clientX: start.x, clientY: start.y });
+      fireEvent.pointerMove(svg, { pointerId: 71, pointerType: 'touch', clientX: start.x + 30, clientY: start.y + 18 });
+      fireEvent.pointerUp(svg, { pointerId: 71, pointerType: 'touch', clientX: start.x + 30, clientY: start.y + 18 });
+      await waitFor(() => expect(eventRequests('node_moved')).toHaveLength(1));
+      await waitFor(() => expect(storedProject().graph.nodes.find(node => node.id === source.id)).toMatchObject(renderedNodePosition(source.id)));
+      const displayed = new Map(project.graph.nodes.map(node => [node.id, renderedNodePosition(node.id)]));
+      const saved = structuredClone(storedProject().graph);
+      expect(storedProject().layout).toEqual({ phoneOverview: 'preserve' });
+      cleanup();
+      render(<App />);
+      await showResumeScreen();
+      openProjectFromList(project.title);
+      await screen.findByRole('heading', { name: 'Systems map' });
+      fireEvent.click(screen.getByRole('button', { name: 'Map', exact: true }));
+      project.graph.nodes.forEach(node => expect(renderedNodePosition(node.id)).toEqual(displayed.get(node.id)));
+      expect(storedProject().graph).toEqual(saved);
+      for (const scale of ['micro', 'meso']) {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: scale } });
+        project.graph.nodes.forEach(node => expect(renderedNodePosition(node.id)).toEqual(displayed.get(node.id)));
+      }
+    });
     it.each([[390, 424], [375, 330]])('fits the phone notebook map to its measured %ipx canvas when the item panel opens', async (width, selectedHeight) => {
       installPhoneLayout(width);
       let canvasHeight = 680;
