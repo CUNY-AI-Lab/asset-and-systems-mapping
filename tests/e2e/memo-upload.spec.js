@@ -13,6 +13,31 @@ async function startProject(page) {
   await page.getByRole('button', { name: 'Start new project' }).click();
 }
 
+test('a multi-page PDF preserves inline citations and references through review and reload', async ({ page }) => {
+  await startProject(page);
+  await page.locator('.upload-zone input[type=file]').setInputFiles(here + 'multi-page-citations.pdf');
+  await expect(page.locator('p.privacy-note[role=status]')).toContainText('PDF text imported from 3 pages.');
+  const memo = page.getByRole('textbox', { name: /^Memo/ });
+  await expect(memo).toHaveValue(/Rosa meets the teacher at the school \(Smith, 2025, p\. 12\)\./);
+  await expect(memo).toHaveValue(/coordinates with the center \(Lee, 2024\)\./);
+  await expect(memo).toHaveValue(/References[\s\S]*Smith, A\.[\s\S]*Lee, B\./);
+  const imported = await memo.inputValue();
+  await page.getByRole('button', { name: 'Memo review', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate guidance' }).click();
+  await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeEnabled({ timeout: 30_000 });
+  await expect.poll(async () => (await readProject(page)).submission.text).toBe(imported);
+  await page.reload();
+  await expect.poll(async () => (await readProject(page)).submission.text).toBe(imported);
+});
+
+test('a PDF with an empty text layer on one page explains the missing passage', async ({ page }) => {
+  await startProject(page);
+  await page.locator('.upload-zone input[type=file]').setInputFiles(here + 'mixed-text-pages.pdf');
+  await expect(page.locator('p.privacy-note[role=status]')).toContainText('1 page');
+  await expect(page.locator('p.privacy-note[role=status]')).toContainText('selectable text');
+  await expect(page.getByRole('textbox', { name: /^Memo/ })).toHaveValue(/Rosa meets the teacher/);
+});
+
 for (const file of ['east-harlem-memo.docx', 'east-harlem-memo.pdf']) {
   test(`upload ${file}, generate guidance, reach a map`, async ({ page }) => {
     const errors = [];

@@ -1,9 +1,9 @@
 # Systems Mapping source and deployment authority
 
 Read `docs/cloudflare-deployment.md`, `docs/REQUIREMENTS.md`, and
-`docs/MICRO_MESO_CORRECTION_2026-08-24.md` before changing this application.
-The later Micro/Meso correction supersedes the node-only Micro rules in the
-older Maria Zoom notes. Preserve the five stages and map navigation,
+`docs/MICRO_MESO_WORKFLOW_2026-10-28.md` before changing this application.
+The October 28 direct request supersedes the August 24 Micro/Meso correction:
+Micro displays nodes, and Meso adds directional relationships between those same nodes. Preserve the five stages and map navigation,
 map geometry, evidence, annotations, import/export and explicit project links.
 
 The Cloudflare entrypoint is a separate version with independent SQLite-backed

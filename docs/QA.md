@@ -1,8 +1,31 @@
 # Systems Mapping — QA and visual-fidelity report
 
-Updated: 2026-08-24
+Updated: 2026-10-28
 
-## Candidate status
+## Current acceptance contract
+
+The October 28 request in `MICRO_MESO_WORKFLOW_2026-10-28.md` governs current work. Micro displays nodes; Meso reuses those nodes and adds forward, reverse, or two-way relationships in the same map space. Exo and Macro retain distinct contextual regions. Existing scoped Meso records remain available in List and private exports.
+
+Current source checks must cover:
+
+- Stable IDs, positions, evidence, annotations, review decisions, and Field Notes during migration and navigation.
+- Manual mouse and keyboard connections, cancellation, self-connection rejection, direction edits, reload, and export at desktop and phone sizes.
+- Complete memo text, inline citations, reference lists, and page order through PDF extraction, model transport, and storage.
+- Provider reading copies omit confidently recognized reference lists across memo review, connection suggestions, and Map Check, preserve inline citations and later narrative, and retain uncertain content. Full original memo storage/export and raw-input ceilings remain intact; a large bibliography cannot consume the provider narrative allowance.
+- Bibliography-only authors and titles excluded from scene nodes; bibliography entries excluded as standalone scene evidence; separately participating cited people remain eligible.
+- One ordinary corrective attempt, then at most one evidence-focused repair for repeated completed grounding failure, all sharing the existing 25-second ordinary or 85-second verified durable-job generation budget. Timeout, quota, transport, cancellation, and repeated generic schema errors do not trigger that repair.
+- Meso strength, channel, connecting work, zero and positive family counts, and missing pairs survive private round-trip; unsupported model details and percentage-to-count conversion fail validation. Exo funding paths may connect named outside offices.
+- Runtime attempt counts round-trip, and unsuccessful repairs store no partial review. Memo and graph remain editable.
+- Exact narrative passages from across a long memo support repair; original source and citations remain intact.
+- Live current/alternate model comparison via the opt-in harness in `cloudflare/guidance-live.test.jsx`, using the owning Gateway acceptance helper and synthetic citation cases. These tests are separate from deterministic browser checks and named classroom acceptance.
+
+See `CITATION_GUIDANCE_RECOVERY_2026-10-28.md` for the current source and recovery contract and focused verification commands. Record final test totals against the exact source snapshot in the delivery report. Historical counts below do not establish current or deployed behavior.
+
+## Historical report from August 24, 2026
+
+The remaining sections preserve the earlier report as provenance. Every reference below to “current,” “required,” or “governs” describes that archived August version; the current contract above and October 28 source ledger supersede it. Deployment receipts below concern earlier releases.
+
+### Candidate status
 
 The direct decision recorded on 2026-08-24 corrects the Micro/Meso contract:
 
@@ -30,7 +53,7 @@ The five workflow stages remain repeatable. The current student interface has no
 
 The 2026-08-21 and 2026-08-22 receipts below verify earlier builds. They do not verify this corrected Micro/Meso contract. Current automated, source-built browser, GitHub, Railway, and live-provider evidence must be recorded after the correction is complete.
 
-## Historical local candidate receipts — superseded Micro/Meso contract
+### Historical local candidate receipts — superseded Micro/Meso contract
 
 | Historical receipt | Result | Boundary |
 | --- | --- | --- |
@@ -40,7 +63,7 @@ The 2026-08-21 and 2026-08-22 receipts below verify earlier builds. They do not 
 | Source-built browser run | The browser showed node-only Micro and generic relationship callouts in Meso, along with working full-screen, zoom, and keyboard pan. | The viewport evidence remains useful, but the Micro/Meso content model is superseded. |
 | Micro discrete-label browser run | The clause “Adult Participants face delays when the Accessible Van Program is unavailable” surfaced `Adult Participants` and `Accessible Van Program` as discrete nodes. | The clause-rejection evidence remains useful; its zero-relationship result is superseded. |
 
-## 2026-08-21 release receipts
+### 2026-08-21 release receipts
 
 | Release receipt | Result | Boundary |
 | --- | --- | --- |
@@ -52,7 +75,7 @@ The 2026-08-21 and 2026-08-22 receipts below verify earlier builds. They do not 
 | Hosted readback | Root/health/security headers, public-demo access, session/configuration/logout, student-to-teacher denial, Teacher Console route, exact asset hashes, and zero HTTP 5xx passed | Previous release; no teacher passphrase was used or exposed. |
 | Live provider | `ollama-cloud` / `deepseek-v4-flash:0731` returned valid Micro 7/0, Meso 0/6 exact-ID, Exosphere 11/5, Macrosphere 8/1 reviews; connection suggestions returned six exact-ID relationships | Previous release with fabricated East Harlem memos; key value and rotation history were not inspected. |
 
-## Historical evidence only
+### Historical evidence only
 
 The following receipts predate the 2026-08-21 reversion and remain useful baselines, not proof of this candidate:
 
@@ -66,7 +89,7 @@ The following receipts predate the 2026-08-21 reversion and remain useful baseli
 
 Earlier security, persistence, session, and review receipts remain historical regression references. The current local checks and previous hosted release are recorded separately above. An authenticated production Teacher Console mutation and credential-owner confirmation of provider-key rotation remain separate operator checks.
 
-## Current acceptance matrix
+### Current acceptance matrix
 
 | Area | Required proof | Status |
 | --- | --- | --- |
@@ -88,7 +111,7 @@ Earlier security, persistence, session, and review receipts remain historical re
 | Persistence | SQLite and PostgreSQL preserve stable IDs, sphere membership, annotations, positions, and viewport. | Verified locally |
 | Delivery | Changed tree is committed, pushed, deployed, and verified through migration, health, public access/authz, configuration, logout, headers, assets, logs, and live-provider checks. | Not established for the 2026-08-24 correction; last established for the superseded 2026-08-21 release. |
 
-## Required rendered journey
+### Required rendered journey
 
 Use a disposable database and temporary teacher claim values, never the handoff database.
 
@@ -106,7 +129,7 @@ Use a disposable database and temporary teacher claim values, never the handoff 
 12. Confirm that retained review records and outstanding evaluations do not block navigation, mapping, or another cycle.
 13. Capture the successful cycle from the built application at desktop, 320, 390, and 430 px. Inspect for clipping, truncation, line/text collisions, icon/text overlap, horizontal overflow, and relevant console errors. Generated or composited visuals do not satisfy this gate.
 
-## Rendered screenshot record
+### Rendered screenshot record
 
 These older archives remain historical:
 
@@ -121,7 +144,7 @@ The last packaged rendered evidence is `/Users/milwright/Projects/dev/systems-ma
 
 The package contains all 15 states at 1440×1000 and 390×844, plus five map/Teacher states each at 320×812 and 430×932. Its 40 true PNGs are accompanied by 4 fabricated memo files and 4 metadata/assertion files. Strict inspection recorded no truncation, overlap, overflow, or console errors. Graph assertions record Micro at 6 nodes/0 connections, Meso using the exact carried Micro IDs, a cumulative 21-node/19-connection map, and Teacher Console after authentication. No credentials are included.
 
-## Release boundary
+### Release boundary
 
 The 2026-08-24 Micro/Meso correction has no completed automated, browser, GitHub, Railway, hosted, or live-provider receipt in this document yet. The completed delivery gate below belongs to the superseded 2026-08-21 ecological release:
 
@@ -135,6 +158,6 @@ The 2026-08-24 Micro/Meso correction has no completed automated, browser, GitHub
 
 The inspected local browser package establishes responsive browser usability only for the 2026-08-21 release. Its GitHub, Railway, hosted readback, and provider receipts do not establish delivery or live behavior for the 2026-08-24 correction. No authenticated production Teacher Console mutation was performed.
 
-## Source authority
+### Source authority
 
 The direct correction supplied on 2026-08-24 and recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md` governs the Micro/Meso boundary. The Maria and Zach Zoom material supplied on 2026-08-21 continues to govern compatible level names, order, and ecological-layer behavior; its node-only Micro/generic-edge Meso interpretation is historical. The fuller Drive specification governs compatible general behavior. See `docs/SOURCE_LEDGER.md`.

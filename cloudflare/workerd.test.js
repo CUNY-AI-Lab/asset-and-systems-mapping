@@ -1,4 +1,4 @@
-import { notebookSection, projectMenu } from '../tests/e2e/support/notebook.js';
+import { notebookSection, projectMenu, openTools } from '../tests/e2e/support/notebook.js';
 // @vitest-environment node
 import { beforeAll, afterAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
@@ -16,12 +16,19 @@ let harness, worker, services;
 const request = (path, who = 'alice', options = {}) => worker.fetch(ORIGIN + path, { redirect: 'manual', ...options, headers: { cookie: `__Host-systems-mapping-session=${sessions[who] || ''}`, origin: ORIGIN, ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
 const control = value => services.fetch('https://fixtures.test/control', { method: 'POST', body: JSON.stringify(value) });
 const newProject = () => { const project = createDefaultProject(); project.id = 'account-map'; project.title = 'Preserved account map'; return project; };
+const expectFullMap = async page => {
+  await openTools(page);
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('all');
+  await page.locator('.notebook-map-tools > summary').click();
+  // Eight visible nodes share three regions; the ninth legacy Meso record remains saved.
+  await browserExpect(page.locator('.graph-node')).toHaveCount(8);
+};
 
 beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
   for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333']]) tokens[name] = {
-    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
+    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject, ...(name === 'alice' ? { name: 'Sam Student' } : {}) }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   };
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mapping-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
@@ -50,6 +57,8 @@ test('production entrypoint rejects forged headers, other origins, encoded paths
 });
 test('account projects isolate users, reject stale writes, and survive a real Durable Object eviction', async () => {
   const alice = await (await request('/api/cloud/account')).json(), bob = await (await request('/api/cloud/account', 'bob')).json();
+  expect(alice.account.preferredName).toBe('Sam Student');
+  expect(bob.account.preferredName).toBeNull();
   expect(alice.account.cacheKey).not.toBe(bob.account.cacheKey);
   expect((await request('/api/cloud/projects', 'bob', { headers: { 'x-systems-account-cache': alice.account.cacheKey } })).status).toBe(409);
   const project = newProject();
@@ -272,7 +281,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await expectFullMap(page);
     await notebookSection(page, 'review');
     await page.locator('.saved-map-note > summary').click();
     const note = page.getByRole('textbox', { name: 'Map note', exact: true });
@@ -286,7 +295,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     expect(stored.mapAnnotation.text).toBe('Account map edit survives restart and export.');
     await page.reload();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
-    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await expectFullMap(page);
     await notebookSection(page, 'review');
     await page.locator('.saved-map-note > summary').click();
     failCloudWrites = true;
@@ -333,7 +342,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await browserExpect(page.getByRole('link', { name: 'CUNY Login' })).toHaveAttribute('href', `/auth/start?returnTo=${encodeURIComponent(`/p/${shared.token}`)}`);
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.reload();
-    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await expectFullMap(page);
     await projectMenu(page, 'Projects');
     await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe('/');
@@ -445,7 +454,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     await page.screenshot({ path: '/tmp/cail-systems-sso-unavailable.png' });
     sessionMode = 'expiring';
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
-    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await expectFullMap(page);
     await notebookSection(page, 'review');
     await page.locator('.saved-map-note > summary').click();
     const draft = 'Map note retained when CUNY sign-in expires';
@@ -454,7 +463,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     // annotation focused so renewal must flush it without a blur or navigation.
     const readsBeforeRenewal = sessionReads;
     await browserExpect.poll(() => sessionReads, { timeout: 8000 }).toBe(readsBeforeRenewal + 1);
-    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await expectFullMap(page);
     await browserExpect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).mapAnnotation.text, recoveryKey)).toBe(draft);
     // A later check that cannot supply a grant must still hide the workspace.
@@ -471,7 +480,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
 
     sessionMode = 'success';
     await openAccountMap();
-    await browserExpect(page.locator('.graph-node')).toHaveCount(9);
+    await expectFullMap(page);
     await notebookSection(page, 'review');
     await page.locator('.saved-map-note > summary').click();
     await browserExpect(page.getByRole('textbox', { name: 'Map note', exact: true })).toHaveValue(draft);

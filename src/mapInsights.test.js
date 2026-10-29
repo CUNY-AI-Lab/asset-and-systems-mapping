@@ -34,8 +34,8 @@ describe('recorded connections across levels', () => {
     project.candidates.nodes.push({ id: 'pending-question', scale: 'micro', status: 'research lead' });
     const summary = summarizeMap(project);
     expect(summary).toMatchObject({ nodes: 9, relationships: 5, crossLevelLinks: 6, evidenceToReview: 1 });
-    expect(summary.levels.find((level) => level.scale === 'micro')).toMatchObject({ nodes: 6, relationships: 4, evidenceToReview: 1, setAside: 1 });
-    expect(summary.levels.find((level) => level.scale === 'meso')).toMatchObject({ nodes: 1, relationships: 0, scopeLinks: 2 });
+    expect(summary.levels.find((level) => level.scale === 'micro')).toMatchObject({ nodes: 6, relationships: 0, evidenceToReview: 1, setAside: 1 });
+    expect(summary.levels.find((level) => level.scale === 'meso')).toMatchObject({ nodes: 1, relationships: 4, scopeLinks: 2 });
   });
 
   it('counts additive evidence passages while retaining contested or inferred claims for review', () => {

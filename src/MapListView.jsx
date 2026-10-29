@@ -1,3 +1,4 @@
+import { relationshipDescription, relationshipArrowheads, relationshipProcessSummary } from './relationshipDirection.js';
 import React, { useMemo } from 'react';
 import {
   SYSTEMS_MAPPING_LEVELS,
@@ -65,7 +66,7 @@ function visibleMapRecords(nodes, edges, visibleScale, showRemoved) {
   const liveEdges = edges.filter((edge) => showRemoved || !isRemoved(edge));
   if (!visibleScale || visibleScale === 'all') return { nodes: liveNodes, edges: liveEdges };
 
-  const visibleEdges = liveEdges.filter((edge) => edge.scale === visibleScale);
+  const visibleEdges = liveEdges.filter((edge) => visibleScale !== 'micro' && edge.scale === visibleScale);
   const contextNodeIds = new Set(visibleEdges.flatMap((edge) => [edge.source, edge.target]));
   liveNodes.forEach((node) => {
     if (node.scale !== visibleScale || !['meso', 'macrosphere'].includes(node.scale)) return;
@@ -75,7 +76,7 @@ function visibleMapRecords(nodes, edges, visibleScale, showRemoved) {
   });
 
   return {
-    nodes: liveNodes.filter((node) => node.scale === visibleScale || contextNodeIds.has(node.id)),
+    nodes: liveNodes.filter((node) => node.scale === visibleScale || (visibleScale === 'meso' && node.scale === 'micro') || contextNodeIds.has(node.id)),
     edges: visibleEdges,
   };
 }
@@ -135,21 +136,18 @@ function ConnectionRecord({ edge, nodeById, onSelect }) {
   const removed = isRemoved(edge);
   const evidenceRecordCount = Array.isArray(edge.claimEvidence) ? edge.claimEvidence.length : 0;
   const process = edge.relationshipProcess || {};
-  const processSummary = [
-    ['Frequency', process.frequency], ['Duration', process.duration], ['Direction', process.direction],
-    ['Conditions', process.conditions], ['Change over time', process.changeOverTime],
-  ].filter(([, value]) => String(value || '').trim()).map(([term, value]) => `${term}: ${value}`).join('; ');
+  const processSummary = relationshipProcessSummary(process);
   return <li className={`map-list-record${removed ? ' is-removed' : ''}`}>
     <button
       type="button"
       className="map-list-record__button"
       onClick={() => onSelect?.('edge', edge.id, true)}
-      aria-label={`Open details for ${source} ${edge.verb} ${target}`}
+      aria-label={`Open details for ${relationshipDescription(edge, source, target)}`}
     >
       <span className="map-list-record__identity map-list-record__proposition">
-        <span>{source}</span>
-        <strong>{edge.verb}</strong>
-        <span>{target}</span>
+        <span>{edge.relationshipProcess?.direction === 'target to source' ? target : source}</span>
+        <strong>{process.connectionStatus === 'missing' ? 'Missing connection: ' : ''}{edge.verb}{relationshipArrowheads(edge).start && relationshipArrowheads(edge).end ? ' ↔' : relationshipArrowheads(edge).start || relationshipArrowheads(edge).end ? ' →' : ' —'}</strong>
+        <span>{edge.relationshipProcess?.direction === 'target to source' ? source : target}</span>
         {removed ? <span className="map-list-record__removed">Removed</span> : null}
       </span>
       <RecordDetails

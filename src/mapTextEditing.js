@@ -18,7 +18,7 @@ export function nodeLabelIssue(value, node, nodes) {
 }
 
 export function relationshipIssue(value, edge) {
-  if (!['micro', 'exosphere'].includes(edge.scale)) return 'Relationships belong at Micro or Exo-level.';
+  if (!['micro', 'meso', 'exosphere'].includes(edge.scale)) return 'Edit relationships at Meso or Exo-level.';
   if (!value || value.length > 100) return 'Enter a relationship of 1–100 characters.';
   if (edge.scale === 'exosphere' && !scaleLexiconVerb('exosphere', value)) return 'Choose an Exo-level decision-path relationship.';
   return '';

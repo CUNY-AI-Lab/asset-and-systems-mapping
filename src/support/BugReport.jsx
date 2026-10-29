@@ -7,6 +7,7 @@ import { mountBugReport as mountContactReport } from './contact-form.js';
 export default function BugReport() {
   const footer = useRef(null);
   const [mode, setMode] = useState(null);
+  const [delivery, setDelivery] = useState(null);
   const enabled = mode !== null;
   useEffect(() => {
     const controller = new AbortController();
@@ -15,7 +16,10 @@ export default function BugReport() {
       .then(response => response.ok ? response.json() : null)
       .then(async value => {
         if (value?.mode === 'contact') await import('./contact-form.css');
-        if (!controller.signal.aborted) setMode(value?.enabled === true ? value.mode || 'email' : null);
+        if (!controller.signal.aborted) {
+          setDelivery(value?.delivery || null);
+          setMode(value?.enabled === true ? value.mode || 'email' : null);
+        }
       })
       .catch(() => {})
       .finally(() => clearTimeout(timeout));
@@ -25,7 +29,7 @@ export default function BugReport() {
     if (!enabled) return;
     const root = document.documentElement;
     const mount = mode === 'contact' ? mountContactReport : mountBugReport;
-    const report = mount(footer.current, { loginUrl: '/auth/start', loginClassName: 'button studio-action button--primary account-login', path: () => {
+    const report = mount(footer.current, { delivery, loginUrl: '/auth/start', loginClassName: 'button studio-action button--primary account-login', path: () => {
       const path = window.location.pathname;
       if (/^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(path)) return '/p/:shared-map';
       return '/';
@@ -38,6 +42,6 @@ export default function BugReport() {
     return () => {
       resize.disconnect(); report(); root.classList.remove('has-bug-report'); root.style.removeProperty('--bug-report-height');
     };
-  }, [mode]);
+  }, [mode, delivery]);
   return enabled ? <footer ref={footer} className={`bug-report-footer${mode === 'contact' ? ' bug-report-footer--contact' : ''}`} aria-label="Bug reports" /> : null;
 }

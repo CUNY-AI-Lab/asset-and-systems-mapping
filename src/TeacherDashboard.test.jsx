@@ -795,9 +795,9 @@ describe('TeacherDashboard', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByRole('heading', { name: 'Field Notes prompts' })).toBeVisible();
     fireEvent.change(await screen.findByLabelText('Mapping step'), { target: { value: 'review-suggestions' } });
-    expect(screen.getByRole('note')).toHaveTextContent("Model guidance is active. Uses these notes to suggest Micro-level elements and direct relationships from the memo.");
+    expect(screen.getByRole('note')).toHaveTextContent("Model guidance is active. Uses these notes to suggest Micro-level elements from the memo.");
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'meso' } });
-    expect(screen.getByRole('note')).toHaveTextContent("Uses these notes to suggest Meso-level linkages across at least two Micro-level settings.");
+    expect(screen.getByRole('note')).toHaveTextContent("Uses these notes to suggest Meso-level relationships between existing Micro-level nodes.");
     fireEvent.change(screen.getByLabelText('Part'), { target: { value: 'part-2' } });
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     fireEvent.change(screen.getByLabelText('Mapping step'), { target: { value: 'choose-what-to-map' } });

@@ -17,14 +17,15 @@ describe('levelStructureStatus', () => {
     project.graph.nodes.push({ id: 'clinic', label: 'Clinic', type: 'setting', scale: 'micro', status: 'confirmed' });
     expect(levelStructureStatus(project, 'micro').ready).toBe(true);
   });
-  it('needs a mesosystem over two settings at Meso and ignores retired items', () => {
+  it('needs a live Meso relationship between existing Micro items', () => {
     const project = seeded();
-    project.graph.nodes.push({ id: 'm', label: 'Clinic–library coordination', type: 'mesosystem', scale: 'meso', scopeNodeIds: ['clinic'] });
+    project.graph.nodes.push({ id: 'clinic', scale: 'micro' }, { id: 'resident', scale: 'micro' });
+    project.graph.edges.push({ id: 'relationship', source: 'clinic', target: 'resident', scale: 'meso', claimState: 'retired' });
     expect(levelStructureStatus(project, 'meso').ready).toBe(false);
-    project.graph.nodes.push({ id: 'm2', label: 'Overlap', type: 'mesosystem', scale: 'meso', scopeNodeIds: ['clinic', 'library'], claimState: 'retired' });
-    expect(levelStructureStatus(project, 'meso').ready).toBe(false);
-    project.graph.nodes.push({ id: 'm3', label: 'Overlap', type: 'mesosystem', scale: 'meso', scopeNodeIds: ['clinic', 'library'] });
+    project.graph.edges[0].claimState = 'student interpretation';
     expect(levelStructureStatus(project, 'meso').ready).toBe(true);
+    project.graph.nodes[1].claimState = 'retired';
+    expect(levelStructureStatus(project, 'meso').ready).toBe(false);
   });
   it('needs an Exo node with a pathway into a Micro setting', () => {
     const project = seeded();

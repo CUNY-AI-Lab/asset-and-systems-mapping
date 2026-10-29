@@ -18,14 +18,14 @@ The course develops one inquiry through two Parts. Each level adds a distinct fo
 
 | Part | Level | Analytical focus | Map representation |
 | --- | --- | --- | --- |
-| 1 | Micro | People, roles, activities, objects, and immediate settings relevant to the focal person or group. | Discrete elements with separately described direct relationships. Non-setting elements can identify the immediate settings in which they appear. |
-| 1 | Meso | How two or more of the focal person's immediate settings interact. | Named mesosystems linked to at least two existing Micro settings. The settings remain in place and retain their original IDs. |
+| 1 | Micro | People, roles, activities, objects, and immediate settings relevant to the focal person or group. | Discrete nodes with evidence. Non-setting elements can identify the immediate settings in which they appear. |
+| 1 | Meso | How the people, groups, resources, and settings on the Micro map interact. | One-way or two-way relationship arrows between the existing Micro nodes, which retain their positions and IDs. |
 | 2 | Exo | Decisions made in outside settings that indirectly affect the focal person or group. | Outside decision settings with pathways into mapped Micro settings. |
 | 2 | Macro | Laws, policies, economic conditions, histories, beliefs, and structures that shape the system. | Broader conditions scoped to at least two earlier map elements. |
 
-The interface labels the later levels **Exo-level** and **Macro-level**; project records use `exosphere` and `macrosphere`. Meso and Macro scope links identify inclusion or influence without creating directional relationship edges. A named institution belongs at Exo-level; a policy or structural condition belongs at Macro-level.
+The interface labels the later levels **Exo-level** and **Macro-level**; project records use `exosphere` and `macrosphere`. Meso shares the Micro map space and adds relationship arrows. Macro scope links identify influence across multiple map items. An institution belongs at Micro or Exo according to the focal person’s participation; broader policies and structural conditions belong at Macro.
 
-Evidence remains distinct from interpretation. Students can record a source passage, their claim and reasoning, uncertainty, counterevidence, and missing perspectives. Micro and Exo relationships can also describe frequency, duration, direction, conditions, and change over time. The application checks references and required structure; students remain responsible for the strength of the explanation.
+Evidence remains distinct from interpretation. Students can record a source passage, their claim and reasoning, uncertainty, counterevidence, and missing perspectives. Meso and Exo relationships can also describe frequency, duration, direction, conditions, and change over time. The application checks references and required structure; students remain responsible for the strength of the explanation.
 
 ### Community assets and wider systems
 
@@ -68,7 +68,7 @@ The separate **Map tools** panel stays at the upper right. Drag its left edge to
 
 Select an item to edit **Label** in the Notebook, or select a connection to edit **Relationship**. Choose **Save** to apply the wording or **Cancel** to restore the saved text. Enter saves; Escape cancels. Moving focus or selecting another item does not save a draft. Candidate Details use the same draft controls.
 
-Labels follow the item’s existing level. Micro relationships accept a verb or phrase; Exo relationships use the available decision-path choices. Invalid drafts leave the saved wording intact and show what needs revision. Saved wording updates any matching suggestion, and renaming an item updates its name in connected relationships. Saving preserves node positions and the current view; the text’s card may resize. Use **Arrange map** to recalculate the arrangement or **Fit map** to refit the view.
+Labels follow the item’s existing level. Meso relationships accept a verb or phrase; Exo relationships use the available decision-path choices. Invalid drafts leave the saved wording intact and show what needs revision. Saved wording updates any matching suggestion, and renaming an item updates its name in connected relationships. Saving preserves node positions and the current view; the text’s card may resize. Use **Arrange map** to recalculate the arrangement or **Fit map** to refit the view.
 
 The selected item’s interpretation, connected items and other editing details remain in Notebook. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
 
@@ -77,6 +77,7 @@ The selected item’s interpretation, connected items and other editing details 
 | Move around the map | Drag empty canvas, use a middle-button drag, or focus the canvas and hold Space while dragging. Arrow keys pan a focused canvas. |
 | Zoom | Scroll at the pointer, pinch on a touch screen, or use the zoom buttons. `+` and `−` zoom a focused canvas. |
 | Move an element | Drag the element. |
+| Connect nodes at Meso | Choose **Connect nodes**, then select the first node and the second node; describe the relationship and choose its direction. |
 | Restore an overview | Choose **Fit map** or press `0` with focus in the canvas. |
 | Reorganize the layout | Choose **Arrange map**. |
 | Undo or redo a layout change | Use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
@@ -176,7 +177,7 @@ For OpenRouter, set `OPENROUTER_ENABLED=true`, `OPENROUTER_API_KEY`, and `OPENRO
 
 Model requests include the active section's published guidance and material, bounded project instructions, inquiry, analytical level, and memo. Memo text is limited to 131,072 UTF-8 bytes; the inquiry is limited to 8,192 bytes. Students review the transfer disclosure before requesting guidance.
 
-Responses must satisfy the level-specific structured contract. Meso and Macro responses contain scoped nodes without relationship edges. With both providers enabled, retryable provider failures can invoke OpenRouter; input-shaped failures do not trigger that backup. Runtime metadata records which provider served the request. Invalid or unavailable model responses return an error and never silently switch to built-in text review.
+Responses must satisfy the level-specific structured contract. Micro responses contain nodes, Meso responses contain relationships between carried Micro nodes, and Macro responses contain scoped conditions. With both providers enabled, retryable provider failures can invoke OpenRouter; input-shaped failures do not trigger that backup. Runtime metadata records which provider served the request. Invalid or unavailable model responses return an error and never silently switch to built-in text review.
 
 ## Architecture and operations
 
@@ -231,4 +232,4 @@ Local tests establish behavior for the tested source and environment. They do no
 - [Release evidence ledger](./TODO.md) — release work and historical receipts.
 - [August 13 reconciliation](./docs/RECONCILIATION_2026-08-13.md) — earlier reconciliation decisions.
 
-The source ledger governs provenance. The August 24, 2026 correction governs the Micro/Meso boundary; compatible August 21 decisions govern the four levels and ecological-layer design. The fuller Drive specification governs compatible general behavior, the supplied HTML/DOCX informs interaction, and CALI materials provide context. Zach's August 5 notes remain unconfirmed minutes; STEM Splitter is an architecture precedent.
+The source ledger governs provenance. The [October 28, 2026 workflow](./docs/MICRO_MESO_WORKFLOW_2026-10-28.md) governs Micro nodes and Meso relationships; the August 24 correction is retained as historical context. The fuller Drive specification governs compatible general behavior, the supplied HTML/DOCX informs interaction, and CALI materials provide context. Zach's August 5 notes remain unconfirmed minutes; STEM Splitter is an architecture precedent.

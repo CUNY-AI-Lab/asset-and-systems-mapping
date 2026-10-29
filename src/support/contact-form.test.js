@@ -4,16 +4,16 @@ import { mountBugReport } from './contact-form.js';
 import { parseGuestContact } from './contact.js';
 let dispose;
 afterEach(() => { dispose?.(); dispose = null; document.body.replaceChildren(); vi.unstubAllGlobals(); });
-function setup(signedIn = false) {
+function setup(signedIn = false, response = null, delivery = 'redmine') {
   let actor = 'a'.repeat(64);
   const posts = [];
   vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
     if (!options.method) return Response.json(signedIn ? { ok: true, expectedActor: actor, preferredName: 'Sam Student' } : { ok: false }, { status: signedIn ? 200 : 401 });
     const data = JSON.parse(options.body); posts.push({ url, data });
-    return Response.json({ ok: true, status: 'saved', reportId: data.reportId, createdAt: new Date().toISOString() });
+    return response ? response(data, posts.length) : Response.json({ ok: true, status: 'saved', delivery: 'redmine', reportId: data.reportId, createdAt: new Date().toISOString() });
   }));
   const host = document.createElement('section'); document.body.append(host);
-  dispose = mountBugReport(host, { loginUrl: '/auth/start', loginClassName: 'button studio-action', path: () => '/' });
+  dispose = mountBugReport(host, { delivery, loginUrl: '/auth/start', loginClassName: 'button studio-action', path: () => '/' });
   host.querySelector('.bug-report__trigger').click();
   return { host, posts, setActor: value => { actor = value; } };
 }
@@ -30,7 +30,7 @@ test('recognizes SSO automatically and sends only the server comparison marker',
   expect(posts[0].url).toBe('/api/bug-reports');
   expect(posts[0].data.expectedActor).toBe('a'.repeat(64));
   expect(posts[0].data).not.toHaveProperty('preferredName');
-  await vi.waitFor(() => expect(host.textContent).toContain('Sent. Thank you.'));
+  await vi.waitFor(() => expect(host.textContent).toContain('Saved to CAIL Ticketing.'));
 });
 test('guest details appear above the description and reject non-edu email before sending', async () => {
   const { host, posts } = setup();
@@ -59,4 +59,35 @@ test('a changed SSO account cannot submit the earlier account draft', async () =
 });
 test.each(['person@example.com', 'person@college.edu.attacker.test', 'person@.edu', 'person@@college.edu'])('rejects invalid .edu contact %s', email => {
   expect(parseGuestContact({ firstName: 'Sample', lastName: 'Student', email }).ok).toBe(false);
+});
+
+test('email acceptance identifies its channel and receipt without claiming inbox delivery', async () => {
+  const reference = '22222222-2222-4222-8222-222222222222';
+  const { host } = setup(true, data => Response.json({ ok: true, status: 'accepted', delivery: 'email', reportId: data.reportId, deliveryReference: reference, createdAt: new Date().toISOString() }), 'email');
+  await vi.waitFor(() => expect(host.textContent).toContain('Reporting as Sam Student'));
+  expect(host.querySelector('.bug-report__delivery-help').textContent).toContain('description and page category are sent by email');
+  fill(host, 'description', 'The student map could not be saved.'); submit(host);
+  await vi.waitFor(() => expect(host.querySelector('.bug-report__status').textContent).toBe(`Accepted for email delivery. Reference: ${reference}.`));
+  expect(host.querySelector('textarea').readOnly).toBe(true);
+});
+
+test('an uncertain delivery keeps the original draft and reference for the status check', async () => {
+  const { host, posts } = setup(true, (data, count) => count === 1
+    ? Response.json({ ok: false, code: 'delivery_unknown' }, { status: 503 })
+    : Response.json({ ok: true, status: 'accepted', delivery: 'email', reportId: data.reportId, createdAt: new Date().toISOString() }));
+  await vi.waitFor(() => expect(host.textContent).toContain('Reporting as Sam Student'));
+  fill(host, 'description', 'Keep this report while its email receipt is checked.'); submit(host);
+  await vi.waitFor(() => expect(host.querySelector('[type="submit"]').textContent).toBe('Check status'));
+  expect(host.querySelector('textarea').readOnly).toBe(true);
+  submit(host);
+  await vi.waitFor(() => expect(host.querySelector('.bug-report__status').textContent).toContain('Accepted for email delivery.'));
+  expect(posts).toHaveLength(2);
+  expect(posts[1].data).toEqual(posts[0].data);
+});
+
+test('an unknown successful channel remains unconfirmed', async () => {
+  const { host } = setup(true, data => Response.json({ ok: true, status: 'saved', delivery: 'unexpected', reportId: data.reportId, createdAt: new Date().toISOString() }));
+  await vi.waitFor(() => expect(host.textContent).toContain('Reporting as Sam Student'));
+  fill(host, 'description', 'Keep this report until its receipt is confirmed.'); submit(host);
+  await vi.waitFor(() => expect(host.querySelector('[type="submit"]').textContent).toBe('Check status'));
 });

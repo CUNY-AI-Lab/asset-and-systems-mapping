@@ -13,9 +13,9 @@ const nodes = [
 ];
 
 const edges = [
-  { id: 'support', source: 'group', target: 'home', verb: 'supports', scale: 'micro', status: 'confirmed', claimState: 'confirmed', evidenceExcerpt: 'The group supports Rosa at home.' },
+  { id: 'support', source: 'group', target: 'home', verb: 'supports', scale: 'meso', status: 'confirmed', claimState: 'confirmed', evidenceExcerpt: 'The group supports Rosa at home.' },
   { id: 'schedule', source: 'agency', target: 'home', verb: 'sets rules for', scale: 'exosphere', status: 'pending', claimState: 'inference', evidence: '' },
-  { id: 'removed-edge', source: 'home', target: 'group', verb: 'used to call', scale: 'micro', status: 'rejected', claimState: 'retired', evidence: '' },
+  { id: 'removed-edge', source: 'home', target: 'group', verb: 'used to call', scale: 'meso', status: 'rejected', claimState: 'retired', evidence: '' },
 ];
 
 afterEach(cleanup);
@@ -51,11 +51,11 @@ describe('MapListView', () => {
 
   it('renders connection propositions with readable metadata and opens the matching edge', () => {
     const onSelect = vi.fn();
-    render(<MapListView nodes={nodes} edges={edges} visibleScale="micro" onSelect={onSelect} />);
+    render(<MapListView nodes={nodes} edges={edges} visibleScale="meso" onSelect={onSelect} />);
 
     const connection = screen.getByRole('button', { name: 'Open details for Peer support group supports Rosa’s home' });
     expect(within(connection).getByText('Peer support group')).toBeVisible();
-    expect(within(connection).getByText('supports')).toBeVisible();
+    expect(within(connection).getByText('supports →')).toBeVisible();
     expect(within(connection).getByText('Rosa’s home')).toBeVisible();
     expect(within(connection).getByText('Connection')).toBeVisible();
     expect(within(connection).getByText('Evidence added')).toBeVisible();
@@ -104,23 +104,32 @@ describe('MapListView', () => {
     expect(within(mesoRecord).getByText('How settings interact')).toBeVisible();
     expect(within(mesoRecord).getByText('Information moves between the home and peer-support settings.')).toBeVisible();
 
-    const connection = screen.getByRole('button', { name: 'Open details for Peer support group supports Rosa’s home' });
+    const connection = screen.getByRole('button', { name: 'Open details for Peer support group supports Rosa’s home, both directions' });
     expect(within(connection).getByText('Evidence records')).toBeVisible();
     expect(within(connection).getByText('Process and time')).toBeVisible();
     expect(within(connection).getByText('Frequency: weekly; Duration: six months; Direction: both directions')).toBeVisible();
   });
 
   it('keeps removed records out of the list unless the student asks to see them', () => {
-    const { rerender } = render(<MapListView nodes={nodes} edges={edges} visibleScale="micro" />);
+    const { rerender } = render(<MapListView nodes={nodes} edges={edges} visibleScale="meso" />);
     expect(screen.queryByRole('button', { name: 'Open details for Earlier draft node' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open details for Rosa’s home used to call Peer support group' })).not.toBeInTheDocument();
 
-    rerender(<MapListView nodes={nodes} edges={edges} visibleScale="micro" showRemoved />);
+    rerender(<MapListView nodes={nodes} edges={edges} visibleScale="meso" showRemoved />);
     expect(screen.getByRole('button', { name: 'Open details for Earlier draft node' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Open details for Rosa’s home used to call Peer support group' })).toBeVisible();
     expect(screen.getAllByText('Removed').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('shows Micro items without relationship records, and carries unconnected Micro items into Meso', () => {
+    const extra = { id: 'person', label: 'Assistant principal', type: 'person', scale: 'micro', status: 'confirmed' };
+    const { rerender } = render(<MapListView nodes={[...nodes, extra]} edges={edges} visibleScale="micro" />);
+    expect(screen.queryByRole('button', { name: /supports Rosa/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open details for Assistant principal' })).toBeVisible();
+    rerender(<MapListView nodes={[...nodes, extra]} edges={edges} visibleScale="meso" />);
+    expect(screen.getByRole('button', { name: /supports Rosa/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Open details for Assistant principal' })).toBeVisible();
+  });
   it('states when no records are visible and distinguishes evidence states', () => {
     render(<MapListView nodes={[]} edges={[]} visibleScale="exosphere" />);
     expect(screen.getByText('No map items are visible at this level.')).toBeVisible();

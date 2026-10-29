@@ -11,7 +11,12 @@ async function openProject(page, activeScale) {
   await page.getByRole('textbox', { name: 'Class code' }).fill('101');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
-  await expect(page.locator('.graph-node')).toHaveCount(9);
+  await openTools(page);
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('all');
+  await page.locator('.notebook-map-tools > summary').click();
+  await expect(page.locator('.graph-node')).toHaveCount(8);
+  // The earlier Meso linkage remains saved and available through the list.
+  expect((await readProject(page)).graph.nodes).toHaveLength(9);
   await mapCommand(page, 'Fit map');
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { courseRequestHeaders, courseWorkspacePath, initialApiCourseSelection, parseCourseSelection } from './courseContext.js';
+import { courseRequestHeaders, courseWorkspacePath, initialApiCourseSelection, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
 import { institutionalLoginUrl, releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
 afterEach(() => {
@@ -54,5 +54,20 @@ describe('course selection', () => {
     expect(a.getItem('draft')).toBe('course A draft');
     expect(a.courseSelection.id).toBe('course-a');
     expect(Object.isFrozen(a.courseSelection)).toBe(true);
+  });
+
+  it('preserves only the known console view in a sign-in destination', () => {
+    const course = parseCourseSelection('?course=course-a');
+    window.history.replaceState(null, '', '/?course=course-a&view=instructor');
+    expect(instructorWorkspacePath(course)).toBe('/?course=course-a&view=instructor');
+    expect(instructorWorkspacePath()).toBe('/?view=instructor');
+    expect(new URL(institutionalLoginUrl(course), window.location.origin).searchParams.get('returnTo')).toBe('/?course=course-a&view=instructor');
+    for (const search of ['?view=admin', '?view=instructor&view=instructor', '?view=https://other.example']) {
+      expect(parseWorkspaceView(search)).toBe('projects');
+      window.history.replaceState(null, '', '/' + search);
+      expect(new URL(institutionalLoginUrl(course), window.location.origin).searchParams.get('returnTo')).toBe('/?course=course-a');
+    }
+    window.history.replaceState(null, '', '/p/abcdefghijklmnopqrst?course=course-a&view=instructor');
+    expect(new URL(institutionalLoginUrl(course), window.location.origin).searchParams.get('returnTo')).toBe('/p/abcdefghijklmnopqrst?course=course-a');
   });
 });

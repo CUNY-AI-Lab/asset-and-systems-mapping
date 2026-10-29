@@ -97,7 +97,7 @@ function addAuthoritativePreflight(project, overrides = {}) {
         { label: 'School', type: 'setting', scale: 'micro', evidence: 'The school refers the student to the committee.' },
         { label: 'Committee', type: 'group', scale: 'micro', evidence: 'The school refers the student to the committee.' },
       ],
-      connections: [{ source: 'School', target: 'Committee', verb: 'refers', rationale: 'The memo names the referral directly.' }],
+      connections: [],
       example: 'One evident connection: School refers Committee, because the memo names the referral directly.',
       readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes and connections.' },
     },
@@ -190,6 +190,37 @@ function mappedEdge({ id, source, target, verb, scale = 'exosphere' }) {
 }
 
 describe('mapping domain', () => {
+  it('moves v7 relationships to Meso while preserving all student work and level progress', () => {
+    const project = projectWithGraph();
+    project.schemaVersion = 7;
+    project.activeScale = 'micro';
+    project.releasedScales = ['micro'];
+    project.reflection = 'Current Micro notes';
+    project.levelProgress.micro.reflection = 'Micro notes';
+    project.levelProgress.meso.reflection = 'Meso notes';
+    project.levelProgress.exosphere.reflection = 'Exo notes';
+    project.levelProgress.macrosphere.reflection = 'Macro notes';
+    project.graph.nodes[0].origin = 'student entry';
+    project.graph.nodes[0].reviewDecision = 'added';
+    const edge = project.graph.edges.find(edge => edge.scale === 'micro');
+    edge.origin = 'student entry';
+    edge.reviewDecision = 'added';
+    edge.relationshipProcess = createRelationshipProcess({ direction: 'both directions', whatMoves: 'Information and support' });
+    edge.annotation.text = 'Keep this relationship note';
+    edge.claimEvidence = [createClaimEvidenceRecord({ sourcePassage: 'The family requests support.', studentInterpretation: 'Support moves in both directions.' }, { ownerId: edge.id })];
+    const original = structuredClone(project);
+    const restored = parseProject(JSON.stringify(project));
+    expect(restored.schemaVersion).toBe(8);
+    expect(restored.activeScale).toBe('micro');
+    expect(restored.releasedScales).toEqual(['micro', 'meso']);
+    expect(restored.graph.nodes).toEqual(original.graph.nodes);
+    expect(restored.levelProgress).toEqual(original.levelProgress);
+    expect(restored.reflection).toBe(original.reflection);
+    expect(restored.submission).toEqual(original.submission);
+    expect(restored.graph.edges.find(item => item.id === edge.id)).toEqual({ ...original.graph.edges.find(item => item.id === edge.id), scale: 'meso' });
+    expect(parseProject(serializeProject(restored))).toEqual(expect.objectContaining({ graph: restored.graph, levelProgress: restored.levelProgress }));
+  });
+
   it('recognizes clauses without trimming them into invented names', () => {
     for (const label of ['A neighbor brings mail upstairs', 'The agency cut weekly allocations', 'A resident needs help with travel', 'Workers are paid near the wage floor']) {
       expect(isStatementMapElementLabel(label), label).toBe(true);
@@ -222,7 +253,7 @@ describe('mapping domain', () => {
     expect(MACROSPHERE_NODE_TYPES).toContain('policy');
   });
 
-  it('keeps a directly participated institution and resource at Micro with direct verbs', () => {
+  it('keeps a directly participated institution and resource at Micro and connects them during Meso', () => {
     const project = createDefaultProject();
     const student = mappedNode({ id: 'node_student', label: 'Marisol', type: 'person', scale: 'micro' });
     const college = mappedNode({ id: 'node_college', label: 'BMCC', type: 'institution', scale: 'micro' });
@@ -241,9 +272,10 @@ describe('mapping domain', () => {
     expect(review.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'BMCC', type: 'institution', scale: 'micro' }),
     ]));
-    expect(review.connections).toEqual(expect.arrayContaining([
-      expect.objectContaining({ target: 'BMCC', verb: 'attends' }),
-    ]));
+    expect(review.connections).toEqual([]);
+    const mesoReview = deterministicMemoReview({ ...project.submission, text: 'Marisol attends BMCC. Marisol uses a transit pass.' }, 'meso', { carriedNodes: project.graph.nodes });
+    expect(mesoReview.nodes).toEqual([]);
+    expect(mesoReview.connections).toContainEqual(expect.objectContaining({ source: student.id, target: college.id, verb: 'attends' }));
     expect(review.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Transit Pass', type: 'resource', scale: 'micro' }),
     ]));
@@ -258,9 +290,7 @@ describe('mapping domain', () => {
     expect(directReview.nodes).toContainEqual(expect.objectContaining({
       label: 'BMCC', type: 'institution', scale: 'micro',
     }));
-    expect(directReview.connections).toContainEqual(expect.objectContaining({
-      source: 'Marisol', target: 'BMCC', verb: 'attends',
-    }));
+    expect(directReview.connections).toEqual([]);
 
     const directServiceReview = deterministicMemoReview({
       ...project.submission,
@@ -269,9 +299,7 @@ describe('mapping domain', () => {
     expect(directServiceReview.nodes).toContainEqual(expect.objectContaining({
       label: 'East Harlem Disability Services', type: 'service', scale: 'micro',
     }));
-    expect(directServiceReview.connections).toContainEqual(expect.objectContaining({
-      source: 'East Harlem Disability Services', target: 'Rosa', verb: 'serves',
-    }));
+    expect(directServiceReview.connections).toEqual([]);
 
     const carriedClassroom = {
       id: 'node_bmcc_classroom',
@@ -300,31 +328,24 @@ describe('mapping domain', () => {
     expect(() => validateProject(project)).not.toThrow();
   });
 
-  it('builds deterministic Meso suggestions as scoped mesosystems without relationship verbs', () => {
+  it('builds Meso relationships between carried Micro nodes without proposing duplicate nodes', () => {
     const carriedNodes = [
-      { id: 'node_home_91f4', label: 'Rivera home', type: 'setting', scale: 'micro' },
-      { id: 'node_classroom_7aa2', label: 'East Harlem transition classroom', type: 'setting', scale: 'micro' },
+      { id: 'node_home', label: 'Rivera home', type: 'setting', scale: 'micro' },
+      { id: 'node_classroom', label: 'Transition classroom', type: 'setting', scale: 'micro' },
     ];
     const review = deterministicMemoReview({
       ...createDefaultProject().submission,
-      text: 'Rivera home and East Harlem transition classroom coordinate transition planning.',
+      text: 'Rivera home coordinates with Transition classroom.',
     }, 'meso', { carriedNodes });
-
-    expect(review.connections).toEqual([]);
-    expect(review.nodes).toEqual([expect.objectContaining({
-      type: 'mesosystem',
-      scale: 'meso',
-      scope: expect.arrayContaining(carriedNodes.map(({ id, label }) => ({ id, label }))),
+    expect(review.nodes).toEqual([]);
+    expect(review.connections).toEqual([expect.objectContaining({
+      source: 'node_home', target: 'node_classroom', verb: 'coordinates with',
     })]);
-    const studentText = JSON.stringify({ guidance: review.guidance, example: review.example, readiness: review.readiness });
-    expect(studentText).toContain(carriedNodes[0].label);
-    expect(studentText).toContain(carriedNodes[1].label);
-    expect(studentText).not.toContain(carriedNodes[0].id);
-    expect(studentText).not.toContain(carriedNodes[1].id);
-    expect(review.guidance[0].point).toBe('Review how these settings interact');
     expect(review.example).toBeNull();
-    expect(JSON.stringify(review)).not.toContain('"verb"');
-    expect(studentText).not.toMatch(/offline reader|connects .* through/i);
+    expect(review.readiness.ready).toBe(true);
+    expect(JSON.stringify(review.guidance)).not.toContain('node_home');
+    const repeated = deterministicMemoReview({ ...createDefaultProject().submission, text: 'Rivera home coordinates with Transition classroom.' }, 'meso', { carriedNodes, carriedConnections: review.connections });
+    expect(repeated.connections).toEqual([]);
   });
 
   it('creates stable identifiers', () => {
@@ -403,7 +424,7 @@ describe('mapping domain', () => {
     });
 
     expect(RELATIONSHIP_PROCESS_FIELDS).toEqual([
-      'frequency', 'duration', 'direction', 'conditions', 'changeOverTime',
+      'frequency', 'duration', 'direction', 'conditions', 'changeOverTime', 'channel', 'connectingWork', 'strength', 'familyCount', 'connectionStatus',
     ]);
     expect(hasRelationshipProcessDetails(edge)).toBe(true);
     expect(hasRelationshipProcessDetails(createRelationshipProcess())).toBe(false);
@@ -412,6 +433,38 @@ describe('mapping domain', () => {
     const importedEdge = imported.graph.edges.find(({ id }) => id === edge.id);
     expect(importedEdge.claimEvidence).toEqual(edge.claimEvidence);
     expect(importedEdge.relationshipProcess).toEqual(edge.relationshipProcess);
+  });
+
+  it('round-trips assignment details and redacts family counts and connecting work while preserving an absent pair', () => {
+    const project = projectWithGraph();
+    project.submission.sensitive = true;
+    project.submission.consent = false;
+    const edge = project.graph.edges[0];
+    edge.relationshipProcess = createRelationshipProcess({ direction: 'both directions', strength: 'contested', channel: 'phone', connectingWork: 'Parent carries the paperwork', familyCount: 0, connectionStatus: 'missing' });
+    expect(hasRelationshipProcessDetails({ familyCount: 0 })).toBe(true);
+    const saved = parseProject(serializeProject(project));
+    expect(saved.graph.edges[0].relationshipProcess).toEqual(edge.relationshipProcess);
+    const portable = createPortableProject(project, 'course');
+    expect(portable.graph.edges[0].relationshipProcess).toEqual(createRelationshipProcess({ direction: 'both directions', connectionStatus: 'missing' }));
+    expect(portable.portableExport.redactions.map(record => record.path)).toContain('graph.edges[0].relationshipProcess.familyCount');
+    expect(parseProject(JSON.stringify(portable)).graph.edges[0].relationshipProcess.connectionStatus).toBe('missing');
+    expect(edge.relationshipProcess.familyCount).toBe(0);
+  });
+
+  it.each([-1, 1.5, '24', Number.MAX_SAFE_INTEGER + 1])('rejects an invalid family count %s in current projects', familyCount => {
+    const project = projectWithGraph();
+    project.graph.edges[0].relationshipProcess = { ...createRelationshipProcess(), familyCount };
+    expect(() => parseProject(JSON.stringify(project))).toThrow(/familyCount/);
+  });
+
+  it('preserves earlier process records that precede the additive assignment details', () => {
+    const project = projectWithGraph();
+    project.schemaVersion = 7;
+    const legacy = { frequency: 'Weekly', duration: '', direction: 'Family to school', conditions: '', changeOverTime: '' };
+    project.graph.edges[0].relationshipProcess = legacy;
+    const restored = parseProject(JSON.stringify(project));
+    expect(restored.graph.edges[0].relationshipProcess).toEqual(legacy);
+    expect(restored.graph.edges[0].scale).toBe('meso');
   });
 
   it('tracks independent progress for all four ecological levels', () => {
@@ -496,7 +549,7 @@ describe('mapping domain', () => {
     expect(scaleLexiconVerb('macrosphere', 'requires')).toBe('mandates');
     expect(scaleLexiconVerb('macrosphere', 'synergizes')).toBeNull();
     expect(scaleLexiconVerb('micro', 'asks for help from')).toBe('asks for help from');
-    expect(scaleLexiconVerb('meso', 'asks for help from')).toBeNull();
+    expect(scaleLexiconVerb('meso', 'asks for help from')).toBe('asks for help from');
   });
 
   it('keeps references, temporal facts, actions, and incomplete phrases out of Micro labels', () => {
@@ -1040,7 +1093,7 @@ describe('mapping domain', () => {
     expect(() => validateProject(orphanMatchGrade)).toThrow(/evidenceMatch must be normalized or elided and accompany/);
 
     const selfLoop = structuredClone(project);
-    selfLoop.preflight.memoReview.connections[0].target = selfLoop.preflight.memoReview.connections[0].source;
+    selfLoop.preflight.memoReview.connections = [{ source: 'School', target: 'School', verb: 'refers', rationale: 'Invalid self-loop' }];
     expect(() => validateProject(selfLoop)).toThrow(/must differ from source/);
 
     const priorV2 = createDefaultProject();
@@ -1305,7 +1358,7 @@ describe('mapping domain', () => {
       expect(migrated[container].edges).toHaveLength(originalRecords[container].edges.length);
       migrated[container].edges.forEach((edge) => {
         const original = originalRecords[container].edges.find(({ id }) => id === edge.id);
-        expect(withoutV7Additions(edge)).toEqual(original);
+        expect(withoutV7Additions(edge)).toEqual({ ...original, scale: original.scale === 'micro' ? 'meso' : original.scale });
         expect(edge).toMatchObject({ origin: 'legacy' });
         expect(edge).not.toHaveProperty('reviewDecision');
       });
@@ -1432,8 +1485,8 @@ describe('mapping domain', () => {
       completedScales: ['exosphere'],
     });
     expect(migrated.graph.nodes.map(({ id }) => id)).toEqual(legacyNodeIds);
-    expect(migrated.candidates.edges[0]).toEqual({ ...legacyCandidateMicroEdge, scale: 'micro', origin: 'legacy' });
-    expect(migrated.graph.edges[0]).toEqual({ ...legacyGraphMicroEdge, scale: 'micro', origin: 'legacy' });
+    expect(migrated.candidates.edges[0]).toEqual({ ...legacyCandidateMicroEdge, scale: 'meso', origin: 'legacy' });
+    expect(migrated.graph.edges[0]).toEqual({ ...legacyGraphMicroEdge, scale: 'meso', origin: 'legacy' });
     expect(migrated.graph.nodes.find((node) => node.id === graphMicroEdge.source).scale).toBe('micro');
     expect(migrated.graph.nodes.find((node) => node.id === graphMicroEdge.target).scale).toBe('micro');
     expect(migrated.graph.nodes.find((node) => node.id === outerNodeIds[0]).scale).toBe('exosphere');
@@ -1467,7 +1520,7 @@ describe('mapping domain', () => {
     expect(JSON.stringify(migrated)).not.toMatch(/"(?:macro|integration)"/);
   });
 
-  it('migrates legacy Meso edges to review-needed Micro relationships without inventing scopes', () => {
+  it('preserves existing Meso relationships and annotations without inventing scopes', () => {
     const earlyV6 = projectWithGraph();
     const relationship = earlyV6.graph.edges.find((edge) => edge.scale === 'micro');
     const candidateRelationship = earlyV6.candidates.edges.find((edge) => edge.id === relationship.id);
@@ -1482,8 +1535,8 @@ describe('mapping domain', () => {
     const migratedGraphEdge = migrated.graph.edges.find((edge) => edge.id === relationship.id);
     const migratedCandidateEdge = migrated.candidates.edges.find((edge) => edge.id === relationship.id);
     [migratedGraphEdge, migratedCandidateEdge].forEach((edge) => {
-      expect(edge).toMatchObject({ scale: 'micro', status: 'research lead', claimState: 'research lead' });
-      expect(edge.notes).toContain('Review this direct relationship in Micro');
+      expect(edge).toMatchObject({ scale: 'meso', status: relationship.status, claimState: relationship.claimState });
+      expect(edge.notes).toBe(relationship.notes);
     });
     expect(migratedGraphEdge.annotation.text).toBe('Keep the graph relationship annotation');
     expect(migratedCandidateEdge.annotation.text).toBe('Keep the candidate relationship annotation');
@@ -1650,8 +1703,8 @@ describe('mapping domain', () => {
     });
     expect(migrated.graph.nodes.find(({ id }) => id === 'node_marisol_both').label).toBe('Marisol Both');
     expect(migrated.graph.edges).toHaveLength(4);
-    migrated.graph.edges.forEach((edge) => expect(edge).toMatchObject({ status: 'rejected', claimState: 'retired' }));
-    expect(migrated.graph.edges.find(({ id }) => id === 'edge_settings').notes).toContain('belongs in a scoped Meso item');
+    migrated.graph.edges.filter(edge => edge.id !== 'edge_settings').forEach((edge) => expect(edge).toMatchObject({ status: 'rejected', claimState: 'retired' }));
+    expect(migrated.graph.edges.find(({ id }) => id === 'edge_settings')).toMatchObject({ status: 'confirmed', verb: 'coordinates with' });
     expect(() => validateProject(migrated)).not.toThrow();
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
@@ -1679,7 +1732,7 @@ describe('mapping domain', () => {
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
-  it('accepts only Exo-to-Micro-setting pathways while keeping invalid pending suggestions reviewable', () => {
+  it('accepts Exo pathways into Micro settings or other outside offices while retaining invalid pending suggestions', () => {
     const project = createDefaultProject();
     project.activeScale = 'exosphere';
     project.releasedScales = ['micro', 'meso', 'exosphere'];
@@ -1700,14 +1753,19 @@ describe('mapping domain', () => {
 
     expect(isExosphereDecisionPathway(agency, home)).toBe(true);
     expect(isExosphereDecisionPathway(home, agency)).toBe(false);
-    expect(isExosphereDecisionPathway(agency, department)).toBe(false);
+    expect(isExosphereDecisionPathway(agency, department)).toBe(true);
+    expect(isExosphereDecisionPathway(agency, agency)).toBe(false);
+    project.graph.edges.push(mappedEdge({ id: 'edge_exo_chain', source: department, target: agency, verb: 'funds' }));
     expect(isExosphereDecisionPathway(agency, mesosystem)).toBe(false);
     expect(() => validateProject(project)).not.toThrow();
+    const restored = parseProject(serializeProject(project));
+    expect(restored.graph.edges).toEqual(project.graph.edges);
+    expect(restored.candidates.edges).toEqual([]);
 
-    for (const [target, label] of [[department, 'Exo'], [mesosystem, 'Meso']]) {
+    for (const [target, label] of [[mesosystem, 'Meso']]) {
       const invalid = structuredClone(project);
       invalid.graph.edges = [mappedEdge({ id: `edge_invalid_${label}`, source: agency, target, verb: 'funds' })];
-      expect(() => validateProject(invalid)).toThrow(/exactly one outside Exosphere decision setting and one carried Micro setting/);
+      expect(() => validateProject(invalid)).toThrow(/outside Exosphere decision setting to a carried Micro setting or another outside decision setting/);
 
       const reviewable = mappedEdge({ id: `edge_pending_${label}`, source: agency, target, verb: 'funds' });
       reviewable.status = 'pending';
@@ -1716,6 +1774,23 @@ describe('mapping domain', () => {
       invalid.candidates.edges = [reviewable];
       expect(() => validateProject(invalid)).not.toThrow();
     }
+  });
+
+  it.each([
+    ['source to target', 'target to source'], ['target to source', 'source to target'],
+    ['both directions', 'both directions'], ['Office to school in the morning', 'Office to school in the morning'],
+  ])('preserves arrow meaning while reorienting an older Exo edge with direction %s', (direction, expected) => {
+    const project = createDefaultProject();
+    project.activeScale = 'exosphere'; project.releasedScales = ['micro', 'meso', 'exosphere'];
+    project.candidates = { nodes: [], edges: [] };
+    const school = mappedNode({ id: 'micro_school', label: 'P.S. 101 School', type: 'setting', scale: 'micro' });
+    const office = mappedNode({ id: 'exo_office', label: 'NYC Public Schools', type: 'agency', scale: 'exosphere' });
+    const edge = mappedEdge({ id: 'reversed_exo', source: school, target: office, verb: 'funds' });
+    edge.relationshipProcess = createRelationshipProcess({ direction, channel: 'Funding allocation', familyCount: 24 });
+    project.graph = { nodes: [school, office], edges: [edge] };
+    const restored = parseProject(JSON.stringify(project));
+    expect(restored.graph.edges[0]).toMatchObject({ source: office.id, target: school.id, relationshipProcess: { direction: expected, channel: 'Funding allocation', familyCount: 24 } });
+    expect(edge.relationshipProcess.direction).toBe(direction);
   });
 
   it('canonicalizes valid legacy institutional edges and returns invalid Exosphere endpoints for review', () => {
@@ -1769,14 +1844,14 @@ describe('mapping domain', () => {
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
-  it('accepts scoped Meso nodes and rejects verb-bearing Meso edges', () => {
+  it('preserves scoped Meso nodes and accepts relationships between Micro nodes', () => {
     const mesoNode = projectWithGraph();
     mesoNode.graph.nodes.find((node) => node.scale === 'micro').scale = 'meso';
     expect(() => validateProject(mesoNode)).toThrow(/must be mesosystem for a Meso node/);
 
     const mesoRelationship = projectWithGraph();
     mesoRelationship.graph.edges[0].scale = 'meso';
-    expect(() => validateProject(mesoRelationship)).toThrow(/Meso uses scoped mesosystem nodes/);
+    expect(() => validateProject(mesoRelationship)).not.toThrow();
 
     const valid = projectWithGraph();
     valid.graph.edges = [];
@@ -1829,7 +1904,7 @@ describe('mapping domain', () => {
       claimState: 'student interpretation',
       annotation: { id: stableId('annotation', 'edge:edge_setting_to_setting:relationship'), text: '' },
     }];
-    expect(() => validateProject(settingEdge)).toThrow(/must not encode an interrelation between two Micro settings/);
+    expect(() => validateProject(settingEdge)).not.toThrow();
   });
 
   it('retains a pending connection for repair when a student removes its endpoint', () => {
@@ -1985,7 +2060,7 @@ describe('mapping domain', () => {
   });
 
   it('rejects unsupported imports', () => {
-    expect(() => parseProject('{"schemaVersion":8}')).toThrow(/not a supported/);
+    expect(() => parseProject('{"schemaVersion":9}')).toThrow(/not a supported/);
   });
 
   it('recovers missing current-schema progress without weakening progress validation', () => {
@@ -2167,6 +2242,22 @@ describe('mapping domain', () => {
     expect(parseProject(serializePortableProject(project, 'public')).id).toBe(project.id);
   });
 
+  it.each(['source to target', 'target to source', 'both directions', 'not yet known', 'varies'])('preserves canonical arrow direction %s in restricted exports while removing process prose', (direction) => {
+    const project = projectWithGraph();
+    project.submission.sensitive = true;
+    project.submission.consent = false;
+    project.instructor.maxSharingTier = 'public';
+    const edge = project.graph.edges[0];
+    edge.scale = 'meso';
+    edge.relationshipProcess = createRelationshipProcess({ direction, conditions: 'A private condition', frequency: 'A private weekly meeting' });
+    const portable = createPortableProject(project, 'course');
+    expect(portable.submission.text).toBe('');
+    expect(portable.graph.edges[0].relationshipProcess).toEqual(createRelationshipProcess({ direction }));
+    expect(portable.portableExport.redactions.map(({ path }) => path)).not.toContain('graph.edges[0].relationshipProcess.direction');
+    expect(parseProject(JSON.stringify(portable)).graph.edges[0].relationshipProcess.direction).toBe(direction);
+    expect(edge.relationshipProcess.conditions).toBe('A private condition');
+  });
+
   it('redacts restricted non-sensitive derived text while preserving stable references', () => {
     const project = projectWithGraph();
     project.submission.sensitive = false;
@@ -2249,7 +2340,7 @@ describe('mapping domain', () => {
       sourceId: project.graph.edges[0].claimEvidence[0].sourceId,
       evidenceHash: project.graph.edges[0].claimEvidence[0].evidenceHash,
     });
-    expect(portableEdge.relationshipProcess).toEqual(createRelationshipProcess());
+    expect(portableEdge.relationshipProcess).toEqual(createRelationshipProcess({ direction: 'not yet known' }));
     expect(portableEvent.detail).toBe('[redacted]');
     expect(portableEvent.operations.nodes).toEqual([node.id]);
     expect(portableEvent.operations.label).toBe('[redacted]');

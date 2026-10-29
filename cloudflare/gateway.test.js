@@ -17,21 +17,23 @@ test.each([
   expect(() => parseGatewayEnvelope(body, 'a-different-model')).toThrow('Unexpected model');
 });
 test('one CAIL credential, canonical model, caller correlation and no provider controls reach the binding', async () => {
-  const fetch = vi.fn(async request => {
-    expect(request.url).toBe('https://tools.ailab.gc.cuny.edu/v1/chat/completions');
-    expect(request.headers.get('x-cail-identity-jwt')).toBe('fixture-identity');
-    expect(request.headers.has('authorization')).toBe(false);
-    expect(request.headers.get('x-cail-request-id')).toBe(correlation.request_id);
-    const body = await request.json();
-    expect(body).toMatchObject({ model: 'glm-5.3-flash', stream: false, reasoning_effort: 'low', max_completion_tokens: 4096 });
-    expect(request.headers.get('x-cail-session-id')).toBe('systems-mapping-guidance');
-    expect(body).not.toHaveProperty('max_tokens'); expect(body).not.toHaveProperty('provider');
-    expect(body.messages[1].content).toContain('For a memo review, return at most 3 guidance points, 10 nodes and 8 direct relationships');
-    expect(body.messages[1].content).not.toContain('connections-only');
+  let request, body;
+  const fetch = vi.fn(async incoming => {
+    request = incoming;
+    body = await incoming.json();
     return Response.json({ model: 'glm-5.3-flash', created: 1, choices: [{ message: { role: 'assistant', content: '{"guidance":[]}' }, finish_reason: 'stop' }] });
   });
   const result = await gatewaySuggestion({ fetch }, 'fixture-identity', 'glm-5.3-flash', correlation)(input);
   expect(result.suggestion).toEqual({ guidance: [] }); expect(fetch).toHaveBeenCalledTimes(1);
+  expect(request.url).toBe('https://tools.ailab.gc.cuny.edu/v1/chat/completions');
+  expect(request.headers.get('x-cail-identity-jwt')).toBe('fixture-identity');
+  expect(request.headers.has('authorization')).toBe(false);
+  expect(request.headers.get('x-cail-request-id')).toBe(correlation.request_id);
+  expect(body).toMatchObject({ model: 'glm-5.3-flash', stream: false, reasoning_effort: 'low', max_completion_tokens: 4096 });
+  expect(request.headers.get('x-cail-session-id')).toBe('systems-mapping-guidance');
+  expect(body).not.toHaveProperty('max_tokens'); expect(body).not.toHaveProperty('provider');
+  expect(body.messages[1].content).toContain('For a memo review, return at most 3 guidance points, 10 nodes, with an empty connections array');
+  expect(body.messages[1].content).not.toContain('connections-only');
 });
 
 const unavailable = (code = 'upstream_unavailable', status = 503, retryAfter = '1') => Response.json({

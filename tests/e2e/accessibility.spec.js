@@ -88,7 +88,7 @@ async function layerLabelNodeCollisions(page) {
 
 async function ecologyLabelMembershipIssues(page) {
   return page.locator('.graph-canvas').evaluate((canvas) => {
-    const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
+    const levels = ['micro', 'exosphere', 'macrosphere'];
     const geometry = new Map(levels.flatMap((level) => {
       const layer = canvas.querySelector(`[data-ecology-layer="${level}"]`);
       if (!layer) return [];
@@ -151,7 +151,7 @@ async function ecologyRingGeometry(page) {
   return page.locator('.graph-canvas').evaluate((canvas) => {
     const viewport = canvas.querySelector('.viewport-layer');
     const zoom = Number(viewport.getAttribute('transform')?.match(/scale\(([-\d.]+)\)/)?.[1]);
-    const rings = Object.fromEntries(['micro', 'meso', 'exosphere', 'macrosphere'].flatMap((level) => {
+    const rings = Object.fromEntries(['micro', 'exosphere', 'macrosphere'].flatMap((level) => {
       const ellipse = canvas.querySelector(`[data-ecology-layer="${level}"] ellipse`);
       if (!ellipse) return [];
       const bounds = ellipse.getBoundingClientRect();
@@ -169,7 +169,7 @@ async function ecologyRingGeometry(page) {
 async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
   return page.locator('.graph-canvas').evaluate(async (canvas, requiredLayers) => {
     await document.fonts.ready;
-    const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
+    const levels = ['micro', 'exosphere', 'macrosphere'];
     const issues = [];
     const nodes = [...canvas.querySelectorAll('.graph-node')];
     if (!nodes.length) issues.push('No graph nodes were available for geometry verification');
@@ -338,7 +338,17 @@ test.describe('student accessibility', () => {
       await expect.poll(() => controlDockIssues(page), { message: `${layer} control docks should stay distinct` }).toEqual([]);
       await expect.poll(() => layerLabelNodeCollisions(page), { message: `${layer} level labels should not overlap nodes` }).toEqual([]);
       await expect.poll(() => ecologyNodeGeometryIssues(page, { requireLayers: layer === 'all' }), { message: `${layer} whole node cards should stay in their annuli and contain their rendered labels` }).toEqual([]);
-      if (layer === 'all') await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Level badges should remain ordered inside their own rings' }).toEqual([]);
+      if (layer === 'all') {
+        await expect(page.locator('[data-ecology-layer="meso"]')).toHaveCount(0);
+        await expect(page.locator('[data-ecology-layer]')).toHaveCount(3);
+        await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Micro, Exo, and Macro badges should remain ordered inside their own rings' }).toEqual([]);
+      }
+      if (layer === 'micro') await expect(page.locator('.graph-edge')).toHaveCount(0);
+      if (layer === 'meso') {
+        await expect(page.locator('.graph-node')).toHaveCount(6);
+        await expect(page.locator('.graph-edge')).toHaveCount(4);
+        await expect(page.locator('[data-ecology-layer="meso"]')).toHaveCount(0);
+      }
       if (layer === 'all' && testInfo.project.name.includes('phone')) {
         const smallestRenderedLabel = await page.locator('.node-label').evaluateAll((labels) => (
           Math.min(...labels.map((label) => label.getBoundingClientRect().height))
@@ -370,7 +380,7 @@ test.describe('student accessibility', () => {
     await captureSourceRenderedScreenshot(page, testInfo, 'Full-screen cumulative map');
 
     const beforeZoomOut = await ecologyRingGeometry(page);
-    const expectedMacroRadius = testInfo.project.name.includes('phone') ? 630 : 1540;
+    const expectedMacroRadius = testInfo.project.name.includes('phone') ? 520 : 1230;
     expect(beforeZoomOut.rings.macrosphere.rx, 'Macro ring must retain at least its baseline radius while allowing measured capacity growth').toBeGreaterThanOrEqual(expectedMacroRadius);
     await mapCommand(page, 'Zoom out');
     const afterZoomOut = await ecologyRingGeometry(page);

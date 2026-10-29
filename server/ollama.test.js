@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   OLLAMA_CLOUD_LIMITS,
+  normalizeInput,
   OllamaCloudError,
   requestOllamaSuggestion,
   validateOllamaCloudConfig,
@@ -197,6 +198,19 @@ describe('Ollama Cloud suggestion adapter', () => {
     expect(fetchImpl.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('classifies a shared generation deadline as timeout while preserving caller cancellation', async () => {
+    const caller = new AbortController();
+    const fetchImpl = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('provider detail', 'AbortError')), { once: true });
+    }));
+    const pending = requestOllamaSuggestion(input(), config(), { signal: caller.signal, testOnly: { fetchImpl } });
+    caller.abort(new DOMException('Shared generation deadline', 'TimeoutError'));
+    await expect(pending).rejects.toMatchObject({ code: 'request_timeout', message: 'Ollama Cloud request timed out.' });
+    await expect(requestOllamaSuggestion(input(), config(), { signal: caller.signal, testOnly: { fetchImpl } }))
+      .rejects.toMatchObject({ code: 'request_timeout' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('propagates caller cancellation without provider details', async () => {
     const caller = new AbortController();
     const fetchImpl = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
@@ -301,4 +315,15 @@ describe('Ollama Cloud think control', () => {
     await requestOllamaSuggestion(input(), config({ think: false }), { testOnly: { fetchImpl } });
     expect(captured.think).toBe(false);
   });
+});
+
+
+it('carries bounded reading aids separately while preserving the full memo and source metadata', () => {
+  const source = input({ memoContext: { mesoEvidence: [{ source: 'parent', target: 'teacher', passages: ['The parent and teacher exchange updates for 0 families.'], relationshipProcess: { familyCount: 0 } }], structure: { bibliographyRanges: [{ start: 20, end: 45 }] }, evidenceRepair: { passages: [{ start: 0, end: 20, text: 'The clinic refers.' }] } } });
+  const wire = JSON.parse(normalizeInput(source).projectInput);
+  expect(wire.memoText).toBe(source.sourceText);
+  expect(wire.memoDetails).toEqual(source.sourceMetadata);
+  expect(wire.memoContext).toEqual(source.memoContext);
+  expect(() => normalizeInput(input({ memoContext: { evidenceRepair: { passages: ['x'.repeat(9000)] } } }))).toThrow('too large');
+  expect(() => normalizeInput(input({ memoContext: { instructions: 'unrecognized' } }))).toThrow('invalid');
 });

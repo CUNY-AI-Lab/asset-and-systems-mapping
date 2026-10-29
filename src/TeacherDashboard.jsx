@@ -77,9 +77,9 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'preflight',
       activeDetail: scale === 'micro'
-        ? 'Uses these notes to suggest Micro-level elements and direct relationships from the memo.'
+        ? 'Uses these notes to suggest Micro-level elements from the memo.'
         : scale === 'meso'
-          ? 'Uses these notes to suggest Meso-level linkages across at least two Micro-level settings.'
+          ? 'Uses these notes to suggest Meso-level relationships between existing Micro-level nodes.'
           : scale === 'exosphere'
             ? 'Uses these notes to suggest Exo-level institutions and supported institutional relationships.'
             : 'Uses these notes to suggest Macro-level conditions and the mapped elements they affect.',
@@ -90,9 +90,9 @@ function stageModelUse(stageId, scale) {
       active: true,
       configKind: 'builder',
       activeDetail: scale === 'micro'
-        ? 'Uses these notes when students request more Micro-level elements or direct relationships from the memo.'
+        ? 'Uses these notes when students request more Micro-level elements from the memo.'
         : scale === 'meso'
-          ? 'Uses these notes when students request more Meso-level linkages across Micro-level settings.'
+          ? 'Uses these notes when students request more Meso-level relationships between existing Micro-level nodes.'
           : scale === 'exosphere'
             ? 'Uses these notes when students request more Exo-level institutions or institutional relationships.'
             : 'Uses these notes when students request more Macro-level conditions or change which mapped elements they affect.',

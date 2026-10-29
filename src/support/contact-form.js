@@ -1,7 +1,7 @@
 import { parseGuestContact } from './contact.js';
 
 /** Shared CAIL report footer: verified SSO or .edu contact, memory-only drafts. */
-export function mountBugReport(container, { loginUrl = '/auth/start', loginClassName = '', path = () => location.pathname,
+export function mountBugReport(container, { delivery = 'redmine', loginUrl = '/auth/start', loginClassName = '', path = () => location.pathname,
   sessionEndpoint = '/api/bug-reports/session', endpoint = '/api/bug-reports', guestEndpoint = '/api/bug-reports/guest' } = {}) {
   // Constant markup only. Names, reports and service replies use text/value.
   container.innerHTML = `<div class="bug-report">
@@ -30,6 +30,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
         </div>
         <div class="bug-report__field">
           <div class="bug-report__label"><label>What went wrong?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="Explain in detail."></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
+          <p class="bug-report__delivery-help"></p>
           <span class="bug-report__error" data-error="description" hidden></span>
         </div>
         <p class="bug-report__status" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -38,6 +39,9 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
       <div class="bug-report__support"><a href="mailto:ailab@gc.cuny.edu" aria-label="Email CUNY AI Lab at ailab@gc.cuny.edu">ailab@gc.cuny.edu</a></div>
     </section>
   </div>`;
+  container.querySelector('.bug-report__delivery-help').textContent = delivery === 'email'
+    ? 'Your description and page category are sent by email. Include contact details in the description if you would like a reply.'
+    : 'Your description may be sent by email if ticketing is unavailable. Include contact details in the description if you would like a reply.';
   const panel = container.querySelector('.bug-report__panel'), form = container.querySelector('form');
   const trigger = container.querySelector('.bug-report__trigger'), closeButton = container.querySelector('.bug-report__close');
   const badge = trigger.querySelector('.bug-report__badge'), count = form.querySelector('.bug-report__count');
@@ -171,9 +175,14 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
       if (disposed) return;
       const code = codeOf(result);
-      if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
+      const acceptedEmail = result?.status === 'accepted' && result?.delivery === 'email';
+      const savedIssue = result?.status === 'saved' && (!result?.delivery || result.delivery === 'redmine');
+      if (response.ok && result?.ok === true && (acceptedEmail || savedIssue) && result.reportId === report.reportId
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
-        done = true; locked = true; submitButton.textContent = 'Sent'; show('Sent. Thank you.', 'success');
+        done = true; locked = true; submitButton.textContent = 'Report sent';
+        const reference = acceptedEmail && /^[0-9a-f-]{36}$/.test(result.deliveryReference) ? result.deliveryReference : report.reportId;
+        show(acceptedEmail ? `Accepted for email delivery. Reference: ${reference}.`
+          : `Saved to CAIL Ticketing. Reference: ${reference}.`, 'success');
       } else if (code === 'account_changed' || response.status === 401 || code === 'not_admitted' || code === 'admission_required') {
         actor = null; preferredName = ''; session = 'signed-out'; show('Sign in again to send this draft.', 'attention');
       } else if (code === 'invalid_contact' && !locked) {
@@ -192,7 +201,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
         show(`Try again in ${Math.ceil(seconds / 60)} min.`, 'attention'); wait(seconds);
       } else if (code === 'forbidden' || response.status === 403) {
         terminal = true; show('Couldn’t send. Copy your text before reloading.', 'attention');
-      } else if (code === 'redmine_rejected') {
+      } else if (code === 'redmine_rejected' || code === 'email_rejected') {
         terminal = true; show('Couldn’t send. Contact the Lab.', 'attention');
       } else {
         uncertain();

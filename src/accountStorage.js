@@ -1,4 +1,4 @@
-import { courseWorkspacePath, initialApiCourseSelection, parseCourseSelection } from './courseContext.js';
+import { courseWorkspacePath, initialApiCourseSelection, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
 
 let accountStorage = null;
 
@@ -8,7 +8,9 @@ export function projectStorage() {
 
 export function institutionalLoginUrl(selection = accountStorage?.courseSelection || initialApiCourseSelection()) {
   const path = window.location.pathname;
-  const returnTo = courseWorkspacePath(/^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(path) ? path : '/', selection);
+  const returnTo = path === '/' && parseWorkspaceView(window.location.search) === 'instructor'
+    ? instructorWorkspacePath(selection)
+    : courseWorkspacePath(/^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(path) ? path : '/', selection);
   return returnTo === '/' ? '/auth/start' : `/auth/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
 

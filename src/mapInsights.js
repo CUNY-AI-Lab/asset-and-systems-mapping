@@ -1,3 +1,4 @@
+import { relationshipDescription } from './relationshipDirection.js';
 import { SYSTEMS_MAPPING_SCALE_IDS } from '../shared/systems-mapping-parts.js';
 
 export function isLiveMapItem(item) {
@@ -54,7 +55,7 @@ export function describeMapConnection(link, nodeId, nodeById) {
   const other = outgoing ? target : source;
   if (link.kind === 'relationship') return {
     group: 'Direct relationships and decision pathways', kind: 'edge', id: link.edge.id,
-    label: `${source.label} ${link.edge.verb} ${target.label}`, scale: link.edge.scale,
+    label: relationshipDescription(link.edge, source.label, target.label), scale: link.edge.scale,
   };
   const groups = {
     mesosystem: outgoing ? 'Included Micro settings' : 'Part of mesosystems',

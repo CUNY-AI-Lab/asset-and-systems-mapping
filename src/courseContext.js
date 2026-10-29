@@ -28,6 +28,16 @@ export function courseWorkspacePath(path = '/', selection = GENERAL) {
   return selection?.kind === 'course' ? `${path}?course=${encodeURIComponent(selection.id)}` : path;
 }
 
+export function parseWorkspaceView(search = '') {
+  const values = new URLSearchParams(search).getAll('view');
+  return values.length === 1 && values[0] === 'instructor' ? 'instructor' : 'projects';
+}
+
+export function instructorWorkspacePath(selection = GENERAL) {
+  const path = courseWorkspacePath('/', selection);
+  return `${path}${selection?.kind === 'course' ? '&' : '?'}view=instructor`;
+}
+
 export function initialApiCourseSelection() {
   // The separately deployed Node application must not acquire course behavior
   // just because someone adds a query parameter to a public link.

@@ -1,10 +1,23 @@
 import { createHash } from 'node:crypto';
 import { boundedText, withDeadline, withSignal } from './bounded.js';
 import { durableDatabase } from './database.js';
+import type { BugReportService } from './bug-reports';
 import { parseGuestContact, type GuestContact } from '../src/support/contact.js';
 
-type ReportEnv = { REDMINE_API_KEY?: string; RELEASE: string };
-type Receipt = { fingerprint: string; state: string; created_at: string; issue_id: number | null };
+type ReportEnv = { REDMINE_API_KEY?: string; RELEASE: string; PUBLIC_ORIGIN?: string; BUG_REPORT_MODE?: string; BUG_REPORTS?: BugReportService };
+type Delivery = 'redmine' | 'email';
+type Receipt = { fingerprint: string; state: string; created_at: string; issue_id: number | null; delivery: Delivery; fallback_safe: number };
+export const contactReporting = (env: ReportEnv) => ['redmine', 'email'].includes(env.BUG_REPORT_MODE || '') || Boolean(env.REDMINE_API_KEY);
+export const reportDelivery = (env: ReportEnv): Delivery => env.BUG_REPORT_MODE === 'email' || !env.REDMINE_API_KEY ? 'email' : 'redmine';
+export const reportsEnabled = (env: ReportEnv) => reportDelivery(env) === 'email' ? Boolean(env.BUG_REPORTS) : Boolean(env.REDMINE_API_KEY || env.BUG_REPORTS);
+// The shared receiver scopes UUIDs to an application. Derive a stable UUID per
+// local owner/report so an unrelated reporter cannot reuse another receipt.
+function emailReportId(owner: string, reportId: string) {
+  const hex = digest(`systems-mapping-email:v1\n${owner}\n${reportId}`).slice(0, 32).split('');
+  hex[12] = '4'; hex[16] = ((parseInt(hex[16], 16) & 3) | 8).toString(16);
+  const value = hex.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
 const BASE = new URL('https://tools.ailab.gc.cuny.edu/help/');
 const PROJECT = 15, TRACKER = 2;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -63,6 +76,15 @@ export class RedmineReports {
     );
     CREATE INDEX IF NOT EXISTS bug_report_guests_owner_time ON bug_report_guests(owner,created_at);
     CREATE INDEX IF NOT EXISTS bug_report_guests_rate_time ON bug_report_guests(rate_key,created_at);`);
+    // Preserve the original receipt-table shapes for older release code.
+    // Missing channel metadata identifies an earlier Redmine receipt.
+    db.exec(`CREATE TABLE IF NOT EXISTS bug_report_delivery (
+      kind TEXT NOT NULL CHECK(kind IN ('bug_reports','bug_report_guests')),
+      owner TEXT NOT NULL, report_id TEXT NOT NULL,
+      delivery TEXT NOT NULL CHECK(delivery IN ('redmine','email')),
+      fallback_safe INTEGER NOT NULL DEFAULT 0 CHECK(fallback_safe IN (0,1)),
+      PRIMARY KEY(kind,owner,report_id)
+    )`);
   }
 
   async request(request: Request, accountOwner: string | null, preferredName?: string | null, rateKey?: string): Promise<Response> {
@@ -71,7 +93,7 @@ export class RedmineReports {
     if (guest ? accountOwner !== null || !rateKey || !/^[0-9a-f]{64}$/.test(rateKey) : !accountOwner) return fail('forbidden', 403);
     const table = guest ? 'bug_report_guests' : 'bug_reports';
     if (url.search) return fail('invalid', 400);
-    if (!this.env.REDMINE_API_KEY) return fail('disabled', 503);
+    if (!reportsEnabled(this.env)) return fail('disabled', 503);
     if (url.pathname === '/api/bug-reports/session') {
       return request.method === 'GET' ? Response.json({ ok: true, expectedActor: accountOwner, preferredName: preferredName ?? null }) : fail('method_not_allowed', 405);
     }
@@ -105,7 +127,10 @@ export class RedmineReports {
     try {
       const createdAt = new Date().toISOString();
       const start = this.storage.transactionSync(() => {
-        const existing = this.db.prepare(`SELECT fingerprint,state,created_at,issue_id FROM ${table} WHERE owner=? AND report_id=?`).get(owner, id) as Receipt | undefined;
+        const existing = this.db.prepare(`SELECT r.fingerprint,r.state,r.created_at,r.issue_id,
+          COALESCE(d.delivery,'redmine') AS delivery,COALESCE(d.fallback_safe,0) AS fallback_safe
+          FROM ${table} r LEFT JOIN bug_report_delivery d ON d.kind=? AND d.owner=r.owner AND d.report_id=r.report_id
+          WHERE r.owner=? AND r.report_id=?`).get(table, owner, id) as Receipt | undefined;
         if (existing) return { existing };
         const recent = this.db.prepare(`SELECT count(*) AS n, min(created_at) AS oldest FROM ${table} WHERE owner=? AND created_at>=?`)
           .get(owner, new Date(Date.now() - 86400000).toISOString());
@@ -114,21 +139,71 @@ export class RedmineReports {
           const network = this.db.prepare('SELECT count(*) AS n, min(created_at) AS oldest FROM bug_report_guests WHERE rate_key=? AND created_at>=?')
             .get(rateKey, new Date(Date.now() - 86400000).toISOString());
           if (network.n >= 20) return { limited: Math.max(60, Math.ceil((Date.parse(network.oldest) + 86400000 - Date.now()) / 1000)) };
-          this.db.prepare("INSERT INTO bug_report_guests VALUES (?,?,?,?,'pending',NULL,?)").run(owner, id, fingerprint, createdAt, rateKey);
-        } else this.db.prepare("INSERT INTO bug_reports VALUES (?,?,?,?,'pending',NULL)").run(owner, id, fingerprint, createdAt);
+          this.db.prepare("INSERT INTO bug_report_guests(owner,report_id,fingerprint,created_at,state,issue_id,rate_key) VALUES (?,?,?,?,'pending',NULL,?)").run(owner, id, fingerprint, createdAt, rateKey);
+        } else this.db.prepare("INSERT INTO bug_reports(owner,report_id,fingerprint,created_at,state,issue_id) VALUES (?,?,?,?,'pending',NULL)").run(owner, id, fingerprint, createdAt);
+        this.db.prepare('INSERT INTO bug_report_delivery(kind,owner,report_id,delivery) VALUES (?,?,?,?)').run(table, owner, id, reportDelivery(this.env));
         return { createdAt };
       });
       if ('limited' in start) return fail('rate_limited', 429, start.limited);
       const existing = start.existing;
       if (existing && existing.fingerprint !== fingerprint) return fail('idempotency_conflict', 409);
       const at = existing?.created_at ?? createdAt;
-      const saved = () => Response.json({ ok: true, status: 'saved', reportId: id, createdAt: at });
-      const saveReceipt = (issueId: number) => {
+      let delivery = existing?.delivery ?? reportDelivery(this.env);
+      const saved = () => Response.json({ ok: true, status: delivery === 'email' ? 'accepted' : 'saved', delivery, reportId: id, createdAt: at, ...(delivery === 'email' ? { deliveryReference: emailReportId(owner, id) } : {}) });
+      const saveReceipt = (issueId: number | null) => {
         this.db.prepare(`UPDATE ${table} SET state='saved',issue_id=? WHERE owner=? AND report_id=?`).run(issueId, owner, id);
         return saved();
       };
+      const sendEmail = async () => {
+        if (!this.env.BUG_REPORTS || !this.env.PUBLIC_ORIGIN) return fail('unavailable', 503, 60);
+        const ip = request.headers.get('cf-connecting-ip');
+        if (!ip || !/^[0-9a-fA-F:.]{3,45}$/.test(ip)) return fail('unavailable', 503, 60);
+        // Persist the channel before dispatch. Retries use this exact derived
+        // UUID; Admission owns the durable claim and email acceptance receipt.
+        delivery = 'email';
+        this.storage.transactionSync(() => {
+          this.db.prepare(`INSERT INTO bug_report_delivery(kind,owner,report_id,delivery) VALUES (?,?,?,'email')
+            ON CONFLICT(kind,owner,report_id) DO UPDATE SET delivery='email'`).run(table, owner, id);
+          this.db.prepare(`UPDATE ${table} SET state='pending' WHERE owner=? AND report_id=?`).run(owner, id);
+        });
+        await this.storage.sync();
+        const serviceId = emailReportId(owner, id);
+        const rateDay = new Date().toISOString().slice(0, 10);
+        let result;
+        try {
+          result = await withDeadline(signal => withSignal(this.env.BUG_REPORTS!.submitPublic({
+            reportId: serviceId, description, origin: this.env.PUBLIC_ORIGIN!,
+            path: body.path === '/p/:shared-map' ? '/p/:shared-map' : '/', release: this.env.RELEASE,
+            rateDay, rateKey: digest(`cail-public-report:systems-mapping:${rateDay}:${ip}`),
+          }), signal), undefined, 18000);
+        } catch { return fail('delivery_unknown', 503, 60); }
+        if (result?.ok === true && result.status === 'accepted' && result.reportId === serviceId) return saveReceipt(null);
+        if (result?.ok === false) {
+          const delay = Number.isSafeInteger(result.retryAfterSeconds) && result.retryAfterSeconds! > 0 && result.retryAfterSeconds! <= 86400 ? result.retryAfterSeconds : 60;
+          if (result.code === 'rate_limited' || (result.code === 'unavailable' && result.retryable === true)) {
+            this.db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).run(owner, id);
+            return fail(result.code, result.code === 'rate_limited' ? 429 : 503, delay);
+          }
+          if (['invalid', 'forbidden', 'idempotency_conflict'].includes(result.code) || (result.code === 'unavailable' && result.retryable === false)) {
+            this.db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).run(owner, id);
+            return fail('email_rejected', 502);
+          }
+        }
+        return fail('delivery_unknown', 503, 60);
+      };
       if (existing?.state === 'saved') return saved();
-      if (existing?.state === 'rejected') return fail('redmine_rejected', 502);
+      if (delivery === 'email') {
+        if (existing?.state === 'rejected') return fail('email_rejected', 502);
+        return await sendEmail();
+      }
+      // Only a definitive rejection permits changing delivery channels. A
+      // pending Redmine attempt is reconciled even after switching to email.
+      if (existing?.state === 'rejected' || existing?.state === 'retryable') {
+        // Older rejected rows may represent redirects after an issue was
+        // created. Only new classified rejections (or a 429) allow fallback.
+        if (this.env.BUG_REPORTS && (existing.state === 'retryable' || existing.fallback_safe === 1)) return await sendEmail();
+        if (existing.state === 'rejected') return fail('redmine_rejected', 502);
+      }
       return await withDeadline(async signal => {
         if (existing?.state === 'pending') {
           const issueId = await findIssue(this.env, id, owner, at, signal);
@@ -140,6 +215,7 @@ export class RedmineReports {
           this.db.prepare(`UPDATE ${table} SET state='pending' WHERE owner=? AND report_id=?`).run(owner, id);
         }
         const page = ({ '/': 'Workspace', '/teacher.html': 'Instructor', '/account.html': 'Account', '/p/:shared-map': 'Shared map' } as Record<string,string>)[body.path];
+        await this.storage.sync();
         const result = await redmine(this.env, 'issues.json', signal, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(id, owner), is_private: true,
@@ -154,11 +230,15 @@ export class RedmineReports {
         }
         if (result.status === 429) {
           this.db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).run(owner, id);
-          return fail('rate_limited', 429, 60);
+          return this.env.BUG_REPORTS ? sendEmail() : fail('rate_limited', 429, 60);
         }
-        if ([301,302,303,307,308,400,401,403,404,422].includes(result.status)) {
-          this.db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).run(owner, id);
-          return fail('redmine_rejected', 502);
+        if ([400,401,403,404,422].includes(result.status)) {
+          this.storage.transactionSync(() => {
+            this.db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).run(owner, id);
+            this.db.prepare(`INSERT INTO bug_report_delivery(kind,owner,report_id,delivery,fallback_safe) VALUES (?,?,?,'redmine',1)
+              ON CONFLICT(kind,owner,report_id) DO UPDATE SET fallback_safe=1`).run(table, owner, id);
+          });
+          return this.env.BUG_REPORTS ? sendEmail() : fail('redmine_rejected', 502);
         }
         return fail('pending', 503, 60);
       }, undefined, 18000);

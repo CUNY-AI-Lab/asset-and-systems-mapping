@@ -1,5 +1,5 @@
 import { expect, test, captureSourceRenderedScreenshot, scanAccessibility, assertNoAccessibilityViolations } from './support/test.js';
-import { notebookSection, showMap, projectMenu } from './support/notebook.js';
+import { notebookSection, showMap, projectMenu, openTools } from './support/notebook.js';
 import { readFile } from 'node:fs/promises';
 import { buildEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
 import { serializeProject } from '../../src/domain.js';
@@ -108,7 +108,13 @@ for (const retainId of [false, true]) test(`unpublished course metadata saves, e
   await page.locator('.export-dropdown__import input').setInputFiles({ name: 'fabricated-map.json', mimeType: 'application/json', buffer: Buffer.from(serializeProject(imported)) });
   await expect(page.getByRole('combobox', { name: 'Work level' })).toHaveValue('macrosphere');
   await showMap(page);
-  await expect(page.locator('.graph-node')).toHaveCount(9);
+  await openTools(page);
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('all');
+  await page.locator('.notebook-map-tools > summary').click();
+  await expect(page.locator('.graph-node')).toHaveCount(8);
+  const savedNodes = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph.nodes, STORAGE_KEY);
+  expect(savedNodes).toHaveLength(9);
+  expect(savedNodes.find(node => node.id === 'node_e2e_home_center_coordination')).toEqual(imported.graph.nodes.find(node => node.id === 'node_e2e_home_center_coordination'));
   await page.locator('[data-graph-id="node_e2e_resident"]').press('Enter');
   const inspector = page.locator('#map-inspector');
   await inspector.getByRole('textbox', { name: 'Label', exact: true }).fill('Synthetic resident after import');
@@ -118,6 +124,13 @@ for (const retainId of [false, true]) test(`unpublished course metadata saves, e
   await page.reload();
   await page.getByRole('article', { name: imported.title }).getByRole('button', { name: 'Open project' }).click();
   await showMap(page);
-  await expect(page.locator('.graph-node')).toHaveCount(9);
+  await openTools(page);
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('all');
+  await page.locator('.notebook-map-tools > summary').click();
+  await expect(page.locator('.graph-node')).toHaveCount(8);
+  const reloadedNodes = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph.nodes, STORAGE_KEY);
+  expect(reloadedNodes).toHaveLength(9);
+  expect(reloadedNodes.find(node => node.id === 'node_e2e_home_center_coordination')).toEqual(imported.graph.nodes.find(node => node.id === 'node_e2e_home_center_coordination'));
+  expect(reloadedNodes.find(node => node.id === 'node_e2e_resident').label).toBe('Synthetic resident after import');
   await expect(page.locator('.workspace-save-notice')).toHaveCount(0);
 });

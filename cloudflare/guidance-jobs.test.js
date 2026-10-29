@@ -43,12 +43,12 @@ test('only explicit retryable refusals resume after backoff and stop at three at
 test('failed semantic retries retain their safe attempt count across job reloads without replay', async () => {
   const { jobs, db, pending } = setup();
   const run = vi.fn(async () => Response.json({ error: 'Suggestions unavailable', details: {
-    code: 'guidance_contract_invalid', shouldRetry: false, correctiveRetries: 1,
+    code: 'guidance_contract_invalid', shouldRetry: false, correctiveRetries: 2, evidenceRepairAttempts: 1,
   } }, { status: 502 }));
   const { job } = jobs.create('alice', 'memo', input, 'scope', undefined, run);
   await Promise.all(pending);
   const restored = new GuidanceJobs(db, () => {}, () => 100000);
-  expect(restored.read('alice', job.id)).toMatchObject({ job: { state: 'failed' }, result: { details: { correctiveRetries: 1 } } });
+  expect(restored.read('alice', job.id)).toMatchObject({ job: { state: 'failed' }, result: { details: { correctiveRetries: 2, evidenceRepairAttempts: 1 } } });
   restored.resume('alice', job.id, 'scope', run);
   expect(run).toHaveBeenCalledTimes(1);
 });

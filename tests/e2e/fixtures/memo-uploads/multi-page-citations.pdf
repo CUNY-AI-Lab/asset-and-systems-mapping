@@ -1,0 +1,65 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 207 >>
+stream
+BT /F1 12 Tf 50 740 Td 18 TL
+(Synthetic classroom memo) Tj T*
+(Rosa meets the teacher at the school \(Smith, 2025, p. 12\).) Tj T*
+(Her family asks the assistant principal for help with transport.) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 176 >>
+stream
+BT /F1 12 Tf 50 740 Td 18 TL
+(The community center provides a place to study after school.) Tj T*
+(The assistant principal coordinates with the center \(Lee, 2024\).) Tj T*
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 195 >>
+stream
+BT /F1 12 Tf 50 740 Td 18 TL
+(References) Tj T*
+(Smith, A. \(2025\). Community schooling. Example Press.) Tj T*
+(Lee, B. \(2024\). Learning across settings. Synthetic Journal, 2, 1-12.) Tj T*
+ET
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000323 00000 n 
+0000000580 00000 n 
+0000000706 00000 n 
+0000000932 00000 n 
+0000001058 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1303
+%%EOF

@@ -1,5 +1,9 @@
 import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
 import { FIELD_NOTES_QUESTION_LIMIT } from '../shared/field-notes.js';
+import { MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
+import { analyzeMemoSource, bibliographyOnlyEvidence, bibliographyOnlyLabel } from '../shared/memo-source.js';
+import { RELATIONSHIP_PROCESS_FIELDS, RELATIONSHIP_PROCESS_TEXT_FIELDS, RELATIONSHIP_STRENGTHS, RELATIONSHIP_STATUSES } from '../shared/relationship-process.js';
+export { RELATIONSHIP_PROCESS_FIELDS, RELATIONSHIP_STRENGTHS, RELATIONSHIP_STATUSES } from '../shared/relationship-process.js';
 import { SYSTEMS_MAPPING_LEVELS, SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
 
 export const SCALE_ORDER = ['micro', 'meso', 'exosphere', 'macrosphere'];
@@ -38,10 +42,8 @@ export const RELATION_VOCABULARY = [
 // Closed relationship registers for the outer levels. An Exosphere link is a
 // transactional pathway from an institution into the mapped world; the
 // Macrosphere register is deontic — how a structure operates on its scope.
-// Meso is represented by scoped mesosystem nodes, not edges, so it has no
-// relationship-verb register. Direct relationship verbs belong to Micro.
+// Meso connects existing Micro nodes with the student's own relationship verbs.
 export const SCALE_VERB_LEXICONS = Object.freeze({
-  meso: Object.freeze([]),
   exosphere: Object.freeze([
     'funds', 'administers', 'regulates', 'employs', 'sets rules for', 'owns',
     'provides', 'serves', 'refers', 'contracts with', 'informs', 'excludes', 'delays',
@@ -211,7 +213,7 @@ export const NODE_ORIGINS = Object.freeze(['memo extraction', 'model suggestion'
 export const REVIEW_DECISIONS = Object.freeze(['pending', 'added', 'set aside', 'removed']);
 export const FOCAL_PARTICIPATION_STATES = Object.freeze(['direct', 'indirect', 'unclear', 'not applicable']);
 
-export const PROJECT_SCHEMA_VERSION = 7;
+export const PROJECT_SCHEMA_VERSION = 8;
 
 export const PROJECT_LIMITS = Object.freeze({
   importBytes: 8 * 1024 * 1024,
@@ -270,14 +272,6 @@ export const CLAIM_EVIDENCE_FIELDS = Object.freeze([
   'uncertainty',
   'counterevidence',
   'missingVoice',
-]);
-
-export const RELATIONSHIP_PROCESS_FIELDS = Object.freeze([
-  'frequency',
-  'duration',
-  'direction',
-  'conditions',
-  'changeOverTime',
 ]);
 
 const DEFAULT_CANVAS = Object.freeze({ width: 840, height: 540, radiusX: 290, radiusY: 190 });
@@ -354,17 +348,19 @@ export function normalizeClaimEvidenceRecords(record) {
 }
 
 export function createRelationshipProcess(overrides = {}) {
-  return Object.fromEntries(RELATIONSHIP_PROCESS_FIELDS.map((field) => [
-    field,
-    typeof overrides?.[field] === 'string' ? overrides[field] : '',
-  ]));
+  return {
+    ...Object.fromEntries(RELATIONSHIP_PROCESS_TEXT_FIELDS.map(field => [field, typeof overrides?.[field] === 'string' ? overrides[field] : ''])),
+    strength: RELATIONSHIP_STRENGTHS.includes(overrides?.strength) ? overrides.strength : 'unknown',
+    familyCount: Number.isSafeInteger(overrides?.familyCount) && overrides.familyCount >= 0 ? overrides.familyCount : null,
+    connectionStatus: RELATIONSHIP_STATUSES.includes(overrides?.connectionStatus) ? overrides.connectionStatus : 'unknown',
+  };
 }
 
 export function hasRelationshipProcessDetails(edgeOrProcess) {
   const process = edgeOrProcess?.relationshipProcess || edgeOrProcess;
-  return Boolean(process && RELATIONSHIP_PROCESS_FIELDS.some((field) => (
-    typeof process[field] === 'string' && process[field].trim()
-  )));
+  return Boolean(process && (RELATIONSHIP_PROCESS_TEXT_FIELDS.some(field => typeof process[field] === 'string' && process[field].trim())
+    || (process.strength && process.strength !== 'unknown') || (process.connectionStatus && process.connectionStatus !== 'unknown')
+    || Number.isSafeInteger(process.familyCount)));
 }
 
 export function createLevelProgress({
@@ -877,10 +873,8 @@ export function extractRelationships(submission) {
         if (!sourceLabel || !targetLabel || sourceLabel.toLocaleLowerCase() === targetLabel.toLocaleLowerCase()) return;
         if (relationships.length >= PROJECT_LIMITS.edges) invalidProject('submission.text', `produces more than ${PROJECT_LIMITS.edges} relationship records`);
         const { sourceScale, targetScale } = relationshipEndpointScales(sourceLabel, targetLabel, match.verb);
-        // Direct, verb-bearing relationships live in Micro. Meso is not an
-        // edge layer; it is represented separately by a mesosystem node whose
-        // scope names two or more immediate settings. Outer institutional and
-        // structural relationships retain their own levels.
+        // Extraction keeps the endpoint classification. The active review
+        // decides whether to propose nodes at Micro or relationships at Meso.
         const inferredScale = targetScale === 'exosphere' || targetScale === 'macrosphere' ? targetScale : sourceScale;
         relationships.push({
           sourceLabel,
@@ -906,9 +900,7 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
   const mappedNodes = extractCandidates({ ...submission, text }).nodes;
   const hasRelational = relationships.length >= 2;
   const hasMicroNodes = mappedNodes.length >= 2;
-  const mesoSettingMentions = new Set([...text.matchAll(/\b(?:home|classroom|school|campus|workplace|work site|library|lab|clinic|center|peer group|online forum|subreddit)\b/gi)]
-    .map((match) => match[0].toLocaleLowerCase()));
-  const hasMesosystem = MESOSYSTEM_CUE.test(text) && mesoSettingMentions.size >= 2;
+  const hasMesoRelationships = relationships.length >= 1;
   const evidenceBoundary = locateEvidence({ ...submission, text }, /(according|data|interview|memo|reports?|shows?|evidence|testimony|should be checked)/i)
     || (submission.evidenceOwnership ? 'Memo and interpretation are tracked separately' : null);
   const hard = [
@@ -918,7 +910,7 @@ export function evaluateSubmission(submission, activeScale = 'micro', threshold 
     activeScale === 'micro'
       ? { ...result('H4', hasMicroNodes ? 'met' : 'unmet', mappedNodes[0]?.evidence || mappedNodes[0]?.evidenceLocator || null, 'Micro begins with at least two clearly named people, roles, activities, objects, or immediate settings.', 'Name at least two people, roles, activities, objects, or immediate settings that belong in the map.', true), nodeCount: mappedNodes.length }
       : activeScale === 'meso'
-        ? { ...result('H4', hasMesosystem ? 'met' : 'unmet', hasMesosystem ? 'Memo names an interrelation among immediate settings' : null, 'Meso requires an interrelation among two or more immediate settings already identified in Micro.', 'Name the immediate settings that form a mesosystem and describe their interrelation.', true), mesosystemCount: hasMesosystem ? 1 : 0 }
+        ? { ...result('H4', hasMesoRelationships ? 'met' : 'unmet', hasMesoRelationships ? 'Memo describes a relationship between mapped elements' : null, 'Meso connects existing Micro nodes with evidence-backed relationships.', 'Name two mapped elements, their relationship, and its direction.', true), relationshipCount: relationships.length }
         : { ...result('H4', hasRelational ? 'met' : 'unmet', relationships[0] || null, 'This level needs at least two clear connections between map elements.', 'Add two statements naming what connects and how.', true), relationshipCount: relationships.length },
   ];
 
@@ -1207,74 +1199,23 @@ export function extractCandidates(submission) {
   };
 }
 
-const DETERMINISTIC_REVIEW_SCALE_LIMITS = Object.freeze({
-  micro: Object.freeze({ nodes: 10, connections: 8 }),
-  meso: Object.freeze({ nodes: 6, connections: 0 }),
-  exosphere: Object.freeze({ nodes: 8, connections: 6 }),
-  // Macrosphere structures relate to the map through scopes, never edges.
-  macrosphere: Object.freeze({ nodes: 8, connections: 0 }),
-});
+const DETERMINISTIC_REVIEW_SCALE_LIMITS = MEMO_REVIEW_SCALE_LIMITS;
 
 export function isMicroSettingNode(node) {
   return Boolean(node && node.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(node.type));
 }
 
 export function isExosphereDecisionPathway(sourceNode, targetNode) {
-  return Boolean(sourceNode?.scale === 'exosphere' && isMicroSettingNode(targetNode));
-}
-
-function naturalList(values) {
-  if (values.length < 2) return values[0] || '';
-  if (values.length === 2) return `${values[0]} and ${values[1]}`;
-  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
-}
-
-const MESOSYSTEM_CUE = /\b(coordination|coordinate[sd]?|communication|communicate[sd]?|collaboration|collaborate[sd]?|overlap|conflict|transition|alignment|disconnect|scheduling|planning)\b/i;
-
-function mesosystemCueLabel(match) {
-  const cue = match?.[1]?.toLocaleLowerCase() || 'coordination';
-  if (cue.startsWith('coordinate')) return 'coordination';
-  if (cue.startsWith('communicate')) return 'communication';
-  if (cue.startsWith('collaborate')) return 'collaboration';
-  return cue;
-}
-
-function deterministicMesosystems(submission, carriedNodes, limit) {
-  const settings = carriedNodes.filter(isMicroSettingNode);
-  const candidates = [];
-  sentenceRecords(submission.text || '').forEach((sentence) => {
-    const mentioned = settings.filter((node) => sentence.excerpt.toLocaleLowerCase().includes(String(node.label || '').trim().toLocaleLowerCase()));
-    if (mentioned.length < 2) return;
-    const relationshipText = mentioned.reduce((text, node) => text.replace(new RegExp(escapeRegExp(String(node.label || '').trim()), 'gi'), ' '), sentence.excerpt);
-    const cue = MESOSYSTEM_CUE.exec(relationshipText);
-    if (!cue) return;
-    candidates.push({
-      source: mentioned[0],
-      target: mentioned[1],
-      cue: mesosystemCueLabel(cue),
-      evidence: sentence.excerpt,
-    });
-  });
-  const seen = new Set();
-  return candidates.flatMap(({ source, target, cue, evidence }) => {
-    if (source.id === target.id || !isMicroSettingNode(source) || !isMicroSettingNode(target)) return [];
-    const members = [source, target].sort((left, right) => left.id.localeCompare(right.id));
-    const key = members.map((member) => member.id).join('::');
-    if (seen.has(key)) return [];
-    seen.add(key);
-    return [{
-      label: `${cue.charAt(0).toLocaleUpperCase()}${cue.slice(1)} between ${naturalList(members.map((member) => member.label))}`,
-      type: MESOSYSTEM_NODE_TYPE,
-      scale: 'meso',
-      evidence: truncateCollapsedText(evidence, PROJECT_LIMITS.memoGuidanceEvidence),
-      scope: members.map(({ id, label }) => ({ id, label })),
-    }];
-  }).slice(0, Math.min(limit, PROJECT_LIMITS.memoReviewNodes));
+  return Boolean(sourceNode?.scale === 'exosphere' && (isMicroSettingNode(targetNode) || targetNode?.scale === 'exosphere')
+    && !(sourceNode.id && targetNode?.id && sourceNode.id === targetNode.id));
 }
 
 export function deterministicMemoReview(submission, activeScale = 'micro', { carriedNodes = [], carriedConnections = [] } = {}) {
   const scaleLimits = DETERMINISTIC_REVIEW_SCALE_LIMITS[activeScale] || DETERMINISTIC_REVIEW_SCALE_LIMITS.micro;
-  const { nodes, edges } = extractCandidates(submission);
+  const extracted = extractCandidates(submission);
+  const memoSource = analyzeMemoSource(submission.text);
+  const nodes = extracted.nodes.filter(node => !bibliographyOnlyLabel(node.label, memoSource) && !bibliographyOnlyEvidence(node.evidenceExcerpt, memoSource));
+  const edges = extracted.edges.filter(edge => !bibliographyOnlyEvidence(edge.evidenceExcerpt, memoSource));
   const carriedNodeByLabel = new Map(carriedNodes.map((node) => [String(node.label || '').trim().toLocaleLowerCase(), node]));
   const carriedConnectionKeys = new Set(carriedConnections
     .map((connection) => `${connection.source}::${String(connection.verb || '').trim().toLocaleLowerCase()}::${connection.target}`));
@@ -1294,7 +1235,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
   // Elements already on the student's map never come back as new proposals;
   // later levels surface only what the memo adds beyond the carried graph.
   let reviewNodes = activeScale === 'meso'
-    ? deterministicMesosystems(submission, carriedNodes, scaleLimits.nodes)
+    ? []
     : orderedNodes
       .filter((node) => node.scale === activeScale)
       .filter((node) => !carriedNodeByLabel.has(node.label.trim().toLocaleLowerCase()))
@@ -1325,17 +1266,13 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
     const proposed = reviewNodes.find((node) => node.label === label);
     return nodeLabels.has(label) && proposed ? { reference: label, label, carried: false, node: proposed } : null;
   };
-  const connectionDetails = (activeScale === 'meso' || activeScale === 'macrosphere') ? [] : edges
-    .filter((edge) => edge.scale === activeScale)
+  const connectionDetails = (activeScale === 'micro' || activeScale === 'macrosphere') ? [] : edges
+    .filter((edge) => edge.scale === activeScale || (activeScale === 'meso' && edge.scale === 'micro'))
     .map((edge) => {
-      if (activeScale === 'micro') {
-        const sourceNode = nodes.find((node) => node.label === edge.sourceLabel) || carriedNodes.find((node) => node.label === edge.sourceLabel);
-        const targetNode = nodes.find((node) => node.label === edge.targetLabel) || carriedNodes.find((node) => node.label === edge.targetLabel);
-        if (isMicroSettingNode({ ...sourceNode, scale: 'micro' }) && isMicroSettingNode({ ...targetNode, scale: 'micro' })) return null;
-      }
       const source = endpointFor(edge.sourceLabel);
       const target = endpointFor(edge.targetLabel);
       if (!source || !target || source.reference === target.reference) return null;
+      if (activeScale === 'meso' && (!source.carried || !target.carried || source.node.scale !== 'micro' || target.node.scale !== 'micro')) return null;
       // An Exosphere connection is an influence pathway from an outside
       // decision setting into one immediate setting in which the focal person
       // participates. It is not a general institution-to-anything edge.
@@ -1345,9 +1282,10 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
         const sourceIsImmediateSetting = source.carried && isMicroSettingNode(source.node);
         const targetIsImmediateSetting = target.carried && isMicroSettingNode(target.node);
         if (!((sourceIsDecisionSetting && targetIsImmediateSetting)
-          || (targetIsDecisionSetting && sourceIsImmediateSetting))) return null;
+          || (targetIsDecisionSetting && sourceIsImmediateSetting)
+          || (sourceIsDecisionSetting && targetIsDecisionSetting))) return null;
       }
-      const verb = activeScale === 'micro' ? edge.verb : scaleLexiconVerb(activeScale, edge.verb);
+      const verb = activeScale === 'meso' ? edge.verb : scaleLexiconVerb(activeScale, edge.verb);
       if (!verb) return null;
       return { edge, source: { id: source.reference, label: source.label }, target: { id: target.reference, label: target.label }, verb };
     })
@@ -1378,9 +1316,9 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
     }))]
     : activeScale === 'meso'
-      ? reviewNodes.slice(0, 3).map((node) => ({
-        point: 'Review how these settings interact',
-        ...(node.evidence ? { evidenceExcerpt: truncateCollapsedText(node.evidence, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
+      ? connectionDetails.slice(0, 3).map((connection) => ({
+        point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}`, PROJECT_LIMITS.memoGuidanceText),
+        ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
       }))
       : connectionDetails.slice(0, 2).map((connection) => ({
       point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}`, PROJECT_LIMITS.memoGuidanceText),
@@ -1403,15 +1341,13 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
         : 'Add a supported connection' });
   }
   const first = connectionDetails[0] || null;
-  const example = activeScale === 'meso' && reviewNodes[0]
-    ? truncateCollapsedText(`${reviewNodes[0].label} includes ${naturalList(reviewNodes[0].scope.map((member) => member.label))}.`, PROJECT_LIMITS.memoReviewExample)
-    : first
-      ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
-      : null;
+  const example = first
+    ? truncateCollapsedText(`${first.sourceLabel} ${first.verb} ${first.targetLabel}. ${first.rationale || ''}`, PROJECT_LIMITS.memoReviewExample)
+    : null;
   // Carried map elements count toward readiness at Exosphere. A Macrosphere
   // item is ready only when the memo supports at least two affected elements.
   const ready = activeScale === 'meso'
-    ? reviewNodes.length >= 1
+    ? connections.length >= 1
     : activeScale === 'micro'
       ? reviewNodes.length + carriedNodes.length >= 2
       : activeScale === 'macrosphere'
@@ -1459,7 +1395,7 @@ const builderConfig = {
   label: 'Map builder',
   provider: 'local-deterministic',
   baseModel: 'STEM Splitter',
-  fixedPrompt: `${BASE_GUARDRAILS}\nAssign ecological level by the focal person's participation and the pathway of effect, not by entity kind. Micro uses discrete elements, including resources and named institutions or services the person participates in directly, plus direct relationships among them. Meso uses noun-labeled mesosystem nodes that include two or more Micro settings already on the map and never uses relationship edges or verbs. Exosphere uses outside decision settings and supported pathways into an immediate Micro setting. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two map items. An institution-owned operational rule may remain with its Exosphere decision setting; a broader public policy belongs at Macrosphere. Never add a suggestion to the map until the student continues from review.`,
+  fixedPrompt: `${BASE_GUARDRAILS}\nAssign ecological level by the focal person's participation and the pathway of effect, not by entity kind. Micro identifies discrete elements, including resources and named institutions or services the person participates in directly. Meso connects those existing Micro nodes with evidence-backed relationship verbs and one-way or two-way arrows. Exosphere uses outside decision settings and supported pathways among them or into an immediate Micro setting. Macrosphere uses broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect at least two map items. An institution-owned operational rule may remain with its Exosphere decision setting; a broader public policy belongs at Macrosphere. Never add a suggestion to the map until the student continues from review.`,
   customInstructions: 'Use Ecological Systems Theory as an organizing lens. Guide with questions rather than supplying conclusions.',
   contextLimit: 32000,
   confidenceThreshold: 0.72,
@@ -1531,7 +1467,7 @@ const PREFLIGHT_REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
 const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter', 'cail-gateway'];
 const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
-  'evalCount', 'evalDurationNs', 'correctiveRetries',
+  'evalCount', 'evalDurationNs', 'correctiveRetries', 'evidenceRepairAttempts',
 ];
 const FORBIDDEN_PROJECT_KEYS = new Set([
   'password', 'passwordhash', 'passwordsalt', 'passphrase', 'apikey', 'secret', 'secrettoken',
@@ -1696,9 +1632,12 @@ function validateRelationshipProcess(process, path) {
   if (process === undefined) return;
   assertObject(process, path);
   assertKnownKeys(process, RELATIONSHIP_PROCESS_FIELDS, path);
-  RELATIONSHIP_PROCESS_FIELDS.forEach((field) => {
-    assertString(process[field], `${path}.${field}`, true, PROJECT_LIMITS.relationshipProcessText);
+  RELATIONSHIP_PROCESS_TEXT_FIELDS.forEach((field) => {
+    if (process[field] !== undefined) assertString(process[field], `${path}.${field}`, true, PROJECT_LIMITS.relationshipProcessText);
   });
+  if (process.strength !== undefined) assertEnum(process.strength, RELATIONSHIP_STRENGTHS, `${path}.strength`);
+  if (process.connectionStatus !== undefined) assertEnum(process.connectionStatus, RELATIONSHIP_STATUSES, `${path}.connectionStatus`);
+  if (process.familyCount !== undefined && process.familyCount !== null) assertInteger(process.familyCount, `${path}.familyCount`, 0, Number.MAX_SAFE_INTEGER);
 }
 
 function validateLevelProgress(levelProgress, path) {
@@ -1862,15 +1801,14 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
     if (nodesById.get(edge.target)?.label !== edge.targetLabel) invalidProject(`${itemPath}.targetLabel`, 'does not match its target node');
     assertString(edge.verb, `${itemPath}.verb`, false, 100);
     assertEnum(edge.scale, SCALE_ORDER, `${itemPath}.scale`);
-    if (edge.scale === 'meso') invalidProject(`${itemPath}.scale`, 'is not allowed because Meso uses scoped mesosystem nodes without directional connections');
     if (edge.scale === 'macrosphere') invalidProject(`${itemPath}.scale`, 'is not allowed because Macrosphere items use scopes without relationship edges');
     assertEnum(edge.status, CANDIDATE_STATUSES, `${itemPath}.status`);
     assertEnum(edge.claimState, CLAIM_STATES, `${itemPath}.claimState`);
-    if (edge.scale === 'micro') {
+    if (edge.scale === 'micro' || edge.scale === 'meso') {
       const sourceNode = nodesById.get(edge.source);
       const targetNode = nodesById.get(edge.target);
-      if (sourceNode?.scale !== 'micro') invalidProject(`${itemPath}.source`, 'must reference a Micro node for a direct Micro relationship');
-      if (targetNode?.scale !== 'micro') invalidProject(`${itemPath}.target`, 'must reference a Micro node for a direct Micro relationship');
+      if (sourceNode?.scale !== 'micro') invalidProject(`${itemPath}.source`, 'must reference a Micro node for this relationship');
+      if (targetNode?.scale !== 'micro') invalidProject(`${itemPath}.target`, 'must reference a Micro node for this relationship');
       const relationshipIsLive = edge.status !== 'rejected' && edge.claimState !== 'retired';
       // Removing an item is a valid student choice. A pending candidate
       // connection can remain available for repair, but cannot enter the map.
@@ -1878,7 +1816,6 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
         && !(path === 'project.candidates.edges' && edge.status === 'pending');
       if (needsLiveEndpoints && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live Micro node');
       if (needsLiveEndpoints && (targetNode?.status === 'rejected' || targetNode?.claimState === 'retired')) invalidProject(`${itemPath}.target`, 'must reference a live Micro node');
-      if (relationshipIsLive && isMicroSettingNode(sourceNode) && isMicroSettingNode(targetNode)) invalidProject(itemPath, 'must not encode an interrelation between two Micro settings as a Micro relationship');
     }
     if (edge.scale === 'exosphere') {
       const sourceNode = nodesById.get(edge.source);
@@ -1887,9 +1824,9 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
       const microSetting = isMicroSettingNode(sourceNode) ? sourceNode : isMicroSettingNode(targetNode) ? targetNode : null;
       // Pending model or student suggestions remain reviewable even when their
       // endpoints need repair. They cannot become committed map pathways until
-      // they join exactly one outside decision setting to one carried Micro
-      // setting.
-      if (relationshipIsCommitted && !isExosphereDecisionPathway(sourceNode, targetNode)) invalidProject(itemPath, 'must connect exactly one outside Exosphere decision setting and one carried Micro setting');
+      // they form a supported pathway into a carried Micro setting or another
+      // outside decision setting.
+      if (relationshipIsCommitted && !isExosphereDecisionPathway(sourceNode, targetNode)) invalidProject(itemPath, 'must connect an outside Exosphere decision setting to a carried Micro setting or another outside decision setting');
       if (relationshipIsCommitted && microSetting && !carriedNodeIds.has(microSetting.id)) invalidProject(itemPath, 'must use a Micro setting already carried on the map');
       if (relationshipIsCommitted && !scaleLexiconVerb('exosphere', edge.verb)) invalidProject(`${itemPath}.verb`, 'must use an Exosphere decision-path relationship');
       if (relationshipIsCommitted && (sourceNode?.status === 'rejected' || sourceNode?.claimState === 'retired')) invalidProject(`${itemPath}.source`, 'must reference a live map item');
@@ -2069,7 +2006,7 @@ function validateMemoReview(review, path) {
   review.connections.forEach((connection, index) => {
     const connectionPath = `${path}.connections[${index}]`;
     assertObject(connection, connectionPath);
-    assertKnownKeys(connection, ['source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'rationale'], connectionPath);
+    assertKnownKeys(connection, ['source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'rationale', 'relationshipProcess'], connectionPath);
     assertString(connection.source, `${connectionPath}.source`, false, 200);
     assertString(connection.target, `${connectionPath}.target`, false, 200);
     if (connection.sourceLabel !== undefined) assertString(connection.sourceLabel, `${connectionPath}.sourceLabel`, false, 200);
@@ -2083,6 +2020,7 @@ function validateMemoReview(review, path) {
     if (connection.source === connection.target) invalidProject(`${connectionPath}.target`, 'must differ from source');
     assertString(connection.verb, `${connectionPath}.verb`, false, 100);
     assertString(connection.rationale, `${connectionPath}.rationale`, true, PROJECT_LIMITS.rationaleText);
+    validateRelationshipProcess(connection.relationshipProcess, `${connectionPath}.relationshipProcess`);
   });
   if (review.example !== null) {
     assertString(review.example, `${path}.example`, false, PROJECT_LIMITS.memoReviewExample);
@@ -2439,8 +2377,8 @@ function migrateScaleVocabulary(project, { sourceSchemaVersion = project?.schema
   }
   rewritten.schemaVersion = PROJECT_SCHEMA_VERSION;
   return migrateEvidenceAndProcess(migrateScaleTypeSemantics(rewritten), {
-    normalizeExisting: sourceSchemaVersion !== PROJECT_SCHEMA_VERSION,
-    legacyNodes: sourceSchemaVersion !== PROJECT_SCHEMA_VERSION,
+    normalizeExisting: sourceSchemaVersion < 7,
+    legacyNodes: sourceSchemaVersion < 7,
   });
 }
 
@@ -2658,18 +2596,13 @@ function migrateScaleTypeSemantics(project) {
         edge.claimState = 'retired';
         appendSemanticMigrationNote(edge, 'Retired during migration because a relationship endpoint is not a live, concrete map element.');
       }
-      if (edgeIsLive && edge.scale === 'micro' && isMicroSettingNode(sourceNode) && isMicroSettingNode(targetNode)) {
-        edge.status = 'rejected';
-        edge.claimState = 'retired';
-        appendSemanticMigrationNote(edge, 'Retired during migration because an interrelation between two Micro settings belongs in a scoped Meso item, not a direct Micro relationship.');
-      }
       if (edge.scale === 'macrosphere') {
         edge.scale = 'exosphere';
         edge.status = 'rejected';
         edge.claimState = 'retired';
         appendSemanticMigrationNote(edge, 'Retired during migration because Macrosphere is represented by scoped items rather than relationship edges.');
       }
-      if (edge.scale === 'micro' && (sourceScale !== 'micro' || targetScale !== 'micro')) {
+      if ((edge.scale === 'micro' || edge.scale === 'meso') && (sourceScale !== 'micro' || targetScale !== 'micro')) {
         const canBecomeInstitutional = [sourceScale, targetScale].includes('exosphere')
           && ![sourceScale, targetScale].includes('macrosphere');
         if (canBecomeInstitutional) {
@@ -2696,13 +2629,15 @@ function migrateScaleTypeSemantics(project) {
         if (edgeIsCommitted && !validPathway && isExosphereDecisionPathway(targetNode, sourceNode)) {
           [edge.source, edge.target] = [edge.target, edge.source];
           [edge.sourceLabel, edge.targetLabel] = [edge.targetLabel, edge.sourceLabel];
+          if (edge.relationshipProcess?.direction === 'source to target') edge.relationshipProcess.direction = 'target to source';
+          else if (edge.relationshipProcess?.direction === 'target to source') edge.relationshipProcess.direction = 'source to target';
           validPathway = true;
           appendSemanticMigrationNote(edge, 'Reoriented during migration so the outside Exo-level decision setting is the source and the carried Micro setting is the target.');
         }
         if (edgeIsCommitted && (!canonicalVerb || !validPathway || hasRetiredEndpoint)) {
           edge.status = 'pending';
           edge.claimState = 'inference';
-          appendSemanticMigrationNote(edge, 'Needs review after migration because an Exo-level connection must join exactly one live outside decision setting and one Micro setting already on the map. Choose valid endpoints or remove this suggestion.');
+          appendSemanticMigrationNote(edge, 'Needs review after migration because an Exo-level connection must join live outside decision settings or reach a Micro setting already on the map. Choose valid endpoints or remove this suggestion.');
           if (container === 'graph') graphEdgesReturnedForReview.add(edge.id);
         } else if (canonicalVerb) {
           edge.verb = canonicalVerb;
@@ -2739,7 +2674,8 @@ function migrateScaleTypeSemantics(project) {
     const reviewScale = project?.preflight?.configurationSnapshot?.activeScale
       || reviewNodes[0]?.scale
       || project.activeScale;
-    const incompatibleConnections = (['meso', 'macrosphere'].includes(reviewScale) && reviewConnections.length > 0)
+    const incompatibleConnections = (['micro', 'macrosphere'].includes(reviewScale) && reviewConnections.length > 0)
+      || (reviewScale === 'meso' && reviewNodes.length > 0)
       || reviewConnections.some((connection) => {
         const sourceLabel = connection?.sourceLabel || connection?.source;
         const targetLabel = connection?.targetLabel || connection?.target;
@@ -2756,67 +2692,27 @@ function migrateScaleTypeSemantics(project) {
 }
 
 function migrateLegacyMappingSemantics(project) {
-  let migratedEdge = false;
-  let migratedNode = false;
-  let hadLegacyMesoData = false;
-  const migrationNote = 'Migrated from an earlier Meso relationship model. Review this direct relationship in Micro before confirming its level.';
-  const appendMigrationNote = (record) => {
-    const notes = typeof record.notes === 'string' ? record.notes.trim() : '';
-    if (!notes.includes(migrationNote)) record.notes = notes ? `${notes}\n\n${migrationNote}` : migrationNote;
-  };
+  // Version 8 keeps the map's identities and evidence while moving relationship
+  // work into Meso. Existing scoped Meso records remain available for review.
+  const legacy = project?.schemaVersion < 8;
+  let movedRelationships = false;
   ['candidates', 'graph'].forEach((container) => {
-    const nodes = project?.[container]?.nodes;
-    if (!Array.isArray(nodes)) return;
-    nodes.forEach((node) => {
-      if (!node || typeof node !== 'object' || Array.isArray(node) || node.scale !== 'meso' || node.type === MESOSYSTEM_NODE_TYPE) return;
-      hadLegacyMesoData = true;
-      node.scale = 'micro';
-      if (node.status !== 'rejected' && node.claimState !== 'retired') {
-        node.status = 'research lead';
-        node.claimState = 'research lead';
-        appendMigrationNote(node);
-      }
-      migratedNode = true;
+    (project?.[container]?.nodes || []).forEach((node) => {
+      if (legacy && node?.scale === 'meso' && node.type !== MESOSYSTEM_NODE_TYPE) node.scale = 'micro';
+    });
+    (project?.[container]?.edges || []).forEach((edge) => {
+      if (legacy && edge?.scale === 'micro') { edge.scale = 'meso'; movedRelationships = true; }
     });
   });
-  ['candidates', 'graph'].forEach((container) => {
-    const edges = project?.[container]?.edges;
-    const nodesById = new Map([
-      ...(project?.graph?.nodes || []),
-      ...(project?.candidates?.nodes || []),
-    ].map((node) => [node.id, node]));
-    if (!Array.isArray(edges)) return;
-    edges.forEach((edge) => {
-      if (!edge || typeof edge !== 'object' || Array.isArray(edge)) return;
-      if (edge.scale !== 'meso') return;
-      hadLegacyMesoData = true;
-      edge.scale = 'micro';
-      if (edge.status !== 'rejected' && edge.claimState !== 'retired') {
-        edge.status = 'research lead';
-        edge.claimState = 'research lead';
-        appendMigrationNote(edge);
-      }
-      migratedEdge = true;
-    });
-  });
-  if (migratedNode && Array.isArray(project.releasedScales) && !project.releasedScales.includes('micro')) {
-    project.releasedScales.unshift('micro');
-  }
-  if (hadLegacyMesoData && Array.isArray(project.releasedScales) && !project.releasedScales.includes('meso')) {
-    const microIndex = project.releasedScales.indexOf('micro');
-    project.releasedScales.splice(microIndex >= 0 ? microIndex + 1 : project.releasedScales.length, 0, 'meso');
+  if (movedRelationships && Array.isArray(project.releasedScales) && !project.releasedScales.includes('meso')) {
+    project.releasedScales.splice(project.releasedScales.includes('micro') ? project.releasedScales.indexOf('micro') + 1 : 0, 0, 'meso');
   }
   const reviewScale = project?.preflight?.configurationSnapshot?.activeScale || project?.activeScale;
   const review = project?.preflight?.memoReview;
-  if (reviewScale === 'meso' && review && typeof review === 'object' && !Array.isArray(review)) {
-    const hadLegacyConnections = Array.isArray(review.connections) && review.connections.length > 0;
-    review.connections = [];
-    review.example = null;
-    review.nodes = (Array.isArray(review.nodes) ? review.nodes : []).filter((node) => node?.type === MESOSYSTEM_NODE_TYPE);
-    if (hadLegacyConnections) {
-      review.guidance = [{ point: 'Earlier Meso connection suggestions need a new review. Direct connections now remain in Micro, and Meso identifies interrelations among two or more Micro settings.' }];
-      review.readiness = { ready: review.nodes.length > 0, note: 'Review the Micro settings before choosing a mesosystem.' };
-    }
+  if (legacy && review && ((reviewScale === 'micro' && review.connections?.length)
+    || (reviewScale === 'meso' && review.nodes?.length))) {
+    // Saved graph and suggestions are retained. Refresh only the old guidance.
+    project.preflight = null;
   }
   return project;
 }
@@ -2867,11 +2763,8 @@ function migrateLegacyProject(project) {
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
   }
-  if (project?.schemaVersion === 6 || project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
-    // Earlier schema-v6 builds used verb-bearing Meso edges. Preserve those
-    // records as Micro research leads so the student can review their level;
-    // never infer a mesosystem scope from a legacy edge. Schema v6 evidence
-    // references are also copied into additive claim evidence records.
+  if (project?.schemaVersion === 6 || project?.schemaVersion === 7 || project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
+    // Preserve saved relationship records and add the current evidence fields.
     const migrated = cloneProject(project);
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
@@ -3138,8 +3031,12 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
       });
       if (record.relationshipProcess) {
         RELATIONSHIP_PROCESS_FIELDS.forEach((field) => {
-          if (!record.relationshipProcess[field]) return;
-          record.relationshipProcess[field] = '';
+          const defaults = createRelationshipProcess();
+          if (record.relationshipProcess[field] === undefined || record.relationshipProcess[field] === defaults[field]) return;
+          // Direction and explicitly missing pairs describe graph structure.
+          if (field === 'direction' && ['source to target', 'target to source', 'both directions', 'not yet known', 'varies'].includes(record.relationshipProcess.direction)) return;
+          if (field === 'connectionStatus') return;
+          record.relationshipProcess[field] = field === 'direction' && record.relationshipProcess.direction ? 'not yet known' : defaults[field];
           addRedaction(redactions, `${path}[${index}].relationshipProcess.${field}`, reason);
         });
       }
@@ -3282,8 +3179,8 @@ export function parseProject(value) {
     throw new Error(`Invalid Systems Mapping project JSON: ${error.message}`);
   }
   assertSafeProjectStructure(parsed);
-  if (![1, 2, 3, 4, 5, 6, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
-    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, 6, or ${PROJECT_SCHEMA_VERSION}.`);
+  if (![1, 2, 3, 4, 5, 6, 7, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
+    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, 6, 7, or ${PROJECT_SCHEMA_VERSION}.`);
   }
   return validateProject(discardRetiredNodeTags(migrateLegacyProject(parsed)));
 }

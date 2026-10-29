@@ -2,8 +2,8 @@
 // the Gateway adapter's compact instruction all read these numbers, so the
 // model is never told two different limits in one request.
 export const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
-  micro: Object.freeze({ nodes: 10, connections: 8 }),
-  meso: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
+  micro: Object.freeze({ nodes: 10, connections: 0 }),
+  meso: Object.freeze({ nodes: 0, connections: 8 }),
   exosphere: Object.freeze({ nodes: 6, connections: 5 }),
   macrosphere: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
 });
@@ -21,8 +21,8 @@ export const MAP_CHECK_INTENTS = Object.freeze({
 });
 
 const ITEM_NOUNS = Object.freeze({
-  micro: ['nodes', 'direct relationships'],
-  meso: ['mesosystems', null],
+  micro: ['nodes', null],
+  meso: ['new nodes', 'relationships between carried Micro nodes'],
   exosphere: ['outside decision settings', 'pathways'],
   macrosphere: ['structures', null],
 });

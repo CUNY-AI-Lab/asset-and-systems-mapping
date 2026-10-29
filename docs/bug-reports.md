@@ -1,115 +1,137 @@
-# Report a problem
+# Report a bug
 
-## Current production flow
+## Delivery configuration
 
-Production selects `BUG_REPORT_MODE=redmine` in [wrangler.jsonc](../wrangler.jsonc).
-The footer opens a report form for either CUNY Login or a guest's first name,
-last name and .edu email address. Guest details are self-reported contact
-information, not verified identity or proof of enrollment. A signed-in reporter's
-preferred name comes from the verified application identity.
+The release configuration selects `BUG_REPORT_MODE=email` in
+[wrangler.jsonc](../wrangler.jsonc). Reports use the existing `BUG_REPORTS`
+service binding to `cail-tools-admission`, whose email receiver manages the
+recipient and provider. Zach confirmed `zmuhlbauer1@gmail.com` for this workflow.
+The application carries no Gmail credential and accepts no browser-supplied
+recipient. Release acceptance checks a fresh report against that inbox.
 
-[Worker routing](../cloudflare/worker.ts) exposes
-`GET /api/bug-reports/availability`. Redmine mode returns `mode: "contact"` and
-`delivery: "redmine"`; `enabled` reflects whether `REDMINE_API_KEY` is configured.
-Explicit Redmine mode with a missing key disables reporting and returns 503 for
-report requests. It does not fall back to email. The presence of that key also
-selects Redmine when the mode variable is absent. This describes existing
-configuration; changing credentials is a separate authorized operation.
+Explicit `email` and `redmine` modes both keep the contact form and its account
+checks. A delivery-mode change therefore preserves the authorization rules for
+an in-flight draft. In email mode, new reports go directly to the email receiver.
+In Redmine mode, new reports use Redmine when its key is configured and email
+when the key is absent. A definitive Redmine rejection also permits email
+fallback. The receipt rules below distinguish these cases from uncertain sends.
 
-The [contact form](../src/support/contact-form.js) uses these routes:
+`GET /api/bug-reports/availability` returns `enabled`, `mode: "contact"`, the
+preferred `delivery`, and an optional email `fallback`. These fields describe
+configured capabilities; actual provider acceptance and inbox arrival require
+a report transaction. When both delivery capabilities are absent, reporting is
+disabled and requests return 503.
 
-- `GET /api/bug-reports/session` checks the signed-in account and returns
-  `expectedActor` and `preferredName`. It is active in Redmine mode.
+## Identity, report contents, and routes
+
+The footer opens a form for either CUNY Login or a guest's first name, last name,
+and .edu email address. Guest details are self-reported contact information.
+Signed-in names come from the verified application identity.
+
+- `GET /api/bug-reports/session` verifies the account and returns `expectedActor`
+  and `preferredName`.
 - `POST /api/bug-reports` accepts exactly
-  `{reportId, expectedActor, description, path}`. The server verifies the account
-  and rejects a changed actor; the browser does not supply the preferred name.
+  `{reportId, expectedActor, description, path}` and rejects an account change.
 - `POST /api/bug-reports/guest` accepts exactly
-  `{reportId, firstName, lastName, email, description, path}` without CUNY Login.
-  [Shared validation](../src/support/contact.js) checks the names and .edu email
-  syntax on both client and server. It does not verify mailbox ownership.
+  `{reportId, firstName, lastName, email, description, path}`. Shared client and
+  server validation checks names and .edu email syntax.
 
-Context uses fixed page categories (`/`, `/teacher.html`, `/account.html`, or
-`/p/:shared-map`), not project IDs or capability URLs. The form does not
-attach map or memo contents automatically. Reporters can still put personal or
-sensitive information in their description; this is not an anonymous channel.
+Email submission uses Admission's existing description-only contract. It
+includes the unchanged report description, a fixed page category, release,
+reference, and server-derived daily rate metadata. It adds neither account
+identity nor guest contact fields to the message. The form explains that a
+reporter who wants a reply should include contact details in the description.
+The complete 4,000-character description survives fallback.
 
-## Storage, limits and delivery
+Redmine delivery creates a private issue in CAIL Ticketing project 15, Bug
+tracker 2. Its description includes the report, page category, release,
+reference, time, and verified account-name metadata or clearly labeled guest
+contact details. Private visibility follows Redmine's permissions.
 
-[RedmineReports](../cloudflare/redmine-reports.ts) creates private issues in
-CAIL Ticketing project 15, Bug tracker 2. The issue includes the description,
-page category, release, report reference and time. Signed-in issues include an
-account reference and the verified preferred name when available. Guest issues
-include the self-reported name and email, explicitly labeled unverified. Private
-issue visibility remains subject to Redmine's permissions.
+Context uses fixed page categories. Email supports `/` and `/p/:shared-map`;
+other admitted page categories become `/` for the shared receiver. Project
+identifiers, shared-link capabilities, query strings, and fragments stay out of
+this context. Memo or map contents are included only when a reporter adds them
+to the description.
 
-The Durable Object stores receipt rows containing an owner reference, report
-UUID, content fingerprint, creation time, state and issue ID. Guest receipts
-also retain a network rate reference. Guest owner references are derived from
-normalized email; network references are derived from the connecting IP and
-server secret. These are pseudonymous references, not a claim of anonymity.
-The receipt tables do not store the description or contact text; that text is
-sent to Redmine. Browser drafts remain in tab memory, with an unload warning
-while a draft is pending. Closing the pop-up preserves the draft; reloading or
-leaving the page can discard it. No broader provider retention or logging claim
-is established by these application tables.
+## Durable receipts and safe fallback
 
-The server bounds the JSON body to 32,768 bytes and five seconds of reading,
-validates a UUIDv4 report ID and closed payload fields, and limits descriptions
-to 4,000 UTF-16 code units before normalization. After normalizing line endings
-and tabs and trimming outer whitespace, it requires at least 10 code units and
-rejects disallowed control characters. Each owner may create 10 receipts in a rolling 24 hours; guest network
-references may create 20. Existing report IDs are checked before these creation
-limits. Worker ingress limits also apply. Redmine responses are bounded to
-2 MiB and the delivery/reconciliation operation to 18 seconds; redirects are
-not followed with the API key.
+The application's Durable Object stores receipt metadata: owner reference,
+report UUID, content fingerprint, creation time, state, delivery channel,
+Redmine issue ID when applicable, and a flag recording a definitive rejection.
+Guest receipts also retain a network rate reference. It stores neither the
+report description nor contact text. Browser drafts stay in tab memory, with a
+leave-page warning while work is pending.
 
-## Receipts and retries
+The channel is persisted before dispatch. Email uses a stable UUID derived from
+the local owner and report UUID; the shared receiver owns the durable email
+claim and provider-acceptance receipt. Its source records the claim before
+calling SES and replays an accepted receipt for the same reference. Concurrent
+local requests share one in-flight submission. Eviction or deployment changes
+preserve each report's selected channel.
 
-`{ok:true,status:"saved",reportId,createdAt}` means the application recorded a
-Redmine issue ID from a successful creation response or reconciliation lookup.
-It does not mean an email was sent or that an instructor read the report.
+| Outcome | Application behavior |
+|---|---|
+| New report with email preference, or Redmine key absent | Submit through the email binding. |
+| Redmine returns 400, 401, 403, 404, 422, or 429 | Persist the definitive refusal, then use email if available. |
+| Redmine timeout, connection exception, 408, 5xx, redirect, or unreadable success | Retain the Redmine receipt as pending; a status check searches for the original issue marker. |
+| Redmine issue is found after a lost acknowledgement | Save and replay the Redmine receipt. |
+| Email receiver confirms acceptance | Save and replay the email receipt with its delivery reference. |
+| Email response or acknowledgement is uncertain | Keep the same email UUID for a status check against the receiver's durable receipt. |
+| Email receiver explicitly permits retry | Retain the UUID and respect its retry delay. |
+| Terminal email refusal | Preserve the draft and show a support action. |
 
-A receipt is claimed before sending. Repeating a saved report returns its
-receipt without another issue creation; changing the payload under the same
-owner/report ID returns `idempotency_conflict`. Concurrent requests for an
-active report return `pending`.
+An uncertain Redmine request never triggers another creation request or a
+second-channel send. An unsuccessful reconciliation remains pending. Earlier
+rejected Redmine receipts may have represented redirects after creation; their
+migration preserves that uncertainty. Only newly classified definitive
+rejections, or the earlier 429 retryable state, permit fallback.
 
-If acknowledgement is lost, the receipt stays pending. A retry searches Redmine
-for its report marker and records the issue ID if found; it does not issue a
-second creation request. An empty, failed or incomplete lookup remains
-unconfirmed, so a report may remain pending even if delivery never occurred.
-The lookup is bounded to 1,000 results. An explicit Redmine 429 marks the receipt
-retryable and allows a later creation attempt; selected definitive rejections
-mark it rejected. Other uncertain responses remain pending.
+An additional metadata table keeps the original receipt-table shapes intact.
+Earlier records default to Redmine, so switching the configured preference cannot reinterpret a prior
+receipt as an email acceptance. Changed content under the same report reference
+returns an idempotency conflict.
 
-The browser locks an uncertain payload, displays its reference and offers
-**Check status**, retaining the same UUID. Rate limits display a wait before
-retry. Authentication changes require the original signed-in account for its
-draft; definitive failures remain visible. Closing a form or losing the browser
-connection does not prove that server-side delivery stopped. These controls
-reduce duplicate creation; they do not constitute a general exactly-once
-provider guarantee.
+## Acknowledgements and limits
 
-## Legacy email flow
+A Redmine success returns `status: "saved", delivery: "redmine"`; the form says
+**Saved to CAIL Ticketing**. An email success returns
+`status: "accepted", delivery: "email"` and `deliveryReference`; the form says
+**Accepted for email delivery** and shows that reference. Provider acceptance
+and inbox arrival are separate outcomes. The browser keeps uncertain drafts
+locked and offers **Check status** with the same local reference.
 
-The retained [email handler](../cloudflare/bug-reports.ts) and
-[email form](../src/support/form.js) support the older `BUG_REPORTS` service
-binding. They apply when Redmine is not explicitly selected and no Redmine key
-is present. In that mode, the report session endpoint returns 404 and anonymous
-`POST /api/bug-reports` accepts `{reportId, description, path}` through
-`AdmissionBugReports.submitPublic`. Its `accepted` receipt concerns email
-provider acceptance, not mailbox arrival. Its payload, budgets and receipts
-must not be used to describe current Redmine production behavior. Retaining the
-binding in configuration does not make it an automatic Redmine fallback.
+Request bodies are bounded to 32,768 bytes and five seconds of reading. Reports
+require UUIDv4 references and 10–4,000 UTF-16 description units after whitespace
+normalization. Each owner can create 10 receipts per rolling 24 hours; guest
+network references can create 20. Configured Redmine keys preserve the existing
+keyed network reference; email-only deployments use a daily IP digest. Worker
+ingress limits and the shared email receiver's independent limits also apply.
 
-## Verification boundaries
+Redmine responses are bounded to 2 MiB and 18 seconds. Requests keep credentials
+on the configured host. Email RPC waits are bounded to 18 seconds, while the
+receiver retains responsibility for any dispatch already in progress. Neither
+closing the form nor a lost browser connection establishes that delivery stopped.
 
-Synthetic coverage lives in [Redmine receipt tests](../cloudflare/redmine-reports.test.ts),
-[contact form tests](../src/support/contact-form.test.js) and
-[Worker reporting tests](../cloudflare/bug-report-runtime.test.js). Read-only
-availability, health and asset checks confirm configuration and deployed bytes,
-not report delivery. A prior guest issue receipt establishes only that specific
-guest transaction. Signed-in reporting, account-change behavior and issue
-readback require separately authorized acceptance; do not submit another live
-report merely to check deployment freshness. Follow the
+## Earlier anonymous installations
+
+When neither an explicit delivery mode nor a Redmine key is configured, the
+retained anonymous form and handler use `AdmissionBugReports.submitPublic`
+directly. This route accepts `{reportId, description, path}` and stays separate
+from account and course authorization. Its accepted receipt also means provider
+acceptance. The explicit contact modes retain their authenticated or validated
+guest boundaries.
+
+## Verification
+
+Synthetic tests cover routing, contact validation, channel selection, definitive
+refusals, uncertain Redmine outcomes, email receipt replay, concurrent requests,
+legacy receipt migration, and real Durable Object eviction. The contact form
+checks channel-specific acknowledgements and retains the same draft reference
+through status checks. The email runtime harness exercises the production
+Worker, real local storage, and a synthetic email receiver.
+
+A production acceptance record should pair the application's email
+`deliveryReference` with the message received at Zach's confirmed inbox.
+Availability and health responses establish configuration only. See the
 [deployment guide](cloudflare-deployment.md) for release verification.

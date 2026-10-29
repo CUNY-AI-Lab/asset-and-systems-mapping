@@ -1,5 +1,7 @@
 # Micro and Meso correction — 2026-08-24
 
+> Historical decision: the October 28 classroom update supersedes this contract. See [Current Micro/Meso workflow](MICRO_MESO_WORKFLOW_2026-10-28.md). Existing source and records remain available for provenance.
+
 ## Direct decision
 
 The current product contract is:

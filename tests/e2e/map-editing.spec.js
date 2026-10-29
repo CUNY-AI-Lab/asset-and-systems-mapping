@@ -1,5 +1,5 @@
 import { expect, test, captureSourceRenderedScreenshot, scanAccessibility, assertNoAccessibilityViolations } from './support/test.js';
-import { mapCommand, notebookSection, showMap } from './support/notebook.js';
+import { mapCommand, notebookSection, showMap, openTools } from './support/notebook.js';
 import { buildEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
 import { serializeProject } from '../../src/domain.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
@@ -31,9 +31,26 @@ async function openProject(page, project) {
 
 async function selectItem(page, id) {
   await showMap(page);
-  if (!await page.locator(`[data-graph-id="${id}"]`).count()) await page.getByRole('button', { name: 'Show full map', exact: true }).click();
-  await page.locator(`[data-graph-id="${id}"]`).press('Enter');
+  const project = await stored(page);
+  const item = project.graph.nodes.find(node => node.id === id) || project.graph.edges.find(edge => edge.id === id);
+  expect(item, `Saved map item ${id}`).toBeTruthy();
+  const fullMap = page.getByRole('button', { name: 'Show full map', exact: true });
+  if (await fullMap.isVisible()) await fullMap.click();
+  await openTools(page);
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption(item.scale);
+  const savedLinkage = item.scale === 'meso' && !item.source;
+  await mapCommand(page, savedLinkage ? 'List' : 'Canvas');
+  if (savedLinkage) {
+    // Earlier projects retain their scoped Meso records in List; new Meso
+    // relationships use the existing Micro nodes on the canvas.
+    await page.getByRole('button', { name: `Open details for ${item.label}`, exact: true }).click();
+  } else {
+    await page.locator(`[data-graph-id="${id}"]`).press('Enter');
+  }
   await expect(inspector(page)).toBeVisible();
+  // Let the phone drawer resize and selected-item fit finish before taking
+  // the camera snapshot that later edits must preserve.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 function fixture() {
@@ -107,7 +124,7 @@ test('contextual manual item edits cancel, validate, save, reload, and keep the 
 
 test('candidate and selected connection wording stay synchronized before and after finishing review', async ({ page }, testInfo) => {
   const project = fixture();
-  project.activeScale = 'micro';
+  project.activeScale = 'meso';
   project.instructor.requireStudentConfirmation = true;
   project.candidates = {
     nodes: [structuredClone(project.graph.nodes.find(node => node.id === residentId))],
@@ -119,7 +136,8 @@ test('candidate and selected connection wording stay synchronized before and aft
   await inspector(page).getByRole('button', { name: 'Save', exact: true }).click();
   await notebookSection(page, 'suggestions');
   await page.getByRole('combobox', { name: 'Suggestion type' }).selectOption('edges');
-  await page.locator('.candidate-details > summary').click();
+  const details = page.locator('.candidate-details');
+  if (!await details.evaluate(element => element.open)) await details.locator(':scope > summary').click();
   const candidate = page.getByRole('textbox', { name: 'Direct connection' });
   await expect(candidate).toHaveValue('provides daily support to');
   await candidate.fill('coordinates home appointments with');
@@ -136,7 +154,7 @@ test('candidate and selected connection wording stay synchronized before and aft
 
 test('accepted Ask connections have a contextual relationship editor without candidate copies', async ({ page }, testInfo) => {
   const project = fixture();
-  project.activeScale = 'micro';
+  project.activeScale = 'meso';
   project.instructor.requireStudentConfirmation = true;
   await page.route('**/api/map/connections', route => route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ connections: [{
     source: residentId, target: 'node_e2e_resource_navigator', verb: 'asks for assistance from', rationale: 'Synthetic model response for a local browser test.',

@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { extractPdfText, pageText } from './pdfMemo.js';
+import { extractPdfMemo, extractPdfText, pageText } from './pdfMemo.js';
 
 describe('pageText', () => {
+  it('preserves word boundaries in positioned PDF runs and keeps citation punctuation', () => {
+    const run = (str, x, width, y = 100) => ({ str, transform: [10, 0, 0, 10, x, y], width, height: 10, dir: 'ltr' });
+    expect(pageText([
+      run('School', 10, 30), run('support', 43, 35), run(' (Smith,', 78, 38),
+      run('2025', 120, 20), run(').', 140, 10),
+    ])).toBe('School support (Smith, 2025).');
+    expect(pageText([run('com', 10, 15), run('munity', 25, 25), run('1', 50, 3, 104)])).toBe('community1');
+  });
+
   it('keeps recorded line breaks and drops non-text items', () => {
     expect(pageText([
       { str: 'Rosa’s husband works nights', hasEOL: true },
@@ -26,6 +35,30 @@ function fakePdfjs(pages) {
 }
 
 describe('extractPdfText', () => {
+  it('reports partially scanned pages while keeping citations and page order', async () => {
+    const { pdfjs, destroy } = fakePdfjs([
+      [{ str: 'The school works with families (Smith, 2025, p. 12).', hasEOL: true }],
+      [],
+      [{ str: 'References', hasEOL: true }, { str: 'Smith, A. (2025). Community schooling.', hasEOL: true }],
+    ]);
+    await expect(extractPdfMemo(new ArrayBuffer(4), { maxCharacters: 1000, load: async () => pdfjs })).resolves.toEqual({
+      text: 'The school works with families (Smith, 2025, p. 12).\n\nReferences\nSmith, A. (2025). Community schooling.',
+      pageCount: 3, emptyPageCount: 1,
+    });
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the page and worker when text extraction fails', async () => {
+    const cleanup = vi.fn();
+    const destroy = vi.fn();
+    const pdfjs = { getDocument: () => ({ destroy, promise: Promise.resolve({ numPages: 1, getPage: async () => ({
+      cleanup, getTextContent: async () => { throw new Error('Unreadable text layer'); },
+    }) }) }) };
+    await expect(extractPdfMemo(new ArrayBuffer(4), { maxCharacters: 1000, load: async () => pdfjs })).rejects.toThrow('Unreadable text layer');
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('joins pages, skips empty pages, disables eval and always releases the document', async () => {
     const { pdfjs, destroy, getDocument } = fakePdfjs([[{ str: 'Page one', hasEOL: false }], [], [{ str: 'Page three', hasEOL: false }]]);
     await expect(extractPdfText(new ArrayBuffer(4), { maxCharacters: 1000, load: async () => pdfjs })).resolves.toBe('Page one\n\nPage three');

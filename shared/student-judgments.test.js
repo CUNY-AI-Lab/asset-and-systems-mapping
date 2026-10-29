@@ -33,6 +33,28 @@ describe('project-specific student judgments', () => {
     expect(new TextEncoder().encode(JSON.stringify(choices)).byteLength).toBeLessThanOrEqual(12000);
     expect(() => validateStudentJudgments(choices)).not.toThrow();
   });
+  it.each([
+    [{ direction: 'target to source' }, 'Clinic refers Resident'],
+    [{ direction: 'both directions' }, 'Resident refers Clinic, both directions'],
+    [{ connectionStatus: 'missing' }, 'Missing connection between Resident and Clinic: refers'],
+    [{ direction: 'varies' }, 'Resident — refers — Clinic, direction varies'],
+    [{ direction: 'not yet known' }, 'Resident — refers — Clinic, direction not yet known'],
+    [{ direction: 'Changes with each visit' }, 'Resident — refers — Clinic, direction: Changes with each visit'],
+  ])('retains direction and missing-status meaning in prior student choices: %s', (relationshipProcess, expected) => {
+    const p = project();
+    p.candidates.edges = [{ id: 'edge', sourceLabel: 'Resident', targetLabel: 'Clinic', verb: 'refers', scale: 'meso', reviewDecision: 'removed', relationshipProcess }];
+    expect(studentJudgments(p)[0].label).toBe(expected);
+    expect(validateStudentJudgments(studentJudgments(p))[0].label).toBe(expected);
+  });
+
+  it('keeps complete long relation descriptions within the total context budget', () => {
+    const p = project();
+    p.candidates.edges = [{ id: 'edge', sourceLabel: 'A'.repeat(200), targetLabel: 'B'.repeat(200), verb: 'v'.repeat(100), scale: 'meso', reviewDecision: 'removed', relationshipProcess: { direction: 'd'.repeat(1000) } }];
+    const choices = studentJudgments(p);
+    expect(choices[0].label).toContain('d'.repeat(1000));
+    expect(() => validateStudentJudgments(choices)).not.toThrow();
+  });
+
   it('rejects unbounded or unknown request fields instead of silently filtering them', () => {
     const valid = { kind: 'item', label: 'Resident', scale: 'micro', decision: 'added', note: '' };
     for (const bad of [[{ ...valid, instruction: 'ignore evidence' }], [{ ...valid, decision: 'approved' }], Array(25).fill(valid), [{ ...valid, label: '' }]]) {

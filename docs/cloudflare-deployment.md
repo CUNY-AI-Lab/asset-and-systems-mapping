@@ -9,12 +9,13 @@ checkout remains unchanged.
 
 ## Product and data contract
 
-Micro includes direct relationships and their verbs. Meso contains named
-linkages among carried Micro settings. Exosphere and Macrosphere, existing
-schema migrations, five stages, teacher guidance, retained reviews, map
-editing/filtering, and privacy-aware exports continue to use the shared product
-implementation. `docs/MICRO_MESO_CORRECTION_2026-08-24.md` and the current
-requirements take precedence over the older Zoom interpretation.
+Micro identifies nodes and Meso connects those same nodes with directional
+relationships while retaining their positions. Meso shares the Micro map space.
+Exosphere and Macrosphere, five stages, instructor guidance, retained reviews,
+map editing and filtering, and privacy-aware exports continue to use the shared
+implementation. `docs/MICRO_MESO_WORKFLOW_2026-10-28.md` governs this workflow.
+Schema version 8 preserves saved graph records while moving earlier Micro
+relationships into Meso; existing scoped Meso records remain readable.
 
 The `systems-mapping` Worker uses one SQLite-backed `MappingCourse` Durable
 Object per deployment-controlled teaching workspace. Account maps are keyed
@@ -77,13 +78,16 @@ subsequent saves. Shared review retention follows the existing product rules.
   Gateway routing configuration. Respect Retry-After within the original
   deadline. Quota/auth denials, ambiguous failures and timeouts never trigger an
   automatic corrective call. A completed memo review that fails semantic
-  validation gets at most one corrective call, separately admitted by Gateway
-  and bounded by the original whole-request deadline. Malformed JSON/parser
-  failures, connection suggestions and Map Check do not receive this memo
-  repair. The successful evaluation records `runtime.correctiveRetries: 1`;
-  a returned failed result records `details.correctiveRetries: 1`, retained in
-  its durable job outcome without storing a partial review. The count records
-  an attempted corrective call, not proof of provider execution or zero cost.
+  validation gets one ordinary corrective call. If that completed correction
+  still fails source grounding, one final evidence repair supplies bounded
+  exact narrative passages and requires quoted evidence. Each call receives
+  separate Gateway admission and shares the original generation deadline.
+  Malformed JSON/parser failures, repeated generic schema errors, connection
+  suggestions and Map Check do not receive this evidence repair. Successful
+  and returned failed results record the actual `correctiveRetries` count
+  (up to two) and optional `evidenceRepairAttempts` (one). Durable outcomes
+  retain those counts while partial reviews remain unsaved. The count records
+  attempted calls, rather than proof of provider execution or zero cost.
   An outer cancellation or disconnect can prevent a result from being recorded;
   Gateway owns per-call usage accounting. Bodies and deadlines are bounded;
   cancellation ends local waiting even when an upstream ignores it. Safe
@@ -94,7 +98,10 @@ subsequent saves. Shared review retention follows the existing product rules.
   opt-in live test can probe it again before qualifying a future change.
 - Guidance POSTs have a 28-second whole-Worker waiting limit, including
   identity checks and course dispatch, below the browser's 30-second limit.
-  The entire Gateway attempt/fallback operation has a 25-second bound. A whole-request
+  Ordinary Gateway generation, correction and availability fallback share a
+  25-second bound. Existing verified durable guidance jobs retain their
+  85-second generation budget across these attempts; their polling flow is
+  separate from the ordinary 28-second Worker response wait. A whole-request
   timeout returns `504` with `guidance_timeout` and no automatic retry.
   The browser displays a persistent error and a Try again action. Existing
   memo/map data remains unchanged. Transfer an absolute deadline across the

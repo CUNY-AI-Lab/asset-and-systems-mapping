@@ -43,7 +43,8 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).graph.nodes.length).toBeGreaterThan(0);
   const graph = (await readProject(page)).graph;
-  expect(graph.edges.length).toBeGreaterThan(0);
+  expect(graph.edges).toHaveLength(0);
+  await expect(page.locator('.graph-edge')).toHaveCount(0);
   expect([...graph.nodes, ...graph.edges].every((item) => item.reviewDecision === 'pending' && item.claimState === 'inference')).toBe(true);
   await expect(page.getByRole('button', { name: 'Review issue' })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -57,6 +58,8 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('meso');
   await expect.poll(async () => (await readProject(page)).stage).toBe(3);
+  await expect.poll(async () => (await readProject(page)).graph.edges.filter(edge => edge.scale === 'meso').length).toBeGreaterThan(0);
+  expect((await readProject(page)).graph.nodes.map(node => node.id)).toEqual(graph.nodes.map(node => node.id));
   expect(memoReviews).toHaveLength(2);
   expect(memoReviews[0]).not.toHaveProperty('fieldNotes');
   expect(memoReviews[1].fieldNotes).toEqual({

@@ -57,9 +57,7 @@ function memoReviewFixture() {
       { label: 'School', type: 'setting', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
     ],
-    connections: [
-      { source: 'School', target: 'Family', verb: 'refers', rationale: 'The memo names the referral directly.' },
-    ],
+    connections: [],
     example: null,
     readiness: { ready: true, note: 'The memo already supports mapping. Continue to choose nodes.' },
   };
@@ -402,7 +400,8 @@ describe('persistent preflight suggestion review queue', () => {
     expect(input.systemPrompt).toContain('Consider both parts when present');
     expect(input.systemPrompt).toContain('Attribute observations to the student, keep questions open');
     expect(input.systemPrompt).toContain('planned investigations as future work, never completed findings');
-    expect(input.systemPrompt).toContain('Meso and Macro still return no directional connections');
+    expect(input.systemPrompt).toContain('Meso connects those existing Micro nodes with directional relationships using their exact carried IDs and returns no new nodes');
+    expect(input.systemPrompt).toContain('Macro uses scoped conditions and returns no directional connections');
     expect(input.systemPrompt).toContain('Do not infer what the rest of the note says');
     const stored = system.db.prepare('SELECT source_record_json, source_material FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
     expect(JSON.parse(stored.source_record_json)).toEqual(body.sourceRecord);
@@ -468,11 +467,12 @@ describe('persistent preflight suggestion review queue', () => {
     });
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
     expect(response.status).toBe(502);
-    // One corrective retry names the quotation rule; a repeated failure stores nothing.
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    // Ordinary correction and one evidence-focused repair both fail without storing partial guidance.
+    expect(ollamaRequest).toHaveBeenCalledTimes(3);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('copied from the memo character for character');
-    expect((await response.json()).details.correctiveRetries).toBe(1);
+    expect((await response.json()).details).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(ollamaRequest.mock.calls[2][0].systemPrompt).toContain('FINAL EVIDENCE REPAIR');
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
@@ -623,24 +623,24 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo');
     expect(firstInput.systemPrompt).toContain('Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments');
     expect(firstInput.systemPrompt).toContain('BE SELECTIVE');
-    expect(firstInput.systemPrompt).toContain('no more than 10 nodes and 8 direct relationships at Micro');
+    expect(firstInput.systemPrompt).toContain('at most 10 nodes and zero connections at Micro');
     expect(firstInput.systemPrompt).toContain('A named activity must still be a complete noun phrase');
-    expect(firstInput.systemPrompt).toContain('A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting');
-    expect(firstInput.systemPrompt).toContain('only setting-to-setting interrelations are excluded from Micro and belong at Meso');
+    expect(firstInput.systemPrompt).toContain('Every carried Micro node is eligible as a Meso relationship endpoint');
+    expect(firstInput.systemPrompt).toContain('At Meso, source and target must be different exact IDs from carriedNodes');
     expect(firstInput.systemPrompt).toContain('Use literal, conventional instructional language throughout');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
-    expect(firstInput.systemPrompt).toContain('At Meso and Macrosphere, connections MUST be empty');
+    expect(firstInput.systemPrompt).toContain('At Micro and Macrosphere, connections must be empty');
     expect(firstInput.systemPrompt).toContain('SCALE BOUNDARIES');
-    expect(firstInput.systemPrompt).toContain('Meso identifies only a noun-labeled interrelation among two or more of those Micro settings');
-    expect(firstInput.systemPrompt).toContain('it is not another place to add entities or directional connections');
-    expect(firstInput.systemPrompt).toContain('Never propose a university, employer, registrar, bursar, office, agency, program, service, administrative system, or other entity as a new Meso node.');
+    expect(firstInput.systemPrompt).toContain('Meso identifies directional relationships between the people, groups, resources and settings already mapped at Micro');
+    expect(firstInput.systemPrompt).toContain('At Meso, reuse the exact supplied Micro node IDs');
+    expect(firstInput.systemPrompt).toContain('Return an empty nodes array and describe relationships in connections.');
     expect(firstInput.systemPrompt).toContain('A named organization, institution, agency, or service remains at Micro when the person participates there directly.');
-    expect(firstInput.systemPrompt).toContain('Exosphere identifies outside decision settings whose actions reach an immediate Micro setting');
-    expect(firstInput.systemPrompt).toContain('Never tell the student to add an institution, office, administrator, employer, service, policy, or other entity at Meso.');
+    expect(firstInput.systemPrompt).toContain('Exosphere identifies outside decision settings whose funding or decisions affect the focal situation');
+    expect(firstInput.systemPrompt).toContain('At Meso, guidance and readiness should describe the proposed relationships using the human-readable labels of existing Micro nodes.');
     expect(firstInput.systemPrompt).toContain('For Micro and Meso, example must be null.');
     expect(firstInput.systemPrompt).toContain('A generic category is not an Exosphere node');
     expect(firstInput.systemPrompt).toContain('FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata');
-    expect(firstInput.systemPrompt).toContain('verb MUST be exactly one of: funds, administers, regulates');
+    expect(firstInput.systemPrompt).toContain('verb must be exactly one of: funds, administers, regulates');
     expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
       .toBeGreaterThan(firstInput.systemPrompt.lastIndexOf(firstBody.projectOverlay.customInstructions));
@@ -664,10 +664,7 @@ describe('persistent preflight suggestion review queue', () => {
       { label: 'School', type: 'setting', scale: 'micro', evidence: 'A school refers a family to an agency.' },
       { label: 'Family', type: 'family', scale: 'micro', evidence: 'A school refers a family to an agency.' },
     ]);
-    expect(first.review.connections).toEqual([{
-      source: 'School', target: 'Family', sourceLabel: 'School', targetLabel: 'Family',
-      verb: 'refers', rationale: 'The memo names the referral directly.',
-    }]);
+    expect(first.review.connections).toEqual([]);
     expect(first.review.example).toBeNull();
     expect(first.review.readiness).toEqual({
       ready: true,
@@ -723,7 +720,7 @@ describe('persistent preflight suggestion review queue', () => {
     }, { cookie: studentCookie });
     expect(oversized.status).toBe(413);
     expect(await oversized.json()).toEqual({
-      error: 'The memo must contain no more than 131072 UTF-8 bytes for this suggestion runtime.',
+      error: 'The narrative sent to the model must contain no more than 131072 UTF-8 bytes. Your complete memo remains saved.',
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(5);
 
@@ -744,11 +741,16 @@ describe('persistent preflight suggestion review queue', () => {
     const sourceMaterial = 'The community center coordinates with the school. The Americans with Disabilities Act shapes the school and community center.';
     const studentCookie = await grantStudent();
     const evaluation = await evaluate(studentCookie, submissionBody({ activeScale, sourceMaterial, carriedNodes }));
-    expect(evaluation.review.nodes).toHaveLength(1);
-    expect(evaluation.review.nodes[0].scope).toEqual(expect.arrayContaining([
-      { id: 'school', label: 'School' }, { id: 'center', label: 'Community Center' },
-    ]));
-    expect(evaluation.review.connections).toEqual([]);
+    if (activeScale === 'meso') {
+      expect(evaluation.review.nodes).toEqual([]);
+      expect(evaluation.review.connections).toEqual([expect.objectContaining({ source: 'center', target: 'school', verb: 'coordinates with' })]);
+    } else {
+      expect(evaluation.review.nodes).toHaveLength(1);
+      expect(evaluation.review.nodes[0].scope).toEqual(expect.arrayContaining([
+        { id: 'school', label: 'School' }, { id: 'center', label: 'Community Center' },
+      ]));
+      expect(evaluation.review.connections).toEqual([]);
+    }
   });
 
   it.each(['exosphere', 'macrosphere'])('rejects narrative clauses at %s before persisting any review', async (activeScale) => {
@@ -846,8 +848,8 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstPrompt).toContain('shortest complete memo-supported referring expression');
     expect(firstPrompt).toContain('Resolve every pronoun or coreference');
     expect(firstPrompt).toContain('dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments');
-    expect(firstPrompt).toContain('A person, role, or group may directly attend, use, visit, receive from, or otherwise interact with a setting');
-    expect(firstPrompt).toContain('only setting-to-setting interrelations are excluded from Micro and belong at Meso');
+    expect(firstPrompt).toContain('At Micro and Macrosphere, connections must be empty');
+    expect(firstPrompt).toContain('At Meso, source and target must be different exact IDs from carriedNodes');
     expect(firstPrompt).toContain('short plain active verb phrase for a concrete action or exchange');
     expect(firstPrompt).toContain('vague collaboration, or generic planning');
     expect(firstPrompt).not.toMatch(/\b(?:Rosa|Danny|Marisol|BMCC|Tuesdays)\b/);
@@ -976,7 +978,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
-  it('keeps time qualifiers out of deterministic Micro nodes while preserving the supported setting and relationships', async () => {
+  it('keeps time qualifiers out of deterministic Micro nodes and defers relationships to Meso', async () => {
     const studentCookie = await grantStudent();
     const { studentAnnotation: _studentAnnotation, ...body } = submissionBody({
       sourceMaterial: 'Danny and Marisol both attend BMCC on Tuesdays.',
@@ -993,10 +995,7 @@ describe('persistent preflight suggestion review queue', () => {
       { label: 'BMCC', type: 'institution', scale: 'micro' },
     ]));
     expect(evaluation.review.nodes.map((node) => node.label)).not.toContain('Tuesdays');
-    expect(evaluation.review.connections).toMatchObject([
-      { sourceLabel: 'Danny', targetLabel: 'BMCC', verb: 'attends' },
-      { sourceLabel: 'Marisol', targetLabel: 'BMCC', verb: 'attends' },
-    ]);
+    expect(evaluation.review.connections).toEqual([]);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
@@ -1037,224 +1036,106 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
   });
 
-  it('gives Meso review scoped mesosystems and rejects unknown setting IDs', async () => {
+  it('retries unknown Meso endpoints and preserves carried person and setting IDs', async () => {
     await system.close();
-    const invalidSuggestion = {
-      guidance: [{ point: 'Review node_school and node_family as one mesosystem.' }],
-      nodes: [
-        { label: 'Family–school coordination', type: 'mesosystem', scale: 'meso', evidence: 'The memo places both settings in the person’s immediate experience.', scope: ['node_school', 'node_family'] },
-        { label: 'Unknown setting mesosystem', type: 'mesosystem', scale: 'meso', evidence: 'Unsupported.', scope: ['node_school', 'node_unknown'] },
-      ],
-      connections: [{ source: 'node_school', target: 'node_family', verb: 'refers', rationale: 'Meso must not return an edge.' }],
-      example: 'The node_school and node_family settings form one mesosystem.',
-      readiness: { ready: true, note: 'The node_school and node_family mesosystem is supported.' },
-    };
-    const validSuggestion = {
-      guidance: [],
-      nodes: [{
-        label: 'Family–school coordination', type: 'mesosystem', scale: 'meso',
-        evidence: 'The memo places both settings in the person’s immediate experience.',
-        scope: ['node_school', 'node_family'],
-      }],
-      connections: [],
+    const valid = {
+      guidance: [{ point: 'Check how the family works with the school.' }],
+      nodes: [],
+      connections: [{ source: 'node_family', target: 'node_school', verb: 'requests help from', rationale: 'The memo describes a request for help.' }],
       example: null,
-      readiness: { ready: true, note: 'The family and school settings form one supported mesosystem.' },
+      readiness: { ready: true, note: 'Review the relationship between the family and school.' },
     };
+    const invalid = { ...valid, connections: [{ ...valid.connections[0], target: 'unknown_node' }] };
     const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
+      .mockResolvedValueOnce({ suggestion: invalid, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: valid, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'meso-carried-nodes.sqlite'),
-      now: () => currentTime,
+      dbPath: join(tempDirectory, 'meso-relationships.sqlite'), now: () => currentTime,
       teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest,
     });
-    const studentCookie = await grantStudent();
-    const body = submissionBody({ activeScale: 'meso' });
-    const evaluation = await evaluate(studentCookie, body);
-
+    const cookie = await grantStudent();
+    const body = submissionBody({
+      activeScale: 'meso', sourceMaterial: 'The family requests help from the school.',
+      carriedNodes: [
+        { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+        { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
+      ],
+    });
+    const evaluation = await evaluate(cookie, body);
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(body.carriedNodes);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('scope containing the exact IDs of 2 or more Micro settings already on the map');
-    expect(evaluation.review.nodes).toEqual([{
-      label: 'Family–school coordination', type: 'mesosystem', scale: 'meso',
-      evidence: 'The memo places both settings in the person’s immediate experience.',
-      scope: [{ id: 'node_school', label: 'School' }, { id: 'node_family', label: 'Family' }],
-    }]);
-    expect(evaluation.review.connections).toEqual([]);
-    expect(evaluation.review.readiness.ready).toBe(true);
-    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
-    expect(evaluation.review.example).toBeNull();
-    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
-    expect(JSON.stringify({
-      guidance: evaluation.review.guidance,
-      example: evaluation.review.example,
-      readiness: evaluation.review.readiness,
-    })).not.toMatch(/node_(?:school|family)/);
-
-    const invalid = await postJson(system.app, '/api/preflight/evaluations', {
-      ...body,
-      projectMetadata: { projectId: 'invalid_carried_node', title: 'Invalid carried node' },
-      carriedNodes: [{ ...body.carriedNodes[0], unexpected: true }],
-    }, { cookie: studentCookie });
-    expect(invalid.status).toBe(400);
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
-
-    const inappropriate = await postJson(system.app, '/api/preflight/evaluations', {
-      ...submissionBody(),
-      carriedNodes: body.carriedNodes,
-    }, { cookie: studentCookie });
-    expect(inappropriate.status).toBe(400);
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
-  });
-
-  it('retries an otherwise valid East Harlem Meso response when example is not null', async () => {
-    await system.close();
-    const validReview = {
-      guidance: [{
-        point: 'Review how Rosa’s home and peer support group operate as connected immediate settings.',
-        evidenceExcerpt: 'Rosa’s household schedules who can help her reach appointments. Rosa also attends a peer support group whose facilitator makes referrals.',
-      }],
-      nodes: [{
-        label: 'Home–peer support coordination',
-        type: 'mesosystem',
-        scale: 'meso',
-        evidence: 'Rosa’s household schedules appointment help, and she participates in a peer support group whose facilitator makes referrals.',
-        scope: ['node_home', 'node_peer_group'],
-      }],
-      connections: [],
-      example: null,
-      readiness: { ready: true, note: 'The memo supports one interrelation between two immediate settings.' },
-    };
-    const invalidReview = {
-      ...validReview,
-      example: 'Rosa’s home and peer support group form one mesosystem.',
-    };
-    const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidReview, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validReview, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
-    system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'meso-east-harlem-microsystems.sqlite'),
-      now: () => currentTime,
-      teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
-    });
-    const studentCookie = await grantStudent();
-    const body = submissionBody({
-      activeScale: 'meso',
-      sourceMaterial: 'Rosa’s household schedules who can help her reach appointments. Rosa also attends a peer support group whose facilitator makes referrals.',
-      carriedNodes: [
-        { id: 'node_home', label: 'Rosa’s home', type: 'setting', scale: 'micro' },
-        { id: 'node_peer_group', label: 'Peer support group', type: 'setting', scale: 'micro' },
-      ],
-    });
-
-    const evaluation = await evaluate(studentCookie, body);
-
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
-    expect(ollamaRequest.mock.calls[0][0].systemPrompt).toContain('For Micro and Meso, example must be null.');
-    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('meso example must be null');
-    expect(evaluation.review).toEqual({
-      ...validReview,
-      nodes: [{
-        ...validReview.nodes[0],
-        scope: [
-          { id: 'node_home', label: 'Rosa’s home' },
-          { id: 'node_peer_group', label: 'Peer support group' },
-        ],
-      }],
-    });
+    expect(evaluation.review).toEqual({ ...valid, connections: [{ ...valid.connections[0], sourceLabel: 'Family', targetLabel: 'School' }] });
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
-  it('keeps institutions and institutional guidance out of Meso for the CUNY Reddit memo', async () => {
+  it('retries an otherwise valid Meso response when example is not null', async () => {
     await system.close();
-    const invalidSuggestion = {
-      guidance: [
-        { point: 'Map the CUNY registrar and bursar at the Meso level.' },
-        { point: 'Treat the employer as a Meso-level institution.' },
-      ],
-      nodes: [
-        {
-          label: 'CUNY administrative systems', type: 'mesosystem', scale: 'meso',
-          evidence: 'The memo names graduation processing, billing, and registration.',
-          scope: ['node_reddit', 'node_workplace'],
-        },
-        {
-          label: 'Registrar and bursar coordination', type: 'mesosystem', scale: 'meso',
-          evidence: 'The memo names delayed diplomas and payment plans.',
-          scope: ['node_reddit', 'node_workplace'],
-        },
-        {
-          label: 'Work–online peer support coordination', type: 'mesosystem', scale: 'meso',
-          evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
-          scope: ['node_reddit', 'node_workplace'],
-        },
-      ],
-      connections: [{ source: 'node_reddit', target: 'node_workplace', verb: 'supports', rationale: 'Meso must not return an edge.' }],
-      example: 'The CUNY registrar, bursar, and employer are Meso institutions.',
-      readiness: { ready: true, note: 'Add the registrar, bursar, and employer at Meso.' },
-    };
-    const validSuggestion = {
-      guidance: [],
-      nodes: [{
-        label: 'Work–online peer support coordination', type: 'mesosystem', scale: 'meso',
-        evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
-        scope: ['node_reddit', 'node_workplace'],
-      }],
-      connections: [],
+    const valid = {
+      guidance: [{ point: 'Check how the family works with the school.' }],
+      nodes: [],
+      connections: [{ source: 'node_family', target: 'node_school', verb: 'requests help from', rationale: 'The memo describes a request for help.' }],
       example: null,
-      readiness: { ready: true, note: 'The two immediate settings form one supported mesosystem.' },
+      readiness: { ready: true, note: 'Review the relationship between the family and school.' },
     };
+    const invalid = { ...valid, example: 'Family requests help from School.' };
     const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
+      .mockResolvedValueOnce({ suggestion: invalid, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: valid, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
     system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'meso-cuny-reddit-boundary.sqlite'),
-      now: () => currentTime,
+      dbPath: join(tempDirectory, 'meso-relationships.sqlite'), now: () => currentTime,
       teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest,
     });
-    const studentCookie = await grantStudent();
+    const cookie = await grantStudent();
     const body = submissionBody({
-      activeScale: 'meso',
-      sourceMaterial: `Brief memo — u/DalekSupreme23
-
-From 2020–2024, this user posted in r/CUNY every calendar year—eight submissions total. They primarily sought peer help navigating CUNY: delayed diplomas, tuition payment plans, COVID testing, course scheduling, instructors, and registration.
-
-Overall, the posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.`,
+      activeScale: 'meso', sourceMaterial: 'The family requests help from the school.',
       carriedNodes: [
-        { id: 'node_reddit', label: 'r/CUNY', type: 'setting', scale: 'micro' },
-        { id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' },
+        { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+        { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
       ],
     });
-    const evaluation = await evaluate(studentCookie, body);
-
-    const systemPrompt = ollamaRequest.mock.calls[0][0].systemPrompt;
+    const evaluation = await evaluate(cookie, body);
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(body.carriedNodes);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(systemPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
-    expect(systemPrompt).toContain('An organization, institution, agency, or service already mapped as a directly participated Micro setting may appear only through its exact scope ID.');
-    expect(evaluation.review.nodes).toEqual([{
-      label: 'Work–online peer support coordination',
-      type: 'mesosystem',
-      scale: 'meso',
-      evidence: 'The posting history documents a working student repeatedly turning to Reddit when institutional systems were unclear or incompatible with work.',
-      scope: [
-        { id: 'node_reddit', label: 'r/CUNY' },
-        { id: 'node_workplace', label: 'Workplace' },
+    expect(evaluation.review).toEqual({ ...valid, connections: [{ ...valid.connections[0], sourceLabel: 'Family', targetLabel: 'School' }] });
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
+  });
+
+  it('retries a Meso response that adds a separate linkage node', async () => {
+    await system.close();
+    const valid = {
+      guidance: [{ point: 'Check how the family works with the school.' }],
+      nodes: [],
+      connections: [{ source: 'node_family', target: 'node_school', verb: 'requests help from', rationale: 'The memo describes a request for help.' }],
+      example: null,
+      readiness: { ready: true, note: 'Review the relationship between the family and school.' },
+    };
+    const invalid = { ...valid, nodes: [{ label: 'Family–school coordination', type: 'mesosystem', scale: 'meso', evidence: 'A request for help.', scope: ['node_family', 'node_school'] }] };
+    const ollamaRequest = vi.fn()
+      .mockResolvedValueOnce({ suggestion: invalid, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
+      .mockResolvedValueOnce({ suggestion: valid, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'meso-relationships.sqlite'), now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest,
+    });
+    const cookie = await grantStudent();
+    const body = submissionBody({
+      activeScale: 'meso', sourceMaterial: 'The family requests help from the school.',
+      carriedNodes: [
+        { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+        { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
       ],
-    }]);
-    expect(evaluation.review.connections).toEqual([]);
-    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
-    expect(evaluation.review.example).toBeNull();
-    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
-    expect(JSON.stringify(evaluation.review)).not.toMatch(/Meso-level institution|add the registrar|CUNY administrative systems|Registrar and bursar coordination/);
+    });
+    const evaluation = await evaluate(cookie, body);
+    expect(ollamaRequest).toHaveBeenCalledTimes(2);
+    expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(body.carriedNodes);
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+    expect(evaluation.review).toEqual({ ...valid, connections: [{ ...valid.connections[0], sourceLabel: 'Family', targetLabel: 'School' }] });
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
   it('lets Exosphere reviews tie new institutions to carried map nodes without re-proposing them', async () => {
@@ -1681,9 +1562,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const validSuggestion = {
       guidance: [],
       nodes,
-      connections: [
-        { source: 'Maya Rivera', target: 'Transition classroom', verb: 'attends', rationale: 'The memo directly supports attendance.' },
-      ],
+      connections: [],
       example: null,
       readiness: { ready: true, note: 'The memo supports Micro mapping.' },
     };
@@ -1703,11 +1582,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(review.connections).toEqual([expect.objectContaining({
-      sourceLabel: 'Maya Rivera',
-      targetLabel: 'Transition classroom',
-      verb: 'attends',
-    })]);
+    expect(review.connections).toEqual([]);
     const stored = system.db.prepare('SELECT suggestion_json AS suggestion FROM preflight_evaluations WHERE id = ?')
       .get(evaluation.id).suggestion;
     expect(stored).not.toContain('coordinates access with');
@@ -1723,9 +1598,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     const invalidSuggestion = {
       connections: [{
         source: 'node_school',
-        target: 'node_center',
+        target: 'node_missing',
         verb: 'coordinates with',
-        rationale: 'This is an invalid setting-to-setting edge.',
+        rationale: 'This endpoint is absent from the supplied map.',
       }, {
         source: 'node_family',
         target: 'node_school',
@@ -1773,7 +1648,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect((await postJson(system.app, '/api/map/connections', connectionBody())).status).toBe(401);
     const studentCookie = await grantStudent();
     const body = connectionBody({
-      activeScale: 'micro',
+      activeScale: 'meso',
       nodes: [
         { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
         { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
@@ -1795,9 +1670,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    const mesoRequest = await postJson(system.app, '/api/map/connections', connectionBody(), { cookie: studentCookie });
+    const mesoRequest = await postJson(system.app, '/api/map/connections', connectionBody({ activeScale: 'micro' }), { cookie: studentCookie });
     expect(mesoRequest.status).toBe(400);
-    expect(await mesoRequest.json()).toEqual({ error: 'Meso shows how Micro settings relate to one another. Add direct connections at Micro.' });
+    expect(await mesoRequest.json()).toEqual({ error: 'Choose Meso to add relationships between your Micro nodes.' });
     const input = ollamaRequest.mock.calls[0][0];
     expect(input.systemPrompt).toContain('[Part 1. Current section. Choose elements]');
     expect(input.systemPrompt).toContain(courseProgression.parts[0].stages['choose-what-to-map'].guidance);
@@ -1907,7 +1782,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(duplicate.status).toBe(409);
     expect(duplicate.headers.get('retry-after')).toBe('1');
     expect(await duplicate.json()).toEqual({ error: 'Guidance is already running', details: { code: 'guidance_in_progress', shouldRetry: true, retryAfterSeconds: 1 } });
-    const connections = await postJson(system.app, '/api/map/connections', connectionBody({ activeScale: 'micro' }), { cookie: cookies[0] });
+    const connections = await postJson(system.app, '/api/map/connections', connectionBody({ activeScale: 'meso' }), { cookie: cookies[0] });
     expect(connections.status).toBe(409);
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const busy = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: cookies[8] });

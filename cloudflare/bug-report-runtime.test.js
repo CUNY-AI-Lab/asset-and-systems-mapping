@@ -167,10 +167,13 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
   }
 }, 60000);
 
-test('production Redmine mode never falls back to email when its secret is missing', async () => {
+test('unconfigured Redmine exposes contact email fallback while retaining sign-in checks', async () => {
  await control({resetReports:true,reportMode:'redmine'});
  const response=await request('/api/bug-reports/availability','');
- expect(await response.json()).toEqual({enabled:false,mode:'contact',delivery:'redmine'});
+ expect(await response.json()).toEqual({enabled:true,mode:'contact',delivery:'email',fallback:null});
+ expect((await submit(sample,'')).status).toBe(401);
+ await control({reportMode:'redmine',binding:false});
+ expect(await (await request('/api/bug-reports/availability','')).json()).toEqual({enabled:false,mode:'contact',delivery:'email',fallback:null});
  expect((await submit(sample,'')).status).toBe(503);
  expect((await stats()).calls).toHaveLength(0);
  await control({resetReports:true});

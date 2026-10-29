@@ -10,6 +10,26 @@ import {
 } from './config.js';
 
 describe('course-setting prompt composition', () => {
+  it('advances untouched October classroom defaults while retaining instructor edits', () => {
+    const profile = structuredClone(DEFAULT_TEACHING_PROFILE);
+    profile.parts[0].stages['build-map'].guidance = 'At Micro-level, arrange the chosen elements and their direct connections. At Meso-level, place each mesosystem in its own region and show the Micro-level settings it includes without adding a directional connection. Record uncertainty in an annotation.';
+    profile.parts[0].stages['review-suggestions'].guidance = 'Maria asks students to explain their choices using the assignment memo.';
+    profile.parts[0].stages['review-suggestions'].materials = 'Instructor-selected classroom example.';
+    const upgraded = upgradeSystemsMappingTeachingProfile(profile);
+    expect(upgraded.parts[0].stages['build-map']).toEqual(DEFAULT_TEACHING_PROFILE.parts[0].stages['build-map']);
+    expect(upgraded.parts[0].stages['review-suggestions']).toEqual(profile.parts[0].stages['review-suggestions']);
+    expect(upgraded.fieldNotesQuestions).toEqual(profile.fieldNotesQuestions);
+  });
+
+  it('updates untouched Exo arrangement guidance while retaining an instructor’s edited funding lesson', () => {
+    const profile = structuredClone(DEFAULT_TEACHING_PROFILE);
+    profile.parts[1].stages['build-map'].guidance = 'Place Exo-level and Macro-level work in distinct regions around the earlier levels. Show each Exo-level connection into a Micro-level setting and the map items affected by each Macro-level item. Filtering a level must not remove or change map records.';
+    profile.parts[1].stages['review-suggestions'].guidance = 'Maria asks students to trace IDEA funding through two named offices.';
+    const upgraded = upgradeSystemsMappingTeachingProfile(profile);
+    expect(upgraded.parts[1].stages['build-map']).toEqual(DEFAULT_TEACHING_PROFILE.parts[1].stages['build-map']);
+    expect(upgraded.parts[1].stages['review-suggestions']).toEqual(profile.parts[1].stages['review-suggestions']);
+  });
+
   it('matches the memo-review contract without asking for rubric results', () => {
     const promptFor = (scale) => composeEffectivePrompt({
       configKind: 'preflight',
@@ -30,19 +50,14 @@ describe('course-setting prompt composition', () => {
       expect(prompt).not.toMatch(/\b(?:criteria|criterion|scores?|outcomes?)\b/i);
       expect(prompt).toContain('Return only the memo-review object required by the application: guidance, nodes, connections, example, and readiness.');
     }
-    expect(microPrompt).toContain('Micro returns nodes plus supported direct connections.');
-    expect(microPrompt).toContain('exactly one bounded person, role, group, named activity, tangible object, resource, or immediate setting');
-    expect(microPrompt).toContain('Never use dates, times, schedules, frequency phrases, modifiers, quantifiers, actions, clauses, or fragments as nodes');
-    expect(microPrompt).toContain('Preserve the entity kind of a directly participated organization, institution, agency, or service while assigning it to Micro.');
-    expect(microPrompt).toContain('each direct relationship must use a short plain active verb phrase');
+    expect(microPrompt).toContain('Micro returns nodes and an empty connections array.');
+    expect(microPrompt).toContain('Micro identifies bounded immediate elements as nodes.');
     expect(microPrompt).toContain('entity kind alone never determines a level');
-    expect(mesoPrompt).toContain('Meso returns mesosystem nodes whose scope fields contain two or more exact Micro setting IDs already on the map and an empty connections array.');
-    expect(mesoPrompt).toContain('Meso does not add actors, organizations, institutions, services, or institutional actions.');
-    expect(mesoPrompt).toContain('An organization, institution, agency, or service already mapped as a directly participated Micro setting may be included by its stable ID');
-    expect(mesoPrompt).toContain('Each node must use type mesosystem, a short conventional label grounded in the memo and the selected Micro settings');
-    expect(mesoPrompt).toContain('Do not add a directional relationship');
-    expect(mesoPrompt).toContain('never return an institutional entity as a Meso node.');
-    expect(mesoPrompt).toContain('Return an empty connections array.');
+    expect(microPrompt).toContain('Resolve references to supported named or role-resolved elements');
+    expect(mesoPrompt).toContain('Meso returns an empty nodes array and supported relationships using exact carried Micro node IDs.');
+    expect(mesoPrompt).toContain('Both endpoints must be different exact IDs of supplied Micro nodes.');
+    expect(mesoPrompt).toContain('one-way or two-way arrows');
+    expect(mesoPrompt).toContain('retain their identities and positions');
   });
 
   it('keeps course settings beneath fixed rules and states their boundary', () => {

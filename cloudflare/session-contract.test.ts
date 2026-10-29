@@ -9,8 +9,8 @@ const documentHeaders = { accept: 'text/html', 'sec-fetch-dest': 'document' };
 let issuer: Awaited<ReturnType<typeof createTestIdentityIssuer>>;
 beforeAll(async () => { issuer = await createTestIdentityIssuer(); });
 test('course selection and course project links survive only bounded local login returns', () => {
-  for (const path of ['/?course=synthetic-course-a', '/p/abcdefghijklmnopqrst?course=synthetic-course-a']) assert.equal(returnPath(path), path);
-  for (const path of ['//other.example/?course=synthetic-course-a', '/?course=a&course=b', '/?course=search', '/?course=a#fragment', '/?course=a&next=https://other.example', '/?course=%61', '/teacher?course=a', '/?course=a\n']) assert.equal(returnPath(path), '/');
+  for (const path of ['/?course=synthetic-course-a', '/p/abcdefghijklmnopqrst?course=synthetic-course-a', '/?view=instructor', '/?course=synthetic-course-a&view=instructor']) assert.equal(returnPath(path), path);
+  for (const path of ['//other.example/?course=synthetic-course-a', '/?course=a&course=b', '/?course=search', '/?course=a#fragment', '/?course=a&next=https://other.example', '/?course=%61', '/teacher?course=a', '/?course=a\n', '/?view=admin', '/?view=instructor&view=instructor', '/?course=a?view=instructor', '/&view=instructor', '/p/abcdefghijklmnopqrst?course=a&view=instructor', '/?course=a&view=instructor#fragment', '/?course=a&view=instructor&next=https://other.example']) assert.equal(returnPath(path), '/');
 });
 function fixture() {
  let calls=0,begins=0;const used=new Set<string>();
@@ -31,6 +31,13 @@ test('fresh handoff and replay rejection use the service authority',async()=>{
  const success=await login(f.req(t.path,t.cookie),f.identity);
  assert.equal(success.status,303); assert.match(success.headers.get('set-cookie')!,/HttpOnly/);
  assert.equal((await login(f.req(t.path,t.cookie),f.identity)).status,401);
+});
+test('fresh sign-in returns to the bounded course instructor destination', async () => {
+ const f = fixture(), target = '/?course=synthetic-course-a&view=instructor', t = await transaction(f, target);
+ assert.equal(t.saved.returnTo, target);
+ const success = await login(f.req(t.path, t.cookie), f.identity);
+ assert.equal(success.status, 303);
+ assert.equal(success.headers.get('location'), target);
 });
 test('duplicate session cookies are not accepted',()=>{
  const f=fixture();assert.equal(readCookie(f.req('/',sessionName+'=a; '+sessionName+'=b')),'');

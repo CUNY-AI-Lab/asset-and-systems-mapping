@@ -6,7 +6,7 @@ import { saveProjectToLibrary, loadProjectLibrary } from './projectLibrary.js';
 import { useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
 import { reconcileCloudProject, rememberCloudSave, serializeCloudProject } from './cloudSync.js';
 import { apiRequest, ApiError } from './api.js';
-import { courseWorkspacePath, parseCourseSelection } from './courseContext.js';
+import { courseWorkspacePath, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
 import { userFacingError } from './userFacingError.js';
 import CoursePromptEditor from './CoursePromptEditor.jsx';
 import NollSketch from './NollSketch.jsx';
@@ -14,6 +14,7 @@ import './account-workspace.css';
 
 export default function AccountWorkspace() {
   const [courseSelection] = useState(() => parseCourseSelection(window.location.search));
+  const [instructorRequested] = useState(() => window.location.pathname === '/' && parseWorkspaceView(window.location.search) === 'instructor');
   const [dark, setDark] = useState(() => {
     try { return window.localStorage.getItem('systems-mapping.theme') === 'dark'; }
     catch { return document.documentElement.dataset.theme === 'dark'; }
@@ -67,12 +68,19 @@ export default function AccountWorkspace() {
         }
         storageRef.current = useAccountStorage(result.account.cacheKey, null, courseSelection);
         setAccount(result.account);
-        const records = await refresh();
         if (courseSelection.kind === 'general') {
           void request('/api/cloud/courses')
             .then(page => { if (!cancelled) setCourses(page.courses); })
             .catch(failure => { if (!cancelled) setCourseError(userFacingError(failure, 'Your courses are temporarily unavailable. Reload to check again.')); });
         }
+        // Navigation selects the view only after the server confirms this
+        // account's instructor role in the selected workspace.
+        if (instructorRequested && result.account.role === 'instructor') {
+          setStatus('');
+          setTeacher(true);
+          return;
+        }
+        const records = await refresh();
         try { const data = await request('/api/cloud/quota'); if (!cancelled) setQuota(data.quota); } catch { /* Informational only; map editing stays available. */ }
         if (cancelled) return;
         setStatus('');
@@ -127,6 +135,12 @@ export default function AccountWorkspace() {
       const reconciled = record ? await reconcileCloudProject(storage, record.id, result) : { project: createBlankProject(), conflict: false };
       const project = reconciled.project || linkedProject;
       if (!project) throw new Error('The saved device copy is unavailable.');
+      // Use the verified profile only when creating a project. A student's
+      // chosen title and every reopened or shared project retain their names.
+      if (!record && !linkedProject && typeof workspaceAccount.preferredName === 'string') {
+        const preferredName = workspaceAccount.preferredName.trim().slice(0, 160);
+        if (preferredName) project.title = preferredName;
+      }
       revisions.current.set(project.id,result?.revision || 0);
       if (result) {
         const remote = serializeCloudProject(parseProject(result.project));
@@ -177,7 +191,10 @@ export default function AccountWorkspace() {
 
   if (active) return <App key={active} startInWorkspace onAccountDashboard={dashboard} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} />;
   if (teacher) return <App startInTeacher onAccountDashboard={dashboard} />;
-  return <AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} onTeacher={account?.role === 'instructor' ? () => setTeacher(true) : undefined}>
+  return <AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} onTeacher={account?.role === 'instructor' ? () => {
+    window.history.replaceState(null, '', instructorWorkspacePath(courseSelection));
+    setTeacher(true);
+  } : undefined}>
     <main id="workspace" className={signedOut ? 'access-main account-workspace account-landing' : 'studio-dashboard account-workspace'}>
       {signedOut ? <>
         <div className="account-landing__hero">
@@ -187,7 +204,13 @@ export default function AccountWorkspace() {
         </div>
         <NollSketch className="account-landing__noll" />
       </> : account ? <>
-        {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul>{courses.map(course => <li key={course.id}><a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>{course.role === 'instructor' && <span> · {course.guestInstructor ? 'Guest instructor' : 'Instructor'}</span>}</li>)}</ul></section>}
+        {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul className="account-courses">{courses.map(course => <li key={course.id}>
+          <a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>
+          {course.role === 'instructor' && <>
+            <span>{course.guestInstructor ? 'Guest instructor' : 'Instructor'}</span>
+            <Action as="a" variant="ghost" href={instructorWorkspacePath({ kind: 'course', id: course.id })} aria-label={`Instructor Console for ${course.name} · ${course.term} · ${course.section}`}>Instructor Console</Action>
+          </>}
+        </li>)}</ul></section>}
         {courseError && <p role="status">{courseError}</p>}
         <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : 'Continue a map or start a new one'} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
         {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} openLabel="Open" />)}</div>

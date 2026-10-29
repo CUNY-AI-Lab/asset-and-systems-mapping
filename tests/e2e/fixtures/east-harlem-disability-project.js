@@ -85,10 +85,10 @@ export function buildEastHarlemDisabilityProject() {
 
   const nodeById = new Map(nodes.map((item) => [item.id, item]));
   const edges = [
-    edge({ id: 'edge_e2e_attendant_assists_resident', source: attendantId, target: residentId, sourceLabel: nodeById.get(attendantId).label, targetLabel: nodeById.get(residentId).label, verb: 'assists', scale: 'micro', evidence: 'The home attendant assists the resident.' }),
-    edge({ id: 'edge_e2e_resident_attends_group', source: residentId, target: groupId, sourceLabel: nodeById.get(residentId).label, targetLabel: nodeById.get(groupId).label, verb: 'attends', scale: 'micro', evidence: 'The resident attends the peer support group.' }),
-    edge({ id: 'edge_e2e_center_hosts_group', source: centerId, target: groupId, sourceLabel: nodeById.get(centerId).label, targetLabel: nodeById.get(groupId).label, verb: 'hosts', scale: 'micro', evidence: 'The resource center hosts the peer support group.' }),
-    edge({ id: 'edge_e2e_navigator_reminds_resident', source: navigatorId, target: residentId, sourceLabel: nodeById.get(navigatorId).label, targetLabel: nodeById.get(residentId).label, verb: 'reminds', scale: 'micro', evidence: 'The resource navigator coordinates appointment reminders with the resident.' }),
+    edge({ id: 'edge_e2e_attendant_assists_resident', source: attendantId, target: residentId, sourceLabel: nodeById.get(attendantId).label, targetLabel: nodeById.get(residentId).label, verb: 'assists', scale: 'meso', evidence: 'The home attendant assists the resident.' }),
+    edge({ id: 'edge_e2e_resident_attends_group', source: residentId, target: groupId, sourceLabel: nodeById.get(residentId).label, targetLabel: nodeById.get(groupId).label, verb: 'attends', scale: 'meso', evidence: 'The resident attends the peer support group.' }),
+    edge({ id: 'edge_e2e_center_hosts_group', source: centerId, target: groupId, sourceLabel: nodeById.get(centerId).label, targetLabel: nodeById.get(groupId).label, verb: 'hosts', scale: 'meso', evidence: 'The resource center hosts the peer support group.' }),
+    edge({ id: 'edge_e2e_navigator_reminds_resident', source: navigatorId, target: residentId, sourceLabel: nodeById.get(navigatorId).label, targetLabel: nodeById.get(residentId).label, verb: 'reminds', scale: 'meso', evidence: 'The resource navigator coordinates appointment reminders with the resident.' }),
     edge({ id: 'edge_e2e_office_rules_center', source: exoId, target: centerId, sourceLabel: nodeById.get(exoId).label, targetLabel: nodeById.get(centerId).label, verb: 'sets rules for', scale: 'exosphere', evidence: 'Booking rules determine whether the resident can reach the resource center on time.' }),
   ];
 

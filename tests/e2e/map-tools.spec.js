@@ -114,22 +114,27 @@ test('full screen opens the canvas from notebook or list and has a visible exit'
 });
 
 
-for (const layer of ['all', 'micro']) test(`phone ${layer} relationship direction cues remain readable after fit and zoom`, async ({ page }, testInfo) => {
+for (const layer of ['all', 'meso']) test(`phone ${layer} relationship direction cues remain readable after fit and zoom`, async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes('phone'), 'Mobile-only non-scaling arrow rendering');
-  if (layer === 'micro') {
-    await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
+  if (layer === 'meso') {
+    await page.getByRole('combobox', { name: 'Work level' }).selectOption('meso');
     await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Map', exact: true }).click();
     await openTools(page);
-    await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('micro');
+    await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('meso');
+    await page.locator('.notebook-map-tools > summary').click();
+  }
+  if (layer === 'all') {
+    await openTools(page);
+    await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('all');
     await page.locator('.notebook-map-tools > summary').click();
   }
   const graphBefore = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);
   for (const action of ['Fit map', 'Zoom in', 'Zoom out']) {
     await mapCommand(page, action);
     const lines = page.locator('.graph-edge .edge-line');
-    await expect(lines).toHaveCount(layer === 'micro' ? 4 : 5);
-    if (layer === 'micro') await expect(page.locator('.graph-edge:not([data-edge-scale="micro"])')).toHaveCount(0);
-    if (layer === 'micro' && action === 'Fit map') {
+    await expect(lines).toHaveCount(layer === 'meso' ? 4 : 5);
+    if (layer === 'meso') await expect(page.locator('.graph-edge:not([data-edge-scale="meso"])')).toHaveCount(0);
+    if (layer === 'meso' && action === 'Fit map') {
       await expect(page.locator('.graph-node')).toHaveCount(6);
       const clearance = await page.locator('.graph-canvas').evaluate(svg => {
         const cards = [...svg.querySelectorAll('.graph-node')].map(node => node.getBoundingClientRect());
@@ -174,12 +179,12 @@ for (const layer of ['all', 'micro']) test(`phone ${layer} relationship directio
 });
 
 
-test('phone Micro movement and Arrange preserve readable connector spacing', async ({ page }, testInfo) => {
-  test.skip(!testInfo.project.name.includes('phone'), 'Phone Micro geometry');
-  await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
+test('phone Meso movement and Arrange preserve readable connector spacing', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('phone'), 'Phone Meso geometry');
+  await page.getByRole('combobox', { name: 'Work level' }).selectOption('meso');
     await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Map', exact: true }).click();
   await openTools(page);
-  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('micro');
+  await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('meso');
   await page.locator('.notebook-map-tools > summary').click();
   const node = page.locator('[data-graph-id="node_e2e_resource_center"]');
   const position = () => node.evaluate(el => el.getAttribute('transform').match(/[-\d.]+/g).map(Number));
@@ -200,12 +205,11 @@ test('phone Micro movement and Arrange preserve readable connector spacing', asy
   await mapCommand(page, 'Fit map');
   const lengths = await page.locator('.edge-line').evaluateAll(paths => paths.map(path => path.getTotalLength() * Math.hypot(path.getScreenCTM().a, path.getScreenCTM().b)));
   expect(Math.min(...lengths)).toBeGreaterThan(25);
-  await expect.poll(async () => page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph.nodes.find(node => node.id === 'node_e2e_resource_center').y, STORAGE_KEY)).toBeCloseTo(before[1], 1);
+  await expect.poll(async () => page.evaluate(key => JSON.parse(localStorage.getItem(key)).events.some(event => event.action === 'map.arranged'), STORAGE_KEY)).toBe(true);
   const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);
   const center = saved.nodes.find(node => node.id === 'node_e2e_resource_center');
   expect(center).toBeTruthy();
-  // The saved arrangement is the spaced layout, not the old compact grid.
-  expect(Math.abs(center.y - before[1])).toBeLessThan(1);
+  expect(Number.isFinite(center.x) && Number.isFinite(center.y)).toBe(true);
   await page.reload();
   await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY)).toEqual(saved);

@@ -6,6 +6,7 @@ import { ProjectRow } from './ui/StudioPrimitives.jsx';
 import { createDefaultProject, serializeProject } from './domain.js';
 import { projectStorage, releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 import { parseCourseSelection } from './courseContext.js';
+import { STORAGE_KEY } from './projectLibrary.js';
 
 vi.mock('./App.jsx', async importOriginal => {
   const original = await importOriginal();
@@ -18,12 +19,14 @@ vi.mock('./App.jsx', async importOriginal => {
 let projects;
 let fetchMock;
 let workspaceAccount;
+let workspaceCourses;
 
 beforeEach(() => {
   window.localStorage.clear();
   releaseAccountStorage();
   window.history.replaceState(null, '', '/');
   workspaceAccount = { cacheKey: 'dashboard-test-account', role: 'instructor', course: null };
+  workspaceCourses = [];
   document.documentElement.dataset.theme = 'light';
   projects = ['First saved map', 'Second saved map'].map((title, index) => {
     const project = createDefaultProject();
@@ -36,7 +39,7 @@ beforeEach(() => {
     if (path === '/api/cloud/account') payload = { account: workspaceAccount };
     else if (path === '/api/cloud/projects') payload = { projects: projects.map(({ id, title, updatedAt }) => ({ id, title, updatedAt })) };
     else if (path === '/api/cloud/quota') payload = { quota: { remaining_percent: 90 } };
-    else if (path === '/api/cloud/courses') payload = { courses: [] };
+    else if (path === '/api/cloud/courses') payload = { courses: workspaceCourses };
     else if (path === '/api/cloud/course-prompt') payload = { prompt: { amendment: 'Course instructions', revision: 1, changeNote: 'Initial', updatedAt: null } };
     else if (path.endsWith('/submitted-revisions')) payload = { recorded: true };
     else if (path.startsWith('/api/cloud/projects/')) {
@@ -57,6 +60,30 @@ afterEach(() => {
 });
 
 describe('Account dashboard controls', () => {
+  it('starts a new project with the verified preferred name and preserves existing titles', async () => {
+    workspaceAccount.preferredName = 'Sam Student';
+    render(<AccountWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(true));
+    const [, options] = fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT');
+    expect(JSON.parse(JSON.parse(options.body).project).title).toBe('Sam Student');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Projects' }));
+    const row = await screen.findByRole('article', { name: 'First saved map' });
+    fireEvent.click(within(row).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    expect(JSON.parse(projectStorage().getItem(STORAGE_KEY)).title).toBe('First saved map');
+  });
+
+  it('keeps the editable default title when the profile name is unavailable', async () => {
+    workspaceAccount.preferredName = null;
+    render(<AccountWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New project' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(true));
+    const [, options] = fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT');
+    expect(JSON.parse(JSON.parse(options.body).project).title).toBe('Untitled systems map');
+  });
+
   it('opens a shared map while course discovery is still pending', async () => {
     window.history.replaceState(null, '', '/p/' + 'a'.repeat(24));
     const normal = fetchMock.getMockImplementation();
@@ -133,6 +160,50 @@ describe('Account dashboard controls', () => {
     await screen.findByLabelText('Additional course guidance');
     for (const [, options] of fetchMock.mock.calls) expect(options.headers['x-systems-course']).toBe('course-a');
     expect(projectStorage().cacheKey).toBe('course-a-cache');
+  });
+
+  it('offers each course instructor a direct console link from the general workspace', async () => {
+    workspaceAccount.role = 'student';
+    workspaceCourses = [
+      { id: 'course-a', name: 'Teaching course', term: 'Fall 2026', section: '01', role: 'instructor' },
+      { id: 'course-b', name: 'Student course', term: 'Fall 2026', section: '02', role: 'student' },
+      { id: 'course-c', name: 'Guest course', term: 'Fall 2026', section: '03', role: 'instructor', guestInstructor: true },
+    ];
+    render(<AccountWorkspace />);
+    const courses = await screen.findByRole('region', { name: 'Your courses' });
+    expect(within(courses).getByRole('link', { name: 'Instructor Console for Teaching course · Fall 2026 · 01' })).toHaveAttribute('href', '/?course=course-a&view=instructor');
+    expect(within(courses).getByRole('link', { name: 'Instructor Console for Guest course · Fall 2026 · 03' })).toHaveAttribute('href', '/?course=course-c&view=instructor');
+    expect(within(courses).getAllByRole('link', { name: /Instructor Console/ })).toHaveLength(2);
+    expect(within(courses).getByRole('link', { name: 'Student course · Fall 2026 · 02' })).toHaveAttribute('href', '/?course=course-b');
+    expect(screen.queryByRole('button', { name: 'Instructor Console' })).not.toBeInTheDocument();
+  });
+
+  it('opens the requested course console only after verifying its instructor role and returns to course Projects', async () => {
+    window.history.replaceState(null, '', '/?course=course-a&view=instructor');
+    workspaceAccount = { cacheKey: 'course-a-cache', role: 'instructor', course: { id: 'course-a', name: 'Teaching course', term: 'Fall 2026', section: '01' } };
+    let resolveAccount;
+    const normal = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((path, options) => path === '/api/cloud/account'
+      ? new Promise(resolve => { resolveAccount = () => resolve(normal(path, options)); }) : normal(path, options));
+    render(<AccountWorkspace />);
+    expect(screen.queryByRole('heading', { name: 'Teacher workspace' })).not.toBeInTheDocument();
+    resolveAccount();
+    await screen.findByRole('heading', { name: 'Teacher workspace' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(projectStorage().courseSelection.id).toBe('course-a');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Projects' }));
+    await screen.findByRole('heading', { name: 'Projects' });
+    expect(window.location.search).toBe('?course=course-a');
+    for (const [, options] of fetchMock.mock.calls) expect(options.headers['x-systems-course']).toBe('course-a');
+  });
+
+  it.each(['student', 'member'])('keeps direct console requests in Projects for a verified course %s', async role => {
+    window.history.replaceState(null, '', '/?course=course-a&view=instructor');
+    workspaceAccount = { cacheKey: 'course-a-cache', role, course: { id: 'course-a', name: 'Course A' } };
+    render(<AccountWorkspace />);
+    await screen.findByRole('heading', { name: 'Projects' });
+    expect(screen.queryByRole('heading', { name: 'Teacher workspace' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Instructor Console' })).not.toBeInTheDocument();
   });
 
   it.each(['student', 'member'])('does not expose instructor guidance to a course %s', async role => {
@@ -212,6 +283,14 @@ describe('Account dashboard controls', () => {
     render(<AccountWorkspace />);
     const link = await screen.findByRole('link', { name: 'CUNY Login' });
     expect(new URL(link.href).searchParams.get('returnTo')).toBe('/p/abcdefghijklmnopqrst?course=course-a');
+  });
+
+  it('keeps the requested course console in the signed-out login link', async () => {
+    window.history.replaceState(null, '', '/?course=course-a&view=instructor');
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: { 'content-type': 'application/json' } }));
+    render(<AccountWorkspace />);
+    const link = await screen.findByRole('link', { name: 'CUNY Login' });
+    expect(new URL(link.href).searchParams.get('returnTo')).toBe('/?course=course-a&view=instructor');
   });
 });
 

@@ -17,7 +17,7 @@ import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from 
 import { GuidanceJobs } from './guidance-jobs.js';
 import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
-import { RedmineReports } from './redmine-reports';
+import { RedmineReports, contactReporting, reportDelivery, reportsEnabled } from './redmine-reports';
 import { handleBugReport, type BugReportService } from './bug-reports';
 
 const HEADERS = {
@@ -192,6 +192,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       this.db.prepare('INSERT OR IGNORE INTO cloud_accounts VALUES (?,?)').run(owner, crypto.randomUUID());
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
         role: principal.admin ? 'instructor' : 'student',
+        preferredName: principal.preferredName ?? null,
         course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, guestInstructor: principal.course.guestInstructor, capabilities: principal.course.capabilities, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
     }
     if (path === '/api/cloud/course-students' && request.method === 'GET') {
@@ -321,17 +322,17 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         response = Response.json({ status: ready ? 'ok' : 'unavailable', release: env.RELEASE, auth: 'cuny', storage: 'isolated-cloudflare' }, { status: ready ? 200 : 503 });
       }
       else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
-        const contact = env.BUG_REPORT_MODE === 'redmine' || Boolean(env.REDMINE_API_KEY);
-        response = Response.json({ enabled: contact ? Boolean(env.REDMINE_API_KEY) : Boolean(env.BUG_REPORTS),
-          ...(contact ? { mode: 'contact', delivery: 'redmine' } : {}) });
+        const contact = contactReporting(env);
+        response = Response.json({ enabled: reportsEnabled(env),
+          ...(contact ? { mode: 'contact', delivery: reportDelivery(env), fallback: reportDelivery(env) === 'redmine' && Boolean(env.BUG_REPORTS) ? 'email' : null } : {}) });
       }
-      else if (env.BUG_REPORT_MODE === 'redmine' && !env.REDMINE_API_KEY && url.pathname.startsWith('/api/bug-reports')) {
+      else if (contactReporting(env) && !reportsEnabled(env) && url.pathname.startsWith('/api/bug-reports')) {
         response = failure('Reporting is unavailable.', 503);
       }
-      else if (!env.REDMINE_API_KEY && isBugReport(url.pathname)) {
+      else if (!contactReporting(env) && isBugReport(url.pathname)) {
         response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
       }
-      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL, bugReportEnabled: Boolean(env.REDMINE_API_KEY) });
+      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL, bugReportEnabled: reportsEnabled(env) });
       else if (url.pathname.startsWith('/auth/')) {
         // Limit new handoffs only. A busy shared IP must not prevent callback
         // completion or clearing/revoking this browser's existing session.
@@ -345,9 +346,11 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       else if (url.pathname === '/api/bug-reports/guest') {
         const ip = request.headers.get('cf-connecting-ip');
         if (request.method !== 'POST') response = failure('Method not allowed.', 405);
-        else if (!env.REDMINE_API_KEY || !ip || !/^[0-9a-fA-F:.]{3,45}$/.test(ip)) response = failure('Reporting is unavailable.', 503);
+        else if (!contactReporting(env) || !reportsEnabled(env) || !ip || !/^[0-9a-fA-F:.]{3,45}$/.test(ip)) response = failure('Reporting is unavailable.', 503);
         else {
-          const rateKey = digest(`guest-report-ip:v1\n${env.REDMINE_API_KEY}\n${ip}`);
+          const rateKey = env.REDMINE_API_KEY
+            ? digest(`guest-report-ip:v1\n${env.REDMINE_API_KEY}\n${ip}`)
+            : digest(`guest-report-ip:v2\n${new Date().toISOString().slice(0, 10)}\n${ip}`);
           const limit = await boundedRpc(env.REQUEST_LIMIT.limit({ key: `guest-report:${rateKey}` }), request.signal);
           response = limit.success
             ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey)

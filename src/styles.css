@@ -1110,15 +1110,15 @@ label.button:focus-within {
 .graph-edge.is-muted:hover { opacity: .72; }
 .edge-hit { fill: none; stroke: transparent !important; stroke-width: 22 !important; pointer-events: stroke; }
 .edge-selection-halo { stroke: var(--teal); stroke-width: 9; stroke-linecap: round; opacity: .34; fill: none; pointer-events: none; }
-.edge-line { stroke: var(--muted) !important; stroke-width: 1.8 !important; fill: none; }
+.edge-line { stroke: var(--muted) !important; stroke-width: var(--edge-count-width, 2) !important; fill: none; }
 .graph-edge--retired { opacity: .45; }
 .graph-edge--retired .edge-line { stroke-dasharray: 2 6; }
-.graph-edge.is-selected .edge-line { stroke: var(--teal) !important; stroke-width: 4 !important; }
+.graph-edge.is-selected .edge-line { stroke: var(--teal) !important; stroke-width: max(4, var(--edge-count-width, 2)) !important; }
 .graph-edge-label.is-selected .edge-label-bg { stroke: var(--teal); stroke-width: 2; }
 #arrowhead path { fill: var(--muted); }
 /* Preserve readable direction cues when the phone map is fitted down. */
 @media (max-width: 600px) {
-  .graph-canvas .edge-line { stroke-width: 2 !important; }
+  .graph-canvas .edge-line { stroke-width: var(--edge-count-width, 2) !important; }
   .graph-canvas--ecology .graph-edge.is-muted { opacity: 1; }
 }
 

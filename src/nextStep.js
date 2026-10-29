@@ -9,7 +9,7 @@ import { hasFieldNotes } from '../shared/field-notes.js';
 
 const STRUCTURE_MISSING = Object.freeze({
   micro: 'an element from your memo',
-  meso: 'a mesosystem linking two Micro settings',
+  meso: 'a relationship between two Micro items',
   exosphere: 'an outside decision setting with a pathway into a Micro setting',
   macrosphere: 'a broader condition scoped to two map items',
 });
@@ -23,7 +23,8 @@ export function levelStructureStatus(project, scale = project.activeScale) {
   const nodes = liveNodes(project, scale);
   let ready = false;
   if (scale === 'micro') ready = nodes.length > 0;
-  else if (scale === 'meso' || scale === 'macrosphere') ready = nodes.some((node) => new Set(node.scopeNodeIds || []).size >= 2);
+  else if (scale === 'meso') ready = liveEdges(project, scale).some((edge) => edge.source !== edge.target && project.graph.nodes.some((node) => node.id === edge.source && node.scale === 'micro' && isLiveMapItem(node)) && project.graph.nodes.some((node) => node.id === edge.target && node.scale === 'micro' && isLiveMapItem(node)));
+  else if (scale === 'macrosphere') ready = nodes.some((node) => new Set(node.scopeNodeIds || []).size >= 2);
   else if (scale === 'exosphere') {
     const nodeById = new Map(project.graph.nodes.filter(isLiveMapItem).map((node) => [node.id, node]));
     ready = nodes.length > 0 && liveEdges(project, scale)

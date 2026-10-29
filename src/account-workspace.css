@@ -1,6 +1,10 @@
 .account-workspace{padding-bottom:40px;color:var(--ink)}
 .account-workspace .account-login{justify-self:start;width:fit-content;max-width:100%;min-height:44px;padding-inline:18px}
 .account-details form{margin:0}
+.account-courses{list-style:none;margin:0 0 24px;padding:0;display:grid;gap:12px}
+.account-courses li{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
+.account-courses li>a{display:inline-flex;align-items:center;min-height:44px}
+.account-courses li>span{color:var(--muted)}
 .account-workspace .account-details > summary::after{margin-left:0}
 .access-shell:has(.account-workspace) .access-header__teacher,
 .access-shell:has(.account-workspace) .theme-toggle--labeled{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:auto;min-width:44px;height:44px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-subtle);color:var(--ink);font-size:15px;font-weight:600;text-decoration:none;white-space:nowrap}

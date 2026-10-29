@@ -53,7 +53,10 @@ describe('student-facing copy', () => {
     ]);
     expect(systemsMappingLevelTitle('exosphere')).toBe('Exo-level');
     expect(systemsMappingLevelTitle('macrosphere')).toBe('Macro-level');
-    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').description).toMatch(/at least two immediate settings.*without adding a directional relationship/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'micro').reviewInstruction).toContain('Relationships are added during Meso');
+    const meso = SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso');
+    expect(meso.description).toMatch(/relationships.*already mapped at Micro-level/i);
+    expect(meso.chooseInstruction).toMatch(/connect two existing Micro nodes.*one-way or two-way arrow/i);
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one map item/i);
   });
 
@@ -65,7 +68,7 @@ describe('student-facing copy', () => {
       expect(level).not.toHaveProperty('adds');
       expect(level).not.toHaveProperty('boundary');
     });
-    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').description).toMatch(/at least two immediate settings/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').checklist).toContain('Keep the same nodes and their positions from Micro-level.');
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'exosphere').description).toMatch(/decision/i);
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws/i);
   });

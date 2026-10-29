@@ -54,4 +54,16 @@ describe('classifyExcerptMatch', () => {
   it('canonicalizes both sides the same way', () => {
     expect(canonicalQuoteText('A—B “C” D’s…')).toBe(canonicalQuoteText("a - b \"c\" d's..."));
   });
+
+  it('preserves dash and quotation matching across repeated spaces and line breaks', () => {
+    expect(canonicalQuoteText('A \n\t—\t\n B--C')).toBe('a - b - - c');
+    expect(classifyExcerptMatch('A \n\t—\t\n B--C', 'a-b - - c')).toBe('normalized');
+  });
+
+  it('handles a large omitted bibliography without repeatedly scanning its whitespace', () => {
+    const source = 'Rosa’s teacher' + ' '.repeat(250_000) + '\nAppendix: Rosa—school.';
+    const started = performance.now();
+    expect(classifyExcerptMatch(source, "rosa's teacher appendix: rosa-school.")).toBe('normalized');
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });

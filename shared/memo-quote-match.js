@@ -38,7 +38,9 @@ export function canonicalQuoteText(value) {
     .replace(DOUBLE_QUOTES, '"')
     .replace(DASHES, '-')
     .replace(ELLIPSIS, '...')
-    .replace(/\s*-\s*/g, ' - ')
+    // Add dash spacing before collapsing whitespace. Matching optional
+    // whitespace around a missing dash rescans long redacted reference lists.
+    .replace(/-/g, ' - ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLocaleLowerCase('en-US');

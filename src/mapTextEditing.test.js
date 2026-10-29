@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPortableProject, parseProject, serializeProject } from './domain.js';
+import { createPortableProject, createRelationshipProcess, parseProject, serializeProject } from './domain.js';
 import { nodeLabelIssue, relationshipIssue, reviseMapText } from './mapTextEditing.js';
 import { buildEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
 
@@ -98,6 +98,21 @@ describe('map wording revisions', () => {
     expect(relationshipIssue('x'.repeat(101), { scale: 'micro' })).not.toBe('');
     expect(relationshipIssue('sets rules for', { scale: 'exosphere' })).toBe('');
     expect(relationshipIssue('laughs with', { scale: 'exosphere' })).not.toBe('');
-    expect(relationshipIssue('supports', { scale: 'meso' })).not.toBe('');
+    expect(relationshipIssue('supports', { scale: 'meso' })).toBe('');
+    expect(relationshipIssue('supports', { scale: 'macrosphere' })).not.toBe('');
+  });
+
+  it('revises Meso wording while preserving arrow direction, evidence, and saved endpoint IDs', () => {
+    const project = buildEastHarlemDisabilityProject();
+    const edge = project.graph.edges.find(item => item.scale === 'meso');
+    edge.relationshipProcess = createRelationshipProcess({ direction: 'both directions' });
+    project.candidates = structuredClone(project.graph);
+    const before = structuredClone(edge);
+    const wording = 'exchanges information with';
+    expect(relationshipIssue(wording, edge)).toBe('');
+    reviseMapText(project, 'graph', 'edges', edge.id, wording);
+    const saved = parseProject(serializeProject(project));
+    expect(saved.graph.edges.find(item => item.id === edge.id)).toEqual({ ...before, verb: wording });
+    expect(saved.candidates.edges.find(item => item.id === edge.id)).toEqual({ ...before, verb: wording });
   });
 });
