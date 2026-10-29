@@ -29,7 +29,7 @@ export function ProjectMenu({ children }) {
 export function LevelSelect({ levels, onSelect }) {
   return <label className="notebook-level"><span className="sr-only">Work level</span>
     <select value={levels.find((level) => level.current)?.scale} onChange={(event) => onSelect(event.target.value)}>
-      {levels.map((level) => <option key={level.scale} value={level.scale} disabled={level.state === 'locked'}>{SHORT[level.scale]}{level.complete ? ' · complete' : ''}</option>)}
+      {levels.map((level) => <option key={level.scale} value={level.scale} disabled={level.state === 'locked'} aria-label={`${SHORT[level.scale]}${level.complete ? ' · complete' : ''}`}>{SHORT[level.scale]}</option>)}
     </select>
   </label>;
 }

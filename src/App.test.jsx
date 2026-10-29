@@ -4193,8 +4193,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(actions).getByRole('button', { name: 'Node' })).toBeVisible();
     expect(within(actions).queryByRole('button', { name: 'Relationship' })).toBeNull();
     cleanup();
-    await openMapProject(makeMapProject('meso'));
-    expect(screen.getByRole('button', { name: 'Connect nodes', exact: true })).toBeEnabled();
+    const meso = await openMapProject(makeMapProject('meso'));
+    expect(screen.queryByRole('button', { name: /^Connect from / })).toBeNull();
+    const source = meso.graph.nodes.find(node => node.scale === 'micro');
+    openNodeInspector(source.id);
+    expect(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true })).toBeEnabled();
   });
 
   it('renders all Micro nodes and Meso relationships while preserving legacy linkage records', async () => {
@@ -5021,19 +5024,25 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('pages through every relationship in a dense phone node focus without shrinking or obscuring the map', async () => {
+  it('keeps the dense phone overview while each connected relationship can be inspected without obscuring its details', async () => {
     installPhoneLayout();
     const project = makeDenseFocusedMesoProject();
     const graphBefore = structuredClone(project.graph);
     await openMapProject(project);
 
-    const inspector = openNodeInspector('node-dense-focus');
-    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
-
+    const overviewPositions = new Map(project.graph.nodes.map(node => [node.id, renderedNodePosition(node.id)]));
     const visitedEdgeIds = new Set();
-    for (let page = 0; page < project.graph.edges.length; page += 1) {
-      await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent(`Relationship ${page + 1} of ${project.graph.edges.length}`));
+    for (const expectedEdge of project.graph.edges) {
+      const inspector = openNodeInspector('node-dense-focus');
+      expect(mapCanvas()).not.toHaveClass('is-detail-view');
+      expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
+      expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
+      project.graph.nodes.forEach(node => expect(renderedNodePosition(node.id)).toEqual(overviewPositions.get(node.id)));
+      const connections = openDetails('.map-connections');
+      expect(within(connections).getAllByRole('button')).toHaveLength(project.graph.edges.length);
+      fireEvent.click(within(connections).getByText(`${expectedEdge.sourceLabel} ${expectedEdge.verb} ${expectedEdge.targetLabel}`, { selector: 'strong' }).closest('button'));
+      fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+      await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
       const labels = [...document.querySelectorAll('.graph-edge-label')];
       expect(labels).toHaveLength(1);
       const label = labels[0];
@@ -5064,27 +5073,17 @@ Overall, the posting history documents a working student repeatedly turning to R
       const [pathStart, pathAnchor, pathEnd] = focusedRoutePoints(path);
       expect(segmentCrossesRectInterior(pathStart, pathAnchor, nodeBounds.get(edge.target))).toBe(false);
       expect(segmentCrossesRectInterior(pathAnchor, pathEnd, nodeBounds.get(edge.source))).toBe(false);
-      const next = screen.getByRole('button', { name: 'Next relationship' });
-      if (page < project.graph.edges.length - 1) {
-        expect(next).toBeEnabled();
-        fireEvent.click(next);
-      } else {
-        expect(next).toBeDisabled();
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
+      await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
+      expect(document.querySelector('.map-focus-bar')).toBeNull();
+      expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
+      expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
     }
     expect([...visitedEdgeIds].sort()).toEqual(project.graph.edges.map((edge) => edge.id).sort());
-    fireEvent.click(screen.getByRole('button', { name: 'Previous relationship' }));
-    await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent(`Relationship ${project.graph.edges.length - 1} of ${project.graph.edges.length}`));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show full map' }));
-    await waitFor(() => expect(mapCanvas()).not.toHaveClass('is-detail-view'));
-    expect(document.querySelector('.map-focus-bar')).toBeNull();
-    expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
-    expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('refits a phone-focused node after an incident relationship is added but preserves its viewport for annotation-only updates', async () => {
+  it('keeps the phone overview when adding a contextual relationship and preserves its inspected viewport during annotation updates', async () => {
     installPhoneLayout();
     const project = makeDenseFocusedMesoProject(2);
     const secondNeighbor = project.graph.nodes.find((node) => node.id === 'node-dense-neighbor-2');
@@ -5093,24 +5092,34 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     let inspector = openNodeInspector('node-dense-focus');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
+    expect(mapCanvas()).not.toHaveClass('is-detail-view');
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
     const zoomOut = mapTool('Zoom out');
     for (let step = 0; step < 30 && !zoomOut.disabled; step += 1) fireEvent.click(zoomOut);
     expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin);
     const manuallyAdjustedViewport = viewportTransform();
 
-    inspector = openMapInspector();
-    fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
-    const addActions = document.getElementById('inspector-add-actions');
-    fireEvent.click(within(addActions).getByRole('button', { name: 'Relationship' }));
+    inspector = openNodeInspector('node-dense-focus');
+    const source = project.graph.nodes.find(node => node.id === 'node-dense-focus');
+    fireEvent.click(within(inspector).getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${secondNeighbor.id}"]`), { key: 'Enter' });
     const addForm = screen.getByRole('heading', { name: 'New relationship' }).parentElement;
-    fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: 'node-dense-focus' } });
+    expect(within(addForm).getByLabelText('From')).toHaveValue('node-dense-focus');
     fireEvent.change(within(addForm).getByLabelText('Relationship'), { target: { value: 'coordinates new support with' } });
-    fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: secondNeighbor.id } });
+    expect(within(addForm).getByLabelText('To')).toHaveValue(secondNeighbor.id);
     fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo documents this additional coordination.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
 
     await waitFor(() => expect(storedProject().graph.edges).toHaveLength(2));
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(2);
+    const addedEdge = storedProject().graph.edges.at(-1);
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
+    inspector = openNodeInspector(source.id);
+    const connections = openDetails('.map-connections');
+    expect(within(connections).getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(within(connections).getByText(`${addedEdge.sourceLabel} ${addedEdge.verb} ${addedEdge.targetLabel}`, { selector: 'strong' }).closest('button'));
+    await waitFor(() => expect(mapCanvas()).toHaveClass('is-detail-view'));
     await waitFor(() => expect(viewportTransform()).not.toEqual(manuallyAdjustedViewport));
     expectVisibleNodesAndConnectionLabelsInsideCanvas();
     const refittedViewport = viewportTransform();
@@ -5123,10 +5132,6 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(viewportTransform()).toEqual(refittedViewport);
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent('Relationship 1 of 2'));
-    const addedEdge = storedProject().graph.edges.at(-1);
-    fireEvent.click(screen.getByRole('button', { name: 'Next relationship' }));
-    await waitFor(() => expect(document.querySelector('.map-focus-bar')).toHaveTextContent('Relationship 2 of 2'));
     expect(document.querySelector('.graph-edge')).toHaveAttribute('data-graph-id', addedEdge.id);
     expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort())
       .toEqual([addedEdge.source, addedEdge.target].sort());
@@ -6676,8 +6681,8 @@ Overall, the posting history documents a working student repeatedly turning to R
       const project = await openMapProject(meetingProject());
       const [source, target] = project.graph.nodes;
       const before = new Map(project.graph.nodes.map((node) => [node.id, renderedNodePosition(node.id)]));
-      fireEvent.click(screen.getByRole('button', { name: 'Connect nodes', exact: true }));
       fireEvent.keyDown(document.querySelector(`[data-graph-id="${source.id}"]`), { key: 'Enter' });
+      fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
       expect(document.querySelector('.map-connect-status')).toHaveTextContent(`${source.label} selected. Choose the ending item.`);
       fireEvent.keyDown(document.querySelector(`[data-graph-id="${target.id}"]`), { key: 'Enter' });
       fireEvent.change(screen.getByRole('textbox', { name: 'Relationship', exact: true }), { target: { value: 'talks with' } });
@@ -6700,17 +6705,21 @@ Overall, the posting history documents a working student repeatedly turning to R
       project.graph.nodes.forEach((node) => expect(renderedNodePosition(node.id)).toEqual(before.get(node.id)));
       expect(() => validateProject(storedProject())).not.toThrow();
     });
-    it('opens the relationship form after two pointer clicks', async () => {
+    it('opens the relationship form from the clicked source after a target tap', async () => {
       const project = await openMapProject(meetingProject());
-      fireEvent.click(screen.getByRole('button', { name: 'Connect nodes', exact: true }));
-      for (const [index, node] of project.graph.nodes.slice(0, 2).entries()) {
+      const [target, , source] = project.graph.nodes;
+      expect(screen.queryByRole('button', { name: /^Connect from / })).toBeNull();
+      for (const [index, node] of [source, target].entries()) {
         const element = document.querySelector(`[data-graph-id="${node.id}"]`);
         fireEvent.pointerDown(element, { pointerId: index + 1, clientX: 200 + index * 100, clientY: 200, button: 0 });
         fireEvent.pointerUp(element, { pointerId: index + 1, clientX: 200 + index * 100, clientY: 200, button: 0 });
+        if (index === 0) fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
       }
       expect(screen.getByRole('heading', { name: 'New relationship' })).toBeVisible();
-      expect(screen.getByRole('combobox', { name: 'From', exact: true })).toHaveValue(project.graph.nodes[0].id);
-      expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(project.graph.nodes[1].id);
+      expect(screen.getByRole('heading', { name: `${source.label} and ${target.label}`, level: 2, exact: true })).toBeVisible();
+      expect(screen.getByRole('combobox', { name: 'From', exact: true })).toHaveValue(source.id);
+      expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
+      expect(storedProject().graph.edges).toHaveLength(0);
     });
     it('keeps saved coordinates after Exo is released and when revisiting Micro and Meso', async () => {
       const project = meetingProject();
@@ -6790,7 +6799,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(Math.abs(added.y - 240)).toBeLessThan(180);
       expect(storedProject().activeScale).toBe('meso');
       expect(storedProject().graph.nodes.filter(node => node.id !== added.id).map(({ id, x, y }) => ({ id, x, y }))).toEqual(priorPositions);
-      fireEvent.click(screen.getByRole('button', { name: 'Connect this item', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Connect from Assistant principal', exact: true }));
       expect(document.querySelector('.map-connect-status')).toHaveTextContent('Assistant principal selected');
       fireEvent.keyDown(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`), { key: 'Enter' });
       fireEvent.change(screen.getByRole('textbox', { name: 'Relationship', exact: true }), { target: { value: 'supports' } });
@@ -6844,15 +6853,123 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(graphCsv(storedProject())).toContain('"connection_status","connection_strength","communication_channel","connecting_work","family_count"');
       expect(graphCsv(storedProject())).toContain('"missing","contested","Phone","Parent","0"');
     });
-    it('cancels a partially chosen connection with Escape and preserves the graph', async () => {
+    it('cancels target selection and the relationship editor while preserving the source and graph', async () => {
       const project = await openMapProject(meetingProject());
-      fireEvent.click(screen.getByRole('button', { name: 'Connect nodes', exact: true }));
-      const node = document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`);
-      fireEvent.keyDown(node, { key: 'Enter' });
-      fireEvent.keyDown(node, { key: 'Escape' });
-      expect(screen.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveAttribute('aria-pressed', 'false');
-      expect(document.querySelectorAll('.graph-edge')).toHaveLength(0);
+      const [target, , source] = project.graph.nodes;
+      const sourceNode = () => document.querySelector(`[data-graph-id="${source.id}"]`);
+      const targetNode = () => document.querySelector(`[data-graph-id="${target.id}"]`);
+      const before = structuredClone(storedProject().graph);
+      for (const exit of ['escape-selection', 'cancel-selection', 'escape-editor', 'cancel-editor']) {
+        fireEvent.keyDown(sourceNode(), { key: 'Enter' });
+        fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
+        if (exit.endsWith('editor')) fireEvent.keyDown(targetNode(), { key: 'Enter' });
+        if (exit.startsWith('escape')) fireEvent.keyDown(exit.endsWith('editor') ? screen.getByRole('textbox', { name: 'Relationship', exact: true }) : sourceNode(), { key: 'Escape' });
+        else fireEvent.click(within(document.querySelector(exit.endsWith('editor') ? '.add-form' : '.map-connect-status')).getByRole('button', { name: 'Cancel', exact: true }));
+        expect(document.querySelector('.map-connect-status')).toBeNull();
+        expect(screen.queryByRole('heading', { name: 'New relationship' })).toBeNull();
+        expect(sourceNode()).toHaveAttribute('aria-pressed', 'true');
+        expect(storedProject().graph).toEqual(before);
+      }
+    });
+    it('keeps the chosen source while dragging or moving a target with the keyboard', async () => {
+      const project = await openMapProject(meetingProject());
+      const [target, , source] = project.graph.nodes;
+      openNodeInspector(source.id);
+      fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
+      const svg = mapCanvas();
+      svg.getScreenCTM = () => ({ inverse: () => ({}) });
+      svg.createSVGPoint = () => ({ x: 0, y: 0, matrixTransform() { return { x: this.x, y: this.y }; } });
+      const start = renderedNodePosition(target.id);
+      const targetNode = () => document.querySelector(`[data-graph-id="${target.id}"]`);
+      fireEvent.pointerDown(targetNode(), { pointerId: 61, button: 0, clientX: start.x, clientY: start.y });
+      fireEvent.pointerMove(svg, { pointerId: 61, clientX: start.x + 28, clientY: start.y + 18 });
+      fireEvent.pointerUp(svg, { pointerId: 61, clientX: start.x + 28, clientY: start.y + 18 });
+      await waitFor(() => expect(eventRequests('node_moved')).toHaveLength(1));
+      expect(renderedNodePosition(target.id)).not.toEqual(start);
+      expect(screen.queryByRole('heading', { name: 'New relationship' })).toBeNull();
+      expect(document.querySelector('.map-connect-status')).toHaveTextContent(`${source.label} selected`);
+      expect(document.querySelector(`[data-graph-id="${source.id}"]`)).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.keyDown(targetNode(), { key: 'ArrowRight' });
+      await waitFor(() => expect(eventRequests('node_moved')).toHaveLength(2));
+      expect(screen.queryByRole('heading', { name: 'New relationship' })).toBeNull();
+      fireEvent.keyDown(targetNode(), { key: 'Enter' });
+      expect(screen.getByRole('combobox', { name: 'From', exact: true })).toHaveValue(source.id);
+      expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
       expect(storedProject().graph.edges).toHaveLength(0);
+    });
+    it('keeps the phone overview and moves the selected node while its contextual inspector is open', async () => {
+      installPhoneLayout();
+      const project = await openMapProject(meetingProject());
+      const source = project.graph.nodes[2];
+      openNodeInspector(source.id);
+      expect(mapCanvas()).not.toHaveClass('is-detail-view');
+      expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
+      expect(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true })).toBeVisible();
+      const svg = mapCanvas();
+      svg.getScreenCTM = () => ({ inverse: () => ({}) });
+      svg.createSVGPoint = () => ({ x: 0, y: 0, matrixTransform() { return { x: this.x, y: this.y }; } });
+      const node = document.querySelector(`[data-graph-id="${source.id}"]`);
+      const start = renderedNodePosition(source.id);
+      fireEvent.pointerDown(node, { pointerId: 62, button: 0, pointerType: 'touch', clientX: start.x, clientY: start.y });
+      fireEvent.pointerMove(svg, { pointerId: 62, pointerType: 'touch', clientX: start.x + 28, clientY: start.y + 18 });
+      fireEvent.pointerUp(svg, { pointerId: 62, pointerType: 'touch', clientX: start.x + 28, clientY: start.y + 18 });
+      await waitFor(() => expect(eventRequests('node_moved')).toHaveLength(1));
+      expect(renderedNodePosition(source.id)).not.toEqual(start);
+      expect(document.querySelector('.map-connect-status')).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'New relationship' })).toBeNull();
+      expect(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true })).toBeVisible();
+      expect(storedProject().graph.edges).toHaveLength(0);
+    });
+    it.each([[390, 424], [375, 330]])('fits the phone notebook map to its measured %ipx canvas when the item panel opens', async (width, selectedHeight) => {
+      installPhoneLayout(width);
+      let canvasHeight = 680;
+      const measurements = new Set();
+      vi.stubGlobal('ResizeObserver', class {
+        constructor(callback) { this.callback = callback; }
+        observe() { measurements.add(this.callback); }
+        disconnect() { measurements.delete(this.callback); }
+      });
+      const originalRect = Element.prototype.getBoundingClientRect;
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+        return this.matches('.graph-canvas')
+          ? { x: 0, y: 0, top: 0, left: 0, width, height: canvasHeight, right: width, bottom: canvasHeight }
+          : originalRect.call(this);
+      });
+      const project = await openMapProject(meetingProject());
+      const graphBefore = structuredClone(storedProject().graph);
+      const fullViewport = viewportTransform();
+      const inspector = openNodeInspector(project.graph.nodes[2].id);
+      expect(viewportTransform()).toEqual(fullViewport);
+      canvasHeight = selectedHeight;
+      act(() => measurements.forEach(measure => measure()));
+      await waitFor(() => expect(visibleMapBounds().bottom - visibleMapBounds().top).toBeCloseTo(840 * selectedHeight / width));
+      // The visible split canvas remains large enough to read each node card;
+      // the legacy 240-unit drawer fit would shrink these below 40px.
+      const nodeWidths = [...document.querySelectorAll('.node-card')].map(card => Number(card.getAttribute('width')) * viewportTransform().zoom * width / 840);
+      expect(Math.min(...nodeWidths)).toBeGreaterThan(70);
+      expectVisibleNodesAndConnectionLabelsInsideCanvas();
+      fireEvent.click(within(inspector).getByRole('button', { name: 'Done', exact: true }));
+      canvasHeight = 680;
+      act(() => measurements.forEach(measure => measure()));
+      await waitFor(() => expect(viewportTransform()).toEqual(fullViewport));
+      expect(storedProject().graph).toEqual(graphBefore);
+    });
+    it('clears contextual connection selection and its draft when the work level changes', async () => {
+      const project = await openMapProject(meetingProject());
+      const [source, target] = project.graph.nodes;
+      const before = structuredClone(storedProject().graph);
+      for (const openEditor of [false, true]) {
+        openNodeInspector(source.id);
+        fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
+        if (openEditor) fireEvent.keyDown(document.querySelector(`[data-graph-id="${target.id}"]`), { key: 'Enter' });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'micro' } });
+        expect(document.querySelector('.map-connect-status')).toBeNull();
+        expect(screen.queryByRole('heading', { name: 'New relationship' })).toBeNull();
+        expect(screen.queryByRole('button', { name: /^Connect from / })).toBeNull();
+        fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'meso' } });
+        expect(document.querySelector('.map-connect-status')).toBeNull();
+        expect(storedProject().graph).toEqual(before);
+      }
     });
   });
 

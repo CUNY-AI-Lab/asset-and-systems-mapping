@@ -2,7 +2,8 @@ import React from 'react';
 import { describeMapConnection } from './mapInsights.js';
 import { systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
 
-export default function MapConnections({ nodeId, index, onFollow, compact = false }) {
+export default function MapConnections({ nodeId, index, onFollow, onConnect, compact = false }) {
+  const node = index.nodeById.get(nodeId);
   const links = index.byNode.get(nodeId) || [];
   const groups = new Map();
   links.forEach((link) => {
@@ -10,7 +11,9 @@ export default function MapConnections({ nodeId, index, onFollow, compact = fals
     if (!groups.has(item.group)) groups.set(item.group, []);
     groups.get(item.group).push({ ...item, key: link.id });
   });
-  return <details className="map-connections" key={nodeId}>
+  return <>
+    {node && onConnect && <button className="map-item-action node-connect-action" type="button" onClick={() => onConnect(nodeId)}>Connect from {node.label}</button>}
+    <details className="map-connections" key={nodeId}>
     <summary>{compact ? 'Connected items' : <>Connections across map <span>{links.length}</span></>}</summary>
     <div className="map-connections__body">
       {!compact && <p>Follow a recorded connection to inspect its evidence and context.</p>}
@@ -24,5 +27,6 @@ export default function MapConnections({ nodeId, index, onFollow, compact = fals
         </li>)}</ul>
       </section>)}
     </div>
-  </details>;
+    </details>
+  </>;
 }

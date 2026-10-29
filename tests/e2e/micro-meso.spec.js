@@ -56,26 +56,30 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   await captureSourceRenderedScreenshot(page, testInfo, 'Micro nodes');
 
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('meso');
-  await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Connect from / })).toHaveCount(0);
   await expect(page.locator('.graph-edge')).toHaveCount(4);
   await expect(page.locator('[data-ecology-layer="meso"]')).toHaveCount(0);
   expect(await positions(page)).toEqual(microPositions);
   await expectSharedMicroCircle(page);
   expect(await microCircle(page)).toEqual(initialCircle);
   const before = (await readProject(page)).graph.edges.length;
-  await page.getByRole('button', { name: 'Connect nodes', exact: true }).click();
   const resident = page.locator('[data-graph-id="node_e2e_resident"]');
   await resident.focus();
   await resident.press('Enter');
+  await page.getByRole('button', { name: 'Connect from Resident', exact: true }).click();
   await expect(page.locator('.map-connect-status')).toContainText('Resident selected');
   await page.keyboard.press('Escape');
   await expect(page.locator('.map-connect-status')).toHaveCount(0);
   expect((await readProject(page)).graph.edges).toHaveLength(before);
 
-  await page.getByRole('button', { name: 'Connect nodes', exact: true }).click();
   await resident.click();
+  await page.getByRole('button', { name: 'Connect from Resident', exact: true }).click();
   await page.locator('[data-graph-id="node_e2e_resource_navigator"]').click();
   const form = page.locator('.add-form');
+  await expect(form.getByRole('combobox', { name: 'From', exact: true })).toHaveValue('node_e2e_resident');
+  await expect(form.getByRole('combobox', { name: 'To', exact: true })).toHaveValue('node_e2e_resource_navigator');
+  await captureSourceRenderedScreenshot(page, testInfo, 'Meso contextual source and target editor');
   await form.getByRole('textbox', { name: 'Relationship', exact: true }).fill('exchanges questions with');
   await form.getByRole('combobox', { name: 'Direction', exact: true }).selectOption('both directions');
   await form.getByRole('textbox', { name: 'Evidence or question' }).fill('Synthetic student interpretation for a classroom check.');
@@ -175,7 +179,7 @@ test('Meso stays usable after guidance fails: add omitted people and settings, c
   await expect(page.locator('.suggestions-review [role="alert"]')).toContainText('Guidance could not be completed. Try again.');
   expect(failedReviews).toBe(1);
   await showMap(page);
-  await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
 
   for (const [label, type] of [['School office', 'setting'], ['Assistant principal', 'person']]) {
     await mapCommand(page, 'Add item');
@@ -197,7 +201,7 @@ test('Meso stays usable after guidance fails: add omitted people and settings, c
   const principal = addedNodes.find(node => node.label === 'Assistant principal');
   const office = addedNodes.find(node => node.label === 'School office');
   expect(addedNodes.filter(node => originalPositions.some(saved => saved.id === node.id)).map(({ id, x, y }) => ({ id, x, y }))).toEqual(originalPositions);
-  await page.getByRole('button', { name: 'Connect this item', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect from Assistant principal', exact: true }).click();
   await expect(page.locator('.map-connect-status')).toContainText('Assistant principal selected');
   await page.locator(`[data-graph-id="${office.id}"]`).click();
   const form = page.locator('.add-form');

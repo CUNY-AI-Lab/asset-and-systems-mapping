@@ -5,6 +5,7 @@ import '@fontsource-variable/source-serif-4';
 import App from './App.jsx';
 import AccountWorkspace from './AccountWorkspace.jsx';
 import BugReport from './support/BugReport.jsx';
+import { BugReportDockProvider } from './support/BugReportDock.jsx';
 import './styles.css';
 import './map-review.css';
 import './map-studio.css';
@@ -15,6 +16,6 @@ import './ui/control-system.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {import.meta.env.VITE_ACCOUNT_WORKSPACE === 'true' ? <><AccountWorkspace /><BugReport /></> : <App />}
+    {import.meta.env.VITE_ACCOUNT_WORKSPACE === 'true' ? <BugReportDockProvider><AccountWorkspace /><BugReport /></BugReportDockProvider> : <App />}
   </React.StrictMode>,
 );

@@ -77,7 +77,7 @@ The selected item’s interpretation, connected items and other editing details 
 | Move around the map | Drag empty canvas, use a middle-button drag, or focus the canvas and hold Space while dragging. Arrow keys pan a focused canvas. |
 | Zoom | Scroll at the pointer, pinch on a touch screen, or use the zoom buttons. `+` and `−` zoom a focused canvas. |
 | Move an element | Drag the element. |
-| Connect nodes at Meso | Choose **Connect nodes**, then select the first node and the second node; describe the relationship and choose its direction. |
+| Connect nodes at Meso | Select the starting node, choose **Connect from [node name]** in its details, then select the ending node; describe the relationship and choose its direction. |
 | Restore an overview | Choose **Fit map** or press `0` with focus in the canvas. |
 | Reorganize the layout | Choose **Arrange map**. |
 | Undo or redo a layout change | Use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
