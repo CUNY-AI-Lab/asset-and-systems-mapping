@@ -26,13 +26,31 @@ const GAP = /\s*(?:\.\s*\.\s*\.|\[\s*(?:\.\s*\.\s*\.)\s*\])\s*/;
 const EDGE_MARKS = /^[\s"'\-]+|[\s"'\-]+$/g;
 const MIN_FRAGMENT_CHARACTERS = 4;
 
+// A quotation may read adjacent table cells as prose. Remove only structural
+// Markdown separators in a recognized table; literal bars and word order stay.
+export function tableReadingText(value) {
+  const lines = String(value).split('\n');
+  const cells = line => /^\s*\|.*\|\s*$/u.test(line)
+    ? line.trim().slice(1, -1).split(/(?<!\\)\|/u).map(cell => cell.trim()) : null;
+  let width = 0;
+  return lines.map((line, index) => {
+    const row = cells(line);
+    if (!row) { width = 0; return line; }
+    const next = cells(lines[index + 1] || '');
+    if (next?.length === row.length && next.every(cell => /^:?-+:?$/u.test(cell))) width = row.length;
+    if (row.length !== width) { width = 0; return line; }
+    if (row.every(cell => /^:?-+:?$/u.test(cell))) return '';
+    return row.join(' ');
+  }).join('\n');
+}
+
 /** The pre-existing strict comparison: Unicode NFC and collapsed whitespace only. */
 export function strictQuoteText(value) {
   return String(value).normalize('NFC').replace(/\s+/g, ' ').trim();
 }
 
 export function canonicalQuoteText(value) {
-  return String(value)
+  return tableReadingText(value)
     .normalize('NFKC')
     .replace(SINGLE_QUOTES, "'")
     .replace(DOUBLE_QUOTES, '"')

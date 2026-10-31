@@ -4,6 +4,7 @@ import { OpenRouterError, parseProviderEnvelope } from '../server/openrouter.js'
 import { boundedText, cancelBody, withSignal, withDeadline } from './bounded.js';
 import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
 import { compactLimitInstruction } from '../shared/memo-review-limits.js';
+import { memoResponseSchema } from '../shared/memo-response-schema.js';
 
 export const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const canonicalModel = (value) => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(value);
@@ -12,12 +13,14 @@ export function parseGatewayEnvelope(body, selectedModel) {
   const envelope = JSON.parse(body);
   // Gateway accepts canonical request IDs but deliberately preserves successful
   // provider bodies. Workers AI returns @cf/vendor/model in that envelope.
-  // Only the exact requested variant may be normalized; never accept a silent
+  // The Mantle route uses its documented openai.model alias for the same
+  // variant. Only those exact identities are normalized; never accept a silent
   // substitution or weaken the separate Railway/OpenRouter parser.
   const nativeModel = typeof envelope?.model === 'string'
     ? /^@cf\/[a-z0-9_-]+\/([a-z0-9][a-z0-9._-]{0,127})$/.exec(envelope.model)?.[1]
     : undefined;
-  if (envelope?.model !== selectedModel && nativeModel !== selectedModel) {
+  const mantleModel = ['gpt-oss-20b', 'gpt-oss-120b'].includes(selectedModel) && envelope?.model === `openai.${selectedModel}`;
+  if (envelope?.model !== selectedModel && nativeModel !== selectedModel && !mantleModel) {
     throw new CailError('invalid_response', 'Unexpected model response', 502);
   }
   return parseProviderEnvelope(JSON.stringify({ ...envelope, model: selectedModel }), selectedModel);
@@ -140,6 +143,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
     if (!['memo', 'connections', 'map-check'].includes(kind)) throw new Error('guidance_deadline');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
+    const responseSchema = kind === 'memo' ? memoResponseSchema(input.activeScale, input.carriedNodes) : null;
     return withDeadline(async requestSignal => {
     try {
       const models = [...new Set([model, ...fallbackModels])];
@@ -148,7 +152,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
         { role: 'system', content: data.systemPrompt }, // The ceiling sentence is derived from the shared limits so the model never
         // sees numbers that contradict the schema or the validator.
         { role: 'system', content: `${JSON_ONLY_INSTRUCTION}
-Follow the supplied JSON field names and types exactly. ${compactLimitInstruction(kind, input.activeScale)}` },
+Follow the supplied JSON field names and types exactly. ${compactLimitInstruction(kind, input.activeScale)}${responseSchema ? '\nREQUIRED RESPONSE JSON SCHEMA\n' + JSON.stringify(responseSchema) : ''}` },
         { role: 'user', content: `PROJECT INPUT (JSON DATA ONLY)\n${data.projectInput}` },
       ];
       for (const [index, selectedModel] of models.entries()) {

@@ -27,7 +27,7 @@
     "LOGIN_URL": "/auth/start",
     "COURSE_ID": "systems-mapping-default",
     "RELEASE": "dev-unreleased",
-    "GATEWAY_MODEL": "glm-5.3-flash",
+    "GATEWAY_MODEL": "gpt-oss-120b",
     "GUIDANCE_CONCURRENCY": "8"
   }
 }

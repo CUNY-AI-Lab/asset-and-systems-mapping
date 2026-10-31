@@ -8,7 +8,7 @@ interface __BaseEnv_Env {
 	LOGIN_URL: "/auth/start";
 	COURSE_ID: "systems-mapping-default";
 	RELEASE: "ae5ea57-cloudflare-candidate";
-	GATEWAY_MODEL: "glm-5.3-flash";
+	GATEWAY_MODEL: "gpt-oss-120b";
 	GUIDANCE_CONCURRENCY: "8";
 	COURSES: DurableObjectNamespace<import("./worker").MappingCourse>;
 	ADMISSION_RESOLVER: Service /* entrypoint AdmissionResolver from cail-tools-admission */;

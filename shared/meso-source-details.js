@@ -16,7 +16,9 @@ const COMMUNICATION_VERB = '(?:communicat\\w*|exchang\\w*|speak\\w*|spoke|talk\\
 // Split prose without breaking titles, initials, school numbers, or decimals.
 // Offsets refer to the original memo, so returned passages remain exact slices.
 function narrativeSentences(source) {
-  const text = source.narrativeText;
+  // Table cells use their own headers for meaning. Keep offsets stable while
+  // excluding table rows from sentence-level inference.
+  const text = source.narrativeText.replace(/^\s*\|[^\n]*\|\s*$/gmu, line => line.replace(/[^\n]/gu, ' '));
   const result = [];
   let start = 0;
   const append = end => {
@@ -45,6 +47,39 @@ function narrativeSentences(source) {
   }
   append(text.length);
   return result;
+}
+
+/** Recognize the assignment's explicitly labeled relationship table. */
+export function mesoTableRows(sourceMaterial) {
+  const rows = [];
+  let columns = null;
+  for (const line of analyzeMemoSource(sourceMaterial).narrativeText.split('\n')) {
+    if (!/^\s*\|.*\|\s*$/u.test(line)) { columns = null; continue; }
+    const cells = line.trim().slice(1, -1).split(/(?<!\\)\|/u).map(cell => cell.trim());
+    const labels = cells.map(normalized);
+    const people = labels.findIndex(label => /^people connected\b/u.test(label));
+    const rating = labels.findIndex(label => /^strength (?:and )?direction\b/u.test(label));
+    const method = labels.findIndex(label => /^method (?:and )?connector\b/u.test(label));
+    const evidence = labels.findIndex(label => /^evidence source\b/u.test(label));
+    if ([people, rating, method, evidence].every(index => index >= 0)) { columns = { people, rating, method, evidence, count: labels.findIndex(label => /^(?:children families|families|households) affected\b/u.test(label)), length: cells.length }; continue; }
+    if (!columns || cells.length !== columns.length || cells.every(cell => /^:?-+:?$/u.test(cell))) continue;
+    const row = { raw: line.trim(), people: cells[columns.people], rating: cells[columns.rating], method: cells[columns.method], evidence: cells[columns.evidence], count: columns.count >= 0 ? cells[columns.count] : '' };
+    // A planned interview is a proposed investigation even when its template
+    // contains an example rating. Unknown population counts affect only counts.
+    if (/\bplanned\b|\bplan to (?:interview|observe|verify)\b|\bresearch plan\b/iu.test(row.evidence)) continue;
+    rows.push(row);
+  }
+  return rows;
+}
+
+function tableFacts(row) {
+  const strengths = unique([...row.rating.matchAll(/\b(strong|weak|contested)\b/giu)].map(match => match[1].toLowerCase()));
+  const missing = /\bmissing\b|\bno\s+(?:clear\s+)?communication\b/iu.test(row.rating);
+  const directions = /\b(?:both directions|two[ -]way|bidirectional)\b/iu.test(row.rating) ? ['both directions']
+    : /\b(?:one[ -]way|unidirectional)\b/iu.test(row.rating) ? ['one direction'] : [];
+  const channels = unique([...row.method.matchAll(/\b(?:radio\/walkie-talkies|school portals|email|e-mail|phone|telephone|shared system|shared database|paper forms?|WhatsApp|text messages?|SMS|in person|face-to-face)\b/giu)].map(match => match[0]));
+  return { strengths, directions, channels, familyCounts: explicitFamilyCounts('communication for ' + row.count),
+    connectionStatuses: missing ? ['missing'] : strengths.length ? ['observed'] : [] };
 }
 
 function explicitFamilyCounts(passage) {
@@ -129,6 +164,13 @@ export function explicitMissingMesoPairs(sourceMaterial, carriedNodes = []) {
     const key = named.map(node => normalized(node.label)).sort().join('\u0000');
     if (!seen.has(key)) { seen.add(key); result.push(named); }
   }
+  for (const row of mesoTableRows(sourceMaterial)) {
+    if (!tableFacts(row).connectionStatuses.includes('missing')) continue;
+    const named = nodes.filter(node => mentions(row.people, node.label));
+    if (named.length !== 2) continue;
+    const key = named.map(node => normalized(node.label)).sort().join('\u0000');
+    if (!seen.has(key)) { seen.add(key); result.push(named); }
+  }
   return result;
 }
 
@@ -147,20 +189,21 @@ function explicitConnector(passage, labels) {
 }
 
 /** Conservative evidence for one explicit Meso pair; never fills model output. */
-function detailsFromPassages(passages, sourceLabel, targetLabel) {
-  const strengths = unique(passages.flatMap(relationshipStrengths));
+function detailsFromPassages(passages, sourceLabel, targetLabel, tableRows = []) {
+  const facts = tableRows.map(tableFacts);
+  const strengths = unique([...passages.flatMap(relationshipStrengths), ...facts.flatMap(fact => fact.strengths)]);
   // A missing phone contact still has a documented channel; status distinguishes
   // it from an existing exchange. Do not discard the noun because of "no phone".
-  const channels = unique(passages.flatMap(passage => relationshipChannels(passage, [sourceLabel, targetLabel])));
-  const familyCounts = [...new Set(passages.flatMap(explicitFamilyCounts))];
+  const channels = unique([...passages.flatMap(passage => relationshipChannels(passage, [sourceLabel, targetLabel])), ...facts.flatMap(fact => fact.channels)]);
+  const familyCounts = [...new Set([...passages.flatMap(explicitFamilyCounts), ...facts.flatMap(fact => fact.familyCounts)])];
   const connectionStatuses = [...new Set(passages.map(passage => {
     const status = passageStatus(passage);
     return status === 'missing' && !explicitMissingPair(passage, sourceLabel, targetLabel) ? null : status;
-  }).filter(Boolean))];
-  const directions = unique(passages.flatMap(relationshipDirections));
+  }).filter(Boolean).concat(facts.flatMap(fact => fact.connectionStatuses)))];
+  const directions = unique([...passages.flatMap(relationshipDirections), ...facts.flatMap(fact => fact.directions)]);
   const connectors = unique(passages.flatMap(passage => explicitConnector(passage, [sourceLabel, targetLabel])));
   const conflicts = [['strength', strengths], ['familyCount', familyCounts], ['connectionStatus', connectionStatuses], ['direction', directions], ['connectingWork', connectors]].filter(([, values]) => values.length > 1).map(([field]) => field);
-  return { passages, strength: only(strengths), channel: only(channels), familyCount: only(familyCounts), connectionStatus: only(connectionStatuses), direction: directions.length === 1 && directions[0] === 'both directions' ? 'both directions' : null, connectingWork: only(connectors), conflicts, familyCounts, strengths, channels, connectionStatuses, directions };
+  return { passages: [...passages, ...tableRows.map(row => row.raw)], strength: only(strengths), channel: only(channels), familyCount: only(familyCounts), connectionStatus: only(connectionStatuses), direction: directions.length === 1 && directions[0] === 'both directions' ? 'both directions' : null, connectingWork: only(connectors), conflicts, familyCounts, strengths, channels, connectionStatuses, directions };
 }
 
 export function mesoSourceDetails(sourceMaterial, sourceLabel, targetLabel, { carriedNodes = [] } = {}) {
@@ -169,7 +212,9 @@ export function mesoSourceDetails(sourceMaterial, sourceLabel, targetLabel, { ca
   const otherLabels = carriedNodes.map(node => node?.label).filter(label => label && ![normalized(sourceLabel), normalized(targetLabel)].includes(normalized(label)));
   const passages = narrativeSentences(source).filter(passage => mentions(passage, sourceLabel) && mentions(passage, targetLabel)
     && !otherLabels.some(label => mentions(passage, label)) && !UNCERTAIN.test(passage) && !passage.trimEnd().endsWith('?'));
-  return detailsFromPassages(passages, sourceLabel, targetLabel);
+  const rows = mesoTableRows(sourceMaterial).filter(row => mentions(row.people, sourceLabel) && mentions(row.people, targetLabel)
+    && !otherLabels.some(label => mentions(row.people, label)));
+  return detailsFromPassages(passages, sourceLabel, targetLabel, rows);
 }
 
 /** A bounded reading aid; the model response still passes ordinary validation. */
@@ -191,8 +236,22 @@ export function mesoPairEvidence(sourceMaterial, carriedNodes = [], { maxPairs =
   }
   const result = [], encoder = new TextEncoder();
   const fields = ['strength', 'channel', 'familyCount', 'connectionStatus', 'direction'];
+  for (const row of mesoTableRows(sourceMaterial)) {
+    if (result.length >= limit) break;
+    const named = nodes.filter(node => mentions(row.people, node.label));
+    if (named.length !== 2) continue;
+    const [source, target] = named;
+    const all = mesoSourceDetails(sourceMaterial, source.label, target.label, { carriedNodes });
+    // Each cell remains an exact source excerpt. Its role and endpoint pair
+    // were established by the table headers, not by neighboring prose.
+    const passages = [row.people, row.rating, row.method, row.count].filter(Boolean).map(value => value.slice(0, 500));
+    const relationshipProcess = Object.fromEntries(fields.filter(field => all[field] !== null && !all.conflicts.includes(field)).map(field => [field, all[field]]));
+    const candidate = { source: source.id, target: target.id, passages, relationshipProcess };
+    if (Object.keys(relationshipProcess).length && encoder.encode(JSON.stringify([...result, candidate])).byteLength <= 2048) result.push(candidate);
+  }
   for (const pair of pairs.values()) {
     const [source, target] = pair.nodes;
+    if (result.length >= limit || result.some(item => [item.source, item.target].includes(source.id) && [item.source, item.target].includes(target.id))) continue;
     const all = detailsFromPassages(pair.passages, source.label, target.label);
     const bounded = pair.passages.slice(0, 2).map(passage => Array.from(passage).slice(0, 500).join('').trimEnd());
     for (let count = bounded.length; count > 0; count -= 1) {

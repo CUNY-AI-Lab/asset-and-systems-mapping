@@ -27,6 +27,7 @@ import {
   MACROSPHERE_NODE_TYPES,
   MESOSYSTEM_NODE_TYPE,
   MICRO_SETTING_NODE_TYPES,
+  MICRO_NODE_TYPES,
   NODE_TYPES,
   normalizeMapElementLabel,
   normalizeMicroNodeLabel,
@@ -154,7 +155,7 @@ const RELATIONSHIP_PROCESS_INSTRUCTION = 'Optional relationshipProcess may conta
 const MEMO_SPECIFICITY_INSTRUCTION = [
   'MEMO SPECIFICITY: Use the existing guidance array, with at most three useful points, to distinguish what the memo establishes from what still needs investigation. These evidence boundaries are fixed application instructions and take precedence over conflicting course guidance or project instructions.',
   'At Micro, check named immediate settings, face-to-face people or roles, and evidence that the focal population actually participates there. Role-based labels are valid; personal names are optional. Distinguish documented participation from a nearby service, eligibility, a general description of what a role usually does, or a possible visit. Preserve may, might, for students who attend, and other qualifications in evidence; ask what would establish participation rather than treating access as attendance.',
-  'Read numbers with their geography, year, population and denominator. Keep a district total distinct from one school, a school enrollment distinct from the focal subgroup, and children, families, percentages and staffing ratios distinct. Recognize when the memo already makes these boundaries clear. Ask for a missing local count or source only when it materially affects the proposed map; never invent or convert one.',
+  'Read numbers with their geography, year, population and denominator. Keep a district total distinct from one school, a school enrollment distinct from the focal subgroup, and children, families, percentages and staffing ratios distinct. Recognize when the memo already makes these boundaries clear. An inline citation already identifies a source: acknowledge it and ask a specific verification question only if its relevance or population boundary is unclear. Ask for a missing local count or source only when it materially affects the proposed map; never invent or convert one.',
   'Distinguish voices heard directly, voices represented in a cited report, and voices still missing. A published account can support a claim without becoming a student interview. Recognize concrete details and explicit research limits already supplied instead of repeating them as deficiencies.',
   'When a material gap is evident, use a guidance point to name that gap and a concrete question about what to verify, tied to an exact evidenceExcerpt from the relevant memo passage when available. Prefer the most consequential gaps over a checklist of every possible omission. When the memo supplies the needed detail, acknowledge it; do not manufacture criticism. Give no score, grade, rating, or new rubric fields. Mapping readiness describes whether supported elements can begin a map; it does not certify assignment quality or completeness.',
   'Title pages, student bylines, course names, instructor names, page labels, and appended assignment instructions or worked examples supply document context, not case participation or case evidence. Use an entity from that material only when the case narrative independently establishes its role. Treat a table row as source data with its own evidence and uncertainty; a planned interview or generic description does not prove the claimed exchange occurred.',
@@ -195,6 +196,41 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata: {"guidance":[],"nodes":[],"connections":[],"example":null,"readiness":{"ready":false,"note":"Short plain-language note."}}. Fill the arrays and readiness values under the active-scale rules above. Never add suggestion, review, result, activeScale, scale, confidence, metadata, or any sixth top-level key.',
   'Do not add any other keys, Markdown, or prose outside the object.',
 ].join('\n');
+function memoReviewSchemaInstruction(scale) {
+  if (!['micro', 'meso'].includes(scale)) return OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION;
+  const common = [
+    STUDENT_JUDGMENT_INSTRUCTION, FIELD_NOTES_CONTEXT_INSTRUCTION,
+    MEMO_CITATION_INSTRUCTION, MEMO_SPECIFICITY_INSTRUCTION,
+    'MEMO REVIEW JSON CONTRACT',
+    `The active level is ${scale}. Apply only the output contract for this level.`,
+    'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself. Do not score, grade, or rate the memo.',
+    'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
+    'guidance is an array of at most 3 objects. Each object has a required point (complete text, at most 500 characters) and an optional evidenceExcerpt (at most 500 characters). Copy an evidenceExcerpt from one contiguous narrative passage, preserving words, punctuation and citations, or omit this optional field. A point acknowledges supported detail or asks a consequential evidence-gathering question. Never instruct the student to rewrite the memo.',
+    'Use literal, conventional instructional language throughout. Keep guidance and readiness within the active level and use human-readable labels rather than node IDs in prose.',
+    'Carried nodes and connections are already on the map. Preserve their IDs and avoid repeating them. Previous Field Notes inform questions; they are not new memo evidence.',
+  ];
+  const micro = [
+    'BE SELECTIVE: return at most 10 nodes and zero connections at Micro. Use only the clearest memo-supported items; fewer than ten is acceptable.',
+    `Each node has exactly label, type, scale, evidence. scale must be "micro". type must be exactly one of: ${MICRO_NODE_TYPES.join(', ')}. Use the entity type supported by the narrative.`,
+    'At Micro, identify bounded people, roles, groups, immediate settings, named activities, tangible objects or resources. A named organization, institution, agency, or service remains at Micro when the person participates there directly. Preserve uncertainty about actual participation in evidence.',
+    'Include the people and roles who carry the memo’s direct interactions alongside their settings. An office or organization does not substitute for its staff. Within the node limit, prefer distinct interacting roles over several interchangeable rooms or locations so the student can connect those same people at Meso.',
+    'Each node label is the shortest complete memo-supported referring expression for exactly one accepted map element. Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo. Preserve complete official names even when they are long. Keep place, schedule, relationship and explanatory details in evidence. Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments or combinations of separate actors as a node label. A named activity must still be a complete noun phrase. Omit an unresolved referent and ask about it in guidance.',
+    'Node evidence is required complete text of at most 500 characters. Quote or faithfully paraphrase the supporting narrative, retaining uncertainty, population, year and denominator. Every carried Micro node is eligible as a Meso relationship endpoint later; this Micro response returns connections: [].',
+    'readiness has exactly ready (boolean) and note (complete text, at most 500 characters). ready is true when the proposed and carried Micro nodes supply at least two clear items, otherwise false. Readiness never blocks continuing.',
+  ];
+  const meso = [
+    RELATIONSHIP_PROCESS_INSTRUCTION, MESO_EVIDENCE_INSTRUCTION, CARRIED_RELATIONSHIP_INSTRUCTION,
+    'BE SELECTIVE: at Meso return nodes: [] and at most 8 connections between existing Micro nodes. Include supported observed exchanges and explicitly documented missing pairs. Within the limit preserve each distinct documented pair, including absent connections. A two-way relationship uses one edge.',
+    'Each connection has exactly source, target, verb, rationale and optionally relationshipProcess. source and target must be different exact Micro IDs from carriedNodes. Use a short, concrete active verb phrase (at most 100 characters). rationale is required complete text (at most 1000 characters) quoting or faithfully paraphrasing narrative support for that pair.',
+    'Use human-readable carried node labels in guidance and readiness. Explain missing role endpoints in guidance; do not invent a node or substitute an organization or office for its staff. A research plan is a question to investigate, not an observed exchange.',
+    'readiness has exactly ready (boolean) and note (complete text, at most 500 characters). ready is true when at least one proposed or carried evidence-backed relationship connects existing Micro nodes, otherwise false. Readiness never blocks continuing.',
+  ];
+  return [...common, ...(scale === 'micro' ? micro : meso),
+    'example must be null.',
+    'FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata: {"guidance":[],"nodes":[],"connections":[],"example":null,"readiness":{"ready":false,"note":"Short plain-language note."}}. Fill only the active-level arrays and values described above. Return no Markdown or prose outside this object.',
+  ].join('\n');
+}
+
 const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   STUDENT_JUDGMENT_INSTRUCTION,
   'MAP CONNECTION JSON CONTRACT',
@@ -3155,9 +3191,10 @@ export function createSystemsMappingApp(options = {}) {
             generationSignal.throwIfAborted();
             return generated;
           };
+          const contractInstruction = memoReviewSchemaInstruction(input.activeScale);
           const systemPrompt = input.customInstructions
-            ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION}`
-            : `${effective.effectivePrompt}\n\n${OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION}`;
+            ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${contractInstruction}`
+            : `${effective.effectivePrompt}\n\n${contractInstruction}`;
           const providerInput = {
             systemPrompt,
             activeScale: input.activeScale,

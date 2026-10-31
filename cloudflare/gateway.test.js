@@ -235,3 +235,27 @@ test('transport and unreadable-output errors do not invent a semantic validation
     expect(safeGatewayFailure(error, correlation.request_id).details).not.toHaveProperty('validationReason');
   }
 });
+
+test('accepts only the exact GPT-OSS model identity returned by the Mantle route', () => {
+  const body = model => JSON.stringify({ model, created: 1, choices: [{ message: { role: 'assistant', content: '{"guidance":[]}' }, finish_reason: 'stop' }] });
+  expect(parseGatewayEnvelope(body('openai.gpt-oss-20b'), 'gpt-oss-20b').metadata.model).toBe('gpt-oss-20b');
+  expect(() => parseGatewayEnvelope(body('openai.gpt-oss-120b'), 'gpt-oss-20b')).toThrow('Unexpected model');
+  expect(() => parseGatewayEnvelope(body('openai.gpt-oss-20b'), 'glm-5.3-flash')).toThrow('Unexpected model');
+});
+
+test.each(['micro','meso'])('supplies %s output constraints through the authenticated Gateway request', async activeScale => {
+  let body;
+  const fetch = async request => { body = await request.json(); return Response.json({model: body.model, created: 1, choices:[{message:{role:'assistant',content:'{"guidance":[]}'},finish_reason:'stop'}]}); };
+  const carriedNodes=[{id:'teacher',label:'Teacher',scale:'micro',type:'role'},{id:'family',label:'Family',scale:'micro',type:'family'}];
+  await gatewaySuggestion({fetch},'fixture-identity','gpt-oss-20b',correlation)({...input,activeScale,carriedNodes});
+  const schema=JSON.parse(body.messages[1].content.split('REQUIRED RESPONSE JSON SCHEMA\n')[1]);
+  expect(body.response_format.type).toBe('json_object');
+  expect(schema.required).toEqual(['guidance','nodes','connections','example','readiness']);
+  expect(schema.additionalProperties).toBe(false);
+  expect(schema.properties.guidance.maxItems).toBe(3);
+  expect(schema.properties.nodes.maxItems).toBe(activeScale==='micro'?10:0);
+  expect(schema.properties.connections.maxItems).toBe(activeScale==='micro'?0:8);
+  expect(schema.properties.connections.items.properties.source.enum).toEqual(['teacher','family']);
+  expect(schema.properties.nodes.items.properties.type.enum).not.toContain('business');
+  expect(schema.properties.nodes.items.properties.type.enum).toContain('role');
+});

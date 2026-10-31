@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deterministicMemoReview } from '../src/domain.js';
+import { deterministicMemoReview, MICRO_NODE_TYPES } from '../src/domain.js';
 import { createSystemsMappingApp } from './app.js';
 import {
   DEFAULT_TEACHING_PROFILE,
@@ -626,22 +626,15 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstInput.systemPrompt).toContain('at most 10 nodes and zero connections at Micro');
     expect(firstInput.systemPrompt).toContain('A named activity must still be a complete noun phrase');
     expect(firstInput.systemPrompt).toContain('Every carried Micro node is eligible as a Meso relationship endpoint');
-    expect(firstInput.systemPrompt).toContain('At Meso, source and target must be different exact IDs from carriedNodes');
     expect(firstInput.systemPrompt).toContain('Use literal, conventional instructional language throughout');
     expect(firstInput.systemPrompt).toContain('Preserve complete official names even when they are long');
-    expect(firstInput.systemPrompt).toContain('At Micro and Macrosphere, connections must be empty');
-    expect(firstInput.systemPrompt).toContain('SCALE BOUNDARIES');
-    expect(firstInput.systemPrompt).toContain('Meso identifies directional relationships between the people, groups, resources and settings already mapped at Micro');
-    expect(firstInput.systemPrompt).toContain('At Meso, reuse the exact supplied Micro node IDs');
-    expect(firstInput.systemPrompt).toContain('Return an empty nodes array and describe relationships in connections.');
     expect(firstInput.systemPrompt).toContain('A named organization, institution, agency, or service remains at Micro when the person participates there directly.');
-    expect(firstInput.systemPrompt).toContain('Exosphere identifies outside decision settings whose funding or decisions affect the focal situation');
-    expect(firstInput.systemPrompt).toContain('At Meso, guidance and readiness should describe the proposed relationships using the human-readable labels of existing Micro nodes.');
-    expect(firstInput.systemPrompt).toContain('For Micro and Meso, example must be null.');
-    expect(firstInput.systemPrompt).toContain('A generic category is not an Exosphere node');
+    expect(firstInput.systemPrompt).toContain(`type must be exactly one of: ${MICRO_NODE_TYPES.join(', ')}`);
+    expect(firstInput.systemPrompt).toContain('example must be null.');
+    const activeContract = firstInput.systemPrompt.slice(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'));
+    expect(activeContract).not.toMatch(/deontic|basis|scope entries|At Exosphere|At Macrosphere/);
+    expect(activeContract).not.toContain('relationshipProcess');
     expect(firstInput.systemPrompt).toContain('FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata');
-    expect(firstInput.systemPrompt).toContain('verb must be exactly one of: funds, administers, regulates');
-    expect(firstInput.systemPrompt).toContain('deontic must be exactly one of: shapes, mandates, prohibits');
     expect(firstInput.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'))
       .toBeGreaterThan(firstInput.systemPrompt.lastIndexOf(firstBody.projectOverlay.customInstructions));
     expect(first.runtime).toEqual({
@@ -848,10 +841,8 @@ describe('persistent preflight suggestion review queue', () => {
     expect(firstPrompt).toContain('shortest complete memo-supported referring expression');
     expect(firstPrompt).toContain('Resolve every pronoun or coreference');
     expect(firstPrompt).toContain('dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments');
-    expect(firstPrompt).toContain('At Micro and Macrosphere, connections must be empty');
-    expect(firstPrompt).toContain('At Meso, source and target must be different exact IDs from carriedNodes');
-    expect(firstPrompt).toContain('short plain active verb phrase for a concrete action or exchange');
-    expect(firstPrompt).toContain('vague collaboration, or generic planning');
+    expect(firstPrompt).toContain('this Micro response returns connections: []');
+    expect(firstPrompt).toContain(`type must be exactly one of: ${MICRO_NODE_TYPES.join(', ')}`);
     expect(firstPrompt).not.toMatch(/\b(?:Rosa|Danny|Marisol|BMCC|Tuesdays)\b/);
     expect(correctivePrompt).toContain('CORRECTIVE RETRY');
     expect(correctivePrompt).toContain('Return a complete replacement JSON object');

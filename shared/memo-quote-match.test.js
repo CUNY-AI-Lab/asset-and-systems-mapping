@@ -67,3 +67,12 @@ describe('classifyExcerptMatch', () => {
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 });
+
+it('matches adjacent table cells as quotations while retaining words, order and literal punctuation', () => {
+  const memo='| People connected | Strength + direction | Method + connector |\n| --- | --- | --- |\n| Nurse and Teacher | Missing communication. | Phone calls require consent. |\n| Parent and Teacher | Strong; two way. | Email updates. |';
+  expect(classifyExcerptMatch(memo,'Missing communication. Phone calls require consent.')).toBe('normalized');
+  expect(classifyExcerptMatch(memo,'Missing communication. Email updates.')).toBeNull();
+  expect(classifyExcerptMatch(memo,'Phone calls do not require consent.')).toBeNull();
+  expect(classifyExcerptMatch('The symbol A | B appears here.', 'The symbol A B appears here.')).toBeNull();
+  expect(classifyExcerptMatch('| A | B |\n| one | two |','one two')).toBeNull();
+});

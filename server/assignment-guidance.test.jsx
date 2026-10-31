@@ -99,6 +99,10 @@ describe('current assignment guidance', () => {
     expect(first.memoContext.mesoEvidence[0]).toMatchObject({ source: 'micro_parent', target: 'micro_teacher', relationshipProcess: { familyCount: 24, strength: 'strong', direction: 'both directions', channel: 'email' } });
     expect(first.memoContext.mesoEvidence[1].relationshipProcess).toMatchObject({ connectionStatus: 'missing', channel: 'phone' });
     expect(first.systemPrompt).toContain('MESO SOURCE READING AID');
+    expect(first.systemPrompt).toContain('at Meso return nodes: [] and at most 8 connections between existing Micro nodes');
+    expect(first.systemPrompt).toContain('different exact Micro IDs from carriedNodes');
+    const activeContract = first.systemPrompt.slice(first.systemPrompt.lastIndexOf('MEMO REVIEW JSON CONTRACT'));
+    expect(activeContract).not.toMatch(/deontic|scope entries|At Exosphere|At Macrosphere/);
     const final = run.mock.calls[2][0];
     expect(final.memoContext.mesoEvidence).toEqual(first.memoContext.mesoEvidence);
     expect(final.memoContext.evidenceRepair.passages.length).toBeGreaterThan(0);
@@ -291,4 +295,19 @@ describe('current assignment guidance', () => {
     const review = exo(); review.connections.shift();
     const { evaluate } = await setup(review, ASSIGNMENT_COMPARISON_CASES[1]); expect((await evaluate()).status).toBe(502);
   });
+});
+
+it('reviews an intact Meso table without confusing an unknown student count with an unknown relationship', async () => {
+  const text = '| People connected | Information exchanged / missing | Strength + direction | Method + connector | Children / families affected | Evidence / source OR plan to find out |\n| --- | --- | --- | --- | --- | --- |\n| Parent and Teacher | School progress | Strong; two way | Communication through email. | Unknown; one school has 480 students. | School communication log. |';
+  const fixture = { activeScale: 'meso', text, carriedNodes: [{ id:'parent',label:'Parent',type:'role',scale:'micro' },{ id:'teacher',label:'Teacher',type:'role',scale:'micro' }] };
+  const review = {guidance:[],nodes:[],connections:[{source:'parent',target:'teacher',verb:'exchanges updates with',rationale:'Communication through email.',relationshipProcess:{strength:'strong',direction:'both directions',channel:'email',connectionStatus:'observed',familyCount:null}}],example:null,readiness:{ready:true,note:'The table documents a two-way exchange.'}};
+  const {evaluate,run,system}=await setup(review,fixture);
+  const response=await evaluate();expect(response.status).toBe(201);
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(run.mock.calls[0][0].memoContext.mesoEvidence[0].relationshipProcess).toMatchObject({strength:'strong',direction:'both directions',channel:'email'});
+  const saved=(await response.json()).evaluation;
+  expect(saved.review.connections[0].relationshipProcess.familyCount).toBeNull();
+  expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(1);
+  review.connections[0].relationshipProcess.familyCount=480;
+  const bad=await setup(review,fixture);expect((await bad.evaluate()).status).toBe(502);
 });
