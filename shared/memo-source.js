@@ -7,6 +7,8 @@ const REFERENCE_DATE = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^
 const REFERENCE_URL = /(?:\bdoi\s*:|https?:\/\/\S+)/iu;
 const ORGANIZATION_REFERENCE = /^(?:\[\d+\]\s*)?(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&)(?:\s+(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&)){0,16}\.?\s+\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*\S/u;
 const WEB_TITLE_REFERENCE = /^(.{2,240}?)\.\s*\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*/u;
+const WEB_SOURCE_CREDIT = /^([\p{Lu}][\p{L}'’&.-]*(?:\s+(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&|in|on|at|to)){0,24})\.\s*(?:https?:\/\/|doi\s*:)/u;
+const ORGANIZATION_WORD = /\b(?:Office|Center|Centre|Department|University|School|Schools|Library|Institute|Association|Organization|Organisation|Council|Bureau|Agency|Foundation|Commission|Comptroller|Press|Publisher|Publishers|Publishing|Services|Museum)\b/u;
 const NARRATIVE_LINE = /^(?:(?:I|we|he|she|they|my|our)\b|(?:the\s+)?[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,6}\s+(?:meets?|visits?|attends?|accompanies|helps?|coordinates?|works?|observes?|said|says|describes?|spoke|speaks|asks?|goes|went|lives?|receives?|serves?|is|are|was|were|has|have|had|can|could|will|would|[\p{L}]{3,}ed)\b)/iu;
 const PUBLICATION_METADATA = /(?:\b[\p{Lu}][\p{L}&.-]*(?:\s+[\p{Lu}][\p{L}&.-]*){0,5}\s+(?:Press|Publisher|Publishers|Publishing)\b|\b(?:Journal|Proceedings|Review|Transactions)\s+(?:of|on|for|the)\b|\bJournal,\s*\d|\b(?:vol|pp)\.\s*\d|https?:\/\/|\bdoi\s*:)/u;
 const INLINE_CITATION_CANDIDATE = /\([^()\n]*\)|\[\d+(?:\s*[,–-]\s*\d+)*\]/gu;
@@ -29,6 +31,21 @@ function looksLikeNarrative(value) {
   return NARRATIVE_LINE.test(value.trim().replace(/^(?:on|after|before|during|at|in)\b[^,\n]{1,80},\s*/iu, ''));
 }
 
+function isWebTitleReference(value) {
+  const raw = value.replace(/^\s*\d{1,4}\s*\n/u, '');
+  const text = raw.replace(/\s+/gu, ' ').trim();
+  const title = WEB_TITLE_REFERENCE.exec(text);
+  if (!title || looksLikeNarrative(title[1])) return false;
+  const credit = WEB_SOURCE_CREDIT.exec(text.slice(title[0].length));
+  // A title/date/URL can be a field note. Require a separate organization or
+  // publisher credit immediately before the URL, rather than guessing verbs.
+  if (!credit || !ORGANIZATION_WORD.test(credit[1])) return false;
+  const url = /https?:\/\/\S+|\bdoi\s*:\s*\S+/iu.exec(raw);
+  const afterUrl = url ? raw.slice(url.index + url[0].length).split('\n', 1)[0] : null;
+  // A sentence after the URL on the same line is ambiguous case material.
+  return afterUrl !== null && !afterUrl.trim();
+}
+
 function isReferenceEntry(value, headed = false) {
   // A PDF page counter can precede a continued reference list. Ignore it only
   // while testing the following block; uncertain blocks remain untouched.
@@ -40,12 +57,9 @@ function isReferenceEntry(value, headed = false) {
   // reference heading, require a publication or URL signal before omission.
   if (!headed && !publication) return false;
   if (ORGANIZATION_REFERENCE.test(text)) return true;
-  // Web references often begin with a page title, punctuation or an acronym,
-  // and the date may wrap to the next PDF line. Require a URL as additional
-  // evidence, and keep sentences describing an actor before or after the date.
-  const webTitle = WEB_TITLE_REFERENCE.exec(text);
-  if (webTitle && REFERENCE_URL.test(text) && !looksLikeNarrative(webTitle[1])
-    && !looksLikeNarrative(text.slice(webTitle[0].length))) return true;
+  // Web references can begin with a punctuated title or an acronym and wrap
+  // before the date. The separate source credit distinguishes them from notes.
+  if (isWebTitleReference(value)) return true;
   const author = REFERENCE_AUTHOR.exec(text);
   if (!author || !(REFERENCE_DATE.test(text) || REFERENCE_URL.test(text))) return false;
   // MLA entries have a title followed by publication details. A role-and-year
@@ -81,6 +95,16 @@ function referenceRanges(text, lines) {
       && !BODY_HEADING.test(headingText(lines[end].text))
       && !looksLikeNarrative(lines[end].text)) end += 1;
     let section = text.slice(lines[index].start, lines[end - 1].end);
+    if (isWebTitleReference(section)) {
+      // A URL completes this narrowly recognized web entry. Examine the next
+      // line independently so later prose survives even without a blank line.
+      let urlLine = index;
+      while (urlLine < end && !REFERENCE_URL.test(lines[urlLine].text)) urlLine += 1;
+      if (urlLine < end) {
+        end = urlLine + 1;
+        section = text.slice(lines[index].start, lines[urlLine].end);
+      }
+    }
     // A PDF page break may separate an author line from its date. Join only
     // this explicit continuation, keeping all original character offsets.
     if (REFERENCE_AUTHOR.test(section.trim()) && !isReferenceEntry(section, referenceSection)) {

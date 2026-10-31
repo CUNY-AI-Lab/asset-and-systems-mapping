@@ -219,9 +219,28 @@ describe('memo source boundaries', () => {
     'School Support (SS) - Family Office. (2025). The nurse helps Rosa complete a form. https://example.test/notes.',
     'The nurse helped Rosa. (n.d.-a). Visit notes at https://example.test/notes.',
     '6\nRosa visits the school and reads the guide at https://example.test/guide.',
+    'Family Support (FS) - Visit notes. (2025). Rosa supports children at the library. https://example.test/notes.',
+    'Parents and school staff - field observation. (2025). A parent shares attendance updates at the school. https://example.test/notes.',
+    'The teacher reads the family form. (2025). Visit notes at https://example.test/notes.',
+    'Clinic visit. (2025). Rosa calls the nurse. https://example.test/notes',
+    'Family meeting. (2025). The parent completes a form. https://example.test/notes',
+    'Community support - Resource Office. (2025). Resource Office. https://example.test/guide A parent shares attendance updates at the school.',
   ])('retains uncertain narrative with a URL and citation-like punctuation: %s', note => {
-    const source = analyzeMemoSource(note);
-    expect(source.narrativeText).toBe(note);
-    expect(source.bibliographyRanges).toEqual([]);
+    for (const heading of ['', 'References\n']) {
+      const source = analyzeMemoSource(heading + note);
+      expect(source.narrativeText).toBe(heading + note);
+      expect(source.bibliographyRanges).toEqual([]);
+    }
+  });
+
+  it('ends a web-title reference at its URL and retains a later actor sentence without a blank line', () => {
+    const reference = 'Community support - Resource Office. (2025). Resource Office. https://example.test/guide';
+    const narrative = 'A parent shares attendance updates at the school.';
+    const laterReference = 'Example School Office. (2025). Guide. https://example.test/guide2';
+    const source = analyzeMemoSource(`${reference}\n${narrative}\n${laterReference}`);
+    expect(source.bibliographyText).toContain(reference);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.bibliographyText).not.toContain(narrative);
+    expect(source.text).toContain(laterReference);
   });
 });
