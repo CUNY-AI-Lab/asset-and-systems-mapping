@@ -103,30 +103,25 @@ describe('ordinary memo contract correction', () => {
     expect(bytes(run.mock.calls[1][0].memoContext.contractRepair)).toBeLessThanOrEqual(MEMO_CONTRACT_REPAIR_BYTES);
   });
 
-  it.each(['copy', 'omit'])('shows the latest rejected guidance quote during final repair and permits a %s response', async action => {
+  it.each(['copy', 'omit'])('selects literal source passages during final quotation repair and permits a %s response', async action => {
     const first = review('meso'); first.guidance[0].evidenceExcerpt = 'Rosa sends a fabricated progress report.';
     const second = review('meso'); second.guidance[0].evidenceExcerpt = 'The teacher sends a made-up receipt.';
     const { evaluate, run, system } = await setup(first, 'meso');
     run.mockReset().mockResolvedValueOnce({ suggestion: first, metadata: {} }).mockResolvedValueOnce({ suggestion: second, metadata: {} })
-      .mockImplementation(async input => {
-        const replacement = review('meso');
-        if (action === 'copy') replacement.guidance[0].evidenceExcerpt = input.memoContext.evidenceRepair.passages[0].text;
-        else delete replacement.guidance[0].evidenceExcerpt;
-        return { suggestion: replacement, metadata: {} };
-      });
+      .mockResolvedValueOnce({ suggestion: { quotes: [action === 'copy' ? 0 : null] }, metadata: {} });
     const response = await evaluate(); expect(response.status).toBe(201);
     const { evaluation } = await response.json();
     expect(run).toHaveBeenCalledTimes(3);
     expect(run.mock.calls[1][0].memoContext.contractRepair).toEqual({ path: 'guidance[0].evidenceExcerpt', value: first.guidance[0].evidenceExcerpt });
     const final = run.mock.calls[2][0];
-    expect(final.memoContext.contractRepair).toEqual({ path: 'guidance[0].evidenceExcerpt', value: second.guidance[0].evidenceExcerpt });
-    expect(final.memoContext.evidenceRepair.passages.some(item => item.text === passage)).toBe(true);
+    expect(final.memoContext.quoteSelection.points).toEqual(second.guidance.map(item => item.point));
+    expect(final.memoContext.quoteSelection.passages.some(item => item.text === passage)).toBe(true);
     expect(final.sourceText).toBe(run.mock.calls[0][0].sourceText);
     expect(final.carriedNodes).toEqual(carried);
     expect(bytes(final.memoContext)).toBeLessThanOrEqual(OLLAMA_CLOUD_LIMITS.memoContextBytes);
     expect(final.systemPrompt).not.toContain(second.guidance[0].evidenceExcerpt);
-    expect(final.systemPrompt).toContain('omit the evidenceExcerpt field');
-    expect(final.systemPrompt).toContain('Node evidence and connection rationale remain required');
+    expect(final.systemPrompt).toContain('null when none supports the point');
+    expect(final.systemPrompt).toContain('validates the complete review');
     expect(evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
     expect(evaluation.review.connections[0].rationale).toBe(passage);
     if (action === 'copy') expect(evaluation.review.guidance[0].evidenceExcerpt).toBe(passage);

@@ -7,6 +7,33 @@ import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvel
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
 afterEach(() => vi.useRealTimers());
+test('full evidence repair declares indices bounded to the supplied passages', async () => {
+  let body;
+  const fetch = vi.fn(async request => {
+    body = await request.json();
+    return Response.json({ model: 'gpt-oss-120b', created: 1, choices: [{ message: { role: 'assistant', content: '{"nodes":[]}' }, finish_reason: 'stop' }] });
+  });
+  await gatewaySuggestion({ fetch }, 'fixture-identity', 'gpt-oss-120b', correlation)({ ...input, memoContext: { evidenceRepair: { passages: [{ start: 0, end: 17, text: input.sourceText }] } } }, null, { kind: 'memo-evidence' });
+  const schema = JSON.parse(body.messages[1].content.split('REQUIRED RESPONSE JSON SCHEMA\n')[1]);
+  expect(schema.properties.nodes.items.properties.evidence).toEqual({ type: 'integer', minimum: 0, maximum: 0 });
+  expect(schema.properties.guidance.items.properties.evidenceExcerpt).toEqual({ type: 'integer', minimum: 0, maximum: 0 });
+  expect(body.max_completion_tokens).toBe(4096);
+});
+test('quotation selection uses a bounded authenticated request with its own response contract', async () => {
+  let body;
+  const fetch = vi.fn(async request => {
+    expect(request.headers.get('x-cail-identity-jwt')).toBe('fixture-identity');
+    body = await request.json();
+    return Response.json({ model: 'openai.gpt-oss-120b', created: 1, choices: [{ message: { role: 'assistant', content: '{"quotes":[0,null]}' }, finish_reason: 'stop' }] });
+  });
+  const result = await gatewaySuggestion({ fetch }, 'fixture-identity', 'gpt-oss-120b', correlation)(input, null, { kind: 'memo-quotes' });
+  expect(result.suggestion).toEqual({ quotes: [0, null] });
+  expect(body.max_completion_tokens).toBe(512);
+  expect(body.messages[1].content).toContain('return exactly one quotes array');
+  expect(body.messages[1].content).not.toContain('For a memo review');
+  expect(body.messages[1].content).not.toContain('REQUIRED RESPONSE JSON SCHEMA');
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 test.each([
   ['glm-5.3-flash', '@cf/zai-org/glm-5.3-flash'],
   ['deepseek-v4-flash-0731', '@cf/deepseek-ai/deepseek-v4-flash-0731'],

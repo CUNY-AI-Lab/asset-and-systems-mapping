@@ -100,7 +100,7 @@ describe('citation-aware memo guidance and recovery', () => {
     if (failure === 'author') invalid.nodes[0] = { label: 'A. Smith', type: 'person', scale: 'micro', evidence: reference };
     if (failure === 'reference-evidence') invalid.guidance[0].evidenceExcerpt = reference;
     if (failure === 'invented-quote') invalid.guidance[0].evidenceExcerpt = 'Rosa interviewed Smith about access.';
-    const run = vi.fn().mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(validReview()));
+    const run = vi.fn().mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(failure === 'author' ? validReview() : { quotes: [0] }));
     const { system, project, evaluate } = await setup(run);
     const response = await evaluate();
     expect(response.status).toBe(201);
@@ -109,8 +109,9 @@ describe('citation-aware memo guidance and recovery', () => {
     const repair = run.mock.calls[2][0];
     expect(repair.systemPrompt).toContain('FINAL EVIDENCE REPAIR');
     expect(repair.sourceText).toBe(prepareProviderMemo(CITATION_MEMO).sourceText);
-    expect(repair.memoContext.evidenceRepair.passages.some(passage => passage.text.includes('Rosa meets'))).toBe(true);
-    expect(repair.memoContext.evidenceRepair.passages.every(passage => !passage.text.includes(reference))).toBe(true);
+    const passages = failure === 'author' ? repair.memoContext.evidenceRepair.passages : repair.memoContext.quoteSelection.passages;
+    expect(passages.some(passage => passage.text.includes('Rosa meets'))).toBe(true);
+    expect(passages.every(passage => !passage.text.includes(reference))).toBe(true);
     const signals = run.mock.calls.map(call => call[2].signal);
     expect(signals.every(signal => signal === signals[0])).toBe(true);
     expect(evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
@@ -120,7 +121,7 @@ describe('citation-aware memo guidance and recovery', () => {
   });
 
   it('rejects unsupported paraphrases in the final repair and saves no partial review', async () => {
-    const invalid = validReview(); invalid.guidance[0].evidenceExcerpt = reference;
+    const invalid = validReview(); invalid.nodes[0].evidence = reference;
     const ungrounded = validReview(); ungrounded.nodes[0].evidence = 'Rosa works as a teacher at this school.';
     const run = vi.fn().mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(ungrounded));
     const { system, evaluate } = await setup(run);

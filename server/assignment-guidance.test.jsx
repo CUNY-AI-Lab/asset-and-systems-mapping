@@ -33,6 +33,105 @@ async function setup(review, fixture = ASSIGNMENT_COMPARISON_CASES[0]) {
 }
 
 describe('current assignment guidance', () => {
+  const quoteSource = 'Students in District 12 may participate in a learning program (District report, 2025). The school counselor supports these students.';
+  const quoteFixture = { activeScale: 'micro', text: quoteSource, carriedNodes: [] };
+  const quoteReview = () => ({ guidance: [
+    { point: 'Confirm participation in the learning program.', evidenceExcerpt: 'Students may participate in a learning program (District report, 2025).' },
+    { point: 'Ask the counselor about meeting frequency.', evidenceExcerpt: 'The counselor meets every day.' },
+  ], nodes: [{ label: 'School counselor', type: 'role', scale: 'micro', evidence: 'The memo identifies the school counselor supporting students.' }], connections: [], example: null, readiness: { ready: false, note: 'A counselor is identified.' } });
+
+  it('repairs optional quotes with selected literal passages while retaining the independently validated review', async () => {
+    const rejected = quoteReview();
+    const { evaluate, run, system } = await setup(rejected, quoteFixture);
+    run.mockResolvedValueOnce({ suggestion: rejected }).mockResolvedValueOnce({ suggestion: rejected })
+      .mockResolvedValueOnce({ suggestion: { quotes: [0, null] }, metadata: { model: 'test-model' } });
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.nodes).toEqual(rejected.nodes);
+    expect(evaluation.review.guidance).toEqual([
+      { point: rejected.guidance[0].point, evidenceExcerpt: quoteSource }, { point: rejected.guidance[1].point },
+    ]);
+    expect(evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(run).toHaveBeenCalledTimes(3);
+    const [input, , options] = run.mock.calls[2];
+    expect(options.kind).toBe('memo-quotes');
+    expect(run.mock.calls.every(call => call[2].signal === options.signal)).toBe(true);
+    expect(input.systemPrompt).toContain('Select optional quotations');
+    expect(input.memoContext.quoteSelection.points).toEqual(rejected.guidance.map(item => item.point));
+    expect(() => normalizeInput(input)).not.toThrow();
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(1);
+    expect(rejected).toEqual(quoteReview());
+  });
+
+  it.each([null, { quotes: [0] }, { quotes: [-1, null] }, { quotes: [6, null] }, { quotes: [0.5, null] }, { quotes: ['0', null] }, { quotes: [0, null], nodes: [] }, { review: { quotes: [0, null] } }])('rejects malformed quotation selections atomically: %j', async selection => {
+    const rejected = quoteReview();
+    const { evaluate, run, system } = await setup(rejected, quoteFixture);
+    run.mockResolvedValueOnce({ suggestion: rejected }).mockResolvedValueOnce({ suggestion: rejected })
+      .mockResolvedValueOnce({ suggestion: selection });
+    expect((await evaluate()).status).toBe(502);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
+
+  it('uses full review repair when invalid quotations conceal a separate node failure', async () => {
+    const rejected = quoteReview(); rejected.nodes[0].label = 'They';
+    const { evaluate, run, system } = await setup(rejected, quoteFixture);
+    expect((await evaluate()).status).toBe(502);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run.mock.calls[2][2].kind).toBe('memo-evidence');
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
+
+  it('discards a completed quotation selection after cancellation', async () => {
+    const rejected = quoteReview();
+    const { run, system, payload, headers } = await setup(rejected, quoteFixture);
+    const controller = new AbortController();
+    run.mockResolvedValueOnce({ suggestion: rejected }).mockResolvedValueOnce({ suggestion: rejected })
+      .mockImplementationOnce(async (_input, _config, options) => {
+        expect(options.kind).toBe('memo-quotes'); controller.abort();
+        return { suggestion: { quotes: [0, null] } };
+      });
+    const response = await system.app.request(ORIGIN + '/api/preflight/evaluations', { method: 'POST', headers, body: JSON.stringify(payload), signal: controller.signal });
+    expect(response.status).not.toBe(201);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
+
+  it.each(['micro', 'meso'])('copies indexed %s evidence before validating and storing the complete final repair', async scale => {
+    const rejected = scale === 'micro' ? quoteReview() : meso();
+    if (scale === 'micro') rejected.nodes[0].label = 'They';
+    else rejected.connections[0].relationshipProcess.familyCount = 25;
+    const { evaluate, run } = await setup(rejected, scale === 'micro' ? quoteFixture : ASSIGNMENT_COMPARISON_CASES[0]);
+    run.mockResolvedValueOnce({ suggestion: rejected }).mockResolvedValueOnce({ suggestion: rejected })
+      .mockImplementationOnce(async (input, _config, options) => {
+        expect(options.kind).toBe('memo-evidence');
+        expect(input.systemPrompt).toContain('zero-based integer index');
+        const fixed = scale === 'micro' ? quoteReview() : meso();
+        fixed.guidance = [];
+        fixed.nodes.forEach(node => { node.evidence = 0; });
+        fixed.connections.forEach(edge => { edge.rationale = 0; });
+        return { suggestion: fixed, metadata: { model: 'test-model' } };
+      });
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    const passage = run.mock.calls[2][0].memoContext.evidenceRepair.passages[0].text;
+    if (scale === 'micro') expect(evaluation.review.nodes[0].evidence).toBe(passage);
+    else {
+      expect(evaluation.review.connections[0].rationale).toBe(passage);
+      expect(evaluation.review.connections[0].relationshipProcess.familyCount).toBe(24);
+    }
+    expect(run).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([-1, 6, 0.5, null, '0'])('rejects an invalid required evidence index %j without storing a partial review', async index => {
+    const rejected = quoteReview(); rejected.nodes[0].label = 'They';
+    const fixed = quoteReview(); fixed.guidance = []; fixed.nodes[0].evidence = index;
+    const { evaluate, run, system } = await setup(rejected, quoteFixture);
+    run.mockResolvedValueOnce({ suggestion: rejected }).mockResolvedValueOnce({ suggestion: rejected }).mockResolvedValueOnce({ suggestion: fixed });
+    expect((await evaluate()).status).toBe(502);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
   it('preserves typed Meso details and an explicitly missing pair through atomic stored review', async () => {
     const { evaluate, run, system } = await setup(meso);
     const response = await evaluate(); expect(response.status).toBe(201);

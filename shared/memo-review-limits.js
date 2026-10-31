@@ -29,6 +29,7 @@ const ITEM_NOUNS = Object.freeze({
 
 /** Short, scale-correct ceiling sentence for the Gateway's second system message. */
 export function compactLimitInstruction(kind, scale) {
+  if (kind === 'memo-quotes') return 'For quotation selection, return exactly one quotes array with one passage index or null per supplied point, at most 3 entries.';
   if (kind === 'connections') return 'For a connections-only request, return only the required connections object with at most 12 connections.';
   if (kind === 'map-check') return `For a map check, return only the required notes object with at most ${MAP_CHECK_LIMITS.notes} notes, each tied to supplied map IDs; never propose new map elements.`;
   const limits = MEMO_REVIEW_SCALE_LIMITS[scale] || MEMO_REVIEW_SCALE_LIMITS.micro;

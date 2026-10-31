@@ -200,10 +200,20 @@ export function memoRepairPassages(source, review = {}) {
     const result = [];
     // Include all parts of long paragraphs in the candidate pool, not just the
     // opening of the memo. Retained text always remains an exact source slice.
-    for (let offset = 0; offset < match[0].length; offset += 480) {
+    for (let offset = 0; offset < match[0].length;) {
       const start = match.index + offset;
-      const text = source.narrativeText.slice(start, Math.min(match.index + match[0].length, start + 480)).trimEnd();
+      let length = Math.min(480, match[0].length - offset);
+      if (offset + length < match[0].length) {
+        const window = match[0].slice(offset, offset + length);
+        const sentenceEnd = [...window.matchAll(/[.!?](?=\s)/gu)].at(-1)?.index;
+        const wordEnd = [...window.matchAll(/\s/gu)].at(-1)?.index;
+        if (sentenceEnd >= 80) length = sentenceEnd + 1;
+        else if (wordEnd > 0) length = wordEnd;
+      }
+      const text = source.narrativeText.slice(start, start + length).trimEnd();
       if (text.trim()) result.push({ start, end: start + text.length, text, score: words(text).filter(word => desired.has(word)).length });
+      offset += length;
+      while (/\s/u.test(match[0][offset] || '') && offset < match[0].length) offset += 1;
     }
     return result;
   });

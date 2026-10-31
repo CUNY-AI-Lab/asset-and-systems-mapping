@@ -7,6 +7,7 @@ import { STUDENT_JUDGMENT_INSTRUCTION, validateStudentJudgments } from '../share
 import { MAP_CHECK_INTENTS, MAP_CHECK_LIMITS, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { classifyExcerptMatch } from '../shared/memo-quote-match.js';
 import { analyzeMemoSource, bibliographyOnlyEvidence, bibliographyOnlyLabel, memoRepairPassages, MEMO_CITATION_INSTRUCTION, MEMO_EVIDENCE_REPAIR_INSTRUCTION } from '../shared/memo-source.js';
+import { applyMemoQuoteSelection, expandMemoEvidenceIndices, guidanceWithoutExcerpts, MEMO_QUOTE_SELECTION_INSTRUCTION, MEMO_INDEXED_EVIDENCE_INSTRUCTION } from '../shared/memo-guidance-quotes.js';
 import { relationshipProcessIssue, normalizeGeneratedRelationshipProcess } from '../shared/relationship-process.js';
 import { mesoSourceDetails, explicitMissingMesoPairs, mesoPairEvidence } from '../shared/meso-source-details.js';
 import { prepareProviderMemo } from '../shared/provider-memo.js';
@@ -3185,9 +3186,9 @@ export function createSystemsMappingApp(options = {}) {
           deadline = generationDeadline(context.req.raw.signal, generationTimeoutMs);
           const generationSignal = deadline.signal;
           const generationOptions = { signal: generationSignal, context: context.env?.verifiedAccount };
-          const generate = async (providerInput) => {
+          const generate = async (providerInput, kind = 'memo') => {
             generationSignal.throwIfAborted();
-            const generated = await ollamaRequest(providerInput, ollamaConfig, generationOptions);
+            const generated = await ollamaRequest(providerInput, ollamaConfig, { ...generationOptions, kind });
             generationSignal.throwIfAborted();
             return generated;
           };
@@ -3240,21 +3241,44 @@ export function createSystemsMappingApp(options = {}) {
               generationSignal.throwIfAborted();
               correctiveRetries = 2;
               evidenceRepairAttempts = 1;
-              let repairContext = { ...readingContext, evidenceRepair: { passages } };
-              const rejectedExcerpt = createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
-              // Prefer both the rejected field and source passages. Preserve at
-              // least one passage, falling back to source-only context if needed.
-              while (rejectedExcerpt && passages.length > 1
-                && Buffer.byteLength(JSON.stringify({ ...repairContext, contractRepair: rejectedExcerpt }), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes) passages.pop();
-              repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, OLLAMA_CLOUD_LIMITS.memoContextBytes);
-              while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
-              if (!passages.length) throw repairError;
-              generated = await generate({
-                ...providerInput,
-                systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_OPTIONAL_QUOTE_REPAIR_INSTRUCTION}`,
-                memoContext: repairContext,
-              });
-              review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true });
+              let quotationOnly = /^guidance\[\d+\]\.evidenceExcerpt\b/u.test(repairError.message);
+              if (quotationOnly) {
+                // This strategy changes quotations only. Verify every other
+                // field first, so it cannot conceal a separate map failure.
+                try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial); }
+                catch { quotationOnly = false; }
+              }
+              if (quotationOnly) {
+                const rejectedReview = generated.suggestion;
+                const quoteSelection = { points: rejectedReview.guidance.map(item => item.point), passages };
+                const quoteContext = { quoteSelection };
+                while (Buffer.byteLength(JSON.stringify(quoteContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+                if (!passages.length) throw repairError;
+                generated = await generate({ ...providerInput, systemPrompt: MEMO_QUOTE_SELECTION_INSTRUCTION, memoContext: quoteContext }, 'memo-quotes');
+                let selectedReview;
+                try { selectedReview = applyMemoQuoteSelection(rejectedReview, generated.suggestion, passages); }
+                catch { throw new MemoReviewSemanticError('The quotation selection does not match the supplied guidance and passages.', { grounding: true }); }
+                review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+              } else {
+                let repairContext = { ...readingContext, evidenceRepair: { passages } };
+                const rejectedExcerpt = createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
+                // Prefer both the rejected field and source passages. Preserve at
+                // least one passage, falling back to source-only context if needed.
+                while (rejectedExcerpt && passages.length > 1
+                  && Buffer.byteLength(JSON.stringify({ ...repairContext, contractRepair: rejectedExcerpt }), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes) passages.pop();
+                repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, OLLAMA_CLOUD_LIMITS.memoContextBytes);
+                while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+                if (!passages.length) throw repairError;
+                generated = await generate({
+                  ...providerInput,
+                  systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`,
+                  memoContext: repairContext,
+                }, 'memo-evidence');
+                let expandedReview;
+                try { expandedReview = expandMemoEvidenceIndices(generated.suggestion, passages); }
+                catch { throw new MemoReviewSemanticError('The evidence indices must select supplied narrative passages.', { grounding: true }); }
+                review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true });
+              }
             }
           }
           suggestion = {

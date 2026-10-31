@@ -54,11 +54,11 @@ describe('quoted evidence whitespace', () => {
     expect(parseProject(JSON.stringify(createPortableProject(project, 'private'))).preflight.memoReview.guidance[0].evidenceExcerpt).toBe(passage);
   });
 
-  it.each(['micro', 'meso'])('preserves multiline %s evidence during the final strict source repair', async scale => {
+  it.each(['micro', 'meso'])('preserves multiline %s evidence during final quotation selection', async scale => {
     const passage = 'Rosa exchanges updates\nwith the teacher at school.';
     const valid = scale === 'micro' ? microReview(passage) : mesoReview(passage);
     const invalid = structuredClone(valid); invalid.guidance[0].evidenceExcerpt = 'Rosa sends an invented report.';
-    const { evaluate, run } = await setup(passage, [invalid, invalid, valid], scale);
+    const { evaluate, run } = await setup(passage, [invalid, invalid, { quotes: [0] }], scale);
     const response = await evaluate(); expect(response.status).toBe(201);
     const { evaluation } = await response.json();
     expect(run).toHaveBeenCalledTimes(3);
@@ -72,13 +72,16 @@ describe('quoted evidence whitespace', () => {
     const passage = 'Rosa exchanges updates\nwith the teacher at school.';
     const scale = field === 'rationale' ? 'meso' : 'micro';
     const valid = scale === 'meso' ? mesoReview(passage) : microReview(passage);
-    const first = structuredClone(valid); first.guidance[0].evidenceExcerpt = 'Rosa sends an invented report.';
+    const reference = 'Smith, A. (2025). Community schooling. Example Press.';
+    const first = structuredClone(valid);
+    if (scale === 'micro') first.nodes[0].evidence = reference;
+    else first.connections[0].rationale = reference;
     const final = structuredClone(valid);
     const unsupported = 'Rosa and the teacher\ncommunicate about school.';
     if (field === 'guidance') final.guidance[0].evidenceExcerpt = unsupported;
     else if (field === 'node') final.nodes[0].evidence = unsupported;
     else final.connections[0].rationale = unsupported;
-    const { evaluate, run, system } = await setup(passage, [first, first, final], scale);
+    const { evaluate, run, system } = await setup(passage + '\n\nReferences\n' + reference, [first, first, final], scale);
     const response = await evaluate(); expect(response.status).toBe(502);
     expect((await response.json()).details).toMatchObject({ code: 'guidance_contract_invalid', validationReason: 'source_evidence', evidenceRepairAttempts: 1 });
     expect(run).toHaveBeenCalledTimes(3);

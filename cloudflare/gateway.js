@@ -140,10 +140,11 @@ function backoff(milliseconds, signal) {
 export function gatewaySuggestion(binding, token, model, correlation, logOutcome = () => {}, fallbackModels = GUIDANCE_FALLBACK_MODELS) {
   const client = gatewayClient(binding);
   return async (input, _config, { signal, timeoutMs = GUIDANCE_MODEL_TIMEOUT_MS, kind = 'memo' } = /** @type {{ signal?: AbortSignal, timeoutMs?: number, kind?: string }} */ ({})) => {
-    if (!['memo', 'connections', 'map-check'].includes(kind)) throw new Error('guidance_deadline');
+    if (!['memo', 'connections', 'map-check', 'memo-quotes', 'memo-evidence'].includes(kind)) throw new Error('guidance_deadline');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
-    const responseSchema = kind === 'memo' ? memoResponseSchema(input.activeScale, input.carriedNodes) : null;
+    const responseSchema = ['memo', 'memo-evidence'].includes(kind) ? memoResponseSchema(input.activeScale, input.carriedNodes,
+      kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0) : null;
     return withDeadline(async requestSignal => {
     try {
       const models = [...new Set([model, ...fallbackModels])];
@@ -160,7 +161,7 @@ Follow the supplied JSON field names and types exactly. ${compactLimitInstructio
         let response;
         try {
           response = await client.chatCompletions({ model: selectedModel, stream: false,
-            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'map-check' ? 1024 : 4096,
+            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'memo-quotes' ? 512 : kind === 'map-check' ? 1024 : 4096,
             response_format: { type: 'json_object' }, messages,
           }, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: kind === 'map-check' ? 'systems-mapping-map-check' : 'systems-mapping-guidance' });
         } catch (error) {

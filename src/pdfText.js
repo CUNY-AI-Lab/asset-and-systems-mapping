@@ -22,4 +22,3 @@ export function pageText(items) {
   }
   return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
-
