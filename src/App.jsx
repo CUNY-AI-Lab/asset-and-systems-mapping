@@ -1376,6 +1376,34 @@ const REVIEW_LEDES = Object.freeze({
   macrosphere: 'Find broader conditions that affect several map items',
 });
 
+const REVIEW_SUPPORT_CODES = new Set([
+  'guidance_contract_invalid', 'guidance_output_invalid', 'guidance_output_truncated',
+  'guidance_timeout', 'guidance_cancelled', 'guidance_unavailable', 'guidance_pending',
+  'guidance_in_progress', 'upstream_failure',
+]);
+const REVIEW_SUPPORT_FIELD = /^(?:guidance(?:\[[0-2]\](?:\.(?:point|evidenceExcerpt))?)?|nodes(?:\[(?:[0-9]|1[0-9])\](?:\.(?:label|type|scale|evidence|scope|basis|deontic))?)?|connections(?:\[(?:[0-9]|1[01])\](?:\.(?:source|target|verb|rationale|relationshipProcess))?)?|example|readiness(?:\.(?:ready|note))?)$/;
+const REVIEW_SUPPORT_REASONS = new Set([
+  'response_shape', 'field_shape', 'text_format', 'item_limit', 'label_format',
+  'label_duplicate', 'scale_type', 'source_evidence', 'endpoint_reference',
+  'relationship_process', 'relationship_duplicate', 'normalization', 'readiness_invalid', 'contract_other',
+]);
+const REVIEW_SUPPORT_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function reviewSupportDetails(error) {
+  if (!(error instanceof ApiError)) return [];
+  const details = error.payload?.details;
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return [];
+  const rows = [];
+  // Retain only these independently validated values, never the error payload.
+  if (REVIEW_SUPPORT_CODES.has(details.code)) rows.push(['Code', details.code]);
+  if (REVIEW_SUPPORT_REASONS.has(details.validationReason)) rows.push(['Validation reason', details.validationReason]);
+  if (typeof details.validationField === 'string' && details.validationField.length <= 64 && REVIEW_SUPPORT_FIELD.exec(details.validationField)?.[0] === details.validationField) rows.push(['Validation field', details.validationField]);
+  if (typeof details.requestId === 'string' && details.requestId.length === 36 && REVIEW_SUPPORT_REQUEST_ID.test(details.requestId)) rows.push(['Request ID', details.requestId]);
+  if (Number.isSafeInteger(details.correctiveRetries) && details.correctiveRetries >= 0 && details.correctiveRetries <= 2) rows.push(['Corrective retries', details.correctiveRetries]);
+  if (Number.isSafeInteger(details.evidenceRepairAttempts) && details.evidenceRepairAttempts >= 0 && details.evidenceRepairAttempts <= 1) rows.push(['Evidence repair attempts', details.evidenceRepairAttempts]);
+  return rows;
+}
+
 function SuggestionsReview({ project, update, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate }) {
   const review = project.preflight?.memoReview;
   const busy = reviewBusy === 'evaluating';
@@ -1394,6 +1422,10 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     </div>
     <GuidanceProgress active={busy} message={reviewProgress} />
     {reviewFailure && <p role="alert" className="teacher-message teacher-message--error">{reviewFailure.message}</p>}
+    {reviewFailure?.supportDetails?.length > 0 && <Disclosure title="Support details" className="review-support-details">
+      <p>You can include these details when you choose Report a bug.</p>
+      <dl>{reviewFailure.supportDetails.map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
+    </Disclosure>}
     {review && <>
       <h2>Suggestions</h2>
       {project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.</p>}
@@ -6235,6 +6267,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         message: error instanceof TimeoutError ? 'Guidance took too long. Try again.'
           : userFacingError(error, 'Guidance could not be completed. Try again.'),
         retryable: !quotaDenied,
+        supportDetails: reviewSupportDetails(error),
       });
       setReviewBusy(null);
       await handleReviewApiError(error, accessGeneration, 'guidance request');
@@ -6402,7 +6435,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
           notes: '',
           ...(node.basis ? { basis: node.basis } : {}),
           ...(currentProject.activeScale === 'micro' ? {
-            focalParticipation: 'direct',
+            focalParticipation: 'unclear',
             settingNodeIds: [],
           } : {}),
           // Meso linkages and Macrosphere items carry their mapped members as

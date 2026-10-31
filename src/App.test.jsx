@@ -2847,6 +2847,58 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().preflight).toBeNull();
   });
 
+  it('offers collapsed safe support details for a failed memo review without sending or saving them', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    const requestId = '87ca9905-188a-4f55-bb50-9832f245f334';
+    preflightEvaluationResponder = () => jsonResponse({ error: 'PRIVATE_MODEL_RESPONSE', details: {
+      code: 'guidance_contract_invalid', validationField: 'nodes[2].label', validationReason: 'label_format', requestId,
+      correctiveRetries: 2, evidenceRepairAttempts: 1,
+      supportReference: 'PRIVATE_PROVIDER_TRACE', response: 'PRIVATE_MEMO_PASSAGE',
+    } }, 502);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The model response did not fit the map rules. Your work is saved. Try again when ready.');
+    const details = screen.getByText('Support details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    const callsBeforeOpening = fetchMock.mock.calls.length;
+    fireEvent.click(within(details).getByText('Support details'));
+    expect(details).toHaveAttribute('open');
+    expect(within(details).getByText('guidance_contract_invalid')).toBeVisible();
+    expect(within(details).getByText('nodes[2].label')).toBeVisible();
+    expect(within(details).getByText('label_format')).toBeVisible();
+    expect(within(details).getByText(requestId)).toBeVisible();
+    expect(within(details).getByText('Corrective retries').nextElementSibling).toHaveTextContent('2');
+    expect(within(details).getByText('Evidence repair attempts').nextElementSibling).toHaveTextContent('1');
+    expect(document.body).not.toHaveTextContent(/PRIVATE_MODEL_RESPONSE|PRIVATE_PROVIDER_TRACE|PRIVATE_MEMO_PASSAGE/);
+    expect(fetchMock.mock.calls).toHaveLength(callsBeforeOpening);
+    expect(storedProject().submission.text).toBe(project.submission.text);
+    expect(storedProject().preflight).toBeNull();
+    expect(JSON.stringify(storedProject())).not.toContain(requestId);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.queryByText('Support details')).not.toBeInTheDocument();
+    await screen.findByText('Support details');
+  });
+
+  it.each([
+    { code: 'PRIVATE_CODE', validationField: 'nodes[0].label: PRIVATE_MEMO', validationReason: 'PRIVATE_REASON', requestId: '<script>PRIVATE_ID</script>', correctiveRetries: 3, evidenceRepairAttempts: 2 },
+    { code: ['guidance_contract_invalid'], validationField: ['nodes[0].label'], validationReason: ['label_format'], requestId: ['87ca9905-188a-4f55-bb50-9832f245f334'], correctiveRetries: '2', evidenceRepairAttempts: '1' },
+    { code: 'guidance_contract_invalid\nPRIVATE_CODE', validationField: 'nodes[0].evidence.privateText', validationReason: 'text_format\nPRIVATE_REASON', requestId: '87ca9905-188a-4f55-bb50-9832f245f334\nPRIVATE_ID', correctiveRetries: -1, evidenceRepairAttempts: 0.5 },
+    { code: 'PRIVATE_CODE', validationField: 'nodes[0].label\n', validationReason: 'label_format\n', requestId: '87ca9905-188a-4f55-bb50-9832f245f334\n', correctiveRetries: null, evidenceRepairAttempts: null },
+  ])('omits malformed memo review support values %#', async (details) => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = () => jsonResponse({ error: 'PRIVATE_ERROR', details }, 502);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Guidance could not be completed. Try again.');
+    expect(screen.queryByText('Support details')).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/PRIVATE_|privateText|<script>|nodes\[0\]/);
+    expect(storedProject().preflight).toBeNull();
+  });
+
   it.each(['failure', 'invalid output'])('does not advance the first mapping cycle after model %s', async (failure) => {
     const project = createDefaultProject();
     project.stage = 1;
@@ -3022,8 +3074,8 @@ describe('Systems Mapping workflow', () => {
     await waitFor(() => expect(storedProject().candidates.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(['School', 'Committee'])));
     const schoolCandidate = storedProject().candidates.nodes.find((node) => node.label === 'School');
     const committeeCandidate = storedProject().candidates.nodes.find((node) => node.label === 'Committee');
-    expect(schoolCandidate).toMatchObject({ focalParticipation: 'direct', settingNodeIds: [] });
-    expect(committeeCandidate).toMatchObject({ focalParticipation: 'direct', settingNodeIds: [] });
+    expect(schoolCandidate).toMatchObject({ focalParticipation: 'unclear', settingNodeIds: [] });
+    expect(committeeCandidate).toMatchObject({ focalParticipation: 'unclear', settingNodeIds: [] });
 
     const schoolRow = screen.getByDisplayValue('School').closest('article');
     expect(within(schoolRow).queryByRole('combobox', { name: 'Add a setting for School' })).not.toBeInTheDocument();
@@ -3093,6 +3145,36 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph.nodes.filter((node) => node.status === 'confirmed')).toHaveLength(0);
     expect(storedProject().graph.edges.filter((edge) => edge.status === 'confirmed')).toHaveLength(0);
     expect(storedProject().candidates.nodes.map(({ reviewDecision }) => reviewDecision)).toEqual(['removed', 'set aside']);
+  });
+
+  it.each(['direct', 'indirect', 'unclear', 'not applicable'])('starts model Micro participation as unclear and preserves recorded %s participation through rereading', async (participation) => {
+    const project = projectWithMemoReview();
+    project.instructor.requireStudentConfirmation = false;
+    await resumeSavedProject(project);
+    fireEvent.click(memoNextAction());
+    await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(2));
+    expect(storedProject().graph.nodes.every(node => node.focalParticipation === 'unclear')).toBe(true);
+    expect(storedProject().candidates.nodes.every(node => node.focalParticipation === 'unclear')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Map', exact: true }));
+    expect(document.querySelector(`[data-graph-id="${storedProject().graph.nodes[0].id}"]`)).toHaveAttribute('aria-label', expect.stringContaining('Unclear'));
+
+    const saved = storedProject();
+    const recordedId = saved.graph.nodes[0].id;
+    saved.graph.nodes.find(node => node.id === recordedId).focalParticipation = participation;
+    saved.candidates.nodes.find(node => node.id === recordedId).focalParticipation = participation;
+    saved.stage = 1;
+    cleanup();
+    await resumeSavedProject(saved);
+    fireEvent.click(screen.getByText('Update suggestions', { selector: 'summary' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reread memo' }));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1));
+    await waitFor(() => expect(memoNextAction()).toBeEnabled());
+    fireEvent.click(memoNextAction());
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.nodes).toHaveLength(2);
+    expect(storedProject().graph.nodes.find(node => node.id === recordedId).focalParticipation).toBe(participation);
+    expect(storedProject().candidates.nodes.find(node => node.id === recordedId).focalParticipation).toBe(participation);
+    expect(storedProject().graph.nodes.find(node => node.id !== recordedId).focalParticipation).toBe('unclear');
   });
 
   it('automatically builds cumulative maps through all four levels without confirming model claims', async () => {

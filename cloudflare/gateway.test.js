@@ -196,3 +196,42 @@ test('classifies completed output failures without exposing response text or ret
     if (code === 'guidance_contract_invalid') expect(safe.details.validationField).toBe(field);
   }
 });
+
+test.each([
+  ['The response does not contain exactly guidance, nodes, connections, example, and readiness.', 'response_shape'],
+  ['nodes exceeds the micro limit.', 'item_limit'],
+  ['nodes[0] does not use the exact micro node fields.', 'field_shape'],
+  ['guidance[0] is not complete text within the response limits.', 'text_format'],
+  ['nodes[0] is not a complete node object.', 'text_format'],
+  ['nodes[2].label duplicates an existing or proposed element.', 'label_duplicate'],
+  ['nodes[2].label is a reference, action, clause, fragment, or non-entity Micro label.', 'label_format'],
+  ['nodes[2].type does not belong at micro.', 'scale_type'],
+  ['connections[0] must use exact carried Micro node IDs.', 'endpoint_reference'],
+  ['connections[0].relationshipProcess.private-field is not an allowed schema field', 'relationship_process'],
+  ['connections[0] repeats a relationship.', 'relationship_duplicate'],
+  ['nodes[0] changed during semantic normalization.', 'normalization'],
+  ['readiness must contain exactly a boolean ready value and a complete note.', 'readiness_invalid'],
+  ['private student or provider text', 'contract_other'],
+])('returns only a fixed validation reason for %s', (message, reason) => {
+  const error = Object.assign(new Error(message), { name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID' });
+  const safe = safeGatewayFailure(error, correlation.request_id);
+  expect(safe.details.validationReason).toBe(reason);
+  expect(JSON.stringify(safe)).not.toContain(message);
+  expect(JSON.stringify(safe)).not.toContain('private-field');
+  expect(safe.details.shouldRetry).toBe(false);
+});
+
+test('source-grounding diagnostics expose a fixed reason and preserve no source quotation', () => {
+  const error = Object.assign(new Error('guidance[0].evidenceExcerpt PRIVATE_QUOTATION'), {
+    name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID', grounding: true,
+  });
+  const safe = safeGatewayFailure(error, correlation.request_id);
+  expect(safe.details).toMatchObject({ validationReason: 'source_evidence', validationField: 'guidance[0].evidenceExcerpt' });
+  expect(JSON.stringify(safe)).not.toContain('PRIVATE_QUOTATION');
+});
+
+test('transport and unreadable-output errors do not invent a semantic validation reason', () => {
+  for (const error of [new OpenRouterError('private response', 'invalid_response'), new CailError('upstream_failure', 'private response', 503)]) {
+    expect(safeGatewayFailure(error, correlation.request_id).details).not.toHaveProperty('validationReason');
+  }
+});

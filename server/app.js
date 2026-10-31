@@ -797,6 +797,14 @@ function generatedRelationshipKey(connection, source = connection.source, target
   return `${source}\u0000${String(connection.verb).trim().toLowerCase()}\u0000${target}\u0000${process.direction === 'both directions' ? 'both' : 'one'}\u0000${process.connectionStatus === 'missing' ? 'missing' : 'unspecified-or-observed'}`;
 }
 
+// Evidence can quote PDF line breaks, tabs or paragraph spacing. Preserve the
+// supplied passage while bounding its actual length; source matching remains a
+// separate check. Labels, verbs and schema fields keep their stricter format.
+function boundedEvidenceText(value, maximum) {
+  return typeof value === 'string' && value.trim() && value.length <= maximum
+    && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value) ? value : null;
+}
+
 function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false } = {}) {
   const memoSource = analyzeMemoSource(sourceMaterial);
   const checkEvidence = (text, path) => {
@@ -846,7 +854,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     }
     const point = exactText(item.point, MEMO_REVIEW_LIMITS.point);
     const evidenceExcerpt = Object.hasOwn(item, 'evidenceExcerpt')
-      ? exactText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence)
+      ? boundedEvidenceText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence)
       : null;
     if (!point || containsRetiredSystemsLanguage(point)
       || (Object.hasOwn(item, 'evidenceExcerpt') && !evidenceExcerpt)) {
@@ -889,7 +897,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   value.nodes.forEach((node, index) => {
     if (!hasExactKeys(node, nodeKeysByScale[activeScale])) throw new MemoReviewSemanticError(`nodes[${index}] does not use the exact ${activeScale} node fields.`);
     const label = exactText(node.label, MEMO_REVIEW_LIMITS.label);
-    const evidence = exactText(node.evidence, MEMO_REVIEW_LIMITS.evidence);
+    const evidence = boundedEvidenceText(node.evidence, MEMO_REVIEW_LIMITS.evidence);
     if (!label || !evidence || typeof node.type !== 'string' || typeof node.scale !== 'string') {
       throw new MemoReviewSemanticError(`nodes[${index}] is not a complete node object.`);
     }
@@ -952,7 +960,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     const sourceResolution = resolveEndpoint(connection.source);
     const targetResolution = resolveEndpoint(connection.target);
     const verb = exactText(connection.verb, MEMO_REVIEW_LIMITS.verb);
-    const rationale = exactText(connection.rationale, MEMO_REVIEW_LIMITS.rationale);
+    const rationale = boundedEvidenceText(connection.rationale, MEMO_REVIEW_LIMITS.rationale);
     if (!sourceResolution || !targetResolution || sourceResolution.node === targetResolution.node || sourceResolution.reference === targetResolution.reference) {
       throw new MemoReviewSemanticError(`connections[${index}] does not use two different accepted-node endpoints.`);
     }
@@ -1099,12 +1107,14 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       .forEach((node) => { text = text.split(node.id).join(node.label); });
     return collapsedRedirectText(text, maximum);
   };
+  const evidenceText = (input, maximum) => carriedNodes !== null
+    ? boundedEvidenceText(input, maximum) : humanizeCarriedIds(input, maximum);
   const guidance = (Array.isArray(value.guidance) ? value.guidance : [])
     .map((item) => {
       if (!isPlainObject(item)) return null;
       const point = humanizeCarriedIds(item.point, MEMO_REVIEW_LIMITS.point);
       if (!point || containsRetiredSystemsLanguage(point)) return null;
-      const evidenceExcerpt = humanizeCarriedIds(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence);
+      const evidenceExcerpt = evidenceText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence);
       return { point, ...(evidenceExcerpt ? { evidenceExcerpt } : {}) };
     })
     .filter(Boolean)
@@ -1179,7 +1189,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
         label,
         type,
         scale: activeScale,
-        evidence: collapsedRedirectText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || '',
+        evidence: evidenceText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || '',
         ...(outerLevel ? { basis: node.basis === 'inference' ? 'inference' : 'memo' } : {}),
         ...(activeScale === 'meso' ? { scope: scope.slice(0, scaleLimits.scope || 12) } : {}),
         ...(activeScale === 'macrosphere' ? {
@@ -1287,7 +1297,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
         ...(sourceLabel ? { sourceLabel } : {}),
         ...(targetLabel ? { targetLabel } : {}),
         verb,
-        rationale: humanizeCarriedIds(connection.rationale, MEMO_REVIEW_LIMITS.rationale) || '',
+        rationale: evidenceText(connection.rationale, MEMO_REVIEW_LIMITS.rationale) || '',
         ...(connection.relationshipProcess && !relationshipProcessIssue(connection.relationshipProcess) ? { relationshipProcess: { ...connection.relationshipProcess } } : {}),
       };
     })
@@ -1585,7 +1595,7 @@ function validateGeneratedConnections(value, nodes, activeScale, sourceMaterial)
     const verb = requireSnapshotText(connection.verb, `${name}.verb`, { max: 100 });
     const rationale = requireSnapshotText(connection.rationale, `${name}.rationale`, { max: 1000 });
     if (collapsedRedirectText(source, 200) !== source || collapsedRedirectText(target, 200) !== target
-      || collapsedRedirectText(verb, 100) !== verb || collapsedRedirectText(rationale, 1000) !== rationale) {
+      || collapsedRedirectText(verb, 100) !== verb || !boundedEvidenceText(rationale, 1000)) {
       throw new HttpError(400, `${name} must use complete text without whitespace coercion.`);
     }
     const sourceNode = nodeById.get(source);
@@ -1713,7 +1723,7 @@ function storedAtomicMemoReview(value, activeScale) {
         : ['point'];
       if (!exactKeys(item, itemKeys) || !exactText(item.point, MEMO_REVIEW_LIMITS.point)
         || containsRetiredSystemsLanguage(item.point)
-        || (Object.hasOwn(item, 'evidenceExcerpt') && !exactText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence))
+        || (Object.hasOwn(item, 'evidenceExcerpt') && !boundedEvidenceText(item.evidenceExcerpt, MEMO_REVIEW_LIMITS.evidence))
         || (Object.hasOwn(item, 'evidenceMatch') && !['normalized', 'elided'].includes(item.evidenceMatch))) fail();
     });
     if (!Array.isArray(value.nodes) || value.nodes.length > Math.min(scaleLimits.nodes, MEMO_REVIEW_LIMITS.nodes)) fail();
@@ -1727,7 +1737,7 @@ function storedAtomicMemoReview(value, activeScale) {
     const nodeByReference = new Map();
     value.nodes.forEach((node) => {
       if (!exactKeys(node, nodeKeys) || !exactText(node.label, MEMO_REVIEW_LIMITS.label)
-        || !exactText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || node.scale !== activeScale
+        || !boundedEvidenceText(node.evidence, MEMO_REVIEW_LIMITS.evidence) || node.scale !== activeScale
         || !isNodeTypeAllowedAtScale(node.type, activeScale)
         || normalizeMapElementLabel(node.label, { micro: activeScale === 'micro' }) !== node.label) fail();
       const lower = node.label.toLocaleLowerCase();
@@ -1762,7 +1772,7 @@ function storedAtomicMemoReview(value, activeScale) {
         || !exactText(connection.sourceLabel, MEMO_REVIEW_LIMITS.label)
         || !exactText(connection.targetLabel, MEMO_REVIEW_LIMITS.label)
         || !exactText(connection.verb, MEMO_REVIEW_LIMITS.verb)
-        || !exactText(connection.rationale, MEMO_REVIEW_LIMITS.rationale)
+        || !boundedEvidenceText(connection.rationale, MEMO_REVIEW_LIMITS.rationale)
         || connection.source === connection.target
         || normalizeMapElementLabel(connection.sourceLabel, { micro: activeScale === 'micro' }) !== connection.sourceLabel
         || normalizeMapElementLabel(connection.targetLabel, { micro: activeScale === 'micro' }) !== connection.targetLabel) fail();

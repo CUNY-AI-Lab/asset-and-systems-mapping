@@ -58,6 +58,28 @@ function gatewayRetryDelay(error, now) {
   return Number.isSafeInteger(delay) && delay >= 1 && delay <= 86400 ? delay : null;
 }
 
+function semanticValidationReason(error) {
+  if (error.grounding === true) return 'source_evidence';
+  const message = String(error.message);
+  // Only fixed categories cross the response boundary. Unknown messages,
+  // including arbitrary provider fields, never become diagnostic text.
+  const categories = [
+    ['response_shape', /^(?:The response is not a JSON object\.|The response does not contain exactly guidance, nodes, connections, example, and readiness\.)$/],
+    ['item_limit', /^(?:guidance must contain no more than \d+ items\.|(?:nodes|connections) exceeds the (?:micro|meso|exosphere|macrosphere) limit\.|(?:micro|macrosphere) review must return an empty connections array\.)$/],
+    ['field_shape', /^(?:guidance\[\d{1,2}\] does not use the exact guidance fields\.|nodes\[\d{1,2}\] does not use the exact (?:micro|meso|exosphere|macrosphere) node fields\.|connections\[\d{1,2}\] does not use the exact relationship fields\.)$/],
+    ['text_format', /^(?:guidance\[\d{1,2}\] is not complete text within the response limits\.|nodes\[\d{1,2}\] is not a complete node object\.|connections\[\d{1,2}\] must contain a complete verb and rationale\.|(?:micro|meso) example must be null\.|example must be null or complete text within the response limit\.)$/],
+    ['label_duplicate', /^nodes\[\d{1,2}\]\.label duplicates an existing or proposed element\.$/],
+    ['label_format', /^nodes\[\d{1,2}\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|does not name a broader condition)\.$/],
+    ['scale_type', /^nodes\[\d{1,2}\](?:\.scale does not match the active scale|\.type does not belong at (?:micro|meso|exosphere|macrosphere)| is not a scoped mesosystem|\.basis must be exactly memo or inference|\.deontic must use the exact Macrosphere register)\.$/],
+    ['endpoint_reference', /^(?:nodes\[\d{1,2}\]\.scope (?:must contain at least two supplied node IDs|must use unique supplied node IDs|must contain only Micro settings|cannot contain another Macrosphere item)|connections\[\d{1,2}\] (?:does not use two different accepted-node endpoints|does not stay within Micro|must use exact carried Micro node IDs|must connect an outside decision setting to a supplied Micro setting or another outside decision setting)|nodes\[\d{1,2}\] must have a supported pathway to a supplied Micro setting or another outside decision setting)\.$/],
+    ['relationship_process', /^connections\[\d{1,2}\]\.(?:relationshipProcess\.|verb must use the exact Exosphere register\.$)/],
+    ['relationship_duplicate', /^connections\[\d{1,2}\] repeats a relationship\.$/],
+    ['normalization', /^(?:One or more response items failed the complete response contract\.|Guidance text was not preserved exactly\.|(?:nodes|connections)\[\d{1,2}\](?:\.scope)? changed during semantic normalization\.|Readiness or example content changed during semantic normalization\.)$/],
+    ['readiness_invalid', /^readiness must contain exactly a boolean ready value and a complete note\.$/],
+  ];
+  return categories.find(([, pattern]) => pattern.test(message))?.[0] || 'contract_other';
+}
+
 export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
   // Completed output failures are distinct from transport failures. Only fixed
   // classifications and schema paths cross this boundary, never response text.
@@ -67,7 +89,9 @@ export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
     const field = semantic ? /^(guidance|nodes|connections)(?:\[\d{1,2}\])?(?:\.(?:label|type|scale|scope|basis|deontic|verb|evidenceExcerpt))?/.exec(String(error.message))?.[0] : undefined;
     return { status: 502, message: 'The model returned a response the map could not use. Your work is saved.',
       details: { code: error?.code === 'response_too_large' ? 'guidance_output_truncated' : semantic ? 'guidance_contract_invalid' : 'guidance_output_invalid',
-        shouldRetry: false, requestId: fallbackRequestId, ...(field ? { validationField: field } : {}) } };
+        shouldRetry: false, requestId: fallbackRequestId,
+        ...(semantic ? { validationReason: semanticValidationReason(error) } : {}),
+        ...(field ? { validationField: field } : {}) } };
   }
 
   if (error?.name === 'TimeoutError') return {
