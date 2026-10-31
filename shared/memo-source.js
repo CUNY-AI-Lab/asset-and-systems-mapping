@@ -90,21 +90,20 @@ function referenceRanges(text, lines) {
       continue;
     }
     let end = index + 1;
+    let checkedWebEntry = false;
     while (end < lines.length && lines[end].text.trim()
       && !REFERENCE_HEADING.test(headingText(lines[end].text))
       && !BODY_HEADING.test(headingText(lines[end].text))
-      && !looksLikeNarrative(lines[end].text)) end += 1;
-    let section = text.slice(lines[index].start, lines[end - 1].end);
-    if (isWebTitleReference(section)) {
-      // A URL completes this narrowly recognized web entry. Examine the next
-      // line independently so later prose survives even without a blank line.
-      let urlLine = index;
-      while (urlLine < end && !REFERENCE_URL.test(lines[urlLine].text)) urlLine += 1;
-      if (urlLine < end) {
-        end = urlLine + 1;
-        section = text.slice(lines[index].start, lines[urlLine].end);
+      && !looksLikeNarrative(lines[end].text)) {
+      if (!checkedWebEntry && REFERENCE_URL.test(lines[end - 1].text)) {
+        checkedWebEntry = true;
+        // Test the first URL while scanning, so consecutive web references
+        // each consume their own lines without rescanning the remaining list.
+        if (isWebTitleReference(text.slice(lines[index].start, lines[end - 1].end))) break;
       }
+      end += 1;
     }
+    let section = text.slice(lines[index].start, lines[end - 1].end);
     // A PDF page break may separate an author line from its date. Join only
     // this explicit continuation, keeping all original character offsets.
     if (REFERENCE_AUTHOR.test(section.trim()) && !isReferenceEntry(section, referenceSection)) {
