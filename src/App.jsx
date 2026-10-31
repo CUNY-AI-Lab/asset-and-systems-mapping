@@ -1135,8 +1135,9 @@ function download(name, contents, type = 'application/json') {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function projectMarkdown(project) {
-  const nodeById = new Map(project.graph.nodes.map((node) => [node.id, node]));
+export function projectMarkdown(project) {
+  const liveNodes = project.graph.nodes.filter((node) => node.status !== 'rejected' && node.claimState !== 'retired');
+  const nodeById = new Map(liveNodes.map((node) => [node.id, node]));
   const evidenceLines = (records) => (records || []).flatMap((record, index) => {
     const fields = [
       ['Memo passage or evidence', record.sourcePassage], ['Student interpretation', record.studentInterpretation],
@@ -1145,7 +1146,7 @@ function projectMarkdown(project) {
     ].filter(([, value]) => String(value || '').trim());
     return fields.length ? [`  - Evidence record ${index + 1}`, ...fields.map(([label, value]) => `    - ${label}: ${value}`)] : [];
   });
-  const nodeLines = project.graph.nodes.flatMap((node) => {
+  const nodeLines = liveNodes.flatMap((node) => {
     const annotations = [node.annotations?.analytical?.text && `analysis: ${node.annotations.analytical.text}`, node.annotations?.evidence?.text && `evidence note: ${node.annotations.evidence.text}`].filter(Boolean).join('; ');
     const members = node.scopeNodeIds?.map((memberId) => nodeById.get(memberId)?.label).filter(Boolean) || [];
     const membership = node.scale === 'meso' && members.length
@@ -1160,12 +1161,18 @@ function projectMarkdown(project) {
       : '';
     return [`- **${node.label}** — ${node.type}; level: ${SCALES[node.scale]?.label || node.scale}; evidence: ${node.evidence || 'needs evidence'}${membership}${explanation}${microContext}${annotations ? `; ${annotations}` : ''}`, ...evidenceLines(node.claimEvidence)];
   });
-  const edgeLines = project.graph.edges.flatMap((edge) => {
+  const edgeLines = project.graph.edges.filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired'
+    && nodeById.has(edge.source) && nodeById.has(edge.target)).flatMap((edge) => {
     const process = relationshipProcessSummary(edge.relationshipProcess);
     return [`- ${relationshipDescription(edge)} — arrow direction: ${relationshipDirection(edge)}; level: ${SCALES[edge.scale]?.label || edge.scale}; evidence: ${edge.evidence || 'needs evidence'}${process ? `; process: ${process}` : ''}${edge.annotation?.text ? `; annotation: ${edge.annotation.text}` : ''}`, ...evidenceLines(edge.claimEvidence)];
   });
   const redactionLines = project.portableExport?.redactions?.map((entry) => `- ${entry.path}: ${entry.reason}`).join('\n') || '- None';
-  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Field Notes\n\n${project.reflection || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${relationshipDescription(edge)}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
+  const fieldNotes = SCALE_ORDER.flatMap((scale) => {
+    // The active editor can be newer than its saved per-level snapshot.
+    const note = scale === project.activeScale ? project.reflection : project.levelProgress?.[scale]?.reflection;
+    return String(note || '').trim() ? [`### ${SCALES[scale].label}\n\n${note}`] : [];
+  }).join('\n\n');
+  return `# ${project.title}\n\n${project.inquiry ? `${project.inquiry}\n\n` : ''}## Memo\n\n${project.submission.text || 'Not yet written'}\n\n## Map annotation\n\n${project.mapAnnotation?.text || 'Not yet written'}\n\n## Nodes\n\n${nodeLines.join('\n') || '- None added'}\n\n## Relationships\n\n${edgeLines.join('\n') || '- None added'}\n\n## Field Notes\n\n${fieldNotes || 'Not yet written'}\n\n## Items needing evidence\n\n${project.candidates.edges.filter((edge) => edge.status === 'research lead').map((edge) => `- ${relationshipDescription(edge)}`).join('\n') || '- None recorded'}\n\n## Export redactions\n\n${redactionLines}\n`;
 }
 
 export function graphCsv(project) {

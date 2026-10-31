@@ -172,4 +172,56 @@ describe('memo source boundaries', () => {
     const source = analyzeMemoSource('Rosa visits the school.\n\nWorks Cited\n' + reference);
     expect(source.bibliographyText).toContain(reference);
   });
+
+  it.each(['n.d.-a', 'n.d.-b'])('recognizes an undated reference suffix %s and retains its inline citation', date => {
+    const narrative = `Rosa meets the teacher (Example School Office, ${date}).`;
+    const reference = `Example School Office. (${date}). School support directory.\nhttps://example.test/directory`;
+    const source = analyzeMemoSource(`${narrative}\n\nReferences\n${reference}`);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.citationText).toContain(`(Example School Office, ${date})`);
+    expect(source.bibliographyText).toContain(reference);
+  });
+
+  it.each(['', 'References:\n'])('recognizes wrapped web-title references with punctuation and heading %j', heading => {
+    const narrative = 'Rosa visits the School library with her family.';
+    const references = 'Family Support Services (FSS) - Community Resource Office.\n(2024, February 12). Community Resource Office.\nhttps://example.test/services\nDistrict access: A family guide. (n.d.-a). Resource Center.\nhttps://example.test/guide';
+    const source = analyzeMemoSource(`${narrative}\n\n${heading}${references}`);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.bibliographyText).toContain(references);
+  });
+
+  it('recognizes references on a continued PDF page after its standalone page counter', () => {
+    const narrative = 'Rosa visits the clinic (Example School Office, 2025b).';
+    const first = 'Example School Office. (2025a). Support directory.\nhttps://example.test/directory';
+    const continued = '6\nExample School Office. (2025b, August 12). Family contacts.\nhttps://example.test/contacts';
+    const source = analyzeMemoSource(`${narrative}\n\nReferences\n${first}\n\n${continued}`);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.bibliographyText).toContain(first);
+    expect(source.bibliographyText).toContain(continued);
+    expect(source.bibliographyRanges).toHaveLength(1);
+  });
+
+  it('retains later assignment text and its example when omitting a PDF reference page', () => {
+    const narrative = 'Rosa visits the clinic with her family.';
+    const reference = 'Clinic access - Community Office. (2025). Community Office.\nhttps://example.test/access';
+    const assignment = 'Assignment 1: Map the local settings\nChoose an issue to investigate.\nExample: After-school access for students in another neighborhood.\nIdentify who participates in each setting.';
+    const text = `${narrative}\n\nReferences:\n${reference}\n\n${assignment}`;
+    const source = analyzeMemoSource(text);
+    expect(source.text).toBe(text);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.narrativeText).toContain(assignment);
+    expect(source.bibliographyText).toContain(reference);
+    expect(source.bibliographyText).not.toContain(assignment);
+  });
+
+  it.each([
+    'The nurse helped Rosa. (2025). Visit notes at https://example.test/notes.',
+    'School Support (SS) - Family Office. (2025). The nurse helps Rosa complete a form. https://example.test/notes.',
+    'The nurse helped Rosa. (n.d.-a). Visit notes at https://example.test/notes.',
+    '6\nRosa visits the school and reads the guide at https://example.test/guide.',
+  ])('retains uncertain narrative with a URL and citation-like punctuation: %s', note => {
+    const source = analyzeMemoSource(note);
+    expect(source.narrativeText).toBe(note);
+    expect(source.bibliographyRanges).toEqual([]);
+  });
 });

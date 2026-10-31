@@ -3,13 +3,14 @@ import { canonicalQuoteText, classifyExcerptMatch } from './memo-quote-match.js'
 const REFERENCE_HEADING = /^(?:references|reference list|bibliography|works? cited|works consulted|literature cited)\s*:?\s*$/iu;
 const BODY_HEADING = /^(?:appendix\b.*|appendices\b.*|(?:reflection|conclusion|observations|field notes|memo|narrative|interview transcript|case analysis|discussion|analysis)(?:\s*[:.—–-]\s*.+)?)\s*:?\s*$/iu;
 const REFERENCE_AUTHOR = /^(?:\[\d+\]\s*|\d+[.)]\s*)?[\p{L}'’.-]+(?:\s+[\p{L}'’.-]+){0,4},\s*(?:(?:[\p{L}]\.\s*){1,4}|[\p{Lu}][\p{L}'’-]*(?:\s+[\p{Lu}][\p{L}'’-]*){0,3}[.,])/u;
-const REFERENCE_DATE = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.)(?:,\s*[^)]{1,35})?\)\.\s*\S|(?:[.,]\s*)(?:18|19|20)\d{2}[a-z]?(?:\.\s+|\s*[.,]?$)/iu;
+const REFERENCE_DATE = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*\S|(?:[.,]\s*)(?:18|19|20)\d{2}[a-z]?(?:\.\s+|\s*[.,]?$)/iu;
 const REFERENCE_URL = /(?:\bdoi\s*:|https?:\/\/\S+)/iu;
-const ORGANIZATION_REFERENCE = /^(?:\[\d+\]\s*)?(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&)(?:\s+(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&)){0,16}\.?\s+\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.)(?:,\s*[^)]{1,35})?\)\.\s*\S/u;
+const ORGANIZATION_REFERENCE = /^(?:\[\d+\]\s*)?(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&)(?:\s+(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&)){0,16}\.?\s+\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*\S/u;
+const WEB_TITLE_REFERENCE = /^(.{2,240}?)\.\s*\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*/u;
 const NARRATIVE_LINE = /^(?:(?:I|we|he|she|they|my|our)\b|(?:the\s+)?[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,6}\s+(?:meets?|visits?|attends?|accompanies|helps?|coordinates?|works?|observes?|said|says|describes?|spoke|speaks|asks?|goes|went|lives?|receives?|serves?|is|are|was|were|has|have|had|can|could|will|would|[\p{L}]{3,}ed)\b)/iu;
 const PUBLICATION_METADATA = /(?:\b[\p{Lu}][\p{L}&.-]*(?:\s+[\p{Lu}][\p{L}&.-]*){0,5}\s+(?:Press|Publisher|Publishers|Publishing)\b|\b(?:Journal|Proceedings|Review|Transactions)\s+(?:of|on|for|the)\b|\bJournal,\s*\d|\b(?:vol|pp)\.\s*\d|https?:\/\/|\bdoi\s*:)/u;
 const INLINE_CITATION_CANDIDATE = /\([^()\n]*\)|\[\d+(?:\s*[,–-]\s*\d+)*\]/gu;
-const AUTHOR_DATE_CITATION = /^(?:see\s+)?[\p{Lu}][\p{L}'’.-]+(?:\s+(?:[\p{Lu}][\p{L}'’.-]+|and|&|et\s+al\.))*[,]?\s+(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.)(?:,\s*p{1,2}\.\s*[\d–-]+)?$/u;
+const AUTHOR_DATE_CITATION = /^(?:see\s+)?[\p{Lu}][\p{L}'’.-]+(?:\s+(?:[\p{Lu}][\p{L}'’.-]+|and|&|et\s+al\.))*[,]?\s+(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*p{1,2}\.\s*[\d–-]+)?$/u;
 function inlineCitations(text) {
   return [...text.matchAll(INLINE_CITATION_CANDIDATE)].filter(match => match[0].startsWith('[')
     || match[0].slice(1, -1).split(';').every(part => AUTHOR_DATE_CITATION.test(part.trim())));
@@ -29,14 +30,22 @@ function looksLikeNarrative(value) {
 }
 
 function isReferenceEntry(value, headed = false) {
-  const text = value.replace(/\s+/gu, ' ').trim();
+  // A PDF page counter can precede a continued reference list. Ignore it only
+  // while testing the following block; uncertain blocks remain untouched.
+  const text = value.replace(/^\s*\d{1,4}\s*\n/u, '').replace(/\s+/gu, ' ').trim();
   const publication = PUBLICATION_METADATA.test(text);
-  const date = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.)(?:,\s*[^)]{1,35})?\)\.\s*/iu.exec(text);
+  const date = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*/iu.exec(text);
   if ((!headed || !publication) && date && looksLikeNarrative(text.slice(date.index + date[0].length))) return false;
   // A surname/date format can also be a student's actor note. Without a
   // reference heading, require a publication or URL signal before omission.
   if (!headed && !publication) return false;
   if (ORGANIZATION_REFERENCE.test(text)) return true;
+  // Web references often begin with a page title, punctuation or an acronym,
+  // and the date may wrap to the next PDF line. Require a URL as additional
+  // evidence, and keep sentences describing an actor before or after the date.
+  const webTitle = WEB_TITLE_REFERENCE.exec(text);
+  if (webTitle && REFERENCE_URL.test(text) && !looksLikeNarrative(webTitle[1])
+    && !looksLikeNarrative(text.slice(webTitle[0].length))) return true;
   const author = REFERENCE_AUTHOR.exec(text);
   if (!author || !(REFERENCE_DATE.test(text) || REFERENCE_URL.test(text))) return false;
   // MLA entries have a title followed by publication details. A role-and-year
@@ -77,7 +86,7 @@ function referenceRanges(text, lines) {
     if (REFERENCE_AUTHOR.test(section.trim()) && !isReferenceEntry(section, referenceSection)) {
       let next = end;
       while (next < lines.length && !lines[next].text.trim()) next += 1;
-      if (next < lines.length && /^\s*\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.)/iu.test(lines[next].text)) {
+      if (next < lines.length && /^\s*\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)/iu.test(lines[next].text)) {
         end = next + 1;
         while (end < lines.length && lines[end].text.trim()
           && !BODY_HEADING.test(headingText(lines[end].text))

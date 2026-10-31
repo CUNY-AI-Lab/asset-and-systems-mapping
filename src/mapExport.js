@@ -33,7 +33,9 @@ export function mapExportSvg(project) {
     return `<g><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10" fill="${colors[levels.indexOf(node.scale)]}" stroke="#475569"/><text x="${box.x + 14}" y="${box.y + 27}" font-size="17">${text.map((line,i) => `<tspan x="${box.x + 14}" dy="${i ? 22 : 0}">${xml(line)}</tspan>`).join('')}</text></g>`;
   });
   const visibleEdges = project.graph.edges.filter(edge => edge.claimState !== 'retired' && edge.status !== 'rejected' && nodeById.has(edge.source) && nodeById.has(edge.target));
-  const edges = [...visibleEdges, ...liveNodes.flatMap(node => [...(node.scopeNodeIds || []).map(id => ({ source: id, target: node.id, verb: 'scope', scope: true })), ...(node.settingNodeIds || []).map(id => ({ source: node.id, target: id, verb: 'setting membership', scope: true }))])];
+  const edges = [...visibleEdges, ...liveNodes.flatMap(node => [...(node.scopeNodeIds || []).map(id => node.scale === 'macrosphere'
+    ? { source: node.id, target: id, verb: node.deontic || 'shapes', scope: true }
+    : { source: id, target: node.id, verb: 'scope', scope: true }), ...(node.settingNodeIds || []).map(id => ({ source: node.id, target: id, verb: 'setting membership', scope: true }))])];
   const legend = [];
   const paths = edges.flatMap((edge,index) => {
     const source = nodeById.get(edge.source)?.label, target = nodeById.get(edge.target)?.label;

@@ -46,6 +46,20 @@ test('PDF offsets resolve to each object and the embedded image stream has its e
   offsets.forEach((offset,i)=>expect(text.slice(offset,offset+7)).toBe(`${i+1} 0 obj`));
 });
 
+test('preserves the Macro action and names the condition before each affected item', () => {
+  const project = createDefaultProject();
+  project.graph.nodes = [
+    { id: 'a', label: 'School', scale: 'micro' },
+    { id: 'b', label: 'Clinic', scale: 'micro' },
+    { id: 'law', label: 'Privacy law', scale: 'macrosphere', deontic: 'prohibits', scopeNodeIds: ['a', 'b'] },
+  ];
+  const { svg } = mapExportSvg(project);
+  const text = [...new DOMParser().parseFromString(svg, 'image/svg+xml').querySelectorAll('tspan')].map(node => node.textContent).join(' ');
+  expect(text).toContain('Privacy law — prohibits — School');
+  expect(text).toContain('Privacy law — prohibits — Clinic');
+  expect(text).not.toContain('— scope —');
+});
+
 test.each([
   ['source to target', false, true, 'Resident talks with Teacher'],
   ['target to source', true, false, 'Teacher talks with Resident'],
