@@ -1,4 +1,5 @@
 import { relationshipProcessIssue } from '../shared/relationship-process.js';
+import { isMemoContractRepair } from './memo-contract-repair.js';
 const DEFAULT_BASE_URL = 'https://ollama.com';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 2_048;
@@ -288,8 +289,9 @@ function normalizeInput(input) {
 
   let memoContext;
   if (input.memoContext !== undefined) {
-    if (!isPlainObject(input.memoContext) || Object.keys(input.memoContext).some(key => !['structure', 'evidenceRepair', 'mesoEvidence'].includes(key))) fail('Memo reading context is invalid.', 'invalid_input');
+    if (!isPlainObject(input.memoContext) || Object.keys(input.memoContext).some(key => !['structure', 'evidenceRepair', 'mesoEvidence', 'contractRepair'].includes(key))) fail('Memo reading context is invalid.', 'invalid_input');
     assertJsonCompatible(input.memoContext, 'Memo reading context');
+    if (input.memoContext.contractRepair !== undefined && !isMemoContractRepair(input.memoContext.contractRepair, input.activeScale)) fail('Memo contract correction context is invalid.', 'invalid_input');
     if (byteLength(JSON.stringify(input.memoContext)) > OLLAMA_CLOUD_LIMITS.memoContextBytes) fail('Memo reading context is too large.', 'input_too_large');
     memoContext = input.memoContext;
   }
