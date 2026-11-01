@@ -55,6 +55,26 @@ describe('current assignment guidance', () => {
     { point: 'Ask the counselor about meeting frequency.', evidenceExcerpt: 'The counselor meets every day.' },
   ], nodes: [{ label: 'School counselor', type: 'role', scale: 'micro', evidence: 'The memo identifies the school counselor supporting students.' }], connections: [], example: null, readiness: { ready: false, note: 'A counselor is identified.' } });
 
+  it('accepts typographic spacing in unquoted guidance while retaining the original evidence', async () => {
+    const review = quoteReview();
+    review.guidance = [{ point: 'Clarify parent\u202f↔\u202fcounselor contact.', evidenceExcerpt: quoteSource }];
+    review.readiness.note = 'A\u00a0counselor is identified.';
+    const { evaluate, run } = await setup(review, quoteFixture);
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.guidance[0]).toEqual({point:'Clarify parent ↔ counselor contact.',evidenceExcerpt:quoteSource});
+    expect(evaluation.review.readiness.note).toBe('A counselor is identified.');
+    expect(review.guidance[0].point).toContain('\u202f');
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['x'.repeat(499)+'\u202f\u202f', 'A point\nwith a line break.', 'A point\u0000with a control.'])('retains raw size and single-line limits for generated guidance %j', async point => {
+    const review = quoteReview(); review.guidance = [{point}];
+    const { evaluate, system } = await setup(review, quoteFixture);
+    expect((await evaluate()).status).toBe(502);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
+
   it('repairs optional quotes with selected literal passages while retaining the independently validated review', async () => {
     const rejected = quoteReview();
     const { evaluate, run, system } = await setup(rejected, quoteFixture);

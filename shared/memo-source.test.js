@@ -62,6 +62,19 @@ describe('memo source boundaries', () => {
     for (const passage of passages) expect(text.slice(passage.start, passage.end)).toBe(passage.text);
   });
 
+  it('retains mapped-pair evidence near the end of a long Meso source before general opening excerpts', () => {
+    const opening = 'Background context about the neighborhood. '.repeat(120);
+    const observed = 'The safety agents and assistant principals communicate by radio.';
+    const missing = 'The safety agents have no contact with guidance counselors.';
+    const text = opening + '\n\n' + observed + '\n\n' + missing;
+    const passages = memoRepairPassages(analyzeMemoSource(text), { nodes: [] }, [observed, missing, 'An invented quotation.', observed]);
+    expect(passages.filter(item => item.text === observed)).toHaveLength(1);
+    expect(passages.some(item => item.text === missing)).toBe(true);
+    expect(passages.some(item => item.text === 'An invented quotation.')).toBe(false);
+    expect(passages.length).toBeLessThanOrEqual(6);
+    for (const passage of passages) expect(text.slice(passage.start, passage.end)).toBe(passage.text);
+  });
+
 
   it('retains a setting described in parentheses with its founding year', () => {
     const text = 'At the clinic (Harlem Health, founded in 2001), Rosa meets the nurse.';

@@ -194,7 +194,7 @@ export function bibliographyOnlyEvidence(excerpt, source) {
 }
 
 /** Small source-backed excerpts for a distinct final grounding repair. */
-export function memoRepairPassages(source, review = {}) {
+export function memoRepairPassages(source, review = {}, preferredPassages = []) {
   const desired = new Set((Array.isArray(review?.nodes) ? review.nodes : []).flatMap(node => words(node?.label || '')).filter(word => word.length > 2));
   const candidates = [...source.narrativeText.matchAll(/\S[^\n]*(?:\n(?=\S)[^\n]*)*/g)].flatMap(match => {
     const result = [];
@@ -218,10 +218,15 @@ export function memoRepairPassages(source, review = {}) {
     return result;
   });
   const selected = [];
+  const preferred = preferredPassages.filter(text => typeof text === 'string' && text.trim() && text.length <= 480)
+    .map(text => ({ start: source.narrativeText.indexOf(text), text }))
+    .filter(passage => passage.start >= 0)
+    .map(passage => ({ ...passage, end: passage.start + passage.text.length }));
   // UTF-8, rather than character count, bounds the transport. Reserve room for
   // structure offsets and JSON metadata even when the memo uses multibyte text.
   let bytes = 0;
-  for (const { score: _score, ...passage } of candidates.toSorted((left, right) => right.score - left.score || left.start - right.start)) {
+  for (const { score: _score, ...passage } of [...preferred, ...candidates.toSorted((left, right) => right.score - left.score || left.start - right.start)]) {
+    if (selected.some(item => item.start === passage.start && item.end === passage.end)) continue;
     const size = new TextEncoder().encode(JSON.stringify(passage)).byteLength;
     if (bytes + size > 5 * 1024) continue;
     selected.push(passage);

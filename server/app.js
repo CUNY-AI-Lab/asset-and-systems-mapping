@@ -862,7 +862,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       && keys.every((key) => allowed.has(key));
   };
   const exactText = (candidate, maximum, { empty = false } = {}) => {
-    if (typeof candidate !== 'string') return null;
+    if (typeof candidate !== 'string' || /[\u0000-\u001f\u007f]/u.test(candidate)) return null;
     if (empty && candidate === '') return '';
     const collapsed = collapsedRedirectText(candidate, maximum);
     return collapsed === candidate ? collapsed : null;
@@ -886,7 +886,15 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   if ((activeScale === 'micro' || activeScale === 'macrosphere') && value.connections.length) {
     throw new MemoReviewSemanticError(`${activeScale} review must return an empty connections array.`);
   }
-  value = { ...value, connections: value.connections.map(connection => isPlainObject(connection) && connection.relationshipProcess !== undefined
+  // Generated prose may use typographic spaces around arrows or punctuation.
+  // Normalize horizontal spacing within the raw limit; quotations and map
+  // identifiers retain their separate, exact evidence/reference contracts.
+  const proseSpacing = (text, limit) => typeof text === 'string' && text.length <= limit
+    ? text.replace(/[ \u00a0\u2000-\u200a\u202f\u205f\u3000]+/gu, ' ') : text;
+  value = { ...value,
+    guidance: value.guidance.map(item => isPlainObject(item) ? { ...item, point: proseSpacing(item.point, MEMO_REVIEW_LIMITS.point) } : item),
+    readiness: isPlainObject(value.readiness) ? { ...value.readiness, note: proseSpacing(value.readiness.note, MEMO_REVIEW_LIMITS.note) } : value.readiness,
+    connections: value.connections.map(connection => isPlainObject(connection) && connection.relationshipProcess !== undefined
     ? { ...connection, relationshipProcess: normalizeGeneratedRelationshipProcess(connection.relationshipProcess) } : connection) };
   // One match grade per guidance item, recorded on the stored review below so a
   // reader can tell a verbatim quotation from one matched by normalization.
@@ -3243,7 +3251,15 @@ export function createSystemsMappingApp(options = {}) {
               // enter this path; each provider call receives normal admission.
               if (repairError instanceof MemoReviewSemanticError) options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message });
               if (!(repairError instanceof MemoReviewSemanticError) || !repairError.grounding) throw repairError;
-              const passages = memoRepairPassages(memoSource, generated.suggestion);
+              // Meso has no proposed nodes to rank paragraphs by. Preserve
+              // evidence for mapped pairs across the whole table, including
+              // missing pairs near its end, before taking general excerpts.
+              const pairEvidence = readingContext?.mesoEvidence || [];
+              const preferredPassages = [
+                ...pairEvidence.map(pair => pair.passages[2] || pair.passages[0]),
+                ...pairEvidence.map(pair => pair.passages[1]),
+              ].filter(Boolean).map(text => text.slice(0, 480));
+              const passages = memoRepairPassages(memoSource, generated.suggestion, preferredPassages);
               if (!passages.length) throw repairError;
               generationSignal.throwIfAborted();
               correctiveRetries = 2;

@@ -82,7 +82,7 @@ test('adjacent actions align and nested export choices stay usable on desktop an
   await dialog.getByRole('button', { name: 'Close Export & share', exact: true }).focus();
   await page.keyboard.press('Tab');
   await expect(formats).toBeFocused();
-  expect(await formats.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('solid');
+  await expect(formats).toHaveCSS('outline-style', 'solid');
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Aligned export choices'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Aligned export choices');
 
