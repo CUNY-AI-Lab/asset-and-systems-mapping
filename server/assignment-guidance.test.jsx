@@ -55,6 +55,35 @@ describe('current assignment guidance', () => {
     { point: 'Ask the counselor about meeting frequency.', evidenceExcerpt: 'The counselor meets every day.' },
   ], nodes: [{ label: 'School counselor', type: 'role', scale: 'micro', evidence: 'The memo identifies the school counselor supporting students.' }], connections: [], example: null, readiness: { ready: false, note: 'A counselor is identified.' } });
 
+  it.each([false, true])('rereads existing Micro items without changing their saved identity, with new items: %s', async withNewItem => {
+    const review = quoteReview(); review.guidance = [];
+    if (withNewItem) {
+      review.nodes.push({ label: 'Students', type: 'role', scale: 'micro', evidence: quoteSource });
+      review.readiness.ready = true;
+    }
+    const original = structuredClone(review);
+    const fixture = { ...quoteFixture, carriedNodes: [{ id: 'existing-counselor', label: 'School counselor', type: 'role', scale: 'micro' }] };
+    const { evaluate, run } = await setup(review, fixture);
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.nodes).toEqual(withNewItem ? [review.nodes[1]] : []);
+    expect(evaluation.review.readiness).toEqual(review.readiness);
+    expect(review).toEqual(original);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['conflicting type', 'duplicate proposal', 'invalid evidence', 'ambiguous carried identity'])('retains atomic rejection during Micro reread: %s', async failure => {
+    const review = quoteReview(); review.guidance = [];
+    const fixture = { ...quoteFixture, carriedNodes: [{ id: 'existing-counselor', label: 'School counselor', type: 'role', scale: 'micro' }] };
+    if (failure === 'conflicting type') review.nodes[0].type = 'setting';
+    if (failure === 'duplicate proposal') review.nodes.push({ ...review.nodes[0] });
+    if (failure === 'invalid evidence') review.nodes[0].evidence = '';
+    if (failure === 'ambiguous carried identity') fixture.carriedNodes.push({ ...fixture.carriedNodes[0], id: 'second-counselor' });
+    const { evaluate, system } = await setup(review, fixture);
+    expect((await evaluate()).status).toBe(502);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
+
   it('accepts typographic spacing in unquoted guidance while retaining the original evidence', async () => {
     const review = quoteReview();
     review.guidance = [{ point: 'Clarify parent\u202f↔\u202fcounselor contact.', evidenceExcerpt: quoteSource }];

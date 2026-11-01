@@ -939,6 +939,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   const carriedByLowerLabel = new Map([...carriedById.values()].map((node) => [node.label.toLocaleLowerCase(), node]));
   const proposedByExactLabel = new Map();
   const proposedByLowerLabel = new Map();
+  const repeatedMicroLabels = new Set();
   const nodeKeysByScale = {
     micro: ['label', 'type', 'scale', 'evidence'],
     meso: ['label', 'type', 'scale', 'evidence', 'scope'],
@@ -969,7 +970,13 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       throw new MemoReviewSemanticError(`nodes[${index}].deontic must use the exact Macrosphere register.`);
     }
     const lower = label.toLocaleLowerCase();
-    if (proposedByLowerLabel.has(lower) || (activeScale !== 'meso' && carriedByLowerLabel.has(lower))) throw new MemoReviewSemanticError(`nodes[${index}].label duplicates an existing or proposed element.`);
+    const carriedMatches = [...carriedById.values()].filter(item => item.label.toLocaleLowerCase() === lower);
+    const sameMappedMicroItem = activeScale === 'micro' && carriedMatches.length === 1
+      && carriedMatches[0].label === label && carriedMatches[0].type === node.type && carriedMatches[0].scale === 'micro';
+    if (proposedByLowerLabel.has(lower) || (activeScale !== 'meso' && carriedByLowerLabel.has(lower) && !sameMappedMicroItem)) {
+      throw new MemoReviewSemanticError(`nodes[${index}].label duplicates an existing or proposed element.`);
+    }
+    if (sameMappedMicroItem) repeatedMicroLabels.add(label);
     proposedByExactLabel.set(label, node);
     proposedByLowerLabel.set(lower, node);
     if (activeScale === 'meso' || activeScale === 'macrosphere') {
@@ -1077,6 +1084,11 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     });
   }
 
+  // A reread can repeat a valid item already on the Micro map. Every item has
+  // passed the complete evidence/type/label checks above. Treat an unambiguous
+  // exact identity as a no-op; preserve the student's existing record and keep
+  // any new proposals. Conflicting identities and duplicate proposals fail.
+  if (repeatedMicroLabels.size) value = { ...value, nodes: value.nodes.filter(node => !repeatedMicroLabels.has(node.label)) };
   const normalizedReview = normalizeMemoReview(value, activeScale, 'generated memo review', carriedNodes, carriedConnections);
   // normalizeMemoReview also replays older stored reviews, where Meso and
   // Macrosphere narrative was historically derived from validated scopes.
