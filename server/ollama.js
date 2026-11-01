@@ -290,7 +290,7 @@ function normalizeInput(input) {
 
   let memoContext;
   if (input.memoContext !== undefined) {
-    if (!isPlainObject(input.memoContext) || Object.keys(input.memoContext).some(key => !['structure', 'evidenceRepair', 'mesoEvidence', 'contractRepair', 'quoteSelection'].includes(key))) fail('Memo reading context is invalid.', 'invalid_input');
+    if (!isPlainObject(input.memoContext) || Object.keys(input.memoContext).some(key => !['structure', 'evidenceRepair', 'mesoEvidence', 'mesoTableCoverage', 'contractRepair', 'quoteSelection'].includes(key))) fail('Memo reading context is invalid.', 'invalid_input');
     assertJsonCompatible(input.memoContext, 'Memo reading context');
     if (input.memoContext.contractRepair !== undefined && !isMemoContractRepair(input.memoContext.contractRepair, input.activeScale)) fail('Memo contract correction context is invalid.', 'invalid_input');
     if (input.memoContext.quoteSelection !== undefined && !isMemoQuoteSelectionContext(input.memoContext.quoteSelection)) fail('Memo quotation selection context is invalid.', 'invalid_input');

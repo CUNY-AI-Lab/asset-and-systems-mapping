@@ -1464,7 +1464,7 @@ const SHARING_TIERS = ['private', 'course', 'CUNY', 'public'];
 const CANDIDATE_STATUSES = ['pending', 'confirmed', 'research lead', 'rejected'];
 const PREFLIGHT_REVIEW_STATUSES = ['pending', 'approved', 'rejected'];
 const PREFLIGHT_REVIEW_DECISIONS = ['approve', 'revise_and_approve', 'reject'];
-const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'ollama-cloud', 'openrouter', 'cail-gateway'];
+const PREFLIGHT_RUNTIME_PROVIDERS = ['deterministic', 'source-check', 'ollama-cloud', 'openrouter', 'cail-gateway'];
 const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
   'evalCount', 'evalDurationNs', 'correctiveRetries', 'evidenceRepairAttempts',
@@ -1926,6 +1926,7 @@ function validatePreflightEvaluation(evaluation, path) {
   assertTimestamp(evaluation.runtime.createdAt, `${path}.runtime.createdAt`);
   if (evaluation.runtime.createdAt !== evaluation.createdAt) invalidProject(`${path}.runtime.createdAt`, 'must match evaluation.createdAt');
   if (evaluation.runtime.provider === 'deterministic' && evaluation.runtime.model !== 'STEM Splitter') invalidProject(`${path}.runtime.model`, 'must be STEM Splitter for deterministic evaluation');
+  if (evaluation.runtime.provider === 'source-check' && evaluation.runtime.model !== 'Meso role coverage') invalidProject(`${path}.runtime.model`, 'must identify the Meso role coverage check');
   if (evaluation.runtime.provider === 'ollama-cloud' && evaluation.runtime.maxSourceBytes !== 131_072) invalidProject(`${path}.runtime.maxSourceBytes`, 'must be 131072 for Ollama Cloud evaluation');
   if (evaluation.runtime.provider === 'deterministic' && evaluation.runtime.maxSourceBytes !== undefined) invalidProject(`${path}.runtime.maxSourceBytes`, 'is not allowed for deterministic evaluation');
   if (evaluation.runtime.maxSourceBytes !== undefined) assertInteger(evaluation.runtime.maxSourceBytes, `${path}.runtime.maxSourceBytes`, 1, PROJECT_LIMITS.sourceText * 4);

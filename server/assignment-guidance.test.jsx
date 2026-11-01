@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSystemsMappingApp } from './app.js';
-import { createDefaultProject } from '../src/domain.js';
+import { createDefaultProject, createPortableProject, parseProject } from '../src/domain.js';
 import { normalizeInput } from './ollama.js';
 import { preflightEvaluationPayload } from '../src/App.jsx';
 import { ASSIGNMENT_COMPARISON_CASES, MESO_OBSERVED_PASSAGE, MESO_MISSING_PASSAGE, EXO_CHAIN_PASSAGE } from '../tests/fixtures/assignment-guidance-cases.js';
@@ -33,6 +33,21 @@ async function setup(review, fixture = ASSIGNMENT_COMPARISON_CASES[0]) {
 }
 
 describe('current assignment guidance', () => {
+  it('supplies missing table endpoints and accepts actionable guidance without substituting an office for a person', async () => {
+    const text = '| People connected | Strength + direction | Method + connector | Evidence / source |\n| --- | --- | --- | --- |\n| Classroom teachers and Guidance counselors | Weak; one way | email | A school report. |';
+    const fixture = { activeScale: 'meso', text, carriedNodes: [{ id: 'teacher', label: 'Teacher', type: 'role', scale: 'micro' }, { id: 'office', label: 'Guidance counselor office', type: 'setting', scale: 'micro' }] };
+    const review = { guidance: [{ point: 'Add the Guidance counselor role from the memo before drawing this relationship.' }], nodes: [], connections: [], example: null, readiness: { ready: false, note: 'The counselor role needs a map node.' } };
+    const { run, evaluate } = await setup(review, fixture);
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review).toMatchObject({ nodes: [], connections: [], readiness: { ready: false } });
+    expect(evaluation.review.guidance[0].point).toContain('Classroom teachers and Guidance counselors');
+    expect(evaluation.runtime).toMatchObject({ provider: 'source-check', model: 'Meso role coverage' });
+    expect(run).not.toHaveBeenCalled();
+    const project = createDefaultProject();
+    project.preflight = { memoReview: evaluation.review, configurationSnapshot: evaluation.configSnapshot, sourceFingerprint: 'test-source', evaluation: { evaluationId: evaluation.id, createdAt: evaluation.createdAt, expiresAt: evaluation.expiresAt, runtime: evaluation.runtime } };
+    expect(parseProject(JSON.stringify(createPortableProject(project, 'private'))).preflight.evaluation.runtime.provider).toBe('source-check');
+  });
   const quoteSource = 'Students in District 12 may participate in a learning program (District report, 2025). The school counselor supports these students.';
   const quoteFixture = { activeScale: 'micro', text: quoteSource, carriedNodes: [] };
   const quoteReview = () => ({ guidance: [

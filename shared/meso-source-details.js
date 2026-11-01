@@ -3,6 +3,33 @@ import { canonicalQuoteText } from './memo-quote-match.js';
 
 const normalized = value => canonicalQuoteText(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const mentions = (text, label) => Boolean(label && (` ${normalized(text)} `).includes(` ${normalized(label)} `));
+// Role number varies between a Micro node and a table heading. Keep every
+// other word, including office names and qualifiers, significant.
+const tableRoleWords = value => normalized(value).replace(/\b(teacher|counselor|agent|principal|parent|guardian|clinician|caseworker|student|worker|nurse|doctor|therapist)s\b/gu, '$1');
+const tableMentions = (text, label) => Boolean(label && (` ${tableRoleWords(text)} `).includes(` ${tableRoleWords(label)} `));
+const TABLE_ROLE = /\b(?:teacher|counselor|agent|principal|parent|guardian|clinician|caseworker|student|worker|nurse|doctor|therapist)\b/gu;
+function tableEndpoints(people) {
+  const parts = people.split(/\s+(?:and|&|[-–—])\s+/iu);
+  return parts.length === 2 ? parts : [];
+}
+function tableEndpointMatches(endpoint, label) {
+  if (!tableMentions(endpoint, label)) return false;
+  const roles = tableRoleWords(endpoint).match(TABLE_ROLE) || [];
+  // A setting-name prefix is not the person working in that setting.
+  return !roles.length || roles.some(role => (` ${tableRoleWords(label)} `).includes(` ${role} `));
+}
+function tableMatches(people, nodes) {
+  return tableEndpoints(people).map(endpoint => nodes.filter(node => tableEndpointMatches(endpoint, node.label)));
+}
+function tableMappedPair(people, nodes) {
+  const matches = tableMatches(people, nodes);
+  return matches.length === 2 && matches.every(side => side.length === 1) && matches[0][0] !== matches[1][0]
+    ? matches.map(side => side[0]) : [];
+}
+function tableHasPair(people, source, target) {
+  const parts = tableEndpoints(people);
+  return parts.length === 2 && [[source, target], [target, source]].some(([a, b]) => tableEndpointMatches(parts[0], a) && tableEndpointMatches(parts[1], b));
+}
 const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelPattern = label => normalized(label).split(' ').map(escape).join('[\\s\\p{P}]+');
 const unique = values => [...new Map(values.map(value => [normalized(value), value])).values()];
@@ -70,6 +97,46 @@ export function mesoTableRows(sourceMaterial) {
     rows.push(row);
   }
   return rows;
+}
+
+/** Source labels and mapped IDs expose missing role endpoints to the reviewer. */
+export function mesoTableCoverage(sourceMaterial, carriedNodes = []) {
+  const rows = [], encoder = new TextEncoder();
+  for (const row of mesoTableRows(sourceMaterial)) {
+    const nodes = carriedNodes.filter(node => typeof node?.id === 'string' && typeof node.label === 'string');
+    const mappedIds = [...new Set(tableMatches(row.people, nodes).flat().map(node => node.id))];
+    const candidate = { people: row.people, mappedIds, complete: tableMappedPair(row.people, nodes).length === 2 };
+    if (encoder.encode(JSON.stringify([...rows, candidate])).byteLength > 2048) continue;
+    rows.push(candidate);
+    if (rows.length === 8) break;
+  }
+  return rows;
+}
+
+/** A source-only prerequisite check for the assignment's relationship table. */
+export function missingMesoTableRolesReview(sourceMaterial, carriedNodes = []) {
+  const text = analyzeMemoSource(sourceMaterial).narrativeText;
+  const lines = text.split('\n');
+  const first = lines.findIndex(line => /^\s*\|/u.test(line));
+  if (first < 0) return null;
+  let last = lines.length - 1;
+  while (last >= first && !lines[last].trim()) last -= 1;
+  // Extra case prose keeps the ordinary narrative review available. Only an
+  // empty preface or the supplied assignment form is a table-only source.
+  const preface = lines.slice(0, first).join('\n').trim();
+  if (preface && !(preface.length <= 2000 && /^LAYER\s+2\s*\|\s*MESOSYSTEM CONNECTIONS\b/iu.test(preface)
+    && /\nPurpose:/u.test(preface) && /\nHow to complete the table:/u.test(preface))) return null;
+  if (lines.slice(first, last + 1).some(line => line.trim() && !/^\s*\|.*\|\s*$/u.test(line))) return null;
+  const rows = mesoTableRows(text);
+  const coverage = mesoTableCoverage(text, carriedNodes);
+  if (!rows.length || coverage.length !== rows.length || rows.some(row => tableEndpoints(row.people).length !== 2)
+    || coverage.some(row => row.complete)) return null;
+  const pairs = coverage.map(row => row.people);
+  const groups = [pairs.slice(0, 3), pairs.slice(3, 6), pairs.slice(6)].filter(group => group.length);
+  const guidance = groups.map(group => ({ point: `Add or distinguish the people or roles in these memo pairs before connecting them: ${group.join('; ')}.` }));
+  if (guidance.some(item => item.point.length > 500)) return null;
+  return { guidance, nodes: [], connections: [], example: null,
+    readiness: { ready: false, note: 'These table pairs need two distinct mapped roles. An office or organization remains separate from the people working there.' } };
 }
 
 function tableFacts(row) {
@@ -166,7 +233,7 @@ export function explicitMissingMesoPairs(sourceMaterial, carriedNodes = []) {
   }
   for (const row of mesoTableRows(sourceMaterial)) {
     if (!tableFacts(row).connectionStatuses.includes('missing')) continue;
-    const named = nodes.filter(node => mentions(row.people, node.label));
+    const named = tableMappedPair(row.people, nodes);
     if (named.length !== 2) continue;
     const key = named.map(node => normalized(node.label)).sort().join('\u0000');
     if (!seen.has(key)) { seen.add(key); result.push(named); }
@@ -212,8 +279,8 @@ export function mesoSourceDetails(sourceMaterial, sourceLabel, targetLabel, { ca
   const otherLabels = carriedNodes.map(node => node?.label).filter(label => label && ![normalized(sourceLabel), normalized(targetLabel)].includes(normalized(label)));
   const passages = narrativeSentences(source).filter(passage => mentions(passage, sourceLabel) && mentions(passage, targetLabel)
     && !otherLabels.some(label => mentions(passage, label)) && !UNCERTAIN.test(passage) && !passage.trimEnd().endsWith('?'));
-  const rows = mesoTableRows(sourceMaterial).filter(row => mentions(row.people, sourceLabel) && mentions(row.people, targetLabel)
-    && !otherLabels.some(label => mentions(row.people, label)));
+  const rows = mesoTableRows(sourceMaterial).filter(row => tableHasPair(row.people, sourceLabel, targetLabel)
+    && !otherLabels.some(label => tableEndpoints(row.people).some(endpoint => tableEndpointMatches(endpoint, label))));
   return detailsFromPassages(passages, sourceLabel, targetLabel, rows);
 }
 
@@ -238,7 +305,7 @@ export function mesoPairEvidence(sourceMaterial, carriedNodes = [], { maxPairs =
   const fields = ['strength', 'channel', 'familyCount', 'connectionStatus', 'direction'];
   for (const row of mesoTableRows(sourceMaterial)) {
     if (result.length >= limit) break;
-    const named = nodes.filter(node => mentions(row.people, node.label));
+    const named = tableMappedPair(row.people, nodes);
     if (named.length !== 2) continue;
     const [source, target] = named;
     const all = mesoSourceDetails(sourceMaterial, source.label, target.label, { carriedNodes });
