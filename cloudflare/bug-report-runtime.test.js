@@ -122,7 +122,7 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       const close = page.getByRole('button', { name: 'Close bug report', exact: true });
       const description = page.getByLabel('What went wrong?');
       const reportHost = await page.locator('.bug-report-host').elementHandle();
-      await browserExpect(page.locator('.notebook-footer .workspace-bug-report .bug-report__trigger')).toBeVisible();
+      await browserExpect(page.locator('.notebook-nav-row .workspace-bug-report .bug-report__trigger')).toBeVisible();
       await browserExpect(page.locator('.bug-report-footer')).toBeHidden();
       await browserExpect(panel).toBeHidden();
       await browserExpect(page.getByRole('combobox', { name: 'Work level', exact: true })).toHaveValue('meso');
@@ -135,7 +135,7 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
           viewport: { width: innerWidth, height: innerHeight },
           header: rect('.app-header--student'), map: rect('.map-layout'),
           project: rect('.project-menu > summary'), tools: rect('.notebook-map-tools > summary'),
-          level: rect('.notebook-level select'), footer: rect('.notebook-footer'),
+          level: rect('.notebook-level select'), navigation: rect('.notebook-nav-row'),
           report: rect('.workspace-bug-report .bug-report__trigger'),
           brandDisplay: getComputedStyle(document.querySelector('.app-header--student .brand')).display,
           script: document.querySelector('script[type="module"]').src,
@@ -164,14 +164,14 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(page.getByRole('group', { name: 'Report page context' })).toHaveText('This pageWorkspace');
       await browserExpect.poll(() => page.evaluate(() => {
         const map = document.querySelector('.map-layout').getBoundingClientRect();
-        const nav = document.querySelector('.notebook-footer').getBoundingClientRect();
+        const nav = document.querySelector('.notebook-nav-row').getBoundingClientRect();
         const support = document.querySelector('.workspace-bug-report .bug-report__trigger').getBoundingClientRect();
-        const tabs = document.querySelector('.notebook-footer nav').getBoundingClientRect();
+        const tabs = document.querySelector('.notebook-nav-row nav').getBoundingClientRect();
         const popout = document.querySelector('.bug-report__panel').getBoundingClientRect();
-        return map.bottom <= nav.top + 2 && support.top >= nav.top && support.bottom <= nav.bottom
+        return nav.bottom <= map.top + 2 && support.top >= nav.top && support.bottom <= nav.bottom
           && support.left >= tabs.right && support.width >= 44 && support.height >= 44
           && parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bug-report-height')) === 0
-          && popout.bottom <= nav.top - 4 && popout.top >= 10 && popout.left >= 10 && popout.right <= innerWidth - 10;
+          && popout.top >= nav.bottom + 4 && popout.bottom <= innerHeight - 10 && popout.left >= 10 && popout.right <= innerWidth - 10;
       })).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (process.env.BUG_REPORT_SCREENSHOTS) {
@@ -180,8 +180,8 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await description.evaluate(element => { element.style.height = '220px'; });
       await browserExpect.poll(() => page.evaluate(() => {
         const panel = document.querySelector('.bug-report__panel').getBoundingClientRect();
-        const nav = document.querySelector('.notebook-footer').getBoundingClientRect();
-        return panel.top >= 10 && panel.bottom <= nav.top - 4;
+        const nav = document.querySelector('.notebook-nav-row').getBoundingClientRect();
+        return panel.top >= nav.bottom + 4 && panel.bottom <= innerHeight - 10;
       })).toBe(true);
       await page.keyboard.press('Escape'); await browserExpect(panel).toBeHidden(); await browserExpect(trigger).toBeFocused();
       await browserExpect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -203,7 +203,7 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(description).toHaveValue('The map controls look different after I reopen this project.');
       await close.click();
       await page.getByRole('article', { name: project.title, exact: true }).getByRole('button', { name: 'Open project', exact: true }).click();
-      await browserExpect(page.locator('.notebook-footer .workspace-bug-report .bug-report__trigger')).toBeVisible();
+      await browserExpect(page.locator('.notebook-nav-row .workspace-bug-report .bug-report__trigger')).toBeVisible();
       expect(await page.locator('.bug-report-host').evaluate((node, original) => node === original, reportHost)).toBe(true);
       await trigger.click();
       await browserExpect(description).toHaveValue('The map controls look different after I reopen this project.');
@@ -212,6 +212,8 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(page.locator('.bug-report-host')).toBeHidden(); await page.keyboard.press('Escape');
       await browserExpect(page.locator('.bug-report-host')).toBeVisible();
       await page.locator('[data-graph-id="node_e2e_resident"]').click();
+      await browserExpect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Map',exact:true})).toHaveAttribute('aria-pressed','true');
+      await page.getByRole('button',{name:'Edit',exact:true}).click();
       await browserExpect(page.locator('.inspector__head h2')).toHaveText('Resident');
       await browserExpect(page.locator('.canvas-wrap')).toBeVisible();
       const connect = page.getByRole('button', { name: 'Connect from Resident', exact: true });
@@ -221,16 +223,31 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       }
       await connect.click();
       await page.locator('[data-graph-id="node_e2e_resource_navigator"]').click();
+      await page.getByRole('button',{name:'Edit',exact:true}).click();
       const form = page.locator('.add-form');
       await browserExpect(form.getByRole('combobox', { name: 'From', exact: true })).toHaveValue('node_e2e_resident');
       await browserExpect(form.getByRole('combobox', { name: 'To', exact: true })).toHaveValue('node_e2e_resource_navigator');
-      await form.getByRole('combobox', { name: 'To', exact: true }).scrollIntoViewIfNeeded();
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      await form.evaluate(element => {
+        const fields=element.querySelectorAll('select'), scroll=element.closest('.inspector__scroll');
+        const from=fields[0].getBoundingClientRect(),to=fields[1].getBoundingClientRect(),bounds=scroll.getBoundingClientRect();
+        scroll.scrollBy({top:(from.top+to.bottom)/2-(bounds.top+bounds.bottom)/2});
+      });
+      if (process.env.BUG_REPORT_SCREENSHOTS) {
+        const metrics=await form.evaluate(element=>{
+          const ancestors=[];let current=element;
+          while(current){const r=current.getBoundingClientRect();ancestors.push({tag:current.tagName,className:current.className,top:r.top,bottom:r.bottom,clientHeight:current.clientHeight,scrollHeight:current.scrollHeight,scrollTop:current.scrollTop,overflow:getComputedStyle(current).overflow});current=current.parentElement;}
+          return {ancestors,fields:[...element.querySelectorAll('select')].map(el=>{const r=el.getBoundingClientRect();return {top:r.top,bottom:r.bottom};})};
+        });
+        await writeFile(`${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-controls.json`,JSON.stringify(metrics,null,2));
+        await page.screenshot({path:`${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-controls.png`});
+      }
       await browserExpect(form.getByRole('combobox', { name: 'From', exact: true })).toBeInViewport({ ratio: 1 });
       await browserExpect(form.getByRole('combobox', { name: 'To', exact: true })).toBeInViewport({ ratio: 1 });
       if (process.env.BUG_REPORT_SCREENSHOTS) {
         await page.screenshot({ animations: 'disabled', path: `${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-relationship.png` });
       }
-      await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await form.getByRole('button', { name: 'Close', exact: true }).click();
       await browserExpect(page.locator('.canvas-wrap')).toBeVisible();
       expect(errors).toEqual([]);
     } finally { await browser.close(); }
