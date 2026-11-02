@@ -64,10 +64,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     await showMap(page);
     await projectMenu(page, 'Export & share');
     const dialog = page.getByRole('dialog', {name: 'Export & share'});
-    const exports = dialog.locator('.export-dropdown');
-    await expect(exports).not.toHaveAttribute('open', '');
-    await exports.locator('summary').click();
-    await expect(exports.getByRole('button', {name: /JSON Reopen/})).toBeVisible();
+    await expect(dialog.getByRole('button', {name: /JSON Reopen/})).toBeVisible();
     assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Exports at ${width}px`));
     await dialog.getByRole('button', {name: 'Close Export & share'}).click();
   }

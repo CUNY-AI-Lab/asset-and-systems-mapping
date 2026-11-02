@@ -99,7 +99,7 @@ describe('Field Notes', () => {
     const update = vi.fn();
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getByRole('textbox')).toHaveValue(project.reflection);
-    expect(screen.getByText(/Macro-level memo review receives an opening excerpt/)).toBeVisible();
+    expect(screen.getByText(/Only the beginning of this note will be sent with your next memo/)).toBeVisible();
     fireEvent.click(screen.getByText('Previous notes'));
     expect(screen.getByText(project.levelProgress.micro.reflection)).toBeVisible();
     expect(update).not.toHaveBeenCalled();

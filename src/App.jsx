@@ -874,22 +874,22 @@ function MicroParticipationEditor({ item, settingOptions, onParticipationChange,
       </select>
     </Field>
     {!itemIsSetting && <div className="micro-membership-editor">
-      <span className="field__label">Item settings</span>
+      <span className="field__label">Where this belongs</span>
       <div className="scope-editor__members">
         {selectedIds.map((settingId) => {
           const setting = settingById.get(settingId);
           const label = setting?.label || settingId;
-          return <button key={settingId} type="button" className="scope-chip" onClick={() => onSettingNodeIdsChange(selectedIds.filter((id) => id !== settingId))} aria-label={`Remove ${label} from settings for ${itemLabel}`}>{label}<span aria-hidden="true"> ×</span></button>;
+          return <button key={settingId} type="button" className="scope-chip" onClick={() => onSettingNodeIdsChange(selectedIds.filter((id) => id !== settingId))} aria-label={`Remove ${itemLabel} from ${label}`}>{label}<span aria-hidden="true"> ×</span></button>;
         })}
-        {availableSettings.length ? <select className="scope-editor__add" aria-label={`Add a setting for ${itemLabel}`} value="" onChange={(event) => {
+        {availableSettings.length ? <select className="scope-editor__add" aria-label={`Choose where ${itemLabel} belongs`} value="" onChange={(event) => {
           const settingId = event.target.value;
           if (!settingId || selectedIds.includes(settingId) || selectedIds.length >= PROJECT_LIMITS.scopeMembers) return;
           onSettingNodeIdsChange([...selectedIds, settingId]);
         }}>
-          <option value="">Add setting…</option>
+          <option value="">Choose where this belongs…</option>
           {availableSettings.map((setting) => <option key={setting.id} value={setting.id}>{setting.label}{setting.status === 'rejected' || setting.claimState === 'retired' ? ' — removed' : ''}</option>)}
         </select> : null}
-        {!selectedIds.length && !availableSettings.length ? <span className="scope-editor__empty">No settings available yet</span> : null}
+        {!selectedIds.length && !availableSettings.length ? <span className="scope-editor__empty">Nothing available yet</span> : null}
       </div>
     </div>}
   </div>;
@@ -925,9 +925,8 @@ function nextClaimEvidenceRecord(ownerId, records) {
 
 function ClaimEvidenceRecordEditor({ record, index, onEdit, onRemove }) {
   const [open, setOpen] = useState(index === 0);
-  const completed = CLAIM_EVIDENCE_FIELDS.filter((field) => record[field]?.trim()).length;
   return <details className="claim-evidence-record" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary><span>Evidence record {index + 1}</span><strong>{completed} of {CLAIM_EVIDENCE_FIELDS.length} fields</strong></summary>
+    <summary><span>Evidence {index + 1}</span></summary>
     <div className="claim-evidence-record__body">
       {CLAIM_EVIDENCE_FIELDS.map((field) => {
         const copy = CLAIM_EVIDENCE_COPY[field];
@@ -1231,11 +1230,11 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
       <details className="project-details"><summary>Project details</summary><div className="project-context-fields">
         <Field label="Map title (optional)"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
         <Field label="Student or group name (optional)"><input autoComplete="name" maxLength={CONFIG_TEXT_LIMIT} value={project.participantName || ''} onChange={(event) => setProjectField('participantName', event.target.value)} /></Field>
-        <Field label="Focal person"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.focal} onChange={(event) => setInquiryField('focal', event.target.value)} /></Field>
+        <Field label="Person or group"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.focal} onChange={(event) => setInquiryField('focal', event.target.value)} /></Field>
         <Field label="Question"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.question} onChange={(event) => setInquiryField('question', event.target.value)} /></Field>
         <Field label="Time period"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.time} onChange={(event) => setInquiryField('time', event.target.value)} /></Field>
-        <Field label="Boundary" hint="What belongs in this map"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.boundary} onChange={(event) => setInquiryField('boundary', event.target.value)} /></Field>
-        <Field label="Evidence"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.evidence} onChange={(event) => setInquiryField('evidence', event.target.value)} /></Field>
+        <Field label="What to include"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.boundary} onChange={(event) => setInquiryField('boundary', event.target.value)} /></Field>
+        <Field label="Evidence" hint="Where does your information come from?"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.evidence} onChange={(event) => setInquiryField('evidence', event.target.value)} /></Field>
         <Field label="Missing voices"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.voices} onChange={(event) => setInquiryField('voices', event.target.value)} /></Field>
       </div>
       </details><div className="intake-grid">
@@ -1258,7 +1257,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
           </button>
           {detailsOpen && <div className="memo-fields">
             <label className="check-row"><input type="checkbox" checked={project.submission.sensitive} onChange={(event) => setSubmission('sensitive', event.target.checked)} /><span><strong>Includes private information</strong></span></label>
-            {project.submission.sensitive && <label className="check-row"><input type="checkbox" checked={project.submission.consent} onChange={(event) => setSubmission('consent', event.target.checked)} /><span><strong>Ready to share</strong><small>Permission recorded or identifying details removed</small></span></label>}
+            {project.submission.sensitive && <label className="check-row"><input type="checkbox" checked={project.submission.consent} onChange={(event) => setSubmission('consent', event.target.checked)} /><span><strong>I have permission to share this information, or I have removed identifying details.</strong></span></label>}
           </div>}
         </aside>
       </div>
@@ -1296,8 +1295,8 @@ function levelProgressStatus(project, scale) {
 const REVIEW_LEDES = Object.freeze({
   micro: 'Find the people, settings, and resources in your memo',
   meso: 'Connect the people and settings already on your map',
-  exosphere: 'Add larger-scale nodes to your existing map',
-  macrosphere: 'Connect larger-scale nodes and trace cross-scale relationships',
+  exosphere: 'Add organizations, resources, policies, and conditions to your map',
+  macrosphere: 'Connect those items to each other and to the people and places on your map',
 });
 
 const REVIEW_SUPPORT_CODES = new Set([
@@ -4575,7 +4574,6 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   };
   const closeInspector = useCallback(() => {
     if (connecting) { cancelConnection(); return; }
-    inspectorRef.current?.querySelectorAll('.export-dropdown[open]').forEach((details) => { details.open = false; });
     setCollapsedPanel(panelMode);
     notebook?.onChange(false);
     setDrawerOpen(false);
@@ -5378,7 +5376,7 @@ const REVISION_EVENT_COPY = Object.freeze({
   'stage.opened': ['Section opened', true],
   'release.opened': ['Level opened', true],
   'reflection.revised': ['Field Notes saved', false],
-  'sharing.changed': ['Export audience changed', true],
+  'sharing.changed': ['Export settings changed', true],
   'config.revised': ['Model setup changed', false],
   'instructor.setting': ['Course setting changed', false],
 });
@@ -5418,18 +5416,15 @@ function ReviewPanel({ onSaveNote, saveState, savedMapNote = null, exportOnly = 
     } catch { const message = 'This project file could not be opened safely. The current map was preserved.'; setImportError(message); toast(message, 'error'); }
     event.target.value = '';
   };
-  const tiers = ['private', 'course', 'CUNY', 'public'];
-  const maxIndex = tiers.indexOf(project.instructor.maxSharingTier);
   const exportProject = async (format) => {
     try {
-      const portable = createPortableProject(project, project.sharingTier);
+      const portable = createPortableProject(project, 'private');
       if (['png', 'pdf'].includes(format)) downloadBlob(await exportMapImage(portable, format), exportFileName(project, format));
-      if (format === 'json') download(exportFileName(project, 'json'), serializePortableProject(project, project.sharingTier));
+      if (format === 'json') download(exportFileName(project, 'json'), serializePortableProject(project, 'private'));
       if (format === 'csv') download(exportFileName(project, 'csv'), graphCsv(portable), 'text/csv');
       if (format === 'markdown') download(exportFileName(project, 'md'), projectMarkdown(portable), 'text/markdown');
       logPrototype('project_exported', { nodeCount: portable.graph.nodes.length, relationshipCount: portable.graph.edges.length });
-      const redactionCount = portable.portableExport.redactions.length;
-      toast(portable.portableExport.redacted ? `Export created. ${redactionCount} private ${redactionCount === 1 ? 'field was' : 'fields were'} removed.` : 'Export created.');
+      toast('Download started.');
     } catch (error) {
       onValidationError(error, 'The export was not created because one map item needs attention.');
     }
@@ -5442,15 +5437,13 @@ function ReviewPanel({ onSaveNote, saveState, savedMapNote = null, exportOnly = 
     </>}
     {exportOnly && <>
     <section className="export-strip export-strip--compact" aria-label="Export and share">
-      <details className="export-dropdown" onKeyDown={(event) => { if (event.key === 'Escape' && event.currentTarget.open) { event.preventDefault(); event.stopPropagation(); const details = event.currentTarget; details.open = false; details.querySelector('summary')?.focus(); } }}>
-        <summary><Icon name="download" /><span>Export &amp; share</span><span aria-hidden="true">▾</span></summary>
+      <div className="export-dropdown">
         <div className="export-dropdown__options">
-          <Field label="Export audience"><select value={project.sharingTier} onChange={(event) => update((draft) => { draft.sharingTier = event.target.value; }, 'sharing.changed', event.target.value)}>{tiers.map((tier, index) => <option key={tier} value={tier} disabled={index > maxIndex}>{tier === 'private' ? 'Only me' : tier === 'course' ? 'Class' : tier === 'public' ? 'Public' : 'CUNY'}</option>)}</select></Field>
-          <fieldset><legend>Show the map</legend><button type="button" onClick={() => exportProject('png')}>PNG image</button><button type="button" onClick={() => exportProject('pdf')}>PDF</button><button type="button" onClick={onProjectLink}>Project link</button></fieldset>
-          <fieldset><legend>Save or reuse</legend><button type="button" onClick={() => exportProject('json')}>JSON <small>Reopen later</small></button><button type="button" onClick={() => exportProject('csv')}>CSV <small>Map data</small></button><button type="button" onClick={() => exportProject('markdown')}>Markdown <small>Readable text</small></button></fieldset>
+          <fieldset><legend>Download or share</legend><button type="button" onClick={() => exportProject('png')}>PNG image</button><button type="button" onClick={() => exportProject('pdf')}>PDF</button><button type="button" onClick={onProjectLink}>Project link</button></fieldset>
+          <fieldset><legend>Other formats</legend><button type="button" onClick={() => exportProject('json')}>JSON <small>Full project</small></button><button type="button" onClick={() => exportProject('csv')}>CSV <small>Map data</small></button><button type="button" onClick={() => exportProject('markdown')}>Markdown <small>Readable text</small></button></fieldset>
           <label className="export-dropdown__import"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label>
         </div>
-      </details>
+      </div>
       {importError && <p className="error-text" role="alert">{importError}</p>}
     </section></>}
   </div>;
@@ -7251,11 +7244,11 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current;
   }} />, studio, studio, studio, studio];
   const completionOpen = project.activeScale === 'macrosphere' && project.completedScales.includes('macrosphere') && !completionDismissed;
-  const exportCompletion = async (format, audience) => {
+  const exportCompletion = async (format) => {
     const snapshot = commitPendingAnnotations().project;
     if (!flushPersistence()) throw new Error('The project could not be saved. Resolve the save warning, then try exporting again.');
     if (format === 'json') download(exportFileName(snapshot, 'json'), serializePortableProject(snapshot, 'private'));
-    else downloadBlob(await exportMapImage(createPortableProject(snapshot, audience), format), exportFileName(snapshot, format));
+    else downloadBlob(await exportMapImage(createPortableProject(snapshot, 'private'), format), exportFileName(snapshot, format));
     logPrototype('project_exported', { nodeCount: snapshot.graph.nodes.length, relationshipCount: snapshot.graph.edges.length });
   };
   const screen = completionOpen ? <ProjectCompletion key={project.id} project={project} onReturn={() => { setCompletionDismissed(true); setNotebookOpen(false); }} onExport={exportCompletion} onMoreExports={() => setModal('exports')} /> : stageScreens[displayedStage];
@@ -7474,7 +7467,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const recoveryModal = <Modal open={modal === 'storage'} title="Save recovery" onClose={() => setModal(null)}>
     <div className="confirm-panel">
       <p>{saveState.message}</p>
-      <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p><p>Private recovery includes your full memo, Field Notes, and evidence. Keep this file private; use Export &amp; share for audience-redacted copies.</p>
+      <p>Choose how to continue. You can download a copy, keep working without saving, or try saving again.</p><p>The recovery file includes your full memo, Field Notes, and evidence. Keep it private.</p>
       <div className="button-stack">
         {saveState.recovery && <button type="button" className="button button--secondary" onClick={() => download('systems-mapping-prior-recovery.json', saveState.recovery)}>Download earlier copy</button>}
         <button type="button" className="button button--secondary" onClick={downloadPrivateRecovery}>Download private recovery</button>

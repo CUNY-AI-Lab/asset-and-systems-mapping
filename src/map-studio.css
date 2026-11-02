@@ -73,14 +73,8 @@
 .map-check__refs { display: flex; flex-wrap: wrap; gap: 6px; }
 .map-check__disclosure { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 
-/* Native disclosure keeps export choices compact and keyboard accessible. */
 .export-strip--compact { display: block; padding: 12px 0; border: 0; }
-.export-dropdown { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
-.export-dropdown > summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 14px; cursor: pointer; font-weight: 600; list-style: none; }
-.export-dropdown > summary::-webkit-details-marker { display: none; }
-.export-dropdown > summary > :last-child { margin-left: auto; }
-.export-dropdown[open] > summary { border-bottom: 1px solid var(--line); }
-.export-dropdown__options { padding: 10px; display: grid; gap: 10px; }
+.export-dropdown__options { display: grid; gap: 10px; }
 .export-dropdown fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .export-dropdown legend { padding: 0 4px 6px; color: var(--muted); font-size: 13px; }
 .export-dropdown button, .export-dropdown__import { min-height: 44px; padding: 8px 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: inherit; cursor: pointer; }

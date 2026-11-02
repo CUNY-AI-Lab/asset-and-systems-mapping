@@ -42,7 +42,7 @@ test('map and notebook preserve Field Notes and viewport across every scale and 
     expect(await notebook.locator('textarea:visible').count()).toBe(1);
     await expect(notebook.locator('.memo-drawer')).toHaveCount(0);
     await field.fill(notes[level]);
-    if (level === 'exosphere') await expect(notebook.getByText(/memo review receives an opening excerpt/)).toBeVisible();
+    if (level === 'exosphere') await expect(notebook.getByText(/Only the beginning of this note will be sent with your next memo/)).toBeVisible();
     await nav.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.locator('.graph-canvas')).toBeVisible();
     const camera = await page.locator('.graph-canvas').getAttribute('viewBox');
@@ -68,7 +68,7 @@ test('map and notebook preserve Field Notes and viewport across every scale and 
   await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
   await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');
   await expect(notebook.getByRole('textbox', { name: 'Field notes' })).toHaveValue(longNote);
-  await expect(notebook.getByText(/memo review receives an opening excerpt/)).toBeVisible();
+  await expect(notebook.getByText(/Only the beginning of this note will be sent with your next memo/)).toBeVisible();
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('macrosphere');
   await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
   await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');

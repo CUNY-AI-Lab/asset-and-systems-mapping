@@ -384,7 +384,7 @@ it('shows unavailable usage rather than fabricating a quota and keeps courses ac
   expect(await screen.findByRole('heading',{name:'Account',exact:true})).toBeVisible();
   expect(within(screen.getByRole('region',{name:'Model usage'})).getByText('Unavailable')).toBeVisible();
   expect(within(screen.getByRole('navigation',{name:'CUNY AI Lab resources'})).getByRole('link',{name:'CUNY AI Lab',exact:true})).toHaveAttribute('href','https://ailab.gc.cuny.edu');
-  expect(screen.getByText('Shared files are not available in this workspace.')).toBeVisible();
+  expect(within(screen.getByRole('region',{name:'Classes and materials'})).getByText('No classes available.')).toBeVisible();
 });
 
 it('filters and sorts actual project names without editing them',async()=>{

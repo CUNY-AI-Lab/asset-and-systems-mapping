@@ -39,7 +39,6 @@ export default function AccountDashboard({ account, courses, courseError, quota,
             {course.role==='instructor' && <a className="account-course-action" href={instructorWorkspacePath({kind:'course',id:course.id})} aria-label={`Instructor Console for ${course.name} · ${course.term} · ${course.section}`}>Instructor Console</a>}
           </li>)}</ul> : <p>No classes available.</p>}
           {courseError && <p role="status">{courseError}</p>}
-          <p className="account-muted">Shared files are not available in this workspace.</p>
         </section>
       </div>
       <nav className="account-resources" aria-label="CUNY AI Lab resources"><a href="https://ailab.gc.cuny.edu">CUNY AI Lab</a><a href="https://ailab.gc.cuny.edu/request-access/">Request access</a><a href="mailto:ailab@gc.cuny.edu">Contact</a></nav>

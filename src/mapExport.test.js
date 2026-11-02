@@ -23,6 +23,7 @@ test('exports Micro items and Meso links inside one shared circle with no separa
   const circle = document.querySelector('[data-export-layer="micro"] ellipse');
   expect(document.querySelectorAll('ellipse')).toHaveLength(1);
   expect(document.querySelectorAll('[data-export-layer="meso"]')).toHaveLength(0);
+  expect(svg).toContain('Map · 8 items · 7 connections');
   expect(svg).toContain('Micro items · Meso relationships');
   expect(width).toBe(900);
   const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map(name => Number(circle.getAttribute(name)));
@@ -34,6 +35,16 @@ test('exports Micro items and Meso links inside one shared circle with no separa
       expect(((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2).toBeLessThan(1);
     }
   }
+});
+test('the exported map does not show a saved audience setting', () => {
+  const project = createDefaultProject();
+  project.sharingTier = 'course';
+  project.graph.nodes = [{ id: 'a', label: 'Community center', scale: 'micro' }];
+  const { svg } = mapExportSvg(project);
+  expect(svg).toContain('Community center');
+  expect(svg).toContain('Map · 1 item · 0 connections');
+  expect(svg).toContain('>Connections</text>');
+  expect(svg).not.toContain('Export audience');
 });
 test('PDF offsets resolve to each object and the embedded image stream has its exact byte length', async () => {
   const blob=imagePdf(new Uint8Array([255,216,255,217]),100,100);

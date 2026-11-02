@@ -63,7 +63,7 @@ function notebookOption(label) {
 }
 function openExports() {
   openProjectMenu('Export & share');
-  openDetails('.export-dropdown');
+  expect(screen.getByRole('button', { name: 'PNG image', exact: true })).toBeVisible();
 }
 function candidateLabels() {
   const labels = [];
@@ -1689,10 +1689,10 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('NYC systems and assets map');
     expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('');
-    expect(screen.getByRole('textbox', { name: /^Focal person/ })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /^Person or group/ })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Question/ })).toHaveValue('How do systems shape access to special-education services in NYC?');
     expect(screen.getByRole('textbox', { name: /^Time period/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Boundary/ })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /^What to include/ })).toBeVisible();
     fireEvent.change(screen.getByRole('textbox', { name: 'Map title (optional)' }), { target: { value: 'Family service access map' } });
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Family service access map');
     expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
@@ -1782,10 +1782,10 @@ describe('Systems Mapping workflow', () => {
     project.inquiry = '';
     await resumeSavedProject(project);
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
-    fireEvent.change(screen.getByRole('textbox', { name: /^Focal person/ }), { target: { value: 'Students seeking special-education services' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /^Person or group/ }), { target: { value: 'Students seeking special-education services' } });
     fireEvent.change(screen.getByRole('textbox', { name: /^Question/ }), { target: { value: 'Where do referral delays emerge?' } });
     fireEvent.change(screen.getByRole('textbox', { name: /^Time period/ }), { target: { value: 'The first semester after referral' } });
-    fireEvent.change(screen.getByRole('textbox', { name: /^Boundary/ }), { target: { value: 'NYC school and family interactions; clinical treatment is outside scope' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /^What to include/ }), { target: { value: 'NYC school and family interactions; clinical treatment is outside scope' } });
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
@@ -1831,10 +1831,10 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Focal person/ })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /^Person or group/ })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Question/ })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Time period/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Boundary/ })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: /^What to include/ })).toBeVisible();
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toBeVisible();
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Date')).not.toBeInTheDocument();
@@ -1845,7 +1845,13 @@ describe('Systems Mapping workflow', () => {
     const privacy = screen.getByRole('button', { name: /Privacy/ });
     expect(privacy).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(privacy);
-    expect(screen.getByRole('checkbox', { name: 'Includes private information' })).toBeVisible();
+    const sensitive = screen.getByRole('checkbox', { name: 'Includes private information' });
+    expect(sensitive).toBeVisible();
+    fireEvent.click(sensitive);
+    const permission = screen.getByRole('checkbox', { name: 'I have permission to share this information, or I have removed identifying details.' });
+    expect(permission).not.toBeChecked();
+    fireEvent.click(permission);
+    await waitFor(() => expect(storedProject().submission).toMatchObject({ sensitive: true, consent: true }));
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
   });
 
@@ -2185,7 +2191,7 @@ describe('Systems Mapping workflow', () => {
     project.levelProgress.micro.reflection = 'Keep the earlier question reachable.';
     preflightEvaluationResponder = () => jsonResponse({ error: 'Guidance is temporarily unavailable. Try again later.' }, 503);
     await resumeSavedProject(project);
-    expect(screen.getByText(/memo review receives an opening excerpt/)).toBeVisible();
+    expect(screen.getByText(/Only the beginning of this note will be sent with your next memo/)).toBeVisible();
     fireEvent.click(workActions().getByRole('button', { name: 'Continue to Macro-level' }));
     expect(await screen.findByRole('button', { name: 'Try again' })).toBeEnabled();
     const calls = fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations');
@@ -2206,7 +2212,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'exosphere' } });
     openNotebookSection('review');
     expect(screen.getByRole('textbox', { name: /Field notes/ })).toHaveValue(note);
-    expect(screen.getByText(/memo review receives an opening excerpt/)).toBeVisible();
+    expect(screen.getByText(/Only the beginning of this note will be sent with your next memo/)).toBeVisible();
     expect(storedProject().levelProgress.exosphere.reflection).toBe(note);
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/preflight/evaluations')).toHaveLength(1);
   });
@@ -3248,17 +3254,21 @@ describe('Systems Mapping workflow', () => {
     expect(committeeCandidate).toMatchObject({ focalParticipation: 'unclear', settingNodeIds: [] });
 
     const schoolRow = screen.getByDisplayValue('School').closest('article');
-    expect(within(schoolRow).queryByRole('combobox', { name: 'Add a setting for School' })).not.toBeInTheDocument();
+    expect(within(schoolRow).queryByRole('combobox', { name: 'Choose where School belongs' })).not.toBeInTheDocument();
     fireEvent.click(within(schoolRow).getByRole('button', { name: 'Add to map' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
     const committeeRow = screen.getByDisplayValue('Committee').closest('article');
     fireEvent.click(within(committeeRow).getByText('Details', { selector: 'summary' }));
     fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Person’s involvement with Committee' }), { target: { value: 'indirect' } });
-    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Add a setting for Committee' }), { target: { value: schoolCandidate.id } });
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Choose where Committee belongs' }), { target: { value: schoolCandidate.id } });
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id)).toMatchObject({
       focalParticipation: 'indirect',
       settingNodeIds: [schoolCandidate.id],
     }));
+    fireEvent.click(within(committeeRow).getByRole('button', { name: 'Remove Committee from School' }));
+    await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id).settingNodeIds).toEqual([]));
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Choose where Committee belongs' }), { target: { value: schoolCandidate.id } });
+    await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id).settingNodeIds).toEqual([schoolCandidate.id]));
 
     fireEvent.click(within(committeeRow).getByRole('button', { name: 'Add to map' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
@@ -4391,7 +4401,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(addForm).getByRole('combobox', { name: 'Person’s involvement with this item' })).toHaveValue('direct');
     fireEvent.change(within(addForm).getByLabelText('Label'), { target: { value: 'Peer navigator' } });
     fireEvent.change(within(addForm).getByRole('combobox', { name: 'Person’s involvement with Peer navigator' }), { target: { value: 'indirect' } });
-    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Add a setting for Peer navigator' }), { target: { value: setting.id } });
+    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Choose where Peer navigator belongs' }), { target: { value: setting.id } });
     fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies the peer navigator in this setting.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add node' }));
 
@@ -5660,7 +5670,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(loadLibraryProject(window.localStorage, loadProjectLibrary(window.localStorage, storedProject(), true).find(record => record.id === imported.id)).submission.text).toBe('Older synthetic memo');
   });
 
-  it.each(['course', 'public'])('downloads full private recovery from a cloud error while %s JSON remains redacted', async audience => {
+  it.each(['course', 'public'])('downloads the complete map and private recovery for a saved %s project', async audience => {
     const project = makeMapProject();
     project.sharingTier = audience;
     project.instructor.maxSharingTier = 'public';
@@ -5688,12 +5698,16 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(recovered.sharingTier).toBe(audience);
       expect(Object.keys(recovered.levelProgress)).toHaveLength(4);
       openExports();
+      expect(screen.queryByRole('combobox', { name: 'Export audience' })).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
-      const shared = parseProject(blobs[1]);
-      expect(shared.submission.text).toBe('');
-      expect(shared.reflection).toBe('[redacted]');
-      for (const progress of Object.values(shared.levelProgress)) expect(progress.reflection).toBe('[redacted]');
-      expect(blobs[1]).not.toContain('PRIVATE synthetic memo');
+      const downloaded = parseProject(blobs[1]);
+      expect(downloaded.submission).toEqual(project.submission);
+      expect(downloaded.reflection).toBe(project.reflection);
+      expect(downloaded.levelProgress).toEqual(project.levelProgress);
+      expect(downloaded.graph).toEqual(project.graph);
+      expect(downloaded.candidates).toEqual(project.candidates);
+      expect(downloaded.sharingTier).toBe('private');
+      expect(storedProject().sharingTier).toBe(audience);
     } finally {
       if (priorCreate === undefined) delete URL.createObjectURL; else URL.createObjectURL = priorCreate;
       if (priorRevoke === undefined) delete URL.revokeObjectURL; else URL.revokeObjectURL = priorRevoke;
