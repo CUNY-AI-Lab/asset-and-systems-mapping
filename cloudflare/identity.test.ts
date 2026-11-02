@@ -62,6 +62,16 @@ test('both exact identity legs must describe one subject; JWT entitlements do no
   grants.gatewayJwt = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.bob });
   expect((await authorize(request(), env) as Response).status).toBe(401);
 });
+test('profile email comes only from the verified matching app identity and never grants authority', async () => {
+  const {env,grants}=await environment();
+  grants.appJwt=await issuer.mintIdentityJwt({audience:'cail:systems-mapping',subject:TEST_SUBJECTS.alice,email:'synthetic-student@example.edu'});
+  grants.gatewayJwt=await issuer.mintIdentityJwt({audience:'cail:gateway',subject:TEST_SUBJECTS.alice,email:'other-profile@example.edu'});
+  expect(await authorize(request(),env)).toMatchObject({email:'synthetic-student@example.edu',admin:false});
+  grants.appJwt=await issuer.mintIdentityJwt({audience:'cail:systems-mapping',subject:TEST_SUBJECTS.alice});
+  expect(await authorize(request(),env)).toMatchObject({email:null,admin:false});
+  grants.gatewayJwt=await issuer.mintIdentityJwt({audience:'cail:gateway',subject:TEST_SUBJECTS.bob});
+  expect((await authorize(request(),env) as Response).status).toBe(401);
+});
 test('the Gateway leg requires its own exact audience, issuer, expiry and signature', async () => {
   const { env, grants, resolveMembership } = await environment();
   for (const token of ['forged', await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping' }), await issuer.mintIdentityJwt({ audience: ['cail:gateway'] }), await issuer.mintIdentityJwt({ audience: 'cail:gateway', expiresInSeconds: -120 }), await issuer.mintIdentityJwt({ audience: 'cail:gateway', issuer: 'https://invalid.example' })]) {

@@ -13,11 +13,10 @@ export default function MapConnections({ nodeId, index, onFollow, onConnect, onS
   });
   return <>
     {node && onConnect && <button className="map-item-action node-connect-action" type="button" onClick={() => onConnect(nodeId)}>Connect from {node.label}</button>}
-    <details className="map-connections" key={nodeId}>
+    {links.length > 0 && <details className="map-connections" key={nodeId}>
     <summary>{compact ? 'Connected items' : <>Connections across map <span>{links.length}</span></>}</summary>
     <div className="map-connections__body">
       {!compact && <p>Follow a recorded connection to inspect its evidence and context.</p>}
-      {!links.length && <p>No connections recorded yet. Add a relationship or include this item in a setting or scope.</p>}
       {[...groups].map(([group, items]) => <section key={group} aria-label={group}>
         <h3>{group}</h3>
         <ul>{items.map((item) => <li key={item.key}>
@@ -27,6 +26,6 @@ export default function MapConnections({ nodeId, index, onFollow, onConnect, onS
         </li>)}</ul>
       </section>)}
     </div>
-    </details>
+    </details>}
   </>;
 }

@@ -28,7 +28,7 @@ beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
   for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333']]) tokens[name] = {
-    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject, ...(name === 'alice' ? { name: 'Sam Student' } : {}) }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
+    subject, sessionToken: sessions[name], appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject, ...(name === 'alice' ? { name: 'Sam Student', email:'synthetic-student@example.edu' } : {}) }), gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
   };
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mapping-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
@@ -58,7 +58,9 @@ test('production entrypoint rejects forged headers, other origins, encoded paths
 test('account projects isolate users, reject stale writes, and survive a real Durable Object eviction', async () => {
   const alice = await (await request('/api/cloud/account')).json(), bob = await (await request('/api/cloud/account', 'bob')).json();
   expect(alice.account.preferredName).toBe('Sam Student');
+  expect(alice.account.email).toBe('synthetic-student@example.edu');
   expect(bob.account.preferredName).toBeNull();
+  expect(bob.account.email).toBeNull();
   expect(alice.account.cacheKey).not.toBe(bob.account.cacheKey);
   expect((await request('/api/cloud/projects', 'bob', { headers: { 'x-systems-account-cache': alice.account.cacheKey } })).status).toBe(409);
   const project = newProject();
@@ -72,6 +74,26 @@ test('account projects isolate users, reject stale writes, and survive a real Du
   expect(reopened.title).toBe(project.title);
   expect(reopened.layout).toEqual({ phoneOverview: 'preserve' });
   const raced = await Promise.all([put(1), put(1)]); expect(raced.map(value => value.status).sort()).toEqual([200, 409]);
+});
+test('project progress is private metadata and revision-checked deletion never affects another owner',async()=>{
+  const project=newProject();project.id='synthetic-notes-before-map';project.submission.text='A private synthetic memo.';project.reflection='A private synthetic observation.';
+  project.levelProgress.meso.reflection='An archived synthetic observation.';
+  const path='/api/cloud/projects/'+project.id;
+  expect((await request(path,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(project),revision:0})})).status).toBe(200);
+  const list=await (await request('/api/cloud/projects')).json();
+  const row=list.projects.find(item=>item.id===project.id);
+  expect(row.progress).toMatchObject({activeScale:'micro',stage:0,nodes:0,relationships:0,hasMemo:true,notes:2});
+  expect(JSON.stringify(list)).not.toContain(project.submission.text);expect(JSON.stringify(list)).not.toContain(project.reflection);
+  expect((await request(path,'bob',{method:'DELETE',body:JSON.stringify({revision:1})})).status).toBe(404);
+  for(const body of [{},{revision:0},{revision:1,owner:'other'}])expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify(body)})).status).toBe(400);
+  expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:2})})).status).toBe(409);
+  expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:1}),headers:{origin:'https://other.example'}})).status).toBe(403);
+  expect((await request(path,'alice')).status).toBe(200);
+  expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:1})})).status).toBe(200);
+  await worker.evictDurableObject('COURSES',{name:'test-course'});
+  expect((await request(path)).status).toBe(404);
+  expect((await request(path,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(project),revision:0})})).status).toBe(200);
+  expect(JSON.parse((await (await request(path)).json()).project).reflection).toBe(project.reflection);
 });
 test('current membership and instructor authority are checked on the next request', async () => {
   expect((await request('/api/teacher/profiles')).status).toBe(403);
@@ -198,11 +220,12 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome nati
         });
         await bridge.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
         await page.goto(ORIGIN);
+        await page.getByRole('button', { name: 'Account', exact: true }).click();
         if (who === 'admin') {
-          await page.getByRole('button', { name: 'Instructor Console', exact: true }).click();
-          await browserExpect(page.getByRole('heading', { name: 'Instructor Console', exact: true })).toBeVisible();
+          await page.getByRole('tab', { name: 'Instructor Console', exact: true }).click();
+          await browserExpect(page.getByRole('tab', { name: 'Submissions', exact: true })).toBeVisible();
+          await page.getByRole('tab', { name: 'Overview', exact: true }).click();
         }
-        await page.getByText('Account', { exact: true }).click();
         const signedOut = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/logout' && response.request().method() === 'POST');
         await page.getByRole('button', { name: 'Sign out', exact: true }).click();
         const response = await signedOut;
@@ -278,10 +301,11 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.setViewportSize({ width: 1440, height: 1000 });
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.alice, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.reload();
-    await page.getByText('Account', { exact: true }).click();
-    await browserExpect(page.getByText('approximately 90% remaining', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Account', exact: true }).click();
+    await browserExpect(page.getByText('Approximately 90% remaining', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expectFullMap(page);
@@ -336,8 +360,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
     await browserExpect(page.getByRole('heading', { name: 'Start your first map' })).toBeVisible();
-    await page.getByText('Account', { exact: true }).click();
-    await browserExpect(page.getByText('approximately 90% remaining', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Account', exact: true }).click();
+    await browserExpect(page.getByText('Approximately 90% remaining', { exact: false })).toBeVisible();
     expect(await page.getByText('East Harlem disability resources').count()).toBe(0);
     const shared = await (await request('/api/projects', 'alice', { method: 'POST', body: JSON.stringify({ project: serializeProject(fixture) }) })).json();
     await context.clearCookies();
@@ -353,15 +377,17 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.clearCookies();
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.admin, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
-    await page.getByRole('button', { name: 'Instructor Console', exact: true }).click();
-    await browserExpect(page.getByRole('heading', { name: 'Instructor Console', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Account', exact: true }).click();
+    await page.getByRole('tab', { name: 'Instructor Console', exact: true }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await browserExpect(page.getByRole('tab', { name: 'Submissions', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('tab', { name: 'Course settings', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Field Notes prompts', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Projects', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
-    await page.getByText('Account', { exact: true }).click();
-    await browserExpect(page.getByText('approximately 90% remaining', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Account', exact: true }).click();
+    await page.getByRole('tab', { name: 'Overview', exact: true }).click();
+    await browserExpect(page.getByText('Approximately 90% remaining', { exact: false })).toBeVisible();
     expect(errors).toEqual([]);
   } finally { await context.unrouteAll({ behavior: 'wait' }); await browser.close(); }
 }, 45000);

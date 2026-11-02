@@ -199,6 +199,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
         role: principal.admin ? 'instructor' : 'student',
         preferredName: accountPreferredName(principal),
+        email: principal.email ?? null,
         course: principal.course ? { id: principal.course.classId, name: principal.course.className, term: principal.course.term, section: principal.course.section, guestInstructor: principal.course.guestInstructor, capabilities: principal.course.capabilities, promptRevision: (await currentCoursePrompt(this.ctx.storage)).revision } : null } });
     }
     if (path === '/api/cloud/course-students' && request.method === 'GET') {
@@ -240,7 +241,19 @@ export class MappingCourse extends DurableObject<Bindings> {
       return Response.json(this.submissions.submit(owner, project, row.revision));
     }
     if (path === '/api/cloud/projects' && request.method === 'GET') {
-      const projects = this.db.prepare('SELECT id,title,revision,updated_at AS updatedAt FROM cloud_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 200').all(owner);
+      // Return bounded progress metadata, not each private memo or full graph.
+      // SQL projects it from the already-validated saved JSON without parsing
+      // and validating up to 200 complete projects on every list refresh.
+      const rows = this.db.prepare(`SELECT id,title,revision,updated_at AS updatedAt,
+        json_extract(project,'$.activeScale') AS activeScale,
+        json_extract(project,'$.stage') AS stage,
+        json_array_length(project,'$.completedScales') AS completedLevels,
+        length(trim(coalesce(json_extract(project,'$.submission.text'),''))) > 0 AS hasMemo,
+        (SELECT count(*) FROM json_each(cloud_projects.project,'$.graph.nodes') WHERE coalesce(json_extract(value,'$.status'),'') <> 'rejected' AND coalesce(json_extract(value,'$.claimState'),'') <> 'retired' AND json_extract(value,'$.scale') <> 'meso') AS nodes,
+        (SELECT count(*) FROM json_each(cloud_projects.project,'$.graph.edges') WHERE coalesce(json_extract(value,'$.status'),'') <> 'rejected' AND coalesce(json_extract(value,'$.claimState'),'') <> 'retired') AS relationships,
+        (length(trim(coalesce(json_extract(project,'$.reflection'),''))) > 0) + (SELECT count(*) FROM json_each(cloud_projects.project,'$.levelProgress') WHERE key <> json_extract(cloud_projects.project,'$.activeScale') AND length(trim(coalesce(json_extract(value,'$.reflection'),''))) > 0) AS notes
+        FROM cloud_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 200`).all(owner);
+      const projects = rows.map(({activeScale,stage,completedLevels,hasMemo,nodes,relationships,notes,...record}: any) => ({...record,progress:{activeScale,stage,completedLevels:completedLevels ?? 0,hasMemo:Boolean(hasMemo),nodes,relationships,notes}}));
       return Response.json({ projects });
     }
     const projectId = /^\/api\/cloud\/projects\/([^/]+)$/.exec(path)?.[1];
@@ -273,6 +286,20 @@ export class MappingCourse extends DurableObject<Bindings> {
           // Activity is operational metadata, not a second copy of memo content.
           this.db.prepare("DELETE FROM cloud_activity WHERE owner=? AND at < ?").run(owner, new Date(Date.now() - 90 * 86400000).toISOString());
           return Response.json({ revision, updatedAt: at });
+        });
+      }
+      if (request.method === 'DELETE') {
+        let body;
+        try {
+          body = await boundedJson(request);
+          if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'revision' || !Number.isSafeInteger(body.revision) || body.revision < 1) throw new Error('shape');
+        } catch { return failure('Choose the saved revision to delete.', 400); }
+        return this.ctx.storage.transactionSync(() => {
+          const row = this.db.prepare('SELECT revision FROM cloud_projects WHERE owner=? AND id=?').get(owner, projectId);
+          if (!row) return failure('Project not found.', 404);
+          if (row.revision !== body.revision) return failure('This project changed. Review the current copy before deleting it.', 409);
+          this.db.prepare('DELETE FROM cloud_projects WHERE owner=? AND id=? AND revision=?').run(owner, projectId, body.revision);
+          return Response.json({ deleted: true });
         });
       }
       return failure('Method not allowed.', 405);

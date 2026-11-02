@@ -1823,6 +1823,13 @@ html[data-theme="dark"] .ecology-layer--macrosphere > ellipse { fill: color-mix(
 .guidance-progress__detail { margin: 0; font-size: 13px; color: var(--muted); }
 
 .item-editor-heading { margin: 0; font-size: 15px; }
+.inspector__head--edit { align-items:flex-start; }
+.item-editor-title { min-width:0;flex:1; }
+.inspector__head .item-editor-title h2 { min-height:44px;display:flex;align-items:center;font-size:22px;font-weight:650; }
+.item-editor-title p { margin:0;font-size:16px;line-height:1.4;overflow-wrap:anywhere; }
+.inspector__head--edit .inspector__actions { align-self:flex-start; }
+.inspector__body > .map-item-action--remove { align-self:flex-start;justify-self:start;width:fit-content;background:transparent;border-color:transparent;font-weight:500;color:var(--muted); }
+.inspector__body > .map-item-action--remove:hover { color:var(--ink);border-color:var(--line); }
 .inspector .node-summary { border: 0; padding: 0; }
 .inspector .node-summary__body { gap: 10px; padding: 0; }
 .inspector .annotation-field textarea { min-height: 84px; }
@@ -1866,3 +1873,5 @@ html[data-theme="dark"] .ecology-layer--macrosphere > ellipse { fill: color-mix(
 .completion-return { margin-top: 12px; }
 .completion-return .button { grid-column: 4; }
 @media (max-width: 600px) { .project-completion { padding: 20px 16px 40px; } .completion-levels { grid-template-columns: 1fr; gap: 18px; } .completion-format-actions { grid-template-columns: repeat(2,minmax(0,1fr)); } .completion-return { grid-template-columns: 1fr; } .completion-return .button { grid-column: 1; } }
+
+.annotation-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.annotation-save--saved{color:var(--muted)}

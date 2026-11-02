@@ -4,7 +4,7 @@
 .bug-report-host { --bug-line: var(--line-strong); --bug-ink: var(--ink); --bug-muted: var(--muted); --bug-background: var(--surface); --bug-field: var(--surface-subtle); --bug-focus: var(--blue); --bug-on-accent: #fff; --bug-panel-clearance: calc(48px + var(--safe-bottom)); }
 .bug-report-host .bug-report { padding: 0; }
 .has-bug-report.bug-report-docked { --bug-report-height: 0px; }
-.workspace-bug-report { display: inline-flex; align-items: center; flex: 0 0 auto; margin-left: auto; }
+.workspace-bug-report { display: inline-flex; align-items: center; flex: 0 0 auto; margin-left: 0; }
 .workspace-bug-report:empty { display: none; }
 .bug-report-host--docked { --bug-panel-clearance: 0px; }
 .bug-report-host--docked .bug-report__trigger { width: 44px; height: 44px; min-width: 44px; padding: 0; }
@@ -24,3 +24,7 @@
   .has-bug-report .workspace:not(.workspace--studio) .inspector { bottom: calc(var(--footer) + var(--safe-bottom) + var(--bug-report-height)); }
 }
 @media print { .bug-report-footer, .bug-report-host { display: none; } }
+
+/* Keep the compact report control aligned with Map, Notebook and Tools. */
+.workspace-bug-report .bug-report__trigger { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 44px; height: 44px; min-height: 44px; padding: 0; margin: 0; }
+.workspace-bug-report .bug-report__trigger > svg { display: block; flex: 0 0 18px; width: 18px; height: 18px; visibility: visible; opacity: 1; }

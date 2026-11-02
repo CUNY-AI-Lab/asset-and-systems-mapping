@@ -20,7 +20,7 @@ export function LevelTrail({ active = 'micro', completed = [] }) {
 }
 
 export function ProjectRow({ title, current, subtitle, detail, onOpen, actions, disabled, openLabel = 'Open' }) {
-  return <article className={`studio-project ${current ? 'is-current' : ''}`} aria-label={title}><div className="studio-project__copy"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}{detail && <p className="studio-project__detail">{detail}</p>}</div><div className="studio-project__actions">{actions}<Action variant="secondary" disabled={disabled} onClick={onOpen} aria-label="Open project">{openLabel}<span aria-hidden="true">→</span></Action></div></article>;
+  return <article className={`studio-project ${current ? 'is-current' : ''}`} aria-label={title}><div className="studio-project__copy"><h2><button type="button" className="project-title" disabled={disabled} onClick={onOpen} aria-label="Open project">{title}</button></h2>{subtitle && <p>{subtitle}</p>}{detail && <p className="studio-project__detail">{detail}</p>}</div>{actions && <div className="studio-project__actions">{actions}</div>}</article>;
 }
 
 export function EmptyState({ title, description, action }) {

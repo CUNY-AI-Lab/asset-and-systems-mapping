@@ -3,7 +3,7 @@ export function mountBugReport(container, { path = () => location.pathname, endp
   // Constant markup only. Report and service data are rendered as text/value.
   container.innerHTML = `<div class="bug-report">
     <button class="bug-report__trigger" type="button" aria-label="Report a problem" aria-haspopup="dialog" aria-expanded="false">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 18H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6l-5 3v-3Z"/><path d="M8 9h8M8 13h5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 2 2 2m4 0 2-2M9 7V6a3 3 0 0 1 6 0v1M6 10H2m4 4H2m4 4H2m16-8h4m-4 4h4m-4 4h4"/><rect x="6" y="7" width="12" height="14" rx="6"/><path d="M12 11v10"/></svg>
       <span>Report a problem</span><span class="bug-report__badge" aria-hidden="true" hidden>Draft</span>
     </button>
     <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a problem" tabindex="-1" hidden>

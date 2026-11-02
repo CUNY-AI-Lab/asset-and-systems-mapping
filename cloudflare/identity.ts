@@ -5,7 +5,7 @@ import { readCookie, type IdentityClient } from './login';
 import { validSessionToken } from './session-contract/session.js';
 import publicJwks from './jwks.json';
 
-export type Principal = { subject: string; preferredName?: string | null; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
+export type Principal = { subject: string; preferredName?: string | null; email?: string | null; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
 export type IdentityEnv = {
   IDENTITY: IdentityClient;
   ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccessV2?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
@@ -55,5 +55,8 @@ export async function authorize(request: Request, env: IdentityEnv): Promise<Pri
   if (expiresAt <= Date.now()) return authFailure(403, 'admission_required');
   const preferredName = typeof appIdentity.name === 'string'
     ? appIdentity.name.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 160) || null : null;
-  return { subject: appIdentity.subject, preferredName, admin: value.accessRole === 'admin', expiresAt, gatewayJwt: grants.gatewayJwt };
+  const email = typeof appIdentity.email === 'string' && appIdentity.email.length <= 254
+    && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(appIdentity.email)
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(appIdentity.email) ? appIdentity.email : null;
+  return { subject: appIdentity.subject, preferredName, email, admin: value.accessRole === 'admin', expiresAt, gatewayJwt: grants.gatewayJwt };
 }

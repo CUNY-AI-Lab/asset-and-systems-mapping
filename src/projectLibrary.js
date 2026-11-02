@@ -1,5 +1,6 @@
 import { parseProject, serializeProject } from './domain.js';
 import { clearSavedMemoDraft, restoreMemoDraft } from './memoDraft.js';
+import { projectProgress } from './projectProgress.js';
 
 // Keep the durable browser key stable. Schema-v6 projects stored here are
 // migrated in place by parseProject; changing the key would strand active work
@@ -81,6 +82,7 @@ export function summarizeProject(project) {
     activeScale: project.activeScale,
     stage: project.stage,
     memoCount: hasMemo(project) ? 1 : 0,
+    progress: projectProgress(project),
     updatedAt: project.updatedAt,
   };
 }
@@ -259,6 +261,24 @@ export function loadLibraryProject(storage, record) {
   const raw = storage.getItem(record.storageKey);
   if (!raw) throw new Error('This saved project is no longer available on this device.');
   return restoreMemoDraft(storage, parseProject(raw));
+}
+
+export function removeLibraryProject(storage, projectId) {
+  const index = readLibraryIndex(storage);
+  const bodyKey = projectBodyKey(projectId);
+  const active = storedActiveProject(storage);
+  const keys = [PROJECT_LIBRARY_KEY, bodyKey, ...(active?.project.id === projectId ? [STORAGE_KEY] : [])];
+  const backups = new Map(keys.map(key => [key, storage.getItem(key)]));
+  try {
+    writeLibraryIndex(storage, index.projects.filter(record => record.id !== projectId), index.activeProjectId === projectId ? null : index.activeProjectId);
+    storage.removeItem(bodyKey);
+    if (active?.project.id === projectId) storage.removeItem(STORAGE_KEY);
+  } catch (failure) {
+    for (const [key, raw] of backups) {
+      try { if (raw === null) storage.removeItem(key); else storage.setItem(key, raw); } catch { /* The separate verified recovery copy remains available. */ }
+    }
+    throw failure;
+  }
 }
 
 function readStoredLinks(storage) {

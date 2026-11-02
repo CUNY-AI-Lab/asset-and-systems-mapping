@@ -3,7 +3,7 @@ import { Action, Disclosure } from './ui/StudioPrimitives.jsx';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { userFacingError } from './userFacingError.js';
 
-export default function CoursePromptEditor({ course, request }) {
+export default function CoursePromptEditor({ course, request, onSaved }) {
   const id = useId();
   const [prompt, setPrompt] = useState(null);
   const [amendment, setAmendment] = useState('');
@@ -54,6 +54,7 @@ export default function CoursePromptEditor({ course, request }) {
       setConflict(false);
       setStatus('Course guidance saved.');
       setHistory(null); setSelectedRevision(null); setPreview(null);
+      onSaved?.();
     } catch (failure) {
       setStatus('');
       if (failure.status === 409) {

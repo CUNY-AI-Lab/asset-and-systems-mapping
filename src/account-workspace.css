@@ -1,4 +1,28 @@
 .account-workspace{padding-bottom:40px;color:var(--ink)}
+.account-shell-view:not([hidden]){display:flex;flex-direction:column;min-height:100dvh}
+.account-project-view:not([hidden]){min-height:100dvh}
+.account-workspace [hidden],.account-shell-view[hidden],.account-project-view[hidden]{display:none!important}
+.account-nav-button{white-space:nowrap}
+.account-dashboard .studio-heading{margin-bottom:20px}
+.account-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:24px}
+.account-tabs button{background:transparent;color:var(--muted);border:1px solid transparent}
+.account-tabs button[aria-selected="true"]{background:var(--surface-subtle);border-color:var(--line);color:var(--ink)}
+.account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.account-card{min-width:0;padding:20px;background:var(--surface-subtle);border-radius:8px}
+.account-card--wide{grid-column:1/-1}
+.account-card h2{margin:0 0 12px;font:600 17px/1.4 var(--body)}
+.account-card p{margin:0 0 12px;overflow-wrap:anywhere}
+.account-card p:last-child{margin-bottom:0}
+.account-card dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 18px;margin:0 0 14px;font-size:15px}
+.account-card dt{color:var(--muted)}
+.account-card dd{margin:0;overflow-wrap:anywhere}
+.account-card form{margin:0}
+.account-muted{color:var(--muted);font-size:14px}
+.account-resources{display:flex;gap:8px 24px;flex-wrap:wrap;margin-top:24px}
+.account-resources a{display:inline-flex;align-items:center;min-height:44px}
+.account-dashboard .teacher-dashboard{margin-top:20px}
+.account-role{margin:0 0 16px;color:var(--muted)}
+.access-shell:has(.account-workspace) .access-header{flex-wrap:wrap}
 .account-workspace .account-login{justify-self:start;width:fit-content;max-width:100%;min-height:44px;padding-inline:18px}
 .account-details form{margin:0}
 .account-courses{list-style:none;margin:0 0 24px;padding:0;display:grid;gap:12px}
@@ -15,6 +39,12 @@ html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__ac
 @media(max-width:700px){
   .access-shell:has(.account-workspace) .access-header{grid-template-columns:auto minmax(0,1fr)}
   .access-shell:has(.account-workspace) .access-header__actions{grid-column:1/-1;justify-self:end;margin-left:0;flex-wrap:wrap}
+  .account-grid{grid-template-columns:minmax(0,1fr);gap:16px}
+  .account-card{padding:16px}
+  .account-card dl{grid-template-columns:minmax(0,1fr);gap:2px}
+  .account-card dd{margin-bottom:10px}
+  .app-shell:has(> .workspace--studio) .app-header--student .header-actions:has(.account-nav-button){display:flex;gap:3px;justify-content:space-between}
+  .app-shell:has(> .workspace--studio) .app-header--student .header-actions:has(.account-nav-button) .workspace-map-controls{display:contents}
 }
 .account-error{padding:1rem;border:2px solid currentColor;background:var(--surface);color:var(--ink);overflow-wrap:anywhere}
 .account-save{font-size:.75rem;max-width:10rem;line-height:1.2;color:var(--muted)}
@@ -30,3 +60,10 @@ html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__ac
   .access-main.account-landing{padding-top:max(16px,calc(18dvh - 110px))}
   .account-landing__noll{min-height:160px;margin-top:96px}
 }
+
+.account-courses li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 16px;padding:12px 0;align-items:center}
+.account-course-info{display:grid;min-width:0;gap:2px}
+.account-course-info a{font-weight:600;overflow-wrap:anywhere;min-height:44px;display:flex;align-items:center;text-underline-offset:3px}
+.account-course-info span{color:var(--muted);font-size:14px}
+.account-courses li>a{padding:0 12px;border:1px solid var(--line);border-radius:var(--radius);text-decoration:none}
+@media(max-width:600px){.account-courses li{grid-template-columns:minmax(0,1fr) auto}.account-course-info{grid-column:1/-1}.account-courses li>a{justify-self:end}}

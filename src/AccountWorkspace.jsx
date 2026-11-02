@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import App, { AccessFrame, createBlankProject } from './App.jsx';
-import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
-import { parseProject } from './domain.js';
-import { saveProjectToLibrary, loadProjectLibrary } from './projectLibrary.js';
+import { Action, EmptyState, LevelTrail, PageHeading } from './ui/StudioPrimitives.jsx';
+import { exportFileName, parseProject, serializePortableProject } from './domain.js';
+import { saveProjectToLibrary, loadProjectLibrary, removeLibraryProject } from './projectLibrary.js';
+import { deletedProjects, forgetDeletedProject, preserveDeletedProject } from './projectRecovery.js';
+import { downloadBlob } from './mapExport.js';
+import SavedProjects from './SavedProjects.jsx';
+import ProjectLibraryDialog from './ProjectLibraryDialog.jsx';
 import { useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
 import { reconcileCloudProject, rememberCloudSave, serializeCloudProject } from './cloudSync.js';
 import { apiRequest, ApiError } from './api.js';
 import { courseWorkspacePath, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
 import { userFacingError } from './userFacingError.js';
-import CoursePromptEditor from './CoursePromptEditor.jsx';
+import AccountDashboard from './AccountDashboard.jsx';
 import NollSketch from './NollSketch.jsx';
 import './account-workspace.css';
 
@@ -22,7 +26,10 @@ export default function AccountWorkspace() {
   const [account,setAccount] = useState(null);
   const [records,setRecords] = useState([]);
   const [active,setActive] = useState(null);
-  const [teacher,setTeacher] = useState(false);
+  const [accountView,setAccountView] = useState({open:false,tab:'overview'});
+  const [configurationRevision,setConfigurationRevision] = useState(0);
+  const [selection,setSelection] = useState(null);
+  const [recoveries,setRecoveries] = useState([]);
   const [status,setStatus] = useState('Loading your workspace…');
   const [error,setError] = useState('');
   const [signedOut,setSignedOut] = useState(false);
@@ -67,18 +74,16 @@ export default function AccountWorkspace() {
           throw new ApiError('Workspace scope unavailable', 503, { details: { code: 'course_access_unavailable' } });
         }
         storageRef.current = useAccountStorage(result.account.cacheKey, null, courseSelection);
+        setRecoveries(deletedProjects(storageRef.current));
         setAccount(result.account);
+        let remembered;
+        try { remembered = JSON.parse(storageRef.current.getItem('account-navigation')); } catch { /* Start with Overview if UI state is unavailable. */ }
+        const requested = instructorRequested && result.account.role === 'instructor';
+        setAccountView({open: requested || remembered?.open === true, tab: result.account.role === 'instructor' && (requested || remembered?.tab === 'instructor') ? 'instructor' : 'overview'});
         if (courseSelection.kind === 'general') {
           void request('/api/cloud/courses')
             .then(page => { if (!cancelled) setCourses(page.courses); })
             .catch(failure => { if (!cancelled) setCourseError(userFacingError(failure, 'Your courses are temporarily unavailable. Reload to check again.')); });
-        }
-        // Navigation selects the view only after the server confirms this
-        // account's instructor role in the selected workspace.
-        if (instructorRequested && result.account.role === 'instructor') {
-          setStatus('');
-          setTeacher(true);
-          return;
         }
         const records = await refresh();
         try { const data = await request('/api/cloud/quota'); if (!cancelled) setQuota(data.quota); } catch { /* Informational only; map editing stays available. */ }
@@ -158,6 +163,7 @@ export default function AccountWorkspace() {
       storageRef.current = useAccountStorage(workspaceAccount.cacheKey,persist,courseSelection);
       if (!reconciled.conflict) persist(project);
       setActive(project.id);
+      navigateAccount({open:false});
     } catch (failure) { setError(userFacingError(failure, 'This map could not be opened. Return to Projects and try again.')); }
     finally { setBusy(false); }
   };
@@ -181,7 +187,7 @@ export default function AccountWorkspace() {
     if (blocked.current.size === 0) {
       window.history.replaceState(null, '', courseWorkspacePath('/', courseSelection));
       setActive(null);
-      setTeacher(false);
+      navigateAccount({open:false});
       try { setDark(document.documentElement.dataset.theme === 'dark'); }
       catch { /* Preserve the current theme when browser storage is unavailable. */ }
       try { await refresh(); } catch (failure) { setError(userFacingError(failure, 'Your project list could not be loaded. Reload to try again.')); }
@@ -189,13 +195,98 @@ export default function AccountWorkspace() {
     setBusy(false);
   };
 
-  if (active) return <App key={active} startInWorkspace onAccountDashboard={dashboard} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} />;
-  if (teacher) return <App startInTeacher onAccountDashboard={dashboard} />;
-  return <AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} onTeacher={account?.role === 'instructor' ? () => {
-    window.history.replaceState(null, '', instructorWorkspacePath(courseSelection));
-    setTeacher(true);
-  } : undefined}>
-    <main id="workspace" className={signedOut ? 'access-main account-workspace account-landing' : 'studio-dashboard account-workspace'}>
+  function navigateAccount(changes) {
+    setAccountView(current => {
+      const next = {...current,...changes};
+      if (account?.role !== 'instructor') next.tab = 'overview';
+      try { storageRef.current?.setItem('account-navigation',JSON.stringify(next)); } catch { /* Navigation remains usable without device storage. */ }
+      return next;
+    });
+  }
+  const showAccount = async () => {
+    setBusy(true); setError('');
+    window.dispatchEvent(new Event('pagehide'));
+    await queue.current;
+    try {
+      const result = await request('/api/cloud/account');
+      if (result.account.cacheKey !== account.cacheKey || (result.account.course?.id || null) !== (account.course?.id || null)) {
+        setActive(null); setAccount(null); setSignedOut(true);
+        throw new Error('The signed-in account changed. Reload to open its workspace. Your device copy is preserved.');
+      }
+      setAccount(result.account);
+      setDark(document.documentElement.dataset.theme === 'dark');
+      navigateAccount({open:true,...(result.account.role !== 'instructor' ? {tab:'overview'} : {})});
+      setQuota(null);
+      try { setQuota((await request('/api/cloud/quota')).quota); } catch { /* Do not substitute stale or invented usage. */ }
+    } catch (failure) {
+      if (failure.status === 401 || failure.status === 403) { setActive(null); setAccount(null); setSignedOut(true); }
+      setError(userFacingError(failure,'Account could not be opened. Your map remains on this device. Try again.'));
+    } finally { setBusy(false); }
+  };
+  const returnFromAccount = () => {
+    window.history.replaceState(null,'',courseWorkspacePath('/',courseSelection));
+    navigateAccount({open:false});
+    requestAnimationFrame(()=>document.querySelector('.account-nav-button')?.focus());
+  };
+  const inspect = async (record, mode) => {
+    setBusy(true); setError('');
+    try {
+      const remote = record.localOnly ? null : await request(`/api/cloud/projects/${encodeURIComponent(record.id)}`);
+      const reconciled = await reconcileCloudProject(storageRef.current, record.id, remote);
+      if (!reconciled.project || reconciled.project.id !== record.id) throw new Error('This saved project could not be read.');
+      setSelection({record,mode,...reconciled,revision:remote?.revision || 0,remote:remote ? parseProject(remote.project) : null});
+    } catch (failure) { setError(userFacingError(failure,'This project could not be read. Try again.')); }
+    finally { setBusy(false); }
+  };
+  const saveNotes = async (project, revision) => {
+    // The dialog opened the current remote revision. Never turn a stale note
+    // edit into an unconditional overwrite of another tab's graph or memo.
+    revisions.current.set(project.id, revision);
+    blocked.current.delete(project.id);
+    saveProjectToLibrary(storageRef.current,project,loadProjectLibrary(storageRef.current,null,false));
+    persist(project);
+    await queue.current;
+    if (blocked.current.has(project.id) || saved.current.get(project.id) !== serializeCloudProject(project)) throw new Error('Notes remain on this device, but the account save failed. Export a private backup before reloading.');
+    setSelection(current => current?.project.id === project.id ? {...current,revision:revisions.current.get(project.id)} : current);
+    await refresh();
+  };
+  const deleteSaved = async selected => {
+    const storage = storageRef.current;
+    preserveDeletedProject(storage,selected.project,selected.conflict ? selected.remote : null);
+    setRecoveries(deletedProjects(storage));
+    if (!selected.record.localOnly) await request(`/api/cloud/projects/${encodeURIComponent(selected.project.id)}`,{method:'DELETE',body:{revision:selected.revision}});
+    removeLibraryProject(storage,selected.project.id);
+    revisions.current.delete(selected.project.id); saved.current.delete(selected.project.id); blocked.current.delete(selected.project.id);
+    await refresh();
+  };
+  const restoreDeleted = async entry => {
+    setBusy(true); setError('');
+    try {
+      const project = parseProject(entry.project);
+      const result = await request(`/api/cloud/projects/${encodeURIComponent(project.id)}`,{method:'PUT',body:{project:serializeCloudProject(project),revision:0}});
+      revisions.current.set(project.id,result.revision);
+      saved.current.set(project.id,serializeCloudProject(project));
+      blocked.current.delete(project.id);
+      saveProjectToLibrary(storageRef.current,project,loadProjectLibrary(storageRef.current,null,false));
+      await rememberCloudSave(storageRef.current,project.id,result.revision,serializeCloudProject(project));
+      // A divergent account copy has its own retained recovery and can still be
+      // downloaded; restoring one version must not silently drop the other.
+      if (!entry.remoteProject) forgetDeletedProject(storageRef.current,entry.key);
+      setRecoveries(deletedProjects(storageRef.current));
+      await refresh();
+    } catch (failure) { setError(userFacingError(failure,'This recovery could not be restored. An existing project will not be overwritten. Download the recovery instead.')); }
+    finally { setBusy(false); }
+  };
+  const downloadRecovery = (entry,remote=false) => {
+    try {
+      const project = parseProject(remote ? entry.remoteProject : entry.project);
+      downloadBlob(new Blob([serializePortableProject(project,'private')],{type:'application/json'}),exportFileName(project,'json','recovery'));
+    } catch (failure) { setError(userFacingError(failure,'This recovery could not be downloaded. The saved bytes remain on this device.')); }
+  };
+  return <>
+    {active && <div hidden={accountView.open} className="account-project-view"><App key={active} startInWorkspace onAccountDashboard={dashboard} onOpenAccount={showAccount} configurationRevision={configurationRevision} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} /></div>}
+    <div hidden={Boolean(active) && !accountView.open} className="account-shell-view"><AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} headerActions={account && !signedOut ? <Action variant="secondary" className="account-nav-button" aria-current={accountView.open ? 'page' : undefined} onClick={showAccount}>Account</Action> : null}>
+    <main id="account-workspace" className={signedOut ? 'access-main account-workspace account-landing' : 'studio-dashboard account-workspace'}>
       {signedOut ? <>
         <div className="account-landing__hero">
           <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
@@ -204,26 +295,19 @@ export default function AccountWorkspace() {
         </div>
         <NollSketch className="account-landing__noll" />
       </> : account ? <>
-        {courses.length > 0 && <section aria-labelledby="your-courses"><h2 id="your-courses">Your courses</h2><ul className="account-courses">{courses.map(course => <li key={course.id}>
-          <a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name} · {course.term} · {course.section}</a>
-          {course.role === 'instructor' && <>
-            <span>{course.guestInstructor ? 'Guest instructor' : 'Instructor'}</span>
-            <Action as="a" variant="ghost" href={instructorWorkspacePath({ kind: 'course', id: course.id })} aria-label={`Instructor Console for ${course.name} · ${course.term} · ${course.section}`}>Instructor Console</Action>
-          </>}
-        </li>)}</ul></section>}
-        {courseError && <p role="status">{courseError}</p>}
+        <div hidden={accountView.open}>
         <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : 'Continue a map or start a new one'} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
-        {records.length ? <div className="studio-projects" aria-label="Saved projects">{records.map(record => <ProjectRow key={record.id} title={record.title || 'Untitled systems map'} subtitle={record.localOnly ? 'Device copy' : undefined} detail={`Updated ${new Date(record.updatedAt).toLocaleString()}`} disabled={busy} onOpen={() => open(record)} openLabel="Open" />)}</div>
+        {records.length ? <SavedProjects records={records} busy={busy} onOpen={open} onInspect={inspect} onDelete={record=>inspect(record,'delete')} />
           : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
-        {account.course?.guestInstructor && <p>Guest instructor · This course’s settings and demonstration content are available to you.</p>}
-        {account.course && account.role === 'instructor' && <CoursePromptEditor key={account.cacheKey} course={account.course} request={request} />}
-        <Disclosure title="Account" className="account-details">
-          <p>Model usage {quota ? `approximately ${quota.remaining_percent}% remaining` : 'unavailable'}</p>
-          <form action="/auth/logout" method="post"><Action variant="ghost" type="submit">Sign out</Action></form>
-        </Disclosure>
+        {recoveries.length > 0 && <details className="project-recoveries"><summary>Project recovery ({recoveries.length})</summary><p>Private copies saved on this device before deletion.</p><ul>{recoveries.map(entry=><li key={entry.key}><span>{entry.title}</span><div className="button-row"><Action variant="secondary" disabled={busy} onClick={()=>restoreDeleted(entry)}>Restore</Action><Action variant="ghost" disabled={busy} onClick={()=>downloadRecovery(entry)}>Download</Action>{entry.remoteProject && <Action variant="ghost" disabled={busy} onClick={()=>downloadRecovery(entry,true)}>Account backup</Action>}</div></li>)}</ul></details>}
         <NollSketch className="noll-sketch--page" />
+        </div>
+        <div hidden={!accountView.open}><AccountDashboard key={account.cacheKey} account={account} courses={courses} courseError={courseError} quota={quota} tab={accountView.tab} onTab={tab=>{
+          navigateAccount({tab});
+          window.history.replaceState(null,'',tab==='instructor' && account.role==='instructor' ? instructorWorkspacePath(courseSelection) : courseWorkspacePath('/',courseSelection));
+        }} active={accountView.open} request={request} onReturn={returnFromAccount} returnLabel={active ? 'Return to map' : 'Projects'} onConfigurationChanged={()=>setConfigurationRevision(value=>value+1)} /></div>
       </> : <p role="status">{status}</p>}
       {error && <p role="alert" className="account-error">{error}</p>}
     </main>
-  </AccessFrame>;
+  </AccessFrame></div>{selection && <ProjectLibraryDialog key={`${selection.record.id}:${selection.mode}`} selection={selection} onClose={()=>setSelection(null)} onSave={saveNotes} onDelete={deleteSaved} onOpen={record=>{setSelection(null);void open(record);}} />}</>;
 }

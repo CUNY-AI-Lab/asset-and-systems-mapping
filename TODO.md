@@ -1,11 +1,30 @@
 # Systems Mapping release evidence ledger
 
-Updated: 2026-08-24
+Updated: 2026-11-02
 
+
+## November 2 — combined UI integration release
+
+Implementation is isolated in `/tmp/systems-ui-integration-20261102`, based on the current served `6d3f55c` (GLM configuration plus Memo submission). The source owner's task-6 checkout is preserved. Model comparison task reports its comparisons complete; this UI work makes no paid calls and preserves the configured model. This section supersedes older layout requirements below.
+
+| Requirement | Implemented | Verification | Deployed |
+| --- | --- | --- | --- |
+| Flush-right Map / Notebook / Tools / bug, restored graphic, even single-line controls, reclaimed canvas | Yes | Synthetic desktop/phone assets; aggregate pending | No |
+| Prominent Edit / aligned Done, italic selected label, secondary Delete, no empty Connected items | Yes | Editing and browser regressions in progress | No |
+| Remove all map/item/connection Check entry points; retain completion and data compatibility | Yes | No-check UI regression added | No |
+| Save note / truthful Saved and error states; autosave; immediate map-note access | Yes | Annotation persistence/error tests passed; new explicit-save test | No |
+| Previous notes; one visible Field Notes label; accessible required field | Yes | Field Notes tests passed | No |
+| Account/profile/email/usage, embedded authorized Instructor Console, theme icon, readable course rows | Yes | Account tests passed; visual verification pending | No |
+| Search/sort/filter projects; clickable names; notes/export/delete and private recovery | Yes | Recovery and Account tests passed; full runtime checks pending | No |
+| Straight cumulative graph, label/badge placement, manual positions and stage sequence | Yes | Synthetic graph/export checks passed; aggregate pending | No |
+| Preserve optional connection wording/drafts/direction, evidence, edit/cancel, keyboard guards | Yes | Existing regression suite required at exact head | No |
+| Compact synthesis/export/return, unfinished exports, failure/reload behavior | Yes | Synthetic export roundtrip passed; aggregate pending | No |
+
+Real tester-role grants, accounts, credentials, participant tests and paid inference are outside this UI release. Synthetic fixtures do not establish real student-role acceptance. Required release gate remains exact-head hosted CI plus visual checks, Dev readback and same-commit production readback. No current-source publication is claimed by this ledger until receipts are recorded.
 
 ## November 1, 2026 — compact editing and one cumulative four-scale map
 
-This dated request supersedes conflicting workflow descriptions in the older ledger below. Micro identifies local nodes; Meso connects them. Exo adds larger-scale nodes; Macro connects those nodes and traces connections back to local nodes. Earlier nodes, relationships, positions, evidence, notes and manual edits must remain visible, usable and available as context for the next exercise. Successful storage alone does not complete this work. The local implementation passed synthetic regression and desktop/phone browser checks. Checked items below record that local verification, not participant testing or publication. The subsequent request authorizes deployment to the existing development Worker only; production publication is not authorized.
+This dated request supersedes conflicting workflow descriptions in the older ledger below. Micro identifies local nodes; Meso connects them. Exo adds larger-scale nodes; Macro connects those nodes and traces connections back to local nodes. Earlier nodes, relationships, positions, evidence, notes and manual edits must remain visible, usable and available as context for the next exercise. Successful storage alone does not complete this work. The local implementation passed synthetic regression and desktop/phone browser checks. Checked items below record that local verification, not participant testing or publication. The subsequent development-deployment interpretation was corrected on November 2: the user meant Sandbox SSO, not Systems Mapping. That command did not authorize a Systems deployment. A later separate user instruction authorized the existing QA owner to verify Dev and then promote the same tested source; its released graph/UI revision is recorded below. The newer Account/project-list changes remain local.
 
 The coordinating task supplied the consolidated request bundle `libfile_6f943fd1f45881919d8a9bf347791e88` (`systems-mapping-TODO-and-images-2026-11-01.zip`) and standalone `libfile_d62ce5088b808191b63a91d8a3f8d264`. The parent verified its manifest and 17 original screenshots. This executor's Library catalog currently exposes upload tools but no supported materialization operation, so the originals have not been imported or viewed here. Parent-inspected descriptions informed implementation. Retain this gap until the package is materialized; do not invent download links.
 
@@ -28,21 +47,54 @@ The coordinating task supplied the consolidated request bundle `libfile_6f943fd1
 - [x] Resolve aggregate test failures without weakening preservation, geometry, access or privacy assertions; run both frontend builds and capture source-matched review screenshots.
 - [x] Render explicit legacy scope memberships as distinguishable, traceable links to exact endpoints; synchronize list/graph selection without converting scope records into relationship edges.
 - [x] Open a dedicated synthesis/export screen after a successful Macro completion save. Summarize actual cumulative graph and notes, support existing private/shared exports and return to the map, and verify failure, repeated completion and reload without an added model call.
-- [ ] Materialize and inspect the original reference package when a supported consumer-local route is available, then compare it with the revised UI. Attach final screenshots through confirmed Library receipts.
+- [ ] Materialize and inspect the original reference package when a supported consumer-local route is available, then compare it with the revised UI. Final revised screenshot uploads are recorded separately below.
 
 The updated bundle is version 1 with 45 unchecked request entries and 17 original images; its exact contents remain unimported here. This section groups the transcript requirements rather than claiming an exact copy of that checklist.
 
-### November 2 screenshot refinements and development release
+### November 2 — graph refinements, Account and saved projects
 
-- [x] Inspect the actual earlier Exo/Macro and export-control screenshots before revising them; preserve the earlier captures as before evidence.
-- [x] Use straight connections with deterministic placement that reduces crossings and card intersections. Keep arrow direction and dotted drafts distinct; retain intentional node placements.
-- [x] Remove obscuring fills and selection-driven fading of earlier work. Keep the full cumulative graph present when following a connection.
-- [x] Move Map / Notebook to the top left inside its container without automatic Notebook toggling on node selection.
-- [x] Replace mixed export button treatments with equal-sized controls and a clear Return to map action on desktop and phone. Remove the Project complete heading and redundant download/helper copy without altering user notes or errors.
-- [ ] Finish dense-map, drag/undo/reload and aggregate synthetic checks on the final revision; inspect fresh Exo/Macro desktop and phone pixels.
-- [ ] Publish a clean commit with verified zmuhls author and committer, and pass required hosted checks on that exact source.
-- [ ] Deploy only to the verified existing systems-mapping-dev Worker and verify the serving revision, assets, health and anonymous access denial. Keep authenticated and physical-device acceptance separate.
-- [ ] Upload the final screenshots through Library and record the confirmed file IDs.
+Status at this update: graph/UI candidate `35b890114ef26d805e116dcc7c7d864df2985513` is published on draft [PR #51](https://github.com/CUNY-AI-Lab/systems-mapping/pull/51). It remains unmerged. [Hosted run 41377271430](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41377271430) succeeded with 1,603 tests and 102 browser checks passed, four skips in each suite. The existing QA owner released this exact source to Dev and then production after verification. The prior run at `71d9a8a` passed its unit step and 101 browser cases, skipped four, and failed one genuine phone-camera case. The fix passed six repeated desktop/phone cases and 34 affected unit tests locally, with the camera assertion retained and strengthened. Independent public health reads at 02:44 UTC confirmed HTTP 200 and exact `35b890114ef26d805e116dcc7c7d864df2985513` on both origins. QA recorded Dev deployment `f9b12edd-7763-49b9-998e-8403a7acaee2` and production deployment `8ec6c24a-a142-4870-80dc-8a53c6ae9bde`, each with 100% traffic and 29 matching asset hashes. See `task-9/output/playwright/release-35b8901/ACCEPTANCE.md` for its receipts and limits.
+
+A checked entry below means the specifically stated local verification, never user acceptance, authenticated testing or deployment. In-progress entries remain unchecked. Original failed screenshots and CI receipts are retained in `output/readable-connections-2026-11-02/` as history. Later Account/list changes are local and uncommitted; they are not part of the published graph head or its CI result.
+
+- [x] **Locally tested:** inspect the earlier generated Exo/Macro and export screenshots; preserve them as before evidence rather than replace the record of rejected attempts.
+- [x] **Locally tested:** automatically arrange nodes for more readable connections with the existing graph stack. Use straight edges rather than winding curves, reduce crossings/card intersections, retain direction and dotted drafts, and preserve intentional placements through drag, undo, repeat arrangement and reload. A dense Fit-all view is an overview, not a claim that every small label is simultaneously readable.
+- [x] **Locally tested:** keep prior Micro/Meso nodes, labels and relationships fully visible, selectable and usable as connection endpoints in Exo/Macro. Remove obscuring fills and opacity veils; retain cumulative data, exact endpoints, notes and manual positions.
+- [x] **Locally tested:** inspect Exo-specific desktop and 390×844 phone renders, correct crowded placement and scale-label/camera bounds, then check Macro for regressions. Fresh synthetic Exo/Macro captures are recorded below; physical-device acceptance remains open.
+- [ ] **Superseded by the latest user request; integration pending:** place Map | Notebook | Tools together at the far right of the container with matching sizing and spacing. Align sidebar header/controls beneath that row. Earlier top-left source/screenshots remain historical; do not reintroduce that layout. Ordinary node clicks still preserve Notebook visibility, and explicit Edit remains available.
+- [x] **Locally tested:** use equal-height/aligned export controls and a clear Return to map action on desktop and phone. Remove the literal Project complete heading and redundant generated-sounding helper copy. Keep actual user notes, export behavior and errors intact.
+- [x] **Locally tested:** preserve a user-chosen fit/pan/zoom when opening the mobile editor or editing text. Fix the real hosted failure without relaxing its assertion.
+- [x] **Published source, not deployed:** publish the graph/UI candidate with verified zmuhls author AND committer and preserve PR #51. No self approval or main merge.
+- [x] **Hosted checks passed:** exact graph head `35b8901` passed the required aggregate run; keep its receipt separate from newer uncommitted source.
+- [x] **Uploaded local evidence:** save six source-rendered synthetic Exo/Macro/export screenshots through Library with confirmed IDs. These predate the camera-only follow-up and are not screenshots of a deployed release.
+- [ ] **Implemented locally; verification in progress:** move Account from the large inline disclosure to the top-right controls and a compact dashboard. Show only truthful existing profile/usage information, CAIL resources and actually available class materials; unavailable data must remain explicitly unavailable. Preserve map/editor state while visiting Account.
+- [ ] **Implemented locally; verification in progress:** embed Instructor Console as the second Account tab only for a server-verified instructor, including a verified guest instructor in the teaching demo. Preserve tab state and draft guidance; do not request rosters or instructor data merely by opening student Account.
+- [ ] **Implemented locally; verification in progress:** replace the visible Dark/Light word with an accessible, keyboard-operable theme icon; retain persisted theme and an accurate accessible name.
+- [ ] **Design decision blocked pending specific access approval:** define a reusable least-privilege tester status separately from instructor authority. The existing Laurie/Luke setup grants guest-instructor capabilities only in the teaching demo; it is not a generic tester entitlement. Do not create fellow accounts, invitations, grants, credentials or new roles under this UI request.
+- [ ] **Implemented locally; verification in progress:** make saved projects compact and organizable, with clickable real project names, useful search/filter/sort, and concise truthful stage/progress. Preserve names/content and avoid tall separator-heavy rows.
+- [ ] **Implemented locally; verification in progress:** add recoverable or confirmed Delete and Export actions to saved projects. Do not test on real projects. Preserve account/course ownership, optimistic revisions and private recovery when deleting.
+- [ ] **Implemented locally; verification in progress:** make unfinished memo/notes/reflections exportable before map generation and throughout all four levels. Verify unfinished and generated-project exports preserve cumulative work; shared exports must retain their redactions.
+- [ ] **Not run:** capture and inspect revised Account and project-list desktop/phone screens with synthetic student, instructor and guest fixtures; test role denials, missing profile/quota/materials, retained navigation, draft preservation and error/recovery paths.
+- [ ] **Not run:** real signed-in and physical-device acceptance, with separately authorized synthetic/demo access only. No participant records or paid model calls used in this local revision.
+
+**Publication coordination:** the Sandbox clarification remains part of history. The user's later explicit Systems Dev instruction and Dev → verification → production instruction were handled by the existing QA owner. This writer did not deploy concurrently. Only exact graph/UI source `35b8901` is released; newer Account, profile/theme, saved-project, notes/export/recovery and badge-collision changes are uncommitted and not released. Do not mix them into the earlier checked artifact. Further publication must be coordinated with the same release owner and validated on the new exact source.
+
+- [x] **Released by QA:** verify Dev, then promote the same `35b8901` graph/UI source to production. Preserve the health, 29 asset hashes, access denial and Worker traffic receipts. Real signed-in and physical-device acceptance remain not run.
+- [ ] **QA patch prepared; integration pending:** remove Check map entry points without removing normal level completion, editing or exports. Review and incorporate the existing QA owner's patch; do not create another overlapping writer.
+- [ ] **QA patch prepared; integration pending:** improve selected-item Edit/Delete hierarchy and course-row presentation while preserving actions, permissions, saved data and the Account/project-list work.
+- [ ] **Implemented locally; verification in progress:** fix QA's Macro screenshot collision between the “supports” relationship label and the Micro badge. Reserve actual relationship-label space when placing badges; keep straight connections and saved node positions unchanged. Exact before image: `/Users/zacharymuhlbauer/Documents/Codex/2026-10-25/task-9/output/playwright/release-35b8901/production-synthetic/1440-macrosphere.png` (locally viewed).
+
+Confirmed revised local screenshots (actual synthetic app captures): Exo desktop `libfile_0adff23d92608191a651c50dcae7d4ab`; Exo phone `libfile_7e93be16f1588191a3b3114723ef40c5`; Macro desktop `libfile_f5a9d371d6fc8191a64e1275a16ce078`; Macro phone `libfile_fcef58ef4d3c8191b2e8f18db44486b3`; export/return desktop `libfile_133770dd73a4819186272080215070b6`; export/return phone `libfile_d5129ad8d7988191bc2bcab9f7cac2b9`. Local files and provenance are in `output/readable-connections-2026-11-02/final-screenshots/`, with confirmed transfer receipt `final-library-files.json`. The earlier export/return screenshot the user rejected is `libfile_a3fda9077d6c8191a1c874cb0f2cd47c`; keep it as historical before evidence.
+
+New source-image references (parent inspected; this executor has no supported materialization tool and has not viewed these originals):
+
+| Reference | Request | Exact Library file |
+| --- | --- | --- |
+| Screenshot 2026-11-01 at 9.14.31 PM.png | move inline Account/usage/sign-out to dashboard | `libfile_26d011ea8390819181d32333779048bf` |
+| image(9).png | theme icon and embedded Instructor Console | `libfile_617964627a248191a0112b762ae3e23d` |
+| Screenshot 2026-11-01 at 9.18.01 PM.png | compact clickable/sortable projects with Delete/Export/progress | `libfile_3526ad72721481918f29c7bcd9d1e0ee` |
+
+The IDs above and the original reference table below identify the exact supplied files; no guessed public or download URLs are substituted. Original-image/TODO ZIP materialization remains blocked by the current tool catalog, not by an assumed lack of user permission. The repository ledger itself is updated here, independently of the parent Space/ZIP artifacts.
 
 Original screenshot references (all parent-inspected; not locally materialized):
 

@@ -92,7 +92,7 @@ test('Project, Map tools, and work level share one accessible row with more room
   for (const size of sizes(testInfo)) {
     await page.setViewportSize(size);
     await openMeso(page);
-    const controls = [page.locator('.project-menu > summary'), page.locator('.notebook-map-tools > summary'), page.getByRole('combobox', { name: 'Work level' })];
+    const controls = [page.locator('.project-menu > summary'), page.getByRole('combobox', { name: 'Work level' }), page.getByRole('button', { name: 'Map', exact: true }), page.getByRole('button', { name: 'Notebook', exact: true }), page.locator('.notebook-map-tools > summary')];
     const bounds = await Promise.all(controls.map(control => control.boundingBox()));
     for (const [index, box] of bounds.entries()) {
       await expect(controls[index]).toBeInViewport({ ratio: 1 });

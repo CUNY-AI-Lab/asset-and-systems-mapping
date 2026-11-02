@@ -55,7 +55,7 @@ test('selection preserves Notebook choice and the compact editor preserves saved
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
   await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
   await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');
-  await expect(notebook.getByRole('heading', { name: 'Field Notes (Required)' })).toBeVisible();
+  await expect(notebook.getByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
   const notes = notebook.getByRole('textbox', { name: 'Field notes (required)', exact: true });
   await notes.fill('Synthetic field note: ask who coordinates these services.'); await notes.blur();
   await expect(page.getByRole('button', { name: 'Continue to Meso', exact: true })).toBeVisible();

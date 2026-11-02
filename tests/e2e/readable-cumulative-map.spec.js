@@ -22,7 +22,7 @@ test('dense cumulative arrangement stays straight and visible, and intentional p
   await expect(nodes).toHaveCount(16);await expect(edges).toHaveCount(project.graph.edges.length);
   const nav=page.getByRole('navigation',{name:'Workspace',exact:true}),container=page.locator('.map-stage');
   const navBox=await nav.boundingBox(),containerBox=await container.boundingBox();
-  expect(navBox.x-containerBox.x).toBeLessThan(24);expect(navBox.y-containerBox.y).toBeLessThan(24);
+  expect(Math.abs(navBox.x + navBox.width - (containerBox.x + containerBox.width))).toBeLessThan(24);expect(navBox.y).toBeLessThan(64);
   for(const layer of ['exosphere','macrosphere']) {
     await page.getByRole('combobox',{name:'Work level'}).selectOption(layer);await showMap(page);
     await mapCommand(page,'Fit map');
@@ -31,9 +31,11 @@ test('dense cumulative arrangement stays straight and visible, and intentional p
       const cards=[...svg.querySelectorAll('.graph-node .node-card')].map(card=>card.getBoundingClientRect());
       let overlaps=0;
       for(let i=0;i<cards.length;i++)for(let j=i+1;j<cards.length;j++)if(cards[i].left<cards[j].right&&cards[i].right>cards[j].left&&cards[i].top<cards[j].bottom&&cards[i].bottom>cards[j].top)overlaps++;
-      return {overlaps,opacities:[...svg.querySelectorAll('.graph-node,.graph-edge,.graph-edge-label')].map(node=>getComputedStyle(node).opacity),fills:[...svg.querySelectorAll('.ecology-layer>ellipse')].map(node=>getComputedStyle(node).fill),paths:[...svg.querySelectorAll('.edge-line')].map(node=>node.getAttribute('d'))};
+      const badges=[...svg.querySelectorAll('.ecology-layer__label rect')].map(el=>el.getBoundingClientRect()),labels=[...svg.querySelectorAll('.edge-label-bg')].map(el=>el.getBoundingClientRect());
+      const badgeOverlaps=badges.flatMap(a=>labels.filter(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)).length;
+      return {overlaps,badgeOverlaps,opacities:[...svg.querySelectorAll('.graph-node,.graph-edge,.graph-edge-label')].map(node=>getComputedStyle(node).opacity),fills:[...svg.querySelectorAll('.ecology-layer>ellipse')].map(node=>getComputedStyle(node).fill),paths:[...svg.querySelectorAll('.edge-line')].map(node=>node.getAttribute('d'))};
     });
-    expect(quality.overlaps).toBe(0);expect(new Set(quality.opacities)).toEqual(new Set(['1']));expect(new Set(quality.fills)).toEqual(new Set(['none']));
+    expect(quality.overlaps).toBe(0);expect(quality.badgeOverlaps).toBe(0);expect(new Set(quality.opacities)).toEqual(new Set(['1']));expect(new Set(quality.fills)).toEqual(new Set(['none']));
     for(const path of quality.paths)expect(path).toMatch(/^M -?[\d.]+ -?[\d.]+ L -?[\d.]+ -?[\d.]+$/);
     expect((await saved(page)).graph).toEqual(before);
     await captureSourceRenderedScreenshot(page,testInfo,`Dense ${layer==='exosphere'?'Exo':'Macro'} full map with straight connections`);

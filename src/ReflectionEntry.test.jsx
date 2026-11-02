@@ -9,6 +9,23 @@ import { LEGACY_FIELD_NOTES_QUESTIONS, PREVIOUS_FIELD_NOTES_QUESTIONS } from '..
 afterEach(cleanup);
 
 describe('Field Notes', () => {
+  it('shows Saved only after a successful explicit persistence result and retains errors', () => {
+    const project = createDefaultProject();
+    const save = vi.fn(() => false);
+    const { rerender } = render(<ReflectionEntry project={project} update={vi.fn()} onSave={save} saveState={{status:'saved',savedRevision:1}} />);
+    fireEvent.change(screen.getByRole('textbox'), {target:{value:'Synthetic note'}});
+    fireEvent.click(screen.getByRole('button',{name:'Save note'}));
+    expect(save).toHaveBeenCalledOnce();
+    expect(screen.getByRole('status')).not.toHaveTextContent(/^Saved$/);
+    rerender(<ReflectionEntry project={project} update={vi.fn()} onSave={save} saveState={{status:'error',message:'Storage unavailable',savedRevision:1}} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Storage unavailable');
+    save.mockReturnValue(true);
+    rerender(<ReflectionEntry project={project} update={vi.fn()} onSave={save} saveState={{status:'saved',savedRevision:1}} />);
+    fireEvent.click(screen.getByRole('button',{name:'Save note'}));
+    expect(screen.getByRole('status')).toHaveTextContent(/^Saved$/);
+    expect(screen.getByRole('button',{name:'Save note'})).toBeDisabled();
+  });
+
   it('shows the published scale question and preserves readable notes from other scales', () => {
     const project = createDefaultProject();
     project.activeScale = 'meso';
@@ -18,7 +35,7 @@ describe('Field Notes', () => {
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getByText('Whose account of the home–school linkage is missing?')).toBeVisible();
     expect(document.getElementById('field-notes-question').textContent).toBe('Whose account of the home–school linkage is missing?');
-    fireEvent.click(screen.getByText('Notes from other scales'));
+    fireEvent.click(screen.getByText('Previous notes'));
     expect(screen.getByRole('heading', { name: 'Micro-level' })).toBeVisible();
     expect(screen.getByText(/Ask the home attendant/)).toBeVisible();
     expect(update).not.toHaveBeenCalled();
@@ -83,7 +100,7 @@ describe('Field Notes', () => {
     render(<ReflectionEntry project={project} update={update} />);
     expect(screen.getByRole('textbox')).toHaveValue(project.reflection);
     expect(screen.getByText(/Macro-level memo review receives an opening excerpt/)).toBeVisible();
-    fireEvent.click(screen.getByText('Notes from other scales'));
+    fireEvent.click(screen.getByText('Previous notes'));
     expect(screen.getByText(project.levelProgress.micro.reflection)).toBeVisible();
     expect(update).not.toHaveBeenCalled();
   });

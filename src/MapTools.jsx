@@ -28,7 +28,7 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
         menu.current.querySelector('summary')?.focus();
       }
     }}>
-    <summary>Map tools</summary>
+    <summary>Tools</summary>
     <div id={panelId} className="notebook-tools-panel" style={{ '--map-tools-width': `${size.width}px` }}>
       <MapToolsResizeHandle panelId={panelId} {...size} />
       <div className="notebook-tools-body">
