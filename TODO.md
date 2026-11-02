@@ -7,8 +7,20 @@ Updated: 2026-11-02
 Place the complete evidence passage directly below the selected item name in a spaced blockquote. Put the interpretation question below its label and above its text field. Keep Delete last, immediately after Position on map for nodes. Apply the evidence and interpretation placement consistently to connection editing.
 
 - [x] Reorder the editor and add readable quotation spacing without changing evidence, annotations or map controls.
-- [ ] Verify the rendered desktop and phone editors, existing editing/persistence/accessibility checks, and exact-source hosted checks.
-- [ ] Deploy the checked refinement to Dev and production and capture fresh privacy-safe screenshots.
+- [x] Verify the rendered desktop and phone editors, existing editing/persistence/accessibility checks, and exact-source hosted checks.
+- [x] Deploy the checked refinement to Dev and production and capture fresh privacy-safe screenshots. See the verified editor refinement receipt below.
+
+## Verified selected-item editor refinement — November 2, 2026
+
+Application source **`033a17e63abacc9acaacebdaab27086d44912f85`** is deployed to Dev and production. [Exact-source hosted checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41406119097) passed 1,657 tests and 106 browser checks, with four conditional skips in each suite. The checked package has the same source tree and all 29 frontend files match byte for byte. The operator-built Worker matches CI after normalizing dependency source-path labels; this is the existing authorized operator route, not a main-branch release claim.
+
+- The complete evidence passage appears directly beneath the selected name as a padded blockquote. The interpretation question sits between its label and text field. Node editors finish with Position on map and then Delete; connection editors also retain Delete last. Evidence, annotation content, navigation, map geometry, draft handling and permissions are preserved.
+- Local App/accessibility checks passed 280 tests; 17 affected browser checks passed (one duplicate phone audit skipped), followed by four final typography/editing cases. Synthetic rendered checks passed at 1440, 1024, 390 and 320 pixels. A longer fictional source passage also wrapped in full on desktop and narrow phone without clipping or overflow.
+- **Dev:** deployment `3e0c0974-bbd0-4caa-92a3-09ff192c71ce`; version `f88cb14f-f68a-4125-8941-b679c624310f`; 100% traffic.
+- **Production:** deployment `a8ba02fa-b5a3-4b8c-a3d8-4bb266b8121a`; version `ba30cf11-b4d6-4395-81da-fedeb269c050`; 100% traffic.
+- Both targets passed release/readiness, all 29 served-file hashes, anonymous project denial (401), and GPT-OSS 120B binding readback. Served-asset synthetic browser checks passed the requested order, spacing, note saving, map editing, keyboard controls, downloads and responsive layouts on all four capture sizes.
+- Screenshots and receipts: `/Users/milwright/Documents/Codex/2026-11-02/systems-mapping-editor-order/`. APIs and authentication were intercepted with fictional examples; there were no live model calls, student documents, production mutations or permission changes. Real CUNY-session and live model-quality acceptance remain separate.
+- This receipt commit is documentation only. The served application source remains `033a17e63abacc9acaacebdaab27086d44912f85`.
 
 ## Previous request — November 2: integrate controls into the panel
 
@@ -23,14 +35,14 @@ The user's new screenshots and direct clarification supersede the separate full-
 
 ## Current reconciled status — November 2, 2026
 
-This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The current independently verified deployed application is **`3601a17bf4950af64c92136b2ff8b935e2296668` on Dev and production**; this documentation update does not deploy an application.
+This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The current independently verified deployed application is **`033a17e63abacc9acaacebdaab27086d44912f85` on Dev and production**; this documentation update does not deploy an application.
 
 ### Current UI requirements (12 groups)
 
 | Requirement group | Implementation | Verification | Deployment |
 | --- | --- | --- | --- |
 | Latest panel navigation: Map / Notebook / Tools together below the main header, integrated into the Notebook's top edge; Micro/work-level beside Tools, bug icon in the main header; reclaim the blank toolbar strip | Complete | Affected, aggregate and served synthetic checks passed across desktop/tablet/narrow phone, resized panel, full screen and open/close transitions | Dev + production |
-| Prominent Edit and aligned Done, italic selected name, secondary Delete, hide empty Connected items | Complete | Synthetic source and served checks passed | Dev + production |
+| Prominent Edit and aligned Done, italic selected name followed by a spaced full evidence passage, interpretation question above its field, Position on map then secondary Delete last, hide empty Connected items | Complete | Synthetic source and served checks passed | Dev + production |
 | Remove Check map / item / connection actions, preserve Complete level and compatible saved data | Complete | Exact-source checks passed | Dev + production |
 | Explicit Save note / truthful Saved and failures, autosave, immediate access, save/reload preservation; Previous notes and one Field Notes label | Complete | Exact-source and served synthetic note checks passed | Dev + production |
 | Compact Account/profile/truthful usage, server-verified Instructor Console, readable course rows, theme icons and retained map/tab state | Complete | Synthetic role and served Account checks passed; real-account acceptance remains open | Dev + production |
@@ -60,7 +72,7 @@ This is the current status index. Dated sections below retain their original evi
 
 ### Verified release evidence and provenance
 
-The latest exact-source checks, Dev/production IDs, served-file and model-binding readbacks, assessment and screenshots are recorded in the panel integration release immediately below. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
+The latest exact-source checks, Dev/production IDs, served-file and model-binding readbacks and screenshots are recorded in the editor refinement receipt above. The panel integration receipt below remains evidence for the preceding source. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
 
 ## Verified panel integration and downloads release — November 2, 2026
 
