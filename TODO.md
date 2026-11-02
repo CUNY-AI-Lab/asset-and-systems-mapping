@@ -2,9 +2,53 @@
 
 Updated: 2026-11-02
 
-## Latest navigation correction — November 1, 2026, America/New_York
+## Current reconciled status — November 2, 2026
 
-The user's direct clarification supersedes the earlier header consolidation: keep **Map | Notebook | Tools** together in one visible, flush-right row **below the main header**. Move Tools down after Notebook, label it Tools, and keep matching control sizes and spacing. Do not move this row into the main header. Project, Account and work-level controls retain their header placement; the bug-report dock follows Tools.
+This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The last independently verified deployed application remains **`11d04916a67257dd52f3b3334e8ac7d6b3f4cd7e` on Dev and production**; this documentation update does not deploy an application.
+
+### Current UI requirements (12 groups)
+
+| Requirement group | Implementation | Verification | Deployment |
+| --- | --- | --- | --- |
+| Latest panel navigation: Map / Notebook / Tools together below the main header, integrated into the Notebook's top edge; Micro/work-level beside Tools, bug icon in the main header; reclaim the blank toolbar strip | In progress in the debugging owner's isolated checkout | Pending affected and aggregate checks, desktop/tablet/narrow phone, resized panel, full-screen and open/close transitions | Pending; `11d0491` still has the separate below-header row and earlier level/bug placement |
+| Prominent Edit and aligned Done, italic selected name, secondary Delete, hide empty Connected items | Complete | Synthetic source and served checks passed | Dev + production |
+| Remove Check map / item / connection actions, preserve Complete level and compatible saved data | Complete | Exact-source checks passed | Dev + production |
+| Explicit Save note / truthful Saved and failures, autosave, immediate access, save/reload preservation; Previous notes and one Field Notes label | Complete | Exact-source and served synthetic note checks passed | Dev + production |
+| Compact Account/profile/truthful usage, server-verified Instructor Console, readable course rows, theme icons and retained map/tab state | Complete | Synthetic role and served Account checks passed; real-account acceptance remains open | Dev + production |
+| Compact searchable/sortable project list, clickable names, unfinished exports, confirmed deletion and private recovery | Complete | Synthetic preservation, recovery and export checks passed | Dev + production |
+| Straight cumulative graph, Exo/Macro visibility, badge spacing, saved positions and four-scale sequence | Complete | Exact-source and served cumulative-graph checks passed | Dev + production |
+| Existing node/relationship editing, optional wording, drafts, direction, keyboard guards; narrow-phone Save/Cancel visible without moving map or focus | Complete | Served editing checks at 320/430 px and desktop passed | Dev + production |
+| Compact synthesis/export/return, safe failure/reload, no Project complete claim | Complete | Exact-source and served synthetic checks passed | Dev + production |
+| Feedback-only recovery preserves graph/decisions and conservative readiness; feedback styling, source quote and keyboard retry | Complete | Exact-source and served light/dark desktop/phone checks passed | Dev + production |
+| Memo submission wording and retained course upload / pedagogical sequence | Complete | Included in checked release source | Dev + production |
+| GPT-OSS 120B configuration preserved across coordinated owners | Complete | Both deployed version bindings independently read back | Dev + production |
+
+**Tally: 11 of these 12 current requirement groups are implemented, verified within the stated scope and deployed; 1 newer navigation group is in progress and not released.** This denominator excludes historical checkboxes, documentation chores and the acceptance/access limitations below. It is not a claim of real-student acceptance or of completed responsive testing for the pending panel layout.
+
+### Newer work and owner reconciliation
+
+- Debugging task `01a19a4a-0fbb-7552-9fac-61d890695b59` has newer direct requests: swap Micro and the bug button, collapse controls into the panel to reclaim canvas whitespace, and thoroughly verify responsive sizing. Its current turn shows local source edits and a successful frontend build, but no completed aggregate gate or deployment receipt for this change. Keep that work pending; do not overwrite its checkout or deploy a competing candidate.
+- The previous **below-header Map | Notebook | Tools** release remains valid history. The latest request keeps these controls out of the main header but replaces the separate blank/full-width strip with panel-top integration. Only the newer placement requirement supersedes the older row/bug/level arrangement; preserve narrow-phone Save/Cancel, editing, state and full-screen behavior.
+- Account owner `01a1760c-b3ad-7697-8d53-8935743b00c1` completed its handoff; its tested patch was integrated in `e772836` and carried through `3622948` and `11d0491`. Older “local/uncommitted” Account/project statuses below are historical, not current blockers.
+- Model owner `01a19a2b-f3c4-78b1-a49a-ee5806e556de` completed the requested GPT-OSS 120B switch and comparison work. No later model-change instruction was found in its latest turn. Preserve `gpt-oss-120b`; comparison results do not authorize switching to Safeguard or new paid calls.
+
+### Remaining acceptance and access limits
+
+- Real authenticated student-session and physical-device acceptance remains **not run**. API-intercepted synthetic roles and viewport checks do not establish actual student permission/session behavior.
+- Generic tester-role grants, accounts or credentials remain **not created** and require separate specific authorization. The existing demo guest-instructor arrangement is not general tester authority.
+- Original reference-package materialization remains an unresolved historical tool-capability gap. Preserve its supplied IDs and confirmed screenshot uploads; do not claim unseen originals were inspected.
+- Historical retained teacher-review compatibility journeys have no fresh acceptance receipt here. Earlier provider-key/rotation items remain historical owner follow-ups, not permission to inspect credentials or a blocker invented for the current Cloudflare UI release.
+
+### Verified release evidence and provenance
+
+The complete Dev/production IDs and CI receipt are recorded once in the release section immediately below. Independent acceptance evidence is also retained at `/Users/zacharymuhlbauer/Documents/Codex/2026-10-25/task-9/output/playwright/release-11d0491/ACCEPTANCE.md`, with asset, deployment and version readbacks and synthetic captures. All 29 served frontend files matched the checked CI package; its source tree matched `11d0491`. A first local rebuild's differing chunk hashes were resolved using that authoritative package, not treated as a match. Both version bindings preserved GPT-OSS 120B.
+
+No new application deployment, model call, credential operation, participant-data access or live-role grant accompanies this documentation reconciliation.
+
+## Verified navigation release — November 1, 2026, America/New_York
+
+
+At this release, the user's clarification superseded the earlier header consolidation (the newer panel integration above is still pending): keep **Map | Notebook | Tools** together in one visible, flush-right row **below the main header**. Move Tools down after Notebook, label it Tools, and keep matching control sizes and spacing. Do not move this row into the main header. Project, Account and work-level controls retain their header placement; the bug-report dock follows Tools.
 
 - [x] Implement the separate workspace row while preserving Map/Notebook state, Tools actions and full-screen exit.
 - [x] Verify the lower row, equal control dimensions, Tools menu and Map/Notebook interactions at desktop and phone sizes with synthetic examples. The final affected browser run passed 17 checks (3 desktop skips for phone-only cases); App, map accessibility and Tools resizing passed 285 unit checks. Both builds, Cloudflare typecheck and Dev/production dry runs passed.
@@ -57,7 +101,7 @@ The user's latest direct instruction was **both simultaneously**, superseding th
 
 Detailed receipts and synthetic captures: `/Users/zacharymuhlbauer/Documents/Codex/2026-10-25/task-9/output/playwright/release-3622948/`. The documentation commit recording these receipts is not a different application deployment.
 
-## Historical request ledger (superseded by the verified status above)
+## Historical request ledger (dated snapshots; use the current status index above)
 
 ## November 1, 2026 — compact editing and one cumulative four-scale map
 
@@ -267,7 +311,7 @@ This redesign supersedes the earlier "student-safe redirects" contract. Items in
 
 This ledger separates implemented behavior from rendered-browser, GitHub, Railway, and live-provider proof. A checked item confirms the implementation or the specifically labeled historical receipt; it does not close a later external gate. A code reference or earlier screenshot alone is not enough to verify the current candidate.
 
-## Implemented contract
+## Historical implemented contract (superseded where later requests conflict)
 
 - [x] Use five direct stages throughout: add your memo, review your memo, choose map elements, build map, and revise and export.
   - Evidence: current `src/App.jsx`, canonical-stage UI regression, and server prototype-stage contract.
@@ -330,7 +374,7 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
 - [x] Preserve the earlier production dependency audit and source/application-bundle scans.
   - Evidence: the production audit reported no known vulnerabilities; credential scans were clean; the application bundle excludes the local class code, source maps, dangerous HTML, teacher identity, review capabilities, and server prompt content. Numeric `101` values in the library bundle are unrelated glyph-table data.
 
-## Historical follow-up carried into the current release gates
+## Historical follow-up (not a duplicate current release checklist)
 
 - [ ] Exercise **Add feedback** and **Recommend another pass** in separate current browser fixtures. These actions retain the compatible `approve` and `reject` API IDs; their automated branches pass, but the five-view package is not a complete teacher-review journey.
 - [ ] Verify current reload restoration and JSON export/import restoration in the rendered application.
@@ -351,7 +395,7 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
   - Evidence: this receipt changes no runtime behavior.
 - [ ] If the retained review API is exercised, run that compatibility journey separately against the candidate deployment. Earlier deployment, health, headers, entry behavior, and disposable review evidence remain historical only.
 
-## Required Ollama Cloud proof
+## Historical Ollama Cloud proof and owner follow-ups
 
 - [ ] Revoke the credential previously exposed in chat and create a fresh key.
 - [ ] Configure only the rotated key as server-side `OLLAMA_API_KEY`; leave it out of source, browser storage, build output, logs, and exports.
@@ -359,7 +403,7 @@ This ledger separates implemented behavior from rendered-browser, GitHub, Railwa
 - [ ] Repeat fabricated-memo Ollama Cloud acceptance for Micro relationships and Meso scoped linkages after the corrected deployment reaches terminal success.
 - [ ] Confirm through the credential owner that the enabled Railway key is the rotated replacement. Live provider requests succeeded, but this verification did not inspect or expose the key value or its rotation history.
 
-## Release boundary
+## Historical release boundary
 
 PR #9, merge commit `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`, and Railway deployment `51a03b7e-6752-4681-8714-5bbf6106d843` are historical ecological-release receipts for the superseded Micro/Meso contract. PR #5, commit `abddbd0a2640aa0e4db0dcf0a1c47d65e9983597`, Railway deployment `39d38543-20ca-4626-95e6-237ef9213881`, and dirty-working-tree deployment `3ea599f4-7fb5-4dd3-998d-c55134a69f15` remain historical receipts for the preceding Macro/Integration implementation. No GitHub, Railway, source-built browser, or live-provider receipt establishes the 2026-08-24 correction yet.
 
