@@ -842,7 +842,7 @@ function boundedEvidenceText(value, maximum) {
     && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value) ? value : null;
 }
 
-function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false } = {}) {
+function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false } = {}) {
   const memoSource = analyzeMemoSource(sourceMaterial);
   const checkEvidence = (text, path) => {
     if (bibliographyOnlyEvidence(text, memoSource)) throw new MemoReviewSemanticError(`${path} cites only a bibliography entry; use a narrative passage about the mapped situation.`, { grounding: true });
@@ -879,6 +879,11 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   }
   if (isNodeReviewScale(activeScale) && value.connections.length) {
     throw new MemoReviewSemanticError(`${activeScale} review must return an empty connections array.`);
+  }
+  // A feedback-only review is built by the server, never supplied by the
+  // provider. It cannot contain map items or an example.
+  if (guidanceOnly && (value.nodes.length || value.connections.length || value.example !== null)) {
+    throw new MemoReviewSemanticError('A feedback-only review cannot contain map suggestions.');
   }
   // Generated prose may use typographic spaces around arrows or punctuation.
   // Normalize horizontal spacing within the raw limit; quotations and map
@@ -1044,7 +1049,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       ...(connection.relationshipProcess ? { relationshipProcess: { ...connection.relationshipProcess } } : {}),
     });
   });
-  if (activeScale === 'meso') {
+  if (activeScale === 'meso' && !guidanceOnly) {
     const missingPairs = explicitMissingMesoPairs(prepareProviderMemo(sourceMaterial).sourceText, carriedNodes);
     // Do not demand more relationships than the response contract can hold.
     // Existing missing pairs already represent the student's accepted work.
@@ -1122,6 +1127,30 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     if (item.evidenceExcerpt && match && match !== 'exact') item.evidenceMatch = match;
   });
   return normalized;
+}
+
+// A failed map item must not hide otherwise valid feedback. Only use a
+// completed response that reached item-level validation; wrapper, guidance,
+// readiness and scale-level shape checks have already run. Revalidate the
+// guidance against the same source while excluding all provider map items and
+// provider readiness. Do not rescue invalid or empty guidance.
+function feedbackOnlyMemoReview(value, failure, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false } = {}) {
+  if (!(failure instanceof MemoReviewSemanticError)
+    || !/^(?:nodes|connections)\[\d+\](?:\.|\s)/u.test(failure.message)
+    || !isPlainObject(value) || !Array.isArray(value.guidance) || value.guidance.length === 0) return null;
+  const partial = {
+    guidance: value.guidance,
+    nodes: [],
+    connections: [],
+    example: null,
+    readiness: { ready: false, note: 'Some map suggestions could not be checked. Review the feedback and add supported elements yourself.' },
+  };
+  try {
+    return validateGeneratedMemoReviewAtomically(partial, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence, guidanceOnly: true });
+  } catch (error) {
+    if (error instanceof MemoReviewSemanticError) return null;
+    throw error;
+  }
 }
 
 function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNodes = null, carriedConnections = null) {
@@ -3211,86 +3240,100 @@ export function createSystemsMappingApp(options = {}) {
           };
           let generated = await generate(providerInput);
           let review;
+          let completedReview = generated.suggestion;
+          let strictFallbackEvidence = false;
+          let feedbackOnly = false;
           try {
-            review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
-          } catch (error) {
-            if (!(error instanceof MemoReviewSemanticError)) throw error;
-            options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message });
-            generationSignal.throwIfAborted();
-            correctiveRetries = 1;
-            const retryContext = memoContractRepairContext(readingContext,
-              createMemoContractRepair(generated.suggestion, error.message, input.activeScale), OLLAMA_CLOUD_LIMITS.memoContextBytes);
-            const endpointInstruction = input.activeScale === 'meso'
-              ? 'For this Meso replacement, every connection source and target must be a different exact ID from carriedNodes at Micro. Labels cannot replace IDs. Return no new nodes; explain missing endpoints in guidance.'
-              : input.activeScale === 'exosphere'
-                ? 'For this Exosphere replacement, use exact carried node IDs for existing endpoints and exact proposed node labels for newly proposed endpoints. Connect an outside decision setting to another outside decision setting or a carried Micro setting.'
-                : `For this ${input.activeScale === 'micro' ? 'Micro' : 'Macrosphere'} replacement, connections must be an empty array.`;
-            generated = await generate({
-              ...providerInput,
-              systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_OPTIONAL_QUOTE_REPAIR_INSTRUCTION}`,
-              ...(retryContext ? { memoContext: retryContext } : {}),
-            });
             try {
               review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
-            } catch (repairError) {
-              // A distinct final strategy for completed source-grounding failures:
-              // supply bounded narrative passages and require quoted evidence.
-              // Transport errors, quota denials and generic schema failures never
-              // enter this path; each provider call receives normal admission.
-              if (repairError instanceof MemoReviewSemanticError) options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message });
-              if (!(repairError instanceof MemoReviewSemanticError) || !repairError.grounding) throw repairError;
-              // Meso has no proposed nodes to rank paragraphs by. Preserve
-              // evidence for mapped pairs across the whole table, including
-              // missing pairs near its end, before taking general excerpts.
-              const pairEvidence = readingContext?.mesoEvidence || [];
-              const preferredPassages = [
-                ...pairEvidence.map(pair => pair.passages[2] || pair.passages[0]),
-                ...pairEvidence.map(pair => pair.passages[1]),
-              ].filter(Boolean).map(text => text.slice(0, 480));
-              const passages = memoRepairPassages(memoSource, generated.suggestion, preferredPassages);
-              if (!passages.length) throw repairError;
+            } catch (error) {
+              if (!(error instanceof MemoReviewSemanticError)) throw error;
+              options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message });
               generationSignal.throwIfAborted();
-              correctiveRetries = 2;
-              evidenceRepairAttempts = 1;
-              let quotationOnly = /^guidance\[\d+\]\.evidenceExcerpt\b/u.test(repairError.message);
-              if (quotationOnly) {
-                // This strategy changes quotations only. Verify every other
-                // field first, so it cannot conceal a separate map failure.
-                try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial); }
-                catch { quotationOnly = false; }
-              }
-              if (quotationOnly) {
-                const rejectedReview = generated.suggestion;
-                const quoteSelection = { points: rejectedReview.guidance.map(item => item.point), passages };
-                const quoteContext = { quoteSelection };
-                while (Buffer.byteLength(JSON.stringify(quoteContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+              correctiveRetries = 1;
+              const retryContext = memoContractRepairContext(readingContext,
+                createMemoContractRepair(generated.suggestion, error.message, input.activeScale), OLLAMA_CLOUD_LIMITS.memoContextBytes);
+              const endpointInstruction = input.activeScale === 'meso'
+                ? 'For this Meso replacement, every connection source and target must be a different exact ID from carriedNodes at Micro. Labels cannot replace IDs. Return no new nodes; explain missing endpoints in guidance.'
+                : input.activeScale === 'exosphere'
+                  ? 'For this Exosphere replacement, use exact carried node IDs for existing endpoints and exact proposed node labels for newly proposed endpoints. Connect an outside decision setting to another outside decision setting or a carried Micro setting.'
+                  : `For this ${input.activeScale === 'micro' ? 'Micro' : 'Macrosphere'} replacement, connections must be an empty array.`;
+              generated = await generate({
+                ...providerInput,
+                systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_OPTIONAL_QUOTE_REPAIR_INSTRUCTION}`,
+                ...(retryContext ? { memoContext: retryContext } : {}),
+              });
+              completedReview = generated.suggestion;
+              try {
+                review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+              } catch (repairError) {
+                // A distinct final strategy for completed source-grounding failures:
+                // supply bounded narrative passages and require quoted evidence.
+                // Transport errors, quota denials and generic schema failures never
+                // enter this path; each provider call receives normal admission.
+                if (repairError instanceof MemoReviewSemanticError) options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message });
+                if (!(repairError instanceof MemoReviewSemanticError) || !repairError.grounding) throw repairError;
+                // Meso has no proposed nodes to rank paragraphs by. Preserve
+                // evidence for mapped pairs across the whole table, including
+                // missing pairs near its end, before taking general excerpts.
+                const pairEvidence = readingContext?.mesoEvidence || [];
+                const preferredPassages = [
+                  ...pairEvidence.map(pair => pair.passages[2] || pair.passages[0]),
+                  ...pairEvidence.map(pair => pair.passages[1]),
+                ].filter(Boolean).map(text => text.slice(0, 480));
+                const passages = memoRepairPassages(memoSource, generated.suggestion, preferredPassages);
                 if (!passages.length) throw repairError;
-                generated = await generate({ ...providerInput, systemPrompt: MEMO_QUOTE_SELECTION_INSTRUCTION, memoContext: quoteContext }, 'memo-quotes');
-                let selectedReview;
-                try { selectedReview = applyMemoQuoteSelection(rejectedReview, generated.suggestion, passages); }
-                catch { throw new MemoReviewSemanticError('The quotation selection does not match the supplied guidance and passages.', { grounding: true }); }
-                review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
-              } else {
-                let repairContext = { ...readingContext, evidenceRepair: { passages } };
-                const rejectedExcerpt = createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
-                // Prefer both the rejected field and source passages. Preserve at
-                // least one passage, falling back to source-only context if needed.
-                while (rejectedExcerpt && passages.length > 1
-                  && Buffer.byteLength(JSON.stringify({ ...repairContext, contractRepair: rejectedExcerpt }), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes) passages.pop();
-                repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, OLLAMA_CLOUD_LIMITS.memoContextBytes);
-                while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
-                if (!passages.length) throw repairError;
-                generated = await generate({
-                  ...providerInput,
-                  systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`,
-                  memoContext: repairContext,
-                }, 'memo-evidence');
-                let expandedReview;
-                try { expandedReview = expandMemoEvidenceIndices(generated.suggestion, passages); }
-                catch { throw new MemoReviewSemanticError('The evidence indices must select supplied narrative passages.', { grounding: true }); }
-                review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true });
+                generationSignal.throwIfAborted();
+                correctiveRetries = 2;
+                evidenceRepairAttempts = 1;
+                let quotationOnly = /^guidance\[\d+\]\.evidenceExcerpt\b/u.test(repairError.message);
+                if (quotationOnly) {
+                  // This strategy changes quotations only. Verify every other
+                  // field first, so it cannot conceal a separate map failure.
+                  try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial); }
+                  catch { quotationOnly = false; }
+                }
+                if (quotationOnly) {
+                  const rejectedReview = generated.suggestion;
+                  const quoteSelection = { points: rejectedReview.guidance.map(item => item.point), passages };
+                  const quoteContext = { quoteSelection };
+                  while (Buffer.byteLength(JSON.stringify(quoteContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+                  if (!passages.length) throw repairError;
+                  generated = await generate({ ...providerInput, systemPrompt: MEMO_QUOTE_SELECTION_INSTRUCTION, memoContext: quoteContext }, 'memo-quotes');
+                  let selectedReview;
+                  try { selectedReview = applyMemoQuoteSelection(rejectedReview, generated.suggestion, passages); }
+                  catch { throw new MemoReviewSemanticError('The quotation selection does not match the supplied guidance and passages.', { grounding: true }); }
+                  completedReview = selectedReview;
+                  review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+                } else {
+                  let repairContext = { ...readingContext, evidenceRepair: { passages } };
+                  const rejectedExcerpt = createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
+                  // Prefer both the rejected field and source passages. Preserve at
+                  // least one passage, falling back to source-only context if needed.
+                  while (rejectedExcerpt && passages.length > 1
+                    && Buffer.byteLength(JSON.stringify({ ...repairContext, contractRepair: rejectedExcerpt }), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes) passages.pop();
+                  repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, OLLAMA_CLOUD_LIMITS.memoContextBytes);
+                  while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+                  if (!passages.length) throw repairError;
+                  generated = await generate({
+                    ...providerInput,
+                    systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`,
+                    memoContext: repairContext,
+                  }, 'memo-evidence');
+                  let expandedReview;
+                  try { expandedReview = expandMemoEvidenceIndices(generated.suggestion, passages); }
+                  catch { throw new MemoReviewSemanticError('The evidence indices must select supplied narrative passages.', { grounding: true }); }
+                  completedReview = expandedReview;
+                  strictFallbackEvidence = true;
+                  review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true });
+                }
               }
             }
+          } catch (error) {
+            generationSignal.throwIfAborted();
+            review = feedbackOnlyMemoReview(completedReview, error, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: strictFallbackEvidence });
+            if (!review) throw error;
+            feedbackOnly = true;
           }
           suggestion = {
             ...review,
@@ -3305,6 +3348,7 @@ export function createSystemsMappingApp(options = {}) {
           });
           if (correctiveRetries) runtimeMetadata.correctiveRetries = correctiveRetries;
           if (evidenceRepairAttempts) runtimeMetadata.evidenceRepairAttempts = evidenceRepairAttempts;
+          if (feedbackOnly) runtimeMetadata.feedbackOnly = true;
         } catch (error) {
           if (options.suggestionFailure) {
             const safe = options.suggestionFailure(error, context);

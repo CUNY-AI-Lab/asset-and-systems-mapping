@@ -35,7 +35,15 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await page.getByRole('button', { name: 'Generate guidance' }).click();
   await expect(page.locator('.notebook-refresh > summary')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue →', exact: true })).toBeEnabled();
-  await expect(page.locator('.review-details')).not.toHaveAttribute('open', '');
+  const guidance = page.locator('.review-details');
+  const feedback = guidance.locator('.studio-feedback').first();
+  await expect(guidance).toHaveAttribute('open', '');
+  await expect(feedback).toBeVisible();
+  await guidance.locator('summary').click();
+  await expect(guidance).not.toHaveAttribute('open', '');
+  await expect(feedback).not.toBeVisible();
+  await guidance.locator('summary').click();
+  await expect(feedback).toBeVisible();
   await expect(page.locator('.memo-drawer')).not.toHaveAttribute('open', '');
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic review'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic review');

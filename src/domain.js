@@ -1895,7 +1895,7 @@ function validatePreflightEvaluation(evaluation, path) {
   if (Date.parse(evaluation.expiresAt) <= Date.parse(evaluation.createdAt)) invalidProject(`${path}.expiresAt`, 'must be later than createdAt');
   assertObject(evaluation.runtime, `${path}.runtime`);
   assertKnownKeys(evaluation.runtime, [
-    'provider', 'model', 'createdAt', 'maxSourceBytes', 'requestedModel', 'doneReason',
+    'provider', 'model', 'createdAt', 'maxSourceBytes', 'requestedModel', 'doneReason', 'feedbackOnly',
     ...PREFLIGHT_RUNTIME_INTEGER_FIELDS,
   ], `${path}.runtime`);
   assertEnum(evaluation.runtime.provider, PREFLIGHT_RUNTIME_PROVIDERS, `${path}.runtime.provider`);
@@ -1909,6 +1909,7 @@ function validatePreflightEvaluation(evaluation, path) {
   if (evaluation.runtime.maxSourceBytes !== undefined) assertInteger(evaluation.runtime.maxSourceBytes, `${path}.runtime.maxSourceBytes`, 1, PROJECT_LIMITS.sourceText * 4);
   if (evaluation.runtime.requestedModel !== undefined) assertString(evaluation.runtime.requestedModel, `${path}.runtime.requestedModel`, false, 200);
   if (evaluation.runtime.doneReason !== undefined) assertString(evaluation.runtime.doneReason, `${path}.runtime.doneReason`, false, 100);
+  if (evaluation.runtime.feedbackOnly !== undefined) assertBoolean(evaluation.runtime.feedbackOnly, `${path}.runtime.feedbackOnly`);
   PREFLIGHT_RUNTIME_INTEGER_FIELDS.forEach((field) => {
     if (evaluation.runtime[field] !== undefined) assertInteger(evaluation.runtime[field], `${path}.runtime.${field}`, 0, Number.MAX_SAFE_INTEGER);
   });
@@ -2024,6 +2025,13 @@ function validateStudentPreflight(preflight, path) {
     if (preflight.configurationSnapshot.kind !== 'preflight') invalidProject(`${path}.configurationSnapshot.kind`, 'must be preflight');
   }
   if (preflight.evaluation !== null) validatePreflightEvaluation(preflight.evaluation, `${path}.evaluation`);
+  if (preflight.evaluation?.runtime?.feedbackOnly === true) {
+    const review = preflight.memoReview;
+    if (!review || !review.guidance.length || review.nodes.length || review.connections.length
+      || review.example !== null || review.readiness.ready !== false) {
+      invalidProject(`${path}.memoReview`, 'must contain only guidance when feedbackOnly is true');
+    }
+  }
   if (preflight.evaluation && preflight.configurationSnapshot === null) invalidProject(`${path}.configurationSnapshot`, 'is required for an authoritative evaluation');
   if (preflight.evaluation && preflight.configurationSnapshot.capturedAt !== preflight.evaluation.createdAt) {
     invalidProject(`${path}.configurationSnapshot.capturedAt`, 'must match the authoritative evaluation timestamp');
@@ -3039,6 +3047,10 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
   if (portable.preflight?.memoReview) {
     portable.preflight.memoReview = null;
     addRedaction(redactions, 'preflight.memoReview', reason);
+    if (portable.preflight.evaluation?.runtime?.feedbackOnly !== undefined) {
+      delete portable.preflight.evaluation.runtime.feedbackOnly;
+      addRedaction(redactions, 'preflight.evaluation.runtime.feedbackOnly', reason);
+    }
   }
   portable.events.forEach((event, index) => {
     if (event.detail) {

@@ -1350,6 +1350,7 @@ function reviewSupportDetails(error) {
 
 function SuggestionsReview({ project, update, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate }) {
   const review = project.preflight?.memoReview;
+  const feedbackOnly = project.preflight?.evaluation?.runtime?.feedbackOnly === true;
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
@@ -1372,7 +1373,8 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     </Disclosure>}
     {review && <>
       <h2>Suggestions</h2>
-      {project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.</p>}
+      {feedbackOnly && <p role="status">Your feedback is below, but the map suggestions could not be returned. You can add items yourself or open Update suggestions and select Reread memo to try again.</p>}
+      {!feedbackOnly && project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.</p>}
       {stale && <p role="status">Update suggestions for your revised memo</p>}
       <Disclosure title="Guidance and evidence" className="review-details" defaultOpen>
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
@@ -1380,9 +1382,9 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
           <p>{item.point}</p>
           {item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}
         </div>)}
-        {isRelationshipReviewScale(project.activeScale)
+        {!feedbackOnly && (isRelationshipReviewScale(project.activeScale)
           ? !review.connections.length && <p className="empty-message">No connections suggested. You can connect mapped items yourself.</p>
-          : !review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>}
+          : !review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>)}
       </Disclosure>
     </>}
   </section>;
@@ -6069,7 +6071,13 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setReviewBusy('evaluating');
     setReviewProgress(resume ? 'Recovering your saved request…' : 'Saving your generation request…');
     try {
-      const cached = readGuidanceCache(projectStorage(), project.id, cacheRequestKey);
+      let cached = readGuidanceCache(projectStorage(), project.id, cacheRequestKey);
+      // A feedback-only result must not turn an explicit reread into reuse of
+      // the same incomplete suggestions. The saved review remains available.
+      if (cached?.evaluation?.runtime?.feedbackOnly === true) {
+        removeGuidanceCacheEntry(projectStorage(), project.id, cacheRequestKey);
+        cached = null;
+      }
       let result;
       if (cached) {
         try { result = normalizePreflightEvaluation(cached.evaluation, project); }
@@ -6087,7 +6095,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       }
       if (!result) {
         result = normalizePreflightEvaluation(response.evaluation, projectRef.current);
-        writeGuidanceCache(projectStorage(), project.id, cacheRequestKey, response);
+        if (result.evaluation.runtime.feedbackOnly !== true) writeGuidanceCache(projectStorage(), project.id, cacheRequestKey, response);
       }
       update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Memo guidance generated', 'student', {
         sourceFingerprint: result.sourceFingerprint,
@@ -6384,6 +6392,17 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const prepareCandidates = (sourceProject = project) => {
     const project = sourceProject;
     if (requiresInitialModel(project)) return false;
+    if (project.preflight?.evaluation?.runtime?.feedbackOnly === true) {
+      // No map suggestions survived validation. Advance without rebuilding or
+      // automatically confirming any prior student choices.
+      update((draft) => {
+        draft.stage = 2;
+        draft.furthestStage = Math.max(draft.furthestStage || 0, 2);
+      }, 'candidates.generated', 'Feedback received without map suggestions', 'student');
+      recordStageTransition(project.stage, 2, { completed: true });
+      toast('Your previous map work is unchanged. You can add items yourself or reread the memo.');
+      return true;
+    }
     let candidates;
     try {
       candidates = buildCandidatesFromProject(project);
@@ -6433,6 +6452,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const refreshCandidatesFromMemo = async () => {
     const result = await generateSuggestions();
     if (!result) return;
+    if (result.evaluation.runtime.feedbackOnly === true) {
+      toast('Your previous suggestions and map are unchanged. You can add items yourself or reread the memo.');
+      return;
+    }
     // React may not have committed the preflight state update yet. Build the
     // next choices from the response we just validated, never the old review.
     const current = { ...projectRef.current, preflight: result };
