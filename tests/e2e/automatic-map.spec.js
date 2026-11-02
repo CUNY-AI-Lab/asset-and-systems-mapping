@@ -51,9 +51,9 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Automatic map'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Automatic map');
   await notebookSection(page, 'review');
-  await expect(page.getByRole('button', { name: 'Continue to Meso-level', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Continue to Meso', exact: true })).toBeDisabled();
   await page.getByRole('textbox', { name: 'Field notes (required)' }).fill('Ask participants which actors and direct interactions are missing, then observe coordination between home and the library.');
-  await page.getByRole('button', { name: 'Continue to Meso-level', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue to Meso', exact: true }).click();
   // Meso reads the memo and, in automatic mode, commits in the same click.
   await expect(page.getByRole('heading', { name: 'Systems map' })).toBeVisible();
   await expect.poll(async () => (await readProject(page)).activeScale).toBe('meso');

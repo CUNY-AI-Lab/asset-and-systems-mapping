@@ -19,6 +19,11 @@ export async function showMap(page) {
   await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Map', exact: true }).click();
 }
 
+export async function editSelected(page) {
+  const edit = page.getByRole('button', {name:'Edit',exact:true});
+  if (await edit.isVisible()) await edit.click();
+}
+
 export async function projectMenu(page, action) {
   const menu = page.locator('.project-menu');
   if (!(await menu.evaluate(el => el.open))) await menu.locator(':scope > summary').click();

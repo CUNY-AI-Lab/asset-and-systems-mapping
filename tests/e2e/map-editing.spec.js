@@ -47,6 +47,8 @@ async function selectItem(page, id) {
   } else {
     await page.locator(`[data-graph-id="${id}"]`).press('Enter');
   }
+  const edit = page.getByRole('button', { name: 'Edit', exact: true });
+  if (await edit.isVisible()) await edit.click();
   await expect(inspector(page)).toBeVisible();
   // Let the phone drawer resize and selected-item fit finish before taking
   // the camera snapshot that later edits must preserve.
@@ -187,7 +189,7 @@ test('selected levels validate their own wording and compact controls fit narrow
   for (const width of widths) {
     await page.setViewportSize({ width, height: width < 500 ? 844 : 1000 });
     for (const [id, invalid] of [
-      ['node_e2e_mobility_scheduling_office', 'Transportation access'],
+      ['node_e2e_mobility_scheduling_office', ''],
       ['node_e2e_home_care_policy', 'Regional Mobility Scheduling Office'],
       ['node_e2e_home_center_coordination', 'supports'],
     ]) {
@@ -200,10 +202,10 @@ test('selected levels validate their own wording and compact controls fit narrow
       await inspector(page).getByRole('button', { name: 'Cancel', exact: true }).click();
     }
     await selectItem(page, 'edge_e2e_office_rules_center');
-    const relationship = inspector(page).getByRole('combobox', { name: 'Relationship', exact: true });
+    const relationship = inspector(page).getByRole('textbox', { name: 'Relationship', exact: true });
     const next = (await relationship.inputValue()) === 'funds' ? 'regulates' : 'funds';
     const before = await geometry(page);
-    await relationship.selectOption(next);
+    await relationship.fill(next);
     for (const name of ['Save', 'Cancel']) {
       const button = inspector(page).getByRole('button', { name, exact: true });
       await expect(button).toBeInViewport();

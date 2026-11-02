@@ -1,6 +1,6 @@
 import { test, expect, captureSourceRenderedScreenshot } from './support/test.js';
 import { serializedEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
-import { openTools, showMap } from './support/notebook.js';
+import { openTools, showMap, editSelected } from './support/notebook.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
 
 const residentId = 'node_e2e_resident';
@@ -37,7 +37,8 @@ async function selectResident(page, phone) {
   const resident = page.locator(`[data-graph-id="${residentId}"]`);
   if (phone) await resident.tap();
   else await resident.click();
-  await expect(page.locator('.inspector__head h2')).toHaveText('Resident');
+  await editSelected(page);
+  await expect(page.getByRole('complementary',{name:'Notebook'}).getByRole('textbox',{name:'Label',exact:true})).toHaveValue('Resident');
   await expect(resident).toHaveAttribute('aria-pressed', 'true');
   await settle(page);
   return resident;
@@ -169,10 +170,14 @@ test('trusted selected-node drags follow movement, save, and reload while connec
     await expect(page.locator('.map-connect-status')).toHaveCount(0);
     await expect(page.locator(`[data-graph-id="${residentId}"]`)).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.add-form')).toHaveCount(0);
+    await page.getByRole('button',{name:'Resume relationship',exact:true}).click();
+    await page.getByRole('button',{name:'Discard relationship',exact:true}).click();
     await selectResident(page, phone);
     await page.getByRole('button', { name: 'Connect from Resident', exact: true }).click();
     const target = page.locator('[data-graph-id="node_e2e_resource_navigator"]');
     if (phone) await target.tap(); else await target.click();
+    await expect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Map',exact:true})).toHaveAttribute('aria-pressed','true');
+    await editSelected(page);
     const form = page.locator('.add-form');
     await expect(form).toBeVisible();
     await expect(page.locator('.inspector__head h2')).toHaveText('Resident and Resource navigator');

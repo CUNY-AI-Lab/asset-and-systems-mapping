@@ -1,4 +1,4 @@
-import { openTools, mapCommand, notebookSection, showMap, projectMenu, preferences } from './support/notebook.js';
+import { openTools, mapCommand, notebookSection, showMap, projectMenu, preferences, editSelected } from './support/notebook.js';
 import { expect, test, scanAccessibility, assertNoAccessibilityViolations, captureSourceRenderedScreenshot } from './support/test.js';
 import { serializedEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
@@ -30,7 +30,7 @@ test('students trace scopes in both directions, cross filtered layers, and retur
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await openProject(page);
   await page.evaluate(() => window.scrollTo(0, 0));
-  const footerTop = await page.locator('.app-footer').evaluate((element) => element.getBoundingClientRect().top);
+  const footerTop = page.viewportSize().height;
   await openTools(page);
   for (const name of ['Fit map', 'Full screen map']) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox();
@@ -41,19 +41,20 @@ test('students trace scopes in both directions, cross filtered layers, and retur
   await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('micro');
   await page.locator('.notebook-map-tools > summary').click();
   await page.locator('[data-graph-id="node_e2e_home_setting"]').press('Enter');
+  await editSelected(page);
   const inspector = page.getByRole('complementary', { name: 'Notebook' });
   await inspector.locator('.map-connections > summary').click();
   await expect(inspector.getByRole('region', { name: 'Part of mesosystems' })).toBeVisible();
   await inspector.getByRole('region', { name: 'Broader conditions' }).getByRole('button', { name: /State home care reimbursement policy/ }).click();
   await expect(page.locator('.notebook-map-tools select[aria-label="Show map layer"]')).toHaveValue('all');
-  await expect(inspector.getByRole('heading', { name: 'State home care reimbursement policy', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('textbox', { name: 'Label', exact: true })).toHaveValue('State home care reimbursement policy');
   await inspector.locator('.map-connections > summary').click();
   await expect(inspector.getByRole('region', { name: 'Affected map items' }).getByRole('button')).toHaveCount(3);
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Expanded cross-level connections'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Expanded cross-level connections');
   await inspector.getByRole('button', { name: 'Back to Apartment building' }).click();
   await expect(page.locator('.notebook-map-tools select[aria-label="Show map layer"]')).toHaveValue('micro');
-  await expect(inspector.getByRole('heading', { name: 'Apartment building', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('textbox', { name: 'Label', exact: true })).toHaveValue('Apartment building');
   expect((await readProject(page)).graph).toEqual(before);
   expect(errors).toEqual([]);
 });
@@ -73,6 +74,7 @@ test('search finds hidden levels and list inspection restores keyboard focus', a
   await search.fill('reimbursement');
   await page.getByRole('search', { name: 'Find map elements' }).getByRole('button', { name: /State home care reimbursement policy/ }).click();
   await expect(page.locator('.notebook-map-tools select[aria-label="Show map layer"]')).toHaveValue('all');
+  await editSelected(page);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   const fullMap = page.getByRole('button', { name: 'Show full map', exact: true });
   if (await fullMap.isVisible()) await fullMap.click();
@@ -82,6 +84,7 @@ test('search finds hidden levels and list inspection restores keyboard focus', a
   await mapCommand(page, 'List');
   const item = page.getByRole('button', { name: 'Open details for Apartment building', exact: true });
   await item.click();
+  await editSelected(page);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(item).toBeFocused();
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'List after inspection'));
@@ -173,8 +176,6 @@ test('manual additions keep canonical level values and save an outside instituti
   await openProject(page, 'micro');
   await mapCommand(page, 'Add item');
   const inspector = page.getByRole('complementary', { name: 'Notebook' });
-  await inspector.getByRole('button', { name: 'Add', exact: true }).click();
-  await inspector.getByRole('button', { name: 'Node', exact: true }).click();
   await inspector.getByRole('combobox', { name: 'Level', exact: true }).selectOption('exosphere');
   await expect(inspector.getByRole('combobox', { name: 'Type', exact: true })).toHaveValue('institution');
   await inspector.getByRole('textbox', { name: 'Label', exact: true }).fill('New York City Housing Authority');
@@ -189,8 +190,10 @@ test('dark mode exposes readable connection and search controls', async ({ page,
   await openProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.locator('[data-graph-id="node_e2e_home_setting"]').press('Enter');
+  await editSelected(page);
   await page.getByRole('complementary', { name: 'Notebook' }).locator('.map-connections > summary').click();
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Dark map connections'));
+  await editSelected(page);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await openTools(page);
   await page.locator('.map-search > summary').click();

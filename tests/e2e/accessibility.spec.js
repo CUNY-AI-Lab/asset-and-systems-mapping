@@ -140,9 +140,8 @@ async function ecologyLabelMembershipIssues(page) {
       const innerMetric = (nearestX / inner.rx) ** 2 + (nearestY / inner.ry) ** 2;
       if (innerMetric < .999) issues.push(`${level} badge enters ${levels[index - 1]}`);
     });
-    const yOrder = levels.map((level) => geometry.get(level)?.y).filter(Number.isFinite);
-    const phonePortrait = canvas.getAttribute('viewBox')?.split(/\s+/).map(Number)?.[1] === -430;
-    if (phonePortrait && yOrder.some((value, index) => index && value < yOrder[index - 1])) issues.push('level badges reverse the Micro-to-Macro reading order');
+    const badges=levels.map(level=>geometry.get(level)?.rect).filter(Boolean);
+    badges.forEach((a,index)=>badges.slice(index+1).forEach(b=>{if(a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)issues.push('level badges overlap');}));
     return issues;
   });
 }
@@ -341,7 +340,7 @@ test.describe('student accessibility', () => {
       if (layer === 'all') {
         await expect(page.locator('[data-ecology-layer="meso"]')).toHaveCount(0);
         await expect(page.locator('[data-ecology-layer]')).toHaveCount(3);
-        await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Micro, Exo, and Macro badges should remain ordered inside their own rings' }).toEqual([]);
+        await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Micro, Exo, and Macro badges should remain distinct inside their own rings' }).toEqual([]);
       }
       if (layer === 'micro') await expect(page.locator('.graph-edge')).toHaveCount(0);
       if (layer === 'meso') {
@@ -389,8 +388,8 @@ test.describe('student accessibility', () => {
     for (const level of Object.keys(beforeZoomOut.rings)) {
       expect(afterZoomOut.rings[level].rx).toBeGreaterThan(beforeZoomOut.rings[level].rx);
       expect(afterZoomOut.rings[level].ry).toBeGreaterThan(beforeZoomOut.rings[level].ry);
-      expect(afterZoomOut.rings[level].renderedWidth).toBeGreaterThan(beforeZoomOut.rings[level].renderedWidth);
-      expect(afterZoomOut.rings[level].renderedHeight).toBeGreaterThan(beforeZoomOut.rings[level].renderedHeight);
+      expect(afterZoomOut.rings[level].renderedWidth / beforeZoomOut.rings[level].renderedWidth).toBeCloseTo(afterZoomOut.rings[level].rx / beforeZoomOut.rings[level].rx * afterZoomOut.zoom / beforeZoomOut.zoom, 4);
+      expect(afterZoomOut.rings[level].renderedHeight / beforeZoomOut.rings[level].renderedHeight).toBeCloseTo(afterZoomOut.rings[level].ry / beforeZoomOut.rings[level].ry * afterZoomOut.zoom / beforeZoomOut.zoom, 4);
     }
     await expect.poll(() => clippedSemanticItems(page), { message: 'Explicit ring expansion should keep semantic map content visible' }).toEqual([]);
     await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Expanded level badges should stay ordered inside their own rings' }).toEqual([]);

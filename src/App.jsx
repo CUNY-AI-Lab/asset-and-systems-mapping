@@ -2303,7 +2303,8 @@ function ecologyLayerLabelPlacement(scale, phoneLayout = false, nodeCount = 0, r
             // to a badge outside the visible semantic-content window.
             ...Array.from({ length: 96 }, (_, index) => -Math.PI + index * Math.PI / 48),
           ]
-        : [.35, .5, .2, .7, -.35, -.5, 1, -1, 0, 2, Math.PI / 2, Math.PI])
+        : [.35, .5, .2, .7, -.35, -.5, 1, -1, 0, 2, Math.PI / 2, Math.PI,
+            ...Array.from({ length: 96 }, (_, index) => -Math.PI + index * Math.PI / 48)])
       .flatMap((angle) => [.5, .44, .56, .38, .62].map((depth) => [angle, depth]));
   const boundsFor = (x, y, padding = 0) => ({
     left: x - width / 2 - padding,
@@ -4271,7 +4272,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const positions = new Map(displayedNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     const bounds = focusedEcologyCalloutBounds(visibleEdges, displayedNodes, positions, phoneLayout);
     if (microBoundary && !notebook) bounds.push(microBoundary);
-    if (notebook || mapMode !== 'ecology' || phoneRelationshipDetail || focusedEcologyDetail) return bounds;
+    if (mapMode !== 'ecology' || phoneRelationshipDetail || focusedEcologyDetail) return bounds;
     const occupied = displayedNodes.map((node) => ecologyCardBounds(
       positions.get(node.id),
       mapNodeGeometry(node.label, phoneLayout),
@@ -4579,7 +4580,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     }
   }, [connecting, connectionSource, project.activeScale, project.graph.nodes, visibleScale, phoneLayout, focusInspector, panelContent, onPanelMode, onHighlight, notebook?.open, newEdge]);
   const followScope = (source, target) => {
+    const previous = selection ? [...traceHistory, {selection, visibleScale, focusPage, presentation}].slice(-12) : [];
+    if (!scaleNodeIds.has(source) || !scaleNodeIds.has(target)) changeVisibleScale('all');
     setSelectedScope({ source, target }); setSelection({ kind: 'node', id: source }); setFocus(notebook ? null : { kind: 'node', id: source });
+    setTraceHistory(previous);
     setInspectorTab('node'); onHighlight?.({ nodeIds: [source,target], edgeIds: [] });
     const pair = displayedNodes.filter(node => node.id === source || node.id === target);
     setMapViewport(fitViewport(pair, phoneLayout ? phoneFitHeight : 420, phoneLayout));
@@ -5247,7 +5251,12 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); onPanelMode?.('inspector'); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
         </div>}
         {legendOpen && <aside id="map-key-panel" className="map-legend" role="dialog" aria-labelledby="map-key-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-key-title">Map key</strong><button type="button" onClick={closeLegend} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend /></aside>}
-      </section> : <MapListView nodes={project.graph.nodes} edges={project.graph.edges} visibleScale={visibleScale} showRemoved={showRemoved} onSelect={selectItem} />}
+      </section> : <MapListView nodes={project.graph.nodes} edges={project.graph.edges} visibleScale={visibleScale} showRemoved={showRemoved} onSelect={(kind,id) => {
+        selectItem(kind,id);
+        // The list action explicitly says Open details. Ordinary canvas
+        // selection continues to preserve the user's Notebook choice.
+        if (notebook) changePanel('inspector');
+      }} />}
       <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={notebook ? 'Notebook' : panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
         {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}
         <div className="inspector__scroll">

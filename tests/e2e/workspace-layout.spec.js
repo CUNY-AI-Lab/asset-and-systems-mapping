@@ -52,8 +52,11 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     expect((await canvas.boundingBox()).width).toBeCloseTo(before.width, 0);
     await captureSourceRenderedScreenshot(page, testInfo, `Map at ${width}px`);
     await page.locator('[data-graph-id="node_e2e_home_setting"]').press('Enter');
-    await expect(notebook.getByRole('heading', { name: 'Apartment building', exact: true })).toBeInViewport();
-    await expect(notebook.getByRole('textbox', { name: 'Your interpretation', exact: true })).toBeVisible();
+    await expect(notebook).not.toBeVisible();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(notebook.getByRole('heading', { name: 'Edit', exact: true })).toBeInViewport();
+    await expect(notebook.getByRole('textbox', { name: 'Label', exact: true })).toHaveValue('Apartment building');
+    await expect(notebook.getByRole('textbox', { name: 'Interpretation', exact: true })).toBeVisible();
     await expect(notebook.getByRole('button', { name: 'Remove from map', exact: true })).not.toBeVisible();
     expect(await notebook.locator('.inspector__scroll').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Selected item at ${width}px`));
