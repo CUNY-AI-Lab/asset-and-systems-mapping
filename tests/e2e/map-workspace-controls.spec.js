@@ -143,6 +143,15 @@ test('workspace controls sit inside the panel and reclaim the canvas strip', asy
     await expect(canvas).toBeVisible();
     await expect(page.getByRole('button', { name: 'Connect from Resident', exact: true })).toBeVisible();
     await captureSourceRenderedScreenshot(page, testInfo, `Selected Resident with visible map ${size.width}x${size.height}`);
+    await openTools(page);
+    const selectedTools = page.locator('.notebook-tools-body');
+    await expect(selectedTools).toBeInViewport({ ratio: 1 });
+    const selectedToolsBounds = await selectedTools.boundingBox();
+    expect(selectedToolsBounds.y).toBeGreaterThanOrEqual(headerBounds.y + headerBounds.height);
+    expect(selectedToolsBounds.y + selectedToolsBounds.height).toBeLessThanOrEqual(size.height);
+    await captureSourceRenderedScreenshot(page, testInfo, `Tools from the selected-item panel ${size.width}x${size.height}`);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.notebook-map-tools > summary')).toBeFocused();
   }
 });
 

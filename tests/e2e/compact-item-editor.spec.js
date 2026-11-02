@@ -32,7 +32,8 @@ test('selection preserves Notebook choice and the compact editor preserves saved
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const notebook = page.getByRole('complementary', { name: 'Notebook', exact: true });
   await expect(notebook.getByRole('heading', { name: 'Edit', exact: true })).toBeVisible();
-  expect(await notebook.locator('input:visible, select:visible, textarea:visible').count()).toBe(2);
+  await expect(notebook.locator('.notebook-controls-host').getByRole('combobox', { name: 'Work level', exact: true })).toHaveCount(1);
+  expect(await notebook.locator('.inspector__scroll').locator('input:visible, select:visible, textarea:visible').count()).toBe(2);
   const interpretation = notebook.getByRole('textbox', { name: 'Interpretation', exact: true });
   await expect(interpretation).not.toHaveAttribute('placeholder');
   const text = 'Synthetic observation: the resource center connects people. I need to check who coordinates appointments.';
@@ -49,7 +50,7 @@ test('selection preserves Notebook choice and the compact editor preserves saved
   await expect(nav.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(notebook.getByRole('heading', { name: 'Edit', exact: true })).toBeVisible();
-  expect(await notebook.locator('input:visible, select:visible, textarea:visible').count()).toBe(3);
+  expect(await notebook.locator('.inspector__scroll').locator('input:visible, select:visible, textarea:visible').count()).toBe(3);
   await captureSourceRenderedScreenshot(page, testInfo, 'Compact relationship editor');
   await nav.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');

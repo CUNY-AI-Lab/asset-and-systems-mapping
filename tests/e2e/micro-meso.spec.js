@@ -194,7 +194,7 @@ test('Meso stays usable after guidance fails and compact editing preserves legac
   expect(edge).toMatchObject({source:principal.id,target:office.id,scale:'meso',relationshipProcess:{direction:'target to source'}});
   await showMap(page);await page.locator(`[data-graph-id="${legacyEdge.id}"]`).press('Enter');await editSelected(page);
   const inspector=page.getByRole('complementary',{name:'Notebook'});
-  await expect(inspector.locator('input:visible,select:visible,textarea:visible')).toHaveCount(3);
+  await expect(inspector.locator('.inspector__scroll').locator('input:visible,select:visible,textarea:visible')).toHaveCount(3);
   await expect(inspector.getByText('Connection details',{exact:true})).toHaveCount(0);
   await inspector.getByRole('textbox',{name:'Relationship',exact:true}).fill('supports appointment planning for');await inspector.getByRole('button',{name:'Save',exact:true}).click();
   await expect.poll(async()=>(await readProject(page)).graph.edges.find(edge=>edge.id===legacyEdge.id).verb).toBe('supports appointment planning for');
