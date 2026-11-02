@@ -16,7 +16,7 @@ async function expectAlignedControls(controls, sameRow = true) {
   }
 }
 
-test('adjacent actions align and nested export choices stay usable on desktop and phone', async ({ page, makeAxeBuilder }, testInfo) => {
+test('adjacent actions align and export choices stay usable on desktop and phone', async ({ page, makeAxeBuilder }, testInfo) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: STORAGE_KEY, value: serializedEastHarlemDisabilityProject() });
@@ -72,17 +72,14 @@ test('adjacent actions align and nested export choices stay usable on desktop an
   await captureSourceRenderedScreenshot(page, testInfo, 'Nested project preferences');
   await projectMenu(page, 'Export & share');
   const dialog = page.getByRole('dialog', { name: 'Export & share', exact: true });
-  const formats = page.locator('.export-dropdown > summary');
-  await formats.click();
-  for (const group of ['Show the map', 'Save or reuse']) {
+  for (const group of ['Download or share', 'Other formats']) {
     await expectAlignedControls(dialog.getByRole('group', { name: group, exact: true }).getByRole('button'));
   }
   await expect(dialog.getByRole('button', { name: 'PNG image', exact: true })).toBeEnabled();
-  await expect(dialog.getByRole('combobox', { name: 'Export audience' })).toHaveValue('private');
+  await expect(dialog.getByRole('combobox', { name: 'Export audience' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close Export & share', exact: true }).focus();
   await page.keyboard.press('Tab');
-  await expect(formats).toBeFocused();
-  await expect(formats).toHaveCSS('outline-style', 'solid');
+  await expect(dialog.getByRole('button', { name: 'PNG image', exact: true })).toBeFocused();
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Aligned export choices'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Aligned export choices');
 
@@ -93,7 +90,7 @@ test('adjacent actions align and nested export choices stay usable on desktop an
 
   if (testInfo.project.name.includes('phone')) {
     await page.setViewportSize({ width: 320, height: 568 });
-    for (const group of ['Show the map', 'Save or reuse']) {
+    for (const group of ['Download or share', 'Other formats']) {
       await expectAlignedControls(dialog.getByRole('group', { name: group, exact: true }).getByRole('button'), false);
     }
     await expect(dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).resolves.toBe(true);
@@ -103,7 +100,27 @@ test('adjacent actions align and nested export choices stay usable on desktop an
 
   await dialog.getByRole('button', { name: 'Project link', exact: true }).click();
   const linkDialog = page.getByRole('dialog', { name: 'Project link', exact: true });
-  await expectAlignedControls(linkDialog.locator('.button-row > .button'));
+  const linkActions = linkDialog.locator('.button-row > .button');
+  async function expectCompactLinkActions() {
+    await expect(linkActions).toHaveCount(2);
+    await expectAlignedControls(linkActions);
+    const [cancel, create] = await linkActions.evaluateAll(buttons => buttons.map(button => {
+      const { x, width, height } = button.getBoundingClientRect();
+      return { x, width, height };
+    }));
+    const dialogBox = await linkDialog.boundingBox();
+    expect(cancel.width).toBeLessThan(120);
+    expect(cancel.x + cancel.width).toBeLessThanOrEqual(create.x);
+    expect(cancel.x).toBeGreaterThanOrEqual(dialogBox.x);
+    expect(create.x + create.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width);
+    await expect(linkDialog.evaluate(element => element.scrollWidth <= element.clientWidth)).resolves.toBe(true);
+  }
+  await expectCompactLinkActions();
+  if (testInfo.project.name.includes('phone')) {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await expectCompactLinkActions();
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Aligned project link actions'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Aligned project link actions');
   await linkDialog.getByRole('button', { name: 'Cancel', exact: true }).click();

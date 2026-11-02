@@ -28,7 +28,6 @@
   align-items: stretch;
   gap: var(--control-gap);
 }
-:is(.app-shell, .access-shell) .button-row:has(> .button + .button) > .button { flex: 1 1 140px; }
 :is(.app-shell, .access-shell) .button-stack > .button { width: 100%; }
 :is(.app-shell, .access-shell) :is(.icon-button, .theme-toggle:not(.theme-toggle--labeled)),
 .app-shell .map-tools-zoom > button:is(:first-child, :last-child) {
@@ -92,10 +91,11 @@
 }
 
 /* Download formats share columns; import stays separate from outgoing actions. */
+.app-shell .modal:has(.export-strip--compact) { width: min(430px, 100%); }
 .app-shell .modal .export-strip--compact { margin: 0; padding: 0; }
 .app-shell .modal .export-dropdown { border: 0; background: transparent; }
 .app-shell .modal .export-dropdown > summary { padding-inline: 0; border-radius: 0; }
-.app-shell .export-dropdown__options { padding: 16px 0 0; gap: 20px; }
+.app-shell .export-dropdown__options { width: min(100%, 390px); padding: 0; gap: 12px; }
 .app-shell .export-dropdown__options > .field { margin: 0; }
 .app-shell .export-dropdown fieldset {
   min-width: 0;
@@ -105,23 +105,41 @@
   gap: var(--control-gap);
 }
 .app-shell .export-dropdown legend { padding: 0 0 8px; font-size: var(--control-font); font-weight: var(--control-weight); }
-.app-shell .export-dropdown button { width: 100%; border: var(--control-border); }
+.app-shell .modal .export-dropdown button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--control-height);
+  height: auto;
+  padding: 4px 6px;
+  border: var(--control-border);
+  line-height: 1.1;
+  gap: 0;
+}
+.app-shell .modal .export-dropdown button small { line-height: 1.1; }
 .app-shell .export-dropdown button:hover:not(:disabled),
 .app-shell .export-dropdown__import:hover { background: var(--surface-hover); }
 .app-shell .export-dropdown button:disabled:hover { background: var(--surface); }
 .app-shell .export-dropdown__import {
+  width: calc((100% - 2 * var(--control-gap)) / 3);
   min-width: 0;
   min-height: var(--control-height);
-  padding: var(--control-padding-block) var(--control-padding-inline);
+  height: auto;
+  box-sizing: border-box;
+  justify-content: center;
+  padding: 4px;
   border: var(--control-border);
   border-radius: var(--control-radius);
-  font: var(--control-weight) var(--control-font)/var(--control-leading) var(--body);
-  gap: var(--control-gap);
+  font: var(--control-weight) 13px/var(--control-leading) var(--body);
+  gap: 4px;
 }
 .app-shell .export-strip > .error-text { margin: 12px 0 0; padding: 12px; border-left: 2px solid var(--bad); overflow-wrap: anywhere; }
 .app-shell .project-link-management { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--control-gap); padding-top: 12px; }
 @media (max-width: 360px) {
-  .app-shell .export-dropdown fieldset { grid-template-columns: 1fr; }
+  .app-shell .export-dropdown fieldset { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .export-dropdown__import { width: calc((100% - var(--control-gap)) / 2); }
   .app-shell .project-link-management { grid-template-columns: 1fr; }
 }
 

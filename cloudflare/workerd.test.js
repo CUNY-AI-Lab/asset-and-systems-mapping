@@ -346,7 +346,6 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.screenshot({ path: '/tmp/cail-systems-cloudflare-desktop.png' });
     await projectMenu(page, 'Export & share');
     const download = page.waitForEvent('download');
-    await page.locator('.export-dropdown > summary').click();
     await page.getByRole('button', { name: /^JSON/ }).click();
     const exported = JSON.parse(await readFile(await (await download).path(), 'utf8'));
     expect(exported.mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');

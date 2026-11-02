@@ -48,7 +48,7 @@ test('the four exercises keep earlier work visible and build larger and cross-sc
  await notebookSection(page,'review');
  await page.getByRole('button',{name:'Complete Macro-level',exact:true}).click();
  await expect(page.getByRole('heading',{name:p.title,exact:true})).toBeVisible();
- await expect(page.getByRole('region',{name:'Micro-level summary'})).toContainText('6 nodes · 1 relationship');
+ await expect(page.getByRole('region',{name:'Micro-level summary'})).toContainText('6 items · 1 connection');
  await expect.poll(async()=>{
   const title=await page.getByRole('heading',{name:p.title,exact:true}).boundingBox();
   const header=await page.locator('.app-header').boundingBox();
@@ -62,22 +62,25 @@ test('the four exercises keep earlier work visible and build larger and cross-sc
  for(const scale of p.releasedScales)expect(exported.levelProgress[scale].reflection).toBe(p.levelProgress[scale].reflection);
  const originalToBlob=await page.evaluate(()=>{window.__completionToBlob=HTMLCanvasElement.prototype.toBlob;return true;});expect(originalToBlob).toBe(true);
  await page.evaluate(()=>{HTMLCanvasElement.prototype.toBlob=function(callback){callback(null);};});
- await page.getByRole('button',{name:'PNG',exact:true}).click();await expect(page.getByRole('alert')).toBeVisible();expect((await read(page)).graph).toEqual(complete.graph);
+ await page.getByRole('button',{name:'Download PNG',exact:true}).click();await expect(page.getByRole('alert')).toBeVisible();expect((await read(page)).graph).toEqual(complete.graph);
  await page.evaluate(()=>{HTMLCanvasElement.prototype.toBlob=window.__completionToBlob;delete window.__completionToBlob;});
- for(const format of ['PNG','PDF']){const next=page.waitForEvent('download');await page.getByRole('button',{name:format,exact:true}).click();const file=await next;expect((await readFile(await file.path())).length).toBeGreaterThan(1000);}
+ for(const format of ['PNG','PDF']){const next=page.waitForEvent('download');await page.getByRole('button',{name:`Download ${format}`,exact:true}).click();const file=await next;expect((await readFile(await file.path())).length).toBeGreaterThan(1000);}
  assertNoAccessibilityViolations(await scanAccessibility(page,makeAxeBuilder,testInfo,'Completion and exports'));
  await page.getByRole('button',{name:'Return to map',exact:true}).scrollIntoViewIfNeeded();
  const formatButtons=await page.locator('.completion-format-actions button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};}));
  expect(formatButtons).toHaveLength(4);
- for(const button of formatButtons){expect(button.height).toBeGreaterThanOrEqual(44);expect(Math.abs(button.height-formatButtons[0].height)).toBeLessThan(1);expect(Math.abs(button.width-formatButtons[0].width)).toBeLessThan(1);}
+ for(const button of formatButtons){expect(button.height).toBeGreaterThanOrEqual(44);expect(button.width).toBeGreaterThanOrEqual(100);expect(Math.abs(button.height-formatButtons[0].height)).toBeLessThan(1);expect(Math.abs(button.width-formatButtons[0].width)).toBeLessThan(1);}
  const phone=testInfo.project.name==='chromium-phone';
  expect(Math.abs(formatButtons[0].y-formatButtons[1].y)).toBeLessThan(1);
- if(phone){expect(formatButtons[2].y).toBeGreaterThan(formatButtons[0].bottom);expect(formatButtons[2].x).toBe(formatButtons[0].x);}
+ if(phone){expect(formatButtons[2].y).toBeGreaterThan(formatButtons[0].bottom);expect(Math.abs(formatButtons[2].x-formatButtons[0].x)).toBeLessThan(1);expect(Math.abs(formatButtons[3].x-formatButtons[1].x)).toBeLessThan(1);expect(Math.abs(formatButtons[2].y-formatButtons[3].y)).toBeLessThan(1);}
  else for(const button of formatButtons)expect(Math.abs(button.y-formatButtons[0].y)).toBeLessThan(1);
  const returnButton=await page.getByRole('button',{name:'Return to map',exact:true}).boundingBox();
  expect(returnButton.y).toBeGreaterThan(Math.max(...formatButtons.map(button=>button.bottom)));
  const formatGroup=await page.locator('.completion-format-actions').boundingBox();
- expect(Math.abs(returnButton.width-(phone?formatGroup.width:formatButtons[0].width))).toBeLessThan(1);
+ expect(formatGroup.width).toBeLessThanOrEqual(phone?320:600);
+ expect(Math.abs(returnButton.x-formatButtons[0].x)).toBeLessThan(1);
+ expect(Math.abs(returnButton.width-formatButtons[0].width)).toBeLessThan(1);
+ expect(returnButton.height).toBeGreaterThanOrEqual(44);
  await expect(page.getByRole('heading',{name:'Project complete',exact:true})).toHaveCount(0);
  await captureSourceRenderedScreenshot(page,testInfo,'Completion export controls and return to map');
  await page.getByRole('button',{name:'Return to map',exact:true}).click();await expect(page.locator('.graph-node')).toHaveCount(8);

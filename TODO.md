@@ -9,6 +9,7 @@ The user's new screenshots and direct clarification supersede the separate full-
 - [x] Implement the combined control placement with equal-height touch controls, a resizable panel header, and preserved keyboard focus between Map and Notebook.
 - [x] Local responsive verification passed at 320, 375, 390, 768, 1024 and 1440 px, including the 260-pixel dock, full screen, Tools placement and keyboard switching without viewport overflow: 7 browser checks passed (1 phone skip for the test that already exercises every breakpoint). App/accessibility/report component checks passed 283 tests. The isolated Worker/report browser suite passed 8 tests; its selected-item Done control is also checked for full visibility. Full hosted checks and deployment remain below.
 - [ ] Run exact-source hosted checks, deploy the same checked build to Dev and production, verify served files/traffic, and capture current screenshots.
+- [x] Integrate complementary PR #56 download controls and plain-language messages into this same candidate. Correct its stale JSON button assertion to `JSON Full project`; retain panel navigation, responsive bounds and permissions. Combined validation and rollout remain pending.
 
 
 

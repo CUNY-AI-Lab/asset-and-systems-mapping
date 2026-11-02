@@ -97,7 +97,6 @@ for (const retainId of [false, true]) test(`unpublished course metadata saves, e
   await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).teacherGovernance?.preflight.moduleVersions.at(-1).revision, STORAGE_KEY)).toBe(0);
   await expect(page.locator('.workspace-save-notice')).toHaveCount(0);
   await projectMenu(page, 'Export & share');
-  await page.locator('.export-dropdown > summary').click();
   const pendingDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: /^JSON/ }).click();
   const exported = JSON.parse(await readFile(await (await pendingDownload).path(), 'utf8'));

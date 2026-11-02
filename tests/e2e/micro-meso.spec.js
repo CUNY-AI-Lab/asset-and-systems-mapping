@@ -153,7 +153,6 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   expect((await readProject(page)).graph.edges.find(edge => edge.id === added.id)).toMatchObject({ verb: 'shares questions with', relationshipProcess: { direction: 'both directions' } });
   expect((await readProject(page)).graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(savedPositions);
   await projectMenu(page, 'Export & share');
-  await page.locator('.export-dropdown > summary').click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: /^JSON/ }).click();
   const download = await downloadPromise;

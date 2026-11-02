@@ -31,7 +31,7 @@ export default function ReflectionEntry({ project, update, onSave, saveState }) 
         onBlur={() => update(() => {}, 'reflection.revised', 'Field Notes revised')} />
     </label>
     {onSave && <div className="annotation-actions"><button type="button" className="button button--secondary" disabled={!dirty && !failed} onClick={() => { if (onSave() === true) { setDirty(false); setSaved(true); } }}>Save note</button><span role="status">{failed ? saveState.message : dirty ? 'Saving…' : saved ? 'Saved' : ''}</span></div>}
-    {nextLevel && excerpt?.truncated && <p className="field-notes-hint">The {nextLevel.title} memo review receives an opening excerpt of these notes. Your full note stays saved.</p>}
+    {nextLevel && excerpt?.truncated && <p className="field-notes-hint">Only the beginning of this note will be sent with your next memo. Your full note stays saved.</p>}
     {earlier.length > 0 && <details className="field-notes-archive"><summary>Previous notes</summary>
       {earlier.map(({ id, title }) => <section key={id}><h3>{title}</h3><p>{project.levelProgress[id].reflection}</p></section>)}
     </details>}
