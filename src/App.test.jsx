@@ -1752,6 +1752,10 @@ describe('Systems Mapping workflow', () => {
     seedProject(project);
     const view = render(<App startInWorkspace />);
     await screen.findByRole('heading', { name: 'Memo review' });
+    // The workspace refreshes its course settings on open. Wait until that
+    // state is saved so the request key cannot change during this test's read.
+    await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.fingerprint).toBe('preflight-shared-fingerprint'), { timeout: 5000 });
+    await waitFor(() => expect(storedProject().teacherGovernance?.builder?.fingerprint).toBe('builder-shared-fingerprint'), { timeout: 5000 });
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
     expect(await screen.findByText('What evidence shows which families use the service?')).toBeVisible();
     const notice = /^The app could not use its map suggestions/;
