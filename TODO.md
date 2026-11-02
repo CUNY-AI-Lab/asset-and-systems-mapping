@@ -3,25 +3,42 @@
 Updated: 2026-11-02
 
 
-## November 2 — combined UI integration release
+## November 2 — verified combined UI and styling release
 
-Implementation is isolated in `/tmp/systems-ui-integration-20261102`, based on the current served `6d3f55c` (GLM configuration plus Memo submission). The source owner's task-6 checkout is preserved. The user's subsequent cross-process alignment request also integrates completed memo-feedback recovery PR #54 (`aa823a7`) into this same release candidate; its source owner is idle, and no separate rollout is assumed. Model comparison task reports its comparisons complete; this UI work makes no paid calls and preserves the configured model. This section supersedes older layout requirements below.
+Application source **`36229485562ddbc0c550f71a70627ebc21e30105`** is verified on both existing environments. It includes the complete Account-owner follow-up and debugging-task styling `3042bac`, atop the integrated feedback recovery. GPT-OSS 120B and Memo submission are preserved. Earlier `e772836` rollout is historical and was followed by this styling-inclusive release.
 
-| Requirement | Implemented | Verification | Deployed |
+The user's latest direct instruction was **both simultaneously**, superseding the earlier sequential order for this rollout. Both targets received the same checked commit; each was independently verified afterward. No production/model-evaluation race, paid calls, credential changes, permission grants or participant records were used by this integration task.
+
+| Requirement | Implemented | Tested | Deployed |
 | --- | --- | --- | --- |
-| Flush-right Map / Notebook / Tools / bug, restored graphic, even single-line controls, reclaimed canvas | Yes | Synthetic desktop/phone assets; aggregate pending | No |
-| Prominent Edit / aligned Done, italic selected label, secondary Delete, no empty Connected items | Yes | Editing and browser regressions in progress | No |
-| Remove all map/item/connection Check entry points; retain completion and data compatibility | Yes | No-check UI regression added | No |
-| Save note / truthful Saved and error states; autosave; immediate map-note access | Yes | Annotation persistence/error tests passed; new explicit-save test | No |
-| Previous notes; one visible Field Notes label; accessible required field | Yes | Field Notes tests passed | No |
-| Account/profile/email/usage, embedded authorized Instructor Console, theme icon, readable course rows | Yes | Account tests passed; visual verification pending | No |
-| Search/sort/filter projects; clickable names; notes/export/delete and private recovery | Yes | Recovery and Account tests passed; full runtime checks pending | No |
-| Straight cumulative graph, label/badge placement, manual positions and stage sequence | Yes | Synthetic graph/export checks passed; aggregate pending | No |
-| Preserve optional connection wording/drafts/direction, evidence, edit/cancel, keyboard guards | Yes | Existing regression suite required at exact head | No |
-| Compact synthesis/export/return, unfinished exports, failure/reload behavior | Yes | Synthetic export roundtrip passed; aggregate pending | No |
-| Preserve checked memo feedback when map suggestions fail; conservative readiness, explicit retry/manual editing, existing graph/decisions retained | Yes (PR #54 integrated) | Source-owner tests passed; combined exact-head verification pending | No |
+| Flush-right Map / Notebook / Tools / bug icon; even controls and reclaimed canvas | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Prominent Edit and aligned Done; italic item name; secondary Delete; no empty Connected items | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Remove map/item/connection Check actions; retain Complete level and saved-data compatibility | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Explicit Save note / truthful Saved and failure feedback; autosave, immediate access and reload preservation | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Previous notes; one visible Field Notes label; accessible required validation | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Account/profile/email/truthful usage; server-verified Instructor Console; theme icons and compact course rows | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Project search/sort/filter and clickable titles; unfinished exports; confirmed deletion with verified private recovery | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Straight cumulative Exo/Macro graph; badge spacing; saved positions and four-scale sequence | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Existing node/relationship editing, optional wording, drafts, direction and keyboard guards | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Compact synthesis/export/return and safe failure/reload behavior | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Feedback-only recovery excludes invalid suggestions, preserves graph/decisions and conservative readiness | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
+| Latest linked-task feedback styling: notice, guidance, source quote and retry controls; light/dark and keyboard accessibility | Yes | Exact-head CI and relevant synthetic checks passed | Dev + production |
 
-Real tester-role grants, accounts, credentials, participant tests and paid inference are outside this UI release. Synthetic fixtures do not establish real student-role acceptance. Required release gate remains exact-head hosted CI plus visual checks, Dev readback and same-commit production readback. No current-source publication is claimed by this ledger until receipts are recorded.
+- [x] Exact-head hosted build/typecheck, unit/database/runtime tests and desktop/phone browser/accessibility gate passed. [CI receipt](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41389715822).
+- [x] Verify each target's release, all 29 asset hashes, anonymous project denial and 100% traffic.
+- [x] Verify served feedback styling on synthetic desktop/phone fixtures, including light/dark, source quotation, keyboard retry disclosure and restored bug icon; no model calls.
+- [x] Verify graph, notes/save/reopen/reload and export behavior with synthetic fixtures. The initial intermittent Exo-to-Macro assertion did not establish a persistence-engine defect; subsequent continuity checks passed. No separate corruption fix is claimed.
+- [x] Reconcile the Account, model and debugging tasks without replacing their work or reverting the model.
+- [ ] Real authenticated student-account and physical-device acceptance: not run; synthetic role fixtures are not live-role acceptance.
+- [ ] Generic tester access or new grants: still require separate specific authorization; none created.
+- [ ] Original reference-package materialization remains a historical tool-capability gap; no invented Library IDs or source-image inspection claims.
+
+- **dev**: deployment `4cb4679f-7847-4f83-abdc-b3e8413bf12a`; Worker version `41a70e5a-e96d-4f5c-8e83-88a4f30f6c9c`; 100% traffic.
+- **prod**: deployment `4ce2016d-0ed9-483a-bbbe-845e2e4aee64`; Worker version `9201e0ba-8ae0-411a-950f-df142c8af183`; 100% traffic.
+
+Detailed receipts and synthetic captures: `/Users/zacharymuhlbauer/Documents/Codex/2026-10-25/task-9/output/playwright/release-3622948/`. The documentation commit recording these receipts is not a different application deployment.
+
+## Historical request ledger (superseded by the verified status above)
 
 ## November 1, 2026 — compact editing and one cumulative four-scale map
 
@@ -330,4 +347,4 @@ PR #9, merge commit `7f6444147d34a4c62203eb1a3943fcfd6c3f4491`, and Railway depl
 The authority order remains in `docs/SOURCE_LEDGER.md`: the direct 2026-08-24 correction governs the Micro/Meso boundary; the 2026-08-21 Zoom material governs compatible level names, order, and ecological filters; the fuller Drive specification governs compatible behavior; supplied wireframes govern compatible presentation; CALI materials provide context; August 5 notes remain unconfirmed minutes; and STEM Splitter is an architecture precedent rather than subject-matter authority.
 
 ## Current cross-process model alignment
-The model owner completed a user-requested runtime switch to GPT-OSS 120B in Dev and production on 2026-11-02. Deployment configuration and generated Env type now preserve that setting; GLM-specific adapter tests and historical evaluations remain valid unchanged. Further model evaluation is active; serialize UI rollout after it completes.
+The model owner completed a user-requested runtime switch to GPT-OSS 120B in Dev and production on 2026-11-02. Deployment configuration and generated Env type now preserve that setting; GLM-specific adapter tests and historical evaluations remain valid unchanged. The model evaluation completed before the coordinated UI rollout; the verified current release is recorded at the top of this ledger.
