@@ -1076,7 +1076,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   // Generated provider responses use their already-validated narrative
   // verbatim: accepting one response and then replacing part of it would
   // violate the atomic generation contract.
-  const normalized = (activeScale === 'meso' || activeScale === 'macrosphere')
+  const normalized = (guidanceOnly || activeScale === 'meso' || activeScale === 'macrosphere')
     ? {
       ...normalizedReview,
       guidance: value.guidance.map((item) => ({ ...item })),
@@ -1143,7 +1143,7 @@ function feedbackOnlyMemoReview(value, failure, activeScale, carriedNodes, carri
     nodes: [],
     connections: [],
     example: null,
-    readiness: { ready: false, note: 'Some map suggestions could not be checked. Review the feedback and add supported elements yourself.' },
+    readiness: { ready: false, note: 'The app could not use the map suggestions. Review the feedback or add items yourself.' },
   };
   try {
     return validateGeneratedMemoReviewAtomically(partial, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence, guidanceOnly: true });
@@ -1389,7 +1389,7 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
       ? nodes.length === 1
         ? 'The review found 1 possible Macrosphere condition affecting at least two map items.'
         : `The review found ${nodes.length} possible Macrosphere conditions, each affecting at least two map items.`
-      : 'No supported Macrosphere condition affecting at least two map items was found. You can revise the memo or continue without adding one.';
+      : 'The review did not suggest a Macrosphere condition. You can add one yourself or reread the memo.';
   }
   if (storedLegacyMeso) readinessNote = 'Refresh this earlier Meso review to suggest relationships between the Micro nodes already on your map.';
   const readiness = {
@@ -3206,7 +3206,7 @@ export function createSystemsMappingApp(options = {}) {
       } else if (ollamaConfig) {
         let correctiveRetries = 0;
         let evidenceRepairAttempts = 0;
-        if (!providerMemo.sourceText.trim()) throw new HttpError(400, 'Add the narrative part of your memo before requesting guidance. Your complete source remains saved.');
+        if (!providerMemo.sourceText.trim()) throw new HttpError(400, 'Add narrative text to the memo before requesting guidance.');
         let deadline;
         try {
           const memoSource = providerMemo.source;

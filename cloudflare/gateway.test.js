@@ -231,6 +231,7 @@ test('classifies completed output failures without exposing response text or ret
   ]) {
     const safe = safeGatewayFailure(error, correlation.request_id);
     expect(safe).toMatchObject({ status: 502, details: { code, shouldRetry: false, requestId: correlation.request_id } });
+    expect(safe.message).toBe('The model returned a response the map could not use. Your existing work was not changed.');
     expect(JSON.stringify(safe)).not.toContain('private');
     if (code === 'guidance_contract_invalid') expect(safe.details.validationField).toBe(field);
   }

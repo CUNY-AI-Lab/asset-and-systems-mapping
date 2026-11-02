@@ -33,9 +33,10 @@ test('feedback-only results remain visible and a reread preserves the map', asyn
   await page.getByRole('button', { name: 'Memo review', exact: true }).click();
   await page.getByRole('button', { name: 'Generate guidance', exact: true }).click();
   const feedback = page.getByText('What evidence would explain the bus delays?');
-  const notice = page.getByText(/Your feedback is below, but the map suggestions could not be returned/);
+  const notice = page.getByText(/^The app could not use its map suggestions/);
   await expect(feedback).toBeVisible();
   await expect(notice).toBeVisible();
+  await expect(notice).toContainText('Check the feedback below against your memo and sources.');
   await expect.poll(async () => (await readProject(page)).preflight?.evaluation?.runtime?.feedbackOnly).toBe(true);
   await page.getByRole('button', { name: 'Continue →', exact: true }).click();
   await expect(page.getByText('Add an item on the map or reread the memo.')).toBeVisible();

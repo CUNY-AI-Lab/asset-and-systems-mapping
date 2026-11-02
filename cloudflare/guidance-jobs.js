@@ -49,7 +49,7 @@ export class GuidanceJobs {
     let row = this.row(owner, id);
     if (!row || row.created_at + TTL <= this.now() && !(row.state === 'running' && row.updated_at + 90000 > this.now())) return null;
     if (row.state === 'running' && this.running.get(id) !== row.attempt_id) {
-      this.fail(owner, id, 'Generation was interrupted. Your memo and map are saved. Choose Try again to start another attempt.', 'guidance_interrupted', row.attempt_id);
+      this.fail(owner, id, 'Generation was interrupted. Your existing work was not changed. Choose Try again to start another attempt.', 'guidance_interrupted', row.attempt_id);
       row = this.row(owner, id);
     }
     return this.view(row);
@@ -128,7 +128,7 @@ export class GuidanceJobs {
       this.db.prepare('UPDATE cloud_guidance_jobs SET state=?,retry_at=?,updated_at=?,outcome=?,status=? WHERE owner=? AND id=? AND attempt_id=?')
         .run(response.ok ? 'succeeded' : safeRetry ? 'retry_wait' : 'failed', retryAt, this.now(), JSON.stringify(result), response.status, owner, id, attemptId);
     } catch {
-      this.fail(owner, id, 'Generation ended before its result could be confirmed. Your memo and map are saved. Choose Try again to start another attempt.', 'guidance_interrupted', attemptId);
+      this.fail(owner, id, 'Generation ended before its result could be confirmed. Your existing work was not changed. Choose Try again to start another attempt.', 'guidance_interrupted', attemptId);
     }
   }
 }

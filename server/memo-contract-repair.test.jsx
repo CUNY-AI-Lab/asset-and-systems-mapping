@@ -20,7 +20,7 @@ const systems = [];
 afterEach(async () => { for (const system of systems.splice(0)) await system.close(); });
 const bytes = value => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
-async function setup(rejected, scale = 'micro', { sourceText = passage } = {}) {
+async function setup(rejected, scale = 'micro', { sourceText = passage, existingMicroNodes = [] } = {}) {
   const accepted = review(scale);
   const run = vi.fn().mockResolvedValueOnce({ suggestion: rejected, metadata: {} }).mockResolvedValue({ suggestion: accepted, metadata: {} });
   const failures = vi.fn();
@@ -32,7 +32,8 @@ async function setup(rejected, scale = 'micro', { sourceText = passage } = {}) {
   const access = await system.app.request(`${ORIGIN}/api/student/access`, { method: 'POST', headers, body: JSON.stringify({ code: '101' }) });
   headers.cookie = access.headers.get('set-cookie').split(';')[0];
   const project = createDefaultProject(); project.activeScale = scale; project.submission.text = sourceText;
-  if (scale === 'meso') project.graph.nodes = carried.map(node => ({ ...node, status: 'confirmed', claimState: 'inference' }));
+  if (scale === 'meso' || existingMicroNodes.length) project.graph.nodes = (scale === 'meso' ? carried : existingMicroNodes)
+    .map(node => ({ ...node, status: 'confirmed', claimState: 'inference' }));
   const payload = preflightEvaluationPayload(project);
   const evaluate = () => system.app.request(`${ORIGIN}/api/preflight/evaluations`, { method: 'POST', headers, body: JSON.stringify(payload) });
   return { run, failures, system, evaluate, accepted, project };
@@ -166,6 +167,22 @@ describe('ordinary memo contract correction', () => {
     expect(JSON.parse(stored.suggestion_json)).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
     expect(JSON.parse(stored.runtime_metadata_json)).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
     expect(stored.suggestion_json).not.toContain('Rosa meets Teacher');
+  });
+
+  it('returns feedback-only with conservative readiness when a Micro reread carries two existing map nodes', async () => {
+    const rejected = review(); rejected.nodes[0].label = 'Rosa meets Teacher';
+    const { evaluate, run, system, project } = await setup(rejected, 'micro', { existingMicroNodes: carried });
+    const originalGraph = structuredClone(project.graph);
+    run.mockResolvedValue({ suggestion: rejected, metadata: {} });
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
+    expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+    expect(project.graph).toEqual(originalGraph);
+    expect(run.mock.calls[0][0].carriedNodes.map(({ id }) => id)).toEqual(['rosa', 'teacher']);
+    expect(run).toHaveBeenCalledTimes(2);
+    const stored = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
+    expect(JSON.parse(stored.suggestion_json)).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
   });
 
   it('retains grounded guidance but no edges when Meso endpoint validation repeatedly fails, even with a documented missing pair', async () => {

@@ -1373,9 +1373,9 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     </Disclosure>}
     {review && <>
       <h2>Suggestions</h2>
-      {feedbackOnly && <p role="status">Your feedback is below, but the map suggestions could not be returned. You can add items yourself or open Update suggestions and select Reread memo to try again.</p>}
-      {!feedbackOnly && project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.</p>}
-      {stale && <p role="status">Update suggestions for your revised memo</p>}
+      {feedbackOnly && <p role="status">The app could not use its map suggestions. Check the feedback below against your memo and sources. You can add to the map yourself, or open Update suggestions and select Reread memo to try again.</p>}
+      {!feedbackOnly && project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">This review used passages from your memo. Check the feedback and suggestions against your own research.</p>}
+      {stale && <p role="status">The feedback shown is for your earlier memo. Reread to update it.</p>}
       <Disclosure title="Guidance and evidence" className="review-details" defaultOpen>
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
         {review.guidance.map((item, index) => <div className="studio-feedback" key={index}>
@@ -1384,7 +1384,7 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
         </div>)}
         {!feedbackOnly && (isRelationshipReviewScale(project.activeScale)
           ? !review.connections.length && <p className="empty-message">No connections suggested. You can connect mapped items yourself.</p>
-          : !review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>)}
+          : !review.nodes.length && <p className="empty-message">No items were suggested. You can add an item yourself or reread the memo.</p>)}
       </Disclosure>
     </>}
   </section>;
@@ -1789,6 +1789,10 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
   const decisionStep = step === 'nodes' || step === 'edges';
   const visibleCandidateIndex = Math.min(candidateIndex, Math.max(0, (activeCandidates[step]?.length || 1) - 1));
   const showList = project.stage >= 2 || activeCandidates.nodes.length > 0 || activeCandidates.edges.length > 0;
+  const candidateTerms = step === 'edges' ? ['connections', 'a connection']
+    : project.activeScale === 'exosphere' ? ['decision settings', 'a decision setting']
+      : project.activeScale === 'macrosphere' ? ['conditions', 'a condition'] : ['items', 'an item'];
+  const requestLabel = project.preflight?.memoReview ? 'reread the memo' : 'request suggestions';
   return <div className="suggestions-panel">
     <SuggestionsReview project={project} update={update} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={retryPending} onGenerate={onGenerate} />
     {project.preflight?.memoReview && <details className="notebook-refresh"><summary>Update suggestions</summary><Action variant="ghost" disabled={Boolean(refreshBusy) || Boolean(reviewBusy) || retryPending} onClick={project.stage >= 2 ? onRefreshCandidates : onGenerate}>{refreshBusy || reviewBusy ? 'Updating…' : 'Reread memo'}</Action></details>}
@@ -1805,17 +1809,7 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
           {candidateRows(step, activeCandidates[step].slice(visibleCandidateIndex, visibleCandidateIndex + 1), visibleCandidateIndex)}
           {!counts[step].total && <p className="empty-message">{project.preflight?.evaluation?.runtime?.feedbackOnly === true
             ? step === 'nodes' ? 'Add an item on the map or reread the memo.' : 'Add a connection on the map or reread the memo.'
-            : step === 'nodes'
-            ? project.activeScale === 'exosphere'
-              ? 'No suggestions. Add a decision setting below.'
-              : project.activeScale === 'meso'
-                ? 'No suggestions. Add one below.'
-              : project.activeScale === 'macrosphere'
-                ? 'No suggestions. Add a condition below.'
-                : 'No suggestions. Revise the memo and reread it, or add items on the map.'
-            : project.activeScale === 'exosphere'
-              ? 'None yet. Ask for suggestions or add one on the map.'
-              : 'None yet. Ask for suggestions or add one on the map.'}</p>}
+            : `No suggested ${candidateTerms[0]} to review. You can add ${candidateTerms[1]} on the map or ${requestLabel}.`}</p>}
         </div>
       {step === 'nodes' && project.activeScale === 'meso' && <Disclosure title="Add mesosystem" className="manual-addition"><section className="elicitation-panel" aria-labelledby="add-meso-linkage-title">
           <h2 id="add-meso-linkage-title">New mesosystem</h2>
@@ -6006,7 +6000,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       }
     }
     if (error instanceof ApiError) {
-      if (error.status === 413) return toast('The guidance request is too large. Shorten the memo and try again.', 'error');
+      if (error.status === 413) return toast('The request is too large. Check the text and project details, then try again.', 'error');
       if (error.status === 429 || error.status === 409 && error.payload?.details?.code === 'guidance_in_progress') {
         if (error.payload?.details?.shouldRetry === false) return toast(userFacingError(error), 'error', 8000);
         const seconds = error.payload?.details?.retryAfterSeconds;
@@ -6105,7 +6099,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
       });
-      toast('Guidance is ready.');
+      toast(result.evaluation.runtime.feedbackOnly === true
+        ? 'Feedback is ready; the app could not use its map suggestions.'
+        : 'Guidance is ready.');
       return result;
     } catch (error) {
       if (request.controller.signal.aborted) return false;
@@ -6165,7 +6161,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         return;
       }
       setConnectionSuggestions(normalized);
-      toast(normalized.length ? 'Connections are ready for your review.' : 'No connections were suggested. Add more detail and try again.');
+      toast(normalized.length ? 'Connections are ready for your review.' : 'No connections were suggested. You can add one yourself or try again.');
     } catch (error) {
       await handleReviewApiError(error, accessGeneration, 'connection request');
     } finally {
@@ -6447,7 +6443,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
           : project.activeScale === 'exosphere'
             ? 'Larger-scale nodes from your memo are ready for review.'
             : 'Larger-scale and cross-scale relationships are ready for review.'
-      : 'The review did not suggest any items. Add an item yourself, or revise the memo and choose “Reread memo.”');
+      : 'No items were suggested. You can add one yourself or reread the memo.');
     return true;
   };
 
@@ -6475,7 +6471,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         edges: [...draft.candidates.edges.filter((item) => item.scale !== draft.activeScale), ...candidates.edges],
       };
     }, 'candidates.refreshed', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { sourceFingerprint: memoFingerprint(current.submission) });
-    toast(candidates.nodes.length + candidates.edges.length ? 'Suggestions refreshed from your memo.' : 'The revised review did not suggest any items. You can add an item yourself.');
+    toast('Memo review updated. You can continue reviewing your map.');
   };
 
   const commitMapSelections = (sourceProject = project, { installCandidates = false, automatic = false, suggestedConnections = connectionSuggestions } = {}) => {
