@@ -185,6 +185,10 @@ test('trusted selected-node drags follow movement, save, and reload while connec
     await expect(form.getByRole('combobox', { name: 'To', exact: true })).toHaveValue('node_e2e_resource_navigator');
     await expect(page.locator('#inspector-add-actions')).toHaveCount(0);
     await captureSourceRenderedScreenshot(page, testInfo, `Native target tap keeps the connection editor ${size.width}x${size.height}`);
+    // Each viewport starts a separate synthetic gesture. Closing preserves a
+    // draft, so explicitly discard this fixture before the next viewport.
+    await form.getByRole('button',{name:'Discard relationship',exact:true}).click();
+    await expect(page.locator('.relationship-draft-preview')).toHaveCount(0);
   }
   expect(errors).toEqual([]);
 });
