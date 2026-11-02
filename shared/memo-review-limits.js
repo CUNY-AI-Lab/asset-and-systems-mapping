@@ -4,8 +4,8 @@
 export const MEMO_REVIEW_SCALE_LIMITS = Object.freeze({
   micro: Object.freeze({ nodes: 10, connections: 0 }),
   meso: Object.freeze({ nodes: 0, connections: 8 }),
-  exosphere: Object.freeze({ nodes: 6, connections: 5 }),
-  macrosphere: Object.freeze({ nodes: 6, connections: 0, scope: 12 }),
+  exosphere: Object.freeze({ nodes: 6, connections: 0 }),
+  macrosphere: Object.freeze({ nodes: 0, connections: 8 }),
 });
 
 export const MEMO_REVIEW_GUIDANCE_LIMIT = 3;
@@ -23,8 +23,8 @@ export const MAP_CHECK_INTENTS = Object.freeze({
 const ITEM_NOUNS = Object.freeze({
   micro: ['nodes', null],
   meso: ['new nodes', 'relationships between carried Micro nodes'],
-  exosphere: ['outside decision settings', 'pathways'],
-  macrosphere: ['structures', null],
+  exosphere: ['larger-scale nodes', null],
+  macrosphere: ['new nodes', 'relationships between carried nodes, including larger-scale and cross-scale connections'],
 });
 
 /** Short, scale-correct ceiling sentence for the Gateway's second system message. */

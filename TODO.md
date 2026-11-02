@@ -2,6 +2,72 @@
 
 Updated: 2026-08-24
 
+
+## November 1, 2026 — compact editing and one cumulative four-scale map
+
+This dated request supersedes conflicting workflow descriptions in the older ledger below. Micro identifies local nodes; Meso connects them. Exo adds larger-scale nodes; Macro connects those nodes and traces connections back to local nodes. Earlier nodes, relationships, positions, evidence, notes and manual edits must remain visible, usable and available as context for the next exercise. Successful storage alone does not complete this work. The local implementation passed synthetic regression and desktop/phone browser checks. Checked items below record that local verification, not participant testing or publication. The subsequent request authorizes deployment to the existing development Worker only; production publication is not authorized.
+
+The coordinating task supplied the consolidated request bundle `libfile_6f943fd1f45881919d8a9bf347791e88` (`systems-mapping-TODO-and-images-2026-11-01.zip`) and standalone `libfile_d62ce5088b808191b63a91d8a3f8d264`. The parent verified its manifest and 17 original screenshots. This executor's Library catalog currently exposes upload tools but no supported materialization operation, so the originals have not been imported or viewed here. Parent-inspected descriptions informed implementation. Retain this gap until the package is materialized; do not invent download links.
+
+- [x] Complete the paired Micro nodes → Meso relationships → Exo larger-scale nodes → Macro relationships contract in prompts, response schemas, validation, UI, storage and transitions.
+- [x] Keep all earlier graph work visible and useful through forward/back navigation, reload, failed/cancelled guidance and later candidate commits. Preserve IDs, endpoints, evidence, annotations, notes, memo, positions, manual wording and prior decisions.
+- [x] Carry historical Micro relationships into Meso and later views without relabeling or dropping them. Exclude non-canvas legacy Meso records from camera bounds while retaining their data and list access.
+- [x] Reuse identical connection geometry for camera bounds and SVG rendering so the 60-node/120-link carried-context test passes its unchanged timeout and complete payload assertions.
+- [x] Enable larger-to-larger and cross-scale links using existing endpoints without hidden substitutions or duplicate nodes.
+- [x] Make instructor settings compact: remove separator rules and quoted redundant copy, reduce field heights and padding, keep guidance/preview/history collapsed, preserve actual save/publish actions and errors.
+- [x] Provide a direct course-material upload through existing safe extraction and profile storage, including preview, cancellation, replace/append, error recovery and stale-response protection.
+- [x] Replace nested selected-item forms with a minimal direct editor; use Edit, Delete and Interpretation. Keep legacy metadata non-destructively; remove all Connection details editing controls.
+- [x] Keep questions outside response fields and preserve genuine saved text. Ordinary node selection must preserve the user's Notebook visibility.
+- [x] Use Field Notes (Required), Continue to Meso, and separate configured prompts from saved responses. Remove the quoted redundant carry-forward/required prose while retaining validation and saving.
+- [x] Use operation-specific progress: Classifying nodes, Identifying relationships, Contextualizing scales for Exo; show saving/recovery/retry truthfully.
+- [x] Allow intended node movement across available Micro/Meso canvas after resize and zoom; preserve positions through selection, Notebook changes, scales and save/reopen. Do not automatically relayout user work.
+- [x] Cache manually started relationship drafts per account/project/level through close, selection changes, navigation and reload; only explicit Discard or completed insertion resolves a draft. Show a dotted preview without premature graph persistence.
+- [x] Allow blank relationship wording and later editing. Render only that wording as the relationship label. Distinguish direction visually and accessibly without inventing unknown/variable direction or appending direction prose to the verb.
+- [x] Provide recoverable Delete and Delete/Backspace handling for intentionally selected nodes, protect connected records, ignore typing/composition, and verify restoration and focus.
+- [x] Verify desktop and 390×844 mobile pixels, accessibility, graph readability, cumulative context, imports, save/publish, errors, repeated navigation and private/shared roundtrips with synthetic data.
+- [x] Resolve aggregate test failures without weakening preservation, geometry, access or privacy assertions; run both frontend builds and capture source-matched review screenshots.
+- [x] Render explicit legacy scope memberships as distinguishable, traceable links to exact endpoints; synchronize list/graph selection without converting scope records into relationship edges.
+- [x] Open a dedicated synthesis/export screen after a successful Macro completion save. Summarize actual cumulative graph and notes, support existing private/shared exports and return to the map, and verify failure, repeated completion and reload without an added model call.
+- [ ] Materialize and inspect the original reference package when a supported consumer-local route is available, then compare it with the revised UI. Attach final screenshots through confirmed Library receipts.
+
+The updated bundle is version 1 with 45 unchecked request entries and 17 original images; its exact contents remain unimported here. This section groups the transcript requirements rather than claiming an exact copy of that checklist.
+
+### November 2 screenshot refinements and development release
+
+- [x] Inspect the actual earlier Exo/Macro and export-control screenshots before revising them; preserve the earlier captures as before evidence.
+- [x] Use straight connections with deterministic placement that reduces crossings and card intersections. Keep arrow direction and dotted drafts distinct; retain intentional node placements.
+- [x] Remove obscuring fills and selection-driven fading of earlier work. Keep the full cumulative graph present when following a connection.
+- [x] Move Map / Notebook to the top left inside its container without automatic Notebook toggling on node selection.
+- [x] Replace mixed export button treatments with equal-sized controls and a clear Return to map action on desktop and phone. Remove the Project complete heading and redundant download/helper copy without altering user notes or errors.
+- [ ] Finish dense-map, drag/undo/reload and aggregate synthetic checks on the final revision; inspect fresh Exo/Macro desktop and phone pixels.
+- [ ] Publish a clean commit with verified zmuhls author and committer, and pass required hosted checks on that exact source.
+- [ ] Deploy only to the verified existing systems-mapping-dev Worker and verify the serving revision, assets, health and anonymous access denial. Keep authenticated and physical-device acceptance separate.
+- [ ] Upload the final screenshots through Library and record the confirmed file IDs.
+
+Original screenshot references (all parent-inspected; not locally materialized):
+
+| Reference | Requested correction | Library file |
+| --- | --- | --- |
+| 4:20:14 PM console | compact structure, oversized fields, rules | `libfile_dfc8f0da4aa48191b3cc512f364d076b` |
+| 4:22:27 PM guidance | collapsed saved preview | `libfile_225c8dbe748c8191bf7f3c8a5e9613ea` |
+| 4:22:49 PM guidance | compact collapsed state | `libfile_f2ea728688888191b5e5256fa98ee5e4` |
+| 4:26:14 PM editor | remove nested core editing | `libfile_56919572442881918b5a86ab01d10196` |
+| 4:26:36 PM editor | simplify nested headings | `libfile_9301d109032c8191803ef8ae0286f407` |
+| 4:26:44 PM evidence | drastically fewer inputs | `libfile_543ecc20d1ec81919e3ebf4ce012d39f` |
+| 4:29:50 PM interpretation | instructions outside field | `libfile_6842b0a7e6a08191ba2d8e7b50f35e45` |
+| 4:32:19 PM progress | actual operation labels | `libfile_42f6db4133a4819180cf8d752d6981ab` |
+| 4:34:41 PM dragging | move right node into left canvas | `libfile_5c2b0dfee7308191bdf4cb8be4ec4716` |
+| 4:36:28 PM new relationship | dotted preview | `libfile_c15dd39bcab0819195741e8f9acce405` |
+| 4:37:13 PM details | remove all Connection details UI | `libfile_ff61d1aa6ecc819182edf7e0f816f0cd` |
+| 4:39:53 PM label | verb separated from direction | `libfile_7758e891460c81919bac32a54ff348ff` |
+| 4:41:44 PM editing | Edit and Delete | `libfile_31a39cd0151481918e46307c0a10eff8` |
+| 4:47:26 PM Exo | empty-looking transition | `libfile_a8a5f171980c8191a1cbab7e97464852` |
+| 4:49:28 PM Exo item | cross-scale connection control | `libfile_cec74446d0b88191b019695301398ee0` |
+| 4:49:43 PM earlier graph | cumulative visible retrieval | `libfile_9bcd9727644c81918b310513ffe0b45b` |
+| 5:13:57 PM scope links | traceable stored Macro-to-Micro influence | `libfile_76f8c1bb54508191b3fb626b9e56b467` |
+
+
+
 ## 2026-08-24 Micro/Meso correction
 
 Current authority: the direct decision recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md`. Micro owns discrete elements and the verbs for their direct, within-setting relationships. Meso names a mesosystem formed by the interrelation of at least two carried Micro settings and never stores a relationship proposition or verb-bearing edge. The earlier “Micro nodes only / Meso first connections” interpretation is historical.

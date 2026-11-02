@@ -14,14 +14,7 @@ export function relationshipArrowheads(edge) {
 export { relationshipDescription } from '../shared/relationship-process.js';
 
 export function relationshipMapLabel(edge) {
-  const process = edge.relationshipProcess || {};
-  return [
-    process.connectionStatus === 'missing' ? 'Missing connection' : '',
-    edge.verb,
-    !['source to target', 'target to source', 'both directions'].includes(relationshipDirection(edge)) ? (relationshipDirection(edge) === 'varies' ? 'direction varies' : 'direction not yet known') : '',
-    process.strength && process.strength !== 'unknown' ? process.strength : '',
-    Number.isInteger(process.familyCount) ? `${process.familyCount} ${process.familyCount === 1 ? 'family' : 'families'}` : '',
-  ].filter(Boolean).join(' · ');
+  return edge.verb || '';
 }
 
 export function relationshipLineWidth(edge) {

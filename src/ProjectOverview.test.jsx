@@ -32,4 +32,13 @@ describe('concise cumulative map', () => {
     expect(within(meso).getByText(`${expectedCount} relationships · 1 saved linkage`)).toBeVisible();
     expect(within(meso).queryByText(/setting links/)).not.toBeInTheDocument();
   });
+  it('counts Macro relationships separately from historical scope memberships', () => {
+    const project = buildEastHarlemDisabilityProject();
+    const macro = project.graph.nodes.find(node => node.scale === 'macrosphere');
+    const target = project.graph.nodes.find(node => node.scale === 'micro');
+    project.graph.edges.push({ id: 'macro-link', source: macro.id, target: target.id, scale: 'macrosphere', verb: '', status: 'accepted', claimState: 'student interpretation', evidence: 'Synthetic source' });
+    render(<ProjectOverview project={project} />);
+    fireEvent.click(screen.getByText('Cumulative map'));
+    expect(within(screen.getByRole('region', { name: 'Macro-level results' })).getByText(`1 node · 1 relationship · ${macro.scopeNodeIds.length} stored scope memberships`)).toBeVisible();
+  });
 });

@@ -1,3 +1,4 @@
+import { isNodeReviewScale, isRelationshipReviewScale, canConnectAtScale } from '../shared/mapping-grammar.js';
 import { appendCoursePrompt } from '../shared/course-prompt.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
@@ -174,28 +175,21 @@ const OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION = [
   'Read the student memo as an interested, encouraging reviewer. Ground every statement in the memo itself, quoting or closely paraphrasing actual passages. Do not score, grade, or rate the memo, and do not use rubric labels or criterion identifiers.',
   'Return one object with exactly these keys: guidance, nodes, connections, example, readiness.',
   'MESO COVERAGE: include both supported observed exchanges and explicitly documented missing pairs using the carried IDs. Within the eight-relationship limit, preserve each distinct pair the memo explicitly documents, including an absent connection. Keep all available source-supported process details, including direction, strength, channel, connectingWork, and familyCount.',
-  'BE SELECTIVE. Return at most 10 nodes and zero connections at Micro, zero nodes and 8 relationships at Meso, 6 outside decision settings with 5 pathways at Exosphere, and 6 structures at Macrosphere. Use only supported items and avoid duplicates.',
   `guidance must be an array of no more than 3 objects, each with a required point and an optional evidenceExcerpt copied character for character from the memo passage it refers to (shorten by choosing a shorter contiguous passage, never by paraphrase). Each point should either name something the memo already supports or raise a genuine question worth pursuing. Never tell the student to return to or rewrite the memo; suggest what to strengthen in place or carry forward to the map.`,
-  `nodes must be an array of objects with exactly these keys: label, type, scale, evidence — plus basis at Exosphere and Macrosphere, and deontic and scope at Macrosphere. At Meso, nodes must be empty. type must be one of ${MEMO_REVIEW_NODE_TYPES.join(', ')}. evidence must quote or closely paraphrase the memo passage that supports the node, or identify what the student should verify for an inferred outer-level item.`,
   'Each node label MUST be the shortest complete memo-supported referring expression for exactly one accepted map element. Resolve every pronoun or coreference to a concrete named or role-resolved label supported by the memo; if the referent is not unambiguous, omit it. Never attach location, schedule, action, relationship, or explanatory material merely to make a label longer; keep those details in evidence, and emit a separately supported setting only when it is independently relevant. Never use pronouns, possessive references, dates, times, schedules, frequency phrases, modifiers, quantifiers, action verbs, clauses, fragments, relationship propositions, outcomes, or explanations as node labels. Never invent abstractions such as "Access to Services" or "Community Wellbeing". Preserve complete official names even when they are long.',
   'Use literal, conventional instructional language throughout. Do not use invented category labels, slogans, or figurative spatial descriptions in node labels, guidance, examples, or readiness notes.',
-  'Keep every suggestion and every sentence of guidance within the active scale. At Macrosphere, discuss only validated broader conditions and the map items they affect; do not discuss missing institutions or outside decision pathways. At Exosphere, discuss only named outside decision settings and their supported funding and decision pathways between outside offices or into immediate settings. Call these Exo-level connections in student-facing text. At Meso, discuss evidence-backed relationships between existing Micro nodes. At Micro, discuss only discrete immediate elements.',
-  'SCALE BOUNDARIES — assign each item by the focal person\'s participation and the pathway of effect, never by entity kind, size, or fame. Micro identifies immediate settings the person participates in, their people, roles, activities, objects, and resources. A named organization, institution, agency, or service remains at Micro when the person participates there directly. Meso identifies directional relationships between the people, groups, resources and settings already mapped at Micro. Exosphere identifies outside decision settings whose funding or decisions affect the focal situation through other outside offices or immediate settings, even though the person does not participate in those decision settings. Macrosphere identifies broader laws, public policies, economic conditions, histories, structures, and cultural beliefs that shape multiple parts of the map. Do not restate lower-level items at a higher level.',
-  `At Micro, propose only bounded people, roles, groups, immediate settings, named activities, tangible objects, or resources that the memo supports. Preserve an organization, institution, agency, or service as its actual entity type while assigning it to Micro when the focal person participates there. A named activity must still be a complete noun phrase, never the action verb or a sentence fragment. Every carried Micro node is eligible as a Meso relationship endpoint. At Exosphere, node type MUST be one of: ${EXOSPHERE_NODE_TYPES.join(', ')}. At Macrosphere, node type MUST be one of: ${MACROSPHERE_NODE_TYPES.join(', ')}. At Exosphere and Macrosphere, DO NOT limit yourself to what the memo names: examine the carried map for outside decision settings that act indirectly and broader conditions that shape several map items. Set basis to "memo" when the memo names the item, or "inference" when the item is inferred from the mapped context; its evidence must say what to verify.`,
-  'When the project input includes carriedNodes, those elements are ALREADY on the student\'s map. Never repeat one in nodes. At Meso, every relationship endpoint must use the exact ID of a Micro node already on the map. At Exosphere, connections may use an existing Micro setting\'s exact label as the endpoint of an outside decision pathway. At Macrosphere, scope entries must use exact IDs from carriedNodes and must never refer to another Macrosphere item.',
   'When the project input includes carriedConnections, those relationships are ALREADY on the student\'s map. Never propose a connection that repeats one.',
-  `connections must be an array of objects with required keys source, target, verb, rationale and optional relationshipProcess. At Micro and Macrosphere, connections must be empty. At Meso, source and target must be different exact IDs from carriedNodes, both at Micro; verb names a concrete evidence-backed action or exchange and rationale explains the evidence. At Exosphere, every connection must join named outside decision settings to each other or to a carried Micro setting, and verb must be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}.`,
   'Include explicitly documented missing pairs alongside observed exchanges when they fit the connection limit. Preserve their absence as connectionStatus missing, and retain supported channel, strength, connecting person and family count details.',
   'At Meso, use a short plain active verb phrase for a concrete action or exchange that matters to the mapped situation. Do not use mere co-residence or co-presence, vague collaboration, or generic planning as a relationship unless the memo makes that tie analytically consequential and names what passes between the endpoints.',
   'At Meso, reuse the exact supplied Micro node IDs. Return an empty nodes array and describe relationships in connections. The student can choose one-way or two-way direction while reviewing the connection.',
   'At Meso, guidance and readiness should describe the proposed relationships using the human-readable labels of existing Micro nodes.',
-  'EXOSPHERE/MACROSPHERE BOUNDARY: Exosphere is a relational placement, not an institution category. Place a concrete institution or service at Micro when the focal person participates there; place it at Exosphere when its relevant decisions occur outside immediate settings. Preserve supported steps between outside offices and ask about any unverified downstream step into the focal person’s setting. An operational rule explicitly owned by that named outside decision setting may remain at Exosphere. Macrosphere is reserved for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Never repeat a concrete institution as a Macrosphere condition.',
-  `EXOSPHERE FINAL CHECK: every node label must be a specific proper name, official acronym, named service, named public-benefit program, or operational rule explicitly scoped to a named outside decision setting. A generic category is not an Exosphere node: omit labels such as "home care agency", "legal services office", "scheduling office", "union", "employer", "benefits office", "service system", or an unnamed hospital, college, clinic, center, program, or agency. An inferred node must still supply a specific proper name and mark basis "inference"; otherwise raise the gap only in guidance. Choose node type only from: ${EXOSPHERE_NODE_TYPES.join(', ')}. Every proposed Exosphere node must participate in a supported funding or decision pathway to a carried Micro setting or another proposed or carried Exosphere node, and must use exactly one allowed Exosphere verb. Use human-readable labels rather than node IDs in guidance, rationale, readiness, and example text.`,
-  `At Macrosphere each node is a structure and relates to the map through its scope, never through connections: scope must be an array of 2 or more exact IDs from carriedNodes that the structure conditions the same way, and deontic must be exactly one of: ${SCALE_VERB_LEXICONS.macrosphere.join(', ')} — how the structure operates on its scope.`,
-  'For Meso, use the human-readable carriedNodes labels, not their IDs, in guidance and readiness text. For Micro and Meso, example must be null. For Exosphere and Macrosphere, example may be a short plain-language paragraph, or null, that explains one outside decision pathway or broader condition.',
-  'readiness must be an object with exactly the keys ready and note. For Micro, ready means the memo supports at least two clear nodes. For Meso, ready means at least one evidence-backed relationship connects two Micro nodes already on the map. For Exosphere, ready means at least one named outside decision setting has an evident pathway to a carried Micro setting or another outside decision setting. For Macrosphere, ready means at least one broader condition affects two or more map items. Readiness never blocks the student from continuing.',
   'FINAL OUTPUT SHAPE: return exactly five top-level keys and no wrapper or metadata: {"guidance":[],"nodes":[],"connections":[],"example":null,"readiness":{"ready":false,"note":"Short plain-language note."}}. Fill the arrays and readiness values under the active-scale rules above. Never add suggestion, review, result, activeScale, scale, confidence, metadata, or any sixth top-level key.',
   'Do not add any other keys, Markdown, or prose outside the object.',
+  'BE SELECTIVE. Micro returns at most 10 local nodes and zero connections. Meso returns zero nodes and at most 8 relationships between carried Micro nodes. Exo returns at most 6 additional larger-scale nodes and zero connections. Macro returns zero nodes and at most 8 relationships between carried nodes, including larger-scale nodes and cross-scale connections. Never repeat or replace carried work.',
+  `Exo nodes name larger-scale institutions, resources, policies, laws, economic conditions, histories, cultures or structures. Use type from: ${EXOSPHERE_NODE_TYPES.join(', ')}. Each node uses exactly label, type, scale, evidence, basis (memo or inference). Keep a complete noun phrase and evidence; inferred items must state what to verify. Do not require a pathway before a node can be proposed.`,
+  'Meso and Macro connections use two different exact IDs from carriedNodes, a verb and a supporting rationale, with optional relationshipProcess. Meso uses Micro nodes. Macro may connect any carried nodes, including Exo-to-Exo and Exo-to-Micro. Direction belongs in relationshipProcess.direction, never appended to the verb. Do not return node suggestions at relationship stages.',
+  'Keep all output within the active exercise. Micro identifies local nodes, Meso connects them, Exo adds larger-scale nodes, Macro connects them and traces links to the local map. Use the carried map as context for the next exercise. Never invent a missing endpoint or change an existing node ID. example is null.',
+
 ].join('\n');
 function memoReviewSchemaInstruction(scale) {
   if (!['micro', 'meso'].includes(scale)) return OLLAMA_SUGGESTION_SCHEMA_INSTRUCTION;
@@ -245,7 +239,7 @@ const CONNECTION_SUGGESTION_SCHEMA_INSTRUCTION = [
   'connections must be an array of no more than 12 objects.',
   'Each connection must contain source, target, verb, rationale and may include relationshipProcess.',
   'source and target must be different node IDs from the supplied nodes.',
-  `At Meso, both endpoints must be supplied Micro node IDs. Use a short plain verb for a supported relationship. At Exosphere, one endpoint must be an outside decision setting and the other a Micro setting or another outside decision setting, and verb must be exactly one of: ${SCALE_VERB_LEXICONS.exosphere.join(', ')}.`,
+  `At Meso, both endpoints must be supplied Micro node IDs. Use a short plain verb for a supported relationship. At Exo and Macro, both endpoints must be supplied nodes. Cross-scale relationships are allowed, and the verb is the student's relationship wording.`,
   'At Meso, use a short plain active verb phrase for a concrete action or exchange that matters to the mapped situation. Do not use mere co-residence or co-presence, vague collaboration, or generic planning unless the student description makes that tie analytically consequential and names what passes between the endpoints.',
   'rationale must quote or closely paraphrase the exact student-description evidence for the relationship.',
   'Do not add confidence scores, evidence claims, Markdown, or prose outside the object.',
@@ -883,7 +877,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
   if (!Array.isArray(value.connections) || value.connections.length > Math.min(scaleLimits.connections, MEMO_REVIEW_LIMITS.connections)) {
     throw new MemoReviewSemanticError(`connections exceeds the ${activeScale} limit.`);
   }
-  if ((activeScale === 'micro' || activeScale === 'macrosphere') && value.connections.length) {
+  if (isNodeReviewScale(activeScale) && value.connections.length) {
     throw new MemoReviewSemanticError(`${activeScale} review must return an empty connections array.`);
   }
   // Generated prose may use typographic spaces around arrows or punctuation.
@@ -961,7 +955,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     if (!isNodeTypeAllowedAtScale(node.type, activeScale)) throw new MemoReviewSemanticError(`nodes[${index}].type does not belong at ${activeScale}.`);
     if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is a reference, action, clause, fragment, or non-entity Micro label.`);
     if (activeScale === 'meso' && (!isMesosystemLabel(label) || node.type !== MESOSYSTEM_NODE_TYPE)) throw new MemoReviewSemanticError(`nodes[${index}] is not a scoped mesosystem.`);
-    if (activeScale === 'exosphere' && !isNamedInstitutionLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is not a named institution or service system.`);
+
     if (activeScale === 'macrosphere' && (isNamedInstitutionLabel(label) || isObviousLowerLevelMacroLabel(label))) throw new MemoReviewSemanticError(`nodes[${index}].label does not name a broader condition.`);
     if ((activeScale === 'exosphere' || activeScale === 'macrosphere') && !['memo', 'inference'].includes(node.basis)) {
       throw new MemoReviewSemanticError(`nodes[${index}].basis must be exactly memo or inference.`);
@@ -971,8 +965,8 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     }
     const lower = label.toLocaleLowerCase();
     const carriedMatches = [...carriedById.values()].filter(item => item.label.toLocaleLowerCase() === lower);
-    const sameMappedMicroItem = activeScale === 'micro' && carriedMatches.length === 1
-      && carriedMatches[0].label === label && carriedMatches[0].type === node.type && carriedMatches[0].scale === 'micro';
+    const sameMappedMicroItem = isNodeReviewScale(activeScale) && carriedMatches.length === 1
+      && carriedMatches[0].label === label && carriedMatches[0].type === node.type && carriedMatches[0].scale === activeScale;
     if (proposedByLowerLabel.has(lower) || (activeScale !== 'meso' && carriedByLowerLabel.has(lower) && !sameMappedMicroItem)) {
       throw new MemoReviewSemanticError(`nodes[${index}].label duplicates an existing or proposed element.`);
     }
@@ -1034,23 +1028,8 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       || connection.source !== sourceNode.id || connection.target !== targetNode.id)) {
       throw new MemoReviewSemanticError(`connections[${index}] must use exact carried Micro node IDs.`);
     }
-    if (activeScale === 'exosphere') {
-      if (!SCALE_VERB_LEXICONS.exosphere.includes(verb)) {
-        throw new MemoReviewSemanticError(`connections[${index}].verb must use the exact Exosphere register.`);
-      }
-      const sourceIsDecisionSetting = sourceNode.scale === 'exosphere';
-      const targetIsDecisionSetting = targetNode.scale === 'exosphere';
-      const sourceIsImmediateSetting = sourceResolution.carried
-        && sourceNode.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(sourceNode.type);
-      const targetIsImmediateSetting = targetResolution.carried
-        && targetNode.scale === 'micro' && MICRO_SETTING_NODE_TYPES.includes(targetNode.type);
-      if (!((sourceIsDecisionSetting && targetIsImmediateSetting)
-        || (targetIsDecisionSetting && sourceIsImmediateSetting)
-        || (sourceIsDecisionSetting && targetIsDecisionSetting))) {
-        throw new MemoReviewSemanticError(`connections[${index}] must connect an outside decision setting to a supplied Micro setting or another outside decision setting.`);
-      }
-      if (sourceIsDecisionSetting && !sourceResolution.carried) connectedProposedExosphereLabels.add(sourceResolution.label);
-      if (targetIsDecisionSetting && !targetResolution.carried) connectedProposedExosphereLabels.add(targetResolution.label);
+    if (activeScale === 'macrosphere' && (!sourceResolution.carried || !targetResolution.carried || connection.source !== sourceNode.id || connection.target !== targetNode.id || !canConnectAtScale(activeScale, sourceNode) || !canConnectAtScale(activeScale, targetNode))) {
+      throw new MemoReviewSemanticError(`connections[${index}] must use exact carried node IDs.`);
     }
     const key = generatedRelationshipKey(connection, sourceResolution.reference, targetResolution.reference);
     if (seenConnections.has(key) || carriedConnectionKeys.has(key)) throw new MemoReviewSemanticError(`connections[${index}] repeats a relationship.`);
@@ -1076,19 +1055,16 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
       if (absent) throw new MemoReviewSemanticError('connections must preserve an explicitly documented missing endpoint pair when it fits the relationship limit.', { grounding: true });
     }
   }
-  if (activeScale === 'exosphere') {
-    value.nodes.forEach((node, index) => {
-      if (!connectedProposedExosphereLabels.has(node.label)) {
-        throw new MemoReviewSemanticError(`nodes[${index}] must have a supported pathway to a supplied Micro setting or another outside decision setting.`);
-      }
-    });
-  }
+
 
   // A reread can repeat a valid item already on the Micro map. Every item has
   // passed the complete evidence/type/label checks above. Treat an unambiguous
   // exact identity as a no-op; preserve the student's existing record and keep
   // any new proposals. Conflicting identities and duplicate proposals fail.
   if (repeatedMicroLabels.size) value = { ...value, nodes: value.nodes.filter(node => !repeatedMicroLabels.has(node.label)) };
+  if (activeScale === 'exosphere' || activeScale === 'macrosphere') {
+    return { ...value, guidance: value.guidance.map((item, index) => ({ ...item, ...(item.evidenceExcerpt && evidenceMatches[index] !== 'exact' ? { evidenceMatch: evidenceMatches[index] } : {}) })), connections: expectedConnections };
+  }
   const normalizedReview = normalizeMemoReview(value, activeScale, 'generated memo review', carriedNodes, carriedConnections);
   // normalizeMemoReview also replays older stored reviews, where Meso and
   // Macrosphere narrative was historically derived from validated scopes.
@@ -1154,7 +1130,8 @@ function normalizeMemoReview(value, activeScale, name = 'memo review', carriedNo
     throw new HttpError(400, `${name} does not follow the memo review contract.`);
   }
   validateBoundedJson(value, name, { maxSerialized: 64_000, maxObjectKeys: 400 });
-  const scaleLimits = MEMO_REVIEW_SCALE_LIMITS[activeScale] || MEMO_REVIEW_SCALE_LIMITS.micro;
+  if (activeScale === 'macrosphere' && Array.isArray(value.nodes) && value.nodes.length === 0 && Array.isArray(value.connections)) return structuredClone(value);
+  const scaleLimits = activeScale === 'macrosphere' ? { nodes: 6, connections: 0, scope: 12 } : activeScale === 'exosphere' ? { nodes: 6, connections: 5 } : MEMO_REVIEW_SCALE_LIMITS[activeScale] || MEMO_REVIEW_SCALE_LIMITS.micro;
   const carriedNodeById = new Map((Array.isArray(carriedNodes) ? carriedNodes : []).map((node) => [node.id, node]));
   const carriedNodeByLabel = new Map([...carriedNodeById.values()].map((node) => [node.label.trim().toLocaleLowerCase(), node]));
   const carriedConnectionKeys = new Set((Array.isArray(carriedConnections) ? carriedConnections : [])
@@ -1455,7 +1432,7 @@ function validatePreflightEvaluationRequest(value) {
     return {
       source: requireSnapshotText(connection.source, `${connectionName}.source`, { max: 200 }),
       target: requireSnapshotText(connection.target, `${connectionName}.target`, { max: 200 }),
-      verb: requireSnapshotText(connection.verb, `${connectionName}.verb`, { max: MEMO_REVIEW_LIMITS.verb }),
+      verb: requireSnapshotText(connection.verb, `${connectionName}.verb`, { min: 0, max: MEMO_REVIEW_LIMITS.verb }),
       ...carriedRelationshipProcess(connection, connectionName),
     };
   }) : [];
@@ -1494,7 +1471,6 @@ function validateConnectionSuggestionRequest(value) {
   catch { throw new HttpError(400, 'Student judgments are invalid.'); }
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   if (value.activeScale === 'micro') throw new HttpError(400, 'Choose Meso to add relationships between your Micro nodes.');
-  if (value.activeScale === 'macrosphere') throw new HttpError(400, 'Macrosphere uses structure scopes and does not use relationship edges.');
   const inquiry = requireSnapshotText(value.inquiry, 'inquiry', { min: 0, max: 8000 });
   const prompt = requireSnapshotText(value.prompt, 'prompt', { max: 4000 });
   if (!Array.isArray(value.nodes) || value.nodes.length < 2 || value.nodes.length > 50) {
@@ -1529,7 +1505,7 @@ function validateConnectionSuggestionRequest(value) {
     if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
       throw new HttpError(400, `${name} must connect two different supplied nodes.`);
     }
-    return { source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { max: 100 }), ...carriedRelationshipProcess(relationship, name) };
+    return { source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { min: 0, max: 100 }), ...carriedRelationshipProcess(relationship, name) };
   });
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
   return {
@@ -1588,7 +1564,7 @@ function validateMapCheckRequest(value) {
     if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
       throw new HttpError(400, `${name} must connect two different supplied nodes.`);
     }
-    return { id, source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { max: 100 }), ...carriedRelationshipProcess(relationship, name) };
+    return { id, source, target, verb: requireSnapshotText(relationship.verb, `${name}.verb`, { min: 0, max: 100 }), ...carriedRelationshipProcess(relationship, name) };
   });
   if (!Array.isArray(value.scopes) || value.scopes.length > 50) throw new HttpError(400, 'scopes must be an array of no more than 50 items.');
   const scopes = value.scopes.map((scope, index) => {
@@ -1778,7 +1754,7 @@ function storedAtomicMemoReview(value, activeScale) {
   try {
     const keys = ['guidance', 'nodes', 'connections', 'example', 'readiness'];
     if (!exactKeys(value, keys)) fail();
-    const scaleLimits = MEMO_REVIEW_SCALE_LIMITS[activeScale] || MEMO_REVIEW_SCALE_LIMITS.micro;
+    const scaleLimits = activeScale === 'macrosphere' && value.nodes?.length ? { nodes: 6, connections: 0, scope: 12 } : activeScale === 'exosphere' ? { nodes: 6, connections: 5 } : MEMO_REVIEW_SCALE_LIMITS[activeScale] || MEMO_REVIEW_SCALE_LIMITS.micro;
     if (!Array.isArray(value.guidance) || value.guidance.length > MEMO_REVIEW_LIMITS.guidance) fail();
     value.guidance.forEach((item) => {
       const itemKeys = Object.hasOwn(item, 'evidenceExcerpt')
@@ -1809,7 +1785,7 @@ function storedAtomicMemoReview(value, activeScale) {
       nodeByReference.set(node.label, node);
       if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) fail();
       if (activeScale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || !isMesosystemLabel(node.label))) fail();
-      if (activeScale === 'exosphere' && (!isNamedInstitutionLabel(node.label) || !['memo', 'inference'].includes(node.basis))) fail();
+      if (activeScale === 'exosphere' && !['memo', 'inference'].includes(node.basis)) fail();
       if (activeScale === 'macrosphere' && (isNamedInstitutionLabel(node.label)
         || isObviousLowerLevelMacroLabel(node.label) || !['memo', 'inference'].includes(node.basis)
         || !SCALE_VERB_LEXICONS.macrosphere.includes(node.deontic))) fail();
@@ -1825,7 +1801,7 @@ function storedAtomicMemoReview(value, activeScale) {
     });
     if (!Array.isArray(value.connections)
       || value.connections.length > Math.min(scaleLimits.connections, MEMO_REVIEW_LIMITS.connections)
-      || ((activeScale === 'micro' || activeScale === 'macrosphere') && value.connections.length)) fail();
+      || (activeScale === 'micro' && value.connections.length)) fail();
     const seenConnections = new Set();
     value.connections.forEach((connection) => {
       if (!exactKeys(connection, ['source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'rationale', ...(connection.relationshipProcess !== undefined ? ['relationshipProcess'] : [])])
@@ -1847,7 +1823,7 @@ function storedAtomicMemoReview(value, activeScale) {
         const targetNode = nodeByReference.get(connection.target) || nodeByReference.get(connection.targetLabel);
         if (MICRO_SETTING_NODE_TYPES.includes(sourceNode?.type) && MICRO_SETTING_NODE_TYPES.includes(targetNode?.type)) fail();
       }
-      if (activeScale === 'exosphere' && !SCALE_VERB_LEXICONS.exosphere.includes(connection.verb)) fail();
+
     });
     if ((activeScale === 'micro' || activeScale === 'meso') ? value.example !== null
       : value.example !== null && !exactText(value.example, MEMO_REVIEW_LIMITS.example)) fail();

@@ -1177,7 +1177,8 @@ label.button:focus-within {
 .ecology-layer--meso > ellipse { fill: color-mix(in srgb, var(--meso) 6%, #fff); }
 .ecology-layer--exosphere > ellipse { fill: color-mix(in srgb, var(--exosphere) 5%, #fff); }
 .ecology-layer--macrosphere > ellipse { fill: color-mix(in srgb, var(--macrosphere) 3%, #fff); }
-.ecology-layer.is-muted { opacity: .16; }
+.ecology-layer.is-muted { opacity: 1; }
+.ecology-layer.is-muted > ellipse { stroke-opacity: .45; fill-opacity: .6; }
 .ecology-layer__label rect { fill: var(--surface); stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .ecology-layer__label text { fill: currentColor; font-size: 15px; font-weight: 700; text-anchor: middle; }
 .ecology-layer--meso .ecology-layer__label text { font-size: 22px; }
@@ -1820,3 +1821,48 @@ html[data-theme="dark"] .ecology-layer--macrosphere > ellipse { fill: color-mix(
 .guidance-progress__fill { display: block; height: 100%; border-radius: 3px; background: var(--blue); transition: width .9s ease-out; }
 .guidance-progress__label { font-weight: 600; }
 .guidance-progress__detail { margin: 0; font-size: 13px; color: var(--muted); }
+
+.item-editor-heading { margin: 0; font-size: 15px; }
+.inspector .node-summary { border: 0; padding: 0; }
+.inspector .node-summary__body { gap: 10px; padding: 0; }
+.inspector .annotation-field textarea { min-height: 84px; }
+.saved-item-context { font-size: 13px; }
+.saved-item-context summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.saved-item-context dl { margin: 0; }
+.saved-item-context dt { font-weight: 600; }
+.saved-item-context dd { margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.map-context-actions { position: absolute; top: 12px; right: 12px; z-index: 8; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: auto; }
+.map-context-actions:empty { display: none; }
+.map-context-actions .button { min-height: 44px; padding: 8px 14px; font-size: 14px; }
+.inspector__body > .map-item-action { justify-self: start; width: auto; min-height: 44px; padding: 8px 14px; margin: 0; }
+
+.scope-influence-hit { fill: none; stroke: transparent; stroke-width: 20; pointer-events: stroke; }
+.scope-influence-line { fill: none; stroke: var(--plum); stroke-width: 2; pointer-events: none; }
+.scope-influence.is-selected .scope-influence-line { stroke-width: 3; }
+.scope-influence-end, .scope-influence-label-bg { fill: var(--surface); stroke: var(--plum); }
+.scope-influence-label { fill: var(--ink); font: 600 14px var(--body); }
+.scope-influence:focus-visible { outline: none; }
+.scope-influence:focus-visible .scope-influence-line { stroke: var(--blue); stroke-width: 4; }
+.map-connections button[aria-pressed="true"] { outline: 2px solid var(--plum); outline-offset: -2px; }
+
+/* Scale is shown by outlines and labels, never by a veil over earlier work. */
+.graph-canvas :is(.micro-setting-regions, .scope-fields) { display: none; }
+.graph-canvas .ecology-layer > ellipse { fill: none !important; }
+.edge-label-leader { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
+
+.project-completion { width: min(920px, 100%); margin: 0 auto; padding: 28px 24px 48px; overflow-y: auto; }
+.project-completion h1 { margin: 0; font-size: 28px; scroll-margin-top: calc(var(--header) + var(--safe-top) + 20px); }
+.project-completion header p { margin: 6px 0 16px; }
+.completion-total { font-size: 16px; }
+.completion-levels { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 28px; margin: 24px 0; }
+.completion-levels h2, .completion-exports h2 { font-size: 18px; margin: 0 0 6px; }
+.completion-levels p { margin: 0; }
+.completion-levels blockquote { margin: 10px 0 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.completion-exports { margin-bottom: 24px; }
+.completion-exports .field { max-width: 240px; margin-bottom: 12px; }
+.completion-format-actions, .completion-return { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+.completion-format-actions .button, .completion-return .button { width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 10px 12px; }
+.completion-return { margin-top: 12px; }
+.completion-return .button { grid-column: 4; }
+@media (max-width: 600px) { .project-completion { padding: 20px 16px 40px; } .completion-levels { grid-template-columns: 1fr; gap: 18px; } .completion-format-actions { grid-template-columns: repeat(2,minmax(0,1fr)); } .completion-return { grid-template-columns: 1fr; } .completion-return .button { grid-column: 1; } }

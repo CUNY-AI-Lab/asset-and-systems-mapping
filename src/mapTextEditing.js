@@ -10,7 +10,6 @@ export function nodeLabelIssue(value, node, nodes) {
   if (containsRetiredSystemsLanguage(value)) return 'Use a direct, conventional name for the map item.';
   if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(value)) return 'Name one specific person, role, group, activity, object, or immediate setting.';
   if (node.scale === 'meso' && !isMesosystemLabel(value)) return 'Name a linkage among at least two Micro settings, such as “home–school coordination.”';
-  if (node.scale === 'exosphere' && !isNamedInstitutionLabel(value)) return 'Use the full name of an outside office, agency, employer, funder, or service system.';
   if (node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(value)) return 'That label names an immediate person, role, activity, or schedule. Add it at Micro instead.';
   if (node.scale === 'macrosphere' && isNamedInstitutionLabel(value)) return 'Name a broader policy, condition, or belief rather than an institution.';
   if (node.scale === 'macrosphere' && labelRepeatsInstitution(value, nodes.filter(item => item.scale === 'exosphere'))) return 'That label names or repeats an institution. Add it at Exo-level instead.';
@@ -18,9 +17,8 @@ export function nodeLabelIssue(value, node, nodes) {
 }
 
 export function relationshipIssue(value, edge) {
-  if (!['micro', 'meso', 'exosphere'].includes(edge.scale)) return 'Edit relationships at Meso or Exo-level.';
-  if (!value || value.length > 100) return 'Enter a relationship of 1–100 characters.';
-  if (edge.scale === 'exosphere' && !scaleLexiconVerb('exosphere', value)) return 'Choose an Exo-level decision-path relationship.';
+  if (!['micro', 'meso', 'exosphere', 'macrosphere'].includes(edge.scale)) return 'Edit relationships at Meso or Exo-level.';
+  if (value.length > 100) return 'Use at most 100 characters.';
   return '';
 }
 

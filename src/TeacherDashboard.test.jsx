@@ -716,21 +716,22 @@ describe('TeacherDashboard', () => {
     expect(guidanceTab).toHaveFocus();
     expect(guidanceTab).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: 'Field Notes prompts' })).toBeVisible();
-    expect(screen.getByText('One question for each scale.')).toBeVisible();
+    expect(screen.queryByText('One question for each scale.')).not.toBeInTheDocument();
     expect(await screen.findByLabelText('Scale')).toHaveValue('micro');
     expect(within(screen.getByLabelText('Scale')).getAllByRole('option').map(({ value }) => value)).toEqual(['micro', 'meso', 'exosphere', 'macrosphere']);
     expect(screen.getByLabelText('Field Notes prompt')).toBeVisible();
     expect(screen.getByLabelText('Mapping step')).not.toBeVisible();
     fireEvent.click(screen.getByText('Guidance and materials'));
     fireEvent.click(screen.getByText('Saved guidance preview'));
-    expect(screen.getByRole('note')).toHaveTextContent('Notes are saved for this step. This step does not call the model.');
+    fireEvent.click(screen.getByText('How this guidance is used'));
+    expect(screen.getByRole('note')).toHaveTextContent('Saved as course reference.');
     const versionDetails = screen.getByText('Versions').closest('details');
     expect(versionDetails).not.toHaveAttribute('open');
     expect(screen.getByLabelText('Version')).not.toBeVisible();
     expect(await screen.findByLabelText('Part')).toHaveValue('part-1');
     expect(screen.getByLabelText('Preview level')).toHaveValue('micro');
     expect(within(screen.getByLabelText('Preview level')).getAllByRole('option').map(({ value }) => value)).toEqual(['micro', 'meso']);
-    expect(screen.getByText('Applies to Micro-level and Meso-level.')).toBeVisible();
+    expect(screen.queryByText('Applies to Micro-level and Meso-level.')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Mapping step')).toHaveValue('add-source');
     expect(within(screen.getByLabelText('Mapping step')).getAllByRole('option')).toHaveLength(5);
     expect(screen.queryByRole('button', { name: 'Review memo' })).not.toBeInTheDocument();
@@ -748,7 +749,7 @@ describe('TeacherDashboard', () => {
     fireEvent.change(screen.getByLabelText('Preview level'), { target: { value: 'macrosphere' } });
     const previewPanel = screen.getByText('Saved guidance preview', { selector: 'summary' }).closest('details');
     expect(previewPanel).toHaveTextContent('Part 2 · Macro-level · Memo review');
-    expect(previewPanel).toHaveTextContent('Broader laws, public policies, economic conditions, histories, and cultural beliefs that affect more than one map item.');
+    expect(previewPanel).toHaveTextContent('Relationships among larger-scale nodes and connections to the local map.');
     fireEvent.click(screen.getByRole('button', { name: 'Preview saved section' }));
     expect(await screen.findByText('Saved version 1')).toBeVisible();
     expect(screen.getByLabelText('Course guidance sent to the model')).toHaveTextContent('SAVED GUIDANCE FOR THIS SECTION');
@@ -886,7 +887,7 @@ describe('TeacherDashboard', () => {
 
     fireEvent.change(screen.getByLabelText('Change note (optional)'), { target: { value: 'Publish the evidence guidance' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
-    expect(await screen.findByText('Published. Students will see the updated prompts.')).toBeVisible();
+    expect(await screen.findByText('Published.')).toBeInTheDocument();
     expect(screen.getByText('Published')).toBeVisible();
     expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
     expect(requests.some(([path, method]) => path === '/api/teacher/modules' && method === 'PUT')).toBe(false);
@@ -905,7 +906,7 @@ describe('TeacherDashboard', () => {
     expect(fetchMock.mock.calls.some(([path]) => /\/preview\?|map\/check|preflight\/evaluations/.test(path))).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
     expect(field).toBeDisabled();
-    expect(await screen.findByText('Published. Students will see the updated prompts.')).toBeVisible();
+    expect(await screen.findByText('Published.')).toBeInTheDocument();
     const writes = fetchMock.mock.calls.filter(([, options]) => ['PUT', 'POST'].includes(options?.method));
     expect(writes.map(([path]) => path)).toEqual(['/api/teacher/profiles', '/api/teacher/profiles/field-notes-customization-draft', '/api/teacher/profiles/field-notes-customization-draft/publish']);
     const saved = JSON.parse(writes[1][1].body);
@@ -927,7 +928,7 @@ describe('TeacherDashboard', () => {
     expect(screen.getByText('Saved draft')).toBeVisible();
     expect(fetchMock.mock.calls.filter(([path]) => path.endsWith('/publish'))).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }));
-    expect(await screen.findByText('Published. Students will see the updated prompts.')).toBeVisible();
+    expect(await screen.findByText('Published.')).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([, options]) => options?.method === 'PUT')).toHaveLength(1);
     expect(fetchMock.mock.calls.filter(([path]) => path.endsWith('/publish'))).toHaveLength(2);
   });

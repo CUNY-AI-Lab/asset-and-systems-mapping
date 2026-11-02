@@ -10,8 +10,8 @@ import { hasFieldNotes } from '../shared/field-notes.js';
 const STRUCTURE_MISSING = Object.freeze({
   micro: 'an element from your memo',
   meso: 'a relationship between two Micro items',
-  exosphere: 'an outside decision setting with a pathway into a Micro setting',
-  macrosphere: 'a broader condition scoped to two map items',
+  exosphere: 'a larger-scale node',
+  macrosphere: 'a relationship involving a larger-scale node',
 });
 
 export const PANEL_MODES = Object.freeze(['suggestions', 'inspector', 'review']);
@@ -24,11 +24,10 @@ export function levelStructureStatus(project, scale = project.activeScale) {
   let ready = false;
   if (scale === 'micro') ready = nodes.length > 0;
   else if (scale === 'meso') ready = liveEdges(project, scale).some((edge) => edge.source !== edge.target && project.graph.nodes.some((node) => node.id === edge.source && node.scale === 'micro' && isLiveMapItem(node)) && project.graph.nodes.some((node) => node.id === edge.target && node.scale === 'micro' && isLiveMapItem(node)));
-  else if (scale === 'macrosphere') ready = nodes.some((node) => new Set(node.scopeNodeIds || []).size >= 2);
-  else if (scale === 'exosphere') {
-    const nodeById = new Map(project.graph.nodes.filter(isLiveMapItem).map((node) => [node.id, node]));
-    ready = nodes.length > 0 && liveEdges(project, scale)
-      .some((edge) => isExosphereDecisionPathway(nodeById.get(edge.source), nodeById.get(edge.target)));
+  else if (scale === 'exosphere') ready = nodes.length > 0;
+  else if (scale === 'macrosphere') {
+    const byId = new Map(project.graph.nodes.filter(isLiveMapItem).map(node => [node.id,node]));
+    ready = liveEdges(project, scale).some(edge => edge.source !== edge.target && byId.has(edge.source) && byId.has(edge.target) && [byId.get(edge.source),byId.get(edge.target)].some(node => ['exosphere','macrosphere'].includes(node.scale)));
   }
   return { ready, missing: ready ? null : STRUCTURE_MISSING[scale] };
 }
@@ -105,7 +104,7 @@ export function nextStep(project, { reviewBusy = false, retryPending = false, in
       structureReady: structure.ready,
     };
   }
-  if (nextScale) return { id: 'continue-level', label: `Continue to ${SCALES[nextScale].label}`, detail: hasFieldNotes(project) ? `${label} reviewed` : 'Add Field Notes to continue', blocking: !hasFieldNotes(project) };
-  if (project.completedScales.includes(scale)) return { id: 'project-complete', label: 'Project complete', detail: 'Export or revise any level', blocking: true };
+  if (nextScale) return { id: 'continue-level', label: nextScale === 'meso' ? 'Continue to Meso' : `Continue to ${SCALES[nextScale].label}`, detail: hasFieldNotes(project) ? `${label} reviewed` : 'Add Field Notes to continue', blocking: !hasFieldNotes(project) };
+  if (project.completedScales.includes(scale)) return { id: 'project-complete', label: 'View summary', detail: 'Export or return to the map', blocking: false };
   return { id: 'complete-level', label: `Complete ${label}`, detail: hasFieldNotes(project) ? 'Finish the cumulative map' : 'Add Field Notes to finish', blocking: !hasFieldNotes(project) };
 }

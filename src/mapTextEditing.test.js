@@ -94,12 +94,12 @@ describe('map wording revisions', () => {
     expect(nodeLabelIssue('', nodes[0], nodes)).toMatch(/1–200/);
     expect(nodeLabelIssue('Adult Participants face delays when the Accessible Van Program is unavailable', nodes[2], nodes)).not.toBe('');
     expect(nodeLabelIssue('Regional Mobility Scheduling Office', nodes.find(item => item.scale === 'macrosphere'), nodes)).not.toBe('');
-    expect(relationshipIssue('   '.trim(), { scale: 'micro' })).not.toBe('');
+    expect(relationshipIssue('   '.trim(), { scale: 'micro' })).toBe('');
     expect(relationshipIssue('x'.repeat(101), { scale: 'micro' })).not.toBe('');
     expect(relationshipIssue('sets rules for', { scale: 'exosphere' })).toBe('');
-    expect(relationshipIssue('laughs with', { scale: 'exosphere' })).not.toBe('');
+    expect(relationshipIssue('laughs with', { scale: 'exosphere' })).toBe('');
     expect(relationshipIssue('supports', { scale: 'meso' })).toBe('');
-    expect(relationshipIssue('supports', { scale: 'macrosphere' })).not.toBe('');
+    expect(relationshipIssue('supports', { scale: 'macrosphere' })).toBe('');
   });
 
   it('revises Meso wording while preserving arrow direction, evidence, and saved endpoint IDs', () => {

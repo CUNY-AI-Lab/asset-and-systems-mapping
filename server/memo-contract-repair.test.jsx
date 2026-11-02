@@ -197,7 +197,7 @@ describe('bounded contract correction context', () => {
 
   it('uses active-level array limits and declines unknown paths or nonexistent items', () => {
     expect(createMemoContractRepair({ nodes: ['one'] }, 'nodes exceeds the meso limit.', 'meso')).toMatchObject({ maximumCount: 0, observedCount: 1 });
-    expect(createMemoContractRepair({ connections: Array(6).fill(null) }, 'connections exceeds the exosphere limit.', 'exosphere')).toMatchObject({ maximumCount: 5, observedCount: 6 });
+    expect(createMemoContractRepair({ connections: Array(6).fill(null) }, 'connections exceeds the exosphere limit.', 'exosphere')).toMatchObject({ maximumCount: 0, observedCount: 6 });
     expect(createMemoContractRepair(review(), 'nodes[99].label is a reference, action, clause, fragment, or non-entity Micro label.', 'micro')).toBeNull();
     expect(createMemoContractRepair(review(), 'arbitrary provider text', 'micro')).toBeNull();
     expect(createMemoContractRepair(review(), '__proto__.label must name a complete map element rather than a statement.', 'micro')).toBeNull();

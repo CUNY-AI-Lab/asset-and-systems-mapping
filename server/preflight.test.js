@@ -734,16 +734,8 @@ describe('persistent preflight suggestion review queue', () => {
     const sourceMaterial = 'The community center coordinates with the school. The Americans with Disabilities Act shapes the school and community center.';
     const studentCookie = await grantStudent();
     const evaluation = await evaluate(studentCookie, submissionBody({ activeScale, sourceMaterial, carriedNodes }));
-    if (activeScale === 'meso') {
-      expect(evaluation.review.nodes).toEqual([]);
-      expect(evaluation.review.connections).toEqual([expect.objectContaining({ source: 'center', target: 'school', verb: 'coordinates with' })]);
-    } else {
-      expect(evaluation.review.nodes).toHaveLength(1);
-      expect(evaluation.review.nodes[0].scope).toEqual(expect.arrayContaining([
-        { id: 'school', label: 'School' }, { id: 'center', label: 'Community Center' },
-      ]));
-      expect(evaluation.review.connections).toEqual([]);
-    }
+    expect(evaluation.review.nodes).toEqual([]);
+    expect(evaluation.review.connections).toEqual([expect.objectContaining({ source: 'center', target: 'school', verb: 'coordinates with' })]);
   });
 
   it.each(['exosphere', 'macrosphere'])('rejects narrative clauses at %s before persisting any review', async (activeScale) => {
@@ -781,7 +773,7 @@ describe('persistent preflight suggestion review queue', () => {
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie: studentCookie });
     expect(response.status).toBe(502);
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
-    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('rather than a statement');
+    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
   });
 
   it('atomically retries the Rosa memo regression and stores only the fully valid replacement review', async () => {
@@ -1129,338 +1121,33 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
-  it('lets Exosphere reviews tie new institutions to carried map nodes without re-proposing them', async () => {
+  it.each(['exosphere', 'macrosphere'])('atomically corrects and replays the current %s exercise with carried context', async activeScale => {
     await system.close();
     const carriedNodes = [
-      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
-      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
+      { id: 'local', label: 'Resident', type: 'person', scale: 'micro' },
+      { id: 'office', label: 'City Housing Authority', type: 'agency', scale: 'exosphere' },
+      { id: 'policy', label: 'Public housing funding policy', type: 'policy', scale: 'exosphere' },
     ];
-    const invalidSuggestion = {
-      guidance: [{ point: 'The memo names an indirect funder.' }],
-      nodes: [
-        { label: 'School', type: 'organization', scale: 'exosphere', evidence: 'Already mapped; must not repeat.' },
-        { label: 'City Education Foundation', type: 'agency', scale: 'exosphere', evidence: 'The foundation pays for the program.' },
-        { label: 'CUNY', type: 'institution', scale: 'exosphere', evidence: 'CUNY sets institution-wide rules.' },
-      ],
-      connections: [
-        { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
-        { source: 'CUNY', target: 'School', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting the school setting.' },
-        { source: 'City Education Foundation', target: 'Unknown Body', verb: 'reports to', rationale: 'Unknown endpoints are invalid.' },
-        { source: 'School', target: 'Family', verb: 'refers', rationale: 'Already mapped; must not repeat.' },
-      ],
-      example: 'City Education Foundation funds School.',
-      readiness: { ready: true, note: 'The memo supports an Exosphere cycle.' },
-    };
-    const validSuggestion = {
-      guidance: [{ point: 'The memo names an indirect funder and a university system.' }],
-      nodes: [
-        { label: 'City Education Foundation', type: 'agency', scale: 'exosphere', evidence: 'The foundation pays for the program.', basis: 'memo' },
-        { label: 'CUNY', type: 'institution', scale: 'exosphere', evidence: 'CUNY sets institution-wide rules.', basis: 'memo' },
-      ],
-      connections: [
-        { source: 'City Education Foundation', target: 'School', verb: 'funds', rationale: 'The foundation pays for the program.' },
-        { source: 'CUNY', target: 'School', verb: 'sets rules for', rationale: 'CUNY sets institution-wide rules affecting the school setting.' },
-      ],
-      example: null,
-      readiness: { ready: true, note: 'The memo supports two institutional relationships.' },
-    };
-    const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
-    system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'exosphere-carried-nodes.sqlite'),
-      now: () => currentTime,
-      teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
-    });
+    const valid = { guidance: [{ point: 'Investigate how funding reaches the resident.' }], nodes: activeScale === 'exosphere' ? [{ label: 'Housing repair budget', type: 'resource', scale: activeScale, evidence: 'Verify the repair budget and its role.', basis: 'inference' }] : [], connections: activeScale === 'macrosphere' ? [{ source: 'office', target: 'local', verb: 'supports', rationale: 'The agency supports local housing repairs.', relationshipProcess: { direction: 'varies' } }] : [], example: null, readiness: { ready: true, note: 'Review the supported items.' } };
+    const invalid = structuredClone(valid);
+    if (activeScale === 'exosphere') invalid.nodes[0].basis = 'invented'; else invalid.connections[0].source = 'unknown-node';
+    const ollamaRequest = vi.fn().mockResolvedValueOnce({ suggestion: invalid, metadata: { provider: 'ollama-cloud', model: 'test-only' } }).mockResolvedValueOnce({ suggestion: valid, metadata: { provider: 'ollama-cloud', model: 'test-only' } });
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'paired-outer.sqlite'), now: () => currentTime, ollamaConfig: { apiKey: 'test-only', model: 'test-only' }, ollamaRequest });
     const studentCookie = await grantStudent();
-    const carriedConnections = [{ source: 'node_school', target: 'node_family', verb: 'refers' }];
-    const body = submissionBody({ activeScale: 'exosphere', carriedNodes, carriedConnections });
-    const evaluation = await evaluate(studentCookie, body);
-
+    const carriedConnections = [{ source: 'office', target: 'policy', verb: 'administers' }];
+    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale, carriedNodes, carriedConnections }));
     expect(ollamaRequest).toHaveBeenCalledTimes(2);
     expect(ollamaRequest.mock.calls[0][0].carriedNodes).toEqual(carriedNodes);
     expect(ollamaRequest.mock.calls[0][0].carriedConnections).toEqual(carriedConnections);
     expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(evaluation.review.nodes.map(({ label }) => label)).toEqual(['City Education Foundation', 'CUNY']);
-    expect(evaluation.review.connections).toEqual([
-      {
-        source: 'City Education Foundation',
-        target: 'node_school',
-        sourceLabel: 'City Education Foundation',
-        targetLabel: 'School',
-        verb: 'funds',
-        rationale: 'The foundation pays for the program.',
-      },
-      {
-        source: 'CUNY',
-        target: 'node_school',
-        sourceLabel: 'CUNY',
-        targetLabel: 'School',
-        verb: 'sets rules for',
-        rationale: 'CUNY sets institution-wide rules affecting the school setting.',
-      },
-    ]);
-
-    // The stored review replays with the same endpoints intact.
-    const readBack = await system.app.request('http://127.0.0.1:4177/api/preflight/evaluations/current', {
-      headers: { origin: 'http://127.0.0.1:4177', 'sec-fetch-site': 'same-origin', cookie: studentCookie },
-    });
-    if (readBack.status === 200) {
-      const stored = (await readBack.json()).evaluation;
-      expect(stored.review.connections).toEqual(evaluation.review.connections);
-    }
-  });
-
-  it('accepts named outside decision settings when each pathway reaches an immediate Micro setting', async () => {
-    await system.close();
-    const carriedNodes = [
-      { id: 'node_home', label: 'Rosa’s home', type: 'setting', scale: 'micro' },
-      { id: 'node_bmcc_classroom', label: 'BMCC classroom', type: 'setting', scale: 'micro' },
-    ];
-    const suggestion = {
-      guidance: [{ point: 'The memo names four institutions whose decisions shape the mapped household.' }],
-      nodes: [
-        { label: 'MTA Access-A-Ride Scheduling Office', type: 'agency', scale: 'exosphere', evidence: 'The scheduling office requires booking a day ahead.', basis: 'memo' },
-        { label: 'BMCC Registration Office', type: 'institution', scale: 'exosphere', evidence: 'The registration office sets course-registration blocks.', basis: 'memo' },
-        { label: 'New York State Medicaid Office', type: 'agency', scale: 'exosphere', evidence: 'The state office administers Medicaid recertification.', basis: 'memo' },
-        { label: 'ConEd Billing Office', type: 'organization', scale: 'exosphere', evidence: 'The billing office issues shutoff notices.', basis: 'memo' },
-      ],
-      connections: [
-        { source: 'MTA Access-A-Ride Scheduling Office', target: 'Rosa’s home', verb: 'delays', rationale: 'Booking decisions delay departure from the home setting.' },
-        { source: 'BMCC Registration Office', target: 'BMCC classroom', verb: 'sets rules for', rationale: 'Registration blocks determine access to the classroom setting.' },
-        { source: 'New York State Medicaid Office', target: 'Rosa’s home', verb: 'administers', rationale: 'Recertification decisions change services available in the home.' },
-        { source: 'ConEd Billing Office', target: 'Rosa’s home', verb: 'informs', rationale: 'The billing office sends shutoff notices to the household.' },
-      ],
-      example: null,
-      readiness: { ready: true, note: 'Four institutional pathways connect directly to the existing map.' },
-    };
-    const ollamaRequest = vi.fn().mockResolvedValue({
-      suggestion,
-      metadata: { provider: 'ollama-cloud', model: 'server-model' },
-    });
-    system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'exosphere-official-names.sqlite'),
-      now: () => currentTime,
-      teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
-    });
-    const studentCookie = await grantStudent();
-
-    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'exosphere', carriedNodes }));
-
-    expect(ollamaRequest).toHaveBeenCalledTimes(1);
-    expect(evaluation.review.nodes).toEqual(suggestion.nodes);
-    expect(evaluation.review.connections).toHaveLength(suggestion.connections.length);
-    expect(evaluation.review.connections.map(({ sourceLabel, targetLabel, verb, rationale }) => ({ source: sourceLabel, target: targetLabel, verb, rationale })))
-      .toEqual(suggestion.connections);
-    expect(evaluation.review.guidance).toEqual(suggestion.guidance);
-    expect(evaluation.review.readiness).toEqual(suggestion.readiness);
-  });
-
-  it('holds Exosphere connections to the institutional register, the carried-map anchor, and the basis marker', async () => {
-    await system.close();
-    const carriedNodes = [
-      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
-      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
-    ];
-    const invalidSuggestion = {
-      guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
-      nodes: [
-        { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
-        { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.' },
-      ],
-      connections: [
-        { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-        { source: 'Google Identity Service', target: 'Family', verb: 'synergizes', rationale: 'Register violation.' },
-        { source: 'Google Identity Service', target: 'School', verb: 'oversees', rationale: 'An alias must not be coerced.' },
-        { source: 'Google Identity Service', target: 'Printing Vendor Corporation', verb: 'funds', rationale: 'No carried anchor.' },
-      ],
-      example: null,
-      readiness: { ready: true, note: 'Pathways land on the map.' },
-    };
-    const validSuggestion = {
-      guidance: [{ point: 'Institutions sit behind the mapped settings.' }],
-      nodes: [
-        { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
-        { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
-      ],
-      connections: [
-        { source: 'Google Identity Service', target: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-        { source: 'Google Identity Service', target: 'School', verb: 'regulates', rationale: 'The institution regulates access to the portal.' },
-        { source: 'Printing Vendor Corporation', target: 'School', verb: 'provides', rationale: 'The vendor provides printed materials used in the school setting.' },
-      ],
-      example: null,
-      readiness: { ready: true, note: 'Both pathways use the exact institutional register.' },
-    };
-    const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
-    system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'exosphere-register.sqlite'),
-      now: () => currentTime,
-      teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
-    });
-    const studentCookie = await grantStudent();
-    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'exosphere', carriedNodes }));
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
-    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(evaluation.review.nodes).toEqual([
-      { label: 'Google Identity Service', type: 'service', scale: 'exosphere', evidence: 'Verify: who operates the sign-in the school requires?', basis: 'inference' },
-      { label: 'Printing Vendor Corporation', type: 'organization', scale: 'exosphere', evidence: 'The memo names the vendor.', basis: 'memo' },
-    ]);
-    expect(evaluation.review.connections).toEqual([
-      { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'sets rules for', rationale: 'Sign-in policy governs the portal.' },
-      { source: 'Google Identity Service', target: 'node_school', sourceLabel: 'Google Identity Service', targetLabel: 'School', verb: 'regulates', rationale: 'The institution regulates access to the portal.' },
-      { source: 'Printing Vendor Corporation', target: 'node_school', sourceLabel: 'Printing Vendor Corporation', targetLabel: 'School', verb: 'provides', rationale: 'The vendor provides printed materials used in the school setting.' },
-    ]);
-  });
-
-  it('returns Macrosphere structures with resolved scopes and deontic verbs, never connections', async () => {
-    await system.close();
-    const carriedNodes = [
-      { id: 'node_school', label: 'School', type: 'setting', scale: 'micro' },
-      { id: 'node_family', label: 'Family', type: 'family', scale: 'micro' },
-      { id: 'node_agency', label: 'Agency', type: 'agency', scale: 'exosphere' },
-    ];
-    const invalidSuggestion = {
-      guidance: [{ point: 'One structure conditions several mapped elements.' }],
-      nodes: [
-        {
-          label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
-          evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
-          deontic: 'defines eligibility for',
-          scope: ['School', 'node_family', 'Unknown Thing', 'School'],
-        },
-        {
-          label: 'Gendered Planning Norms', type: 'belief', scale: 'macrosphere',
-          evidence: 'Verify: who is assumed to plan?', basis: 'inference',
-          deontic: 'synergizes',
-          scope: [{ id: 'node_agency', label: 'Agency' }],
-        },
-        {
-          label: 'CUNY', type: 'structure', scale: 'macrosphere',
-          evidence: 'CUNY is a named institution and must remain in Exosphere.', basis: 'memo',
-          deontic: 'shapes',
-          scope: ['node_school', 'node_family'],
-        },
-      ],
-      connections: [
-        { source: 'Universal Pre-K Law', target: 'School', verb: 'shapes', rationale: 'Macrosphere must not return an edge.' },
-      ],
-      example: null,
-      readiness: { ready: true, note: 'One structure has a scope.' },
-    };
-    const validSuggestion = {
-      guidance: [{ point: 'One law defines eligibility across two mapped elements.' }],
-      nodes: [{
-        label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
-        evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
-        deontic: 'defines eligibility for', scope: ['node_school', 'node_family'],
-      }],
-      connections: [],
-      example: null,
-      readiness: { ready: true, note: 'One broader law affects two mapped elements.' },
-    };
-    const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
-    system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'macrosphere-scopes.sqlite'),
-      now: () => currentTime,
-      teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
-    });
-    const studentCookie = await grantStudent();
-    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'macrosphere', carriedNodes }));
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
-    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(evaluation.review.connections).toEqual([]);
-    expect(evaluation.review.nodes).toEqual([
-      {
-        label: 'Universal Pre-K Law', type: 'law', scale: 'macrosphere',
-        evidence: 'Eligibility rules recur across the memo.', basis: 'memo',
-        deontic: 'defines eligibility for',
-        scope: [{ id: 'node_school', label: 'School' }, { id: 'node_family', label: 'Family' }],
-      },
-    ]);
-    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
-    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
-
-    // The stored review replays scope pairs without carried context.
-    const readBack = await system.app.request('http://127.0.0.1:4177/api/preflight/evaluations/current', {
-      headers: { origin: 'http://127.0.0.1:4177', 'sec-fetch-site': 'same-origin', cookie: studentCookie },
-    });
-    if (readBack.status === 200) {
-      const stored = (await readBack.json()).evaluation;
-      expect(stored.review.nodes).toEqual(evaluation.review.nodes);
-      expect(stored.review.connections).toEqual([]);
-    }
-  });
-
-  it('retries the whole Macrosphere response instead of filtering lower-level labels', async () => {
-    await system.close();
-    const carriedNodes = [
-      { id: 'node_student', label: 'Working student', type: 'role', scale: 'micro' },
-      { id: 'node_workplace', label: 'Workplace', type: 'setting', scale: 'micro' },
-      { id: 'node_cuny', label: 'CUNY', type: 'institution', scale: 'exosphere' },
-    ];
-    const scope = ['node_student', 'node_workplace'];
-    const invalidSuggestion = {
-      guidance: [{ point: 'Provider prose is replaced by validated Macrosphere guidance.' }],
-      nodes: [
-        { label: 'Marcus Facilitates It', type: 'structure', scale: 'macrosphere', evidence: 'Marcus facilitates the workshop.', basis: 'memo', deontic: 'shapes', scope },
-        { label: 'Center Aide', type: 'structure', scale: 'macrosphere', evidence: 'A center aide helps the student.', basis: 'memo', deontic: 'shapes', scope },
-        { label: 'Home Attendant’s Hours', type: 'policy', scale: 'macrosphere', evidence: 'The attendant works limited hours.', basis: 'memo', deontic: 'constrains', scope },
-        { label: 'CUNY', type: 'structure', scale: 'macrosphere', evidence: 'A named institution stays at Exosphere.', basis: 'memo', deontic: 'shapes', scope },
-        { label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere', evidence: 'High costs constrain home and work.', basis: 'memo', deontic: 'prices', scope },
-        { label: 'Ableist expectations about work and independence', type: 'belief', scale: 'macrosphere', evidence: 'The memo describes expectations about independence.', basis: 'memo', deontic: 'normalizes', scope },
-        { label: 'Unpredictable work schedules', type: 'economic condition', scale: 'macrosphere', evidence: 'Unpredictable schedules constrain several settings.', basis: 'memo', deontic: 'constrains', scope },
-      ],
-      connections: [],
-      example: null,
-      readiness: { ready: true, note: 'Provider readiness prose.' },
-    };
-    const validSuggestion = {
-      guidance: [{ point: 'Review the broader conditions that affect the working student and workplace.' }],
-      nodes: [
-        { label: 'High housing and transportation costs', type: 'economic condition', scale: 'macrosphere', evidence: 'High costs constrain home and work.', basis: 'memo', deontic: 'prices', scope },
-        { label: 'Ableist expectations about work and independence', type: 'belief', scale: 'macrosphere', evidence: 'The memo describes expectations about independence.', basis: 'memo', deontic: 'normalizes', scope },
-        { label: 'Unpredictable work schedules', type: 'economic condition', scale: 'macrosphere', evidence: 'Unpredictable schedules constrain several settings.', basis: 'memo', deontic: 'constrains', scope },
-      ],
-      connections: [],
-      example: null,
-      readiness: { ready: true, note: 'Three broader conditions affect two mapped elements.' },
-    };
-    const ollamaRequest = vi.fn()
-      .mockResolvedValueOnce({ suggestion: invalidSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } })
-      .mockResolvedValueOnce({ suggestion: validSuggestion, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
-    system = createSystemsMappingApp({
-      dbPath: join(tempDirectory, 'macrosphere-lower-level-filter.sqlite'),
-      now: () => currentTime,
-      teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      ollamaConfig: { apiKey: 'fresh-test-only-server-key', model: 'server-model' },
-      ollamaRequest,
-    });
-    const studentCookie = await grantStudent();
-
-    const evaluation = await evaluate(studentCookie, submissionBody({ activeScale: 'macrosphere', carriedNodes }));
-
-    expect(ollamaRequest).toHaveBeenCalledTimes(2);
-    expect(ollamaRequest.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
-    expect(evaluation.review.nodes.map(({ label }) => label)).toEqual([
-      'High housing and transportation costs',
-      'Ableist expectations about work and independence',
-      'Unpredictable work schedules',
-    ]);
-    expect(JSON.stringify(evaluation.review)).not.toMatch(/Marcus Facilitates It|Center Aide|Home Attendant’s Hours|CUNY/);
-    expect(evaluation.review.guidance).toEqual(validSuggestion.guidance);
-    expect(evaluation.review.readiness).toEqual(validSuggestion.readiness);
+    expect(evaluation.review.nodes).toEqual(valid.nodes);
+    expect(evaluation.review.connections).toEqual(valid.connections.map(edge => ({ ...edge, sourceLabel: 'City Housing Authority', targetLabel: 'Resident' })));
+    expect(evaluation.review.guidance).toEqual(valid.guidance);
+    expect(evaluation.review.readiness).toEqual(valid.readiness);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
+    const stored = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
+    const { configurationSnapshot, generationContract, runtime, evaluatedAt, ...savedReview } = JSON.parse(stored.suggestion_json);
+    expect(generationContract).toBe('atomic-v1'); expect(evaluatedAt).toBe(evaluation.createdAt); expect(configurationSnapshot.activeScale).toBe(activeScale); expect(savedReview).toEqual(evaluation.review);
   });
 
   it('rejects an entire provider response when any generated field uses retired interface language', async () => {

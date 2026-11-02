@@ -4,6 +4,7 @@ import { ApiError, apiRequest, resetTeacherPassword } from './api.js';
 import { userFacingError } from './userFacingError.js';
 import { institutionalLoginUrl, projectStorage } from './accountStorage.js';
 import CourseStudents from './CourseStudents.jsx';
+import CourseMaterialUpload from './CourseMaterialUpload.jsx';
 import { useVisibleRefresh } from './useVisibleRefresh.js';
 import { SYSTEMS_MAPPING_STAGES } from '../shared/systems-mapping-stages.js';
 import { SYSTEMS_MAPPING_LEVELS, systemsMappingLevel, systemsMappingLevelTitle } from '../shared/systems-mapping-parts.js';
@@ -101,7 +102,7 @@ function stageModelUse(stageId, scale) {
   return {
     active: false,
     configKind: 'preflight',
-    inactiveDetail: 'This step does not call the model.',
+    inactiveDetail: '',
   };
 }
 
@@ -109,7 +110,7 @@ function runtimeEffect(runtime, stageId, scale) {
   const stageUse = stageModelUse(stageId, scale);
   if (!stageUse.active) {
     return {
-      label: 'Notes are saved for this step.',
+      label: 'Course reference',
       detail: stageUse.inactiveDetail,
     };
   }
@@ -529,7 +530,7 @@ function ReviewSubmissions({ active = true }) {
         <ReviewColumnHeading id="instructor-response-heading">Feedback</ReviewColumnHeading>
         <form onSubmit={submitDecision}>
 
-          <label className="field instructor-response__guidance"><span className="field__label">Feedback for the student</span><textarea rows="7" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
+          <label className="field instructor-response__guidance"><span className="field__label">Feedback for the student</span><textarea rows="3" maxLength="4000" value={instructorAnnotation} onChange={(event) => setInstructorAnnotation(event.target.value)} /></label>
           <fieldset className="review-decision"><legend>Feedback type</legend><div className="review-decision__actions">{REVIEW_DECISIONS.map((item) => <button key={item.id} type="button" aria-pressed={decision === item.id} className={decision === item.id ? 'is-selected' : ''} onClick={() => { setDecision(item.id); setMessage(null); }}>{item.label}</button>)}</div></fieldset>
           {decision === 'revise_and_approve' && <label className="field"><span className="field__label">Question for the student</span><textarea rows="5" maxLength="1000" value={focusedQuestion} onChange={(event) => setFocusedQuestion(event.target.value)} /></label>}
           <Message message={message} />
@@ -762,7 +763,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
       setEvents(result.events || []);
       setNote('');
       setPreview(null);
-      setMessage({ type: 'success', text: 'Published. Students will see the updated prompts.' });
+      setMessage({ type: 'success', text: 'Published.' });
       await loadCatalog(result.profile.id);
       onConfigurationChanged();
     } catch (error) {
@@ -804,8 +805,9 @@ function TeachingProfiles({ onConfigurationChanged }) {
   const levelNotePrefix = `${scaleLabel(previewScale)}: `;
   const canAppendLevelNote = editable && selectedStageSettings.guidance.length + levelNotePrefix.length + 2 <= 2500;
   return <section className="model-guidance teaching-profiles course-settings" aria-labelledby="course-settings-heading" aria-busy={busy || loading}>
-    <div className="section-heading"><div><h2 id="course-settings-heading">Field Notes prompts</h2><p>One question for each scale.</p></div></div>
-    <Message message={message} />
+    <div className="section-heading"><div><h2 id="course-settings-heading">Field Notes prompts</h2></div></div>
+    <Message message={message?.type === 'success' ? null : message} />
+    <span className="sr-only" role="status">{message?.type === 'success' ? message.text : ''}</span>
     {detail && draft && <>
       <div className="course-settings__body">
         <fieldset className="course-prompt-editor" aria-label="Field Notes customization" disabled={busy || loading}>
@@ -816,7 +818,7 @@ function TeachingProfiles({ onConfigurationChanged }) {
             setPreview(null);
           }}>{SYSTEMS_MAPPING_LEVELS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}</select></label>
           <label className="field"><span className="field__label">Field Notes prompt</span>
-            <textarea ref={promptRef} rows="7" maxLength={FIELD_NOTES_QUESTION_LIMIT} readOnly={!editable}
+            <textarea ref={promptRef} rows="3" maxLength={FIELD_NOTES_QUESTION_LIMIT} readOnly={!editable}
               aria-describedby="course-prompt-help" aria-invalid={message?.type === 'error' && !fieldNotesQuestions(draft.profile)[previewScale].trim() || undefined}
               value={fieldNotesQuestions(draft.profile)[previewScale]}
               onChange={(event) => {
@@ -841,21 +843,20 @@ function TeachingProfiles({ onConfigurationChanged }) {
       <div className="course-settings__additional">
         <details className="course-model-settings"><summary>Guidance and materials</summary>
           <fieldset className="course-model-fields" disabled={busy || loading}>
-        <p className="teacher-message teacher-runtime" role="note"><strong>{runtime.label}</strong> {runtime.detail}</p>
+        <details className="course-runtime-details"><summary>How this guidance is used</summary><p role="note">{stageUse.active ? `${runtime.label} ${runtime.detail}` : 'Saved as course reference.'}</p></details>
         {selectedPart ? <>
           <div className="teacher-controls teaching-profile-controls" role="group" aria-label="Course section">
             <label><span>Part</span><select aria-label="Part" value={selectedPart.id} onChange={(event) => selectPart(event.target.value)}>{profileParts.map((part) => <option key={part.id} value={part.id}>{part.label}</option>)}</select></label>
             <label><span>Mapping step</span><select aria-label="Mapping step" value={selectedStageId} onChange={(event) => { setSelectedStageId(event.target.value); setPreview(null); }}>{SYSTEMS_MAPPING_STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label>
           </div>
-          <p className="field__hint">Applies to {selectedPart.scaleIds.map(scaleLabel).join(' and ')}.</p>
         </> : <p className="teacher-message teacher-message--error" role="alert">The selected version has no course parts.</p>}
         {selectedPart && <section className="course-stage-editor" aria-labelledby={`course-stage-heading-${selectedStage.id}`}>
-          <p className="course-stage-context" id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.description}</p>
-          <label className="field"><span className="field__label">Guidance</span><textarea rows="6" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
+          <h3 className="sr-only" id={`course-stage-heading-${selectedStage.id}`}>{selectedStage.label}</h3>
+          <label className="field"><span className="field__label">Guidance</span><textarea rows="3" maxLength="2500" readOnly={!editable} value={selectedStageSettings.guidance} onChange={(event) => changeStage('guidance', event.target.value)} /></label>
           {editable && <div className="button-row"><button type="button" className="button button--ghost" disabled={!canAppendLevelNote} onClick={() => changeStage('guidance', appendLevelNote(selectedStageSettings.guidance, previewScale))}>Add {scaleLabel(previewScale)} note</button></div>}
           <p className="field__hint">Level definitions and map rules remain fixed.</p>
-          <label className="field"><span className="field__label">Course material</span><textarea rows="7" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
-          <p className="field__hint">Use a course passage or reference.</p>
+          <label className="field"><span className="field__label">Course material</span><textarea rows="3" maxLength="4000" readOnly={!editable} value={selectedStageSettings.materials} onChange={(event) => changeStage('materials', event.target.value)} /></label>
+          {editable && <CourseMaterialUpload key={`${detail.id}:${selectedPart.id}:${selectedStageId}`} value={selectedStageSettings.materials} onChange={(text) => changeStage('materials', text)} disabled={busy || loading} />}
         </section>}
 
             <details className="course-model-preview course-model-preview-panel"><summary>Saved guidance preview</summary>

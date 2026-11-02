@@ -30,13 +30,15 @@ describe('levelStructureStatus', () => {
   it('needs an Exo node with a pathway into a Micro setting', () => {
     const project = seeded();
     project.graph.nodes.push({ id: 'clinic', label: 'Clinic', type: 'setting', scale: 'micro' }, { id: 'hra', label: 'HRA', type: 'agency', scale: 'exosphere' });
-    expect(levelStructureStatus(project, 'exosphere').ready).toBe(false);
+    expect(levelStructureStatus(project, 'exosphere').ready).toBe(true);
     project.graph.edges.push({ id: 'e1', source: 'hra', target: 'clinic', verb: 'funds', scale: 'exosphere' });
     expect(levelStructureStatus(project, 'exosphere').ready).toBe(true);
   });
-  it('needs a Macro condition scoped to two items', () => {
+  it('uses a Macro relationship involving a larger node instead of a legacy scope as readiness', () => {
     const project = seeded();
-    project.graph.nodes.push({ id: 'law', label: 'Medicaid rules', type: 'policy', scale: 'macrosphere', scopeNodeIds: ['clinic', 'hra'] });
+    project.graph.nodes.push({ id: 'office', label: 'City Housing Authority', type: 'agency', scale: 'exosphere' }, { id: 'person', label: 'Resident', type: 'person', scale: 'micro' });
+    expect(levelStructureStatus(project, 'macrosphere').ready).toBe(false);
+    project.graph.edges.push({ id: 'macro-edge', source: 'office', target: 'person', scale: 'macrosphere', verb: 'supports' });
     expect(levelStructureStatus(project, 'macrosphere').ready).toBe(true);
   });
 });
@@ -87,11 +89,11 @@ describe('nextStep', () => {
   });
   it('continues to the next level, completes Macro once, then stops', () => {
     const project = seeded({ stage: 4, reflection: 'I will ask who coordinates between these settings.' });
-    expect(nextStep(project)).toMatchObject({ id: 'continue-level', label: 'Continue to Meso-level' });
+    expect(nextStep(project)).toMatchObject({ id: 'continue-level', label: 'Continue to Meso' });
     project.activeScale = 'macrosphere';
     expect(nextStep(project)).toMatchObject({ id: 'complete-level', label: 'Complete Macro-level', blocking: false });
     project.completedScales = ['micro', 'meso', 'exosphere', 'macrosphere'];
-    expect(nextStep(project)).toMatchObject({ id: 'project-complete', label: 'Project complete', blocking: true });
+    expect(nextStep(project)).toMatchObject({ id: 'project-complete', label: 'View summary', blocking: false });
   });
 
   it.each(['micro', 'meso', 'exosphere', 'macrosphere'])('requires a nonblank Field Note to complete %s while keeping the map available', activeScale => {

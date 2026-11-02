@@ -386,12 +386,12 @@ describe('current assignment guidance', () => {
     const { evaluate } = await setup(review, { ...ASSIGNMENT_COMPARISON_CASES[0], text }); expect((await evaluate()).status).toBe(201);
   });
   it('accepts a cited institution-to-institution funding path into the carried school', async () => {
-    const { evaluate, run } = await setup(exo, ASSIGNMENT_COMPARISON_CASES[1]);
+    const nodeOnly = () => ({ ...exo(), connections: [] });
+    const { evaluate, run } = await setup(nodeOnly, ASSIGNMENT_COMPARISON_CASES[1]);
     const response = await evaluate(); expect(response.status).toBe(201);
     const { evaluation } = await response.json();
-    expect(evaluation.review.connections).toHaveLength(3);
-    expect(evaluation.review.connections[0]).toMatchObject({ source: 'U.S. Department of Education', target: 'NYSED', verb: 'funds' });
-    expect(evaluation.review.connections[2].target).toBe('micro_school');
+    expect(evaluation.review.connections).toHaveLength(0);
+    expect(evaluation.review.nodes.map(node => node.label)).toEqual(['U.S. Department of Education', 'NYSED', 'NYC Public Schools']);
     expect(run).toHaveBeenCalledTimes(1);
   });
   it('supports the same typed Meso details in direct connection suggestions', async () => {

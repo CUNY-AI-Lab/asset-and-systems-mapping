@@ -3,7 +3,7 @@ export const SYSTEMS_MAPPING_STAGES = Object.freeze([
     id: 'add-source',
     label: 'Add memo',
     short: 'Memo',
-    description: 'Set your focus and add a memo for all four levels',
+    description: 'Memo',
   }),
   Object.freeze({
     id: 'review-suggestions',

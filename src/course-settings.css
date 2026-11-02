@@ -186,3 +186,28 @@
   .course-settings .teaching-profile-create > .button { width: auto; }
   .course-model-preview-panel .effective-preview { padding: 16px; }
 }
+
+/* Compact console: spacing separates sections; controls retain their outlines. */
+.teacher-dashboard :is(.studio-heading, .teacher-dashboard__sections, .course-progress-disclosure, .section-heading, .teacher-review-grid, .submission-queue, .submission-queue__list button, .student-work, .instructor-response, .suggestion-annotation, .review-history, .review-history li, .teacher-history, .teacher-history ol, .teacher-history li, .course-settings__body, .course-settings__actions, .course-student-preview, .course-settings__additional > details, .course-model-preview, .effective-preview, .saved-course-settings, .teaching-profile-create, .course-stage-editor) { border-block: 0; }
+.teacher-dashboard hr { display: none; }
+.course-settings__body { border: 0; background: transparent; }
+.course-settings > .section-heading { margin-bottom: 12px; }
+.course-prompt-editor { gap: 12px; padding: 0; }
+.course-prompt-editor textarea { height: 88px; min-height: 88px; padding: 8px 10px; line-height: 1.45; }
+.course-settings__actions { position: static; padding: 12px 0; background: transparent; }
+.course-settings__additional { margin-top: 8px; }
+.teacher-dashboard :is(.course-student-preview, .course-settings__additional > details, .course-model-preview) > summary { min-height: 44px; padding: 8px 0; font-size: 15px; }
+.course-model-fields { padding-bottom: 12px; }
+.course-model-fields textarea { min-height: 80px; padding: 8px 10px; }
+.course-stage-editor { gap: 12px; padding: 12px 0; }
+.course-runtime-details { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+.course-runtime-details > summary { min-height: 44px; cursor: pointer; display: flex; align-items: center; }
+.course-material-upload { min-width: 0; }
+.course-material-upload input { max-width: 100%; min-height: 44px; }
+.course-material-upload pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.course-material-upload .button-row { flex-wrap: wrap; }
+.teacher-dashboard__sections button { border-block: 0; box-shadow: none; }
+.teacher-dashboard__sections button.is-active { border-block: 0; box-shadow: none; background: var(--surface-hover); }
+.teacher-dashboard :is(section, fieldset, details, summary, header, nav, article, li, ol, dl) { border-top: 0; border-bottom: 0; }
+
+.app-shell:has(.workspace--teacher) > .app-header { border-bottom: 0; box-shadow: none; }

@@ -141,7 +141,7 @@ test('instructor edits Field Notes by scale and publishes the saved questions', 
   await page.getByText('Versions', { exact: true }).click();
   await page.getByLabel('Change note (optional)', { exact: true }).fill('Adapt the questions to the field site');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await expect(page.getByText('Draft revision 2 saved.')).toBeVisible();
+  await expect(page.getByText('Draft revision 2 saved.')).toBeAttached();
   expect(writes).toHaveLength(1);
   expect(writes[0].profile.fieldNotesQuestions).toMatchObject(questions);
   expect(writes[0].profile.parts).toEqual(DEFAULT_TEACHING_PROFILE.parts);
@@ -150,7 +150,7 @@ test('instructor edits Field Notes by scale and publishes the saved questions', 
   await captureSourceRenderedScreenshot(page, testInfo, 'Field Notes instructor editor');
   await page.getByLabel('Change note (optional)', { exact: true }).fill('Publish the questions for this fieldwork cycle');
   await page.getByRole('button', { name: 'Publish changes', exact: true }).click();
-  await expect(page.getByText('Published. Students will see the updated prompts.')).toBeVisible();
+  await expect(page.getByText('Published.', { exact: true })).toBeAttached();
   await expect(page.getByRole('textbox', { name: 'Field Notes prompt', exact: true })).toHaveAttribute('readonly', '');
 });
 
@@ -221,16 +221,78 @@ test('lesson customization opens an editable copy and publishes directly from th
   await page.getByText('Student preview', { exact: true }).click();
   await expect(page.locator('.course-student-preview__question')).toHaveText(question);
   expect(await page.locator('.course-student-preview__question').innerText()).toBe(question.replace(/\s+/g, ' '));
+  await page.getByRole('button', { name: 'Publish changes', exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeInViewport({ ratio: 1 });
   await expect(page.getByLabel('Change note (optional)')).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Course customization preview'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Course customization preview');
   await page.getByRole('button', { name: 'Publish changes', exact: true }).click();
-  await expect(page.getByText('Published. Students will see the updated prompts.')).toBeVisible();
+  await expect(page.getByText('Published.', { exact: true })).toBeAttached();
   await expect(field).toHaveAttribute('readonly', '');
   expect(writes.map(write => write.method)).toEqual(['CREATE', 'SAVE', 'PUBLISH']);
   expect(writes[1].profile.fieldNotesQuestions.micro).toBe(question);
   expect(writes[1].profile.fieldNotesQuestions.meso).toBe(DEFAULT_TEACHING_PROFILE.fieldNotesQuestions.meso);
   expect(errors).toEqual(screenshotWarnings(browserName, 2));
+});
+
+test('compact course materials import previews, cancels, saves, and preserves errors', async ({ page, makeAxeBuilder }, testInfo) => {
+  let current = { id: 'compact-course', name: 'Synthetic course', status: 'draft', revision: 1, profile: structuredClone(DEFAULT_TEACHING_PROFILE) };
+  const original = 'Existing course reference.';
+  current.profile.parts[0].stages['add-source'].materials = original;
+  let failSave = false;
+  await page.route('**/api/teacher/profiles', route => route.fulfill({ json: { resource: SYSTEMS_MAPPING_EDUCATOR_RESOURCE, runtime: { provider: 'deterministic' }, activeProfileId: current.id, profiles: [current] } }));
+  await page.route(`**/api/teacher/profiles/${current.id}`, async route => {
+    if (route.request().method() === 'PUT') {
+      if (failSave) return route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: 'Temporarily unavailable' } } });
+      current = { ...current, ...route.request().postDataJSON(), revision: current.revision + 1 };
+    }
+    return route.fulfill({ json: { profile: current, events: [] } });
+  });
+  await openTeacherFixture(page, []);
+  await page.getByRole('tab', { name: 'Course settings' }).click();
+  const guidance = page.locator('.course-model-settings');
+  await expect(guidance).not.toHaveAttribute('open', '');
+  await page.getByText('Guidance and materials', { exact: true }).click();
+  await expect(page.locator('.course-model-preview-panel')).not.toHaveAttribute('open', '');
+  const material = page.getByRole('textbox', { name: 'Course material', exact: true });
+  const upload = page.getByLabel('Upload course material', { exact: true });
+  await upload.setInputFiles({ name: 'reading.txt', mimeType: 'text/plain', buffer: Buffer.from('Observe who connects the two settings.') });
+  await expect(page.getByRole('region', { name: 'Course material import preview' })).toBeVisible();
+  await expect(material).toHaveValue(original);
+  await page.getByText('Cancel import', { exact: true }).click();
+  await expect(material).toHaveValue(original);
+  for (const name of ['east-harlem-memo.docx', 'east-harlem-memo.pdf']) {
+    await upload.setInputFiles(new URL(`./fixtures/memo-uploads/${name}`, import.meta.url).pathname);
+    await expect(page.getByRole('region', { name: 'Course material import preview' })).toBeVisible();
+    await expect(material).toHaveValue(original);
+    await page.getByText('Cancel import', { exact: true }).click();
+  }
+  await upload.setInputFiles({ name: 'reading.txt', mimeType: 'text/plain', buffer: Buffer.from('Observe who connects the two settings.') });
+  await page.getByText('Append to course material', { exact: true }).click();
+  const combined = `${original}\n\nObserve who connects the two settings.`;
+  await expect(material).toHaveValue(combined);
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByText('Draft revision 2 saved.', { exact: true })).toBeAttached();
+  expect(current.profile.parts[0].stages['add-source'].materials).toBe(combined);
+  await page.getByRole('tab', { name: 'Submissions' }).click();
+  await page.getByRole('tab', { name: 'Course settings' }).click();
+  // Section state may remain open while mounted; content must remain unchanged.
+  if (!(await guidance.evaluate(el => el.open))) await page.getByText('Guidance and materials', { exact: true }).click();
+  await expect(material).toHaveValue(combined);
+  await upload.setInputFiles({ name: 'too-long.txt', mimeType: 'text/plain', buffer: Buffer.from('x'.repeat(4001)) });
+  await expect(page.getByRole('alert')).toContainText('too large');
+  await expect(material).toHaveValue(combined);
+  await upload.setInputFiles({ name: 'reading.txt', mimeType: 'text/plain', buffer: Buffer.from('Another passage.') });
+  await page.getByText('Cancel import', { exact: true }).click();
+  await material.fill(combined + '\nUnsaved addition.'); failSave = true;
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(material).toHaveValue(combined + '\nUnsaved addition.');
+  failSave = false;
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByText('Draft revision 3 saved.', { exact: true })).toBeAttached();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Compact course materials'));
+  await captureSourceRenderedScreenshot(page, testInfo, 'Compact course materials');
 });

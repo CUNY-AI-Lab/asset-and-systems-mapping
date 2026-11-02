@@ -10,6 +10,9 @@ describe('GuidanceProgress', () => {
     expect(phaseFor(90, 'Saving your generation request…')).toBe('Saving request');
     expect(phaseFor(0, 'Recovering your saved request…')).toBe('Recovering request');
     expect(phaseFor(4, 'Temporary model interruption. Retrying after the requested delay (attempt 2 of 3)…')).toBe('Waiting to retry');
+    expect(phaseFor(0, 'Reading memo', 'meso')).toBe('Identifying relationships');
+    expect(phaseFor(90, 'Reading memo', 'micro')).toBe('Classifying nodes');
+    expect(phaseFor(90, 'Saving request', 'micro')).toBe('Saving request');
     expect(approximateProgress(0)).toBe(0);
     expect(approximateProgress(18)).toBeGreaterThan(50);
     expect(approximateProgress(600)).toBe(95);
@@ -28,3 +31,7 @@ describe('GuidanceProgress', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+it('names Exo contextualization without overriding saving', () => { expect(phaseFor(20, '', 'exosphere')).toBe('Contextualizing scales'); expect(phaseFor(20, 'Saving', 'exosphere')).toBe('Saving request'); });
+
+it('names the Macro relationship operation', () => expect(phaseFor(0, '', 'macrosphere')).toBe('Identifying relationships'));

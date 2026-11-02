@@ -12,14 +12,11 @@ export default function ProjectOverview({ project, onReviewLevel }) {
       <div className="project-overview__levels">
         {summary.levels.filter((level) => project.releasedScales.includes(level.scale)).map((level) => {
           const reflection = level.scale === project.activeScale ? project.reflection : project.levelProgress?.[level.scale]?.reflection;
-          const resultLabel = level.scale === 'macrosphere' ? 'broader condition' : 'element';
-          const linkLabel = level.scale === 'macrosphere' ? 'scope link' : 'relationship';
-          const linkCount = level.scale === 'macrosphere' ? level.scopeLinks : level.relationships;
           const mapResults = level.scale === 'meso'
             ? [counted(level.relationships, 'relationship'), level.nodes ? counted(level.nodes, 'saved linkage') : ''].filter(Boolean).join(' · ')
             : level.scale === 'micro'
-              ? counted(level.nodes, 'element')
-              : `${counted(level.nodes, resultLabel)} · ${counted(linkCount, linkLabel)}`;
+              ? [counted(level.nodes, 'element'), level.relationships ? counted(level.relationships, 'saved relationship') : ''].filter(Boolean).join(' · ')
+              : [counted(level.nodes, 'node'), counted(level.relationships, 'relationship'), level.scopeLinks ? counted(level.scopeLinks, 'stored scope membership') : ''].filter(Boolean).join(' · ');
           const reviewSummary = [
             level.evidenceToReview ? `${counted(level.evidenceToReview, 'item')} to review` : '',
             level.setAside ? `${counted(level.setAside, 'item')} set aside` : '',

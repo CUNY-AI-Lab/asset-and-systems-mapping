@@ -36,7 +36,7 @@ describe('student-facing copy', () => {
 
   it('keeps the shared student actions concise and separate from teacher and model setup', () => {
     const descriptions = SYSTEMS_MAPPING_STAGES.map(({ description }) => description);
-    expect(descriptions[0]).toBe('Set your focus and add a memo for all four levels');
+    expect(descriptions[0]).toBe('Memo');
     descriptions.forEach((description) => {
       expect(description.length).toBeLessThanOrEqual(65);
       expect(description).not.toContain('.');
@@ -57,7 +57,7 @@ describe('student-facing copy', () => {
     const meso = SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso');
     expect(meso.description).toMatch(/relationships.*already mapped at Micro-level/i);
     expect(meso.chooseInstruction).toMatch(/connect two existing Micro nodes.*one-way or two-way arrow/i);
-    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws.*more than one map item/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/relationships.*larger-scale.*local map/i);
   });
 
   it('keeps level distinctions without the repeated Uses/Adds/Boundary panel', () => {
@@ -69,19 +69,16 @@ describe('student-facing copy', () => {
       expect(level).not.toHaveProperty('boundary');
     });
     expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'meso').checklist).toContain('Keep the same nodes and their positions from Micro-level.');
-    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'exosphere').description).toMatch(/decision/i);
-    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/broader laws/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'exosphere').description).toMatch(/larger-scale/i);
+    expect(SYSTEMS_MAPPING_LEVELS.find(({ id }) => id === 'macrosphere').description).toMatch(/relationships.*larger-scale/i);
   });
 
-  it('uses decision-setting language for Exo-level and plain Meso explanation copy', () => {
+  it('uses paired node and relationship language without obsolete pathway forms', () => {
+    expect(SYSTEMS_MAPPING_LEVELS.find(level => level.id === 'exosphere').reviewInstruction).toMatch(/additional larger-scale nodes/);
+    expect(SYSTEMS_MAPPING_LEVELS.find(level => level.id === 'macrosphere').chooseInstruction).toContain('Cross-scale connections are allowed');
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
-    expect(source).toContain('New decision setting');
-    expect(source).toContain('Add setting');
-    expect(source).toContain('label="Pathway"');
-    expect(source).toContain('label="Interaction"');
-    expect(source).not.toContain('Suggested Exo-level institutions');
-    expect(source).not.toContain('Place named institutions at Exo-level');
-    expect(source).not.toContain('What passes, coordinates, or conflicts?');
+    expect(source).not.toContain('Disclosure title="Add decision setting"');
+    expect(source).not.toContain('Disclosure title="Add condition"');
   });
 
   it('keeps student headings free of standalone articles', () => {

@@ -127,7 +127,7 @@ describe('map accessibility', () => {
 
     const canvas = screen.getByRole('group', { name: /Micro-level map.*Choose a node or connection for details/i });
     const node = screen.getByRole('button', { name: /Rosa, person, Micro-level, evidence recorded/i });
-    const connection = screen.getByRole('button', { name: /Rosa supports Peer support group, Micro-level connection/i });
+    const connection = screen.getByRole('button', { name: /Rosa supports Peer support group, direction: source to target, Micro-level connection/i });
     expect(canvas).toHaveAttribute('tabindex', '0');
     expect(node).toHaveAttribute('aria-keyshortcuts', expect.stringContaining('ArrowRight'));
     expect(connection).toHaveAttribute('aria-keyshortcuts', 'Enter Space');
@@ -138,6 +138,22 @@ describe('map accessibility', () => {
     connection.focus();
     fireEvent.keyDown(connection, { key: ' ' });
     expect(onSelect).toHaveBeenCalledWith('edge', edge.id, true);
+  });
+
+  it.each(['micro', 'meso'])('allows %s dragging into visible space left of the old world rectangle after zooming', (scale) => {
+    const { nodes } = mapFixture();
+    const node = { ...nodes[0], x: 100, y: 250 };
+    const onMoveNode = vi.fn();
+    render(<GraphCanvas nodes={[node]} edges={[]} selection={null} onSelect={vi.fn()} onMoveNode={onMoveNode}
+      viewport={{ panX: 400, panY: 0, zoom: 0.5 }} phoneLayout={false} visibleLayer={scale} mapMode="network"
+      mapLabel="Synthetic map" onViewportChange={vi.fn()} onAnnounce={vi.fn()} />);
+    const canvas = document.querySelector('.graph-canvas');
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 840, height: 540, right: 840, bottom: 540 });
+    const target = document.querySelector('.graph-node');
+    fireEvent.pointerDown(target, { pointerId: 1, button: 0, clientX: 450, clientY: 125 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, button: 0, clientX: 250, clientY: 125 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, button: 0, clientX: 250, clientY: 125 });
+    expect(onMoveNode).toHaveBeenCalledWith(node.id, -300, 250, 'pointer');
   });
 
   it('pans by direct background drag and keyboard without a mode toggle', () => {
@@ -206,7 +222,6 @@ describe('map accessibility', () => {
 
     const node = screen.getByRole('button', { name: /Rosa, person, Micro-level/i });
     fireEvent.keyDown(node, { key: 'Enter' });
-    fireEvent.click(screen.getByText('Edit item details'));
     await waitFor(() => expect(screen.getByRole('group', { name: 'Move Rosa without dragging' })).toBeVisible());
     fireEvent.click(screen.getByRole('button', { name: 'Move Rosa right' }));
     expect(update).toHaveBeenCalledTimes(2);
@@ -217,13 +232,13 @@ describe('map accessibility', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: /Rosa, person, Micro-level/i }), { key: 'Enter' });
     const panel = screen.getByRole('tabpanel', { name: 'Item' });
     expect(within(panel).queryByText(/Explain why this item matters/)).not.toBeInTheDocument();
-    expect(within(panel).getByRole('textbox', { name: 'Your interpretation' })).toBeVisible();
-    expect(within(panel).getByRole('button', { name: 'Remove from map' })).not.toBeVisible();
-    expect(within(panel).getByRole('button', { name: 'Add record' })).not.toBeVisible();
-    fireEvent.click(within(panel).getByText('Edit item details'));
-    fireEvent.click(within(panel).getByText('Evidence and questions'));
-    expect(within(panel).getByRole('button', { name: 'Add record' })).toBeVisible();
-    expect(within(panel).getByRole('button', { name: 'Remove from map' })).toBeVisible();
+    expect(within(panel).getByRole('textbox', { name: 'Interpretation' })).toBeVisible();
+    expect(within(panel).getByRole('button', { name: 'Delete' })).toBeVisible();
+    expect(within(panel).queryByRole('button', { name: 'Add record' })).not.toBeInTheDocument();
+    expect(within(panel).getAllByRole('textbox')).toHaveLength(2);
+    expect(within(panel).getByRole('textbox', { name: 'Interpretation' })).not.toHaveAttribute('placeholder');
+    expect(within(panel).getByText('What does this node help explain? What is still uncertain?')).toBeVisible();
+    expect(within(panel).getByRole('heading', { name: 'Edit' })).toBeVisible();
   });
 
   it('zooms around the pointer with a wheel and supports two-pointer pinch', () => {
