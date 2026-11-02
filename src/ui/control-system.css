@@ -138,3 +138,5 @@
 @media(max-width:340px){.workspace-map-controls .notebook-level{display:none}}
 
 .app-shell .header-actions .notebook-switch > button{min-width:44px}
+.app-shell .header-actions .notebook-switch > .notebook-map-tools,
+.app-shell .header-actions .notebook-switch > .notebook-map-tools > summary{min-width:44px}
