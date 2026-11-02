@@ -56,6 +56,8 @@ test('dense cumulative arrangement stays straight and visible, and intentional p
   await expect(nav.getByRole('button',{name:'Map',exact:true})).toHaveAttribute('aria-pressed','true');
   expect(await positions(page)).toEqual(moved);expect(await view(page)).toBe(camera);
   await page.getByRole('button',{name:'Edit',exact:true}).click();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  expect(await view(page)).toBe(camera);
   const label=page.getByRole('textbox',{name:'Label',exact:true});
   await label.fill('Apartment building and accessible entrance');await label.blur();
   expect(await positions(page)).toEqual(moved);expect(await view(page)).toBe(camera);

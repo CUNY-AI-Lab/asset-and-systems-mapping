@@ -4305,12 +4305,19 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     return `${focus?.kind || ''}:${focus?.id || ''}:page-${activeFocusPage}:${relationshipGeometry}::${nodeGeometry}`;
   }, [activeFocusPage, displayedNodes, focus?.id, focus?.kind, focusIncidentEdges, focusedEcologyDetail]);
   const focusedDetailMinimumZoom = VIEWPORT_LIMITS.minZoom;
-  const automaticCameraKey = `${ecologyGeometryKey}:${visibleScale}:${phoneFitHeight}:${phoneLayout}:${presentation}`;
+  const automaticCameraContext = `${ecologyGeometryKey}:${visibleScale}:${phoneLayout}:${presentation}:${fullscreen}:${typeof window === 'undefined' ? '' : window.innerWidth}`;
+  const automaticCameraKey = `${automaticCameraContext}:${phoneFitHeight}`;
+  const userCameraRef = useRef({ context: '', manual: false });
+  const preserveCamera = useCallback(() => {
+    userCameraRef.current = {context: automaticCameraContext, manual: true};
+  }, [automaticCameraContext]);
   useEffect(() => {
     if (!notebook || presentation !== 'canvas') return;
+    if (userCameraRef.current.context !== automaticCameraContext) userCameraRef.current = {context: automaticCameraContext, manual: false};
+    if (userCameraRef.current.manual) return;
     setMapViewport(fitViewport(displayedNodes, phoneLayout ? phoneFitHeight : 420, phoneLayout, visibleRelationshipBounds, phoneLayout && displayedNodes.length > 12 ? 1 : VIEWPORT_LIMITS.minZoom));
-    // Topology, breakpoint and available canvas space trigger fitting. Dragging,
-    // text changes, selection and annotation saves retain the user's camera.
+    // Fit new topology and viewport widths. A dock or keyboard height change
+    // must not replace a camera the user deliberately chose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [automaticCameraKey]);
 
@@ -4586,6 +4593,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setTraceHistory(previous);
     setInspectorTab('node'); onHighlight?.({ nodeIds: [source,target], edgeIds: [] });
     const pair = displayedNodes.filter(node => node.id === source || node.id === target);
+    preserveCamera();
     setMapViewport(fitViewport(pair, phoneLayout ? phoneFitHeight : 420, phoneLayout));
     setAnnouncement('Stored scope highlighted. No direct relationship was added.');
   };
@@ -4687,8 +4695,11 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (notebook && presentation === 'canvas' && !legacyMesoRecord) {
       const targets = kind === 'node' ? displayedNodes.filter(node => node.id === id)
         : displayedNodes.filter(node => node.id === item.source || node.id === item.target);
-      if (targets.length) setMapViewport(fitViewport(targets, phoneLayout ? phoneFitHeight : 420, phoneLayout,
-        kind === 'edge' ? focusedEcologyCalloutBounds([item], displayedNodes, new Map(displayedNodes.map(node => [node.id, node])), phoneLayout) : []));
+      if (targets.length) {
+        preserveCamera();
+        setMapViewport(fitViewport(targets, phoneLayout ? phoneFitHeight : 420, phoneLayout,
+          kind === 'edge' ? focusedEcologyCalloutBounds([item], displayedNodes, new Map(displayedNodes.map(node => [node.id, node])), phoneLayout) : []));
+      }
     }
     setTraceHistory(previous);
     setAnnouncement(`Opened ${kind === 'node' ? item.label : relationshipDescription(item)}${legacyMesoRecord ? ' in List' : ''}.`);
@@ -4724,6 +4735,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     const from = direction === 'undo' ? layoutHistory.past : layoutHistory.future;
     const snapshot = from.at(-1);
     if (!snapshot) return;
+    preserveCamera();
     const current = snapshotLayout();
     setLayoutHistory(direction === 'undo'
       ? { past: from.slice(0, -1), future: [...layoutHistory.future, current] }
@@ -4745,6 +4757,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAnnouncement(direction === 'undo' ? 'Layout change undone.' : 'Layout change redone.');
   };
   const moveNode = useCallback((id, x, y, method) => {
+    preserveCamera();
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     const displayedNode = displayedNodes.find((node) => node.id === id);
     const safePosition = displayedNode
@@ -4778,9 +4791,10 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAutomaticPositions(null);
     setLayoutMeasurementRevision(revision => revision + 1);
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
-  }, [readablePositions, notebook, automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, interactionEcologyBands, update, visibleEdges]);
+  }, [preserveCamera, readablePositions, notebook, automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, interactionEcologyBands, update, visibleEdges]);
   const minimumInteractiveZoom = VIEWPORT_LIMITS.minZoom;
   const changeViewport = useCallback((next) => {
+    preserveCamera();
     const bounded = {
       panX: clamp(Math.round(next.panX), VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
       panY: clamp(Math.round(next.panY), VIEWPORT_LIMITS.minPan, VIEWPORT_LIMITS.maxPan),
@@ -4809,7 +4823,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     if (phoneEcologyPositions) setPhoneEcologyCommittedScope(phoneEcologyScope);
     if (phoneOverviewPositions || phoneEcologyPositions) setAutomaticPositions(null);
     logPrototype('viewport_changed');
-  }, [Boolean(notebook), update, logPrototype, legacyPhoneDrawer, phoneLayout, mapMode, focusedEcologyPositions, minimumInteractiveZoom, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
+  }, [preserveCamera, Boolean(notebook), update, logPrototype, legacyPhoneDrawer, phoneLayout, mapMode, focusedEcologyPositions, minimumInteractiveZoom, phoneEcologyPositions, phoneEcologyScope, phoneOverviewPositions, phoneOverviewScope, phoneRelationshipPositions]);
   const zoomBy = (amount) => {
     const requested = legacyPhoneDrawer && phoneViewport ? phoneViewport : mapViewport || project.viewport;
     const current = requested;
@@ -4844,6 +4858,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAnnouncement(`Map zoom ${Math.round(zoom * 100)} percent.`);
   };
   const fitMap = () => {
+    preserveCamera();
     const nodes = displayedNodes.length ? displayedNodes : project.graph.nodes;
     const detailLayout = focusedEcologyPositions || phoneRelationshipPositions;
     const nextViewport = fitViewport(
@@ -4863,6 +4878,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
     setAnnouncement('Map fitted to view.');
   };
   const arrangeMap = () => {
+    preserveCamera();
     rememberLayout();
     const liveNodes = project.graph.nodes.filter((node) => node.scale !== 'meso' && (showRemoved || node.claimState !== 'retired'));
     const nodes = visibleScale === 'all' ? liveNodes : visibleNodes.length ? visibleNodes : liveNodes;
