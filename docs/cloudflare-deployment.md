@@ -63,7 +63,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   use the shared Instructor Console; members cannot. No legacy teacher account
   is automatically linked by name or email.
 - `GATEWAY` binds to `cail-model-api`. Exact installed artifacts are CAIL Client
-  6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `glm-5.3-flash`,
+  6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `gpt-oss-120b`,
   observed active in the public Gateway catalog on October 3. Provider
   credentials, routing controls and accounting identities are not supplied by
   this application. GLM and its GPT-OSS backup use low reasoning. A

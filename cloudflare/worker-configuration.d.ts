@@ -11,7 +11,7 @@ interface __BaseEnv_Env {
 	COURSE_ACCESS_ENABLED: "true";
 	COURSE_IDS: "understanding-systems-impacting-youth-and-families-fall-2026-01,cail-teaching-tools-demo";
 	RELEASE: "ae5ea57-cloudflare-candidate";
-	GATEWAY_MODEL: "glm-5.3-flash";
+	GATEWAY_MODEL: "gpt-oss-120b";
 	GUIDANCE_CONCURRENCY: "8";
 	COURSES: DurableObjectNamespace<import("./worker").MappingCourse>;
 	BUG_REPORTS: Service /* entrypoint AdmissionBugReports from cail-tools-admission */;
