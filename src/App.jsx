@@ -5255,7 +5255,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
         selectItem(kind,id);
         // The list action explicitly says Open details. Ordinary canvas
         // selection continues to preserve the user's Notebook choice.
-        if (notebook) changePanel('inspector');
+        if (notebook) { onPanelMode?.('inspector'); notebook.onChange(true); setDrawerOpen(true); focusInspector(); }
       }} />}
       <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={notebook ? 'Notebook' : panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
         {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}

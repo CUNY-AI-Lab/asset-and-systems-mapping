@@ -75,6 +75,8 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   await page.keyboard.press('Escape');
   await expect(page.locator('.map-connect-status')).toHaveCount(0);
   expect((await readProject(page)).graph.edges).toHaveLength(before);
+  await page.getByRole('button',{name:'Resume relationship',exact:true}).click();
+  await page.getByRole('button',{name:'Discard relationship',exact:true}).click();
 
   await resident.click();
   await editSelected(page);
@@ -176,6 +178,7 @@ test('Meso stays usable after guidance fails and compact editing preserves legac
     await mapCommand(page,'Add item');const form=page.locator('.add-form');
     await form.getByRole('textbox',{name:'Label',exact:true}).fill(label);await form.getByRole('combobox',{name:'Type',exact:true}).selectOption(type);
     await expect(form.getByRole('combobox',{name:'Level',exact:true})).toHaveValue('micro');
+    await form.getByRole('textbox',{name:'Evidence or question'}).fill(`${label} is named in this synthetic classroom account.`);
     await form.getByRole('button',{name:'Add node',exact:true}).click();await expect.poll(async()=>(await readProject(page)).graph.nodes.some(node=>node.label===label)).toBe(true);
   }
   const added=(await readProject(page)).graph.nodes,principal=added.find(node=>node.label==='Assistant principal'),office=added.find(node=>node.label==='School office');
