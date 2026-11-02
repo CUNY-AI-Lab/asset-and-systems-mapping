@@ -1,12 +1,15 @@
-import { test, expect } from './support/test.js';
+import { test, expect, captureSourceRenderedScreenshot } from './support/test.js';
 import { mapCommand, notebookSection } from './support/notebook.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
 
 const memo = 'A fictional parent visits the school office. A coordinator helps the parent complete a transport request form. The parent says the bus arrived late twice. The memo does not establish why.';
 const readProject = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
 
-test('feedback-only results remain visible and a reread preserves the map', async ({ page }) => {
+test('feedback-only results remain visible and a reread preserves the map', async ({ page }, testInfo) => {
   let evaluations = 0;
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   // Exercise the real UI with a fabricated memo and an intentionally partial
   // local server response. This does not test a model provider.
   await page.route('**/api/preflight/evaluations', async route => {
@@ -35,6 +38,8 @@ test('feedback-only results remain visible and a reread preserves the map', asyn
   await expect(notice).toBeVisible();
   await expect.poll(async () => (await readProject(page)).preflight?.evaluation?.runtime?.feedbackOnly).toBe(true);
   await page.getByRole('button', { name: 'Continue →', exact: true }).click();
+  await expect(page.getByText('Add an item on the map or reread the memo.')).toBeVisible();
+  await expect(page.getByText('No suggestions. Revise the memo and reread it, or add items on the map.')).toHaveCount(0);
   await page.getByRole('button', { name: 'Finish review', exact: true }).click();
 
   await mapCommand(page, 'Add item');
@@ -62,4 +67,7 @@ test('feedback-only results remain visible and a reread preserves the map', asyn
   await expect(notice).toBeVisible();
   await expect(feedback).toBeVisible();
   expect((await readProject(page)).graph).toEqual(beforeReread.graph);
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+  await captureSourceRenderedScreenshot(page, testInfo, 'Feedback-only after reload');
+  expect(errors).toEqual([]);
 });

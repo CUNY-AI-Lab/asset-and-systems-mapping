@@ -1803,7 +1803,9 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
         {counts[step].total > 1 && <nav className="notebook-candidate-nav" aria-label="Suggestion navigation"><button type="button" disabled={visibleCandidateIndex === 0} onClick={() => setCandidateIndex(visibleCandidateIndex - 1)}>Previous suggestion</button><span>{visibleCandidateIndex + 1} / {counts[step].total}</span><button type="button" disabled={visibleCandidateIndex + 1 >= counts[step].total} onClick={() => setCandidateIndex(visibleCandidateIndex + 1)}>Next suggestion</button></nav>}
         <div className="candidate-list">
           {candidateRows(step, activeCandidates[step].slice(visibleCandidateIndex, visibleCandidateIndex + 1), visibleCandidateIndex)}
-          {!counts[step].total && <p className="empty-message">{step === 'nodes'
+          {!counts[step].total && <p className="empty-message">{project.preflight?.evaluation?.runtime?.feedbackOnly === true
+            ? step === 'nodes' ? 'Add an item on the map or reread the memo.' : 'Add a connection on the map or reread the memo.'
+            : step === 'nodes'
             ? project.activeScale === 'exosphere'
               ? 'No suggestions. Add a decision setting below.'
               : project.activeScale === 'meso'
