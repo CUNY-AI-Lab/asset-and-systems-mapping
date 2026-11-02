@@ -59,7 +59,7 @@
 /* Project names are the open action; supporting actions stay compact. */
 .studio-projects:has(.project-title){display:grid;gap:8px;border:0;margin:16px 0 28px}
 .studio-project:has(.project-title){padding:10px 14px;gap:12px 20px;border:0;border-radius:6px;background:var(--surface-subtle)}
-.studio-project .project-title{display:block;text-align:left;width:auto;min-height:44px;padding:4px 0;border:0;background:transparent;color:var(--ink);font:600 18px/1.35 var(--body)}
+:is(.app-shell,.access-shell) .studio-project .project-title{display:block;text-align:left;width:auto;min-height:44px;padding:4px 0;border:0;background:transparent;color:var(--ink);font:600 18px/1.35 var(--body)}
 .studio-project .project-title:hover{text-decoration:underline;text-underline-offset:3px}
 .studio-project:has(.project-title) p{margin-top:2px;font-size:13px}
 .studio-project:has(.project-title) .studio-project__actions{width:auto;display:flex;flex-wrap:wrap;gap:4px}
@@ -68,6 +68,9 @@
 .project-list-controls .field{margin:0;flex:1 1 140px}
 .project-list-controls .field:first-child{flex:2 1 200px}
 .project-list-controls :is(input,select){width:100%;font-size:14px}
+.project-search{position:relative}
+.project-search svg{position:absolute;width:18px;height:18px;left:12px;top:13px;color:var(--muted);pointer-events:none}
+.project-search input{padding-left:38px}
 .project-recoveries{margin-top:16px}
 .project-recoveries>summary{min-height:44px;cursor:pointer}
 .project-recoveries ul{list-style:none;padding:0;display:grid;gap:12px}

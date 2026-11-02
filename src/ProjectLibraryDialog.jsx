@@ -55,7 +55,7 @@ export default function ProjectLibraryDialog({ selection, onClose, onSave, onDel
   const save = () => run(async () => {
     const next = {...project, updatedAt:new Date().toISOString()};
     await onSave(next, selection.revision);
-    setProject(next); setDirty(false); setStatus('Notes saved.');
+    setProject(next); setDirty(false); setStatus('Saved');
   });
   const deleting = selection.mode === 'delete';
   return <Modal open title={project.title} onClose={close}>
@@ -71,7 +71,7 @@ export default function ProjectLibraryDialog({ selection, onClose, onSave, onDel
           <label className="field"><span className="field__label">Level</span><select value={level} onChange={event => setLevel(event.target.value)}>{SCALE_ORDER.filter(scale => project.releasedScales.includes(scale)).map(scale => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}</select></label>
           <p id="library-notes-question" className="reflection-prompt">{fieldNotesQuestions(project.teacherGovernance?.preflight)[level]}</p>
           <label className="field"><span className="field__label">Field Notes</span><textarea rows={4} maxLength={PROJECT_LIMITS.promptText} aria-describedby="library-notes-question" value={note} disabled={busy || selection.conflict} onChange={event => writeNote(event.target.value)} /></label>
-          <Action disabled={busy || !dirty || selection.conflict} onClick={save}>Save notes</Action>
+          <Action disabled={busy || !dirty || selection.conflict} onClick={save}>Save note</Action>
         </section>
         <section aria-label="Private project exports"><h2>Private exports</h2>
           <div className="library-format-actions"><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('json'))}>Private backup</Action><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('markdown'))}>Notes (Markdown)</Action>{project.graph.nodes.length > 0 && <><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('png'))}>PNG</Action><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('pdf'))}>PDF</Action></>}</div>

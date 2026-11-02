@@ -296,7 +296,7 @@ export default function AccountWorkspace() {
         <NollSketch className="account-landing__noll" />
       </> : account ? <>
         <div hidden={accountView.open}>
-        <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : 'Continue a map or start a new one'} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
+        <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : undefined} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
         {records.length ? <SavedProjects records={records} busy={busy} onOpen={open} onInspect={inspect} onDelete={record=>inspect(record,'delete')} />
           : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
         {recoveries.length > 0 && <details className="project-recoveries"><summary>Project recovery ({recoveries.length})</summary><p>Private copies saved on this device before deletion.</p><ul>{recoveries.map(entry=><li key={entry.key}><span>{entry.title}</span><div className="button-row"><Action variant="secondary" disabled={busy} onClick={()=>restoreDeleted(entry)}>Restore</Action><Action variant="ghost" disabled={busy} onClick={()=>downloadRecovery(entry)}>Download</Action>{entry.remoteProject && <Action variant="ghost" disabled={busy} onClick={()=>downloadRecovery(entry,true)}>Account backup</Action>}</div></li>)}</ul></details>}

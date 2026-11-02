@@ -21,5 +21,6 @@ export function progressLabel(record) {
 
 export function progressDetail(record) {
   const progress = record.progress || record;
-  return [progress.hasMemo ? 'Memo added' : '', Number.isInteger(progress.nodes) ? `${progress.nodes} nodes` : '', Number.isInteger(progress.relationships) ? `${progress.relationships} relationships` : '', progress.notes > 0 ? `Field Notes at ${progress.notes} ${progress.notes === 1 ? 'level' : 'levels'}` : ''].filter(Boolean).join(' · ');
+  const empty = progress.nodes === 0 && progress.relationships === 0;
+  return [progress.hasMemo ? 'Memo added' : '', empty ? 'No map yet' : Number.isInteger(progress.nodes) ? `${progress.nodes} nodes` : '', !empty && Number.isInteger(progress.relationships) ? `${progress.relationships} relationships` : '', progress.notes > 0 ? `Field Notes at ${progress.notes} ${progress.notes === 1 ? 'level' : 'levels'}` : ''].filter(Boolean).join(' · ');
 }

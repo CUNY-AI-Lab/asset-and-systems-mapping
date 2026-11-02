@@ -195,7 +195,7 @@ describe('Account dashboard controls', () => {
     expect(within(courses).getByRole('link', { name: 'Instructor Console for Teaching course · Fall 2026 · 01' })).toHaveAttribute('href', '/?course=course-a&view=instructor');
     expect(within(courses).getByRole('link', { name: 'Instructor Console for Guest course · Fall 2026 · 03' })).toHaveAttribute('href', '/?course=course-c&view=instructor');
     expect(within(courses).getAllByRole('link', { name: /Instructor Console/ })).toHaveLength(2);
-    expect(within(courses).getByRole('link', { name: 'Student course' })).toHaveAttribute('href', '/?course=course-b');
+    expect(within(courses).getByRole('link', { name: 'Student course · Fall 2026 · 02' })).toHaveAttribute('href', '/?course=course-b');
     expect(screen.queryByRole('button', { name: 'Instructor Console' })).not.toBeInTheDocument();
   });
 
@@ -410,8 +410,8 @@ it('saves and privately exports Field Notes before any map generation without a 
   expect(note).toHaveValue('Earlier observation');
   expect(note).not.toHaveAttribute('placeholder');
   fireEvent.change(note,{target:{value:'A new observation before guidance or graph generation.'}});
-  fireEvent.click(within(dialog).getByRole('button',{name:'Save notes'}));
-  expect(await within(dialog).findByRole('status')).toHaveTextContent('Notes saved.');
+  fireEvent.click(within(dialog).getByRole('button',{name:'Save note'}));
+  expect(await within(dialog).findByRole('status')).toHaveTextContent('Saved');
   expect(projects[0].reflection).toBe('A new observation before guidance or graph generation.');
   expect(projects[0].stage).toBe(0);expect(projects[0].graph.nodes).toEqual([]);
   fireEvent.click(within(dialog).getByRole('button',{name:'Private backup'}));

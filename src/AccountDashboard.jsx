@@ -23,10 +23,10 @@ export default function AccountDashboard({ account, courses, courseError, quota,
   const role = account.course?.guestInstructor ? 'Guest instructor' : instructor ? 'Instructor' : 'Student';
   return <section className="account-dashboard" aria-label="Account dashboard">
     <PageHeading title="Account" actions={<Action variant="secondary" onClick={onReturn}>{returnLabel}</Action>} />
-    <div className="account-tabs" role="tablist" aria-label="Account">
+    {instructor && <div className="account-tabs" role="tablist" aria-label="Account">
       {tabs.map((value, index) => <button key={value} ref={node => node ? refs.current.set(value, node) : refs.current.delete(value)} id={`account-tab-${value}`} type="button" role="tab" aria-selected={selected === value} aria-controls={`account-panel-${value}`} tabIndex={selected === value ? 0 : -1} onKeyDown={event => move(event, index)} onClick={() => choose(value)}>{value === 'overview' ? 'Overview' : 'Instructor Console'}</button>)}
-    </div>
-    <div id="account-panel-overview" role="tabpanel" aria-labelledby="account-tab-overview" hidden={selected !== 'overview'}>
+    </div>}
+    <div id="account-panel-overview" role={instructor ? 'tabpanel' : 'region'} aria-labelledby={instructor ? 'account-tab-overview' : undefined} aria-label={instructor ? undefined : 'Account overview'} hidden={selected !== 'overview'}>
       <div className="account-grid">
         <section className="account-card" aria-labelledby="account-profile"><h2 id="account-profile">Profile</h2>
           <dl><dt>Preferred name</dt><dd>{account.preferredName || 'Unavailable'}</dd><dt>Email</dt><dd>{account.email || 'Unavailable'}</dd><dt>Access</dt><dd>{role}</dd></dl>
@@ -35,8 +35,8 @@ export default function AccountDashboard({ account, courses, courseError, quota,
         <section className="account-card" aria-labelledby="account-usage"><h2 id="account-usage">Model usage</h2><p>{usage}</p></section>
         <section className="account-card account-card--wide" aria-labelledby="account-materials"><h2 id="account-materials">Classes and materials</h2>
           {account.course ? <p>{[account.course.name, account.course.term, account.course.section].filter(Boolean).join(' · ')}</p> : courses.length ? <ul className="account-courses">{courses.map(course => <li key={course.id}>
-            <div className="account-course-info"><a href={courseWorkspacePath('/', { kind: 'course', id: course.id })}>{course.name}</a><span>{[course.term, course.section].filter(Boolean).join(' · ')}</span></div>
-            {course.role === 'instructor' && <><span>{course.guestInstructor ? 'Guest instructor' : 'Instructor'}</span><a href={instructorWorkspacePath({ kind: 'course', id: course.id })} aria-label={`Instructor Console for ${course.name} · ${course.term} · ${course.section}`}>Instructor Console</a></>}
+            <div className="account-course-info"><a className="account-course-title" href={courseWorkspacePath('/',{kind:'course',id:course.id})} aria-label={`${course.name} · ${course.term} · ${course.section}`}>{course.name}</a><div className="account-course-meta"><span>{[course.term,course.section].filter(Boolean).join(' · ')}</span>{course.role==='instructor' && <span>{course.guestInstructor ? 'Guest instructor' : 'Instructor'}</span>}</div></div>
+            {course.role==='instructor' && <a className="account-course-action" href={instructorWorkspacePath({kind:'course',id:course.id})} aria-label={`Instructor Console for ${course.name} · ${course.term} · ${course.section}`}>Instructor Console</a>}
           </li>)}</ul> : <p>No classes available.</p>}
           {courseError && <p role="status">{courseError}</p>}
           <p className="account-muted">Shared files are not available in this workspace.</p>
