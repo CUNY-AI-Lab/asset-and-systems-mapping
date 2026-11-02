@@ -87,24 +87,36 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(({ key, value }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, value); }, { key: STORAGE_KEY, value: serializedEastHarlemDisabilityProject() });
 });
 
-test('Project, Map tools, and work level share one accessible row with more room for the map', async ({ page }, testInfo) => {
+test('Map, Notebook, and Tools share a visible row below the main header', async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   for (const size of sizes(testInfo)) {
     await page.setViewportSize(size);
     await openMeso(page);
-    const controls = [page.locator('.project-menu > summary'), page.getByRole('combobox', { name: 'Work level' }), page.getByRole('button', { name: 'Map', exact: true }), page.getByRole('button', { name: 'Notebook', exact: true }), page.locator('.notebook-map-tools > summary')];
+    const header = page.locator('.app-header--student');
+    const headerBounds = await header.boundingBox();
+    await expect(header.getByRole('navigation', { name: 'Workspace', exact: true })).toHaveCount(0);
+    await expect(page.locator('.project-menu > summary')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole('combobox', { name: 'Work level' })).toBeInViewport({ ratio: 1 });
+    const nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
+    const controls = [nav.getByRole('button', { name: 'Map', exact: true }), nav.getByRole('button', { name: 'Notebook', exact: true }), nav.locator('.notebook-map-tools > summary')];
+    await expect(controls[2]).toHaveText('Tools');
     const bounds = await Promise.all(controls.map(control => control.boundingBox()));
     for (const [index, box] of bounds.entries()) {
       await expect(controls[index]).toBeInViewport({ ratio: 1 });
       expect(box.height).toBeGreaterThanOrEqual(44);
       expect(box.width).toBeGreaterThanOrEqual(44);
-      expect(box.y).toBeLessThan(64);
+      expect(box.y).toBeGreaterThanOrEqual(headerBounds.y + headerBounds.height);
+      expect(box.width).toBeCloseTo(bounds[0].width, 1);
+      expect(box.height).toBeCloseTo(bounds[0].height, 1);
       if (index) expect(box.x).toBeGreaterThanOrEqual(bounds[index - 1].x + bounds[index - 1].width);
     }
     expect(Math.max(...bounds.map(box => box.y)) - Math.min(...bounds.map(box => box.y))).toBeLessThanOrEqual(4);
     const canvas = page.locator('.canvas-wrap');
     await expect(canvas).toBeVisible();
-    expect((await canvas.boundingBox()).height).toBeGreaterThanOrEqual(size.height - 130);
+    const navBounds = await nav.boundingBox();
+    const stageBounds = await page.locator('.map-stage').boundingBox();
+    expect(Math.abs(navBounds.x + navBounds.width - (stageBounds.x + stageBounds.width))).toBeLessThan(24);
+    expect((await canvas.boundingBox()).height).toBeGreaterThanOrEqual(size.height - navBounds.y - navBounds.height - 24);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
     await captureSourceRenderedScreenshot(page, testInfo, `Workspace controls ${size.width}x${size.height}`);

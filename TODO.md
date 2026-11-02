@@ -2,6 +2,15 @@
 
 Updated: 2026-11-02
 
+## Latest navigation correction — November 1, 2026, America/New_York
+
+The user's direct clarification supersedes the earlier header consolidation: keep **Map | Notebook | Tools** together in one visible, flush-right row **below the main header**. Move Tools down after Notebook, label it Tools, and keep matching control sizes and spacing. Do not move this row into the main header. Project, Account and work-level controls retain their header placement; the bug-report dock follows Tools.
+
+- [x] Implement the separate workspace row while preserving Map/Notebook state, Tools actions and full-screen exit.
+- [x] Verify the lower row, equal control dimensions, Tools menu and Map/Notebook interactions at desktop and phone sizes with synthetic examples. The final affected browser run passed 17 checks (3 desktop skips for phone-only cases); App, map accessibility and Tools resizing passed 285 unit checks. Both builds, Cloudflare typecheck and Dev/production dry runs passed.
+- [ ] Deploy the same checked source to Dev and production, verify the release and served assets, and capture fresh synthetic screenshots.
+
+
 
 ## November 2 — verified combined UI and styling release
 

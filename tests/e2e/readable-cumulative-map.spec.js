@@ -22,7 +22,8 @@ test('dense cumulative arrangement stays straight and visible, and intentional p
   await expect(nodes).toHaveCount(16);await expect(edges).toHaveCount(project.graph.edges.length);
   const nav=page.getByRole('navigation',{name:'Workspace',exact:true}),container=page.locator('.map-stage');
   const navBox=await nav.boundingBox(),containerBox=await container.boundingBox();
-  expect(Math.abs(navBox.x + navBox.width - (containerBox.x + containerBox.width))).toBeLessThan(24);expect(navBox.y).toBeLessThan(64);
+  const headerBox=await page.locator('.app-header--student').boundingBox();
+  expect(Math.abs(navBox.x + navBox.width - (containerBox.x + containerBox.width))).toBeLessThan(24);expect(navBox.y).toBeGreaterThanOrEqual(headerBox.y+headerBox.height);
   for(const layer of ['exosphere','macrosphere']) {
     await page.getByRole('combobox',{name:'Work level'}).selectOption(layer);await showMap(page);
     await mapCommand(page,'Fit map');

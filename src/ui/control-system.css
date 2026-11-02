@@ -126,20 +126,19 @@
 }
 
 /* Workspace navigation is one compact, single-line action group. */
-.app-shell .header-actions .notebook-switch > button,
-.app-shell .header-actions .notebook-switch > .notebook-map-tools > summary {
+.app-shell .notebook-nav-row .notebook-switch > button,
+.app-shell .notebook-nav-row .notebook-switch > .notebook-map-tools > summary {
   height:44px;min-height:44px;padding:6px;white-space:nowrap;overflow-wrap:normal;border-radius:0;box-sizing:border-box;
 }
 .app-shell .header-actions .notebook-toolbar-actions { align-items:center;gap:4px; }
-.app-shell .header-actions .notebook-switch { align-items:center; }
+.app-shell .notebook-nav-row .notebook-switch { align-items:center; }
 @media(max-width:600px){
   .app-shell .app-header--student .header-actions{gap:4px;align-items:center}
   .app-shell .header-actions .project-menu > summary{padding-inline:8px}
   .workspace-map-controls .notebook-level{display:block}
   .workspace-map-controls .notebook-level select{min-width:54px;max-width:60px;padding-inline:3px}
 }
-@media(max-width:340px){.workspace-map-controls .notebook-level{display:none}}
 
-.app-shell .header-actions .notebook-switch > button{min-width:44px}
-.app-shell .header-actions .notebook-switch > .notebook-map-tools,
-.app-shell .header-actions .notebook-switch > .notebook-map-tools > summary{min-width:44px}
+.app-shell .notebook-nav-row .notebook-switch > button{min-width:44px}
+.app-shell .notebook-nav-row .notebook-switch > .notebook-map-tools,
+.app-shell .notebook-nav-row .notebook-switch > .notebook-map-tools > summary{min-width:44px}
