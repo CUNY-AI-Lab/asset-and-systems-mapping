@@ -8,6 +8,7 @@ The user's direct clarification supersedes the earlier header consolidation: kee
 
 - [x] Implement the separate workspace row while preserving Map/Notebook state, Tools actions and full-screen exit.
 - [x] Verify the lower row, equal control dimensions, Tools menu and Map/Notebook interactions at desktop and phone sizes with synthetic examples. The final affected browser run passed 17 checks (3 desktop skips for phone-only cases); App, map accessibility and Tools resizing passed 285 unit checks. Both builds, Cloudflare typecheck and Dev/production dry runs passed.
+- [x] Keep Save and Cancel reachable when a wording draft appears in the compact Notebook. Scroll only the Notebook contents, preserving keyboard focus, map size, camera and selection. The unchanged narrow-phone regression passed at 320 and 430 px.
 - [ ] Deploy the same checked source to Dev and production, verify the release and served assets, and capture fresh synthetic screenshots.
 
 

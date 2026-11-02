@@ -1,12 +1,23 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 // Drafts belong to the selected record. Blur and selection changes never save.
 export default function MapTextEditor({ label, value, maxLength, options, validate, onSave }) {
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState('');
   const fieldRef = useRef(null);
+  const actionsRef = useRef(null);
   const errorId = useId();
+  const hasDraft = draft !== value;
   useEffect(() => { setDraft(value); setError(''); }, [value]);
+  useLayoutEffect(() => {
+    // Keep explicit Save / Cancel reachable in the compact Notebook without
+    // changing the map's size, camera, selection or keyboard focus.
+    const actions = actionsRef.current;
+    const scroller = actions?.closest('.inspector__scroll');
+    if (!scroller) return;
+    const overflow = actions.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom;
+    if (overflow > 0) scroller.scrollTop += overflow + 8;
+  }, [hasDraft, error]);
   const cancel = () => { setDraft(value); setError(''); fieldRef.current?.focus(); };
   const save = () => {
     const next = draft.trim();
@@ -32,7 +43,7 @@ export default function MapTextEditor({ label, value, maxLength, options, valida
       {options ? <select {...fieldProps}>{[...new Set([value, ...options])].map(option => <option key={option}>{option}</option>)}</select> : <input {...fieldProps} />}
     </label>
     {error && <p id={errorId} className="map-text-editor__error" role="alert">{error}</p>}
-    {draft !== value && <div className="map-text-editor__actions">
+    {hasDraft && <div ref={actionsRef} className="map-text-editor__actions">
       <button type="button" className="button button--small" onClick={save}>Save</button>
       <button type="button" className="button button--small button--ghost" onClick={cancel}>Cancel</button>
     </div>}
