@@ -41,6 +41,8 @@ describe.skipIf(process.env.SYSTEMS_MAPPING_LIVE_GUIDANCE !== '1')('paid Gateway
 
   test.each([
     ['glm-5.3-flash', false, 'baseline', null],
+    ...(process.env.SYSTEMS_MAPPING_LIVE_OSS_120B === '1' ? [['gpt-oss-120b', false, 'baseline', null]] : []),
+    ...(process.env.SYSTEMS_MAPPING_LIVE_DEEPSEEK_41 === '1' ? [['deepseek-v4.1-flash-1017', false, 'baseline', null]] : []),
     ...(process.env.SYSTEMS_MAPPING_LIVE_DEEPSEEK === '1' ? [['deepseek-v4-flash-0731', false, 'baseline', null]] : []),
     ['gpt-oss-20b', false, 'baseline', null],
     ['glm-5.3-flash', true, 'availability-fallback', null],
