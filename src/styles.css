@@ -1827,12 +1827,16 @@ html[data-theme="dark"] .ecology-layer--macrosphere > ellipse { fill: color-mix(
 .item-editor-title { min-width:0;flex:1; }
 .inspector__head .item-editor-title h2 { min-height:44px;display:flex;align-items:center;font-size:22px;font-weight:650; }
 .item-editor-title p { margin:0;font-size:16px;line-height:1.4;overflow-wrap:anywhere; }
+.inspector-evidence { margin:16px 16px 20px; padding:12px 14px; border:0; border-left:3px solid var(--line-strong); border-radius:0 4px 4px 0; background:var(--surface-subtle); color:var(--ink); font-size:14px; line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap; }
+.inspector-evidence p { margin:0; }
+.inspector-evidence--empty { padding:0; border:0; background:none; color:var(--muted); }
 .inspector__head--edit .inspector__actions { align-self:flex-start; }
 .inspector__body > .map-item-action--remove { align-self:flex-start;justify-self:start;width:fit-content;background:transparent;border-color:transparent;font-weight:500;color:var(--muted); }
 .inspector__body > .map-item-action--remove:hover { color:var(--ink);border-color:var(--line); }
 .inspector .node-summary { border: 0; padding: 0; }
 .inspector .node-summary__body { gap: 10px; padding: 0; }
 .inspector .annotation-field textarea { min-height: 84px; }
+.inspector .annotation-field > .field__hint { font-size:14px; line-height:1.5; }
 .saved-item-context { font-size: 13px; }
 .saved-item-context summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 .saved-item-context dl { margin: 0; }

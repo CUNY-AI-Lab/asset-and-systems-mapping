@@ -233,8 +233,6 @@
 .map-stage--notebook .inspector__head h2 { flex: 1; }
 .map-stage--notebook .inspector__actions { width: auto; }
 .map-stage--notebook .inspector-done { border: 0; background: none; }
-.map-stage--notebook .inspector-evidence { padding: 0 0 0 12px; background: none; }
-.map-stage--notebook .inspector-evidence p { margin: 0; }
 
 .map-stage--notebook :is(.map-connections, .node-summary) { border: 0; border-top: 1px solid var(--line); background: none; }
 .map-stage--notebook :is(.map-connections, .node-summary) > summary { min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 400; }

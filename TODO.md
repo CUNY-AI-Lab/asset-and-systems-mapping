@@ -2,7 +2,15 @@
 
 Updated: 2026-11-02
 
-## Latest request — November 2: integrate controls into the panel
+## Latest request — November 2: refine the selected-item editor
+
+Place the complete evidence passage directly below the selected item name in a spaced blockquote. Put the interpretation question below its label and above its text field. Keep Delete last, immediately after Position on map for nodes. Apply the evidence and interpretation placement consistently to connection editing.
+
+- [x] Reorder the editor and add readable quotation spacing without changing evidence, annotations or map controls.
+- [ ] Verify the rendered desktop and phone editors, existing editing/persistence/accessibility checks, and exact-source hosted checks.
+- [ ] Deploy the checked refinement to Dev and production and capture fresh privacy-safe screenshots.
+
+## Previous request — November 2: integrate controls into the panel
 
 The user's new screenshots and direct clarification supersede the separate full-width navigation row below. Put **Map | Notebook | Tools | work level** into the Notebook panel's top edge so the canvas starts immediately below the main header. Move the level selector (Micro/Meso/Exo/Macro) into the former bug-button position after Tools, and move the bug button into the level selector's former main-header position. When Notebook is closed, keep a compact control overlay on the canvas so it can be reopened without reserving a blank strip. Preserve report drafts, focus, model behavior, map geometry, notes and permissions.
 
