@@ -36,9 +36,12 @@ it('Macro accepts larger-to-larger and larger-to-local exact-ID relationships', 
  const result = (await response.json()).evaluation.review; expect(result.nodes).toEqual([]); expect(result.connections.map(c => [c.source,c.target,c.verb])).toEqual(connections.map(c => [c.source,c.target,c.verb])); expect(result.connections[1].relationshipProcess.direction).toBe('varies');
  const schema = memoResponseSchema('macrosphere', carried); expect(schema.properties.nodes.maxItems).toBe(0); expect(schema.properties.connections.items.properties.source.enum).toContain('housing-office');
 });
-it.each(['invented-node', 'City Housing Authority'])('Macro rejects unknown or label-only endpoint %s', async bad => {
+it.each(['invented-node', 'City Housing Authority'])('Macro excludes unknown or label-only endpoint %s while retaining valid feedback', async bad => {
  const { evaluate } = await setup('macrosphere', review('macrosphere', [{ source: bad, target: 'resident', verb: 'affects', rationale: source }]));
- const response = await evaluate(); expect(response.status).toBe(502);
+ const response = await evaluate(); expect(response.status).toBe(201);
+ const { evaluation } = await response.json();
+ expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+ expect(evaluation.review).toMatchObject({ guidance: review('macrosphere').guidance, nodes: [], connections: [], example: null, readiness: { ready: false } });
 });
 it('Exo rejects edges and Macro rejects replacement node proposals', async () => {
  const exo = review('exosphere', [{ source: 'housing-office', target: 'resident', verb: 'affects', rationale: source }]);
