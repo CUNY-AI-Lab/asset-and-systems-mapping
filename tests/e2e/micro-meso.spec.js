@@ -184,6 +184,7 @@ test('Meso stays usable after guidance fails and compact editing preserves legac
   const added=(await readProject(page)).graph.nodes,principal=added.find(node=>node.label==='Assistant principal'),office=added.find(node=>node.label==='School office');
   expect(added.filter(node=>originalPositions.some(prior=>prior.id===node.id)).map(({id,x,y})=>({id,x,y}))).toEqual(originalPositions);
   await page.getByRole('button',{name:'Connect from Assistant principal',exact:true}).click();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await page.locator(`[data-graph-id="${office.id}"]`).press('Enter');await editSelected(page);
   const form=page.locator('.add-form');await expect(form.locator('input,select,textarea')).toHaveCount(4);
   await form.getByRole('textbox',{name:'Relationship',exact:true}).fill('requests support from');

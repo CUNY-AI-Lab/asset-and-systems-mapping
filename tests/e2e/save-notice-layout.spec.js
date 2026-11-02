@@ -1,5 +1,5 @@
 import { expect, test, captureSourceRenderedScreenshot, scanAccessibility, assertNoAccessibilityViolations } from './support/test.js';
-import { notebookSection, showMap, projectMenu, openTools } from './support/notebook.js';
+import { notebookSection, showMap, projectMenu, openTools, editSelected } from './support/notebook.js';
 import { readFile } from 'node:fs/promises';
 import { buildEastHarlemDisabilityProject } from './fixtures/east-harlem-disability-project.js';
 import { serializeProject } from '../../src/domain.js';
@@ -116,6 +116,7 @@ for (const retainId of [false, true]) test(`unpublished course metadata saves, e
   expect(savedNodes).toHaveLength(9);
   expect(savedNodes.find(node => node.id === 'node_e2e_home_center_coordination')).toEqual(imported.graph.nodes.find(node => node.id === 'node_e2e_home_center_coordination'));
   await page.locator('[data-graph-id="node_e2e_resident"]').press('Enter');
+  await editSelected(page);
   const inspector = page.locator('#map-inspector');
   await inspector.getByRole('textbox', { name: 'Label', exact: true }).fill('Synthetic resident after import');
   await inspector.getByRole('button', { name: 'Save', exact: true }).click();

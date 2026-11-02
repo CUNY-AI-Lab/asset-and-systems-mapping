@@ -20,8 +20,11 @@ export async function showMap(page) {
 }
 
 export async function editSelected(page) {
+  const notebook=page.getByRole('complementary',{name:'Notebook',exact:true});
+  if (await notebook.isVisible()) return;
   const edit = page.getByRole('button', {name:'Edit',exact:true});
-  if (await edit.isVisible()) await edit.click();
+  await edit.waitFor({state:'visible'});
+  await edit.click();
 }
 
 export async function projectMenu(page, action) {
