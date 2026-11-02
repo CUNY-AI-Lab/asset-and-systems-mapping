@@ -143,11 +143,12 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
         };
       });
       expect(layout.project.right).toBeLessThanOrEqual(layout.level.x + 1);
-      expect(layout.level.right).toBeLessThanOrEqual(layout.navigation.x + 1);
+      expect(Math.abs(layout.project.y - layout.level.y)).toBeLessThanOrEqual(2);
+      expect(layout.navigation.y).toBeGreaterThanOrEqual(layout.header.bottom);
       expect(layout.tools.right).toBeLessThanOrEqual(layout.report.x + 1);
       expect(layout.navigation.right).toBeLessThanOrEqual(viewport.width);
-      expect(Math.abs(layout.project.y - layout.tools.y)).toBeLessThanOrEqual(2);
-      expect(Math.abs(layout.tools.y - layout.level.y)).toBeLessThanOrEqual(2);
+      expect(Math.abs(layout.tools.y - layout.report.y)).toBeLessThanOrEqual(2);
+      expect(layout.map.y).toBeGreaterThanOrEqual(layout.navigation.bottom);
       if (viewport.width < 600) {
         expect(layout.brandDisplay).toBe('none');
         expect(layout.map.height).toBeGreaterThan(viewport.height * 0.85);
