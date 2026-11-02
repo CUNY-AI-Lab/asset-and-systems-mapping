@@ -87,7 +87,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(({ key, value }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, value); }, { key: STORAGE_KEY, value: serializedEastHarlemDisabilityProject() });
 });
 
-test('Map, Notebook, and Tools share a visible row below the main header', async ({ page }, testInfo) => {
+test('workspace controls sit inside the panel and reclaim the canvas strip', async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   for (const size of sizes(testInfo)) {
     await page.setViewportSize(size);
@@ -96,11 +96,16 @@ test('Map, Notebook, and Tools share a visible row below the main header', async
     const headerBounds = await header.boundingBox();
     await expect(header.getByRole('navigation', { name: 'Workspace', exact: true })).toHaveCount(0);
     await expect(page.locator('.project-menu > summary')).toBeInViewport({ ratio: 1 });
-    await expect(page.getByRole('combobox', { name: 'Work level' })).toBeInViewport({ ratio: 1 });
+    await expect(header.getByRole('combobox', { name: 'Work level', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'Work level', exact: true })).toBeInViewport({ ratio: 1 });
     const nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
     const controls = [nav.getByRole('button', { name: 'Map', exact: true }), nav.getByRole('button', { name: 'Notebook', exact: true }), nav.locator('.notebook-map-tools > summary')];
     await expect(controls[2]).toHaveText('Tools');
+    const level = nav.getByRole('combobox', { name: 'Work level', exact: true });
     const bounds = await Promise.all(controls.map(control => control.boundingBox()));
+    const levelBounds = await level.boundingBox();
+    expect(levelBounds.x).toBeGreaterThanOrEqual(bounds[2].x + bounds[2].width - 1);
+    expect(levelBounds.y).toBeCloseTo(bounds[0].y, 1);
     for (const [index, box] of bounds.entries()) {
       await expect(controls[index]).toBeInViewport({ ratio: 1 });
       expect(box.height).toBeGreaterThanOrEqual(44);
@@ -116,7 +121,9 @@ test('Map, Notebook, and Tools share a visible row below the main header', async
     const navBounds = await nav.boundingBox();
     const stageBounds = await page.locator('.map-stage').boundingBox();
     expect(Math.abs(navBounds.x + navBounds.width - (stageBounds.x + stageBounds.width))).toBeLessThan(24);
-    expect((await canvas.boundingBox()).height).toBeGreaterThanOrEqual(size.height - navBounds.y - navBounds.height - 24);
+    const canvasBounds = await canvas.boundingBox();
+    expect(canvasBounds.y).toBeLessThanOrEqual(headerBounds.y + headerBounds.height + 8);
+    expect(canvasBounds.height).toBeGreaterThanOrEqual(size.height - canvasBounds.y - 12);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
     await captureSourceRenderedScreenshot(page, testInfo, `Workspace controls ${size.width}x${size.height}`);

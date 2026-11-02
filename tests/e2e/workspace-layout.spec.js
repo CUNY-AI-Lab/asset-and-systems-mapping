@@ -37,10 +37,21 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
       await page.mouse.up();
       expect(Number(await handle.getAttribute('aria-valuenow'))).toBeGreaterThan(initial);
       expect((await notebook.boundingBox()).width).toBeLessThanOrEqual(362);
+      // The controls remain readable even at the narrowest supported dock.
+      for (let step = 0; step < 10; step++) await handle.press('ArrowRight');
+      await expect(handle).toHaveAttribute('aria-valuenow', await handle.getAttribute('aria-valuemin'));
     } else {
       await expect(handle).not.toBeVisible();
       await expect(canvas).not.toBeVisible();
       expect((await notebook.boundingBox()).width).toBeCloseTo(before.width, 0);
+    }
+    const controls = notebook.locator('.notebook-controls-host');
+    await expect(controls.getByRole('navigation', { name: 'Workspace', exact: true })).toBeVisible();
+    await expect(controls.getByRole('combobox', { name: 'Work level', exact: true })).toBeVisible();
+    expect(await controls.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    for (const control of await controls.locator('.notebook-switch > button, .notebook-map-tools > summary, .notebook-level select').all()) {
+      await expect(control).toBeInViewport({ ratio: 1 });
+      expect((await control.boundingBox()).height).toBeGreaterThanOrEqual(44);
     }
     await notebook.getByRole('textbox', { name: 'Field notes (required)' }).fill('A student interpretation with enough detail to wrap comfortably at each viewport. '.repeat(4));
     await expect(notebook.locator('textarea:visible')).toHaveCount(1);
@@ -50,6 +61,17 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     await showMap(page);
     await expect(notebook).not.toBeVisible();
     expect((await canvas.boundingBox()).width).toBeCloseTo(before.width, 0);
+    const header = await page.locator('.app-header--student').boundingBox();
+    expect((await canvas.boundingBox()).y).toBeLessThanOrEqual(header.y + header.height + 8);
+    const workspaceNavigation = page.getByRole('navigation', { name: 'Workspace', exact: true });
+    const notebookButton = workspaceNavigation.getByRole('button', { name: 'Notebook', exact: true });
+    await notebookButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(notebookButton).toBeFocused();
+    const mapButton = workspaceNavigation.getByRole('button', { name: 'Map', exact: true });
+    await mapButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(mapButton).toBeFocused();
     await captureSourceRenderedScreenshot(page, testInfo, `Map at ${width}px`);
     await page.locator('[data-graph-id="node_e2e_home_setting"]').press('Enter');
     await expect(notebook).not.toBeVisible();

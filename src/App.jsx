@@ -3975,6 +3975,9 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
   const [collapsedPanel, setCollapsedPanel] = useState(null);
   const sheetOpen = notebook ? notebook.open : panelContent ? collapsedPanel !== panelMode : drawerOpen;
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [notebookNavigationHost, setNotebookNavigationHost] = useState(null);
+  const [workspaceNavigationRoot] = useState(() => document.createElement('div'));
+  const floatingControlsRef = useRef(null);
   useEffect(() => { if (notebook?.open) setToolsOpen(false); }, [notebook?.open]);
   const layoutRef = useRef(null);
   const sidebarSize = useSidebarSize(layoutRef);
@@ -5199,10 +5202,27 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
           onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
           onLegend={toggleLegend} onFullscreen={toggleFullscreen} fullscreen={fullscreen}
           hasRemoved={hasRemovedItems} showRemoved={showRemoved} onShowRemoved={setShowRemoved} />;
-  const notebookControls = notebook && <div className="notebook-toolbar-actions">
-    {fullscreen ? <button className="map-fullscreen-exit" type="button" aria-label="Exit full screen" onClick={toggleFullscreen}><Icon name="close" /><span>Exit full screen</span></button> : toolbarStart}
+  useLayoutEffect(() => {
+    if (!notebook) return;
+    const target = (sheetOpen && !fullscreen && notebookNavigationHost) || floatingControlsRef.current;
+    if (!target || workspaceNavigationRoot.parentNode === target) return;
+    // Move the same controls between the panel and canvas so menu drafts and
+    // focused controls survive a Map / Notebook switch.
+    const focused = workspaceNavigationRoot.contains(document.activeElement) ? document.activeElement : null;
+    if (workspaceNavigationRoot.isConnected && target.isConnected && typeof target.moveBefore === 'function') target.moveBefore(workspaceNavigationRoot, null);
+    else target.append(workspaceNavigationRoot);
+    focused?.focus({ preventScroll: true });
+  }, [sheetOpen, fullscreen, notebookNavigationHost, workspaceNavigationRoot, notebook]);
+  useLayoutEffect(() => () => workspaceNavigationRoot.remove(), [workspaceNavigationRoot]);
+  const notebookControls = notebook && <div className="notebook-toolbar-actions">{notebook.dock}</div>;
+  const notebookNavigation = notebook && <div className="notebook-nav-row">
+    {fullscreen && <button className="map-fullscreen-exit" type="button" aria-label="Exit full screen" onClick={toggleFullscreen}><Icon name="close" /></button>}
+    <nav className="notebook-switch" aria-label="Workspace">
+      <button type="button" aria-pressed={!notebook.open} onClick={() => notebook.onChange(false)}>Map</button>
+      <button type="button" aria-pressed={notebook.open} aria-controls="map-inspector" onClick={() => notebook.onOpen ? notebook.onOpen() : notebook.onChange(true)}>Notebook</button>
+      {mapTools}{!fullscreen && toolbarStart}
+    </nav>
   </div>;
-  const notebookNavigation = notebook && <nav className="notebook-switch" aria-label="Workspace"><button type="button" aria-pressed={!notebook.open} onClick={() => notebook.onChange(false)}>Map</button><button type="button" aria-pressed={notebook.open} aria-controls="map-inspector" onClick={() => notebook.onOpen ? notebook.onOpen() : notebook.onChange(true)}>Notebook</button>{mapTools}{notebook.dock}</nav>;
   return <div className={`map-stage ${notebook ? 'map-stage--notebook' : ''} map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
     onPointerDownCapture={() => { consumedCanvasTapRef.current = null; }}
     onKeyDownCapture={() => { consumedCanvasTapRef.current = null; }}
@@ -5224,9 +5244,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       event.preventDefault(); fitMap();
     }
   }}>
-    {notebook ? <><h1 className="sr-only">Systems map</h1>{toolbarHost && !fullscreen
-      ? createPortal(notebookControls, toolbarHost)
-      : null}<div className="notebook-nav-row">{(!toolbarHost || fullscreen) && notebookControls}{notebookNavigation}</div></> : <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls"><button type="button" className="sidebar-toggle" aria-controls="map-inspector" aria-expanded={sheetOpen} onClick={() => sheetOpen ? closeInspector() : changePanel(panelMode)}>{sheetOpen ? 'Hide sidebar' : 'Show sidebar'}</button>{panel && <WorkPanelTabs mode={panelMode} onChange={changePanel} disabled={panel.disabled || []} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, changePanel)} />}<MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>}
+    {notebook ? <><h1 className="sr-only">Systems map</h1>{toolbarHost ? createPortal(notebookControls, toolbarHost) : null}</> : <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls"><button type="button" className="sidebar-toggle" aria-controls="map-inspector" aria-expanded={sheetOpen} onClick={() => sheetOpen ? closeInspector() : changePanel(panelMode)}>{sheetOpen ? 'Hide sidebar' : 'Show sidebar'}</button>{panel && <WorkPanelTabs mode={panelMode} onChange={changePanel} disabled={panel.disabled || []} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, changePanel)} />}<MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>}
     {connecting && <div className="map-connect-status" role="status"><span>{connectionSource ? `${project.graph.nodes.find((node) => node.id === connectionSource)?.label} selected. Choose the ending item.` : 'Choose the starting item, then choose the ending item.'}</span><button type="button" onClick={cancelConnection}>Cancel</button></div>}
     {focusActive && !notebook?.open ? <div className="map-focus-bar" role="status"><div className="map-focus-bar__summary"><span>{focusSummary}</span>{focusHasRelationshipPages && <small aria-live="polite">Relationship {activeFocusPage + 1} of {focusIncidentEdges.length}</small>}</div><div className="map-focus-bar__actions">{focusHasRelationshipPages && focusPageCount > 1 ? <><button type="button" aria-label="Previous relationship" disabled={activeFocusPage === 0} onClick={() => changeFocusPage(activeFocusPage - 1)}>Previous</button><button type="button" aria-label="Next relationship" disabled={activeFocusPage === focusPageCount - 1} onClick={() => changeFocusPage(activeFocusPage + 1)}>Next</button></> : null}<button type="button" onClick={showFullMap}>Show full map</button></div></div> : <p className="map-overview-hint">{mapOverviewHint}</p>}
 
@@ -5234,6 +5252,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
 
         <div className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcement.revision}>{announcement.message}</span></div>
     <div ref={layoutRef} style={{ '--sidebar-width': `${sidebarSize.width}px` }} className={`map-layout ${sheetOpen ? 'has-inspector' : ''} is-panel-${panelMode}`}>
+      {notebook && <>{createPortal(notebookNavigation, workspaceNavigationRoot)}<div ref={floatingControlsRef} className="notebook-floating-controls" /></>}
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && sheetOpen ? 'is-inspector-open' : ''} is-panel-${panelMode} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <div className="map-context-actions">{relationshipDraft.draft && addMode !== 'edge' && <button type="button" className="button relationship-resume" onClick={() => { setConnecting(false); setAddMode('edge'); changePanel('inspector'); }}>Resume relationship</button>}{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}</div>
         <MemoGraphCanvas previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} onDeleteNode={(id) => { if (selection?.kind === 'node' && selection.id === id) setSelectedRemoved(true); }} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
@@ -5250,6 +5269,7 @@ function MapStage({ project, update, toast, logPrototype, saveState, stageAnnota
       }} />}
       <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={notebook ? 'Notebook' : panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
         {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}
+        {notebook && <div ref={setNotebookNavigationHost} className="notebook-controls-host" />}
         <div className="inspector__scroll">
         {!notebook && panelContent && <div className="work-panel__close"><button type="button" onClick={closeInspector}>Close sidebar</button></div>}
         {notebook && panelContent && <NotebookSection mode={panelMode} onChange={changePanel} disabled={panel?.disabled || []} />}

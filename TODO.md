@@ -2,6 +2,16 @@
 
 Updated: 2026-11-02
 
+## Latest request — November 2: integrate controls into the panel
+
+The user's new screenshots and direct clarification supersede the separate full-width navigation row below. Put **Map | Notebook | Tools | work level** into the Notebook panel's top edge so the canvas starts immediately below the main header. Move the level selector (Micro/Meso/Exo/Macro) into the former bug-button position after Tools, and move the bug button into the level selector's former main-header position. When Notebook is closed, keep a compact control overlay on the canvas so it can be reopened without reserving a blank strip. Preserve report drafts, focus, model behavior, map geometry, notes and permissions.
+
+- [x] Implement the combined control placement with equal-height touch controls, a resizable panel header, and preserved keyboard focus between Map and Notebook.
+- [x] Local responsive verification passed at 320, 375, 390, 768, 1024 and 1440 px, including the 260-pixel dock, full screen, Tools placement and keyboard switching without viewport overflow: 7 browser checks passed (1 phone skip for the test that already exercises every breakpoint). App/accessibility/report component checks passed 283 tests. The isolated Worker/report browser suite passed 8 tests; its selected-item Done control is also checked for full visibility. Full hosted checks and deployment remain below.
+- [ ] Run exact-source hosted checks, deploy the same checked build to Dev and production, verify served files/traffic, and capture current screenshots.
+
+
+
 ## Current reconciled status — November 2, 2026
 
 This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The last independently verified deployed application remains **`11d04916a67257dd52f3b3334e8ac7d6b3f4cd7e` on Dev and production**; this documentation update does not deploy an application.

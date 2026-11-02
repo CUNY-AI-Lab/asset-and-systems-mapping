@@ -135,8 +135,6 @@
 @media(max-width:600px){
   .app-shell .app-header--student .header-actions{gap:4px;align-items:center}
   .app-shell .header-actions .project-menu > summary{padding-inline:8px}
-  .workspace-map-controls .notebook-level{display:block}
-  .workspace-map-controls .notebook-level select{min-width:54px;max-width:60px;padding-inline:3px}
 }
 
 .app-shell .notebook-nav-row .notebook-switch > button{min-width:44px}
