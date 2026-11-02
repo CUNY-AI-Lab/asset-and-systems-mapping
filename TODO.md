@@ -9,13 +9,22 @@ The user's direct clarification supersedes the earlier header consolidation: kee
 - [x] Implement the separate workspace row while preserving Map/Notebook state, Tools actions and full-screen exit.
 - [x] Verify the lower row, equal control dimensions, Tools menu and Map/Notebook interactions at desktop and phone sizes with synthetic examples. The final affected browser run passed 17 checks (3 desktop skips for phone-only cases); App, map accessibility and Tools resizing passed 285 unit checks. Both builds, Cloudflare typecheck and Dev/production dry runs passed.
 - [x] Keep Save and Cancel reachable when a wording draft appears in the compact Notebook. Scroll only the Notebook contents, preserving keyboard focus, map size, camera and selection. The unchanged narrow-phone regression passed at 320 and 430 px.
-- [ ] Deploy the same checked source to Dev and production, verify the release and served assets, and capture fresh synthetic screenshots.
+- [x] Deploy the same checked source to Dev and production, verify the release and served assets, and capture fresh synthetic screenshots.
+
+**Current deployed source:** `11d04916a67257dd52f3b3334e8ac7d6b3f4cd7e` on both environments. [Exact-source hosted checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41393320889) passed 1,653 tests and 104 browser checks, with four conditional skips in each suite. The checked package has the identical source tree and all 29 frontend files match byte for byte. The operator-built Worker matches the checked Worker after normalizing dependency source-path labels; both environments received the same prebuilt Worker and frontend files.
+
+- **Dev:** deployment `b0682426-2f9c-49a4-9869-41414dfb1746`; version `1e3df57c-1c94-4af2-9164-67ee21fa3580`; 100% traffic.
+- **Production:** deployment `2e738b8d-92a8-439a-92b3-62ce7541fe80`; version `bed12a93-ee6d-44e9-969b-682d7da71b21`; 100% traffic.
+- Both origins independently passed release/readiness checks, all 29 served-file hashes and anonymous-project denial (401). GPT-OSS 120B, deployment bindings, course settings and permissions are preserved.
+- Fresh desktop/phone captures of both deployed interfaces passed navigation placement/order/equal-sizing, Map/Notebook interaction, keyboard Tools, feedback/evidence and light/dark presentation checks without page errors. Account, feedback and all API responses in these browser fixtures were synthetic and intercepted; no course records were changed and no model calls were made. These fixtures do not establish real signed-in student or model-quality acceptance.
+- Receipts and screenshots: `/Users/milwright/Documents/Codex/2026-11-02/systems-mapping-lower-navigation/`. This documentation receipt is not another application deployment; the served source remains `11d0491`.
 
 
 
-## November 2 — verified combined UI and styling release
 
-Application source **`36229485562ddbc0c550f71a70627ebc21e30105`** is verified on both existing environments. It includes the complete Account-owner follow-up and debugging-task styling `3042bac`, atop the integrated feedback recovery. GPT-OSS 120B and Memo submission are preserved. Earlier `e772836` rollout is historical and was followed by this styling-inclusive release.
+## November 2 — previous verified combined UI and styling release
+
+Before the lower-row correction above, application source **`36229485562ddbc0c550f71a70627ebc21e30105`** was verified on both existing environments. It includes the complete Account-owner follow-up and debugging-task styling `3042bac`, atop the integrated feedback recovery. GPT-OSS 120B and Memo submission are preserved. Earlier `e772836` rollout is historical and was followed by this styling-inclusive release.
 
 The user's latest direct instruction was **both simultaneously**, superseding the earlier sequential order for this rollout. Both targets received the same checked commit; each was independently verified afterward. No production/model-evaluation race, paid calls, credential changes, permission grants or participant records were used by this integration task.
 
