@@ -318,8 +318,11 @@ describe('Account dashboard controls', () => {
 it('submits only after the course map is saved and sends the saved revision in the same workspace', async () => {
   workspaceAccount = { cacheKey:'student-course', role:'student', course:{id:'course-a',name:'Course A'} };
   window.history.replaceState(null,'','/?course=course-a');
+  // Sorting puts the newer map first; open the map this test actually revises.
+  projects[1].updatedAt = new Date(Date.parse(projects[0].updatedAt) + 1000).toISOString();
   render(<AccountWorkspace />);
-  fireEvent.click((await screen.findAllByRole('button',{name:'Open project',exact:true}))[0]);
+  const map = await screen.findByRole('article', { name: 'First saved map' });
+  fireEvent.click(within(map).getByRole('button', { name: 'Open project', exact: true }));
   const submit=await screen.findByRole('button',{name:'Submit test revision'});
   projects[0].submission.text='An intentional memo revision';
   fireEvent.click(submit);
