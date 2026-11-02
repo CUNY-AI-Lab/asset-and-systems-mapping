@@ -37,7 +37,7 @@ export function LevelSelect({ levels, onSelect }) {
 export function NotebookSection({ mode, onChange, disabled = [] }) {
   return <label className="notebook-section"><span className="sr-only">Notebook section</span>
     <select value={mode} onChange={(event) => onChange(event.target.value)}>
-      <option value="suggestions">Memo and suggestions</option>
+      <option value="suggestions">Memo submission</option>
       <option value="review" disabled={disabled.includes('review')}>Field Notes</option>
     </select>
   </label>;
