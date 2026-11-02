@@ -157,6 +157,57 @@
 .map-stage--notebook .review-intro:empty { display: none; }
 .map-stage--notebook .review-intro { margin-bottom: 16px; }
 
+/* Keep review status, feedback, source passages, and the retry control distinct
+   in the narrow notebook without giving each paragraph its own card. */
+.map-stage--notebook .suggestions-review > h2 { margin-bottom: 10px; }
+.map-stage--notebook .suggestions-review > p[role="status"] {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--blue);
+  background: var(--pale-blue);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.map-stage--notebook .review-details { margin: 12px 0 4px; }
+.map-stage--notebook .review-details > summary { min-height: 44px; padding-block: 10px; color: var(--ink); }
+.map-stage--notebook .review-details > .studio-disclosure__body { padding-bottom: 4px; }
+.map-stage--notebook .studio-feedback { margin: 0; padding: 4px 0 12px; overflow-wrap: anywhere; }
+.map-stage--notebook .studio-feedback + .studio-feedback { padding-top: 12px; border-top: 1px solid var(--line); }
+.map-stage--notebook .studio-feedback p { margin: 0; font-size: 16px; line-height: 1.5; }
+.map-stage--notebook .studio-feedback blockquote {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-strong);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.map-stage--notebook .notebook-refresh { border-top: 1px solid var(--line); }
+.map-stage--notebook .notebook-refresh > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+.map-stage--notebook .notebook-refresh > summary::-webkit-details-marker { display: none; }
+.map-stage--notebook .notebook-refresh > summary::after { content: "+"; margin-left: auto; font-size: 20px; font-weight: 400; }
+.map-stage--notebook .notebook-refresh[open] > summary::after { content: "−"; }
+.map-stage--notebook .notebook-refresh > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.map-stage--notebook .notebook-refresh > button { margin-bottom: 8px; }
+.map-stage--notebook .candidate-list > .empty-message { margin: 8px 0 12px; padding: 0; font-size: 14px; }
+@media (forced-colors: active) {
+  .map-stage--notebook .suggestions-review > p[role="status"] { border-left-color: CanvasText; }
+  .map-stage--notebook .notebook-refresh > summary:focus-visible { outline-color: Highlight; }
+}
+
 /* A writing task is a prompt and a field; the selector already names the section. */
 .map-stage--notebook .reflection-entry .reflection-prompt { font-size: 16px; line-height: 1.5; font-weight: 400; }
 .map-stage--notebook .inspector__head { align-items: center; padding-block: 12px; }

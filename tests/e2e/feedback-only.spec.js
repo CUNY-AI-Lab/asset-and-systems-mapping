@@ -1,11 +1,11 @@
-import { test, expect, captureSourceRenderedScreenshot } from './support/test.js';
-import { mapCommand, notebookSection } from './support/notebook.js';
+import { test, expect, captureSourceRenderedScreenshot, scanAccessibility, assertNoAccessibilityViolations } from './support/test.js';
+import { mapCommand, notebookSection, preferences } from './support/notebook.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
 
 const memo = 'A fictional parent visits the school office. A coordinator helps the parent complete a transport request form. The parent says the bus arrived late twice. The memo does not establish why.';
 const readProject = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
 
-test('feedback-only results remain visible and a reread preserves the map', async ({ page }, testInfo) => {
+test('feedback-only results remain visible and a reread preserves the map', async ({ page, makeAxeBuilder }, testInfo) => {
   let evaluations = 0;
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -17,7 +17,7 @@ test('feedback-only results remain visible and a reread preserves the map', asyn
     const response = await route.fetch();
     const body = await response.json();
     body.evaluation.review = {
-      guidance: [{ point: 'What evidence would explain the bus delays?' }],
+      guidance: [{ point: 'What evidence would explain the bus delays?', evidenceExcerpt: 'The parent says the bus arrived late twice.' }],
       nodes: [], connections: [], example: null,
       readiness: { ready: false, note: 'Map suggestions could not be checked.' },
     };
@@ -37,6 +37,7 @@ test('feedback-only results remain visible and a reread preserves the map', asyn
   await expect(feedback).toBeVisible();
   await expect(notice).toBeVisible();
   await expect(notice).toContainText('Check the feedback below against your memo and sources.');
+  await expect(page.locator('.review-details blockquote')).toHaveText('The parent says the bus arrived late twice.');
   await expect.poll(async () => (await readProject(page)).preflight?.evaluation?.runtime?.feedbackOnly).toBe(true);
   await page.getByRole('button', { name: 'Continue →', exact: true }).click();
   await expect(page.getByText('Add an item on the map or reread the memo.')).toBeVisible();
@@ -68,7 +69,22 @@ test('feedback-only results remain visible and a reread preserves the map', asyn
   await expect(notice).toBeVisible();
   await expect(feedback).toBeVisible();
   expect((await readProject(page)).graph).toEqual(beforeReread.graph);
+  const refreshSummary = page.locator('.notebook-refresh > summary');
+  await refreshSummary.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Reread memo', exact: true })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Reread memo', exact: true })).not.toBeVisible();
+  await feedback.click();
   await expect(page.locator('vite-error-overlay')).toHaveCount(0);
   await captureSourceRenderedScreenshot(page, testInfo, 'Feedback-only after reload');
+  const violations = await scanAccessibility(page, makeAxeBuilder, testInfo, 'Feedback-only light');
+  await preferences(page);
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await page.locator('.project-menu > summary').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await captureSourceRenderedScreenshot(page, testInfo, 'Feedback-only dark');
+  violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Feedback-only dark'));
+  assertNoAccessibilityViolations(violations);
   expect(errors).toEqual([]);
 });
