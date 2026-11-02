@@ -108,11 +108,11 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   await relationshipEditor.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(async () => (await readProject(page)).graph.edges.find(edge => edge.id === added.id).verb).toBe('shares questions with');
   await page.getByRole('combobox', { name: 'Arrow direction', exact: true }).selectOption('not yet known');
-  await expect(page.locator('.inspector__head h2')).toContainText('direction not yet known');
+  await expect(page.locator('.item-editor-title em')).toContainText('direction not yet known');
   await expect(line).not.toHaveAttribute('marker-start');
   await expect(line).not.toHaveAttribute('marker-end');
   await page.getByRole('combobox', { name: 'Arrow direction', exact: true }).selectOption('target to source');
-  await expect(page.locator('.inspector__head h2')).toHaveText('Resource navigator shares questions with Resident');
+  await expect(page.locator('.item-editor-title em')).toHaveText('Resource navigator shares questions with Resident');
   await showMap(page);
   await expect(line).toHaveAttribute('marker-start', 'url(#arrowhead)');
   await expect(line).not.toHaveAttribute('marker-end');

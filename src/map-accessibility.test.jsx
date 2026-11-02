@@ -238,7 +238,9 @@ describe('map accessibility', () => {
     expect(within(panel).getAllByRole('textbox')).toHaveLength(2);
     expect(within(panel).getByRole('textbox', { name: 'Interpretation' })).not.toHaveAttribute('placeholder');
     expect(within(panel).getByText('What does this node help explain? What is still uncertain?')).toBeVisible();
-    expect(within(panel).getByRole('heading', { name: 'Edit' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Edit' })).toBeVisible();
+    expect(document.querySelector('.item-editor-title em')).toHaveTextContent('Rosa');
+    expect(screen.getByRole('button', { name: 'Done' })).toBeVisible();
   });
 
   it('zooms around the pointer with a wheel and supports two-pointer pinch', () => {
