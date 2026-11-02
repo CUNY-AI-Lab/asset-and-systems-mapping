@@ -7,21 +7,21 @@ Updated: 2026-11-02
 The user's new screenshots and direct clarification supersede the separate full-width navigation row below. Put **Map | Notebook | Tools | work level** into the Notebook panel's top edge so the canvas starts immediately below the main header. Move the level selector (Micro/Meso/Exo/Macro) into the former bug-button position after Tools, and move the bug button into the level selector's former main-header position. When Notebook is closed, keep a compact control overlay on the canvas so it can be reopened without reserving a blank strip. Preserve report drafts, focus, model behavior, map geometry, notes and permissions.
 
 - [x] Implement the combined control placement with equal-height touch controls, a resizable panel header, and preserved keyboard focus between Map and Notebook.
-- [x] Local responsive verification passed at 320, 375, 390, 768, 1024 and 1440 px, including the 260-pixel dock, full screen, Tools placement and keyboard switching without viewport overflow: 7 browser checks passed (1 phone skip for the test that already exercises every breakpoint). App/accessibility/report component checks passed 283 tests. The isolated Worker/report browser suite passed 8 tests; its selected-item Done control is also checked for full visibility. Full hosted checks and deployment remain below.
-- [ ] Run exact-source hosted checks, deploy the same checked build to Dev and production, verify served files/traffic, and capture current screenshots.
-- [x] Integrate complementary PR #56 download controls and plain-language messages into this same candidate. Correct its stale JSON button assertion to `JSON Full project`; retain panel navigation, responsive bounds and permissions. Combined validation and rollout remain pending.
+- [x] Local responsive verification passed at 320, 375, 390, 768, 1024 and 1440 px, including the 260-pixel dock, full screen, Tools placement and keyboard switching without viewport overflow: 7 browser checks passed (1 phone skip for the test that already exercises every breakpoint). App/accessibility/report component checks passed 283 tests. The isolated Worker/report browser suite passed 8 tests; its selected-item Done control is also checked for full visibility. The subsequent combined hosted checks and verified deployment are recorded below.
+- [x] Run exact-source hosted checks, deploy the same checked build to Dev and production, verify served files/traffic, and capture current screenshots. See the verified panel integration release below.
+- [x] Integrate complementary PR #56 download controls and plain-language messages into this same candidate. Correct its stale JSON button assertion to `JSON Full project`; retain panel navigation, responsive bounds and permissions. Combined validation and both deployments passed; see the receipt below.
 
 
 
 ## Current reconciled status — November 2, 2026
 
-This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The last independently verified deployed application remains **`11d04916a67257dd52f3b3334e8ac7d6b3f4cd7e` on Dev and production**; this documentation update does not deploy an application.
+This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The current independently verified deployed application is **`3601a17bf4950af64c92136b2ff8b935e2296668` on Dev and production**; this documentation update does not deploy an application.
 
 ### Current UI requirements (12 groups)
 
 | Requirement group | Implementation | Verification | Deployment |
 | --- | --- | --- | --- |
-| Latest panel navigation: Map / Notebook / Tools together below the main header, integrated into the Notebook's top edge; Micro/work-level beside Tools, bug icon in the main header; reclaim the blank toolbar strip | In progress in the debugging owner's isolated checkout | Pending affected and aggregate checks, desktop/tablet/narrow phone, resized panel, full-screen and open/close transitions | Pending; `11d0491` still has the separate below-header row and earlier level/bug placement |
+| Latest panel navigation: Map / Notebook / Tools together below the main header, integrated into the Notebook's top edge; Micro/work-level beside Tools, bug icon in the main header; reclaim the blank toolbar strip | Complete | Affected, aggregate and served synthetic checks passed across desktop/tablet/narrow phone, resized panel, full screen and open/close transitions | Dev + production |
 | Prominent Edit and aligned Done, italic selected name, secondary Delete, hide empty Connected items | Complete | Synthetic source and served checks passed | Dev + production |
 | Remove Check map / item / connection actions, preserve Complete level and compatible saved data | Complete | Exact-source checks passed | Dev + production |
 | Explicit Save note / truthful Saved and failures, autosave, immediate access, save/reload preservation; Previous notes and one Field Notes label | Complete | Exact-source and served synthetic note checks passed | Dev + production |
@@ -34,11 +34,11 @@ This is the current status index. Dated sections below retain their original evi
 | Memo submission wording and retained course upload / pedagogical sequence | Complete | Included in checked release source | Dev + production |
 | GPT-OSS 120B configuration preserved across coordinated owners | Complete | Both deployed version bindings independently read back | Dev + production |
 
-**Tally: 11 of these 12 current requirement groups are implemented, verified within the stated scope and deployed; 1 newer navigation group is in progress and not released.** This denominator excludes historical checkboxes, documentation chores and the acceptance/access limitations below. It is not a claim of real-student acceptance or of completed responsive testing for the pending panel layout.
+**Tally: all 12 current requirement groups are implemented, verified within the stated scope and deployed.** This denominator excludes historical checkboxes, documentation chores and the acceptance/access limitations below. It is not a claim of real-student, physical-device or live model-quality acceptance.
 
 ### Newer work and owner reconciliation
 
-- Debugging task `01a19a4a-0fbb-7552-9fac-61d890695b59` has newer direct requests: swap Micro and the bug button, collapse controls into the panel to reclaim canvas whitespace, and thoroughly verify responsive sizing. Its current turn shows local source edits and a successful frontend build, but no completed aggregate gate or deployment receipt for this change. Keep that work pending; do not overwrite its checkout or deploy a competing candidate.
+- Debugging task `01a19a4a-0fbb-7552-9fac-61d890695b59` has newer direct requests: swap Micro and the bug button, collapse controls into the panel to reclaim canvas whitespace, and thoroughly verify responsive sizing. Its checked source `3601a17bf4950af64c92136b2ff8b935e2296668` now satisfies these requests on both deployments, with the exact CI, served-file and responsive receipts below. Complementary PR #56 is included; preserve this combined tree.
 - The previous **below-header Map | Notebook | Tools** release remains valid history. The latest request keeps these controls out of the main header but replaces the separate blank/full-width strip with panel-top integration. Only the newer placement requirement supersedes the older row/bug/level arrangement; preserve narrow-phone Save/Cancel, editing, state and full-screen behavior.
 - Account owner `01a1760c-b3ad-7697-8d53-8935743b00c1` completed its handoff; its tested patch was integrated in `e772836` and carried through `3622948` and `11d0491`. Older “local/uncommitted” Account/project statuses below are historical, not current blockers.
 - Model owner `01a19a2b-f3c4-78b1-a49a-ee5806e556de` completed the requested GPT-OSS 120B switch and comparison work. No later model-change instruction was found in its latest turn. Preserve `gpt-oss-120b`; comparison results do not authorize switching to Safeguard or new paid calls.
@@ -52,30 +52,41 @@ This is the current status index. Dated sections below retain their original evi
 
 ### Verified release evidence and provenance
 
-The complete Dev/production IDs and CI receipt are recorded once in the release section immediately below. Independent acceptance evidence is also retained at `/Users/zacharymuhlbauer/Documents/Codex/2026-10-25/task-9/output/playwright/release-11d0491/ACCEPTANCE.md`, with asset, deployment and version readbacks and synthetic captures. All 29 served frontend files matched the checked CI package; its source tree matched `11d0491`. A first local rebuild's differing chunk hashes were resolved using that authoritative package, not treated as a match. Both version bindings preserved GPT-OSS 120B.
+The latest exact-source checks, Dev/production IDs, served-file and model-binding readbacks, assessment and screenshots are recorded in the panel integration release immediately below. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
 
-No new application deployment, model call, credential operation, participant-data access or live-role grant accompanies this documentation reconciliation.
+## Verified panel integration and downloads release — November 2, 2026
+
+Application source **`3601a17bf4950af64c92136b2ff8b935e2296668`** is deployed to both Dev and production. [Exact-source hosted checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41401172330) passed 1,657 tests and 106 browser checks, with four conditional skips in each suite. The extra local full browser run passed 105 checks, skipped four and hit one phone keyboard-connection timing failure; that case then passed on an isolated rerun and three consecutive repetitions. The checked CI tree matches this clean published operator candidate; all 29 frontend files match byte for byte. The prebuilt operator Worker matches CI after normalizing dependency source-path labels. This is the authorized operator route, not a main-branch release claim.
+
+- **Dev:** deployment `3ca9d69f-857f-45a3-ae94-cb0a67d49d83`; version `bafe6a80-a9b4-4999-aa14-ab5fd173c5d7`; 100% traffic.
+- **Production:** deployment `d8b925f5-2df3-48f5-b637-bb20a9d1ca75`; version `4eea6364-1af2-4c99-a57c-e83b2ac55424`; 100% traffic.
+- Both origins passed health/release checks, all 29 served-file hashes, anonymous project denial (401), and deployed GPT-OSS 120B binding readback. Existing bindings, course settings, permissions and stored work are preserved.
+- Served-asset browser checks passed at 1440, 1024, 390 and 320 pixels on each origin: panel-integrated navigation, equal controls, work level after Tools, header bug button, reclaimed canvas strip, Map/Notebook switching, keyboard Tools, normal feedback/evidence, editable map items, fully visible Done, full-project JSON and light/dark layouts. Source checks additionally cover 375/768 pixels, the 260-pixel dock, full screen, report drafts and narrow-phone Save/Cancel.
+- Separate feedback-only recovery fixtures passed on desktop and phone on both origins, with the notice, usable guidance and source quote retained. Browser fixtures intercepted all APIs and authentication, used a fictional memo and controlled valid review, and made no production mutations or live model calls. These checks do not establish actual CUNY login, real student roles or model-quality acceptance.
+- Durable receipts, assessment and screenshots: `/Users/milwright/Documents/Codex/2026-11-02/systems-mapping-panel-controls/`. This ledger commit is documentation only; served application source remains `3601a17bf4950af64c92136b2ff8b935e2296668`.
 
 ## Verified navigation release — November 1, 2026, America/New_York
 
 
-At this release, the user's clarification superseded the earlier header consolidation (the newer panel integration above is still pending): keep **Map | Notebook | Tools** together in one visible, flush-right row **below the main header**. Move Tools down after Notebook, label it Tools, and keep matching control sizes and spacing. Do not move this row into the main header. Project, Account and work-level controls retain their header placement; the bug-report dock follows Tools.
+At this release, the user's clarification superseded the earlier header consolidation (the newer panel integration above supersedes this placement): keep **Map | Notebook | Tools** together in one visible, flush-right row **below the main header**. Move Tools down after Notebook, label it Tools, and keep matching control sizes and spacing. Do not move this row into the main header. Project, Account and work-level controls retain their header placement; the bug-report dock follows Tools.
 
 - [x] Implement the separate workspace row while preserving Map/Notebook state, Tools actions and full-screen exit.
 - [x] Verify the lower row, equal control dimensions, Tools menu and Map/Notebook interactions at desktop and phone sizes with synthetic examples. The final affected browser run passed 17 checks (3 desktop skips for phone-only cases); App, map accessibility and Tools resizing passed 285 unit checks. Both builds, Cloudflare typecheck and Dev/production dry runs passed.
 - [x] Keep Save and Cancel reachable when a wording draft appears in the compact Notebook. Scroll only the Notebook contents, preserving keyboard focus, map size, camera and selection. The unchanged narrow-phone regression passed at 320 and 430 px.
 - [x] Deploy the same checked source to Dev and production, verify the release and served assets, and capture fresh synthetic screenshots.
 
-**Current deployed source:** `11d04916a67257dd52f3b3334e8ac7d6b3f4cd7e` on both environments. [Exact-source hosted checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41393320889) passed 1,653 tests and 104 browser checks, with four conditional skips in each suite. The checked package has the identical source tree and all 29 frontend files match byte for byte. The operator-built Worker matches the checked Worker after normalizing dependency source-path labels; both environments received the same prebuilt Worker and frontend files.
+**Historical deployed source:** `11d04916a67257dd52f3b3334e8ac7d6b3f4cd7e` on both environments. [Exact-source hosted checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41393320889) passed 1,653 tests and 104 browser checks, with four conditional skips in each suite. The checked package has the identical source tree and all 29 frontend files match byte for byte. The operator-built Worker matches the checked Worker after normalizing dependency source-path labels; both environments received the same prebuilt Worker and frontend files.
 
 - **Dev:** deployment `b0682426-2f9c-49a4-9869-41414dfb1746`; version `1e3df57c-1c94-4af2-9164-67ee21fa3580`; 100% traffic.
 - **Production:** deployment `2e738b8d-92a8-439a-92b3-62ce7541fe80`; version `bed12a93-ee6d-44e9-969b-682d7da71b21`; 100% traffic.
 - Both origins independently passed release/readiness checks, all 29 served-file hashes and anonymous-project denial (401). GPT-OSS 120B, deployment bindings, course settings and permissions are preserved.
 - Fresh desktop/phone captures of both deployed interfaces passed navigation placement/order/equal-sizing, Map/Notebook interaction, keyboard Tools, feedback/evidence and light/dark presentation checks without page errors. Account, feedback and all API responses in these browser fixtures were synthetic and intercepted; no course records were changed and no model calls were made. These fixtures do not establish real signed-in student or model-quality acceptance.
-- Receipts and screenshots: `/Users/milwright/Documents/Codex/2026-11-02/systems-mapping-lower-navigation/`. This documentation receipt is not another application deployment; the served source remains `11d0491`.
+- Receipts and screenshots: `/Users/milwright/Documents/Codex/2026-11-02/systems-mapping-lower-navigation/`. This documentation receipt is not another application deployment; the served source at that receipt was `11d0491`.
 
 
 
+
+Historical independent evidence for `11d0491` is also retained at `/Users/zacharymuhlbauer/Documents/Codex/2026-10-25/task-9/output/playwright/release-11d0491/ACCEPTANCE.md`, with asset, deployment and version readbacks and synthetic captures. All 29 served frontend files matched its checked CI package, whose source tree matched `11d0491`. A first local rebuild's differing chunk hashes were resolved using that authoritative package, not treated as a match. Both version bindings preserved GPT-OSS 120B.
 
 ## November 2 — previous verified combined UI and styling release
 
