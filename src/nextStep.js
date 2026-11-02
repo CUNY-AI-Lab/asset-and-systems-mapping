@@ -4,7 +4,7 @@ import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
 import { hasFieldNotes } from '../shared/field-notes.js';
 
 // The Studio shows one computed next action instead of a five-step footer.
-// Every rule reads saved project state; none depends on a model response.
+// Every rule reads saved project state and initiates no model action.
 // Stage numbers stay the record of progress; the panel mode is derived from them.
 
 const STRUCTURE_MISSING = Object.freeze({
@@ -85,7 +85,7 @@ export function nextStep(project, { reviewBusy = false, retryPending = false, in
     return {
       id: needsModel ? 'read-memo' : 'prepare-candidates',
       label: 'Continue →',
-      detail: !hasMemo ? 'Add a memo to begin' : reviewBusy ? 'Reading your memo…' : retryPending ? 'Waiting before the next attempt' : needsModel ? `Read the memo for ${label}` : 'Review the suggestions',
+      detail: !hasMemo ? 'Add a memo to begin' : reviewBusy ? 'Reading your memo…' : retryPending ? 'Waiting before the next attempt' : needsModel ? `Read the memo for ${label}` : project.preflight?.evaluation?.runtime?.feedbackOnly === true ? 'Review the feedback or continue to the map' : 'Review the suggestions',
       blocking,
     };
   }

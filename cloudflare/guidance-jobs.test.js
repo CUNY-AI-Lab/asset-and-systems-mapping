@@ -56,6 +56,10 @@ test('ambiguous interruption requires explicit retry and a repeated retry token 
   const { jobs, pending } = setup();
   const run = vi.fn(async () => { throw new DOMException('Uncertain provider completion', 'TimeoutError'); });
   const { job } = jobs.create('alice','memo',input,'scope',undefined,run); await Promise.all(pending);
+  expect(jobs.read('alice', job.id)).toMatchObject({ job: { state: 'failed' }, resultStatus: 503, result: {
+    error: 'Generation ended before its result could be confirmed. Your existing work was not changed. Choose Try again to start another attempt.',
+    details: { code: 'guidance_interrupted', shouldRetry: false },
+  } });
   jobs.resume('alice',job.id,'scope',run); expect(run).toHaveBeenCalledTimes(1);
   const retryToken = crypto.randomUUID();
   jobs.create('alice','memo',input,'scope',retryToken,run); await Promise.all(pending);
@@ -81,7 +85,10 @@ test('a process restart records interrupted work without replaying inference', (
   const run = vi.fn(() => new Promise(() => {}));
   const { job } = jobs.create('alice','memo',input,'scope',undefined,run);
   const restarted = new GuidanceJobs(db, () => {}, () => 100001);
-  expect(restarted.read('alice',job.id)).toMatchObject({ job: { state: 'failed' }, result: { details: { code: 'guidance_interrupted' } } });
+  expect(restarted.read('alice',job.id)).toMatchObject({ job: { state: 'failed' }, resultStatus: 503, result: {
+    error: 'Generation was interrupted. Your existing work was not changed. Choose Try again to start another attempt.',
+    details: { code: 'guidance_interrupted', shouldRetry: false },
+  } });
   restarted.create('alice','memo',input,'scope',undefined,run); expect(run).toHaveBeenCalledTimes(1);
 });
 

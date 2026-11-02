@@ -13,7 +13,7 @@ Meso represents relationships rather than a second concentric region. A relation
 
 ## Review and storage contract
 
-A Micro memo review returns up to ten node suggestions and an empty connections array. A Meso memo review returns an empty nodes array and up to eight relationship suggestions. Each Meso relationship uses two different exact IDs from the carried Micro nodes, plus a verb and evidence rationale. Reviews remain atomic, with bounded correction and citation-aware source checks described in `CITATION_GUIDANCE_RECOVERY_2026-10-28.md`.
+A Micro memo review returns up to ten node suggestions and an empty connections array. A Meso memo review returns an empty nodes array and up to eight relationship suggestions. Each Meso relationship uses two different exact IDs from the carried Micro nodes, plus a verb and evidence rationale. Complete reviews remain atomic, with bounded correction and citation-aware source checks described in `CITATION_GUIDANCE_RECOVERY_2026-10-28.md`. If an individual suggestion still fails after those attempts, a clearly labeled feedback-only review may retain independently validated guidance with no map suggestions. This does not claim that a missing Meso relationship was preserved.
 
 Graph relationships use `scale: "meso"`. The existing `relationshipProcess.direction` records `source to target`, `target to source`, or `both directions`; the canvas and exported map render that direction. Exo also permits a named outside office to connect to another outside office, preserving intermediate funding and decision steps. Macro retains scoped conditions.
 

@@ -25,3 +25,8 @@ test('a lost create response retries with the same fixed request identity', asyn
   await expect(result).resolves.toEqual({ evaluation:'existing' });
   expect(request.mock.calls[0][1].body.requestToken).toBe(request.mock.calls[1][1].body.requestToken);
 });
+test('an unspecified generation failure does not claim that work was saved', async () => {
+  const request = vi.fn().mockResolvedValue({ job: { id: 'job-a', state: 'failed' }, resultStatus: 502, result: {} });
+  await expect(durableGuidance(request, makeError, 'memo', {}, options)).rejects.toThrow('Generation needs another attempt. Your existing work was not changed.');
+  expect(hasPendingGuidance(localStorage, 'map', 'input-one')).toBe(false);
+});

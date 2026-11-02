@@ -5,7 +5,7 @@ Updated: 2026-11-02
 
 ## November 2 — combined UI integration release
 
-Implementation is isolated in `/tmp/systems-ui-integration-20261102`, based on the current served `6d3f55c` (GLM configuration plus Memo submission). The source owner's task-6 checkout is preserved. Model comparison task reports its comparisons complete; this UI work makes no paid calls and preserves the configured model. This section supersedes older layout requirements below.
+Implementation is isolated in `/tmp/systems-ui-integration-20261102`, based on the current served `6d3f55c` (GLM configuration plus Memo submission). The source owner's task-6 checkout is preserved. The user's subsequent cross-process alignment request also integrates completed memo-feedback recovery PR #54 (`aa823a7`) into this same release candidate; its source owner is idle, and no separate rollout is assumed. Model comparison task reports its comparisons complete; this UI work makes no paid calls and preserves the configured model. This section supersedes older layout requirements below.
 
 | Requirement | Implemented | Verification | Deployed |
 | --- | --- | --- | --- |
@@ -19,6 +19,7 @@ Implementation is isolated in `/tmp/systems-ui-integration-20261102`, based on t
 | Straight cumulative graph, label/badge placement, manual positions and stage sequence | Yes | Synthetic graph/export checks passed; aggregate pending | No |
 | Preserve optional connection wording/drafts/direction, evidence, edit/cancel, keyboard guards | Yes | Existing regression suite required at exact head | No |
 | Compact synthesis/export/return, unfinished exports, failure/reload behavior | Yes | Synthetic export roundtrip passed; aggregate pending | No |
+| Preserve checked memo feedback when map suggestions fail; conservative readiness, explicit retry/manual editing, existing graph/decisions retained | Yes (PR #54 integrated) | Source-owner tests passed; combined exact-head verification pending | No |
 
 Real tester-role grants, accounts, credentials, participant tests and paid inference are outside this UI release. Synthetic fixtures do not establish real student-role acceptance. Required release gate remains exact-head hosted CI plus visual checks, Dev readback and same-commit production readback. No current-source publication is claimed by this ledger until receipts are recorded.
 

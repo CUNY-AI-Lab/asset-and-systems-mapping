@@ -17,20 +17,28 @@ describe('safe error display', () => {
 
   it('names an unsupported memo quotation from the fixed schema path only', () => {
     const quoted = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'guidance[1].evidenceExcerpt' } });
-    expect(userFacingError(quoted)).toBe('The suggestions did not match your memo and were not shown. Your work is saved. Try again when ready.');
+    expect(userFacingError(quoted)).toBe('A quotation in the feedback could not be checked, so the review was not shown. Your existing work was not changed. Try again.');
     const otherField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[2].label' } });
-    expect(userFacingError(otherField)).toBe('The model response did not fit the map rules. Your work is saved. Try again when ready.');
+    expect(userFacingError(otherField)).toBe('The app could not use the model response. Your existing work was not changed. Try again.');
     const unsafeField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', validationField: 'guidance[0].evidenceExcerpt private memo text' } });
-    expect(userFacingError(unsafeField)).toBe('The model response did not fit the map rules. Your work is saved. Try again when ready.');
+    expect(userFacingError(unsafeField)).toBe('The app could not use the model response. Your existing work was not changed. Try again.');
   });
 
   it('preserves stable API identifiers and payloads while displaying useful quota copy', () => {
     const payload = { error: 'quota_exceeded', details: { code: 'quota_exceeded', shouldRetry: false, requestId: 'internal-reference' } };
     const error = new ApiError('quota_exceeded', 429, payload);
-    expect(userFacingError(error)).toBe('You have reached the model usage limit. Continue editing your map and try again later.');
+    expect(userFacingError(error)).toBe('The model usage limit has been reached. Try again later.');
     expect(error.message).toBe('quota_exceeded');
     expect(error.payload).toBe(payload);
     expect(error.payload.details).toEqual({ code: 'quota_exceeded', shouldRetry: false, requestId: 'internal-reference' });
+  });
+
+  it.each(['guidance_output_truncated', 'guidance_output_invalid', 'guidance_contract_invalid'])('does not promise a save or blame the memo for %s', code => {
+    const error = new ApiError(code, 502, { details: { code } });
+    const message = userFacingError(error);
+    expect(message).toContain('Your existing work was not changed.');
+    expect(message).toContain('Try again.');
+    expect(message).not.toMatch(/your work is saved|revise (?:your|the) memo/i);
   });
 
   it.each([

@@ -571,6 +571,13 @@ describe('mapping domain', () => {
     expect(isDiscreteMicroNodeLabel('Marisol Both')).toBe(false);
   });
 
+  it('accepts request forms as objects without accepting request clauses', () => {
+    ['Request form', 'request forms', 'Transport request form', 'Transportation request forms']
+      .forEach((label) => expect(isDiscreteMicroNodeLabel(label), label).toBe(true));
+    ['Request the form', 'Request forms from the teacher', 'The parent requests a form', 'Transport requests form a queue']
+      .forEach((label) => expect(isDiscreteMicroNodeLabel(label), label).toBe(false));
+  });
+
   it('accepts Meso noun phrases and rejects relationship propositions', () => {
     [
       'school–clinic information exchange',
@@ -1019,6 +1026,28 @@ describe('mapping domain', () => {
       evalCount: 512,
     };
     expect(() => validateProject(openRouterRuntime)).not.toThrow();
+
+    const feedbackOnly = structuredClone(project);
+    feedbackOnly.preflight.evaluation.runtime.feedbackOnly = true;
+    feedbackOnly.preflight.memoReview.nodes = [];
+    feedbackOnly.preflight.memoReview.connections = [];
+    feedbackOnly.preflight.memoReview.example = null;
+    feedbackOnly.preflight.memoReview.readiness.ready = false;
+    expect(parseProject(serializeProject(feedbackOnly)).preflight.evaluation.runtime.feedbackOnly).toBe(true);
+    const sensitiveFeedback = structuredClone(feedbackOnly);
+    sensitiveFeedback.submission.sensitive = true;
+    sensitiveFeedback.instructor.maxSharingTier = 'public';
+    for (const tier of ['CUNY', 'public']) {
+      const restored = parseProject(JSON.stringify(createPortableProject(sensitiveFeedback, tier)));
+      expect(restored.preflight.memoReview).toBeNull();
+      expect(restored.preflight.evaluation.runtime.feedbackOnly).toBeUndefined();
+    }
+    expect(sensitiveFeedback.preflight.evaluation.runtime.feedbackOnly).toBe(true);
+    const inconsistentFeedbackOnly = structuredClone(feedbackOnly);
+    inconsistentFeedbackOnly.preflight.memoReview.nodes = structuredClone(project.preflight.memoReview.nodes);
+    expect(() => validateProject(inconsistentFeedbackOnly)).toThrow(/must contain only guidance when feedbackOnly is true/);
+    feedbackOnly.preflight.evaluation.runtime.feedbackOnly = 'true';
+    expect(() => validateProject(feedbackOnly)).toThrow(/feedbackOnly must be a boolean/);
 
     const internalField = structuredClone(project);
     internalField.preflight.evaluation.studentSessionRef = 'must-not-persist';
