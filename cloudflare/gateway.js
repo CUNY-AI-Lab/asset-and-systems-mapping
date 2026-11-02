@@ -90,7 +90,7 @@ export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
   const outputFailure = error instanceof OpenRouterError || error instanceof SyntaxError || semantic;
   if (outputFailure) {
     const field = semantic ? /^(guidance|nodes|connections)(?:\[\d{1,2}\])?(?:\.(?:label|type|scale|scope|basis|deontic|verb|evidenceExcerpt))?/.exec(String(error.message))?.[0] : undefined;
-    return { status: 502, message: 'The model returned a response the map could not use. Your work is saved.',
+    return { status: 502, message: 'The model returned a response the map could not use. Your existing work was not changed.',
       details: { code: error?.code === 'response_too_large' ? 'guidance_output_truncated' : semantic ? 'guidance_contract_invalid' : 'guidance_output_invalid',
         shouldRetry: false, requestId: fallbackRequestId,
         ...(semantic ? { validationReason: semanticValidationReason(error) } : {}),

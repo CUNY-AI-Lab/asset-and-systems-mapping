@@ -2,11 +2,23 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { correlationFromHeaders } from '@cuny-ai-lab/cail-log';
 import { CailError } from '@cuny-ai-lab/cail-client';
+import { unstable_readConfig } from 'wrangler';
 import { OpenRouterError } from '../server/openrouter.js';
 import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvelope } from './gateway.js';
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
 afterEach(() => vi.useRealTimers());
+test.each(['wrangler.jsonc', 'wrangler.dev.jsonc'])('%s sends the configured GLM model to the Gateway', async configPath => {
+  const model = unstable_readConfig({ config: configPath, env: '' }, { hideWarnings: true }).vars.GATEWAY_MODEL;
+  const fetch = vi.fn(async request => {
+    const body = await request.json();
+    expect(body.model).toBe('glm-5.3-flash');
+    return Response.json({ model: body.model, created: 1, choices: [{ message: { role: 'assistant', content: '{"guidance":[]}' }, finish_reason: 'stop' }] });
+  });
+  const result = await gatewaySuggestion({ fetch }, 'fixture-identity', model, correlation, undefined, [])(input);
+  expect(result.metadata.model).toBe('glm-5.3-flash');
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 test('full evidence repair declares indices bounded to the supplied passages', async () => {
   let body;
   const fetch = vi.fn(async request => {
@@ -219,6 +231,7 @@ test('classifies completed output failures without exposing response text or ret
   ]) {
     const safe = safeGatewayFailure(error, correlation.request_id);
     expect(safe).toMatchObject({ status: 502, details: { code, shouldRetry: false, requestId: correlation.request_id } });
+    expect(safe.message).toBe('The model returned a response the map could not use. Your existing work was not changed.');
     expect(JSON.stringify(safe)).not.toContain('private');
     if (code === 'guidance_contract_invalid') expect(safe.details.validationField).toBe(field);
   }

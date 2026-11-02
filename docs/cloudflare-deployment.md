@@ -63,7 +63,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   use the shared Instructor Console; members cannot. No legacy teacher account
   is automatically linked by name or email.
 - `GATEWAY` binds to `cail-model-api`. Exact installed artifacts are CAIL Client
-  6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `gpt-oss-120b`,
+  6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `glm-5.3-flash`,
   observed active in the public Gateway catalog on October 3. Provider
   credentials, routing controls and accounting identities are not supplied by
   this application. GLM and its GPT-OSS backup use low reasoning. A
@@ -86,7 +86,12 @@ subsequent saves. Shared review retention follows the existing product rules.
   suggestions and Map Check do not receive this evidence repair. Successful
   and returned failed results record the actual `correctiveRetries` count
   (up to two) and optional `evidenceRepairAttempts` (one). Durable outcomes
-  retain those counts while partial reviews remain unsaved. The count records
+  retain those counts. If a completed review still fails on a specific map
+  item, a server-constructed feedback-only result may be saved only after the
+  nonempty guidance passes its normal source and shape checks; it carries no
+  map suggestions and is labeled in runtime metadata and the interface. This
+  adds no provider call and does not rescue provider or transport failures.
+  The count records
   attempted calls, rather than proof of provider execution or zero cost.
   An outer cancellation or disconnect can prevent a result from being recorded;
   Gateway owns per-call usage accounting. Bodies and deadlines are bounded;

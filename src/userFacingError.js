@@ -15,12 +15,12 @@ const messagesByCode = Object.freeze({
   course_prompt_conflict: 'The course instructions changed in another session. Keep a copy of your changes, then load the current version.',
   course_prompt_invalid: 'The course instructions could not be saved. Check the text and its length, then try again.',
   course_prompt_changed: 'The course instructions changed. Reload this page before requesting guidance again.',
-  quota_exceeded: 'You have reached the model usage limit. Continue editing your map and try again later.',
+  quota_exceeded: 'The model usage limit has been reached. Try again later.',
   guidance_in_progress: 'Guidance is already being generated. Wait for it to finish before trying again.',
   guidance_timeout: 'Guidance took too long. Try again.',
-  guidance_output_truncated: 'The model response was cut short. Your work is saved. Try again when ready.',
-  guidance_output_invalid: 'The model returned an unreadable response. Your work is saved. Try again when ready.',
-  guidance_contract_invalid: 'The model response did not fit the map rules. Your work is saved. Try again when ready.',
+  guidance_output_truncated: 'The model response was cut short, so the app could not use it. Your existing work was not changed. Try again.',
+  guidance_output_invalid: 'The app could not read the model response. Your existing work was not changed. Try again.',
+  guidance_contract_invalid: 'The app could not use the model response. Your existing work was not changed. Try again.',
   guidance_cancelled: 'Guidance was cancelled. Try again when you are ready.',
 });
 
@@ -31,7 +31,7 @@ export function userFacingError(error, fallback = 'The request could not be comp
   const details = error?.payload?.details;
   // The server names only a fixed schema path, never memo or response text.
   if (details?.code === 'guidance_contract_invalid' && /^guidance\[\d{1,2}\]\.evidenceExcerpt$/.test(String(details.validationField ?? ''))) {
-    return 'The suggestions did not match your memo and were not shown. Your work is saved. Try again when ready.';
+    return 'A quotation in the feedback could not be checked, so the review was not shown. Your existing work was not changed. Try again.';
   }
   if (typeof details?.code === 'string' && Object.hasOwn(messagesByCode, details.code)) return messagesByCode[details.code];
   if (error?.name === 'TimeoutError' || error?.status === 408 || error?.status === 504) return 'The request took too long. Try again.';

@@ -36,6 +36,16 @@ async function setup(text, reviews, scale = 'micro') {
   return { system, run, failures, project, payload, headers, evaluate };
 }
 
+async function expectFeedbackOnly(response, guidance, system) {
+  expect(response.status).toBe(201);
+  const { evaluation } = await response.json();
+  expect(evaluation.runtime.feedbackOnly).toBe(true);
+  expect(evaluation.review).toMatchObject({ guidance, nodes: [], connections: [], readiness: { ready: false } });
+  const saved = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
+  expect(JSON.parse(saved.suggestion_json)).toMatchObject({ guidance, nodes: [], connections: [], readiness: { ready: false } });
+  return evaluation;
+}
+
 describe('quoted evidence whitespace', () => {
   it.each(['\n', '\r\n', '\n\n', '\t', '\u00a0', '  '])('preserves a source quotation containing %j through review, storage and project export', async whitespace => {
     const passage = `Rosa meets${whitespace}the teacher at school.`;
@@ -82,10 +92,17 @@ describe('quoted evidence whitespace', () => {
     else if (field === 'node') final.nodes[0].evidence = unsupported;
     else final.connections[0].rationale = unsupported;
     const { evaluate, run, system } = await setup(passage + '\n\nReferences\n' + reference, [first, first, final], scale);
-    const response = await evaluate(); expect(response.status).toBe(502);
-    expect((await response.json()).details).toMatchObject({ code: 'guidance_contract_invalid', validationReason: 'source_evidence', evidenceRepairAttempts: 1 });
+    const response = await evaluate();
+    if (field === 'guidance') {
+      expect(response.status).toBe(502);
+      expect((await response.json()).details).toMatchObject({ code: 'guidance_contract_invalid', validationReason: 'source_evidence', evidenceRepairAttempts: 1 });
+      expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+    } else {
+      const evaluation = await expectFeedbackOnly(response, valid.guidance, system);
+      expect(evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+      expect(JSON.stringify(evaluation)).not.toContain(unsupported);
+    }
     expect(run).toHaveBeenCalledTimes(3);
-    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
   });
 
   it.each(['guidance', 'node', 'rationale'])('preserves actual length, nonempty and control-character limits for %s evidence', async field => {
@@ -98,9 +115,14 @@ describe('quoted evidence whitespace', () => {
       else invalid.connections[0].rationale = invalidText;
       const { evaluate, run, system } = await setup(passage, invalid, scale);
       const response = await evaluate();
-      expect(response.status).toBe(502); expect(run).toHaveBeenCalledTimes(2);
-      expect((await response.json()).details.validationReason).toBe('text_format');
-      expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+      if (field === 'guidance') {
+        expect(response.status).toBe(502);
+        expect((await response.json()).details.validationReason).toBe('text_format');
+        expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+      } else {
+        await expectFeedbackOnly(response, [{ point: field === 'node' ? 'The memo describes two immediate participants.' : 'The memo describes an exchange.', evidenceExcerpt: passage }], system);
+      }
+      expect(run).toHaveBeenCalledTimes(2);
     }
   });
 
@@ -110,8 +132,9 @@ describe('quoted evidence whitespace', () => {
     const invalid = scale === 'meso' ? mesoReview(passage) : microReview(passage);
     if (field === 'label') invalid.nodes[0].label = 'Rosa\nSmith';
     else invalid.connections[0].verb = 'exchanges\nupdates with';
-    const { evaluate, run } = await setup(passage, invalid, scale);
-    expect((await evaluate()).status).toBe(502); expect(run).toHaveBeenCalledTimes(2);
+    const { evaluate, run, system } = await setup(passage, invalid, scale);
+    await expectFeedbackOnly(await evaluate(), invalid.guidance, system);
+    expect(run).toHaveBeenCalledTimes(2);
   });
 
   it('preserves multiline quoted rationale in the separate connection-suggestion path', async () => {

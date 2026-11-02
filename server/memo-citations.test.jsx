@@ -120,16 +120,21 @@ describe('citation-aware memo guidance and recovery', () => {
     expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(1);
   });
 
-  it('rejects unsupported paraphrases in the final repair and saves no partial review', async () => {
+  it('omits suggestions with unsupported final-repair evidence while retaining valid guidance', async () => {
     const invalid = validReview(); invalid.nodes[0].evidence = reference;
     const ungrounded = validReview(); ungrounded.nodes[0].evidence = 'Rosa works as a teacher at this school.';
     const run = vi.fn().mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(invalid)).mockResolvedValueOnce(generated(ungrounded));
     const { system, evaluate } = await setup(run);
     const response = await evaluate();
-    expect(response.status).toBe(502);
-    expect((await response.json()).details).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(evaluation.review).toMatchObject({ guidance: validReview().guidance, nodes: [], connections: [], readiness: { ready: false } });
+    expect(JSON.stringify(evaluation)).not.toContain(ungrounded.nodes[0].evidence);
     expect(run).toHaveBeenCalledTimes(3);
-    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+    const stored = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
+    expect(JSON.parse(stored.suggestion_json)).toMatchObject({ guidance: validReview().guidance, nodes: [], connections: [], readiness: { ready: false } });
+    expect(stored.suggestion_json).not.toContain(ungrounded.nodes[0].evidence);
   });
 
   it('stops after ordinary correction for a repeated schema error', async () => {

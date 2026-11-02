@@ -982,6 +982,30 @@ describe('persistent preflight suggestion review queue', () => {
     expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(1);
   });
 
+  it('accepts a supported request form as a Micro object without retrying', async () => {
+    await system.close();
+    const passage = 'The parent fills out a request form.';
+    const ollamaRequest = vi.fn(async () => ({
+      suggestion: {
+        guidance: [{ point: 'Check where the form goes after it is completed.', evidenceExcerpt: passage }],
+        nodes: [{ label: 'Request form', type: 'object', scale: 'micro', evidence: passage }],
+        connections: [], example: null,
+        readiness: { ready: false, note: 'Consider the supported form and other immediate elements.' },
+      },
+      metadata: { provider: 'cail-gateway', model: 'synthetic-test' },
+    }));
+    system = createSystemsMappingApp({
+      dbPath: join(tempDirectory, 'request-form-review.sqlite'), now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN,
+      ollamaConfig: { apiKey: 'test-only', model: 'synthetic-test' },
+      suggestionProvider: 'cail-gateway', ollamaRequest,
+    });
+    const cookie = await grantStudent();
+    const evaluation = await evaluate(cookie, submissionBody({ sourceMaterial: passage }));
+    expect(evaluation.review.nodes).toEqual([{ label: 'Request form', type: 'object', scale: 'micro', evidence: passage }]);
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a provider response atomically when any proposed node is a clause or wrong-level entity', async () => {
     await system.close();
     const fullClause = 'Adult Participants face delays when the Accessible Van Program is unavailable.';

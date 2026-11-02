@@ -73,6 +73,21 @@ describe('nextStep', () => {
     const project = seeded({ stage: 1 });
     expect(nextStep(project)).toMatchObject({ id: 'prepare-candidates', detail: 'Review the suggestions' });
   });
+  it.each(['micro', 'meso', 'exosphere', 'macrosphere'])('describes feedback-only guidance without promising %s suggestions or changing progress', activeScale => {
+    const project = seeded({ stage: 1, activeScale });
+    project.preflight.configurationSnapshot.activeScale = activeScale;
+    project.preflight.evaluation.runtime = { feedbackOnly: true };
+    const before = structuredClone(project);
+    expect(nextStep(project)).toMatchObject({ id: 'prepare-candidates', label: 'Continue →', detail: 'Review the feedback or continue to the map', blocking: false });
+    expect(nextStep(project, { reviewBusy: true })).toMatchObject({ id: 'prepare-candidates', detail: 'Reading your memo…', blocking: true });
+    expect(nextStep(project, { retryPending: true })).toMatchObject({ id: 'prepare-candidates', detail: 'Waiting before the next attempt', blocking: true });
+    expect(project).toEqual(before);
+  });
+  it('does not let stale feedback-only guidance obscure that the current level requires a new read', () => {
+    const project = seeded({ stage: 1, activeScale: 'meso' });
+    project.preflight.evaluation.runtime = { feedbackOnly: true };
+    expect(nextStep(project)).toMatchObject({ id: 'read-memo', detail: 'Read the memo for Meso-level', blocking: false });
+  });
   it('reports undecided suggestions before opening the map', () => {
     const project = seeded({ stage: 2 });
     project.candidates.nodes.push({ id: 'a', scale: 'micro', status: 'pending' }, { id: 'b', scale: 'micro', status: 'pending' });

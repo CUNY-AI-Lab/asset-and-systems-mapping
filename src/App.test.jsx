@@ -1518,6 +1518,58 @@ describe('Systems Mapping workflow', () => {
     });
   });
 
+  it.each([true, false])('preserves pending and decided suggestions and the map after a feedback-only reread (confirmation=%s)', async requireConfirmation => {
+    const project = projectWithMemoReview();
+    project.preflight.memoReview.nodes.push({ label: 'Caregiver', type: 'role', scale: 'micro', evidence: 'A family requests an evaluation.' });
+    await resumeSavedProject(project);
+    fireEvent.click(memoNextAction());
+    await waitFor(() => expect(storedProject().candidates.nodes).toHaveLength(3));
+    const currentCard = () => screen.getByRole('textbox', { name: 'Node label' }).closest('article');
+    fireEvent.click(within(currentCard()).getByRole('button', { name: 'Add to map' }));
+    await waitFor(() => expect(storedProject().candidates.nodes[0].reviewDecision).toBe('added'));
+    fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
+    fireEvent.click(within(currentCard()).getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(storedProject().candidates.nodes[1].reviewDecision).toBe('removed'));
+    const saved = storedProject();
+    expect(saved.stage).toBeGreaterThanOrEqual(2);
+    expect(saved.candidates.nodes.map(item => item.reviewDecision)).toEqual(['added', 'removed', 'pending']);
+    saved.instructor.requireStudentConfirmation = requireConfirmation;
+    const graphBefore = structuredClone(saved.graph);
+    const candidatesBefore = structuredClone(saved.candidates);
+    cleanup();
+    preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, {
+      review: { guidance: [{ point: 'Check which support the caregiver provides.' }], nodes: [], connections: [], example: null,
+        readiness: { ready: false, note: 'Some suggestions could not be checked.' } },
+      runtime: { provider: 'cail-gateway', model: 'synthetic-test', createdAt: '2027-01-15T08:00:00.000Z', correctiveRetries: 1, feedbackOnly: true },
+    }) }, 201);
+    await resumeSavedProject(saved);
+    openDetails('.notebook-refresh');
+    fireEvent.click(screen.getByRole('button', { name: 'Reread memo' }));
+    await waitFor(() => expect(storedProject().preflight?.evaluation?.runtime?.feedbackOnly).toBe(true));
+    expect(screen.getByText(/^The app could not use its map suggestions/i)).toBeVisible();
+    expect(storedProject().candidates).toEqual(candidatesBefore);
+    expect(storedProject().graph).toEqual(graphBefore);
+  });
+
+  it.each([true, false])('can advance after an initial feedback-only review without inventing map items (confirmation=%s)', async requireConfirmation => {
+    const project = createDefaultProject();
+    project.stage = 1; project.furthestStage = 1;
+    project.instructor.requireStudentConfirmation = requireConfirmation;
+    preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, {
+      review: { guidance: [{ point: 'What evidence supports the described contact?' }], nodes: [], connections: [], example: null,
+        readiness: { ready: false, note: 'Some suggestions could not be checked.' } },
+      runtime: { provider: 'cail-gateway', model: 'synthetic-test', createdAt: '2027-01-15T08:00:00.000Z', correctiveRetries: 1, feedbackOnly: true },
+    }) }, 201);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    await waitFor(() => expect(storedProject().preflight?.evaluation?.runtime?.feedbackOnly).toBe(true));
+    expect(screen.getByText(/^The app could not use its map suggestions/i)).toBeVisible();
+    fireEvent.click(memoNextAction());
+    await waitFor(() => expect(storedProject().stage).toBeGreaterThanOrEqual(2));
+    expect(storedProject().graph).toEqual({ nodes: [], edges: [] });
+    expect(storedProject().candidates).toEqual({ nodes: [], edges: [] });
+  });
+
 
   it('starts a blank project only after a granted session and explicit start action', async () => {
     render(<App />);
@@ -1656,9 +1708,16 @@ describe('Systems Mapping workflow', () => {
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Progress' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await memoReviewDetails();
+    await screen.findByText('Guidance and evidence');
+    const guidance = document.querySelector('.review-details');
+    expect(guidance).toHaveAttribute('open');
     expect(guidance.querySelectorAll('.studio-feedback')).toHaveLength(2);
     expect(within(guidance).getByText('The memo grounds the referral in a specific handoff.')).toBeVisible();
+    expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
+    fireEvent.click(within(guidance).getByText('Guidance and evidence'));
+    expect(guidance).not.toHaveAttribute('open');
+    expect(within(guidance).getByText('Where does the delay enter the referral process?')).not.toBeVisible();
+    fireEvent.click(within(guidance).getByText('Guidance and evidence'));
     expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
     expect(screen.queryByText('2 items · 1 connection')).not.toBeInTheDocument();
     expect(within(guidance).queryByText('School', { selector: 'strong' })).not.toBeInTheDocument();
@@ -1676,6 +1735,45 @@ describe('Systems Mapping workflow', () => {
     expect(visibleStageText).not.toMatch(/\b(?:conditional|hold|score|scoring|criterion|criteria|checklist|hard gate)\b/i);
     expect(screen.queryByRole('tab', { name: 'Model setup' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Custom project instructions/ })).not.toBeInTheDocument();
+  });
+
+  it('shows feedback-only guidance and its retry notice after a reload without changing saved map work', async () => {
+    const project = makeMapProject('micro');
+    project.stage = 1;
+    project.furthestStage = 1;
+    const originalGraph = structuredClone(project.graph);
+    preflightEvaluationResponder = vi.fn(body => {
+      const review = { guidance: [{ point: 'What evidence shows which families use the service?' }], nodes: [], connections: [], example: null,
+        readiness: { ready: false, note: 'Map suggestions could not be returned.' } };
+      const evaluation = evaluationRecord(body, { review });
+      evaluation.runtime.feedbackOnly = true;
+      return jsonResponse({ evaluation }, 201);
+    });
+    seedProject(project);
+    const view = render(<App startInWorkspace />);
+    await screen.findByRole('heading', { name: 'Memo review' });
+    // The workspace refreshes its course settings on open. Wait until that
+    // state is saved so the request key cannot change during this test's read.
+    await waitFor(() => expect(storedProject().teacherGovernance?.preflight?.fingerprint).toBe('preflight-shared-fingerprint'), { timeout: 5000 });
+    await waitFor(() => expect(storedProject().teacherGovernance?.builder?.fingerprint).toBe('builder-shared-fingerprint'), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    expect(await screen.findByText('What evidence shows which families use the service?')).toBeVisible();
+    const notice = /^The app could not use its map suggestions/;
+    expect(screen.getByText(notice)).toBeVisible();
+    expect(screen.getByText(notice)).toHaveTextContent('Check the feedback below against your memo and sources.');
+    expect(screen.queryByText('No items were suggested. You can add an item yourself or reread the memo.')).not.toBeInTheDocument();
+    await waitFor(() => expect(storedProject().preflight?.evaluation?.runtime?.feedbackOnly).toBe(true));
+    expect(storedProject().graph).toEqual(originalGraph);
+    const retry = document.querySelector('.notebook-refresh');
+    fireEvent.click(within(retry).getByText('Update suggestions'));
+    fireEvent.click(within(retry).getByRole('button', { name: 'Reread memo' }));
+    await waitFor(() => expect(preflightEvaluationResponder).toHaveBeenCalledTimes(2));
+    view.unmount();
+
+    render(<App startInWorkspace />);
+    expect(await screen.findByText('What evidence shows which families use the service?')).toBeVisible();
+    expect(screen.getByText(notice)).toBeVisible();
+    expect(storedProject().graph).toEqual(originalGraph);
   });
 
   it('sends explicit focal person, inquiry, time, and boundary framing only after Generate guidance', async () => {
@@ -2479,11 +2577,25 @@ describe('Systems Mapping workflow', () => {
     project.candidates = { nodes: [], edges: [] };
     await resumeSavedProject(project);
 
-    expect(screen.getByText(/add items on the map/i)).toBeVisible();
+    expect(screen.getByText('No suggested items to review. You can add an item on the map or reread the memo.')).toBeVisible();
+    expect(screen.getByText('No items were suggested. You can add an item yourself or reread the memo.')).toBeVisible();
     expect(screen.queryByRole('combobox', { name: 'Suggestion type' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Finish review' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
     await waitFor(() => expect(storedProject().stage).toBe(3));
+  });
+
+  it.each([
+    ['micro', 'No suggested items to review. You can add an item on the map or request suggestions.'],
+    ['meso', 'No suggested connections to review. You can add a connection on the map or request suggestions.'],
+    ['exosphere', 'No suggested decision settings to review. You can add a decision setting on the map or request suggestions.'],
+    ['macrosphere', 'No suggested connections to review. You can add a connection on the map or request suggestions.'],
+  ])('uses actionable empty-suggestion copy at %s before a memo review', async (scale, message) => {
+    const project = makeMapProject(scale);
+    project.stage = 2;
+    project.candidates = { nodes: [], edges: [] };
+    await resumeSavedProject(project);
+    expect(screen.getByText(message)).toBeVisible();
   });
 
   it('uses the student description to request editable connections and adds only accepted suggestions to the map', async () => {
@@ -2860,8 +2972,20 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().preflight).toBeNull();
   });
 
+  it('does not blame the memo for a server-side request size error', async () => {
+    const project = createDefaultProject();
+    project.stage = 1;
+    project.furthestStage = 1;
+    preflightEvaluationResponder = () => jsonResponse({ error: 'Request is too large.' }, 413);
+    await resumeSavedProject(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    await waitFor(() => expect(document.querySelector('.toast')).toHaveTextContent('The request is too large. Check the text and project details, then try again.'));
+    expect(document.querySelector('.toast')).not.toHaveTextContent('Shorten the memo');
+    expect(storedProject().submission.text).toBe(project.submission.text);
+  });
+
   it.each([
-    [429, 'quota_exceeded', 'You have reached the model usage limit. Continue editing your map and try again later.'],
+    [429, 'quota_exceeded', 'The model usage limit has been reached. Try again later.'],
     [429, 'internal_throttle', 'Requests are paused. Try again later.'],
     [403, 'course_access_denied', 'This course is not available to your account. Ask your instructor to check your enrollment.'],
     [409, 'course_prompt_changed', 'The course instructions changed. Reload this page before requesting guidance again.'],
@@ -2905,7 +3029,7 @@ describe('Systems Mapping workflow', () => {
     } }, 502);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('The model response did not fit the map rules. Your work is saved. Try again when ready.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('The app could not use the model response. Your existing work was not changed. Try again.');
     const details = screen.getByText('Support details').closest('details');
     expect(details).not.toHaveAttribute('open');
     const callsBeforeOpening = fetchMock.mock.calls.length;
@@ -3010,7 +3134,7 @@ describe('Systems Mapping workflow', () => {
     const project = projectWithMemoReview();
     await resumeSavedProject(project);
     expect(screen.getByRole('heading', { name: 'Suggestions', exact: true })).toBeVisible();
-    expect(screen.queryByText(/Update suggestions for your revised memo/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The feedback shown is for your earlier memo/)).not.toBeInTheDocument();
 
     const drawer = document.querySelector('.memo-drawer');
     drawer.open = true;
@@ -3018,7 +3142,7 @@ describe('Systems Mapping workflow', () => {
       target: { value: `${project.submission.text} A later correction adds one more connection.` },
     });
 
-    expect(await screen.findByText(/Update suggestions for your revised memo/)).toBeVisible();
+    expect(await screen.findByText(/The feedback shown is for your earlier memo/)).toBeVisible();
     expect(await memoReviewDetails()).toBeVisible();
     openDetails('.notebook-refresh');
     expect(screen.getByRole('button', { name: 'Reread memo' })).toBeEnabled();
@@ -6581,8 +6705,8 @@ Overall, the posting history documents a working student repeatedly turning to R
       openNotebookSection('suggestions');
       fireEvent.click(screen.getByRole('button', { name: 'Generate guidance', exact: true }));
       await waitFor(() => expect(storedProject().preflight?.memoReview.connections[0].relationshipProcess).toMatchObject(process));
-      expect(screen.getByText('Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.')).toBeVisible();
-      expect(screen.queryByText('No items suggested. Refresh after revising the memo.')).not.toBeInTheDocument();
+      expect(screen.getByText('This review used passages from your memo. Check the feedback and suggestions against your own research.')).toBeVisible();
+      expect(screen.queryByText('No items were suggested. You can add an item yourself or reread the memo.')).not.toBeInTheDocument();
       fireEvent.click(memoNextAction());
       await waitFor(() => expect(storedProject().candidates.edges[0]?.relationshipProcess).toMatchObject(process));
       fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));

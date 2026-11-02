@@ -1350,6 +1350,7 @@ function reviewSupportDetails(error) {
 
 function SuggestionsReview({ project, update, reviewBusy, reviewProgress, reviewFailure, retryPending, onGenerate }) {
   const review = project.preflight?.memoReview;
+  const feedbackOnly = project.preflight?.evaluation?.runtime?.feedbackOnly === true;
   const busy = reviewBusy === 'evaluating';
   const hasMemo = Boolean(project.submission.text.trim());
   const stale = Boolean(project.preflight && project.preflight.sourceFingerprint !== memoFingerprint(project.submission));
@@ -1372,17 +1373,18 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
     </Disclosure>}
     {review && <>
       <h2>Suggestions</h2>
-      {project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.</p>}
-      {stale && <p role="status">Update suggestions for your revised memo</p>}
-      <Disclosure title="Guidance and evidence" className="review-details">
+      {feedbackOnly && <p role="status">The app could not use its map suggestions. Check the feedback below against your memo and sources. You can add to the map yourself, or open Update suggestions and select Reread memo to try again.</p>}
+      {!feedbackOnly && project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">This review used passages from your memo. Check the feedback and suggestions against your own research.</p>}
+      {stale && <p role="status">The feedback shown is for your earlier memo. Reread to update it.</p>}
+      <Disclosure title="Guidance and evidence" className="review-details" defaultOpen>
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
         {review.guidance.map((item, index) => <div className="studio-feedback" key={index}>
           <p>{item.point}</p>
           {item.evidenceExcerpt && <blockquote>{item.evidenceExcerpt}</blockquote>}
         </div>)}
-        {isRelationshipReviewScale(project.activeScale)
+        {!feedbackOnly && (isRelationshipReviewScale(project.activeScale)
           ? !review.connections.length && <p className="empty-message">No connections suggested. You can connect mapped items yourself.</p>
-          : !review.nodes.length && <p className="empty-message">No items suggested. Refresh after revising the memo.</p>}
+          : !review.nodes.length && <p className="empty-message">No items were suggested. You can add an item yourself or reread the memo.</p>)}
       </Disclosure>
     </>}
   </section>;
@@ -1787,6 +1789,10 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
   const decisionStep = step === 'nodes' || step === 'edges';
   const visibleCandidateIndex = Math.min(candidateIndex, Math.max(0, (activeCandidates[step]?.length || 1) - 1));
   const showList = project.stage >= 2 || activeCandidates.nodes.length > 0 || activeCandidates.edges.length > 0;
+  const candidateTerms = step === 'edges' ? ['connections', 'a connection']
+    : project.activeScale === 'exosphere' ? ['decision settings', 'a decision setting']
+      : project.activeScale === 'macrosphere' ? ['conditions', 'a condition'] : ['items', 'an item'];
+  const requestLabel = project.preflight?.memoReview ? 'reread the memo' : 'request suggestions';
   return <div className="suggestions-panel">
     <SuggestionsReview project={project} update={update} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={retryPending} onGenerate={onGenerate} />
     {project.preflight?.memoReview && <details className="notebook-refresh"><summary>Update suggestions</summary><Action variant="ghost" disabled={Boolean(refreshBusy) || Boolean(reviewBusy) || retryPending} onClick={project.stage >= 2 ? onRefreshCandidates : onGenerate}>{refreshBusy || reviewBusy ? 'Updating…' : 'Reread memo'}</Action></details>}
@@ -1801,17 +1807,9 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
         {counts[step].total > 1 && <nav className="notebook-candidate-nav" aria-label="Suggestion navigation"><button type="button" disabled={visibleCandidateIndex === 0} onClick={() => setCandidateIndex(visibleCandidateIndex - 1)}>Previous suggestion</button><span>{visibleCandidateIndex + 1} / {counts[step].total}</span><button type="button" disabled={visibleCandidateIndex + 1 >= counts[step].total} onClick={() => setCandidateIndex(visibleCandidateIndex + 1)}>Next suggestion</button></nav>}
         <div className="candidate-list">
           {candidateRows(step, activeCandidates[step].slice(visibleCandidateIndex, visibleCandidateIndex + 1), visibleCandidateIndex)}
-          {!counts[step].total && <p className="empty-message">{step === 'nodes'
-            ? project.activeScale === 'exosphere'
-              ? 'No suggestions. Add a decision setting below.'
-              : project.activeScale === 'meso'
-                ? 'No suggestions. Add one below.'
-              : project.activeScale === 'macrosphere'
-                ? 'No suggestions. Add a condition below.'
-                : 'No suggestions. Revise the memo and reread it, or add items on the map.'
-            : project.activeScale === 'exosphere'
-              ? 'None yet. Ask for suggestions or add one on the map.'
-              : 'None yet. Ask for suggestions or add one on the map.'}</p>}
+          {!counts[step].total && <p className="empty-message">{project.preflight?.evaluation?.runtime?.feedbackOnly === true
+            ? step === 'nodes' ? 'Add an item on the map or reread the memo.' : 'Add a connection on the map or reread the memo.'
+            : `No suggested ${candidateTerms[0]} to review. You can add ${candidateTerms[1]} on the map or ${requestLabel}.`}</p>}
         </div>
       {step === 'nodes' && project.activeScale === 'meso' && <Disclosure title="Add mesosystem" className="manual-addition"><section className="elicitation-panel" aria-labelledby="add-meso-linkage-title">
           <h2 id="add-meso-linkage-title">New mesosystem</h2>
@@ -6002,7 +6000,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       }
     }
     if (error instanceof ApiError) {
-      if (error.status === 413) return toast('The guidance request is too large. Shorten the memo and try again.', 'error');
+      if (error.status === 413) return toast('The request is too large. Check the text and project details, then try again.', 'error');
       if (error.status === 429 || error.status === 409 && error.payload?.details?.code === 'guidance_in_progress') {
         if (error.payload?.details?.shouldRetry === false) return toast(userFacingError(error), 'error', 8000);
         const seconds = error.payload?.details?.retryAfterSeconds;
@@ -6069,7 +6067,13 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     setReviewBusy('evaluating');
     setReviewProgress(resume ? 'Recovering your saved request…' : 'Saving your generation request…');
     try {
-      const cached = readGuidanceCache(projectStorage(), project.id, cacheRequestKey);
+      let cached = readGuidanceCache(projectStorage(), project.id, cacheRequestKey);
+      // A feedback-only result must not turn an explicit reread into reuse of
+      // the same incomplete suggestions. The saved review remains available.
+      if (cached?.evaluation?.runtime?.feedbackOnly === true) {
+        removeGuidanceCacheEntry(projectStorage(), project.id, cacheRequestKey);
+        cached = null;
+      }
       let result;
       if (cached) {
         try { result = normalizePreflightEvaluation(cached.evaluation, project); }
@@ -6087,7 +6091,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       }
       if (!result) {
         result = normalizePreflightEvaluation(response.evaluation, projectRef.current);
-        writeGuidanceCache(projectStorage(), project.id, cacheRequestKey, response);
+        if (result.evaluation.runtime.feedbackOnly !== true) writeGuidanceCache(projectStorage(), project.id, cacheRequestKey, response);
       }
       update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Memo guidance generated', 'student', {
         sourceFingerprint: result.sourceFingerprint,
@@ -6095,7 +6099,9 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
       });
-      toast('Guidance is ready.');
+      toast(result.evaluation.runtime.feedbackOnly === true
+        ? 'Feedback is ready; the app could not use its map suggestions.'
+        : 'Guidance is ready.');
       return result;
     } catch (error) {
       if (request.controller.signal.aborted) return false;
@@ -6155,7 +6161,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         return;
       }
       setConnectionSuggestions(normalized);
-      toast(normalized.length ? 'Connections are ready for your review.' : 'No connections were suggested. Add more detail and try again.');
+      toast(normalized.length ? 'Connections are ready for your review.' : 'No connections were suggested. You can add one yourself or try again.');
     } catch (error) {
       await handleReviewApiError(error, accessGeneration, 'connection request');
     } finally {
@@ -6384,6 +6390,17 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const prepareCandidates = (sourceProject = project) => {
     const project = sourceProject;
     if (requiresInitialModel(project)) return false;
+    if (project.preflight?.evaluation?.runtime?.feedbackOnly === true) {
+      // No map suggestions survived validation. Advance without rebuilding or
+      // automatically confirming any prior student choices.
+      update((draft) => {
+        draft.stage = 2;
+        draft.furthestStage = Math.max(draft.furthestStage || 0, 2);
+      }, 'candidates.generated', 'Feedback received without map suggestions', 'student');
+      recordStageTransition(project.stage, 2, { completed: true });
+      toast('Your previous map work is unchanged. You can add items yourself or reread the memo.');
+      return true;
+    }
     let candidates;
     try {
       candidates = buildCandidatesFromProject(project);
@@ -6426,13 +6443,17 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
           : project.activeScale === 'exosphere'
             ? 'Larger-scale nodes from your memo are ready for review.'
             : 'Larger-scale and cross-scale relationships are ready for review.'
-      : 'The review did not suggest any items. Add an item yourself, or revise the memo and choose “Reread memo.”');
+      : 'No items were suggested. You can add one yourself or reread the memo.');
     return true;
   };
 
   const refreshCandidatesFromMemo = async () => {
     const result = await generateSuggestions();
     if (!result) return;
+    if (result.evaluation.runtime.feedbackOnly === true) {
+      toast('Your previous suggestions and map are unchanged. You can add items yourself or reread the memo.');
+      return;
+    }
     // React may not have committed the preflight state update yet. Build the
     // next choices from the response we just validated, never the old review.
     const current = { ...projectRef.current, preflight: result };
@@ -6450,7 +6471,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         edges: [...draft.candidates.edges.filter((item) => item.scale !== draft.activeScale), ...candidates.edges],
       };
     }, 'candidates.refreshed', `${candidates.nodes.length} nodes and ${candidates.edges.length} relationships`, 'student', { sourceFingerprint: memoFingerprint(current.submission) });
-    toast(candidates.nodes.length + candidates.edges.length ? 'Suggestions refreshed from your memo.' : 'The revised review did not suggest any items. You can add an item yourself.');
+    toast('Memo review updated. You can continue reviewing your map.');
   };
 
   const commitMapSelections = (sourceProject = project, { installCandidates = false, automatic = false, suggestedConnections = connectionSuggestions } = {}) => {

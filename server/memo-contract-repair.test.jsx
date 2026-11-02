@@ -6,6 +6,7 @@ import { normalizeInput, OLLAMA_CLOUD_LIMITS } from './ollama.js';
 import { safeGatewayFailure } from '../cloudflare/gateway.js';
 import { createDefaultProject } from '../src/domain.js';
 import { preflightEvaluationPayload } from '../src/App.jsx';
+import { explicitMissingMesoPairs } from '../shared/meso-source-details.js';
 
 const ORIGIN = 'http://127.0.0.1:4177';
 const REQUEST_ID = '00000000-0000-4000-8000-000000000001';
@@ -19,7 +20,7 @@ const systems = [];
 afterEach(async () => { for (const system of systems.splice(0)) await system.close(); });
 const bytes = value => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
-async function setup(rejected, scale = 'micro') {
+async function setup(rejected, scale = 'micro', { sourceText = passage, existingMicroNodes = [] } = {}) {
   const accepted = review(scale);
   const run = vi.fn().mockResolvedValueOnce({ suggestion: rejected, metadata: {} }).mockResolvedValue({ suggestion: accepted, metadata: {} });
   const failures = vi.fn();
@@ -30,11 +31,12 @@ async function setup(rejected, scale = 'micro') {
   const headers = { origin: ORIGIN, 'content-type': 'application/json' };
   const access = await system.app.request(`${ORIGIN}/api/student/access`, { method: 'POST', headers, body: JSON.stringify({ code: '101' }) });
   headers.cookie = access.headers.get('set-cookie').split(';')[0];
-  const project = createDefaultProject(); project.activeScale = scale; project.submission.text = passage;
-  if (scale === 'meso') project.graph.nodes = carried.map(node => ({ ...node, status: 'confirmed', claimState: 'inference' }));
+  const project = createDefaultProject(); project.activeScale = scale; project.submission.text = sourceText;
+  if (scale === 'meso' || existingMicroNodes.length) project.graph.nodes = (scale === 'meso' ? carried : existingMicroNodes)
+    .map(node => ({ ...node, status: 'confirmed', claimState: 'inference' }));
   const payload = preflightEvaluationPayload(project);
   const evaluate = () => system.app.request(`${ORIGIN}/api/preflight/evaluations`, { method: 'POST', headers, body: JSON.stringify(payload) });
-  return { run, failures, system, evaluate, accepted };
+  return { run, failures, system, evaluate, accepted, project };
 }
 
 describe('ordinary memo contract correction', () => {
@@ -74,6 +76,10 @@ describe('ordinary memo contract correction', () => {
     const rejected = review(); rejected.nodes[0].label = 'Rosa meets Teacher';
     const { evaluate, run, system } = await setup(rejected);
     const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.nodes).toEqual(review().nodes);
+    expect(evaluation.runtime.feedbackOnly).toBeUndefined();
+    expect(evaluation.runtime.correctiveRetries).toBe(1);
     const retry = run.mock.calls[1][0];
     expect(retry.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: 'Rosa meets Teacher' });
     expect(retry.systemPrompt).not.toContain('Rosa meets Teacher');
@@ -81,6 +87,18 @@ describe('ordinary memo contract correction', () => {
     expect(retry.systemPrompt).toContain('complete replacement review');
     expect(retry.systemPrompt).toContain('For this Micro replacement, connections must be an empty array.');
     expect(system.db.prepare('SELECT suggestion_json FROM preflight_evaluations').get().suggestion_json).not.toContain('Rosa meets Teacher');
+  });
+
+  it('does not trust a provider-supplied feedback-only flag', async () => {
+    const valid = review();
+    const { evaluate, run } = await setup(valid);
+    run.mockResolvedValue({ suggestion: valid, metadata: { feedbackOnly: true } });
+    const response = await evaluate();
+    expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.runtime.feedbackOnly).toBeUndefined();
+    expect(evaluation.review.nodes).toEqual(valid.nodes);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   it('identifies rejected Meso endpoints and requires exact carried IDs without the earlier label ambiguity', async () => {
@@ -129,15 +147,100 @@ describe('ordinary memo contract correction', () => {
     expect(system.db.prepare('SELECT suggestion_json FROM preflight_evaluations').get().suggestion_json).not.toContain('contractRepair');
   });
 
-  it('keeps the existing two-call budget and safe support details when correction fails again', async () => {
+  it('returns independently valid feedback when both attempts contain an invalid Micro node', async () => {
     const rejected = review(); rejected.nodes[0].label = 'Rosa meets Teacher';
-    const { evaluate, run, failures, system } = await setup(rejected);
+    const { evaluate, run, failures, system, project } = await setup(rejected);
+    const originalGraph = structuredClone(project.graph);
     run.mockResolvedValue({ suggestion: rejected, metadata: {} });
-    const response = await evaluate(); expect(response.status).toBe(502);
-    const body = await response.json();
-    expect(body.details).toMatchObject({ validationReason: 'label_format', validationField: 'nodes[0].label', correctiveRetries: 1 });
-    expect(JSON.stringify(body)).not.toContain('Rosa meets Teacher');
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.guidance).toEqual(rejected.guidance);
+    expect(evaluation.review.nodes).toEqual([]);
+    expect(evaluation.review.connections).toEqual([]);
+    expect(evaluation.review.readiness.ready).toBe(false);
+    expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+    expect(JSON.stringify(evaluation)).not.toContain('Rosa meets Teacher');
     expect(JSON.stringify(failures.mock.calls)).not.toContain('Rosa meets Teacher');
+    expect(project.graph).toEqual(originalGraph);
+    expect(run).toHaveBeenCalledTimes(2);
+    const stored = system.db.prepare('SELECT suggestion_json, runtime_metadata_json FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
+    expect(JSON.parse(stored.suggestion_json)).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
+    expect(JSON.parse(stored.runtime_metadata_json)).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+    expect(stored.suggestion_json).not.toContain('Rosa meets Teacher');
+  });
+
+  it('returns feedback-only with conservative readiness when a Micro reread carries two existing map nodes', async () => {
+    const rejected = review(); rejected.nodes[0].label = 'Rosa meets Teacher';
+    const { evaluate, run, system, project } = await setup(rejected, 'micro', { existingMicroNodes: carried });
+    const originalGraph = structuredClone(project.graph);
+    run.mockResolvedValue({ suggestion: rejected, metadata: {} });
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
+    expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+    expect(project.graph).toEqual(originalGraph);
+    expect(run.mock.calls[0][0].carriedNodes.map(({ id }) => id)).toEqual(['rosa', 'teacher']);
+    expect(run).toHaveBeenCalledTimes(2);
+    const stored = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
+    expect(JSON.parse(stored.suggestion_json)).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
+  });
+
+  it('retains grounded guidance but no edges when Meso endpoint validation repeatedly fails, even with a documented missing pair', async () => {
+    const sourceText = 'Rosa has no contact with the teacher.';
+    expect(explicitMissingMesoPairs(sourceText, carried)).toEqual([[carried[0], carried[1]]]);
+    const rejected = review('meso');
+    rejected.guidance = [{ point: 'What would help establish whether communication begins?', evidenceExcerpt: sourceText }];
+    rejected.connections = [{ source: 'rosa', target: 'unmapped', verb: 'contacts', rationale: sourceText }];
+    const { evaluate, run, system } = await setup(rejected, 'meso', { sourceText });
+    run.mockResolvedValue({ suggestion: rejected, metadata: {} });
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review.guidance).toEqual(rejected.guidance);
+    expect(evaluation.review.nodes).toEqual([]);
+    expect(evaluation.review.connections).toEqual([]);
+    expect(evaluation.review.readiness.ready).toBe(false);
+    expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+    expect(JSON.stringify(evaluation)).not.toContain('unmapped');
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(1);
+  });
+
+  it.each(['exosphere', 'macrosphere'])('keeps only guidance when a %s suggestion repeatedly fails item validation', async scale => {
+    const rejected = review(scale);
+    if (scale === 'exosphere') rejected.nodes = [{ label: 'District Office', type: 'invalid-type', scale, evidence: passage, basis: 'memo' }];
+    else rejected.connections = [{ source: 'unknown-a', target: 'unknown-b', verb: 'funds', rationale: passage }];
+    const { evaluate, run } = await setup(rejected, scale);
+    run.mockResolvedValue({ suggestion: rejected, metadata: {} });
+    const response = await evaluate(); expect(response.status).toBe(201);
+    const { evaluation } = await response.json();
+    expect(evaluation.review).toMatchObject({ guidance: rejected.guidance, nodes: [], connections: [], readiness: { ready: false } });
+    expect(evaluation.runtime).toMatchObject({ feedbackOnly: true, correctiveRetries: 1 });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['invented quotation', 'empty guidance'])('does not return or persist a feedback-only review with %s', async condition => {
+    const rejected = review();
+    rejected.nodes[0].label = 'Rosa meets Teacher';
+    if (condition === 'invented quotation') rejected.guidance[0].evidenceExcerpt = 'Rosa sent an invented report.';
+    else rejected.guidance = [];
+    const { evaluate, run, system } = await setup(rejected);
+    run.mockResolvedValue({ suggestion: rejected, metadata: {} });
+    const response = await evaluate();
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(JSON.stringify(body)).not.toContain('invented report');
+    expect(run).toHaveBeenCalledTimes(condition === 'invented quotation' ? 3 : 2);
+    expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
+  });
+
+  it('does not return a previous rejected review after a timeout during correction', async () => {
+    const rejected = review(); rejected.nodes[0].label = 'Rosa meets Teacher';
+    const { evaluate, run, system } = await setup(rejected);
+    run.mockReset().mockResolvedValueOnce({ suggestion: rejected, metadata: {} })
+      .mockRejectedValueOnce(Object.assign(new Error('synthetic timeout'), { name: 'TimeoutError' }));
+    const response = await evaluate();
+    expect(response.status).toBe(504);
+    expect((await response.json()).details).toMatchObject({ code: 'guidance_timeout', correctiveRetries: 1 });
     expect(run).toHaveBeenCalledTimes(2);
     expect(system.db.prepare('SELECT count(*) AS n FROM preflight_evaluations').get().n).toBe(0);
   });
