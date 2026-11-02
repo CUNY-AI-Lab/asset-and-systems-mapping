@@ -1656,9 +1656,16 @@ describe('Systems Mapping workflow', () => {
     within(stageMenu).getAllByRole('button').filter((button) => button.textContent !== 'Close').forEach((button) => expect(button).toBeEnabled());
     fireEvent.click(within(stageMenu).getByRole('button', { name: 'Close Progress' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    const guidance = await memoReviewDetails();
+    await screen.findByText('Guidance and evidence');
+    const guidance = document.querySelector('.review-details');
+    expect(guidance).toHaveAttribute('open');
     expect(guidance.querySelectorAll('.studio-feedback')).toHaveLength(2);
     expect(within(guidance).getByText('The memo grounds the referral in a specific handoff.')).toBeVisible();
+    expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
+    fireEvent.click(within(guidance).getByText('Guidance and evidence'));
+    expect(guidance).not.toHaveAttribute('open');
+    expect(within(guidance).getByText('Where does the delay enter the referral process?')).not.toBeVisible();
+    fireEvent.click(within(guidance).getByText('Guidance and evidence'));
     expect(within(guidance).getByText('Where does the delay enter the referral process?')).toBeVisible();
     expect(screen.queryByText('2 items · 1 connection')).not.toBeInTheDocument();
     expect(within(guidance).queryByText('School', { selector: 'strong' })).not.toBeInTheDocument();

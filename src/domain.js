@@ -403,6 +403,8 @@ const MAP_ELEMENT_LEADING_QUANTIFIER = /^(?:all|both|each|either|every|few|many|
 const MAP_ELEMENT_ENTITY_HEAD = /\b(?:association|board|bureau|center|centre|church|class|classroom|clinic|coalition|college|committee|community|council|department|family|foundation|group|hospital|institute|institution|journal|lab|library|magazine|network|newspaper|office|organization|person|platform|program|school|service|society|student|team|university|workplace)\b/i;
 const MAP_ELEMENT_SCHEDULE_HEAD = /\b(?:availability|appointments?|hours?|schedules?|shifts?|workdays?|workweeks?)$/i;
 const MAP_ELEMENT_ACTION_START = /^(?:administer(?:s|ed|ing)?|attend(?:s|ed|ing)?|connect(?:s|ed|ing)?|coordinate(?:s|d|ing)?|deliver(?:s|ed|ing)?|facilitat(?:e|es|ed|ing)|fund(?:s|ed|ing)?|help(?:s|ed|ing)?|manage(?:s|d|ing)?|offer(?:s|ed|ing)?|provide(?:s|d|ing)?|receive(?:s|d|ing)?|refer(?:s|red|ring)?|request(?:s|ed|ing)?|serve(?:s|d|ing)?|support(?:s|ed|ing)?|supervis(?:e|es|ed|ing)|use(?:s|d|ing)?|visit(?:s|ed|ing)?|work(?:s|ed|ing)?)\b/i;
+// These exact phrases name tangible objects, not requests to take an action.
+const MICRO_REQUEST_FORM_LABEL = /^(?:(?:transport|transportation)\s+)?request\s+forms?$/i;
 const MAP_ELEMENT_WEEKDAY = /^(?:mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|mons?|tues?|weds?|thurs?|fris?|sats?|suns?)$/i;
 const MAP_ELEMENT_MONTH = /^(?:januarys?|februarys?|march(?:es)?|aprils?|mays?|junes?|julys?|augusts?|septembers?|octobers?|novembers?|decembers?|jans?|febs?|mars?|aprs?|juns?|juls?|augs?|septs?|octs?|novs?|decs?)$/i;
 const MAP_ELEMENT_TEMPORAL_ATOM = /^(?:days?|weeks?|months?|years?|hours?|minutes?|mornings?|afternoons?|evenings?|nights?|noon|midnight|dawn|dusk|weekdays?|weekends?|semesters?|terms?|spring|summer|fall|autumn|winter|daily|weekly|biweekly|fortnightly|monthly|quarterly|annually|yearly|hourly|nightly)$/i;
@@ -467,7 +469,8 @@ export function normalizeMapElementLabel(value, { micro = false } = {}) {
   if (isTemporalOnlyMapElementLabel(label, micro)) return null;
   // A verb-shaped first token joined into a compound can be a noun modifier
   // (for example, a work–school mesosystem label), not a finite predicate.
-  if (MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)) return null;
+  if (MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)
+    && !(micro && MICRO_REQUEST_FORM_LABEL.test(label))) return null;
   return label;
 }
 
@@ -497,6 +500,7 @@ const MICRO_NODE_FINAL_CONTENT_NAME = /^(?:(?:(?:annual|case|daily|financial|mon
 export function normalizeMicroNodeLabel(value) {
   const label = cleanMicroNodeLabel(value);
   if (!label) return null;
+  if (MICRO_REQUEST_FORM_LABEL.test(label)) return label;
   const predicate = MICRO_NODE_PREDICATE.exec(label);
   if (!predicate) return label;
   // A small closed set of explicit content-name forms may end in a word that

@@ -1374,7 +1374,7 @@ function SuggestionsReview({ project, update, reviewBusy, reviewProgress, review
       <h2>Suggestions</h2>
       {project.preflight.evaluation?.runtime?.evidenceRepairAttempts > 0 && <p role="status">Guidance was checked and repaired against the narrative passages in your memo. Your full memo and references are preserved.</p>}
       {stale && <p role="status">Update suggestions for your revised memo</p>}
-      <Disclosure title="Guidance and evidence" className="review-details">
+      <Disclosure title="Guidance and evidence" className="review-details" defaultOpen>
         {!review.guidance.length && <p className="empty-message">No guidance returned</p>}
         {review.guidance.map((item, index) => <div className="studio-feedback" key={index}>
           <p>{item.point}</p>

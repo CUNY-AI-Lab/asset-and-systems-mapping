@@ -571,6 +571,13 @@ describe('mapping domain', () => {
     expect(isDiscreteMicroNodeLabel('Marisol Both')).toBe(false);
   });
 
+  it('accepts request forms as objects without accepting request clauses', () => {
+    ['Request form', 'request forms', 'Transport request form', 'Transportation request forms']
+      .forEach((label) => expect(isDiscreteMicroNodeLabel(label), label).toBe(true));
+    ['Request the form', 'Request forms from the teacher', 'The parent requests a form', 'Transport requests form a queue']
+      .forEach((label) => expect(isDiscreteMicroNodeLabel(label), label).toBe(false));
+  });
+
   it('accepts Meso noun phrases and rejects relationship propositions', () => {
     [
       'school–clinic information exchange',
