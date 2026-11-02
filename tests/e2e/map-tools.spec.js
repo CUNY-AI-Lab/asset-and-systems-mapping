@@ -35,7 +35,8 @@ test('expanded map tools stay readable and contained, including at short phone s
     await expect(page.locator('.notebook-map-tools')).not.toHaveAttribute('open', '');
     await expect(page.locator('.notebook-map-tools > summary')).toBeFocused();
     await openTools(page);
-    await page.locator('.notebook-level').click();
+    // Project stays visible even when the narrowest layout moves Work level into its menu.
+    await page.locator('.project-menu > summary').click();
     await expect(page.locator('.notebook-map-tools')).not.toHaveAttribute('open', '');
   }
 });

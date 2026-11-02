@@ -55,11 +55,11 @@ test('map and notebook preserve Field Notes and viewport across every scale and 
   await openProject();
   await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
   await expect(notebook.getByRole('textbox', { name: 'Field notes' })).toHaveValue(notes.macrosphere);
-  await notebook.getByText('Notes from other scales', { exact: true }).click();
+  await notebook.getByText('Previous notes', { exact: true }).click();
   for (const scale of ['micro', 'meso', 'exosphere']) {
     await expect(notebook.getByText(notes[scale], { exact: true })).toBeVisible();
   }
-  await notebook.getByText('Notes from other scales', { exact: true }).click();
+  await notebook.getByText('Previous notes', { exact: true }).click();
   await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('suggestions');
   await notebook.locator('.field-notes-continuity summary').click();
   await expect(notebook.locator('.field-notes-continuity blockquote')).toHaveText(fieldNotesExcerpt('exosphere', longNote).text);
