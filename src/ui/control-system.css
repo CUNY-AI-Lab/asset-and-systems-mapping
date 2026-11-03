@@ -158,3 +158,5 @@
 .app-shell .notebook-nav-row .notebook-switch > button{min-width:44px}
 .app-shell .notebook-nav-row .notebook-switch > .notebook-map-tools,
 .app-shell .notebook-nav-row .notebook-switch > .notebook-map-tools > summary{min-width:44px}
+
+.app-shell .inspector__body > .map-item-action--remove { min-width: 44px; padding-inline: 0; text-align: left; }

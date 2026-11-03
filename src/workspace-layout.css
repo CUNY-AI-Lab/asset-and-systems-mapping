@@ -62,15 +62,23 @@
 .inspector .inspector-done { background: var(--surface); border-color: var(--line); color: var(--ink); }
 html[data-theme="dark"] .inspector .inspector-done { color: var(--ink); }
 .inspector-guide { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.inspector-evidence { padding: 10px 12px; border-left: 2px solid var(--line-strong); background: var(--surface-subtle); }
-.inspector-evidence > span { font-size: 12px; font-weight: 550; color: var(--muted); }
-.inspector-evidence p { margin: 4px 0 0; font-size: 14px; }
+.inspector .inspector__head--edit { align-items: flex-start; }
+.item-editor-heading { margin: 0; font-size: 15px; }
+.item-editor-title { min-width: 0; flex: 1; }
+.inspector .inspector__head--edit .item-editor-title h2 { min-height: 44px; display: flex; align-items: center; font-size: var(--type-title); font-weight: 650; }
+.item-editor-title p { margin: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.item-editor-title em { font-style: italic; }
+.inspector__head--edit .inspector__actions { align-self: flex-start; }
+.inspector-evidence { margin: 16px 14px 20px; padding: 12px 14px; border: 0; border-left: 3px solid var(--line-strong); border-radius: 0 4px 4px 0; background: var(--surface-subtle); color: var(--ink); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.inspector-evidence p { margin: 0; font-size: inherit; }
+.inspector-evidence--empty { padding: 0; border: 0; background: none; color: var(--muted); }
 .inspector-disclosure { border-top: 1px solid var(--line); }
 .inspector-disclosure > summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
 .inspector-disclosure > div { display: grid; gap: 12px; padding-bottom: 12px; }
 .inspector-disclosure .claim-evidence { border: 0; padding: 0; }
 .inspector .node-summary > summary { min-height: 44px; }
-.inspector .node-position-controls { padding: 12px; }
+.inspector .node-position-controls { padding: 12px 0; }
+.inspector .node-position-controls > span { font: var(--weight-label) var(--type-label)/1.4 var(--body); letter-spacing: 0; }
 .inspector .coverage-banner { margin: 8px 0 0; padding: 12px 0; }
 .inspector .map-check { padding-top: 12px; }
 .inspector :is(.review-intro, .stage-title-row, .section-heading) { gap: 10px; flex-wrap: wrap; }
