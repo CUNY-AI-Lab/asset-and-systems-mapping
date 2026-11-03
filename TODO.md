@@ -4,14 +4,28 @@ Updated: 2026-11-03
 
 ## Latest request — November 3: reconcile style, merge and deployment; ten E2E screenshots
 
-The user requested ten fresh end-to-end screenshots and correction of style, structure, merge and deployment inconsistencies. PR #55 was still a draft outside main although its earlier checked source was deployed to Dev and production. Complete the style refinements, merge the checked PR, and release the successful exact-main CI package to both targets.
+The requested style and structure refinements are complete. PR #55 is merged into main; GitHub also marked the included PR #51 merged. The successful exact-main CI package for **`7a4f45d5d92c16c7252ab9671242ae19ac5da2cb`** is deployed to Dev and production. Both served UI journeys passed and ten fresh production screenshots are available in the receipt below.
 
 - [x] Consolidate editor typography/evidence styles, load the actual italic font, and align position/Delete controls with the form. Keep Map / Notebook / Tools / work level and the requested evidence/question/action order. Keep the report action in the project header across memo entry, mapping and final summary; completion must not recreate a report footer.
 - [x] Local checks passed: 280 App/accessibility tests; seven targeted responsive/browser cases (one duplicate viewport audit skipped). A ten-capture synthetic UI journey created a project on desktop, reopened it on phone, preserved interpretation and Field Notes across all four levels, built cumulative relationships, opened the final summary and verified the full-project JSON download.
 - [x] Clarify the README's panel navigation, persistent report placement, account saving and direct download options. A hosted dense-map regression exposed unrelated editor-font loading refitting the canvas; filter font events to the normal map-label face and retain the unchanged desktop/phone camera-preservation checks.
-- [ ] Run the exact-source hosted checks, merge PR #55 into main, and verify the successful main build.
-- [ ] Deploy the checked main package to Dev and production; verify source, traffic, model binding and every served file.
-- [ ] Capture the ten new production screenshots and retain their provenance, with all APIs isolated from real course data and no live model calls.
+- [x] Exact-source PR checks and the successful main-push build passed; PR #55 is merged. See the verified main release below.
+- [x] Deploy the checked main package to Dev and production; source, 100% traffic, preserved bindings and all 36 served files verified.
+- [x] Capture exactly ten new production screenshots, plus a separate ten-capture Dev set. Retain source/hash/viewport provenance, fictional API responses and zero live model calls.
+
+## Verified main release and ten E2E screenshots — November 3, 2026
+
+Application source **`7a4f45d5d92c16c7252ab9671242ae19ac5da2cb`** is merged into main and deployed to both existing environments. [PR #55 checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41608228568) and the [exact-main push checks](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41610670083) each passed **1,660 unit/Worker tests and 106 browser checks**, with four conditional skips in each suite. The downloaded main package's source, Git tree, configuration, lockfile and SHA256SUMS were verified. Its prebuilt Worker was uploaded directly with no rebundling; all **36 frontend files** match the checked package on both served origins.
+
+- The Edit heading stays at 22 pixels, selected names use a loaded italic font, evidence spacing has one style owner, and Position/Delete align with the form. Map / Notebook / Tools / work level retain their panel integration and the canvas begins below the main header. The report action stays in that header through memo entry, mapping and final summary.
+- Hosted checks exposed an unrelated editor-font event refitting the chosen map view. Restricting geometry invalidation to the normal map-label font corrected it; the unchanged dense-map test passed twice on desktop and twice on phone. Follow-up App/font/geometry checks passed 287 tests. README navigation, saving, downloads and removed Map Check descriptions are reconciled with the current interface.
+- **Dev:** deployment `573e533b-4bd9-4248-aa03-ce44fbb66674`; version `72d8668a-159f-46d1-bcb7-05213fe28e04`; **100% traffic**.
+- **Production:** deployment `13882335-4434-48c5-a0a8-37e7f11b5ed1`; version `23fa188b-c92b-44ed-ab5d-8a0d5dd08a9f`; **100% traffic**.
+- Both origins passed release/readiness, anonymous project denial (401 with no-store), all 36 served-file hashes, and GPT-OSS 120B binding readback. Effective binding fingerprints match their pre-deployment values, excluding the intended release marker and asset binding. Backend code, storage schema and deployment configuration are unchanged from the preceding `033a17e` application.
+- A new fictional journey on **each served origin** passed retained feedback when suggestions are unusable, an explicit successful reread, Micro item interpretation, account-project reopening in a fresh phone context, saved Field Notes, Meso relationships, Exo offices, Macro links, final summary and full-project JSON download. The exported memo, five nodes, three connections, interpretation and all four levels of notes were preserved; both runs had zero page/console errors. Captures use 1440×1000 and 390×844 viewports; memo-header bounds also passed at 320/390/768/1440 pixels. Field Notes are captured after the Saved state.
+- **Production screenshots:** `/Users/milwright/Documents/Codex/2026-11-03/systems-mapping-e2e/production/index.html` — exactly ten PNGs, with a portable `production-screenshots.zip`. A separate Dev gallery and archive are retained alongside the production set. Receipts include image dimensions/hashes, source, origins, API-route metadata and capture times; the harness is retained in `harness/`.
+- All account/auth/model API traffic in these UI journeys was intercepted into isolated memory with fictional material. No real course records, live model calls, production project writes, permission changes or bug-report submissions were used. Real CUNY-session and live model-quality acceptance remain separate and unverified here.
+- This completion receipt is documentation only. The deployed application source remains `7a4f45d5d92c16c7252ab9671242ae19ac5da2cb`; the receipt commit changes no application code.
 
 ## Previous request — November 2: refine the selected-item editor
 
@@ -44,9 +58,9 @@ The user's new screenshots and direct clarification supersede the separate full-
 
 
 
-## Current reconciled status — November 2, 2026
+## Current reconciled status — November 3, 2026
 
-This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. Documentation baseline: `d9c6a45`, following `67dfe18`. The current independently verified deployed application is **`033a17e63abacc9acaacebdaab27086d44912f85` on Dev and production**; this documentation update does not deploy an application.
+This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. The current independently verified deployed application is **`7a4f45d5d92c16c7252ab9671242ae19ac5da2cb` on Dev and production**, released from the successful main-push package. The completion receipt changes documentation only.
 
 ### Current UI requirements (12 groups)
 
@@ -69,7 +83,7 @@ This is the current status index. Dated sections below retain their original evi
 
 ### Newer work and owner reconciliation
 
-- Debugging task `01a19a4a-0fbb-7552-9fac-61d890695b59` has newer direct requests: swap Micro and the bug button, collapse controls into the panel to reclaim canvas whitespace, and thoroughly verify responsive sizing. Its checked source `3601a17bf4950af64c92136b2ff8b935e2296668` now satisfies these requests on both deployments, with the exact CI, served-file and responsive receipts below. Complementary PR #56 is included; preserve this combined tree.
+- Debugging task `01a19a4a-0fbb-7552-9fac-61d890695b59` has newer direct requests: swap Micro and the bug button, collapse controls into the panel to reclaim canvas whitespace, and thoroughly verify responsive sizing. The initial integration `3601a17` was refined by `033a17e` and the current main release `7a4f45d5d92c16c7252ab9671242ae19ac5da2cb`; both deployments now contain the combined work with the exact CI, served-file and responsive receipts above. Complementary PR #56 is included; preserve this combined tree.
 - The previous **below-header Map | Notebook | Tools** release remains valid history. The latest request keeps these controls out of the main header but replaces the separate blank/full-width strip with panel-top integration. Only the newer placement requirement supersedes the older row/bug/level arrangement; preserve narrow-phone Save/Cancel, editing, state and full-screen behavior.
 - Account owner `01a1760c-b3ad-7697-8d53-8935743b00c1` completed its handoff; its tested patch was integrated in `e772836` and carried through `3622948` and `11d0491`. Older “local/uncommitted” Account/project statuses below are historical, not current blockers.
 - Model owner `01a19a2b-f3c4-78b1-a49a-ee5806e556de` completed the requested GPT-OSS 120B switch and comparison work. No later model-change instruction was found in its latest turn. Preserve `gpt-oss-120b`; comparison results do not authorize switching to Safeguard or new paid calls.
@@ -83,7 +97,7 @@ This is the current status index. Dated sections below retain their original evi
 
 ### Verified release evidence and provenance
 
-The latest exact-source checks, Dev/production IDs, served-file and model-binding readbacks and screenshots are recorded in the editor refinement receipt above. The panel integration receipt below remains evidence for the preceding source. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
+The latest exact-main checks, Dev/production IDs, served-file and binding readbacks and ten new screenshots are recorded in the November 3 main release receipt above. The editor refinement and panel integration receipts retain evidence for their preceding sources. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
 
 ## Verified panel integration and downloads release — November 2, 2026
 

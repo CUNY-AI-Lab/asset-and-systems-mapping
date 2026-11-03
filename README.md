@@ -52,9 +52,9 @@ Field Notes are required to complete a scale; students can return to Map at any 
 
 Instructors customize the question from **Instructor Console → Course settings → Edit prompts**. Choose a scale, connect the prompt to the lesson's case or reading, optionally open Student preview, then Publish changes. Draft creation and saving are handled within that flow; version history and model settings remain collapsed. See [instructor settings](docs/instructor-settings.md).
 
-### Map Check
+### Feedback and interpretation
 
-Map Check asks the course model to reason over the map the student has built, not to reread the memo. Students can request **Check this item** or **Check this connection** inside its editing details. The general “Ask the map” panel has been removed. Each returns at most four short notes tied to map IDs, commits nothing, and runs as one attempt with the same course prompt appendix, limits and support IDs as memo guidance. Choosing an item in a note highlights it on the canvas.
+Students review memo guidance, decide which supported items belong on the map, and record their interpretation and Field Notes. Selecting a map item opens its evidence and interpretation editor. The former **Check map**, **Check this item** and **Check this connection** controls have been removed from the student workspace.
 
 ## Working with the map
 
@@ -70,7 +70,7 @@ Select an item to edit **Label** in the Notebook, or select a connection to edit
 
 Labels follow the item’s existing level. Meso relationships accept a verb or phrase; Exo relationships use the available decision-path choices. Invalid drafts leave the saved wording intact and show what needs revision. Saved wording updates any matching suggestion, and renaming an item updates its name in connected relationships. Saving preserves node positions and the current view; the text’s card may resize. Use **Arrange map** to recalculate the arrangement or **Fit map** to refit the view.
 
-The selected item’s interpretation, connected items and other editing details remain in Notebook. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
+The selected name appears in italics beneath **Edit**, followed by the complete evidence passage in a spaced quotation block. The interpretation question sits below **Interpretation** and above its text field. Node editing ends with **Position on map**, then **Delete**; connection editing also keeps Delete last. Connected items and other editing details remain in Notebook. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
 
 | Task | Control |
 | --- | --- |
