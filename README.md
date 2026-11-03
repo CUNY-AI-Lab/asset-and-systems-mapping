@@ -41,12 +41,12 @@ The workspace has two views: **Map** and **Notebook**. The five stage records (`
 | --- | --- |
 | **Memo** | Set the inquiry and paste or upload the memo. |
 | **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
-| **Map** | Canvas, direct selection and a collapsed **Map tools** menu for search, layers, list, zoom, arrange, key and full screen. |
+| **Map** | Canvas and direct selection. **Tools** opens search, layers, list, zoom, arrange, key and full screen. |
 | **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens that item’s details and interpretation; the memo appears only with suggestions. |
 | **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Instructor Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
 | **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
 
-The notebook contains the current next action. The compact footer only switches **Map / Notebook**. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
+The notebook contains the current next action. **Map / Notebook / Tools / work level** share its top edge. When Notebook is closed, these controls float over the canvas so they remain available without reserving a separate toolbar strip. The report button stays in the main project header, including memo entry and the final summary. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
 
 Field Notes are required to complete a scale; students can return to Map at any time. They use the existing immediate draft journal and per-scale project saves. A separate historical recovery cache is [proposed](docs/field-notes-recovery-proposal.md), not implemented.
 
@@ -64,7 +64,7 @@ Selecting an element opens its inspector. On desktop the whole layer stays on th
 
 The map fills the available browser height. On wide screens, the Notebook is a narrow resizable dock (260–360px). Drag its left edge or use the focused divider's arrow keys; Home restores the default width. Text and controls wrap as it changes. At 1100px and below, Notebook occupies the workspace while the mounted map is hidden. **Map** restores the canvas and its view.
 
-The separate **Map tools** panel stays at the upper right. Drag its left edge to resize the whole panel, or focus the divider and use Left to widen it and Right to narrow it; Shift makes larger changes. Home or a double-click restores 280px, and End uses the available maximum, up to 480px. The browser remembers this preference separately from Notebook width. Phones keep the compact panel without a resize handle; resizing does not move the map.
+The **Tools** panel opens below its control at the upper right. Drag its left edge to resize the whole panel, or focus the divider and use Left to widen it and Right to narrow it; Shift makes larger changes. Home or a double-click restores 280px, and End uses the available maximum, up to 480px. The browser remembers this preference separately from Notebook width. Phones keep the compact panel without a resize handle; resizing does not move the map.
 
 Select an item to edit **Label** in the Notebook, or select a connection to edit **Relationship**. Choose **Save** to apply the wording or **Cancel** to restore the saved text. Enter saves; Escape cancels. Moving focus or selecting another item does not save a draft. Candidate Details use the same draft controls.
 
@@ -89,7 +89,7 @@ An item’s level is fixed once it is mapped. To correct the level, remove the i
 
 ## Saving and sharing
 
-Projects save to browser `localStorage`, including the memo, candidates, graph, evidence, annotations, per-level progress, layout, and viewport. This storage belongs to the current browser and device. A classroom server does not provide automatic synchronization of the student project. Export JSON to keep a portable backup or move work to another browser.
+In the local Node/Railway version, projects save to browser `localStorage`, including the memo, candidates, graph, evidence, annotations, per-level progress, layout, and viewport. This storage belongs to the current browser and device; its classroom server does not synchronize the student project. Export JSON to keep a portable backup or move work to another browser.
 
 In the Cloudflare version, projects also save to the signed-in account using
 optimistic revisions. An unsynced browser copy is preserved when a save fails
@@ -104,13 +104,14 @@ or rejected access keeps the workspace paused; an unavailable check offers
 reload. Recognized identity
 alone does not replace the account and course authorization check.
 
-Exports live behind the **Project → Export & share** dialog, with the format options initially collapsed, grouped as *Show the map* (PNG, PDF, project link) and *Save or reuse* (JSON, CSV, Markdown, import). **Prepare copy for** selects an audience within the course's sharing limit. Export rules apply to all formats:
+The **Project → Export & share** dialog shows its controls directly, grouped as **Download or share** (PNG, PDF, project link) and **Other formats** (JSON, CSV, Markdown), followed by **Import JSON**:
 
-- **JSON** preserves a reopenable project with stable IDs and layout, subject to the selected audience's redactions. Import validates the file before replacing the open project.
+- **PNG / PDF** show the cumulative map and its connections; they omit the memo and Field Notes.
+- **JSON — Full project** preserves a reopenable project with the memo, Field Notes, stable IDs and layout. Keep this complete copy private. Import validates the file before replacing the open project.
 - **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.
 - **Markdown** provides a readable account for review and discussion.
 
-Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v7 supports migration of v1–v6 projects.
+Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. Project links retain their existing access, expiry and revocation rules. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v9 supports migration of v1–v8 projects.
 
 ## Run locally
 
