@@ -6,8 +6,8 @@ Updated: 2026-11-03
 
 The user requested ten fresh end-to-end screenshots and correction of style, structure, merge and deployment inconsistencies. PR #55 was still a draft outside main although its earlier checked source was deployed to Dev and production. Complete the style refinements, merge the checked PR, and release the successful exact-main CI package to both targets.
 
-- [x] Consolidate editor typography/evidence styles, load the actual italic font, and align position/Delete controls with the form. Keep Map / Notebook / Tools / work level and the requested evidence/question/action order.
-- [x] Local checks passed: 280 App/accessibility tests; seven targeted responsive/browser cases (one duplicate viewport audit skipped). A ten-capture synthetic UI journey created a project on desktop, reopened it on phone, preserved interpretation and Field Notes, built a Meso relationship and verified the full-project JSON download.
+- [x] Consolidate editor typography/evidence styles, load the actual italic font, and align position/Delete controls with the form. Keep Map / Notebook / Tools / work level and the requested evidence/question/action order. Keep the report action in the project header across memo entry, mapping and final summary; completion must not recreate a report footer.
+- [x] Local checks passed: 280 App/accessibility tests; seven targeted responsive/browser cases (one duplicate viewport audit skipped). A ten-capture synthetic UI journey created a project on desktop, reopened it on phone, preserved interpretation and Field Notes across all four levels, built cumulative relationships, opened the final summary and verified the full-project JSON download.
 - [ ] Run the exact-source hosted checks, merge PR #55 into main, and verify the successful main build.
 - [ ] Deploy the checked main package to Dev and production; verify source, traffic, model binding and every served file.
 - [ ] Capture the ten new production screenshots and retain their provenance, with all APIs isolated from real course data and no live model calls.
