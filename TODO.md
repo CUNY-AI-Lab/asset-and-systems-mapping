@@ -10,8 +10,21 @@ Add the exact Stem Splitter credit: **Built through the Critical AI Literacy Ins
 - [x] Reserve the measured footer border-box height once, including safe-area padding; retain full-screen/print behavior and budget compact Tools against the available map height.
 - [x] Local checks passed: three report component tests, eight isolated Worker/report browser-runtime checks, and five affected responsive/browser checks (one duplicate viewport audit skipped). The fictional ten-capture journey passed all four levels, feedback recovery, saved notes and JSON export, including a 20-pixel safe-area inset. Local desktop and phone previews were shown inline in chat.
 - [x] The full hosted accessibility run exposed a compressed presentation row in short-phone Tools. Keep each row's natural height and scroll the panel instead; the four unchanged expanded-Tools/dark-search accessibility cases and both workspace-control cases then passed locally.
-- [ ] Verify the successful exact-main package and deploy it to both existing environments, preserving bindings and course data.
-- [ ] Capture the updated production journey and embed its screenshots in chat, with fictional API responses and no live model calls.
+- [x] The successful exact-main package is deployed to Dev and production; all 36 served files, source, 100% traffic and preserved binding fingerprints verified.
+- [x] Ten fresh production captures and a separate ten-capture Dev set passed all footer/clearance audits; the production images are delivered inline in chat with fictional API responses and no live model calls.
+
+## Verified institute-credit footer release — November 3, 2026
+
+Application source **`48efc09a9d9a73d4ea6a35efd3fb6a0096beb2e0`** is deployed to Dev and production from the [successful exact-main package](https://github.com/CUNY-AI-Lab/systems-mapping/actions/runs/41651670115). Hosted checks passed **1,660 unit/Worker tests and 106 browser checks**, with four conditional skips in each suite. Source, tree, configuration, lockfile and package checksums match; the uploaded prebuilt Worker has the same SHA-256 as the preceding UI release, and all **36 frontend files** match the checked package on both served origins.
+
+- The shared footer shows the exact institute/lab credit and links only CUNY AI Lab, matching the committed Stem Splitter reference. It remains present across sign-in, account, memo, map, notes and summary, including when reporting is unavailable. The report stays in the workspace header. The measured border-box reserves approximately 32 pixels on desktop and 51 pixels on phone; safe-area padding is counted once. Full screen and print hide the footer.
+- Responsive verification corrected both a safe-area measurement issue and short-phone Tools row compression. Rows keep their touch-target height and the panel scrolls; compact popovers use the actual available canvas height. The unchanged failing accessibility cases now pass. Independent signed-out checks passed seven light/dark/portrait/landscape cases at 320/390/768/1440 widths; expected synthetic account 401 responses are recorded separately from errors.
+- **Dev:** deployment `44ec3af5-6d40-4846-8823-87c354f82285`; version `41f59ea5-3469-4627-b005-f2c515f67c20`; **100% traffic**.
+- **Production:** deployment `b018c017-4fab-4eea-a6a2-019ad7a47a8c`; version `a209ac09-71d4-4ae1-8e9b-aaf85b1eb03a`; **100% traffic**.
+- Readiness, anonymous project denial (401/no-store), all 36 asset hashes and GPT-OSS 120B readback passed on both origins. Effective binding fingerprints match the pre-deployment values, excluding release and asset bindings. Course storage, permissions and model configuration were preserved.
+- The fresh served journey passed on each origin with zero page/console errors: usable feedback after invalid suggestions, rereading, interpretation, saved notes, all four levels, summary and full-project JSON. Each capture verifies the footer text, Lab link, measured height and bottom clearance; a 20-pixel safe-area inset is also exercised. The final dark capture follows the successful download and closes its dialog so the footer remains visible.
+- **Ten production PNGs:** `/Users/milwright/Documents/Codex/2026-11-03/systems-mapping-footer-credit/production/`; a separate Dev set and portable screenshot archives are retained alongside it. Image manifests record source, dimensions and SHA-256. All account/auth/model responses in these journeys are isolated fictional fixtures; no student documents, real course writes, live model calls or bug-report submissions were used. Real CUNY-session and model-quality acceptance remain separate.
+- This completion receipt changes documentation only. Deployed application source remains `48efc09a9d9a73d4ea6a35efd3fb6a0096beb2e0`.
 
 ## Previous request — November 3: reconcile style, merge and deployment; ten E2E screenshots
 
@@ -71,9 +84,9 @@ The user's new screenshots and direct clarification supersede the separate full-
 
 ## Current reconciled status — November 3, 2026
 
-This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. The current independently verified deployed application is **`7a4f45d5d92c16c7252ab9671242ae19ac5da2cb` on Dev and production**, released from the successful main-push package. The completion receipt changes documentation only.
+This is the current status index. Dated sections below retain their original evidence and superseded decisions; their unchecked boxes are not a second active backlog. The current independently verified deployed application is **`48efc09a9d9a73d4ea6a35efd3fb6a0096beb2e0` on Dev and production**, released from the successful main-push package with the institute-credit footer. The completion receipt changes documentation only.
 
-### Current UI requirements (12 groups)
+### Current UI requirements (13 groups)
 
 | Requirement group | Implementation | Verification | Deployment |
 | --- | --- | --- | --- |
@@ -89,8 +102,9 @@ This is the current status index. Dated sections below retain their original evi
 | Feedback-only recovery preserves graph/decisions and conservative readiness; feedback styling, source quote and keyboard retry | Complete | Exact-source and served light/dark desktop/phone checks passed | Dev + production |
 | Memo submission wording and retained course upload / pedagogical sequence | Complete | Included in checked release source | Dev + production |
 | GPT-OSS 120B configuration preserved across coordinated owners | Complete | Both deployed version bindings independently read back | Dev + production |
+| Exact institute/lab credit in a compact wrapping footer, linked Lab, measured safe-area clearance and retained header report | Complete | Hosted checks, both served ten-capture journeys and seven independent signed-out local cases passed | Dev + production |
 
-**Tally: all 12 current requirement groups are implemented, verified within the stated scope and deployed.** This denominator excludes historical checkboxes, documentation chores and the acceptance/access limitations below. It is not a claim of real-student, physical-device or live model-quality acceptance.
+**Tally: all 13 current requirement groups are implemented, verified within the stated scope and deployed.** This denominator excludes historical checkboxes, documentation chores and the acceptance/access limitations below. It is not a claim of real-student, physical-device or live model-quality acceptance.
 
 ### Newer work and owner reconciliation
 
@@ -108,7 +122,7 @@ This is the current status index. Dated sections below retain their original evi
 
 ### Verified release evidence and provenance
 
-The latest exact-main checks, Dev/production IDs, served-file and binding readbacks and ten new screenshots are recorded in the November 3 main release receipt above. The editor refinement and panel integration receipts retain evidence for their preceding sources. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
+The latest exact-main checks, Dev/production IDs, served-file and binding readbacks and ten new screenshots are recorded in the institute-credit footer release receipt above. The editor refinement and panel integration receipts retain evidence for their preceding sources. Earlier `11d0491` receipts remain historical evidence in the following section. No live model call, credential operation, participant-data access or role grant accompanies this UI verification.
 
 ## Verified panel integration and downloads release — November 2, 2026
 
