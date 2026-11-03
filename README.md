@@ -48,6 +48,8 @@ The workspace has two views: **Map** and **Notebook**. The five stage records (`
 
 The notebook contains the current next action. **Map / Notebook / Tools / work level** share its top edge. When Notebook is closed, these controls float over the canvas so they remain available without reserving a separate toolbar strip. The report button stays in the main project header, including memo entry and the final summary. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
 
+The compact footer reads: “Built through the Critical AI Literacy Institute. A continuing project with the CUNY AI Lab.” Only **CUNY AI Lab** links to the lab website. The credit appears across sign-in, account and project screens, wraps on phones and gives way to the canvas in full screen.
+
 Field Notes are required to complete a scale; students can return to Map at any time. They use the existing immediate draft journal and per-scale project saves. A separate historical recovery cache is [proposed](docs/field-notes-recovery-proposal.md), not implemented.
 
 Instructors customize the question from **Instructor Console → Course settings → Edit prompts**. Choose a scale, connect the prompt to the lesson's case or reading, optionally open Student preview, then Publish changes. Draft creation and saving are handled within that flow; version history and model settings remain collapsed. See [instructor settings](docs/instructor-settings.md).

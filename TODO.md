@@ -2,7 +2,17 @@
 
 Updated: 2026-11-03
 
-## Latest request — November 3: reconcile style, merge and deployment; ten E2E screenshots
+## Latest request — November 3: institute credit in the footer and screenshots in chat
+
+Add the exact Stem Splitter credit: **Built through the Critical AI Literacy Institute. A continuing project with the CUNY AI Lab.** Link only CUNY AI Lab to `https://ailab.gc.cuny.edu/`, and show the updated screenshots directly in chat.
+
+- [x] Add one shared, compact credit footer across the Cloudflare account and Node entrypoints, including when reporting is unavailable. Preserve the report host and its drafts in the project header.
+- [x] Reserve the measured footer border-box height once, including safe-area padding; retain full-screen/print behavior and budget compact Tools against the available map height.
+- [x] Local checks passed: three report component tests, eight isolated Worker/report browser-runtime checks, and five affected responsive/browser checks (one duplicate viewport audit skipped). The fictional ten-capture journey passed all four levels, feedback recovery, saved notes and JSON export, including a 20-pixel safe-area inset. Local desktop and phone previews were shown inline in chat.
+- [ ] Verify the successful exact-main package and deploy it to both existing environments, preserving bindings and course data.
+- [ ] Capture the updated production journey and embed its screenshots in chat, with fictional API responses and no live model calls.
+
+## Previous request — November 3: reconcile style, merge and deployment; ten E2E screenshots
 
 The requested style and structure refinements are complete. PR #55 is merged into main; GitHub also marked the included PR #51 merged. The successful exact-main CI package for **`7a4f45d5d92c16c7252ab9671242ae19ac5da2cb`** is deployed to Dev and production. Both served UI journeys passed and ten fresh production screenshots are available in the receipt below.
 

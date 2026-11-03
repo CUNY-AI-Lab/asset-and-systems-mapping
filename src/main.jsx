@@ -7,6 +7,7 @@ import App from './App.jsx';
 import AccountWorkspace from './AccountWorkspace.jsx';
 import BugReport from './support/BugReport.jsx';
 import { BugReportDockProvider } from './support/BugReportDock.jsx';
+import ProjectFooter from './ProjectFooter.jsx';
 import './styles.css';
 import './map-review.css';
 import './map-studio.css';
@@ -14,9 +15,10 @@ import './ui/design-system.css';
 import './workspace-layout.css';
 import './notebook.css';
 import './ui/control-system.css';
+import './project-footer.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {import.meta.env.VITE_ACCOUNT_WORKSPACE === 'true' ? <BugReportDockProvider><AccountWorkspace /><BugReport /></BugReportDockProvider> : <App />}
+    {import.meta.env.VITE_ACCOUNT_WORKSPACE === 'true' ? <BugReportDockProvider><AccountWorkspace /><BugReport /></BugReportDockProvider> : <><App /><ProjectFooter /></>}
   </React.StrictMode>,
 );

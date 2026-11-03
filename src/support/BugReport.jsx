@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { mountBugReport } from './form.js';
 import { useBugReportDockTarget } from './BugReportDock.jsx';
+import ProjectFooter from '../ProjectFooter.jsx';
 import './form.css';
 import './mapping.css';
 import { mountBugReport as mountContactReport } from './contact-form.js';
@@ -68,5 +69,5 @@ export default function BugReport() {
     } });
     return report;
   }, [mode, delivery, host]);
-  return enabled ? <footer ref={footer} hidden={Boolean(dock)} className={`bug-report-footer${mode === 'contact' ? ' bug-report-footer--contact' : ''}`} aria-label="Bug reports" /> : null;
+  return <ProjectFooter>{enabled && <div ref={footer} hidden={Boolean(dock)} className={`bug-report-footer${mode === 'contact' ? ' bug-report-footer--contact' : ''}`} />}</ProjectFooter>;
 }

@@ -1,0 +1,35 @@
+.project-footer {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  padding: 6px calc(12px + var(--safe-right)) calc(6px + var(--safe-bottom)) calc(12px + var(--safe-left));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.project-credit { flex: 1; min-width: 0; margin: 0; color: var(--muted); font: 400 12px/1.55 var(--body); overflow-wrap: anywhere; }
+.project-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.project-footer > .bug-report-footer { flex: 0 0 auto; }
+.has-project-footer .app-footer { bottom: var(--project-footer-height); height: var(--footer); padding-bottom: 0; }
+.has-project-footer .workspace { padding-bottom: calc(var(--footer) + var(--project-footer-height) + 32px); }
+.has-project-footer .workspace.workspace--studio { padding-bottom: calc(var(--footer) + var(--project-footer-height) + 4px); }
+.has-project-footer .workspace--studio .notebook-tools-body { max-height: max(88px, calc(100dvh - 180px - var(--project-footer-height))); }
+.has-project-footer .access-shell { padding-bottom: 0; }
+.has-project-footer :is(.access-main, .studio-dashboard, .teacher-main) { padding-bottom: calc(var(--project-footer-height) + 40px); }
+.has-project-footer .toast { bottom: calc(var(--footer) + var(--project-footer-height) + 20px); }
+.map-fullscreen-open .project-footer { display: none; }
+@media (min-width: 981px) {
+  .has-project-footer .workspace:not(.workspace--studio) .map-stage:not(.is-fullscreen):not(:has(> .memo-drawer[open])) .canvas-chrome__bottom { bottom: calc(var(--footer) + var(--project-footer-height) + 8px); }
+}
+@media (max-width: 980px) {
+  .has-project-footer .workspace:not(.workspace--studio) .inspector { bottom: calc(var(--footer) + var(--project-footer-height)); }
+}
+@media (max-width: 600px) {
+  .project-footer { gap: 12px; }
+  .project-footer .bug-report__trigger { width: 44px; height: 44px; padding: 0; }
+  .project-footer .bug-report__trigger > span { display: none; }
+}
+@media print { .project-footer { display: none; } }

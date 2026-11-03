@@ -122,8 +122,12 @@ test('workspace controls sit inside the panel and reclaim the canvas strip', asy
     const stageBounds = await page.locator('.map-stage').boundingBox();
     expect(Math.abs(navBounds.x + navBounds.width - (stageBounds.x + stageBounds.width))).toBeLessThan(24);
     const canvasBounds = await canvas.boundingBox();
+    const credits = page.getByRole('contentinfo', { name: 'Project credits', exact: true });
+    await expect(credits).toBeInViewport({ ratio: 1 });
+    const creditBounds = await credits.boundingBox();
     expect(canvasBounds.y).toBeLessThanOrEqual(headerBounds.y + headerBounds.height + 8);
-    expect(canvasBounds.height).toBeGreaterThanOrEqual(size.height - canvasBounds.y - 12);
+    expect(canvasBounds.y + canvasBounds.height).toBeLessThanOrEqual(creditBounds.y);
+    expect(canvasBounds.height).toBeGreaterThanOrEqual(creditBounds.y - canvasBounds.y - 12);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
     await captureSourceRenderedScreenshot(page, testInfo, `Workspace controls ${size.width}x${size.height}`);
