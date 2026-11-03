@@ -48,6 +48,7 @@
 .notebook-map-tools > summary::-webkit-details-marker { display: none; }
 .notebook-tools-panel { position: absolute; top: 100%; right: 0; width: var(--map-tools-width, 280px); max-width: calc(100vw - 24px); }
 .notebook-tools-body { position: relative; width: 100%; max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 18px #0002; }
+.notebook-tools-body > * { flex-shrink: 0; }
 .map-tools-resizer { position: absolute; z-index: 1; inset: 0 auto 0 -6px; width: 12px; display: flex; align-items: center; justify-content: center; cursor: col-resize; touch-action: none; user-select: none; }
 .map-tools-resizer span { width: 3px; height: 40px; border-radius: 3px; background: var(--line-strong); }
 .map-tools-resizer:hover, .map-tools-resizer:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; background: var(--pale-blue); }

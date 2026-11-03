@@ -9,6 +9,7 @@ Add the exact Stem Splitter credit: **Built through the Critical AI Literacy Ins
 - [x] Add one shared, compact credit footer across the Cloudflare account and Node entrypoints, including when reporting is unavailable. Preserve the report host and its drafts in the project header.
 - [x] Reserve the measured footer border-box height once, including safe-area padding; retain full-screen/print behavior and budget compact Tools against the available map height.
 - [x] Local checks passed: three report component tests, eight isolated Worker/report browser-runtime checks, and five affected responsive/browser checks (one duplicate viewport audit skipped). The fictional ten-capture journey passed all four levels, feedback recovery, saved notes and JSON export, including a 20-pixel safe-area inset. Local desktop and phone previews were shown inline in chat.
+- [x] The full hosted accessibility run exposed a compressed presentation row in short-phone Tools. Keep each row's natural height and scroll the panel instead; the four unchanged expanded-Tools/dark-search accessibility cases and both workspace-control cases then passed locally.
 - [ ] Verify the successful exact-main package and deploy it to both existing environments, preserving bindings and course data.
 - [ ] Capture the updated production journey and embed its screenshots in chat, with fictional API responses and no live model calls.
 
