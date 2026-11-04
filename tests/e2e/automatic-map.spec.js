@@ -22,7 +22,7 @@ test('student automatic flow stays simple, editable, and persistent', async ({ p
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Start new project' }).click();
   await expect(page.locator('.project-menu > summary')).toHaveText('Project');
-  await expect(page.getByRole('textbox', { name: 'Map title (optional)' })).not.toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Project title' })).not.toBeVisible();
   await page.getByRole('textbox', { name: /^Memo/ }).fill(memo);
   await captureSourceRenderedScreenshot(page, testInfo, 'Memo intake');
   await page.getByRole('button', { name: 'Memo review', exact: true }).click();

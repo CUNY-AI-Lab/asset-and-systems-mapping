@@ -1584,7 +1584,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('heading', { name: 'Memo' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Start new project' }));
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Untitled systems map');
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Untitled systems map');
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
   });
 
@@ -1605,7 +1605,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('dialog', { name: 'Start new project?' })).not.toBeInTheDocument();
 
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Untitled systems map');
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Untitled systems map');
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('');
 
     openProjectMenu('Projects');
@@ -1623,7 +1623,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(within(savedEarlierProject).getByRole('button', { name: 'Open project' }));
 
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(earlierProject.title);
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue(earlierProject.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(earlierProject.submission.text);
   });
 
@@ -1641,7 +1641,7 @@ describe('Systems Mapping workflow', () => {
     const legacyProjectCard = screen.getByRole('article', { name: legacy.title });
     fireEvent.click(within(legacyProjectCard).getByRole('button', { name: 'Open project' }));
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(legacy.title);
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue(legacy.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(legacy.submission.text);
     await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 10, title: legacy.title, participantName: '' }));
   });
@@ -1693,14 +1693,14 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
     expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('NYC systems and assets map');
-    expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('');
-    expect(screen.getByRole('textbox', { name: /^Person or group/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Question/ })).toHaveValue('How do systems shape access to special-education services in NYC?');
-    expect(screen.getByRole('textbox', { name: /^Time period/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^What to include/ })).toBeVisible();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Map title (optional)' }), { target: { value: 'Family service access map' } });
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue('Family service access map');
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('NYC systems and assets map');
+    expect(screen.getByRole('textbox', { name: 'Name or Group Name' })).toHaveValue('');
+    expect(screen.queryByRole('textbox', { name: /^Person or group/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /^Question/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /^Time period/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /^What to include/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Family service access map' } });
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Family service access map');
     expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
     const memo = screen.getByRole('textbox', { name: /^Memo/ });
     expect(memo).toBeVisible();
@@ -1782,16 +1782,17 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().graph).toEqual(originalGraph);
   });
 
-  it('sends explicit focal person, inquiry, time, and boundary framing only after Generate guidance', async () => {
+  it('preserves saved inquiry framing and sends it only after Generate guidance', async () => {
     const project = createDefaultProject();
     project.instructor.requireStudentConfirmation = true;
-    project.inquiry = '';
+    project.inquiry = [
+      'Focal person or group: Students seeking special-education services',
+      'Map question: Where do referral delays emerge?',
+      'Time period or episode: The first semester after referral',
+      'Map boundary: NYC school and family interactions; clinical treatment is outside scope',
+    ].join('\n');
     await resumeSavedProject(project);
-    fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
-    fireEvent.change(screen.getByRole('textbox', { name: /^Person or group/ }), { target: { value: 'Students seeking special-education services' } });
-    fireEvent.change(screen.getByRole('textbox', { name: /^Question/ }), { target: { value: 'Where do referral delays emerge?' } });
-    fireEvent.change(screen.getByRole('textbox', { name: /^Time period/ }), { target: { value: 'The first semester after referral' } });
-    fireEvent.change(screen.getByRole('textbox', { name: /^What to include/ }), { target: { value: 'NYC school and family interactions; clinical treatment is outside scope' } });
+    expect(storedProject().inquiry).toBe(project.inquiry);
     fireEvent.click(screen.getByRole('button', { name: 'Memo review' }));
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
@@ -1831,16 +1832,16 @@ describe('Systems Mapping workflow', () => {
 
   it('keeps the memo intake limited to fields students need', async () => {
     await resumeSavedProject(createDefaultProject());
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).not.toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Project title' })).not.toBeVisible();
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
 
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Student or group name (optional)' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Person or group/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Question/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Time period/ })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^What to include/ })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Name or Group Name' })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: /^Person or group/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /^Question/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /^Time period/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /^What to include/ })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toBeVisible();
     expect(screen.queryByLabelText('Author or creator')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Date')).not.toBeInTheDocument();
@@ -2312,12 +2313,12 @@ describe('Systems Mapping workflow', () => {
 
   it('persists the optional student or group name and shows it in the project-link summary', async () => {
     await resumeSavedProject(createDefaultProject());
-    const participant = screen.getByRole('textbox', { name: 'Student or group name (optional)' });
+    const participant = screen.getByRole('textbox', { name: 'Name or Group Name' });
     fireEvent.change(participant, { target: { value: 'East Harlem mapping group' } });
     await waitFor(() => expect(storedProject().participantName).toBe('East Harlem mapping group'));
 
     const dialog = openProjectLink();
-    expect(within(dialog).getByText('Student or group name (optional)')).toBeVisible();
+    expect(within(dialog).getByText('Name or Group Name')).toBeVisible();
     expect(within(dialog).getByText('East Harlem mapping group')).toBeVisible();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close Project link' }));
 
@@ -2325,7 +2326,7 @@ describe('Systems Mapping workflow', () => {
     render(<App />);
     await showResumeScreen();
     openProjectFromList('NYC systems and assets map');
-    expect(await screen.findByRole('textbox', { name: 'Student or group name (optional)' })).toHaveValue('East Harlem mapping group');
+    expect(await screen.findByRole('textbox', { name: 'Name or Group Name' })).toHaveValue('East Harlem mapping group');
   });
 
   it('discloses the complete server-stored project and records revision, sync, and expiry metadata after link creation', async () => {
@@ -2381,7 +2382,7 @@ describe('Systems Mapping workflow', () => {
       : defaultFetch(path, options));
     vi.stubGlobal('fetch', fetchMock);
     render(<App startInWorkspace onAccountDashboard={vi.fn()} />);
-    await screen.findByRole('textbox', { name: 'Student or group name (optional)' });
+    await screen.findByRole('textbox', { name: 'Name or Group Name' });
     window.history.replaceState(null, '', '/?course=another-course');
     const dialog = openProjectLink();
     expect(within(dialog).getByText('Opening this link requires CUNY Login and access to this course')).toBeVisible();
@@ -2429,7 +2430,7 @@ describe('Systems Mapping workflow', () => {
 
     await resumeSavedProject(project);
     vi.useFakeTimers();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Student or group name (optional)' }), { target: { value: 'Device-side revision' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name or Group Name' }), { target: { value: 'Device-side revision' } });
     await act(async () => {
       vi.advanceTimersByTime(4100);
       await Promise.resolve();
@@ -6368,25 +6369,24 @@ Overall, the posting history documents a working student repeatedly turning to R
     });
   });
 
-  it('saves and restores the intake evidence used and missing-perspectives framing', async () => {
+  it('preserves prior inquiry evidence while editing the two project details', async () => {
     const project = createDefaultProject();
+    project.inquiry = 'Evidence used: Memo and public meeting notes\nMissing perspectives: People who could not attend';
     await resumeSavedProject(project);
-    const evidence = 'Memo, public meeting notes, and program schedule';
-    const missing = 'Accounts from people who could not attend the meeting';
-    fireEvent.change(screen.getByRole('textbox', { name: /^Evidence/ }), { target: { value: evidence } });
-    fireEvent.change(screen.getByRole('textbox', { name: /^Missing voices/ }), { target: { value: missing } });
-    await waitFor(() => {
-      expect(storedProject().inquiry).toContain(`Evidence used: ${evidence}`);
-      expect(storedProject().inquiry).toContain(`Missing perspectives: ${missing}`);
-    });
+    fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
+    expect(document.querySelectorAll('.project-context-fields input')).toHaveLength(2);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Community access map' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name or Group Name' }), { target: { value: 'Study group' } });
+    await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Community access map', participantName: 'Study group', inquiry: project.inquiry }));
 
     cleanup();
     render(<App />);
     await showResumeScreen();
-    openProjectFromList(project.title);
+    openProjectFromList('Community access map');
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: /^Evidence/ })).toHaveValue(evidence);
-    expect(screen.getByRole('textbox', { name: /^Missing voices/ })).toHaveValue(missing);
+    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Community access map');
+    expect(screen.getByRole('textbox', { name: 'Name or Group Name' })).toHaveValue('Study group');
+    expect(storedProject().inquiry).toBe(project.inquiry);
   });
 
   it('combines the current level and stage in the Progress control and dialog context', async () => {

@@ -1182,13 +1182,6 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
     draft[field] = value;
     invalidatePreflight(draft);
   });
-  const inquiryContext = parseInquiryContext(project.inquiry);
-  const setInquiryField = (field, value) => update((draft) => {
-    const next = parseInquiryContext(draft.inquiry);
-    next[field] = value;
-    draft.inquiry = composeInquiryContext(next);
-    invalidatePreflight(draft);
-  });
   const onFile = async (event) => {
     const input = event.currentTarget;
     const [file] = input.files;
@@ -1237,14 +1230,8 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
       <PageHeading title="Memo" description={`${memoLabel(project)} — ${isPart2(project.activeScale) ? 'build on your first memo and the existing map' : 'set the focus for your map'}`} />
       <LevelTrail active={project.activeScale} completed={project.completedScales} />
       <details className="project-details"><summary>Project details</summary><div className="project-context-fields">
-        <Field label="Map title (optional)"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
-        <Field label="Student or group name (optional)"><input autoComplete="name" maxLength={CONFIG_TEXT_LIMIT} value={project.participantName || ''} onChange={(event) => setProjectField('participantName', event.target.value)} /></Field>
-        <Field label="Person or group"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.focal} onChange={(event) => setInquiryField('focal', event.target.value)} /></Field>
-        <Field label="Question"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.question} onChange={(event) => setInquiryField('question', event.target.value)} /></Field>
-        <Field label="Time period"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.time} onChange={(event) => setInquiryField('time', event.target.value)} /></Field>
-        <Field label="What to include"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.boundary} onChange={(event) => setInquiryField('boundary', event.target.value)} /></Field>
-        <Field label="Evidence" hint="Where does your information come from?"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.evidence} onChange={(event) => setInquiryField('evidence', event.target.value)} /></Field>
-        <Field label="Missing voices"><input maxLength={CONFIG_TEXT_LIMIT} value={inquiryContext.voices} onChange={(event) => setInquiryField('voices', event.target.value)} /></Field>
+        <Field label="Project title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
+        <Field label="Name or Group Name"><input autoComplete="name" maxLength={CONFIG_TEXT_LIMIT} value={project.participantName || ''} onChange={(event) => setProjectField('participantName', event.target.value)} /></Field>
       </div>
       </details><div className="intake-grid">
         <div>
@@ -7844,7 +7831,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       <div className="confirm-panel">
         <dl className="project-link-summary">
           <div>
-            <dt>Student or group name (optional)</dt>
+            <dt>Name or Group Name</dt>
             <dd>{project.participantName?.trim() || 'Not added'}</dd>
           </div>
         </dl>
