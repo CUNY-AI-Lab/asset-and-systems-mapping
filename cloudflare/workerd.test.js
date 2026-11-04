@@ -9,6 +9,9 @@ import { readFile } from 'node:fs/promises';
 import { serializedEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
 import { DEFAULT_TEACHING_PROFILE } from '../server/config.js';
 import { STORAGE_KEY } from '../src/projectLibrary.js';
+import { groupProject } from '../tests/fixtures/group-project.js';
+import { beginPart2 } from '../src/projectMemo.js';
+import { STRONG_MACRO_MEMO } from '../tests/fixtures/two-memo-cases.js';
 
 const ORIGIN = 'https://systems-mapping.ailab-452.workers.dev';
 const sessions = Object.fromEntries(['alice', 'bob', 'admin', 'instructor'].map(name => [name, crypto.randomUUID() + '.' + 's'.repeat(43)]));
@@ -74,6 +77,28 @@ test('account projects isolate users, reject stale writes, and survive a real Du
   expect(reopened.title).toBe(project.title);
   expect(reopened.layout).toEqual({ phoneOverview: 'preserve' });
   const raced = await Promise.all([put(1), put(1)]); expect(raced.map(value => value.status).sort()).toEqual([200, 409]);
+});
+test('both memos and manual group membership survive account persistence and Durable Object eviction', async () => {
+  const project = groupProject(); project.id = 'two-memo-account-map'; project.title = 'Two-memo persistence example';
+  beginPart2(project); project.part2Submission.text = STRONG_MACRO_MEMO;
+  const path = `/api/cloud/projects/${project.id}`;
+  const put = revision => request(path, 'alice', { method: 'PUT', body: JSON.stringify({ project: serializeProject(project), revision }) });
+  expect((await put(0)).status).toBe(200);
+  expect((await request(path, 'bob')).status).toBe(404);
+  const original = structuredClone(project.graph);
+  const group = project.graph.edges.find(edge => edge.relationshipIds);
+  group.relationshipIds = group.relationshipIds.slice(0, 1);
+  group.annotation.text = 'Student-selected membership after checking both memos.';
+  expect((await put(1)).status).toBe(200);
+  await worker.evictDurableObject('COURSES', { name: 'test-course' });
+  const reopened = JSON.parse((await (await request(path)).json()).project);
+  expect(reopened.submission).toEqual(project.submission);
+  expect(reopened.part2Submission).toEqual(project.part2Submission);
+  expect(reopened.graph.edges.find(edge => edge.id === group.id)).toEqual(group);
+  expect(reopened.graph.nodes).toEqual(original.nodes);
+  expect(reopened.graph.edges.filter(edge => edge.scale === 'meso')).toEqual(original.edges.filter(edge => edge.scale === 'meso'));
+  expect((await put(1)).status).toBe(409);
+  expect((await request(path, 'bob')).status).toBe(404);
 });
 test('project progress is private metadata and revision-checked deletion never affects another owner',async()=>{
   const project=newProject();project.id='synthetic-notes-before-map';project.submission.text='A private synthetic memo.';project.reflection='A private synthetic observation.';
