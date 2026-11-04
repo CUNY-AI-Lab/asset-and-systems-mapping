@@ -16,6 +16,7 @@ import './workspace-layout.css';
 import './notebook.css';
 import './ui/control-system.css';
 import './project-footer.css';
+import './memo-workflow.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

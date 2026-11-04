@@ -1,3 +1,6 @@
+import { classifyExcerptMatch } from '../shared/memo-quote-match.js';
+import MemoWorkflowNotebook from './MemoWorkflowNotebook.jsx';
+import { NODE_SUBMISSION, submittedReviewIssue } from '../shared/node-submission.js';
 import { relationshipGroupIssue, groupedRelationships } from '../shared/relationship-groups.js';
 import { activeSubmission, beginPart2, isPart2, reviewMemoText, memoLabel } from './projectMemo.js';
 import ProjectCompletion from './ProjectCompletion.jsx';
@@ -23,6 +26,7 @@ import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-j
 import { prepareProviderMemo } from '../shared/provider-memo.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
+import { MEMO_WORKFLOW, appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
 import { levelRailState, nextStep, stageForPanelMode } from './nextStep.js';
 import { LevelSelect, NotebookSection, ProjectMenu, PANEL_TABS, WorkPanelTabs } from './MapStudio.jsx';
 import { hasPendingGuidance } from './durableGuidance.js';
@@ -442,20 +446,21 @@ function relationshipProcessContext(process) {
 function carriedReviewConnections(project) {
   return project.graph.edges
     .filter((edge) => edge.status !== 'rejected' && edge.claimState !== 'retired')
-    .map(({ id, scale, source, target, verb, relationshipProcess, evidence, relationshipIds }) => ({ source, target, verb, ...relationshipProcessContext(relationshipProcess), ...(project.activeScale === 'macrosphere' ? { id, scale, evidence: String(evidence || '').slice(0, 1000), ...(relationshipIds ? { relationshipIds } : {}) } : {}) }));
+    .map(({ id, scale, source, target, verb, relationshipProcess, evidence, relationshipIds }) => ({ source, target, verb, ...relationshipProcessContext(relationshipProcess), ...(isPart2(project.activeScale) ? { id, scale, evidence: String(evidence || '').slice(0, 1000), ...(relationshipIds ? { relationshipIds } : {}) } : {}) }));
 }
 
-export function preflightEvaluationPayload(project) {
-  const carriedNodes = carriedReviewNodes(project);
+export function preflightEvaluationPayload(project, memoFirstWorkflow = false) {
+  const carriedNodes = memoFirstWorkflow && isPart2(project.activeScale) ? project.graph.nodes.filter(isLiveMapItem).map(({id,label,type,scale}) => ({id,label,type,scale})) : carriedReviewNodes(project);
   const carriedConnections = carriedReviewConnections(project);
   const fieldNotes = previousFieldNotes(project);
   return {
+    ...(memoFirstWorkflow ? { workflowMode: NODE_SUBMISSION } : {}),
     projectMetadata: projectMetadataForReview(project),
     activeScale: project.activeScale,
     stageId: STAGES[project.stage]?.id || 'review-suggestions',
     inquiry: project.inquiry,
     sourceRecord: { ...sourceRecordForEvaluation(activeSubmission(project)), sensitive: project.submission.sensitive || activeSubmission(project).sensitive, consent: (!project.submission.sensitive || project.submission.consent) && (!activeSubmission(project).sensitive || activeSubmission(project).consent) },
-    sourceMaterial: reviewMemoText(project),
+    sourceMaterial: memoFirstWorkflow ? activeSubmission(project).text : reviewMemoText(project),
     projectOverlay: projectOverlayForEvaluation(project.configs.preflight),
     studentJudgments: studentJudgments(project),
     ...(fieldNotes ? { fieldNotes } : {}),
@@ -586,8 +591,8 @@ function normalizeConnectionSuggestions(response, project) {
   });
 }
 
-function authoritativeEvaluationKey(project) {
-  const payload = preflightEvaluationPayload(project);
+function authoritativeEvaluationKey(project, memoFirstWorkflow = false) {
+  const payload = preflightEvaluationPayload(project, memoFirstWorkflow);
   const { clientUpdatedAt: _clientUpdatedAt, stage: _stage, furthestStage: _furthestStage, ...stableMetadata } = payload.projectMetadata;
   return stableId('evaluation-request', JSON.stringify({
     ...payload, projectMetadata: stableMetadata, contract: GUIDANCE_CONTRACT_VERSION,
@@ -671,7 +676,7 @@ function assertAtomicMemoReview(review, project) {
   });
 }
 
-function normalizePreflightEvaluation(evaluation, project) {
+function normalizePreflightEvaluation(evaluation, project, memoFirstWorkflow = false) {
   if (!evaluation || typeof evaluation !== 'object' || Array.isArray(evaluation)) throw new Error('The classroom server returned an invalid memo review.');
   const expectedKeys = ['id', 'review', 'configSnapshot', 'runtime', 'createdAt', 'expiresAt'];
   if (Object.keys(evaluation).length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(evaluation, key))) {
@@ -681,7 +686,10 @@ function normalizePreflightEvaluation(evaluation, project) {
   if (!evaluation.review || typeof evaluation.review !== 'object' || Array.isArray(evaluation.review) || !evaluation.configSnapshot || !evaluation.runtime) {
     throw new Error('The classroom server returned an incomplete memo review.');
   }
-  assertAtomicMemoReview(evaluation.review, project);
+  if (memoFirstWorkflow) {
+    const issue = submittedReviewIssue(evaluation.review, project.activeScale, activeSubmission(project).text);
+    if (issue) throw new Error('The memo could not be processed: ' + issue);
+  } else assertAtomicMemoReview(evaluation.review, project);
   const preflight = {
     memoReview: structuredClone(evaluation.review),
     configurationSnapshot: structuredClone(evaluation.configSnapshot),
@@ -691,7 +699,7 @@ function normalizePreflightEvaluation(evaluation, project) {
       createdAt: evaluation.createdAt,
       expiresAt: evaluation.expiresAt,
     },
-    sourceFingerprint: stableId('src', reviewMemoText(project)),
+    sourceFingerprint: stableId('src', memoFirstWorkflow ? activeSubmission(project).text : reviewMemoText(project)),
   };
   const candidate = structuredClone(project);
   candidate.preflight = preflight;
@@ -1158,7 +1166,7 @@ export function graphCsv(project) {
 }
 
 
-function IntakeStage({ project, update, toast, onRequestRestart, captureImportScope }) {
+function IntakeStage({ project, update, toast, onRequestRestart, captureImportScope, action }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [fileNotice, setFileNotice] = useState('');
   const importRequest = useRef(0);
@@ -1228,6 +1236,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
   return (
     <div className="wide stage-enter intake-stage">
       <PageHeading title="Memo" description={`${memoLabel(project)} — ${isPart2(project.activeScale) ? 'build on your first memo and the existing map' : 'set the focus for your map'}`} />
+      {action && <div className="memo-submit-top">{action}</div>}
       <LevelTrail active={project.activeScale} completed={project.completedScales} />
       <details className="project-details"><summary>Project details</summary><div className="project-context-fields">
         <Field label="Project title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
@@ -1236,7 +1245,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
       </details><div className="intake-grid">
         <div>
           <label className="upload-zone">
-            <input type="file" accept=".docx,.txt,.md,.html,.htm,.json,.pdf" onChange={onFile} />
+            <input type="file" aria-label={`Upload ${isPart2(project.activeScale) ? 'Part 2' : 'Part 1'} memo`} accept=".docx,.txt,.md,.html,.htm,.json,.pdf" onChange={onFile} />
             <Icon name="upload" size={26} />
             <strong>{activeSubmission(project).fileName || 'Upload a memo'}</strong>
             <span>DOCX, TXT, MD, HTML, JSON, or PDF</span>
@@ -1245,7 +1254,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
           <Field label="Memo" hint={`${activeSubmission(project).text.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words`}>
             <textarea className="memo-text" maxLength="500000" value={activeSubmission(project).text} onChange={(event) => setSubmission('text', event.target.value)} rows="15" />
           </Field>
-          {hasProjectWork(project) && <MemoForkButton onRequestRestart={onRequestRestart} />}
+          {!action && hasProjectWork(project) && <MemoForkButton onRequestRestart={onRequestRestart} />}
         </div>
         <aside className="memo-panel">
           <button type="button" className="disclosure-button" aria-label="Privacy" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>
@@ -1797,7 +1806,7 @@ function SuggestionsPanel({ project, update, toast, prompt, onPromptChange, busy
         <MapTextEditor key={`label:${item.id}`} label={mesoLinkageRow ? 'Mesosystem label' : structureRow ? 'Macro-level condition label' : 'Node label'} maxLength={NODE_LABEL_LIMIT} value={item.label} validate={(value) => nodeLabelIssue(value, item, project.graph.nodes)} onSave={(value) => edit(kind, item.id, 'label', value)} />
         {!mesoLinkageRow && <Field label={structureRow ? 'Macro-level condition type' : 'Node type'}><select value={item.type} onChange={(event) => edit(kind, item.id, 'type', event.target.value)}>{candidateNodeTypes.map((type) => <option key={type}>{type}</option>)}</select></Field>}
       </> : <>
-        {item.relationshipIds && <><Field label="Macrosystem heading"><select value={item.source} onChange={event => edit(kind, item.id, 'source', event.target.value)}>{liveMapNodes.filter(node => ['exosphere', 'macrosphere'].includes(node.scale)).map(node => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><RelationshipGroupPicker project={project} value={item.relationshipIds} onChange={ids => edit(kind, item.id, 'relationshipIds', ids)} /></>}{!item.relationshipIds && isRelationshipReviewScale(project.activeScale) && <><Field label="From"><select value={item.source} onChange={(event) => edit(kind, item.id, 'source', event.target.value)}>{endpointOptions(project.activeScale === 'macrosphere' ? nodesForConnectionPrompt(project) : availableMicroEndpoints, item.source).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="To"><select value={item.target} onChange={(event) => edit(kind, item.id, 'target', event.target.value)}>{endpointOptions(project.activeScale === 'macrosphere' ? nodesForConnectionPrompt(project) : availableMicroEndpoints, item.target).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field></>}
+        {item.relationshipIds && <><Field label="Heading"><select value={item.source} onChange={event => edit(kind, item.id, 'source', event.target.value)}>{liveMapNodes.filter(node => ['exosphere', 'macrosphere'].includes(node.scale)).map(node => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><RelationshipGroupPicker project={project} value={item.relationshipIds} onChange={ids => edit(kind, item.id, 'relationshipIds', ids)} /></>}{!item.relationshipIds && isRelationshipReviewScale(project.activeScale) && <><Field label="From"><select value={item.source} onChange={(event) => edit(kind, item.id, 'source', event.target.value)}>{endpointOptions(project.activeScale === 'macrosphere' ? nodesForConnectionPrompt(project) : availableMicroEndpoints, item.source).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="To"><select value={item.target} onChange={(event) => edit(kind, item.id, 'target', event.target.value)}>{endpointOptions(project.activeScale === 'macrosphere' ? nodesForConnectionPrompt(project) : availableMicroEndpoints, item.target).map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field></>}
         {project.activeScale === 'exosphere' && <Field label="Outside decision setting"><select value={item.source} onChange={(event) => edit(kind, item.id, 'source', event.target.value)}>{endpointOptions(acceptedExosphereNodes, item.source).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select></Field>}
         <MapTextEditor key={`verb:${item.id}`} label={project.activeScale === 'exosphere' ? 'How the decision reaches its recipient' : 'Direct connection'} maxLength={RELATIONSHIP_VERB_LIMIT} value={item.verb} options={project.activeScale === 'exosphere' ? exoVerbOptions(item.verb) : undefined} validate={(value) => relationshipIssue(value, item)} onSave={(value) => edit(kind, item.id, 'verb', value)} />
         {project.activeScale === 'exosphere' && <Field label="Affected setting or office"><select value={item.target} onChange={(event) => edit(kind, item.id, 'target', event.target.value)}>{endpointOptions([...mesoSettingNodes, ...acceptedExosphereNodes].filter(node => node.id !== item.source), item.target).map((node) => <option key={node.id} value={node.id}>{node.needsRepair ? 'Needs repair: ' : ''}{node.label}</option>)}</select></Field>}
@@ -3379,7 +3388,7 @@ function AnnotationField({ annotationId, label, value, hint, placeholder, onDraf
   </div>;
 }
 
-function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, onViewportChange, onAnnounce }) {
+function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onViewportChange, onAnnounce }) {
   const sharedBands = ecologyBandGeometry || ecologyBands(phoneLayout, nodes.length, nodes);
   const interactionBands = ecologyInteractionBandGeometry || sharedBands;
   const retainedPlacement = useMemo(() => mapMode === 'ecology' && Boolean(retainedEcologyBoundaries(nodes, edges, phoneLayout, sharedBands)), [nodes, edges, phoneLayout, sharedBands, mapMode]);
@@ -3733,7 +3742,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   }])), [nodes, renderedPositions, phoneLayout, fontRevision]);
   const scopeTraces = storedScopeTraces(nodes);
   const selectedGroup = edges.find(edge => edge.relationshipIds?.length && (selection?.kind === 'edge' ? edge.id === selection.id : edge.source === selection?.id));
-  const readingEdgeIds = new Set(selection?.kind === 'edge' ? [selection.id, ...(selectedGroup?.relationshipIds || [])]
+  const readingEdgeIds = new Set(overviewLabels && !selection ? edges.map(edge=>edge.id) : selection?.kind === 'edge' ? [selection.id, ...(selectedGroup?.relationshipIds || [])]
     : edges.filter(edge => edge.source === selection?.id || edge.target === selection?.id).filter(edge => !edge.relationshipIds?.length).map(edge => edge.id));
   if (selectedGroup) { readingEdgeIds.add(selectedGroup.id); selectedGroup.relationshipIds.forEach(id => readingEdgeIds.add(id)); }
   const readingGeometry = new Map([...nodeVisuals].map(([id, visual]) => [id, visual.geometry]));
@@ -3773,7 +3782,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       : calloutAnchor
       ? `M ${sourcePoint.x} ${sourcePoint.y} L ${calloutAnchor.x} ${calloutAnchor.y} L ${targetPoint.x} ${targetPoint.y}`
       : `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
-    if (readingMode && selectedGroup?.id === edge.id && edge.relationshipIds?.length && groupPoints.length) {
+    if (readingMode && (selectedGroup?.id === edge.id || overviewLabels && !selection) && edge.relationshipIds?.length && groupPoints.length) {
       const anchor = groupPoints[0], targetId = `relationship-anchor:${edge.id}`;
       const groupLayout = attachedConnectionLayout([{...edge,target:targetId}], [...nodes,{id:targetId}],
         new Map([...renderedPositions,[targetId,anchor]]),
@@ -3840,7 +3849,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       const a = nodeVisuals.get(local.source)?.position, b = nodeVisuals.get(local.target)?.position;
       if (!heading || !a || !b) return [];
       const anchor=relationshipAttachment(betweenEndpointLayout,local.id) || {x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-      if (!readingMode || selectedGroup?.id !== edge.id) return [{id:local.id,...anchor}];
+      if (!readingMode || selectedGroup?.id !== edge.id && !(overviewLabels && !selection)) return [{id:local.id,...anchor}];
       const targetId=`group-member:${local.id}`;
       const routed=attachedConnectionLayout([{id:edge.id,source:edge.source,target:targetId}], [...nodes,{id:targetId}],
         new Map([...renderedPositions,[targetId,anchor]]),new Map([...readingGeometry,[targetId,{cardWidth:0,cardHeight:0}]]),new Map());
@@ -3848,8 +3857,8 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     });
     return region && heading ? [{ ...region, edge, heading, vectors, maskId: `${regionMaskPrefix}-group-${edge.id}` }] : [];
   });
-  const graphSummary = `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`;
-  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. Choose a node or connection for details. Drag the map or use arrow keys to pan. Use the mouse wheel or pinch to zoom.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
+  const graphSummary = `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'}${nodeStage ? '' : ` and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`}`;
+  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. ${nodeStage ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
     if (event.key === 'Escape' && interactionRef.current) {
       event.preventDefault();
       const interaction = interactionRef.current;
@@ -3897,14 +3906,14 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       ))}
     </defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
-      {contentBoundaries && <g className="ecology-layers" aria-hidden="true">{['exosphere','micro'].filter(scale=>contentBoundaries[scale]).map(scale=>{const b=contentBoundaries[scale];return <g key={scale} data-ecology-layer={scale} className={`ecology-layer ecology-layer--${scale} is-visible`}><ellipse cx={b.cx} cy={b.cy} rx={b.rx} ry={b.ry}/><g className="ecology-layer__label" transform={`translate(${b.cx} ${b.top+8})`}><rect x="-84" y="-16" width="168" height="32" rx="16"/><text y="5">{scale==='micro'?'Microsystem':'Macrosystem'}</text></g></g>;})}</g>}
+      {contentBoundaries && <g className="ecology-layers" aria-hidden="true">{['macrosphere','exosphere','micro'].filter(scale=>contentBoundaries[scale]).map(scale=>{const b=contentBoundaries[scale];return <g key={scale} data-ecology-layer={scale} className={`ecology-layer ecology-layer--${scale} is-visible`}><ellipse cx={b.cx} cy={b.cy} rx={b.rx} ry={b.ry}/><g className="ecology-layer__label" transform={`translate(${b.cx} ${b.top+8})`}><rect x="-84" y="-16" width="168" height="32" rx="16"/><text y="5">{scale==='micro'?'Microsystem':scale==='exosphere'?'Exosystem':'Macrosystem'}</text></g></g>;})}</g>}
       {!readingMode && mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} phoneLayout={phoneLayout} nodeCount={nodes.length} ringExpansion={activeRingExpansion} nodes={nodes} edges={edges} positions={renderedPositions} visibleBounds={visibleLabelBounds} sharedBands={sharedBands} connectionLabelBounds={[...betweenEndpointLayout.bounds.values()]} /> : null}
       {!readingMode && microBoundary && <g className="ecology-layers shared-micro-boundary" aria-hidden="true"><g data-ecology-layer="micro" className="ecology-layer ecology-layer--micro is-visible">
         <ellipse cx={microBoundary.cx} cy={microBoundary.cy} rx={microBoundary.rx} ry={microBoundary.ry} />
         <g className="ecology-layer__label" transform={`translate(${microBoundary.cx} ${microBoundary.top + 12})`}><rect x="-84" y="-18" width="168" height="36" rx="18" /><text y="5">Microsystem</text></g>
       </g></g>}
       <g className="micro-setting-regions" aria-hidden="true">{microSettingRegionVisuals.map(({ setting, memberCount, path, selected, maskId }) => <path key={`micro-setting-${setting.id}`} data-setting-region={setting.id} data-member-count={memberCount} className={`micro-setting-region ${selected ? 'is-selected' : ''} ${setting.visualMuted ? 'is-muted' : ''}`} d={path} mask={`url(#${maskId})`} />)}</g>
-      <g className="macrosystem-relationship-groups">{relationshipGroupVisuals.map(({ edge, path, maskId, heading, vectors }) => <g key={edge.id} data-relationship-group={edge.id} data-heading={edge.source} className={readingMode && selectedGroup?.id !== edge.id ? 'is-inactive-group' : 'is-active-group'}>
+      <g className="macrosystem-relationship-groups">{relationshipGroupVisuals.map(({ edge, path, maskId, heading, vectors }) => <g key={edge.id} data-relationship-group={edge.id} data-heading={edge.source} data-group-scale={edge.scale} className={readingMode && selectedGroup?.id !== edge.id && !(overviewLabels && !selection) ? 'is-inactive-group' : 'is-active-group'}>
         <path className={`relationship-group-band ${selection?.id === edge.id ? 'is-selected' : ''}`} d={path} mask={`url(#${maskId})`} aria-hidden="true" />
         {vectors.map(point => <path key={point.id} data-group-member={point.id} d={point.path || `M ${heading.x} ${heading.y} L ${point.x} ${point.y}`} className="relationship-group-vector" vectorEffect="non-scaling-stroke" aria-hidden="true" />)}
         {readingMode && vectors.map(point=><circle key={`join-${point.id}`} className="relationship-group-join" cx={point.x} cy={point.y} r="4" aria-hidden="true" />)}
@@ -3940,7 +3949,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         const arrows = relationshipArrowheads({ relationshipProcess: { direction: previewConnection.direction } });
         return <g className="relationship-draft-preview" pointerEvents="none" aria-label="Relationship draft, not added to map"><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="var(--ink)" strokeWidth="2" strokeDasharray="3 6" vectorEffect="non-scaling-stroke" markerStart={arrows.start ? 'url(#arrowhead)' : undefined} markerEnd={arrows.end ? 'url(#arrowhead)' : undefined} /></g>;
       })()}
-      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space" aria-pressed={selected} className={`graph-edge ${readingMode && readingEdgeIds.has(edge.id) ? 'is-reading-active' : ''} ${readingMode && edge.relationshipIds?.length && selectedGroup?.id !== edge.id ? 'is-inactive-group' : ''} graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onFocus={() => { if(readingMode && selection?.id !== edge.id) onSelect('edge',edge.id,false); }} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
+      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space" aria-pressed={selected} className={`graph-edge ${readingMode && readingEdgeIds.has(edge.id) ? 'is-reading-active' : ''} ${readingMode && edge.relationshipIds?.length && selectedGroup?.id !== edge.id && !(overviewLabels && !selection) ? 'is-inactive-group' : ''} graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onFocus={() => { if(readingMode && selection?.id !== edge.id) onSelect('edge',edge.id,false); }} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onSelect('edge', edge.id, true);
@@ -3948,6 +3957,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         <path className="edge-hit" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />
         {selected && <path className="edge-selection-halo" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />}
         <title>{`Direction: ${relationshipDirection(edge)}`}</title>
+        {readingMode && <path className="edge-crossing-gap" d={path} aria-hidden="true" />}
         <path className="edge-line" style={{ '--edge-count-width': relationshipLineWidth(edge) }} strokeDasharray={edge.relationshipProcess?.connectionStatus === 'missing' ? '7 5' : undefined} data-connection-status={edge.relationshipProcess?.connectionStatus || 'unknown'} vectorEffect={phoneLayout ? "non-scaling-stroke" : undefined} d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerStart={relationshipArrowheads(edge).start ? 'url(#arrowhead)' : undefined} markerEnd={relationshipArrowheads(edge).end ? 'url(#arrowhead)' : undefined} />
       </g>)}</g>
       <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false && (!readingMode || readingEdgeIds.has(edge.id))).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
@@ -3973,7 +3983,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         const microContextState = node.scale === 'micro'
           ? `, ${FOCAL_PARTICIPATION_LABELS[node.focalParticipation || 'unclear'] || 'Focal participation unclear'}, ${(node.settingNodeIds || []).length} immediate ${(node.settingNodeIds || []).length === 1 ? 'setting' : 'settings'}`
           : '';
-        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} data-node-type={node.type} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale}, ${evidenceState}${scopeState}${microContextState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} aria-pressed={selected} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${node.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => keyboardNode(event, node)}>
+        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} data-node-type={node.type} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale}, ${evidenceState}${scopeState}${microContextState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} aria-pressed={selected} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${node.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); onCancelConnection?.(); }} onPointerDown={(event) => beginNode(event, node)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => keyboardNode(event, node)}>
           {selected && <rect className="node-selection-ring" x={geometry.ringX} y={geometry.ringY} width={geometry.ringWidth} height={geometry.ringHeight} rx={geometry.ringRadius} />}
           <rect className="node-card" x={geometry.cardX} y={geometry.cardY} width={geometry.cardWidth} height={geometry.cardHeight} rx={geometry.cardRadius} />
           <text className="node-label" style={{ fontSize: geometry.fontSize, fontFamily: '"Source Sans 3 Variable", "Source Sans 3", sans-serif' }}>{geometry.lines.map((line, lineIndex) => <tspan key={`${node.id}-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
@@ -3984,7 +3994,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
 }
 
 function sameGraphVisuals(previous, next) {
-  if (previous.readingMode !== next.readingMode) return false;
+  if (previous.onCancelConnection !== next.onCancelConnection || previous.readingMode !== next.readingMode || previous.overviewLabels !== next.overviewLabels || previous.nodeStage !== next.nodeStage) return false;
   if (previous.phoneLayout !== next.phoneLayout) return false;
   if (previous.phoneViewBox?.height !== next.phoneViewBox?.height) return false;
   if (previous.mapLabel !== next.mapLabel) return false;
@@ -4023,11 +4033,13 @@ function MapLegend() {
     <section><h3>Levels</h3><dl className="level-guide">
       <div><dt><i className="legend-symbol legend-symbol--micro" />Micro-level</dt><dd>Person participates directly in this setting or interaction.</dd></div>
       <div><dt><i className="legend-symbol legend-symbol--meso" />Meso-level</dt><dd>Arrows connect the people, resources, and settings already on the Micro map.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Larger-scale institutions, resources, policies and conditions added to the local map.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Relationships among larger-scale nodes and connections to the local map.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Outside organizations and decision settings; dotted connections attach them to local relationships.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Broader policies, values and structural conditions; purple dashed lines mark their connections.</dd></div>
     <div><dt><span aria-hidden="true">◇</span> Direction varies</dt><dd>No fixed arrow direction is asserted.</dd></div><div><dt><span aria-hidden="true">?</span> Direction unknown</dt><dd>Direction has not been established.</dd></div></dl></section>
     <section><h3>Node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions and policies</li></ul><h3>How to read this map</h3><ul className="map-conventions">
       <li><strong>Micro</strong><span>People, resources, and immediate settings</span></li>
+      <li><strong>Exo</strong><span>Outside settings; teal dotted connections link to local relationships.</span></li>
+      <li><strong>Macro</strong><span>Broader policies and conditions; purple dashed connections.</span></li>
       <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording.</span></li>
       <li><strong>Draft</strong><span>A dotted line previews an unfinished relationship.</span></li>
       <li><strong>Stored scope</strong><span>A dash-dot line with hollow endpoints marks a recorded scope membership, not a directional relationship.</span></li>
@@ -4136,13 +4148,13 @@ function mapContentCenter(nodes, phoneLayout = false) {
 const INSPECTOR_TABS = ['node', 'relationships', 'map'];
 const FOCUSED_RELATIONSHIPS_PER_PAGE = 1;
 
-function blankManualNode(scale) {
+function blankManualNode(scale, threeSpheres = false) {
   // Meso adds relationships in the existing Micro space. A missing person or
   // setting therefore joins Micro even when the student is working at Meso.
-  scale = nodeScaleFor(scale);
+  scale = threeSpheres && scale === 'macrosphere' ? scale : nodeScaleFor(scale);
   return {
     label: '',
-    type: nodeScaleFor(scale) === 'exosphere' ? 'institution' : 'person',
+    type: scale === 'macrosphere' ? 'policy' : scale === 'exosphere' ? 'institution' : 'person',
     scale,
     evidence: '',
     claimState: 'research lead',
@@ -4160,7 +4172,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const connectionIndex = useMemo(() => indexMapConnections(project.graph), [project.graph]);
   const [focus, setFocus] = useState(null);
   const [focusPage, setFocusPage] = useState(0);
-  const [visibleScale, setVisibleScale] = useState(project.activeScale);
+  const [visibleScale, setVisibleScale] = useState(notebook?.simple ? 'all' : project.activeScale);
   const [presentation, setPresentation] = useState('canvas');
   const [showRemoved, setShowRemoved] = useState(false);
   const [inspectorTab, setInspectorTab] = useState('map');
@@ -4185,7 +4197,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const [legendOpen, setLegendOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const sheetOpen = notebook ? !fullscreen : panelContent ? collapsedPanel !== panelMode : drawerOpen;
+  const sheetOpen = notebook ? (!notebook.simple || notebook.open) && !fullscreen : panelContent ? collapsedPanel !== panelMode : drawerOpen;
   useEffect(() => { if (notebook?.open) setFullscreen(false); }, [notebook?.open]);
   const [announcement, setAnnouncementState] = useState({ message: '', revision: 0 });
   const [addMode, setAddMode] = useState(null);
@@ -4195,10 +4207,10 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [phoneOverviewCommittedScope, setPhoneOverviewCommittedScope] = useState('');
   const [phoneEcologyCommittedScope, setPhoneEcologyCommittedScope] = useState('');
-  const [newNode, setNewNode] = useState(() => blankManualNode(project.activeScale));
+  const [newNode, setNewNode] = useState(() => blankManualNode(project.activeScale, notebook?.simple));
   const relationshipDraft = useRelationshipDraft(project, toast);
   const newEdge = relationshipDraft.draft || { source: '', target: '', verb: '', evidence: '', relationshipProcess: { direction: 'not yet known' } };
-  const setNewEdge = value => relationshipDraft.setDraft(typeof value === 'function' ? value(newEdge) : value);
+  const setNewEdge = relationshipDraft.setDraft;
   const canvasWrapRef = useRef(null);
   const legendTriggerRef = useRef(null);
   const moveMenuTriggerRef = useRef(null);
@@ -4221,7 +4233,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   }, []);
   useEffect(() => {
     setSelection(null);
-    setVisibleScale(project.activeScale);
+    setVisibleScale(notebook?.simple ? 'all' : project.activeScale);
     setTraceHistory([]);
     setLayoutHistory({ past: [], future: [] });
     setFocus(null);
@@ -4234,7 +4246,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setConnecting(false);
     setConnectionSource(null);
     setCreateMenuOpen(false);
-    setNewNode(blankManualNode(project.activeScale));
+    setNewNode(blankManualNode(project.activeScale, notebook?.simple));
   }, [project.activeScale]);
   const hasLegacyMacroNodes = project.graph.nodes.some(node => node.scale === 'macrosphere' && isLiveMapItem(node));
   const ecologyLayers = useMemo(() => SCALE_ORDER.filter(scale => project.releasedScales.includes(scale) && (scale !== 'macrosphere' || hasLegacyMacroNodes)), [project.releasedScales, hasLegacyMacroNodes]);
@@ -4751,7 +4763,13 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     if (!source || available.length < 2) return;
     if (relationshipDraft.draft) { setAddMode('edge'); changePanel('inspector'); return; }
     relationshipDraft.start(source.id);
-    setVisibleScale(project.activeScale); setPresentation('canvas'); setConnecting(true);
+    if (notebook?.simple && source.scale === 'exosphere' && project.activeScale === 'exosphere') {
+      setNewEdge(current => ({ ...current, source: source.id, target: '', relationshipIds: [] }));
+      setConnecting(false); setConnectionSource(null); setSelection(null); setFocus(null);
+      setAddMode('edge'); setInspectorTab('relationships'); changePanel('inspector');
+      return;
+    }
+    setVisibleScale(notebook?.simple ? 'all' : project.activeScale); setPresentation('canvas'); setConnecting(true);
     setConnectionSource(source.id); setSelection({ kind: 'node', id: source.id }); setFocus(null); setAddMode(null);
     setDrawerOpen(false); notebook?.onChange(false); setToolsOpen(false);
     setAnnouncement(`${source.label} selected. Choose the ending item.`);
@@ -4773,7 +4791,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       setNewEdge({ ...newEdge, source: connectionSource, target: id });
       setConnecting(false); setFocus(null); setSelection(null);
       setAddMode('edge'); setInspectorTab('relationships'); setDrawerOpen(true);
-      onPanelMode?.('inspector', { preserveNotebook: true }); if (!notebook || notebook.open) focusInspector();
+      onPanelMode?.('inspector', { preserveNotebook: true }); if (notebook?.simple) notebook.onChange(true); if (!notebook || notebook.open || notebook.simple) focusInspector();
       return;
     }
     if (openInspector && !inspectorRef.current?.contains(document.activeElement)) selectionTriggerRef.current = document.activeElement;
@@ -5214,7 +5232,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       if (message) return toast(message, 'error');
     }
     if (!removed && selection.kind === 'node' && containsRetiredSystemsLanguage(selectedNode?.label)) return toast('Rename this item with a direct, conventional name before returning it to the map.', 'error');
-    if (!removed && selection.kind === 'node' && ['meso', 'macrosphere'].includes(selectedNode?.scale)) {
+    if (!removed && selection.kind === 'node' && (selectedNode?.scale === 'meso' || selectedNode?.scale === 'macrosphere' && selectedNode.scopeNodeIds?.length)) {
       const memberById = new Map(project.graph.nodes.map((node) => [node.id, node]));
       const membersAreAvailable = (selectedNode.scopeNodeIds || []).length >= 2 && selectedNode.scopeNodeIds.every((id) => {
         const member = memberById.get(id);
@@ -5264,7 +5282,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
         candidate.reviewDecision = item.reviewDecision;
       }
     }, removed ? 'map.item.removed' : 'map.item.restored', selection.id);
-    if (removed && !showRemoved) {
+    if (removed && !showRemoved && !notebook?.simple) {
       setSelection(null);
       setFocus(null);
       setFocusPage(0);
@@ -5292,7 +5310,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     if (!newNode.label.trim()) return toast('Name the node before adding it.', 'error');
     if (!isCanonicalMapElementLabel(newNode.label, newNode.scale)) return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
     if (containsRetiredSystemsLanguage(newNode.label)) return toast('Use a direct, conventional name for the map item.', 'error');
-    if (!isNodeTypeAllowedAtScale(newNode.type, newNode.scale) || !isNodeReviewScale(newNode.scale)) return toast('Choose a type and level that belong together.', 'error');
+    if (!isNodeTypeAllowedAtScale(newNode.type, newNode.scale) || !(isNodeReviewScale(newNode.scale) || notebook?.simple && newNode.scale === 'macrosphere')) return toast('Choose a type and level that belong together.', 'error');
     if (newNode.scale === 'micro' && !isDiscreteMicroNodeLabel(newNode.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (project.instructor.evidenceRequired && !newNode.evidence.trim()) return toast('Add evidence or a question before adding the node.', 'error');
     const id = stableId('node', `${newNode.label}:${Date.now()}`);
@@ -5312,10 +5330,10 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       draft.graph.nodes.push(added);
     }, 'node.added', newNode.label.trim());
     setFocus(null);
-    setVisibleScale(project.activeScale);
+    setVisibleScale(notebook?.simple ? 'all' : project.activeScale);
     setSelection({ kind: 'node', id });
     setInspectorTab('node');
-    setNewNode(blankManualNode(project.activeScale));
+    setNewNode(blankManualNode(project.activeScale, notebook?.simple));
     setAddMode(null);
     toast(project.activeScale === 'meso' ? 'Item added to Micro. Connect it here in Meso.' : 'Node added.');
   };
@@ -5445,12 +5463,12 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setMoveMenuOpen(false);
     setAnnouncement(next === 'list' ? 'Map list opened.' : 'Map canvas opened.');
   };
-  const mapTools = <MapTools open={toolsOpen} onOpenChange={setToolsOpen} scales={project.releasedScales}
+  const mapTools = <MapTools embedded={Boolean(notebook?.simple)} open={toolsOpen} onOpenChange={setToolsOpen} scales={project.releasedScales}
           scale={visibleScale} onScale={changeVisibleScale} presentation={presentation} onPresentation={changePresentation}
           nodes={connectionIndex.nodes} onSelect={followMapItem} onZoom={zoomBy}
           canZoomOut={canvasViewport.zoom > minimumInteractiveZoom} canZoomIn={canvasViewport.zoom < VIEWPORT_LIMITS.maxZoom}
-          onAdd={project.instructor.allowResearchLeads && SCALE_ORDER.includes(project.activeScale) ? () => { setConnecting(false); setConnectionSource(null); changePanel('inspector'); setNewNode(blankManualNode(project.activeScale)); setAddMode('node'); } : null}
-          onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
+          onAdd={project.instructor.allowResearchLeads && SCALE_ORDER.includes(project.activeScale) ? () => { setConnecting(false); setConnectionSource(null); changePanel('inspector'); setNewNode(blankManualNode(project.activeScale, notebook?.simple)); setAddMode('node'); } : null}
+          autoFit={project.layout?.autoFit !== false} onAutoFit={notebook ? enabled => { update(draft => { draft.layout = { ...draft.layout, autoFit: enabled }; if (!enabled) for (const node of draft.graph.nodes) { const p = readablePositions?.get(node.id); if (p) Object.assign(node, p); } }, 'layout.auto-fit', enabled ? 'Auto-fit on' : 'Auto-fit off'); if (enabled) fitMap(); } : undefined} onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
           onUndo={notebook ? ()=>restoreLayout('undo') : undefined} onRedo={()=>restoreLayout('redo')} canUndo={Boolean(layoutHistory.past.length)} canRedo={Boolean(layoutHistory.future.length)}
           onLegend={toggleLegend} onFullscreen={toggleFullscreen} fullscreen={fullscreen}
           hasRemoved={hasRemovedItems} showRemoved={showRemoved} onShowRemoved={setShowRemoved} />;
@@ -5466,14 +5484,20 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     focused?.focus({ preventScroll: true });
   }, [sheetOpen, fullscreen, notebookNavigationHost, workspaceNavigationRoot, notebook]);
   useLayoutEffect(() => () => workspaceNavigationRoot.remove(), [workspaceNavigationRoot]);
-  const notebookNavigation = notebook && <div className="notebook-nav-row">
+  const notebookNavigation = notebook && (notebook.simple ? <div className="notebook-nav-row notebook-nav-row--simple">
+    {fullscreen && <button className="button button--secondary" type="button" aria-label="Exit full screen" onClick={toggleFullscreen}><Icon name="close" /></button>}
+    <nav className="notebook-switch" aria-label="Workspace">
+      <button type="button" aria-pressed={notebook.open && !toolsOpen} onClick={() => { setToolsOpen(false); notebook.onOpen(); }}>Notebook</button>
+      {notebook.open && <><button type="button" aria-pressed={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}>Tools</button><button type="button" aria-label="Hide sidebar" onClick={() => { setToolsOpen(false); notebook.onChange(false); }}>Hide <Icon name="close" /></button></>}
+    </nav>
+  </div> : <div className="notebook-nav-row">
     {fullscreen && <button className="map-fullscreen-exit" type="button" aria-label="Exit full screen" onClick={toggleFullscreen}><Icon name="close" /></button>}
     <nav className="notebook-switch" aria-label="Workspace">
       <button type="button" aria-pressed={!notebook.open} onClick={() => notebook.onChange(false)}>Map</button>
       <button type="button" aria-pressed={notebook.open} aria-controls="map-inspector" onClick={() => notebook.onOpen ? notebook.onOpen() : notebook.onChange(true)}>Notebook</button>
       {mapTools}{!fullscreen && toolbarStart}
     </nav>
-  </div>;
+  </div>);
   return <div className={`map-stage ${notebook ? 'map-stage--notebook' : ''} map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
     onPointerDownCapture={() => { consumedCanvasTapRef.current = null; }}
     onKeyDownCapture={() => { consumedCanvasTapRef.current = null; }}
@@ -5506,8 +5530,8 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       {notebook && <>{createPortal(notebookNavigation, workspaceNavigationRoot)}<div ref={floatingControlsRef} className="notebook-floating-controls" /></>}
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && sheetOpen ? 'is-inspector-open' : ''} is-panel-${panelMode} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <div className="map-context-actions">{relationshipDraft.draft && addMode !== 'edge' && <button type="button" className="button relationship-resume" onClick={() => { setConnecting(false); setAddMode('edge'); changePanel('inspector'); }}>Resume relationship</button>}{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}</div>
-        {notebook && !connecting && <div className="map-reading-guide"><span>{selection ? 'Highlighted connections' : 'Select an item to explore its connections.'}</span>{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>Clear highlight</button>}</div>}
-        <MemoGraphCanvas readingMode={Boolean(notebook)} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} onDeleteNode={(id) => { if (selection?.kind === 'node' && selection.id === id) setSelectedRemoved(true); }} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
+        {notebook && !connecting && <div className="map-reading-guide"><span>{project.activeScale === 'micro' ? 'Select a node to edit it.' : selection ? 'Make connections' : 'Select a node or relationship to edit it.'}</span>{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>{notebook.simple ? 'Cancel' : 'Clear highlight'}</button>}</div>}
+        <MemoGraphCanvas onCancelConnection={() => { if (!connecting && !relationshipDraft.draft) return; if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); } cancelConnection(); setSelection(null); setFocus(null); }} readingMode={Boolean(notebook)} overviewLabels={Boolean(notebook?.simple)} nodeStage={project.activeScale === 'micro'} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} onDeleteNode={(id) => { if (selection?.kind === 'node' && selection.id === id) setSelectedRemoved(true); }} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         {!notebook && <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
           <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-key-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
           <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); onPanelMode?.('inspector'); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
@@ -5522,37 +5546,39 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       <aside id="map-inspector" ref={inspectorRef} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={notebook ? 'Notebook' : panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
         {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}
         {notebook && <div ref={setNotebookNavigationHost} className="notebook-controls-host" />}
+        {notebook?.simple && notebook.action && <div className="notebook-task-end notebook-task-top" aria-label="Next step">{notebook.action}</div>}
+        {notebook?.simple && !panelContent && !toolsOpen && !addMode && (selectedNode || selectedEdge) && <div className="inspector-item-actions" aria-label="Selected item actions"><span>{selectedItemRemoved ? 'Not on map' : 'On map'}</span><button className="button button--secondary" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Add to map' : 'Remove'}</button></div>}
         <div className="inspector__scroll">
         {!notebook && panelContent && <div className="work-panel__close"><button type="button" onClick={closeInspector}>Close sidebar</button></div>}
-        {notebook && panelContent && <NotebookSection mode={panelMode} onChange={changePanel} disabled={panel?.disabled || []} />}
-        {(!notebook || panelMode === 'suggestions') && <MemoDrawer project={project} update={update} toast={toast} captureImportScope={captureImportScope} defaultOpen={isPart2(project.activeScale) && !activeSubmission(project).text.trim()} onRequestRestart={onRequestRestart} />}
-        {panelContent ? <div className="work-panel__body">{notebook && panelMode === 'review' ? React.cloneElement(panel.content, { savedMapNote: <SavedMapNote key={project.id} project={project}><AnnotationField annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></SavedMapNote> }) : panel.content}</div> : <>
+        {notebook && !notebook.simple && panelContent && <NotebookSection mode={panelMode} onChange={changePanel} disabled={panel?.disabled || []} />}
+        {(!notebook || !notebook.simple && panelMode === 'suggestions') && <MemoDrawer project={project} update={update} toast={toast} captureImportScope={captureImportScope} defaultOpen={isPart2(project.activeScale) && !activeSubmission(project).text.trim()} onRequestRestart={onRequestRestart} />}
+        {notebook?.simple && toolsOpen ? mapTools : panelContent ? <div className="work-panel__body">{notebook && panelMode === 'review' ? React.cloneElement(panel.content, { savedMapNote: <SavedMapNote key={project.id} project={project}><AnnotationField annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></SavedMapNote> }) : panel.content}</div> : <>
         <div className={`inspector__head${!addMode && (selectedNode || selectedEdge) ? ' inspector__head--edit' : ''}`}>
           {!addMode && (selectedNode || selectedEdge) ? <div className="item-editor-title"><h2>Edit</h2><p>{selectedNode?.label || relationshipDescription(selectedEdge)}</p></div> : <h2>{addMode === 'edge' && relationshipSource && relationshipTarget
             ? `${relationshipSource.label} and ${relationshipTarget.label}`
             : selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Map details')}</h2>}
           <div className="inspector__actions">
-            {project.instructor.allowResearchLeads && (!notebook || addMode) && SCALE_ORDER.includes(project.activeScale) && <div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions">{<button type="button" onClick={() => { setNewNode(blankManualNode(project.activeScale)); setAddMode('node'); setCreateMenuOpen(false); }}>{isRelationshipReviewScale(project.activeScale) ? 'Missing node' : 'Node'}</button>}{project.activeScale !== 'micro' && <button type="button" onClick={() => { relationshipDraft.start(); setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button>}</div>}</div>}
+            {project.instructor.allowResearchLeads && (!notebook || addMode) && SCALE_ORDER.includes(project.activeScale) && <div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions">{<button type="button" onClick={() => { setNewNode(blankManualNode(project.activeScale, notebook?.simple)); setAddMode('node'); setCreateMenuOpen(false); }}>{isRelationshipReviewScale(project.activeScale) ? 'Missing node' : 'Node'}</button>}{project.activeScale !== 'micro' && <button type="button" onClick={() => { relationshipDraft.start(); setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button>}</div>}</div>}
             <button className="inspector-done" type="button" onClick={closeInspector}>Done</button>
           </div>
         </div>
         {inspectedItem && (inspectedItem.evidence
-          ? <blockquote className="inspector-evidence"><p>{inspectedItem.evidence}</p></blockquote>
+          ? <blockquote className="inspector-evidence"><span className="evidence-label">{classifyExcerptMatch(project.submission.text, inspectedItem.evidence) || classifyExcerptMatch(project.part2Submission?.text || '', inspectedItem.evidence) ? 'Quote from memo' : 'Evidence or question'}</span><p>{inspectedItem.evidence}</p></blockquote>
           : <p className="inspector-evidence inspector-evidence--empty">No source evidence recorded.</p>)}
         {previousTraceLabel && <button type="button" className="map-trace-back" onClick={returnToPreviousItem}>Back to {previousTraceLabel}</button>}
         {!notebook && <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{inspectorTabs.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, inspectorTabs, inspectorTab, setTab)}>{tab === 'relationships' ? 'Connections' : tab === 'node' ? 'Item' : 'Map'}</button>)}</div>}
         {addMode === 'node' && <div className="add-form">
           <h3>{project.activeScale === 'meso' ? 'Add a missing Micro item' : 'New node'}</h3>
           {project.activeScale === 'meso' && <p>Add a person, group, resource, or setting. It joins your Micro map and can be connected here in Meso.</p>}
-          {isPart2(project.activeScale) && <p>Name a broader condition or policy, such as counseling allocation, rather than a named organization. Keep the specific source in Evidence.</p>}
+          {isPart2(project.activeScale) && <p>{newNode.scale === 'macrosphere' ? 'Name a broader policy, value or condition. Named organizations belong in Exo.' : 'Name an outside organization, resource or decision setting that affects the local situation.'}</p>}
           <Field label="Label"><textarea className="map-label-input" rows="1" maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale)).map((type) => <option key={type}>{type}</option>)}</select></Field>
             <Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => {
               const scale = event.target.value;
-              const type = isNodeTypeAllowedAtScale(current.type, scale) ? current.type : (scale === 'exosphere' ? 'institution' : 'person');
-              return { ...blankManualNode(scale), label: current.label, evidence: current.evidence, type };
-            })}>{project.releasedScales.filter((scale) => isNodeReviewScale(scale)).map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
+              const type = isNodeTypeAllowedAtScale(current.type, scale) ? current.type : (scale === 'macrosphere' ? 'policy' : scale === 'exosphere' ? 'institution' : 'person');
+              return { ...blankManualNode(scale, notebook?.simple), label: current.label, evidence: current.evidence, type };
+            })}>{project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere').map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
           </div>
           {newNode.scale === 'micro' && <MicroParticipationEditor
             item={newNode}
@@ -5564,20 +5590,20 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           <button className="button" type="button" onClick={addNode}>Add node</button>
           <button type="button" onClick={() => { setAddMode(null); closeInspector(); }}>Cancel</button>
         </div>}
-        {addMode === 'edge' && project.activeScale !== 'micro' && <div className="add-form"><h3>New relationship</h3>{project.activeScale === 'macrosphere' && <label className="check-row"><input type="checkbox" checked={Boolean(newEdge.relationshipIds)} onChange={event => setNewEdge(current => {
+        {addMode === 'edge' && project.activeScale !== 'micro' && <div className="add-form"><h3>New relationship</h3>{isPart2(project.activeScale) && <label className="check-row"><input type="checkbox" checked={Boolean(newEdge.relationshipIds)} onChange={event => setNewEdge(current => {
           const { relationshipIds, ...rest } = current;
           return event.target.checked ? { ...rest, source: project.graph.nodes.find(node => node.id === rest.source && ['exosphere', 'macrosphere'].includes(node.scale))?.id || '', target: '', relationshipIds: [] } : rest;
-        })} /><span>Connect local relationships under a macrosystem heading</span></label>}<Field label="From"><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}><option value="">Choose a node</option>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge(current => ({ ...current, verb: event.target.value }))} /></Field>{newEdge.relationshipIds ? <RelationshipGroupPicker project={project} value={newEdge.relationshipIds} onChange={ids => setNewEdge(current => ({ ...current, relationshipIds: ids, target: project.graph.edges.find(edge => edge.id === ids[0])?.source || '' }))} /> : <Field label="To"><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}><option value="">Choose a node</option>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>}<Field label="Direction"><select value={newEdge.relationshipProcess?.direction || 'source to target'} onChange={(event) => setNewEdge((current) => ({ ...current, relationshipProcess: createRelationshipProcess({ ...current.relationshipProcess, direction: event.target.value }) }))}><option value="source to target">One way: {relationshipSource?.label} to {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label}</option><option value="target to source">One way: {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label} to {relationshipSource?.label}</option><option value="both directions">Both directions</option><option value="varies">Direction varies</option><option value="not yet known">Not yet known</option></select></Field>{project.activeScale === 'macrosphere' && <Field label="Evidence or question"><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={newEdge.evidence} onChange={event => setNewEdge(current => ({ ...current, evidence: event.target.value }))} /></Field>}<button className="button" type="button" onClick={addEdge}>Add relationship</button><button type="button" onClick={() => { setAddMode(null); closeInspector(); }}>Close</button><button type="button" onClick={() => { if (relationshipDraft.discard()) { setAddMode(null); setConnecting(false); setConnectionSource(null); closeInspector(); } }}>Discard relationship</button></div>}
+        })} /><span>Connect to local relationships</span></label>}<Field label="From"><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}><option value="">Choose a node</option>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge(current => ({ ...current, verb: event.target.value }))} /></Field>{newEdge.relationshipIds ? <RelationshipGroupPicker project={project} value={newEdge.relationshipIds} onChange={ids => setNewEdge(current => ({ ...current, relationshipIds: ids, target: project.graph.edges.find(edge => edge.id === ids[0])?.source || '' }))} /> : <Field label="To"><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}><option value="">Choose a node</option>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>}<Field label="Direction"><select value={newEdge.relationshipProcess?.direction || 'source to target'} onChange={(event) => setNewEdge((current) => ({ ...current, relationshipProcess: createRelationshipProcess({ ...current.relationshipProcess, direction: event.target.value }) }))}><option value="source to target">One way: {relationshipSource?.label} to {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label}</option><option value="target to source">One way: {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label} to {relationshipSource?.label}</option><option value="both directions">Both directions</option><option value="varies">Direction varies</option><option value="not yet known">Not yet known</option></select></Field>{isPart2(project.activeScale) && <Field label="Evidence or question"><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={newEdge.evidence} onChange={event => setNewEdge(current => ({ ...current, evidence: event.target.value }))} /></Field>}<button className="button" type="button" onClick={addEdge}>Add relationship</button><button type="button" onClick={() => { setAddMode(null); closeInspector(); }}>Close</button><button type="button" onClick={() => { if (relationshipDraft.discard()) { setAddMode(null); setConnecting(false); setConnectionSource(null); closeInspector(); } }}>Discard relationship</button></div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role={notebook ? "region" : "tabpanel"} aria-label={notebook ? "Item details" : undefined} aria-labelledby={notebook ? undefined : "map-inspector-tab-node"}>{selectedNode ? <>
           <MapConnections compact={Boolean(notebook)} nodeId={selectedNode.id} index={connectionIndex} onFollow={followMapItem} onScopeFollow={followScope} selectedScope={selectedScope}
             onConnect={project.activeScale !== 'micro' && canConnectAtScale(project.activeScale, selectedNode) && isLiveMapItem(selectedNode) && project.instructor.allowResearchLeads && connectionIndex.nodes.filter(node => canConnectAtScale(project.activeScale, node)).length > 1 ? startConnection : undefined} />
           <MapTextEditor key={`node:${selectedNode.id}`} label="Label" maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={(value) => nodeLabelIssue(value, selectedNode, project.graph.nodes)} onSave={(value) => editNode('label', value)} />
-          <AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Interpretation" value={selectedNode.annotations.analytical.text} hint="What does this node help explain? What is still uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} />
+          <AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Interpretation" value={selectedNode.annotations.analytical.text} hint="Where does this connect? What is still uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} />
           <section className="node-summary" aria-label="Edit node">
             <div className="node-summary__body">
               <p className="field__hint">{selectedNode.type} · {SCALES[selectedNode.scale].label}</p>
               <SavedItemContext item={selectedNode} />
-              {['meso', 'macrosphere'].includes(selectedNode.scale) && <div className="scope-editor" aria-label={selectedNode.scale === 'meso' ? `Micro settings included in ${selectedNode.label}` : `Map items affected by ${selectedNode.label}`}>
+              {!notebook?.simple && ['meso', 'macrosphere'].includes(selectedNode.scale) && <div className="scope-editor" aria-label={selectedNode.scale === 'meso' ? `Micro settings included in ${selectedNode.label}` : `Map items affected by ${selectedNode.label}`}>
                 {selectedNode.scale === 'macrosphere' && <div className="scope-editor__mode"><label><span>Effect</span><select aria-label={`How ${selectedNode.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
                 <div className="scope-editor__members">
                   {(selectedNode.scopeNodeIds || []).map((memberId) => {
@@ -5596,19 +5622,19 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
             </div>
           </section>
           <div className="node-position-controls"><span>Position on map</span><div role="group" aria-label={`Move ${selectedNode.label} without dragging`}><button type="button" aria-label={`Move ${selectedNode.label} left`} onClick={() => moveSelectedNodeBy(-24, 0, 'left')}>←</button><button type="button" aria-label={`Move ${selectedNode.label} up`} onClick={() => moveSelectedNodeBy(0, -24, 'up')}>↑</button><button type="button" aria-label={`Move ${selectedNode.label} down`} onClick={() => moveSelectedNodeBy(0, 24, 'down')}>↓</button><button type="button" aria-label={`Move ${selectedNode.label} right`} onClick={() => moveSelectedNodeBy(24, 0, 'right')}>→</button></div></div>
-          <button className="map-item-action map-item-action--remove" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Delete'}</button>
+          {!notebook?.simple && <button className="map-item-action map-item-action--remove" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Delete'}</button>}
         </> : <p className="empty-message">Select an item on the map to see its evidence and explain what it means for your inquiry.</p>}</div>}
         {!addMode && inspectorTab === 'relationships' && <div id="map-inspector-panel-relationships" className="inspector__body" role={notebook ? "region" : "tabpanel"} aria-label={notebook ? "Connections" : undefined} aria-labelledby={notebook ? undefined : "map-inspector-tab-relationships"}>
           {!selectedEdge && <><p className="inspector-guide">Choose a connection to explain how these items affect one another.</p><div className="relationship-picker" aria-label="Relationship list">{relatedEdges.map((edge) => <button type="button" key={edge.id} onClick={() => selectItem('edge', edge.id)}><span>{relationshipDescription(edge)}</span></button>)}</div></>}
           {selectedEdge ? <>
-            {selectedEdge.relationshipIds && <Field label="Macrosystem heading"><select value={selectedEdge.source} onChange={event => editEdge('source', event.target.value)}>{project.graph.nodes.filter(node => isLiveMapItem(node) && ['exosphere', 'macrosphere'].includes(node.scale)).map(node => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>}
+            {selectedEdge.relationshipIds && <Field label="Heading"><select value={selectedEdge.source} onChange={event => editEdge('source', event.target.value)}>{project.graph.nodes.filter(node => isLiveMapItem(node) && ['exosphere', 'macrosphere'].includes(node.scale)).map(node => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>}
             {selectedEdge.relationshipIds && <RelationshipGroupPicker project={project} value={selectedEdge.relationshipIds} onChange={ids => editEdge('relationshipIds', ids)} />}
             <Field label="Direction"><select aria-label="Arrow direction" value={relationshipDirection(selectedEdge)} onChange={(event) => editEdge('relationshipProcess', createRelationshipProcess({ ...selectedEdge.relationshipProcess, direction: event.target.value }))}>{!PROCESS_DIRECTION_OPTIONS.some(option => option.value === relationshipDirection(selectedEdge)) && <option value={relationshipDirection(selectedEdge)}>{relationshipDirection(selectedEdge)}</option>}<option value="source to target">{selectedEdge.sourceLabel} to {selectedEdge.relationshipIds ? 'selected local relationships' : selectedEdge.targetLabel}</option><option value="target to source">{selectedEdge.relationshipIds ? 'Selected local relationships' : selectedEdge.targetLabel} to {selectedEdge.sourceLabel}</option><option value="both directions">Both directions</option><option value="varies">Direction varies</option><option value="not yet known">Not yet known</option></select></Field>
             <MapTextEditor key={`edge:${selectedEdge.id}`} label="Relationship" maxLength={RELATIONSHIP_VERB_LIMIT} value={selectedEdge.verb}  validate={(value) => relationshipIssue(value, selectedEdge)} onSave={(value) => editEdge('verb', value)} />
             <AnnotationField key={selectedEdge.annotation.id} annotationId={selectedEdge.annotation.id} label="Interpretation" value={selectedEdge.annotation.text} hint="What does this relationship explain? What is still uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedEdge.annotation.id, text)} {...annotationProps} />
 
             <SavedItemContext item={selectedEdge} />
-            <button className="map-item-action map-item-action--remove" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Delete'}</button>
+            {!notebook?.simple && <button className="map-item-action map-item-action--remove" type="button" onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Return to map' : 'Delete'}</button>}
 
           </> : <p className="empty-message">You can also select a line directly on the map.</p>}
         </div>}
@@ -5625,7 +5651,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           <div className="map-summary"><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
         </>}
         </div>
-        {notebook && notebook.action && !addMode && !connecting && <div className="notebook-task-end" aria-label="Next step">
+        {notebook && !notebook.simple && notebook.action && !addMode && !connecting && <div className="notebook-task-end" aria-label="Next step">
           <span className="notebook-current-step">{SCALES[project.activeScale].label} · {isNodeReviewScale(project.activeScale) ? 'Nodes' : 'Relationships'}</span>
           {notebook.detail && <span className="notebook-step-detail">{notebook.detail}</span>}
           {notebook.action}
@@ -5752,14 +5778,15 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
   return next;
 }
 
-function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, onOpenAccount, configurationRevision = 0, cloudSaveStatus, cloudError, onSubmitRevision } = {}) {
+function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, onOpenAccount, configurationRevision = 0, cloudSaveStatus, cloudError, onSubmitRevision } = {}) {
   const institutionalMode = Boolean(onAccountDashboard);
   const bugReportDock = useBugReportDock();
   const [mapToolbarHost, setMapToolbarHost] = useState(null);
   const [theme, setTheme] = useState(storedTheme);
   const [notebookOpen, setNotebookOpen] = useState(false);
+  const [workflowPanelMode, setWorkflowPanelMode] = useState('review');
   const [completionDismissed, setCompletionDismissed] = useState(false);
-  const [initialLoad] = useState(loadProject);
+  const [initialLoad] = useState(() => { const loaded = loadProject(); if (memoFirstWorkflow && isPart2(loaded.project.activeScale)) beginPart2(loaded.project); return loaded; });
   const persistenceStorageRef = useRef(projectStorage());
   const memoDraftBaseRef = useRef(initialLoad.memoDraftBase || initialLoad.project);
   const memoDraftErrorRef = useRef(false);
@@ -5828,7 +5855,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     }
   }, [theme]);
   projectRef.current = project;
-  const initialModelRequired = requiresInitialModel(project);
+  const initialModelRequired = !memoFirstWorkflow && requiresInitialModel(project);
   useEffect(() => {
     if (!initialModelRequired || project.stage < 2) return;
     setMapPreviewOpen(false);
@@ -6200,7 +6227,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   const setStage = (stage, options = {}) => {
     if (!options.preserveNotebook) setNotebookOpen(stage !== 3 || requiresInitialModel(projectRef.current));
     if (!Number.isInteger(stage) || stage < 0 || stage >= STAGES.length) return false;
-    if (stage >= 2 && requiresInitialModel(projectRef.current)) {
+    if (!memoFirstWorkflow && stage >= 2 && requiresInitialModel(projectRef.current)) {
       toast('Continue from Memo review to start your map', 'error');
       return false;
     }
@@ -6275,9 +6302,10 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const generateSuggestions = async ({ resume = false } = {}) => {
+    if (memoFirstWorkflow && !isNodeReviewScale(project.activeScale)) return false;
     if (reviewInFlightRef.current || reviewRetryAtRef.current > Date.now()) return false;
     if (!activeSubmission(project).text.trim()) { toast('Add the memo for this part before requesting guidance.', 'error'); return false; }
-    const payload = preflightEvaluationPayload(project);
+    const payload = preflightEvaluationPayload(project, memoFirstWorkflow);
     const encoder = new TextEncoder();
     const sourceBytes = encoder.encode(prepareProviderMemo(payload.sourceMaterial).sourceText).byteLength;
     if (payload.inquiry.length > MAX_EVALUATION_INQUIRY_CHARACTERS) {
@@ -6303,7 +6331,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       return;
     }
     const accessGeneration = accessGenerationRef.current;
-    const requestKey = authoritativeEvaluationKey(project);
+    const requestKey = authoritativeEvaluationKey(project, memoFirstWorkflow);
     const cacheRequestKey = stableId('guidance-cache', `${requestKey}:${JSON.stringify(accessState.access)}`);
     const request = { controller: new AbortController(), projectId: project.id };
     reviewRequestRef.current = request;
@@ -6321,7 +6349,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       }
       let result;
       if (cached) {
-        try { result = normalizePreflightEvaluation(cached.evaluation, project); }
+        try { result = normalizePreflightEvaluation(cached.evaluation, project, memoFirstWorkflow); }
         catch { removeGuidanceCacheEntry(projectStorage(), project.id, cacheRequestKey); }
       }
       const response = result ? cached : await createPreflightEvaluation(payload, { signal: request.controller.signal, durable: institutionalMode,
@@ -6330,21 +6358,32 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       if (request.controller.signal.aborted) return false;
       if (!response || !Object.hasOwn(response, 'evaluation')) throw new Error('The server returned guidance in an unexpected format. Generate the guidance again.');
       if (accessGeneration !== accessGenerationRef.current || projectRef.current.id !== project.id) return;
-      if (authoritativeEvaluationKey(projectRef.current) !== requestKey) {
+      if (authoritativeEvaluationKey(projectRef.current, memoFirstWorkflow) !== requestKey) {
         toast('The memo or model setup changed while guidance was generated. Generate again from the current project.', 'error');
         return;
       }
       if (!result) {
-        result = normalizePreflightEvaluation(response.evaluation, projectRef.current);
+        result = normalizePreflightEvaluation(response.evaluation, projectRef.current, memoFirstWorkflow);
         if (result.evaluation.runtime.feedbackOnly !== true) writeGuidanceCache(projectStorage(), project.id, cacheRequestKey, response);
       }
-      update((draft) => { draft.preflight = result; }, 'preflight.completed', 'Memo guidance generated', 'student', {
+      let addedNodeCount = 0;
+      if (memoFirstWorkflow) {
+        const proposed = structuredClone(projectRef.current);
+        proposed.preflight = result;
+        addedNodeCount = appendSubmittedNodes(proposed, result.memoReview);
+        validateProject(proposed);
+      }
+      update((draft) => { draft.preflight = result; if (memoFirstWorkflow) appendSubmittedNodes(draft, result.memoReview); }, 'preflight.completed', memoFirstWorkflow ? 'Submitted memo nodes added to map' : 'Memo guidance generated', 'student', {
         sourceFingerprint: result.sourceFingerprint,
         configurationSnapshot: result.configurationSnapshot,
         runtime: result.evaluation.runtime,
         evaluation: { createdAt: result.evaluation.createdAt, expiresAt: result.evaluation.expiresAt },
       });
-      toast(result.evaluation.runtime.feedbackOnly === true
+      if (memoFirstWorkflow) {
+        setNotebookOpen(true);
+        if (!addedNodeCount && result.evaluation.runtime.feedbackOnly === true) setReviewFailure({ message: 'No nodes could be extracted. Your saved map is unchanged. You can add nodes manually or revise the memo and submit again.' });
+        toast(addedNodeCount ? `${addedNodeCount} nodes added to your map.` : 'Your map is ready. No new nodes were added.');
+      } else toast(result.evaluation.runtime.feedbackOnly === true
         ? 'Feedback is ready; the app could not use its map suggestions.'
         : 'Guidance is ready.');
       return result;
@@ -6372,13 +6411,14 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
 
   useEffect(() => {
     if (!institutionalMode || accessState.status !== 'granted' || project.stage !== 1) return;
-    const key = authoritativeEvaluationKey(project);
+    const key = authoritativeEvaluationKey(project, memoFirstWorkflow);
     if (resumedGuidance.current === key || !hasPendingGuidance(projectStorage(), project.id, key)) return;
     resumedGuidance.current = key;
     void generateSuggestions({ resume: true });
   }, [institutionalMode, accessState.status, project.id, project.activeScale, project.stage, project.teacherGovernance]);
 
   const generateConnectionSuggestions = async () => {
+    if (memoFirstWorkflow) return;
     const effectivePrompt = connectionPrompt.trim() || memoPromptExcerpt(reviewMemoText(project));
     if (!effectivePrompt) return toast('Write a sentence about how the nodes connect, or add memo text first.', 'error');
     const payload = connectionSuggestionPayload(project, effectivePrompt);
@@ -6789,8 +6829,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       .filter((node) => node.status !== 'rejected' && node.claimState !== 'retired')
       .map((node) => node.id));
     const endpointIds = new Set([...liveGraphNodeIds, ...acceptedNodeIds]);
-    const relationshipsAllowed = project.activeScale !== 'micro';
-    const reviewedScaleEdges = project.candidates.edges
+    const relationshipsAllowed = !memoFirstWorkflow && project.activeScale !== 'micro';
+    const reviewedScaleEdges = (memoFirstWorkflow ? [] : project.candidates.edges)
       .filter((item) => item.scale === project.activeScale)
       .map(rekeyEdge);
     const rekeyedConnectionSuggestions = suggestedConnections.map(rekeyEdge);
@@ -6942,7 +6982,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const primary = async ({ mesoReviewed = false } = {}) => {
-    if (project.stage >= 2 && requiresInitialModel(projectRef.current)) return setStage(1);
+    if (!memoFirstWorkflow && project.stage >= 2 && requiresInitialModel(projectRef.current)) return setStage(1);
     switch (project.stage) {
       case 0: setStage(1, { completed: true }); break;
       case 1: {
@@ -6951,6 +6991,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         if (requiresLevelModel(current)) {
           const result = await generateSuggestions();
           if (!result) return;
+          if (memoFirstWorkflow) return;
           return prepareCandidates({ ...projectRef.current, preflight: result });
         }
         prepareCandidates(current);
@@ -7079,6 +7120,12 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   };
 
   const selectWorkScale = (scale, targetStage = null) => {
+    if (memoFirstWorkflow) {
+      if (!SCALE_ORDER.includes(scale)) return;
+      update(draft => openMemoWorkflowScale(draft, scale), 'scale.selected', `${SCALES[scale].label} opened`);
+      setWorkflowPanelMode('review'); setNotebookOpen(true); setMapPreviewOpen(false); setCompletionDismissed(true); setModal(null);
+      return;
+    }
     if (!project.releasedScales.includes(scale)) return;
     if (scale === project.activeScale) {
       if (targetStage !== null) setStage(targetStage);
@@ -7099,10 +7146,45 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     toast(`Working at ${SCALES[scale].label}. The cumulative map and prior decisions remain.`);
   };
 
+  const submitWorkflowMemo = () => {
+    if (!isNodeReviewScale(project.activeScale) || reviewInFlightRef.current) return;
+    setWorkflowPanelMode('review'); setNotebookOpen(true);
+    if (project.stage === 1) { void generateSuggestions(); return; }
+    setStage(1, { preserveNotebook: true });
+    setPendingLevelRead(project.activeScale);
+  };
+  const editWorkflowMemo = (scale) => {
+    update(draft => {
+      openMemoWorkflowScale(draft, scale || (isPart2(draft.activeScale) ? 'exosphere' : 'micro'));
+      draft.stage = 1;
+    }, 'memo.opened', 'Memo opened for editing');
+    setWorkflowPanelMode('review'); setNotebookOpen(true);
+  };
+
   // One computed next action replaces the five-step footer. Rules live in
   // nextStep.js and read saved project state only; stage records are unchanged.
   const step = nextStep(project, { reviewBusy: Boolean(reviewBusy), retryPending: reviewRetryAt > Date.now(), initialModelRequired });
   const runNextStep = () => {
+    if (memoFirstWorkflow) {
+      if (project.stage === 0) return submitWorkflowMemo();
+      const next = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
+      if (next) {
+        update(draft => {
+          if (!draft.completedScales.includes(draft.activeScale)) draft.completedScales.push(draft.activeScale);
+          openMemoWorkflowScale(draft, next);
+        }, 'scale.selected', `${SCALES[next].label} opened`);
+        setWorkflowPanelMode('review'); setNotebookOpen(true); setMapPreviewOpen(false);
+      } else {
+        const completed = structuredClone(commitPendingAnnotations().project);
+        if (!completed.completedScales.includes('macrosphere')) completed.completedScales.push('macrosphere');
+        completed.stage = completed.furthestStage = 4;
+        completed.levelProgress.macrosphere = { stage: 4, reflection: completed.reflection };
+        completed.updatedAt = new Date(Math.max(Date.now(), Date.parse(completed.updatedAt) + 1)).toISOString();
+        if (!persistNow(completed)) return;
+        projectRef.current = completed; setProject(completed); setCompletionDismissed(false);
+      }
+      return;
+    }
     switch (step.id) {
       case 'start-review': setStage(1, { completed: true }); break;
       case 'review-level': setStage(4, { completed: true }); break;
@@ -7122,12 +7204,14 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       && governanceSettled.stageId === STAGES[project.stage]?.id;
     if (refreshing && !settled) return;
     setPendingLevelRead(null);
-    if (!activeSubmission(project).text.trim() || reviewInFlightRef.current || !requiresLevelModel(project)) return;
+    if (!activeSubmission(project).text.trim() || reviewInFlightRef.current || !memoFirstWorkflow && !requiresLevelModel(project)) return;
+    if (memoFirstWorkflow) { void generateSuggestions(); return; }
     void primary();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingLevelRead, project.activeScale, project.stage, project.teacherGovernance, governanceSettled]);
   const backDisabled = project.stage === 0;
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
+    if (memoFirstWorkflow && isPart2(next.activeScale)) beginPart2(next);
     projectActivationGenerationRef.current += 1;
     window.clearTimeout(persistTimer.current);
     window.clearTimeout(linkSyncTimer.current);
@@ -7518,19 +7602,25 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
   useEffect(() => { if (project.stage !== 3) setNotebookOpen(true); }, [project.stage, project.activeScale]);
   const panelDisabled = initialModelRequired ? ['inspector', 'review'] : [];
   const changePanelMode = (mode, options = {}) => {
+    if (memoFirstWorkflow) { setWorkflowPanelMode(mode === 'inspector' ? 'inspector' : 'review'); return; }
     if (mode === 'inspector' && project.stage === 3) return;
     setStage(stageForPanelMode(mode, projectRef.current), { completed: mode === 'review' && project.stage === 3, ...options });
   };
   const suggestionsPanel = <SuggestionsPanel project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onHighlight={setStudioHighlight} />;
   const reviewPanel = <ReviewPanel onSaveNote={flushPersistence} saveState={saveState} onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} onSubmitRevision={onSubmitRevision ? submitRevision : undefined} revisionSubmitting={revisionSubmitting} submitDisabled={Boolean(reviewBusy) || Boolean(connectionBusy)} />;
-  const panel = project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
+  const captureMemoImportScope = () => { const access = accessGenerationRef.current; const activation = projectActivationGenerationRef.current; return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current; };
+  const workflowNotebook = <MemoWorkflowNotebook key={`${project.id}:${project.activeScale}`} project={project} update={update} uploadControl={<MemoFileUpload project={project} update={update} toast={toast} captureImportScope={captureMemoImportScope} />} onTextChange={text => update(draft => invalidateSubmissionDerived(draft, 'text', text))} onSelectStep={selectWorkScale} onSubmitMemo={submitWorkflowMemo} onEditMemo={editWorkflowMemo} busy={Boolean(reviewBusy)} failure={reviewFailure} retryPending={reviewRetryAt > Date.now()} saveState={saveState} onSaveNote={flushPersistence} />;
+  const panel = memoFirstWorkflow ? { mode: workflowPanelMode, ...(workflowPanelMode !== 'inspector' ? { content: workflowNotebook } : {}), disabled: [] }
+    : project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
     : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
     : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
-  const captureMemoImportScope = () => { const access = accessGenerationRef.current; const activation = projectActivationGenerationRef.current; return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current; };
-  const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, detail: step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
+  const workflowLevels = levelRailState(project).map(level => memoFirstWorkflow && level.state === 'locked' ? { ...level, state: 'available' } : level);
+  const workflowPrevious = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) - 1];
+  const workflowAction = <><div className="workflow-actions">{workflowPrevious && <button type="button" className="button button--secondary" disabled={Boolean(reviewBusy)} onClick={() => selectWorkScale(workflowPrevious)}>Back</button>}<button className="button notebook-next" type="button" disabled={Boolean(reviewBusy)} onClick={runNextStep}>{project.activeScale === 'macrosphere' ? 'Finish map' : 'Continue'}</button></div>{project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}</>;
+  const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, open: notebookOpen, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
   const intakeOpen = project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
-  const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {
+  const stageScreens = [<IntakeStage project={project} update={update} toast={toast} action={memoFirstWorkflow ? <button className="button" type="button" disabled={Boolean(reviewBusy) || !activeSubmission(project).text.trim() || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>Submit memo and add nodes</button> : null} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {
     const access = accessGenerationRef.current;
     const activation = projectActivationGenerationRef.current;
     return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current;
@@ -7561,7 +7651,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       workspaceRef.current?.focus();
       return;
     }
-    if (requiresInitialModel(projectRef.current)) {
+    if (!memoFirstWorkflow && requiresInitialModel(projectRef.current)) {
       setStage(1);
       toast('Continue from Memo review to start your map', 'error');
       return;
@@ -7808,8 +7898,8 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
         <button className="text-button" type="button" onClick={() => setModal('stages')}>Progress</button>
         <button className="text-button" type="button" onClick={() => setModal('exports')}>Export &amp; share</button>
         {onOpenAccount && <button className="text-button project-menu-account" type="button" onClick={() => { if (flushPersistence()) void onOpenAccount(); }}>Account</button>}
-        <div className="project-menu-level"><LevelSelect label="Work level in Project menu" levels={levelRailState(project)} onSelect={selectWorkScale} /></div>
-        <details><summary>Preferences</summary><SuggestionPreference project={project} update={update} /><ThemeToggle dark={dark} onToggle={toggleTheme} showLabel /></details>
+        <div className="project-menu-level"><LevelSelect label="Work level in Project menu" levels={workflowLevels} onSelect={selectWorkScale} /></div>
+        <details><summary>Preferences</summary>{!memoFirstWorkflow && <SuggestionPreference project={project} update={update} />}<ThemeToggle dark={dark} onToggle={toggleTheme} showLabel /></details>
       </ProjectMenu>{onOpenAccount && <button className="text-button account-nav-button" type="button" onClick={() => { if (flushPersistence()) void onOpenAccount(); }}>Account</button>}<div ref={setMapToolbarHost} className="workspace-map-controls"><div className="notebook-toolbar-actions"><span ref={bugReportDock} className="workspace-bug-report" /></div></div></div>
     </header>
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
@@ -7819,18 +7909,18 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
       {['error', 'validation'].includes(saveState.status) && <div className="workspace-save-notice" role="alert"><span>{saveState.status === 'validation' ? 'Finish the map item to save' : 'Changes are not saved'}</span><button type="button" onClick={() => setModal(saveState.status === 'validation' ? 'validation' : 'storage')}>{saveState.status === 'validation' ? 'Review issue' : 'Recover project'}</button></div>}
       {screen}
     </main>
-    {completionOpen ? null : intakeOpen ? <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong><span className="next-step-detail">{step.detail}</span></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{step.label}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer> : null}
+    {memoFirstWorkflow && intakeOpen ? null : completionOpen ? null : intakeOpen ? <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong><span className="next-step-detail">{step.detail}</span></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{step.label}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer> : null}
     <Modal open={modal === 'exports'} title="Export & share" onClose={() => setModal(null)}><ReviewPanel exportOnly onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} /></Modal>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>
       <section className="level-progress-summary" aria-labelledby="level-progress-title">
         <h2 id="level-progress-title">Level progression</h2>
-        <ol>{SCALE_ORDER.map((scale) => <li key={scale}><strong>{SCALES[scale].label}</strong><span>{levelProgressStatus(project, scale)}</span></li>)}</ol>
+        <ol>{SCALE_ORDER.map((scale) => <li key={scale}>{memoFirstWorkflow ? <button className="button button--secondary" type="button" onClick={() => selectWorkScale(scale)}>{MEMO_WORKFLOW[scale].title}</button> : <strong>{SCALES[scale].label}</strong>}<span>{levelProgressStatus(project, scale)}</span></li>)}</ol>
       </section>
       <div className="progress-actions"><button className="button button--ghost" type="button" onClick={() => setModal('project-link')}>Project link</button></div>
-       <ol className="stage-menu">{STAGES.map((stage, index) => {
+       {!memoFirstWorkflow && <ol className="stage-menu">{STAGES.map((stage, index) => {
          return <li key={stage.id}><button aria-label={stage.label} className={index === project.stage ? 'is-current' : ''} onClick={() => { if (setStage(index)) setModal(null); }}><strong><span aria-hidden="true">{index + 1}. </span>{stage.label}</strong>{index === project.stage ? <em>Current</em> : null}</button></li>;
-       })}</ol>
+       })}</ol>}
     </Modal>
     <Modal open={modal === 'restart-map'} title="Start new map from this memo?" onClose={() => setModal(null)}>
       <div className="confirm-panel"><p>This creates a new project at Micro with the same memo and framing. Your current project stays saved in Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={restartFromCurrentMemo}>Start new map</button></div></div>

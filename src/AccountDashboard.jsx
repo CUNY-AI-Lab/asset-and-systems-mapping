@@ -29,7 +29,7 @@ export default function AccountDashboard({ account, courses, courseError, quota,
     <div id="account-panel-overview" role={instructor ? 'tabpanel' : 'region'} aria-labelledby={instructor ? 'account-tab-overview' : undefined} aria-label={instructor ? undefined : 'Account overview'} hidden={selected !== 'overview'}>
       <div className="account-grid">
         <section className="account-card" aria-labelledby="account-profile"><h2 id="account-profile">Profile</h2>
-          <dl><dt>Preferred name</dt><dd>{account.preferredName || 'Unavailable'}</dd><dt>Email</dt><dd>{account.email || 'Unavailable'}</dd><dt>Access</dt><dd>{role}</dd></dl>
+          <p className="account-signin">Signed in with CUNY Login</p><dl>{account.preferredName && <><dt>Preferred name</dt><dd>{account.preferredName}</dd></>}{account.email && <><dt>Email</dt><dd>{account.email}</dd></>}<dt>Access</dt><dd>{role}</dd></dl>
           <form action="/auth/logout" method="post"><Action variant="ghost" type="submit">Sign out</Action></form>
         </section>
         <section className="account-card" aria-labelledby="account-usage"><h2 id="account-usage">Model usage</h2><p>{usage}</p></section>

@@ -1552,52 +1552,23 @@ describe('mapping domain', () => {
     expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
   });
 
-  it('rejects a live generic Exosphere label but retires the same legacy item so the project can open', () => {
-    const legacy = createDefaultProject();
-    legacy.activeScale = 'exosphere';
-    legacy.releasedScales = ['micro', 'exosphere'];
-    legacy.graph.nodes = [mappedNode({
-      id: 'node_generic_exosphere',
-      label: 'Transportation access',
-      type: 'service',
-      scale: 'exosphere',
-    })];
-
-    expect(() => validateProject(legacy)).not.toThrow();
-
-    const migrated = parseProject(JSON.stringify({ ...legacy, schemaVersion: 7 }));
-    expect(migrated.graph.nodes[0]).toMatchObject({
-      id: 'node_generic_exosphere',
-      scale: 'exosphere',
-      status: 'rejected',
-      claimState: 'retired',
-    });
-    expect(migrated.graph.nodes[0].notes).toContain('Exosphere item must name an institution');
-    expect(parseProject(JSON.stringify(migrated))).toEqual(migrated);
+  it('preserves outside settings without requiring a proper noun', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'exosphere'; project.releasedScales = ['micro', 'exosphere'];
+    project.graph.nodes = [mappedNode({ id: 'outside', label: 'Transportation access', type: 'service', scale: 'exosphere' })];
+    const restored = parseProject(JSON.stringify({...project,schemaVersion:7}));
+    expect(restored.graph.nodes[0]).toMatchObject({ id: 'outside', status: 'confirmed', claimState: 'student interpretation' });
+    expect(parseProject(serializeProject(restored)).graph).toEqual(restored.graph);
   });
 
-  it('retires a legacy scope-less Macrosphere item instead of blocking the project from opening', () => {
-    const legacy = createDefaultProject();
-    legacy.activeScale = 'macrosphere';
-    legacy.releasedScales = ['micro', 'macrosphere'];
-    legacy.graph.nodes = [mappedNode({
-      id: 'node_scope_less_macro',
-      label: 'High transportation costs',
-      type: 'economic condition',
-      scale: 'macrosphere',
-      deontic: 'constrains',
-    })];
-
-    expect(() => validateProject(legacy)).toThrow(/at least two map items/);
-
-    const migrated = parseProject(JSON.stringify({ ...legacy, schemaVersion: 7 }));
-    expect(migrated.graph.nodes[0]).toMatchObject({
-      id: 'node_scope_less_macro',
-      status: 'rejected',
-      claimState: 'retired',
-    });
-    expect(migrated.graph.nodes[0].notes).toContain('at least two valid mapped scope members');
-    expect(() => validateProject(migrated)).not.toThrow();
+  it('keeps a Macro condition while the student has not yet connected it', () => {
+    const project = createDefaultProject();
+    project.activeScale = 'macrosphere'; project.releasedScales = ['micro', 'macrosphere'];
+    project.graph.nodes = [mappedNode({ id: 'condition', label: 'High transportation costs', type: 'economic condition', scale: 'macrosphere' })];
+    const restored = parseProject(JSON.stringify({...project,schemaVersion:7}));
+    expect(restored.graph.nodes[0]).toMatchObject({ id: 'condition', status: 'confirmed', claimState: 'student interpretation' });
+    expect(restored.graph.edges).toEqual(project.graph.edges);
+    expect(() => validateProject(restored)).not.toThrow();
   });
 
   it('reclassifies lower-level roles but retires schedules and clause labels during migration', () => {

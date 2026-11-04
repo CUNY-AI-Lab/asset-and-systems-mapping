@@ -4,33 +4,24 @@ import MapSearch from './MapSearch.jsx';
 import { MapToolsResizeHandle, useMapToolsSize } from './MapToolsResize.jsx';
 
 // Keep this popover outside the legacy toolbar's grid and field rules.
-export default function MapTools({ open, onOpenChange, scales, scale, onScale,
+export default function MapTools({ embedded = false, open, onOpenChange, scales, scale, onScale,
   presentation, onPresentation, nodes, onSelect, onZoom, canZoomOut, canZoomIn,
-  onAdd, onFit, onArrange, canArrange, onLegend, onFullscreen, fullscreen,
+  onAdd, onFit, onArrange, canArrange, autoFit, onAutoFit, onLegend, onFullscreen, fullscreen,
   hasRemoved, showRemoved, onShowRemoved, onUndo, onRedo, canUndo, canRedo }) {
   const menu = useRef(null);
   const panelId = useId();
   const size = useMapToolsSize();
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || embedded) return undefined;
     const dismiss = (event) => {
       if (!menu.current?.contains(event.target)) onOpenChange(false);
     };
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
-  }, [open, onOpenChange]);
-  const run = (action) => { onOpenChange(false); action(); };
-  return <details ref={menu} className="notebook-map-tools" open={open}
-    onToggle={(event) => onOpenChange(event.currentTarget.open)}
-    onKeyDown={(event) => {
-      if (event.key === 'Escape' && open) {
-        event.preventDefault(); event.stopPropagation(); onOpenChange(false);
-        menu.current.querySelector('summary')?.focus();
-      }
-    }}>
-    <summary>Tools</summary>
-    <div id={panelId} className="notebook-tools-panel" style={{ '--map-tools-width': `${size.width}px` }}>
-      <MapToolsResizeHandle panelId={panelId} {...size} />
+  }, [open, onOpenChange, embedded]);
+  const run = (action) => { if (!embedded) onOpenChange(false); action(); };
+  const content = <div id={panelId} className={embedded ? "notebook-tools-inline" : "notebook-tools-panel"} style={{ '--map-tools-width': `${size.width}px` }}>
+      {!embedded && <MapToolsResizeHandle panelId={panelId} {...size} />}
       <div className="notebook-tools-body">
       <div className="map-tools-view" role="group" aria-label="Map presentation">
         <button type="button" aria-pressed={presentation === 'canvas'} onClick={() => run(() => onPresentation('canvas'))}>Canvas</button>
@@ -47,6 +38,7 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
         <button type="button" onClick={() => run(onFit)}>Fit map</button>
         <button type="button" aria-label="Zoom in" disabled={!canZoomIn} onClick={() => onZoom(0.15)}>+</button>
       </div>}
+      {onAutoFit && <label className="map-tools-autofit"><input type="checkbox" checked={autoFit} onChange={event => onAutoFit(event.target.checked)} />Auto-fit layout</label>}
       <div className="map-tools-commands">
         {onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
         <MapSearch nodes={nodes} onSelect={(kind, id) => run(() => onSelect(kind, id))} />
@@ -62,6 +54,17 @@ export default function MapTools({ open, onOpenChange, scales, scale, onScale,
       </div>
       {hasRemoved && <label className="map-tools-removed"><input type="checkbox" checked={showRemoved} onChange={(event) => onShowRemoved(event.target.checked)} />Show removed items</label>}
       </div>
-    </div>
+    </div>;
+  if (embedded) return <section aria-label="Map tools">{content}</section>;
+  return <details ref={menu} className="notebook-map-tools" open={open}
+    onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    onKeyDown={(event) => {
+      if (event.key === 'Escape' && open) {
+        event.preventDefault(); event.stopPropagation(); onOpenChange(false);
+        menu.current.querySelector('summary')?.focus();
+      }
+    }}>
+    <summary>Tools</summary>
+{content}
   </details>;
 }

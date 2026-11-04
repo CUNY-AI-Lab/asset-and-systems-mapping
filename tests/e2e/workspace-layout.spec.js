@@ -38,7 +38,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
       await page.mouse.move(box.x - 80, box.y + box.height / 2, { steps: 4 });
       await page.mouse.up();
       expect(Number(await handle.getAttribute('aria-valuenow'))).toBeGreaterThan(initial);
-      expect((await notebook.boundingBox()).width).toBeLessThanOrEqual(362);
+      expect((await notebook.boundingBox()).width).toBeLessThanOrEqual(522);
       // The controls remain readable even at the narrowest supported dock.
       for (let step = 0; step < 10; step++) await handle.press('ArrowRight');
       await expect(handle).toHaveAttribute('aria-valuenow', await handle.getAttribute('aria-valuemin'));
@@ -66,7 +66,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     await showMap(page);
     await expect(notebook).toBeVisible();
     expect((await canvas.boundingBox()).width).toBeCloseTo(dockedCanvas.width, 0);
-    const instruction = await page.getByText('Select an item to explore its connections.', {exact:true}).boundingBox();
+    const instruction = await page.getByText('Select a node or relationship to edit it.', {exact:true}).boundingBox();
     const mapBox = await canvas.boundingBox();
     expect(instruction.x - mapBox.x).toBeLessThan(20);
     expect(instruction.y - mapBox.y).toBeLessThan(20);

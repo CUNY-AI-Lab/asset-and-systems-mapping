@@ -1,3 +1,4 @@
+import { NODE_SUBMISSION, nodeSubmissionInstruction, submittedReviewIssue } from '../shared/node-submission.js';
 import { relationshipGroupIssue, relationshipIdsIssue } from '../shared/relationship-groups.js';
 import { isNodeReviewScale, isRelationshipReviewScale, canConnectAtScale } from '../shared/mapping-grammar.js';
 import { appendCoursePrompt } from '../shared/course-prompt.js';
@@ -860,7 +861,12 @@ function boundedEvidenceText(value, maximum) {
     && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value) ? value : null;
 }
 
-function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false } = {}) {
+function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false, workflowMode } = {}) {
+  if (workflowMode === NODE_SUBMISSION) {
+    const issue = submittedReviewIssue(value, activeScale, sourceMaterial);
+    if (issue) throw new MemoReviewSemanticError(issue, { grounding: issue.includes('.evidence') });
+    return structuredClone(value);
+  }
   const memoSource = analyzeMemoSource(sourceMaterial);
   const checkEvidence = (text, path) => {
     if (bibliographyOnlyEvidence(text, memoSource)) throw new MemoReviewSemanticError(`${path} cites only a bibliography entry; use a narrative passage about the mapped situation.`, { grounding: true });
@@ -1429,8 +1435,9 @@ function carriedRelationshipProcess(record, path) {
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments', 'fieldNotes',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments', 'fieldNotes', 'workflowMode',
   ]);
+  if (value.workflowMode !== undefined && (value.workflowMode !== NODE_SUBMISSION || !['micro', 'exosphere'].includes(value.activeScale))) throw new HttpError(400, 'Submit a memo at Micro or Exo. Relationships are drawn by students.');
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
   if (!PREFLIGHT_SCALES.has(value.activeScale)) throw new HttpError(400, 'activeScale is not supported.');
   const hasCarriedNodes = Object.hasOwn(value, 'carriedNodes');
@@ -1502,6 +1509,7 @@ function validatePreflightEvaluationRequest(value) {
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
   return {
     projectMetadata,
+    ...(value.workflowMode ? { workflowMode: value.workflowMode } : {}),
     activeScale: value.activeScale,
     stageId,
     inquiry,
@@ -1932,6 +1940,10 @@ function studentMemoReview(value, activeScale = 'micro') {
     generationContract: _generationContract,
     ...review
   } = suggestion;
+  if (_generationContract === NODE_SUBMISSION) {
+    if (submittedReviewIssue(review, activeScale)) throw new Error('invalid submitted nodes');
+    return review;
+  }
   if (_generationContract === 'atomic-v1') return storedAtomicMemoReview(review, activeScale);
   const normalized = normalizeMemoReview(review, activeScale, 'stored memo review');
   return normalized;
@@ -3233,8 +3245,8 @@ export function createSystemsMappingApp(options = {}) {
       );
       const missingRolesReview = input.activeScale === 'meso' && providerMemo ? missingMesoTableRolesReview(providerMemo.sourceText, input.carriedNodes) : null;
       if (missingRolesReview) {
-        const review = validateGeneratedMemoReviewAtomically(missingRolesReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
-        suggestion = { ...review, generationContract: 'atomic-v1', evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
+        const review = validateGeneratedMemoReviewAtomically(missingRolesReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
+        suggestion = { ...review, generationContract: input.workflowMode || 'atomic-v1', evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
         runtimeMetadata = authoritativeRuntimeMetadata({}, { provider: 'source-check', model: 'Meso role coverage', createdAt });
       } else if (ollamaConfig) {
         let correctiveRetries = 0;
@@ -3257,13 +3269,14 @@ export function createSystemsMappingApp(options = {}) {
             generationSignal.throwIfAborted();
             return generated;
           };
-          const contractInstruction = memoReviewSchemaInstruction(input.activeScale);
+          const contractInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale) : memoReviewSchemaInstruction(input.activeScale);
           const systemPrompt = input.customInstructions
             ? `${effective.effectivePrompt}\n\nSTUDENT PROJECT OVERLAY\n[Custom instructions]\n${input.customInstructions}\n\n${contractInstruction}`
             : `${effective.effectivePrompt}\n\n${contractInstruction}`;
           const providerInput = {
             systemPrompt,
             activeScale: input.activeScale,
+            ...(input.workflowMode ? { workflowMode: input.workflowMode } : {}),
             inquiry: input.inquiry,
             sourceMetadata,
             sourceText: providerMemo.sourceText,
@@ -3278,7 +3291,7 @@ export function createSystemsMappingApp(options = {}) {
           let feedbackOnly = false;
           try {
             try {
-              review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+              review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
             } catch (error) {
               if (!(error instanceof MemoReviewSemanticError)) throw error;
               options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message });
@@ -3286,7 +3299,7 @@ export function createSystemsMappingApp(options = {}) {
               correctiveRetries = 1;
               const retryContext = memoContractRepairContext(readingContext,
                 createMemoContractRepair(generated.suggestion, error.message, input.activeScale), OLLAMA_CLOUD_LIMITS.memoContextBytes);
-              const endpointInstruction = input.activeScale === 'meso'
+              const endpointInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale) : input.activeScale === 'meso'
                 ? 'For this Meso replacement, every connection source and target must be a different exact ID from carriedNodes at Micro. Labels cannot replace IDs. Return no new nodes; explain missing endpoints in guidance.'
                 : input.activeScale === 'exosphere'
                   ? 'For this Exosphere replacement, return larger-scale nodes and an empty connections array.'
@@ -3300,7 +3313,7 @@ export function createSystemsMappingApp(options = {}) {
               });
               completedReview = generated.suggestion;
               try {
-                review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+                review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
               } catch (repairError) {
                 // A distinct final strategy for completed source-grounding failures:
                 // supply bounded narrative passages and require quoted evidence.
@@ -3325,7 +3338,7 @@ export function createSystemsMappingApp(options = {}) {
                 if (quotationOnly) {
                   // This strategy changes quotations only. Verify every other
                   // field first, so it cannot conceal a separate map failure.
-                  try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial); }
+                  try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode }); }
                   catch { quotationOnly = false; }
                 }
                 if (quotationOnly) {
@@ -3339,7 +3352,7 @@ export function createSystemsMappingApp(options = {}) {
                   try { selectedReview = applyMemoQuoteSelection(rejectedReview, generated.suggestion, passages); }
                   catch { throw new MemoReviewSemanticError('The quotation selection does not match the supplied guidance and passages.', { grounding: true }); }
                   completedReview = selectedReview;
-                  review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+                  review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
                 } else {
                   let repairContext = { ...readingContext, evidenceRepair: { passages } };
                   const rejectedExcerpt = createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
@@ -3360,19 +3373,19 @@ export function createSystemsMappingApp(options = {}) {
                   catch { throw new MemoReviewSemanticError('The evidence indices must select supplied narrative passages.', { grounding: true }); }
                   completedReview = expandedReview;
                   strictFallbackEvidence = true;
-                  review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true });
+                  review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true, workflowMode: input.workflowMode });
                 }
               }
             }
           } catch (error) {
             generationSignal.throwIfAborted();
-            review = feedbackOnlyMemoReview(completedReview, error, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: strictFallbackEvidence });
+            review = input.workflowMode === NODE_SUBMISSION ? null : feedbackOnlyMemoReview(completedReview, error, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: strictFallbackEvidence });
             if (!review) throw error;
             feedbackOnly = true;
           }
           suggestion = {
             ...review,
-            generationContract: 'atomic-v1',
+            generationContract: input.workflowMode || 'atomic-v1',
             evaluatedAt: new Date(createdAt).toISOString(),
             configurationSnapshot: configSnapshot,
           };
@@ -3422,14 +3435,14 @@ export function createSystemsMappingApp(options = {}) {
               ...(Array.isArray(node.scope) ? { scope: node.scope.map(member => typeof member === 'string' ? member : member.id) } : {}),
             })),
           };
-          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial);
+          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
         } catch (error) {
           if (!(error instanceof MemoReviewSemanticError)) throw error;
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');
         }
         suggestion = {
           ...review,
-          generationContract: 'atomic-v1',
+          generationContract: input.workflowMode || 'atomic-v1',
           evaluatedAt: new Date(createdAt).toISOString(),
           configurationSnapshot: configSnapshot,
         };

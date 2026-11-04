@@ -8,7 +8,7 @@ it.each([false,true])('separates crowded retained cards without changing the sav
   const nodes=Array.from({length:13},(_,i)=>({id:`local-${i}`,scale:'micro',label:i%3?'Community support setting':'Residents and their neighborhood support staff',x:120+i%4*200,y:60+Math.floor(i/4)*75}));
   nodes.push(...Array.from({length:3},(_,i)=>({id:`policy-${i}`,scale:'exosphere',label:`District resource policy ${i+1}`,x:1600+i*300,y:400})));
   const before=structuredClone(nodes),geometry=new Map(nodes.map(n=>[n.id,mapNodeGeometry(n.label,phone)]));
-  const positions=studentMapPositions(nodes,[],geometry,{manualNodeIds:nodes.filter(n=>n.scale==='micro').map(n=>n.id),phone});
+  const positions=studentMapPositions(nodes,[],geometry,{phone});
   const boxes=nodes.map(n=>area(positions.get(n.id),geometry.get(n.id)));
   expect(boxes.some((b,i)=>boxes.slice(i+1).some(other=>intersects(b,other)))).toBe(false);
   const regions=studentMapBoundaries(nodes.map(n=>({...n,...positions.get(n.id)})),geometry);
@@ -21,7 +21,7 @@ it('uses compact cards for short names and enough room for long names',()=>{
   expect(short.cardWidth).toBeLessThan(130);expect(short.cardHeight).toBeLessThan(50);
   expect(long.cardHeight).toBeGreaterThan(short.cardHeight);expect(long.cardWidth).toBeLessThanOrEqual(224);
 });
-it('preserves deliberate placement at the same aspect and adapts a narrower canvas without rewriting it',()=>{
+it('preserves deliberate placement through sidebar resizing without rewriting it',()=>{
   const nodes=Array.from({length:12},(_,i)=>({id:`node-${i}`,label:'Local setting',scale:'micro',x:i*40,y:i*10}));
   const geometry=new Map(nodes.map(n=>[n.id,mapNodeGeometry(n.label)]));
   const wide=studentMapPositions(nodes,[],geometry,{aspectRatio:1.8});
@@ -31,7 +31,7 @@ it('preserves deliberate placement at the same aspect and adapts a narrower canv
   const restored=studentMapPositions(saved,[],geometry,{...layout,aspectRatio:1.8});
   for(const node of saved)expect(restored.get(node.id)).toEqual({x:node.x,y:node.y});
   const narrow=studentMapPositions(saved,[],geometry,{...layout,aspectRatio:.6});
-  expect(new Set([...narrow.values()].map(p=>p.y)).size).toBeGreaterThan(new Set([...wide.values()].map(p=>p.y)).size);
+  expect(narrow).toEqual(restored);
   const boxes=saved.map(n=>area(narrow.get(n.id),geometry.get(n.id)));
   expect(boxes.some((b,i)=>boxes.slice(i+1).some(other=>intersects(b,other)))).toBe(false);
   expect(saved).toEqual(before);

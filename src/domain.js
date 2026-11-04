@@ -1737,7 +1737,7 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     if (node.type === MESOSYSTEM_NODE_TYPE && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
       invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two Micro settings for a mesosystem node');
     }
-    if (node.scale === 'macrosphere' && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
+    if (node.scale === 'macrosphere' && nodeIsLive && node.scopeNodeIds !== undefined && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
       invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two map items for a live Macrosphere item');
     }
     validateEvidence(node, itemPath);
@@ -1975,7 +1975,7 @@ function validateMemoReview(review, path) {
     if (node.type === MESOSYSTEM_NODE_TYPE && (!Array.isArray(node.scope) || node.scope.length < 2)) {
       invalidProject(`${nodePath}.scope`, 'must identify at least two Micro settings for a mesosystem suggestion');
     }
-    if (node.scale === 'macrosphere' && (!Array.isArray(node.scope) || node.scope.length < 2)) {
+    if (node.scale === 'macrosphere' && node.scope !== undefined && (!Array.isArray(node.scope) || node.scope.length < 2)) {
       invalidProject(`${nodePath}.scope`, 'must identify at least two map items for a Macrosphere suggestion');
     }
   });
@@ -2285,7 +2285,8 @@ export function validateProject(project) {
   assertFiniteNumber(project.viewport.zoom, 'project.viewport.zoom', PROJECT_LIMITS.zoomMin, PROJECT_LIMITS.zoomMax);
   if (project.layout !== undefined) {
     assertObject(project.layout, 'project.layout');
-    assertKnownKeys(project.layout, ['phoneOverview', 'manualNodeIds', 'readingAspect'], 'project.layout');
+    assertKnownKeys(project.layout, ['phoneOverview', 'manualNodeIds', 'readingAspect', 'autoFit'], 'project.layout');
+    if (project.layout.autoFit !== undefined && typeof project.layout.autoFit !== 'boolean') invalidProject('project.layout.autoFit', 'must be a boolean');
     if (project.layout.readingAspect !== undefined) assertFiniteNumber(project.layout.readingAspect, 'project.layout.readingAspect', .05, 20);
     if (project.layout.phoneOverview !== undefined && project.layout.phoneOverview !== 'preserve') invalidProject('project.layout.phoneOverview', 'must be preserve');
     if (project.layout.manualNodeIds !== undefined) {
@@ -2293,7 +2294,7 @@ export function validateProject(project) {
       project.layout.manualNodeIds.forEach((id,index) => assertString(id, `project.layout.manualNodeIds[${index}]`, false, 200));
       if (new Set(project.layout.manualNodeIds).size !== project.layout.manualNodeIds.length) invalidProject('project.layout.manualNodeIds', 'must contain unique node IDs');
     }
-    if (project.layout.phoneOverview === undefined && project.layout.manualNodeIds === undefined) invalidProject('project.layout', 'must contain a layout preference');
+    if (project.layout.phoneOverview === undefined && project.layout.manualNodeIds === undefined && project.layout.autoFit === undefined) invalidProject('project.layout', 'must contain a layout preference');
   }
   validateAnnotation(project.mapAnnotation, 'project.mapAnnotation', `project:${project.id}:map`, annotationOwners);
   assertString(project.reflection, 'project.reflection', true, PROJECT_LIMITS.promptText);
@@ -2537,7 +2538,7 @@ function migrateScaleTypeSemantics(project) {
       appendSemanticMigrationNote(node, `Earlier structural action was preserved here for review: ${node.deontic}.`);
       delete node.deontic;
     }
-    if (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label) && node.status !== 'rejected' && node.claimState !== 'retired') {
+    if (node.scale === 'exosphere' && !EXOSPHERE_NODE_TYPES.includes(node.type) && node.status !== 'rejected' && node.claimState !== 'retired') {
       node.status = 'rejected';
       node.claimState = 'retired';
       appendSemanticMigrationNote(node, retiredExosphereNote);
@@ -2547,7 +2548,7 @@ function migrateScaleTypeSemantics(project) {
       node.claimState = 'retired';
       appendSemanticMigrationNote(node, retiredMicroNote);
     }
-    if (['meso', 'macrosphere'].includes(node.scale)
+    if ((node.scale === 'meso' || node.scale === 'macrosphere' && node.scopeNodeIds !== undefined)
       && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)
       && node.status !== 'rejected' && node.claimState !== 'retired') {
       node.status = 'rejected';
@@ -2682,9 +2683,8 @@ function migrateScaleTypeSemantics(project) {
       || normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label
       || !isNodeTypeAllowedAtScale(node.type, node.scale)
       || (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
-      || (node.scale === 'exosphere' && !isNamedInstitutionLabel(node.label))
-      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || isObviousLowerLevelMacroLabel(node.label) || !Array.isArray(node.scope) || node.scope.length < 2))
-      || (node.scale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || !Array.isArray(node.scope) || node.scope.length < 2))
+      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || isObviousLowerLevelMacroLabel(node.label) || node.scope !== undefined && (!Array.isArray(node.scope) || node.scope.length < 2)))
+      || (node.scale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || node.scope !== undefined && (!Array.isArray(node.scope) || node.scope.length < 2)))
     ));
     const reviewScale = project?.preflight?.configurationSnapshot?.activeScale
       || reviewNodes[0]?.scale

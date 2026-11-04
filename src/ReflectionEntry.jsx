@@ -8,7 +8,7 @@ export { DEFAULT_FIELD_NOTES_QUESTIONS as REFLECTION_PROMPTS } from '../shared/f
 
 // Keep the original string intact, including older labeled Macro syntheses.
 // Viewing this component never parses, reformats or overwrites student prose.
-export default function ReflectionEntry({ project, update, onSave, saveState }) {
+export default function ReflectionEntry({ project, update, onSave, saveState, required = true }) {
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const revision = useRef(saveState?.savedRevision || 0);
@@ -25,7 +25,7 @@ export default function ReflectionEntry({ project, update, onSave, saveState }) 
     <h2 id="reflection-title" className="sr-only">Field Notes</h2>
     <label className="field">
       <span id="field-notes-question" className="reflection-prompt">{question}</span>
-      <textarea className="reflection" aria-label="Field notes (required)" aria-describedby="field-notes-question" required rows="5" maxLength={PROJECT_LIMITS.promptText}
+      <textarea className="reflection" aria-label={required ? 'Field notes (required)' : 'Field notes'} aria-describedby="field-notes-question" required={required} rows="5" maxLength={PROJECT_LIMITS.promptText}
         value={project.reflection}
         onChange={(event) => { revision.current = saveState?.savedRevision || 0; setDirty(true); setSaved(false); update((draft) => { draft.reflection = event.target.value; }); }}
         onBlur={() => update(() => {}, 'reflection.revised', 'Field Notes revised')} />

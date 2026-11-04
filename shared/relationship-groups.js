@@ -14,9 +14,10 @@ export function relationshipGroupIssue(connection, nodes, relationships, scale =
   if (connection.relationshipIds === undefined) return null;
   const shape = relationshipIdsIssue(connection.relationshipIds);
   if (shape) return shape;
-  if (scale !== 'macrosphere') return 'Relationship groups belong to Macro.';
+  if (!['exosphere', 'macrosphere'].includes(scale)) return 'Relationship groups belong to Exo or Macro.';
   const heading = nodes.find(node => node.id === connection.source);
-  if (!live(heading) || !['exosphere', 'macrosphere'].includes(heading.scale)) return 'Choose a live macrosystem heading.';
+  if (!live(heading) || !['exosphere', 'macrosphere'].includes(heading.scale)) return 'Choose a live Exo or Macro heading.';
+  if (scale === 'exosphere' && heading.scale !== 'exosphere') return 'Choose an Exo setting for this connection.';
   const byId = new Map(relationships.map(edge => [edge.id, edge]));
   const selected = connection.relationshipIds.map(id => byId.get(id));
   if (selected.some(edge => !live(edge) || edge.scale !== 'meso' || edge.relationshipIds)) return 'Choose live Meso relationships already on the map.';

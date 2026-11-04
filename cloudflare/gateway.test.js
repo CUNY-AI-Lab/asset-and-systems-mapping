@@ -8,6 +8,16 @@ import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvel
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
 afterEach(() => vi.useRealTimers());
+test('node submission reserves reasoning headroom while keeping six nodes and no relationships', async () => {
+  let body;
+  const fetch = vi.fn(async request => { body = await request.json(); return Response.json({ model:'gpt-oss-120b', created:1, choices:[{message:{role:'assistant',content:'{"nodes":[]}'},finish_reason:'stop'}] }); });
+  await gatewaySuggestion({fetch}, 'fixture-identity', 'gpt-oss-120b', correlation)({...input, workflowMode:'student-nodes-v1'});
+  const schema=JSON.parse(body.messages[1].content.split('REQUIRED RESPONSE JSON SCHEMA\n')[1]);
+  expect(body.max_completion_tokens).toBe(8192);
+  expect(schema.properties.nodes.maxItems).toBe(6);
+  expect(schema.properties.connections.maxItems).toBe(0);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 test.each(['wrangler.jsonc', 'wrangler.dev.jsonc'])('%s sends the configured GPT-OSS model to the Gateway', async configPath => {
   const model = unstable_readConfig({ config: configPath, env: '' }, { hideWarnings: true }).vars.GATEWAY_MODEL;
   const fetch = vi.fn(async request => {

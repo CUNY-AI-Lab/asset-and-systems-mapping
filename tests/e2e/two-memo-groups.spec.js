@@ -79,10 +79,10 @@ test('two memos retain the local map, model groups can be edited, and downloads 
   expect(macroInput.sourceMaterial).toContain(first); expect(macroInput.sourceMaterial).toContain(HOUSING_MACRO_MEMO);
   const grouped = (await read(page)).graph.edges.find(edge => edge.relationshipIds);
   await showMap(page);
-  await expect(page.locator('.ecology-layer')).toHaveCount(2);
-  await expect(page.locator('.ecology-layer__label')).toContainText(['Macrosystem', 'Microsystem']);
+  await expect(page.locator('.ecology-layer')).toHaveCount(3);
+  await expect(page.locator('.ecology-layer__label')).toContainText(['Macrosystem', 'Exosystem', 'Microsystem']);
   await expect(page.locator('.relationship-group-vector')).toHaveCount(2);
-  await captureSourceRenderedScreenshot(page, testInfo, 'Two spheres and model-proposed relationship group');
+  await captureSourceRenderedScreenshot(page, testInfo, 'Three spheres and legacy relationship group');
   await page.locator(`[data-graph-id="${grouped.id}"]`).focus();
   await page.locator(`[data-graph-id="${grouped.id}"]`).press('Enter');
   await page.locator('.graph-canvas').press('0');
@@ -127,7 +127,7 @@ test('two memos retain the local map, model groups can be edited, and downloads 
   await page.locator(`[data-graph-id="${original.nodes[0].id}"]`).press('Enter');
   await editSelected(page);
   let form = page.locator('.add-form');
-  await form.getByRole('checkbox', { name: 'Connect local relationships under a macrosystem heading' }).check();
+  await form.getByRole('checkbox', { name: 'Connect to local relationships' }).check();
   const checks = form.getByRole('group', { name: 'Local relationships', exact: true }).getByRole('checkbox');
   await checks.nth(1).check(); await checks.nth(2).check();
   await form.getByRole('textbox', { name: 'Relationship', exact: true }).fill('may limit');
@@ -172,7 +172,7 @@ const realFiles = [
   ['Micro Memo.pdf', /Bronx/],
   ['Microsystem EDITED.pdf.pdf', /Johnson|Harlem/],
 ];
-test('retained local coordinates stay inside two fitted spheres after Part 2', async ({ page }, testInfo) => {
+test('retained local coordinates stay inside three fitted spheres after Part 2', async ({ page }, testInfo) => {
   const p = localProject();
   p.activeScale = 'macrosphere';
   p.graph.nodes.forEach((node, index) => { node.x = 120 + index % 3 * 300; node.y = 120 + Math.floor(index / 3) * 180; });
@@ -184,7 +184,7 @@ test('retained local coordinates stay inside two fitted spheres after Part 2', a
   await openProject(page, p);
   await showMap(page);
   await page.locator('.graph-canvas').press('0');
-  await expect(page.locator('.ecology-layer')).toHaveCount(2);
+  await expect(page.locator('.ecology-layer')).toHaveCount(3);
   const geometry = await page.locator('.graph-canvas').evaluate(svg => {
     const rings = Object.fromEntries([...svg.querySelectorAll('[data-ecology-layer]')].map(group => {
       const e = group.querySelector('ellipse');

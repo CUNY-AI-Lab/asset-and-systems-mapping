@@ -284,7 +284,7 @@ export default function AccountWorkspace() {
     } catch (failure) { setError(userFacingError(failure,'This recovery could not be downloaded. The saved bytes remain on this device.')); }
   };
   return <>
-    {active && <div hidden={accountView.open} className="account-project-view"><App key={active} startInWorkspace onAccountDashboard={dashboard} onOpenAccount={showAccount} configurationRevision={configurationRevision} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} /></div>}
+    {active && <div hidden={accountView.open} className="account-project-view"><App key={active} memoFirstWorkflow startInWorkspace onAccountDashboard={dashboard} onOpenAccount={showAccount} configurationRevision={configurationRevision} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} /></div>}
     <div hidden={Boolean(active) && !accountView.open} className="account-shell-view"><AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} headerActions={account && !signedOut ? <Action variant="secondary" className="account-nav-button" aria-current={accountView.open ? 'page' : undefined} onClick={showAccount}>Account</Action> : null}>
     <main id="account-workspace" className={signedOut ? 'access-main account-workspace account-landing' : 'studio-dashboard account-workspace'}>
       {signedOut ? <>

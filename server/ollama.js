@@ -218,11 +218,12 @@ export function validateOllamaCloudConfig(config) {
 
 function normalizeInput(input) {
   if (!isPlainObject(input)) fail('Suggestion input is required.', 'invalid_input');
-  const allowedKeys = new Set(['systemPrompt', 'activeScale', 'inquiry', 'sourceMetadata', 'sourceText', 'carriedNodes', 'carriedConnections', 'memoContext']);
+  const allowedKeys = new Set(['systemPrompt', 'activeScale', 'inquiry', 'sourceMetadata', 'sourceText', 'carriedNodes', 'carriedConnections', 'memoContext', 'workflowMode']);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
     fail('Suggestion input contains an unsupported field.', 'invalid_input');
   }
 
+  if (input.workflowMode !== undefined && input.workflowMode !== 'student-nodes-v1') fail('Unsupported memo workflow.', 'invalid_input');
   const systemPrompt = assertBoundedString(
     input.systemPrompt,
     'System prompt',

@@ -3,8 +3,9 @@ import { notebookSection, projectMenu, openTools } from '../tests/e2e/support/no
 import { beforeAll, afterAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
-import { createDefaultProject, serializeProject } from '../src/domain.js';
+import { createDefaultProject, parseProject, serializeProject } from '../src/domain.js';
 import { chromium, expect as browserExpect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { readFile } from 'node:fs/promises';
 import { serializedEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
 import { DEFAULT_TEACHING_PROFILE } from '../server/config.js';
@@ -22,7 +23,7 @@ const newProject = () => { const project = createDefaultProject(); project.id = 
 const expectFullMap = async page => {
   await openTools(page);
   await page.getByRole('combobox', { name: 'Show map layer' }).selectOption('all');
-  await page.locator('.notebook-map-tools > summary').click();
+  await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Notebook',exact:true}).click();
   // Eight visible nodes share three regions; the ninth legacy Meso record remains saved.
   await browserExpect(page.locator('.graph-node')).toHaveCount(8);
 };
@@ -44,6 +45,73 @@ beforeAll(async () => {
   await harness.listen(); worker = harness.getWorker('systems-mapping-test'); services = harness.getWorker('systems-fixture');
 }, 30000);
 afterAll(async () => { await harness?.close(); });
+
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-memo workflow keeps separate uploads, student relationships and three nested spheres', async () => {
+  await control({mode:'nodes'});
+  const project=newProject();project.id='browser-node-workflow';project.title='Two separate memos';
+  project.stage=project.furthestStage=0;project.activeScale='micro';project.releasedScales=['micro'];project.completedScales=[];
+  project.submission.text='';delete project.submission.fingerprint;project.preflight=null;project.graph={nodes:[],edges:[]};project.candidates={nodes:[],edges:[]};
+  expect((await request(`/api/cloud/projects/${project.id}`,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(project),revision:0})})).status).toBe(200);
+  const browser=await chromium.launch({headless:true});
+  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
+  await context.addCookies([{name:'__Host-systems-mapping-session',value:sessions.alice,url:ORIGIN,secure:true,httpOnly:true,sameSite:'Lax'}]);
+  await context.route('**/*',async route=>{
+    const source=route.request();if(new URL(source.url()).origin!==ORIGIN)return route.abort();
+    const response=await worker.fetch(source.url(),{method:source.method(),headers:await source.allHeaders(),body:source.postDataBuffer()??undefined,redirect:'manual'});
+    await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+  });
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const stored=async()=>JSON.parse((await(await request(`/api/cloud/projects/${project.id}`)).json()).project);
+  const first='Residents meet in the community room.';
+  const second='City Housing Authority allocates repair staff. Capital repair funding policy delays elevator repairs.';
+  try {
+    await page.goto(ORIGIN);await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
+    await page.getByLabel('Upload Part 1 memo',{exact:true}).setInputFiles({name:'first.txt',mimeType:'text/plain',buffer:Buffer.from(first)});
+    await page.getByRole('button',{name:'Submit memo and add nodes',exact:true}).click();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(2);await browserExpect(page.locator('.graph-edge')).toHaveCount(0);
+    await browserExpect(page.getByText('Set aside',{exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
+    await page.getByRole('button',{name:'Connect from Residents',exact:true}).click();
+    await page.locator('.graph-node').filter({hasText:'Community room'}).press('Enter');
+    await page.getByRole('textbox',{name:'Relationship',exact:true}).fill('meet in');
+    await page.getByRole('button',{name:'Add relationship',exact:true}).click();
+    await browserExpect(page.locator('.graph-edge')).toHaveCount(1);
+    await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await browserExpect(page.getByRole('textbox',{name:'Second memo',exact:true})).toHaveValue('');
+    await browserExpect(page.locator('.workflow-memos')).not.toContainText('first.txt');
+    await page.getByLabel('Upload Part 2 memo',{exact:true}).setInputFiles({name:'second.txt',mimeType:'text/plain',buffer:Buffer.from(second)});
+    await page.getByRole('button',{name:'Submit memo and add nodes',exact:true}).click();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(4);await browserExpect(page.locator('.graph-edge')).toHaveCount(1);
+    await browserExpect(page.locator('.ecology-layers [data-ecology-layer]')).toHaveCount(3);
+    await page.locator('.graph-node').filter({hasText:'City Housing Authority'}).press('Enter');
+    await page.getByRole('button',{name:'Connect from City Housing Authority',exact:true}).click();
+    await page.getByRole('group',{name:'Local relationships',exact:true}).getByRole('checkbox').check();
+    await page.getByRole('textbox',{name:'Relationship',exact:true}).fill('allocates staff for');
+    await page.getByRole('textbox',{name:'Evidence or question',exact:true}).fill('A student interpretation of the second memo.');
+    await page.getByRole('button',{name:'Add relationship',exact:true}).click();
+    await browserExpect(page.locator('.graph-edge')).toHaveCount(2);
+    await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await browserExpect(page.getByRole('heading',{name:'Macro · broader conditions'})).toBeVisible();
+    expect((await(await services.fetch('https://fixtures.test/control')).json()).calls).toBe(2);
+    await browserExpect.poll(async()=> (await stored()).graph.edges.length).toBe(2);
+    const before=await stored();expect(before.submission.text).toBe(first);expect(before.part2Submission.text).toBe(second);
+    expect(before.graph.edges[1].relationshipIds).toEqual([before.graph.edges[0].id]);
+    await page.getByRole('button',{name:'Hide sidebar',exact:true}).click();await browserExpect(page.getByRole('complementary',{name:'Notebook'})).toHaveCount(0);
+    await page.getByRole('button',{name:'Notebook',exact:true}).click();
+    const resizer=page.getByRole('separator',{name:'Resize sidebar',exact:true});const width=Number(await resizer.getAttribute('aria-valuenow'));await resizer.press('ArrowLeft');await browserExpect(resizer).toHaveAttribute('aria-valuenow',String(width+16));
+    await page.getByRole('button',{name:'Tools',exact:true}).click();await browserExpect(page.locator('#map-inspector .notebook-tools-inline')).toBeVisible();await browserExpect(page.locator('.notebook-tools-panel')).toHaveCount(0);
+    await browserExpect(page.getByRole('checkbox',{name:'Auto-fit layout'})).toBeChecked();
+    expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:'/tmp/systems-three-spheres-desktop.png'});
+    await page.reload();await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(4);expect((await stored()).graph).toEqual(before.graph);
+    await page.getByRole('button',{name:'Notebook',exact:true}).click();
+    for(const width of [390,320]){await page.setViewportSize({width,height:844});await browserExpect(page.locator('.graph-node')).toHaveCount(4);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await browserExpect(page.getByRole('button',{name:'Finish map',exact:true})).toBeInViewport();}
+    expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:'/tmp/systems-three-spheres-phone.png'});expect(errors).toEqual([]);
+  } finally {await context.unrouteAll({behavior:'wait'});await browser.close();await control({mode:'success'});}
+},60000);
 
 test('production entrypoint rejects forged headers, other origins, encoded paths and cross-origin writes', async () => {
   expect((await request('/api/health', '')).status).toBe(200);
