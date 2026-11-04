@@ -221,7 +221,7 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Map',exact:true})).toHaveAttribute('aria-pressed','true');
       await page.getByRole('button',{name:'Edit',exact:true}).click();
       await browserExpect(page.locator('.inspector__head h2')).toHaveText('Edit');
-      await browserExpect(page.locator('.item-editor-title em')).toHaveText('Resident');
+      await browserExpect(page.locator('.item-editor-title p')).toHaveText('Resident');
       if (process.env.BUG_REPORT_SCREENSHOTS) {
         const editorBounds = await page.locator('.inspector__head').evaluate(element => {
           const bounds = node => ({ className: node.className, rect: node.getBoundingClientRect().toJSON(), width: getComputedStyle(node).width, flex: getComputedStyle(node).flex, display: getComputedStyle(node).display });
