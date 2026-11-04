@@ -1086,6 +1086,7 @@ describe('Systems Mapping workflow', () => {
     expect(document.querySelector('.map-reading-guide')).toHaveTextContent('Select a node to edit it.');
     expect(document.querySelector('.graph-canvas').getAttribute('aria-label')).not.toContain('connections');
     fireEvent.keyDown([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Residents')),{key:'Enter'});
+    fireEvent.doubleClick([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Residents')));
     fireEvent.click(await screen.findByRole('button',{name:'Remove',exact:true}));
     expect(document.querySelectorAll('.graph-node')).toHaveLength(1);
     expect(screen.queryByRole('button',{name:'Remove',exact:true})).not.toBeInTheDocument();
