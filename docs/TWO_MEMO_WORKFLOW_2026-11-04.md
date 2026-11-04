@@ -8,6 +8,8 @@ The workflow keeps four analytical steps and one durable graph. Part 1 uses a lo
 
 Memo upload remains available in the notebook at Meso, Exo and Macro. The reader accepts the existing PDF, DOCX and text formats. A delayed or unsuccessful import cannot overwrite a newer edit, another project, or another work level. Earlier graph IDs, coordinates, evidence, annotations and per-level Field Notes stay saved. Manual editing remains available when model guidance fails.
 
+The Notebook keeps the current level and its next action below the scrolling content, including the map stage. Field Notes remain required for level completion; the next action explains that requirement beside the disabled button. Deleting a connection's starting node cancels that unfinished connection and discards its draft; a deletion blocked by existing dependencies does not cancel it. Opening an editor preserves focus when the student has already started typing.
+
 Outer guidance receives both memos, with reference lists stripped independently for provider context while the originals remain saved. It also receives the carried graph, bounded Field Notes and student decisions. Edits to either source invalidate the combined review fingerprint. Sensitive context requires the applicable permission declarations from both sources. Total provider request limits still apply.
 
 ## Relationship groups

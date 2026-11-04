@@ -17,7 +17,10 @@ async function expectDottedPreview(preview) {
 test('selection preserves Notebook choice and the compact editor preserves saved work', async ({ page, makeAxeBuilder }, testInfo) => {
   let modelCalls = 0;
   await page.route('**/api/preflight/evaluations', route => { modelCalls++; return route.abort(); });
-  await page.addInitScript(({ key, value }) => { if (!localStorage.getItem('compact-seeded')) { localStorage.setItem(key, value); localStorage.setItem('compact-seeded', '1'); } }, { key: STORAGE_KEY, value: serializedEastHarlemDisabilityProject() });
+  const fixture = JSON.parse(serializedEastHarlemDisabilityProject());
+  fixture.completedScales = fixture.completedScales.filter(scale => scale !== 'micro');
+  fixture.levelProgress.micro.stage = 3;
+  await page.addInitScript(({ key, value }) => { if (!localStorage.getItem('compact-seeded')) { localStorage.setItem(key, value); localStorage.setItem('compact-seeded', '1'); } }, { key: STORAGE_KEY, value: JSON.stringify(fixture) });
   await page.goto('/');
   await page.getByRole('textbox', { name: 'Class code' }).fill('101');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -26,6 +29,11 @@ test('selection preserves Notebook choice and the compact editor preserves saved
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
   const nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
   await nav.getByRole('button', { name: 'Map', exact: true }).click();
+  const nextStep = page.locator('.notebook-task-end');
+  const fieldNotesStep = nextStep.getByRole('button', { name: 'Field Notes', exact: true });
+  await expect(fieldNotesStep).toBeInViewport();
+  await expect(nextStep).toContainText('Micro-level · Nodes');
+  expect(await nextStep.evaluate(el => el.closest('.inspector__scroll') === null)).toBe(true);
   const node = page.locator('.graph-node').first();
   await node.focus(); await node.press('Enter');
   await expect(nav.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -61,12 +69,18 @@ test('selection preserves Notebook choice and the compact editor preserves saved
   await captureSourceRenderedScreenshot(page, testInfo, 'Compact relationship editor');
   await nav.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('combobox', { name: 'Work level' }).selectOption('micro');
-  await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
-  await notebook.getByRole('combobox', { name: 'Notebook section' }).selectOption('review');
+  await fieldNotesStep.click();
   await expect(notebook.getByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
   const notes = notebook.getByRole('textbox', { name: 'Field notes (required)', exact: true });
+  const continueToMeso = nextStep.getByRole('button', { name: 'Continue to Meso', exact: true });
+  await expect(continueToMeso).toBeDisabled();
+  await expect(nextStep).toContainText('Add Field Notes to continue');
+  await expect(continueToMeso).toBeInViewport();
+  await notebook.locator('.inspector__scroll').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(continueToMeso).toBeInViewport();
   await notes.fill('Synthetic field note: ask who coordinates these services.'); await notes.blur();
-  await expect(page.getByRole('button', { name: 'Continue to Meso', exact: true })).toBeVisible();
+  await expect(continueToMeso).toBeEnabled();
+  await expect(continueToMeso).toBeInViewport();
   await captureSourceRenderedScreenshot(page, testInfo, 'Compact required Field Notes');
   await page.reload(); await open();
   await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
@@ -148,7 +162,10 @@ test('relationship draft survives navigation and reload; blank wording commits w
   await expect(page.locator(`[data-edge-id="${saved.id}"] .edge-direction-symbol`)).toBeVisible();
   await edge.focus(); await edge.press('Enter'); await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const wording = page.getByRole('textbox', { name: 'Relationship', exact: true });
-  await wording.fill('shelters'); await wording.press('Enter');
+  await wording.fill('shelters');
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await expect(wording).toBeFocused();
+  await wording.press('Enter');
   await expect(page.locator(`[data-edge-id="${saved.id}"] .edge-label`)).toHaveText('shelters');
   await nav.getByRole('button', { name: 'Map', exact: true }).click();
   await captureSourceRenderedScreenshot(page, testInfo, 'Relationship wording and separate direction symbol');

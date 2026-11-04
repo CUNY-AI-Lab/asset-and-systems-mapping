@@ -285,6 +285,25 @@
 .map-stage--notebook #map-inspector .map-connections { margin:0; }
 .map-stage--notebook #map-inspector .map-connections > summary { padding:8px 0; min-height:36px; }
 .map-stage--notebook #map-inspector .annotation-field textarea { min-height:80px; }
+
+/* Keep the Notebook focused on the current memo or note, with one type scale
+   and less space between the prompt, writing area and its actions. */
+.map-stage--notebook .notebook-section { padding:4px 12px 0; }
+.map-stage--notebook .work-panel__body { padding:8px 12px; }
+.map-stage--notebook .notebook-task-end { flex:0 0 auto; padding:8px 12px 12px; gap:4px; border-top:1px solid var(--line); background:var(--surface); }
+.notebook-current-step { font:550 13px/1.4 var(--body); color:var(--muted); }
+.notebook-step-detail { font:400 13px/1.4 var(--body); }
+.map-stage--notebook .notebook-task-end .notebook-next { width:100%; justify-self:stretch; margin-top:4px; }
+.map-stage--notebook .reflection-entry { gap:8px; }
+.map-stage--notebook .reflection-entry > .field { gap:6px; margin:0; }
+.map-stage--notebook .reflection-entry .reflection-prompt { font:400 14px/1.4 var(--body); }
+.map-stage--notebook .reflection-entry .annotation-actions { margin:0; gap:8px; }
+.map-stage--notebook .reflection-entry .annotation-actions .button { background:transparent; padding:6px 10px; }
+.map-stage--notebook :is(.field-notes-archive,.saved-map-note) { margin:0; border-top:1px solid var(--line); }
+.map-stage--notebook :is(.field-notes-archive,.saved-map-note) > summary { min-height:44px; padding:8px 0; font:400 14px/1.4 var(--body); }
+.map-stage--notebook .studio-feedback p { font-size:14px; line-height:1.4; }
+.map-stage--notebook .studio-feedback blockquote { font-size:14px; line-height:1.4; }
+.map-stage--notebook .suggestions-review > h2 { font-size:16px; margin-bottom:8px; }
 @media (max-width:600px) {
   .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,55%) minmax(180px,45%); }
   .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout > .inspector.is-open { grid-column:1; grid-row:2; border-left:0; border-top:1px solid var(--line); }

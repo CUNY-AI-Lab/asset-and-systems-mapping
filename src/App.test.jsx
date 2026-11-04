@@ -2100,6 +2100,28 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().levelProgress.micro.reflection).toBe(previousAnswer);
   });
 
+  it('keeps the next step available from the map and explains required Field Notes before advancing', async () => {
+    const project = makeMapProject('micro');
+    project.stage = project.levelProgress.micro.stage = 3;
+    project.reflection = project.levelProgress.micro.reflection = '';
+    const graphBefore = structuredClone(project.graph);
+    await resumeSavedProject(project);
+    const next = screen.getByRole('button', { name: 'Field Notes', exact: true });
+    expect(next.closest('.inspector__scroll')).toBeNull();
+    expect(next.closest('.notebook-task-end')).toHaveTextContent('Micro-level · Nodes');
+    fireEvent.click(next);
+    const continueButton = screen.getByRole('button', { name: 'Continue to Meso', exact: true });
+    expect(continueButton).toBeDisabled();
+    expect(continueButton.closest('.notebook-task-end')).toHaveTextContent('Add Field Notes to continue');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Field notes (required)' }), { target: { value: 'Ask who coordinates the handoff between these settings.' } });
+    expect(continueButton).toBeEnabled();
+    preflightEvaluationResponder = () => new Promise(() => {});
+    fireEvent.click(continueButton);
+    await waitFor(() => expect(storedProject().activeScale).toBe('meso'));
+    expect(storedProject().graph).toEqual(graphBefore);
+    expect(storedProject().levelProgress.micro.reflection).toBe('Ask who coordinates the handoff between these settings.');
+  });
+
   it('requires nonblank Field Notes for completion while keeping map navigation available', async () => {
     const project = makeRevisionProject('micro');
     project.reflection = project.levelProgress.micro.reflection = '';
@@ -6679,6 +6701,24 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(document.querySelector('.relationship-draft-preview')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Resume relationship', exact: true })).toBeNull();
       expect(storedProject().graph).toEqual(before);
+    });
+    it.each([false, true])('cancels Connect from when its source is deleted and stays cancelled after reopen (phone=%s)', async phone => {
+      if (phone) installPhoneLayout();
+      const project = meetingProject();
+      project.graph.nodes.forEach(node => { node.settingNodeIds = []; });
+      await openMapProject(project);
+      const source = project.graph.nodes[0];
+      openNodeInspector(source.id);
+      fireEvent.click(screen.getByRole('button', { name: `Connect from ${source.label}`, exact: true }));
+      expect(document.querySelector('.map-connect-status')).toBeTruthy();
+      fireEvent.keyDown(document.querySelector(`[data-graph-id="${source.id}"]`), { key: 'Delete' });
+      await waitFor(() => expect(storedProject().graph.nodes.find(node => node.id === source.id).status).toBe('rejected'));
+      expect(document.querySelector('.map-connect-status')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Resume relationship', exact: true })).toBeNull();
+      const saved = structuredClone(storedProject());
+      cleanup(); await openMapProject(saved);
+      expect(document.querySelector('.map-connect-status')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Resume relationship', exact: true })).toBeNull();
     });
     it('keeps the chosen source while dragging or moving a target with the keyboard', async () => {
       const project = await openMapProject(meetingProject());

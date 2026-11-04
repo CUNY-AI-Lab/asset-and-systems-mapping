@@ -4701,6 +4701,9 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const focusInspector = useCallback(() => {
     window.requestAnimationFrame(() => {
       const inspector = inspectorRef.current;
+      // Opening the editor must not steal focus after the student has already
+      // started typing in it, including on a short phone panel.
+      if (inspector?.contains(document.activeElement) && document.activeElement.matches('input, textarea, select, [contenteditable="true"]')) return;
       ((notebook ? inspector?.querySelector('.inspector-done') : inspector?.querySelector('[role="tab"][aria-selected="true"]'))
         || inspector?.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
       const scroll = inspector?.querySelector('.inspector__scroll');
@@ -4734,6 +4737,13 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       ([...nodes].find(node => node.getAttribute('data-graph-id') === source?.id) || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
     });
   }, [connectionSource, project.graph.nodes, notebook?.onChange, setAnnouncement]);
+  useEffect(() => {
+    if (!connecting || !connectionSource || project.graph.nodes.some(node => node.id === connectionSource && isLiveMapItem(node))) return;
+    relationshipDraft.discard();
+    setConnecting(false); setConnectionSource(null); setAddMode(null); setFocus(null);
+    setSelection(null); setInspectorTab('map'); setDrawerOpen(false);
+    setAnnouncement('Connection cancelled because its starting item was removed.');
+  }, [connecting, connectionSource, project.graph.nodes, relationshipDraft.discard, setAnnouncement]);
   const startConnection = (sourceId) => {
     if (project.activeScale === 'micro' || !project.instructor.allowResearchLeads) return;
     const available = project.graph.nodes.filter(node => canConnectAtScale(project.activeScale, node) && isLiveMapItem(node));
@@ -5614,8 +5624,12 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           {!notebook && <ProjectOverview project={project} />}
           <div className="map-summary"><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
         </>}
-        {notebook && panelContent && notebook.action && <div className="notebook-task-end">{notebook.action}</div>}
         </div>
+        {notebook && notebook.action && !addMode && !connecting && <div className="notebook-task-end" aria-label="Next step">
+          <span className="notebook-current-step">{SCALES[project.activeScale].label} · {isNodeReviewScale(project.activeScale) ? 'Nodes' : 'Relationships'}</span>
+          {notebook.detail && <span className="notebook-step-detail">{notebook.detail}</span>}
+          {notebook.action}
+        </div>}
       </aside>
     </div>
   </div>;
@@ -7513,7 +7527,7 @@ function App({ startInWorkspace = false, startInTeacher = false, onOpenProjects,
     : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
     : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
   const captureMemoImportScope = () => { const access = accessGenerationRef.current; const activation = projectActivationGenerationRef.current; return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current; };
-  const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, onChange: setNotebookOpen, onOpen: () => { if (project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
+  const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ open: notebookOpen, detail: step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={levelRailState(project)} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
   const intakeOpen = project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
   const stageScreens = [<IntakeStage project={project} update={update} toast={toast} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {
