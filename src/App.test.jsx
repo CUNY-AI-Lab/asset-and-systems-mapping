@@ -26,11 +26,17 @@ import { loadLibraryProject, loadProjectLibrary, loadStoredLink, rememberStoredL
 import { memoDraftKey } from './memoDraft.js';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
-function expectStraightRelationship(edge) {
+function expectAttachedRelationship(edge) {
   const group = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
+  fireEvent.keyDown(group, {key:'Enter'});
   const label = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-  expect(group).toHaveAttribute('data-edge-route', 'straight');
-  expect(group.querySelector('.edge-line').getAttribute('d')).toMatch(/^M -?[\d.]+ -?[\d.]+ L -?[\d.]+ -?[\d.]+$/);
+  expect(group).toHaveAttribute('data-edge-route', 'attached');
+  const values = group.querySelector('.edge-line').getAttribute('d').match(/-?[\d.]+/g).map(Number);
+  const points = Array.from({length:values.length/2},(_,i)=>({x:values[i*2],y:values[i*2+1]}));
+  const anchor = {x:Number(label.getAttribute('data-anchor-x')),y:Number(label.getAttribute('data-anchor-y'))};
+  const distance = (a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  expect(points.slice(1).some((b,i)=>Math.abs(distance(points[i],anchor)+distance(anchor,b)-distance(points[i],b))<.1)).toBe(true);
+  expect(label.querySelector('.edge-label-leader')).toBeNull();
   expect(label).toHaveAttribute('data-full-label', edge.verb);
   if (edge.verb.trim()) {
     expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(edge.verb);
@@ -4277,7 +4283,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
     fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: 'micro' } });
     for (const node of retained.graph.nodes.filter(node => node.scale === 'micro')) {
-      expect(renderedNodePosition(node.id)).toEqual({ x: node.x, y: node.y });
+      expect(storedProject().graph.nodes.find(item => item.id === node.id)).toMatchObject({ x: node.x, y: node.y });
     }
   });
 
@@ -4323,13 +4329,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
 
     expect(mapCanvas()).toHaveAttribute('data-map-mode', 'network');
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${baseEdge.source}"]`), {key:'Enter'});
     const labels = relationships.map((edge) => document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`));
     const paths = relationships.map((edge) => document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d'));
     const anchors = labels.map((label) => `${label.getAttribute('data-anchor-x')},${label.getAttribute('data-anchor-y')}`);
     const labelBounds = labels.map((label) => svgRectBounds(label.querySelector('.edge-label-bg')));
 
     labels.forEach((label, index) => {
-      expect(label).toHaveAttribute('data-edge-route', 'straight');
+      expect(label).toHaveAttribute('data-edge-route', 'attached');
       expect(label).toHaveAttribute('data-full-label', relationships[index].verb);
       expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(relationships[index].verb);
       expect(label).not.toHaveTextContent('…');
@@ -4350,7 +4357,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(mapTool('Full screen map'));
 
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
-    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(project.graph.edges.length);
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelector('[data-ecology-layer="meso"]')).toBeNull();
 
     const renderedBefore = [...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id'));
@@ -4358,7 +4365,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const incident = project.graph.edges.filter((edge) => renderedEdgeIds.has(edge.id) && (edge.source === 'node-dense-focus' || edge.target === 'node-dense-focus'));
     const inspector = openNodeInspector('node-dense-focus');
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
+    await waitFor(() => expect(inspector).not.toHaveAttribute('aria-hidden'));
 
     // Desktop keeps the whole band on the canvas, dims what is outside the one-hop
     // neighbourhood, and labels every incident relationship at once.
@@ -4373,11 +4380,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     const neighbourhood = new Set(['node-dense-focus', ...incident.flatMap((edge) => [edge.source, edge.target])]);
     [...document.querySelectorAll('.graph-node')].forEach((node) => {
       if (neighbourhood.has(node.getAttribute('data-graph-id'))) expect(node).not.toHaveClass('is-dimmed');
-      else expect(node).toHaveClass('is-dimmed');
+      else expect(node).not.toHaveClass('is-dimmed');
     });
     [...document.querySelectorAll('.graph-edge')].forEach((edge) => {
       if (incident.some((candidate) => candidate.id === edge.getAttribute('data-graph-id'))) expect(edge).not.toHaveClass('is-dimmed');
-      else expect(edge).toHaveClass('is-dimmed');
+      else expect(edge).not.toHaveClass('is-dimmed');
     });
     expect(storedProject().graph.nodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })))
       .toEqual(graphBefore.nodes.map(({ id, label, type, scale }) => ({ id, label, type, scale })));
@@ -4479,47 +4486,26 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(2);
     expect(document.querySelector('[data-ecology-layer="exosphere"]')).toHaveClass('is-visible');
     expect(document.querySelectorAll('.graph-node.is-dimmed, .graph-edge.is-dimmed')).toHaveLength(0);
-    const activeLabels = [...document.querySelectorAll(`.graph-edge-label[data-edge-scale="${activeScale}"][data-edge-route="straight"]`)];
-    const allActiveLabels = [...document.querySelectorAll(`.graph-edge-label[data-edge-scale="${activeScale}"]`)];
-    expect(allActiveLabels).toHaveLength(active.edges.filter(edge => edge.scale === activeScale).length);
-    allActiveLabels.forEach(label => {
-      const edge = project.graph.edges.find(edge => edge.id === label.getAttribute('data-edge-id'));
-      expect(label.getAttribute('data-full-label')).toBe(edge.verb);
-      const bounds = svgRectBounds(label.querySelector('.edge-label-bg'));
-      [...document.querySelectorAll('.graph-node')].forEach(node => expect(rectsIntersect(bounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false));
-    });
-    expect(activeLabels.length).toBeLessThanOrEqual(active.edges.length);
-    activeLabels.forEach((label) => {
-      const edge = project.graph.edges.find((candidate) => candidate.id === label.getAttribute('data-edge-id'));
-      const source = renderedNodePosition(edge.source);
-      const target = renderedNodePosition(edge.target);
-      const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
-      const delta = { x: target.x - source.x, y: target.y - source.y };
-      const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
-      expect(projection, `${label.getAttribute('data-full-label')} is not between its endpoints`).toBeGreaterThan(0);
-      expect(projection, `${label.getAttribute('data-full-label')} is not between its endpoints`).toBeLessThan(1);
-      const labelBounds = svgRectBounds(label.querySelector('.edge-label-bg'));
-      [...document.querySelectorAll('.graph-node')].forEach((node) => {
-        expect(rectsIntersect(labelBounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false);
-      });
-    });
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
+    for (const edge of active.edges) expectAttachedRelationship(edge);
+    fireEvent.click(screen.getByRole('button',{name:'Clear highlight',exact:true}));
     expect(screen.getByText(activeScale === 'exosphere'
       ? 'Select an item to inspect its connections'
       : 'Select a condition to view affected items')).toBeVisible();
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
-    expect(inspector).toHaveAttribute('inert');
-    expect(document.querySelector('.map-layout')).not.toHaveClass('has-inspector');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
+    expect(inspector).not.toHaveAttribute('inert');
+    expect(document.querySelector('.map-layout')).toHaveClass('has-inspector');
 
     fireEvent.change(scale, { target: { value: 'meso' } });
     expect(scale).toHaveValue('meso');
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`Meso-level map. ${meso.nodes.length} nodes and ${meso.edges.length} connections.`));
-    expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(meso.edges.length);
+    expect(document.querySelectorAll('.graph-edge-label[data-edge-scale="meso"]')).toHaveLength(0);
 
     fireEvent.change(scale, { target: { value: 'all' } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(screen.getByText('Select an item to inspect its connections')).toBeVisible();
     expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(2);
-    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(all.edges.length);
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(0);
     expect(storedProject().graph).toEqual(graphBefore);
   });
@@ -4606,7 +4592,7 @@ Overall, the posting history documents a working student repeatedly turning to R
 
     fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
-    expect(document.querySelectorAll('.graph-edge-label').length).toBeGreaterThan(0);
+    expectAttachedRelationship(project.graph.edges.find(edge => document.querySelector(`[data-graph-id="${edge.id}"]`)));
     const fittedFilteredViewport = { ...storedProject().viewport };
 
     fireEvent.click(mapTool('Full screen map'));
@@ -4672,95 +4658,35 @@ Overall, the posting history documents a working student repeatedly turning to R
     expectNodesInsideEcologyRings();
   });
 
-  it('keeps level badges in their own ordered rings and expands the shared ring geometry with explicit zoom out', async () => {
+  it('keeps the two content-sized boundaries stable when zooming and separates their labels', async () => {
     installPhoneLayout(390);
     await openMapProject(makePhoneEcologyWithLegacyScope());
-    fireEvent.change(mapLayer(), { target: { value: 'all' } });
-    fireEvent.click(mapTool('Fit map'));
-
-    const levels = ['micro', 'exosphere'];
-    const readGeometry = () => {
-      const rings = new Map();
-      const labels = new Map();
-      levels.forEach((level) => {
-        const layer = document.querySelector(`[data-ecology-layer="${level}"]`);
-        const ellipse = layer.querySelector('ellipse');
-        const labelGroup = layer.querySelector('.ecology-layer__label');
-        const labelRect = labelGroup.querySelector('rect');
-        const [, x, y] = labelGroup.getAttribute('transform').match(/^translate\((-?[\d.]+) (-?[\d.]+)\)$/);
-        const center = { x: Number(ellipse.getAttribute('cx')), y: Number(ellipse.getAttribute('cy')) };
-        const rect = {
-          left: Number(x) + Number(labelRect.getAttribute('x')),
-          right: Number(x) + Number(labelRect.getAttribute('x')) + Number(labelRect.getAttribute('width')),
-          top: Number(y) + Number(labelRect.getAttribute('y')),
-          bottom: Number(y) + Number(labelRect.getAttribute('y')) + Number(labelRect.getAttribute('height')),
-        };
-        rings.set(level, {
-          ...center,
-          rx: Number(ellipse.getAttribute('rx')),
-          ry: Number(ellipse.getAttribute('ry')),
-        });
-        labels.set(level, { x: Number(x), y: Number(y), rect });
-      });
-      return { rings, labels };
-    };
-    const expectOrderedMembership = ({ rings, labels }) => {
-      levels.forEach((level, index) => {
-        const ring = rings.get(level);
-        const { rect } = labels.get(level);
-        const corners = [
-          [rect.left, rect.top], [rect.right, rect.top],
-          [rect.left, rect.bottom], [rect.right, rect.bottom],
-        ];
-        const outerMetric = Math.max(...corners.map(([x, y]) => (
-          ((x - ring.x) / ring.rx) ** 2 + ((y - ring.y) / ring.ry) ** 2
-        )));
-        expect(outerMetric, `${level} badge must stay inside its own outer ellipse`).toBeLessThanOrEqual(1.001);
-        if (!index) return;
-        const inner = rings.get(levels[index - 1]);
-        const nearestX = inner.x < rect.left ? rect.left - inner.x : inner.x > rect.right ? inner.x - rect.right : 0;
-        const nearestY = inner.y < rect.top ? rect.top - inner.y : inner.y > rect.bottom ? inner.y - rect.bottom : 0;
-        const innerMetric = (nearestX / inner.rx) ** 2 + (nearestY / inner.ry) ** 2;
-        expect(innerMetric, `${level} badge must stay outside the preceding ring`).toBeGreaterThanOrEqual(.999);
-        expect(ring.rx).toBeGreaterThan(inner.rx);
-        expect(ring.ry).toBeGreaterThan(inner.ry);
-      });
-    };
-
-    const before = readGeometry();
-    expectOrderedMembership(before);
+    fireEvent.change(mapLayer(), {target:{value:'all'}});
+    const boundaries = () => [...document.querySelectorAll('[data-ecology-layer] ellipse')].map(e=>e.outerHTML);
+    const before = boundaries();
+    const badges = [...document.querySelectorAll('.ecology-layer__label')].map(g=>translatedRectBounds(g,g.querySelector('rect')));
+    expect(badges).toHaveLength(2);
+    expect(rectsIntersect(badges[0],badges[1])).toBe(false);
     expectNodesInsideEcologyRings();
-    const badges = levels.map(level => before.labels.get(level).rect);
-    badges.forEach((badge, index) => badges.slice(index + 1).forEach(other => expect(rectsIntersect(badge, other)).toBe(false)));
-
+    const zoom = viewportTransform().zoom;
     fireEvent.click(mapTool('Zoom out'));
-    const after = readGeometry();
-    expect(Number(mapCanvas().getAttribute('data-ring-expansion'))).toBeGreaterThan(1);
-    levels.forEach((level) => {
-      expect(after.rings.get(level).rx).toBeGreaterThan(before.rings.get(level).rx);
-      expect(after.rings.get(level).ry).toBeGreaterThan(before.rings.get(level).ry);
-    });
-    expectOrderedMembership(after);
+    expect(viewportTransform().zoom).toBeLessThan(zoom);
+    expect(boundaries()).toEqual(before);
     expectNodesInsideEcologyRings();
   });
 
-  it('expands compact ecological rings when the map crosses from phone to desktop space without rewriting the graph', async () => {
+  it('fits content-sized ecological boundaries across phone and desktop without rewriting the graph', async () => {
     const resizeTo = installResponsiveLayout();
-    const project = makePhoneEcologyWithLegacyScope();
-    await openMapProject(project);
-    fireEvent.change(mapLayer(), { target: { value: 'all' } });
-    const durableGraph = structuredClone(storedProject().graph);
-
-    resizeTo(390);
-    await waitFor(() => expect(Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'))).toBeGreaterThanOrEqual(600));
-    const phoneRadius = Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'));
-    expectNodesInsideEcologyRings();
-    resizeTo(1024);
-    await waitFor(() => expect(Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'))).toBeGreaterThanOrEqual(1220));
-    expect(Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'))).toBeGreaterThan(phoneRadius);
-    expectNodesInsideEcologyRings();
-
-    expect(storedProject().graph).toEqual(durableGraph);
+    await openMapProject(makePhoneEcologyWithLegacyScope());
+    fireEvent.change(mapLayer(), {target:{value:'all'}});
+    const graph = structuredClone(storedProject().graph);
+    for(const width of [390,1024]) {
+      resizeTo(width);
+      fireEvent.click(mapTool('Fit map'));
+      await waitFor(()=>expectVisibleNodesAndConnectionLabelsInsideCanvas());
+      expectNodesInsideEcologyRings();
+      expect(storedProject().graph).toEqual(graph);
+    }
   });
 
   it.each([320, 390, 430])('keeps a six-node all-layer ecology overview readable, separate, and on canvas at %ipx without saving it', async (width) => {
@@ -4822,7 +4748,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       resizeTo(width);
       await waitFor(() => {
         expect(renderedNodePosition(project.graph.nodes[0].id)).not.toEqual(desktopPositions.get(project.graph.nodes[0].id));
-        expect(viewportTransform().zoom).toBeGreaterThanOrEqual(1);
+        expect(viewportTransform().zoom).toBeGreaterThanOrEqual(PROJECT_LIMITS.zoomMin);
       });
 
       fireEvent.click(mapTool('Fit map'));
@@ -4983,7 +4909,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     const edge = project.graph.edges.find(item => document.querySelector(`.graph-edge[data-graph-id="${item.id}"]`));
     const element = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
     fireEvent.keyDown(element, {key:'Enter'});
-    expect(screen.getByLabelText('Notebook')).toHaveAttribute('aria-hidden','true');
+    expect(screen.getByLabelText('Notebook')).not.toHaveAttribute('aria-hidden');
     expect([...renderedPositions()]).toEqual([...positions]);
     for (const width of [390, 1024]) {
       resizeTo(width);
@@ -4992,7 +4918,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(mapCanvas()).not.toHaveClass('is-detail-view');
       expect(document.querySelectorAll('.graph-node')).toHaveLength(positions.size);
       expect(document.querySelectorAll('.is-dimmed, .graph-edge.is-muted')).toHaveLength(0);
-      expectStraightRelationship(edge);
+      expectAttachedRelationship(edge);
     }
     expect([...renderedPositions()]).toEqual([...positions]);
     expect(storedProject().graph).toEqual(before);
@@ -5005,11 +4931,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     const positions = renderedPositions();
     const edge = project.graph.edges.find(item => document.querySelector(`.graph-edge[data-graph-id="${item.id}"]`));
     fireEvent.keyDown(document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`), {key:'Enter'});
-    expect(screen.getByLabelText('Notebook')).toHaveAttribute('aria-hidden','true');
+    expect(screen.getByLabelText('Notebook')).not.toHaveAttribute('aria-hidden');
     expect(mapCanvas()).not.toHaveClass('is-detail-view');
     expect([...renderedPositions()]).toEqual([...positions]);
     expect(document.querySelector('.ecology-layers')).not.toBeNull();
-    expectStraightRelationship(edge);
+    expectAttachedRelationship(edge);
     fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     expect(storedProject().graph).toEqual(before);
@@ -5027,36 +4953,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
     fireEvent.change(mapLayer(), { target: { value: activeScale } });
 
-    const overviewLabel = document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`);
-    const expectClearOverviewLabel = (label) => {
-      const labelBounds = svgRectBounds(label.querySelector('.edge-label-bg'));
-      const visibleBounds = transformedRectBounds(labelBounds);
-      expect(['straight']).toContain(label.getAttribute('data-edge-route'));
-      expect(svgTextLines(label.querySelector('.edge-label')).join('')).toBe(verb);
-      expect(label).not.toHaveTextContent('…');
-      const source = renderedNodePosition(edge.source);
-      const target = renderedNodePosition(edge.target);
-      const anchor = { x: Number(label.getAttribute('data-anchor-x')), y: Number(label.getAttribute('data-anchor-y')) };
-      const delta = { x: target.x - source.x, y: target.y - source.y };
-      const projection = ((anchor.x - source.x) * delta.x + (anchor.y - source.y) * delta.y) / (delta.x ** 2 + delta.y ** 2);
-      expect(projection).toBeGreaterThan(0);
-      expect(projection).toBeLessThan(1);
-      [...document.querySelectorAll('.graph-node')].forEach((node) => {
-        expect(rectsIntersect(labelBounds, translatedRectBounds(node, node.querySelector('.node-card')))).toBe(false);
-      });
-      expect(visibleBounds.left).toBeGreaterThanOrEqual(0);
-      expect(visibleBounds.right).toBeLessThanOrEqual(840);
-      expect(visibleBounds.top).toBeGreaterThanOrEqual(0);
-      expect(visibleBounds.bottom).toBeLessThanOrEqual(540);
-      const path = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"] .edge-line`).getAttribute('d');
-      if (label.getAttribute('data-edge-route').startsWith('between-endpoints')) {
-        expect(path).toContain(`L ${label.getAttribute('data-anchor-x')} ${label.getAttribute('data-anchor-y')} L`);
-      } else {
-        expect(path).toMatch(/^M -?[\d.]+ -?[\d.]+ L -?[\d.]+ -?[\d.]+$/);
-      }
-    };
-    expectClearOverviewLabel(overviewLabel);
-    expect(svgTextLines(overviewLabel.querySelector('.edge-label')).join('')).toBe(verb);
+    expect(document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`)).toBeNull();
+    expectAttachedRelationship(edge);
+    const expectClearOverviewLabel = () => expectAttachedRelationship(edge);
 
     const renderedEdge = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
     renderedEdge.focus();
@@ -5064,14 +4963,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     const inspector = screen.getByLabelText('Notebook');
     if (screen.queryByRole('button', { name: 'Edit', exact: true })) fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
+    await waitFor(() => expect(inspector).not.toHaveAttribute('aria-hidden'));
 
     // Desktop keeps the whole layer on the canvas; the selected relationship keeps its
     // complete, clear label while everything outside it dims.
     expect(mapCanvas()).not.toHaveClass('is-detail-view');
     expect(document.querySelectorAll('.graph-node')).toHaveLength(activeGraph.nodes.length);
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(activeGraph.edges.length);
-    expect([...document.querySelectorAll('.graph-edge-label')].map((label) => label.getAttribute('data-edge-id')).sort()).toEqual(activeGraph.edges.map(item=>item.id).sort());
+    expect([...document.querySelectorAll('.graph-edge-label')].map((label) => label.getAttribute('data-edge-id')).sort()).toEqual([edge.id]);
     expectClearOverviewLabel(document.querySelector(`.graph-edge-label[data-edge-id="${edge.id}"]`));
     expect(document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`)).not.toHaveClass('is-dimmed');
     activeGraph.nodes.forEach(node => expect(document.querySelector(`.graph-node[data-graph-id="${node.id}"]`)).not.toHaveClass('is-dimmed'));
@@ -5086,7 +4985,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(storedProject().graph).toEqual(graphBefore);
   });
 
-  it('permits intentional dragging with a straight connection and clear label, and restores exact positions with undo and redo', async () => {
+  it('permits intentional dragging with attached wording and restores exact positions with undo and redo', async () => {
     const project = makeMapProject('meso');
     const source = structuredClone(project.graph.nodes.find(node => node.label === 'Family'));
     const target = structuredClone(project.graph.nodes.find(node => node.label === 'School'));
@@ -5094,7 +4993,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     Object.assign(source, {x:200,y:270}); Object.assign(target, {x:720,y:270});
     edge.verb = 'determines daytime course availability for';
     project.graph = {nodes:[source,target],edges:[edge]}; project.candidates = {nodes:[],edges:[]};
-    project.layout = {manualNodeIds:[source.id,target.id]};
+    project.layout = {phoneOverview:'preserve',manualNodeIds:[source.id,target.id]};
     await openMapProject(project);
     const canvas=mapCanvas(), element=document.querySelector(`.graph-node[data-graph-id="${target.id}"]`);
     canvas.getScreenCTM=()=>({inverse:()=>({})});
@@ -5104,14 +5003,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.pointerMove(canvas,{pointerId:81,clientX:720-200*zoom,clientY:270});
     fireEvent.pointerUp(canvas,{pointerId:81,clientX:720-200*zoom,clientY:270});
     await waitFor(() => expect(renderedNodePosition(target.id)).toEqual({x:520,y:270}));
-    expectStraightRelationship(edge);
+    expectAttachedRelationship(edge);
     expect(renderedNodePosition(source.id)).toEqual({x:200,y:270});
     await waitFor(() => expect(storedProject().graph.nodes.find(node=>node.id===target.id)).toMatchObject({x:520,y:270}));
     fireEvent.keyDown(canvas,{key:'z',ctrlKey:true});
     await waitFor(() => expect(renderedNodePosition(target.id)).toEqual({x:720,y:270}));
     fireEvent.keyDown(canvas,{key:'z',ctrlKey:true,shiftKey:true});
     await waitFor(() => expect(renderedNodePosition(target.id)).toEqual({x:520,y:270}));
-    expectStraightRelationship(edge);
+    expectAttachedRelationship(edge);
   });
 
   it('retains a complete maximum-length relationship label clear of cards on the cumulative phone map', async () => {
@@ -5122,14 +5021,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     await openMapProject(project);
     fireEvent.keyDown(document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`),{key:'Enter'});
     expect(mapCanvas()).not.toHaveClass('is-detail-view');
-    expectStraightRelationship(edge);
+    expectAttachedRelationship(edge);
     fireEvent.click(mapTool('Fit map'));
     await waitFor(() => expectVisibleNodesAndConnectionLabelsInsideCanvas());
     const zoomOut=mapTool('Zoom out');
     for(let step=0;step<30&&!zoomOut.disabled;step++) fireEvent.click(zoomOut);
     expect(viewportTransform().zoom).toBe(PROJECT_LIMITS.zoomMin);
     expect(zoomOut).toBeDisabled();
-    expectStraightRelationship(edge);
+    expectAttachedRelationship(edge);
     expect(storedProject().graph).toEqual(before);
   });
 
@@ -5145,7 +5044,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
       expect(document.querySelectorAll('.graph-edge')).toHaveLength(project.graph.edges.length);
       expect([...renderedPositions()]).toEqual([...positions]);
-      expectStraightRelationship(edge);visited.add(edge.id);
+      expectAttachedRelationship(edge);visited.add(edge.id);
       expect(mapCanvas()).not.toHaveClass('is-detail-view');
       if(screen.queryByRole('button',{name:'Edit',exact:true})) fireEvent.click(screen.getByRole('button',{name:'Edit',exact:true}));
       fireEvent.click(within(inspector).getByRole('button',{name:'Done'}));
@@ -5196,7 +5095,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(connections).getByText(`${addedEdge.sourceLabel} ${addedEdge.verb} ${addedEdge.targetLabel}`, { selector: 'strong' }).closest('button'));
     expect(mapCanvas()).not.toHaveClass('is-detail-view');
     await waitFor(() => expect(viewportTransform()).not.toEqual(manuallyAdjustedViewport));
-    expectStraightRelationship(addedEdge);
+    expectAttachedRelationship(addedEdge);
     const refittedViewport = viewportTransform();
 
     const relationshipPanel = within(inspector).getByRole('region', { name: 'Connections' });
@@ -5211,7 +5110,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(document.querySelector(`.graph-edge[data-graph-id="${addedEdge.id}"]`)).toHaveAttribute('aria-pressed','true');
     expect([...document.querySelectorAll('.graph-node')].map((node) => node.getAttribute('data-graph-id')).sort())
       .toEqual(project.graph.nodes.map(node=>node.id).sort());
-    expectStraightRelationship(addedEdge);
+    expectAttachedRelationship(addedEdge);
     fireEvent.click(mapTool('Fit map'));
     expectVisibleNodesAndConnectionLabelsInsideCanvas();
   });
@@ -5223,15 +5122,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     const edge=document.querySelector('.graph-edge[tabindex="0"]');
     edge.focus();fireEvent.keyDown(edge,{key:'Enter'});
     expect(edge).toHaveAttribute('aria-pressed','true');
-    expect(screen.getByLabelText('Notebook')).toHaveAttribute('aria-hidden','true');
+    expect(screen.getByLabelText('Notebook')).not.toHaveAttribute('aria-hidden');
     fireEvent.click(screen.getByRole('button',{name:'Edit',exact:true}));
     const inspector=screen.getByLabelText('Notebook');
     expect(within(inspector).getByRole('region',{name:'Connections'})).toBeVisible();
     fireEvent.click(within(inspector).getByRole('button',{name:'Done'}));
-    expect(inspector).toHaveAttribute('aria-hidden','true');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(mapCanvas()).not.toHaveClass('is-detail-view');
     expect([...renderedPositions()]).toEqual([...positions]);
-    for(const item of project.graph.edges.filter(item=>document.querySelector(`.graph-edge[data-graph-id="${item.id}"]`))) expectStraightRelationship(item);
+    for(const item of project.graph.edges.filter(item=>document.querySelector(`.graph-edge[data-graph-id="${item.id}"]`))) expectAttachedRelationship(item);
     expect(storedProject().graph).toEqual(graph);
   });
 
@@ -5261,14 +5160,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     const positions=renderedPositions(), before=structuredClone(storedProject().graph);
     const node=project.graph.nodes.find(item=>positions.has(item.id));
     fireEvent.keyDown(document.querySelector(`.graph-node[data-graph-id="${node.id}"]`),{key:'Enter'});
-    expect(screen.getByLabelText('Notebook')).toHaveAttribute('aria-hidden','true');
+    expect(screen.getByLabelText('Notebook')).not.toHaveAttribute('aria-hidden');
     expect(document.querySelectorAll('.is-dimmed, .graph-edge.is-muted')).toHaveLength(0);
     expect([...renderedPositions()]).toEqual([...positions]);
     const inspector=openNodeInspector(node.id);
     expect(inspector).not.toHaveAttribute('aria-hidden');
     const visibleEdges=project.graph.edges.filter(edge=>positions.has(edge.source)&&positions.has(edge.target));
-    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(visibleEdges.length);
-    for(const edge of visibleEdges) expectStraightRelationship(edge);
+    expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(visibleEdges.filter(edge=>edge.source===node.id||edge.target===node.id).length);
+    for(const edge of visibleEdges) expectAttachedRelationship(edge);
     fireEvent.click(within(inspector).getByRole('button',{name:'Done'}));
     expect(document.querySelector('.map-focus-bar')).toBeNull();
     expect([...renderedPositions()]).toEqual([...positions]);
@@ -5803,15 +5702,15 @@ Overall, the posting history documents a working student repeatedly turning to R
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, PERSIST_DEBOUNCE_MS + 30)); });
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
 
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
-    expect(inspector).not.toHaveClass('is-open');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
+    expect(inspector).toHaveClass('is-open');
     fireEvent.pointerDown(nodeElement, { pointerId: 29, button: 0, clientX: start.x, clientY: start.y });
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
     fireEvent.pointerMove(svg, { pointerId: 29, clientX: start.x + 24, clientY: start.y + 16 });
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
     fireEvent.pointerUp(svg, { pointerId: 29, clientX: start.x + 24, clientY: start.y + 16 });
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
-    expect(inspector).not.toHaveClass('is-open');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
+    expect(inspector).toHaveClass('is-open');
 
     await waitFor(() => expect(storedProject().graph.nodes.find((item) => item.id === node.id)).toMatchObject(draggedPosition));
     const coordinateWrites = setItem.mock.calls.filter(([key, value]) => {
@@ -5825,7 +5724,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     setItem.mockClear();
     fireEvent.pointerDown(document.querySelector(`[data-graph-id="${node.id}"]`), { pointerId: 30, button: 0, clientX: draggedPosition.x, clientY: draggedPosition.y });
     fireEvent.pointerUp(svg, { pointerId: 30, clientX: draggedPosition.x, clientY: draggedPosition.y });
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     expect(inspector).not.toHaveAttribute('aria-hidden');
@@ -5837,7 +5736,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     if (screen.queryByRole('button', { name: 'Edit', exact: true })) fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => {
-      expect(inspector).toHaveAttribute('aria-hidden', 'true');
+      expect(inspector).not.toHaveAttribute('aria-hidden');
       expect(document.querySelector('.canvas-chrome')).toBeNull();
       expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveFocus();
     });
@@ -5900,7 +5799,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/map/check')).toHaveLength(0);
   });
 
-  it('keeps the closed phone inspector out of navigation and returns focus without extra target tabs', async () => {
+  it('keeps the phone Notebook available and returns focus without extra target tabs', async () => {
     installPhoneLayout();
     Object.defineProperty(window, 'requestAnimationFrame', {
       configurable: true,
@@ -5923,11 +5822,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     const keyButton = mapTool('Map key');
     fireEvent.click(keyButton);
     expect(screen.getByLabelText('Map key')).toBeVisible();
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
-    expect(inspector).toHaveAttribute('inert');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
+    expect(inspector).not.toHaveAttribute('inert');
     fireEvent.pointerDown(nodeElement, { pointerId: 51, button: 0, clientX: position.x, clientY: position.y });
     fireEvent.pointerUp(svg, { pointerId: 51, clientX: position.x, clientY: position.y });
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     expect(screen.queryByLabelText('Map key')).not.toBeInTheDocument();
@@ -5937,18 +5836,18 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(within(inspector).queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
     expect(within(inspector).queryByRole('tablist')).not.toBeInTheDocument();
     fireEvent.keyDown(within(inspector).getByRole('button', { name: 'Done' }), { key: 'Escape' });
-    await waitFor(() => expect(inspector).toHaveAttribute('aria-hidden', 'true'));
-    expect(inspector).toHaveAttribute('inert');
+    await waitFor(() => expect(inspector).not.toHaveAttribute('aria-hidden'));
+    expect(inspector).not.toHaveAttribute('inert');
 
     fireEvent.pointerDown(nodeElement, { pointerId: 52, button: 0, clientX: position.x, clientY: position.y });
     fireEvent.pointerUp(svg, { pointerId: 52, clientX: position.x, clientY: position.y });
-    expect(inspector).toHaveAttribute('aria-hidden', 'true');
+    expect(inspector).not.toHaveAttribute('aria-hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     if (screen.queryByRole('button', { name: 'Edit', exact: true })) fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     fireEvent.click(within(inspector).getByRole('button', { name: 'Done' }));
     await waitFor(() => {
-      expect(inspector).toHaveAttribute('aria-hidden', 'true');
+      expect(inspector).not.toHaveAttribute('aria-hidden');
       expect(nodeElement).toHaveFocus();
     });
   });
@@ -5971,7 +5870,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.pointerMove(svg, { pointerId: 7, clientX: startX + 20, clientY: startY + 15 });
     fireEvent.pointerUp(svg, { pointerId: 7, clientX: startX + 20, clientY: startY + 15 });
 
-    const expected = { x: position.x + Math.round(40 / zoom), y: position.y + Math.round(30 / zoom) };
+    const [, , viewWidth, viewHeight] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+    const scale = Math.min(420/viewWidth, 540/viewHeight);
+    const expected = { x: position.x + Math.round(20 / scale / zoom), y: position.y + Math.round(15 / scale / zoom) };
     await waitFor(() => expect(document.querySelector(`[data-graph-id="${node.id}"]`)).toHaveAttribute('transform', `translate(${expected.x} ${expected.y})`));
   });
 
@@ -6605,7 +6506,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
       expect(storedProject().graph.edges).toHaveLength(0);
     });
-    it('keeps the Notebook closed after a target touch, so no new control receives the trailing click', async () => {
+    it('keeps the Notebook available after a target touch without submitting the trailing click', async () => {
       installPhoneLayout();
       const project = await openMapProject(meetingProject());
       const [source, target] = project.graph.nodes;
@@ -6615,24 +6516,25 @@ Overall, the posting history documents a working student repeatedly turning to R
       fireEvent.pointerDown(node, { pointerId: 81, pointerType: 'touch', clientX: 250, clientY: 433, button: 0 });
       fireEvent.pointerUp(node, { pointerId: 81, pointerType: 'touch', clientX: 250, clientY: 433, button: 0 });
       fireEvent.click(node, { detail: 1, clientX: 250, clientY: 433 });
-      expect(screen.getByLabelText('Notebook')).toHaveAttribute('aria-hidden', 'true');
-      expect(screen.queryByRole('button', { name: 'Add', exact: true })).toBeNull();
+      expect(screen.getByLabelText('Notebook')).not.toHaveAttribute('aria-hidden');
+      expect(screen.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-expanded', 'false');
       expect(storedProject().graph.edges).toHaveLength(0);
       fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
       expect(screen.getByRole('combobox', { name: 'From', exact: true })).toHaveValue(source.id);
       expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
     });
-    it('keeps saved coordinates after Exo is released and when revisiting Micro and Meso', async () => {
+    it('keeps the reading arrangement and saved graph when revisiting Micro and Meso after Exo is released', async () => {
       const project = meetingProject();
       project.layout = {manualNodeIds: project.graph.nodes.map(node => node.id)};
       project.releasedScales.push('exosphere');
       project.levelProgress.exosphere = { stage: 3, reflection: '' };
       await openMapProject(project);
-      const saved = new Map(project.graph.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+      const saved = new Map(project.graph.nodes.map((node) => [node.id, renderedNodePosition(node.id)]));
       for (const scale of ['micro', 'meso', 'micro', 'meso']) {
         fireEvent.change(screen.getByRole('combobox', { name: 'Work level' }), { target: { value: scale } });
         await waitFor(() => expect(mapLayer()).toHaveValue(scale));
         project.graph.nodes.forEach((node) => expect(renderedNodePosition(node.id)).toEqual(saved.get(node.id)));
+        expect(storedProject().graph).toEqual(project.graph);
       }
     });
     it('edits and reloads a reverse arrow with matching accessible text', async () => {
@@ -6717,7 +6619,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       const [source, target] = project.graph.nodes;
       project.graph.edges = [{ id: 'boundary-edge', source: source.id, target: target.id, sourceLabel: source.label, targetLabel: target.label, verb: 'supports', scale: 'meso', status: 'confirmed', claimState: 'student interpretation', evidence: 'Synthetic evidence', notes: '', annotation: { id: 'boundary-edge-annotation', text: '' } }];
       await openMapProject(project);
-      const boundary = () => document.querySelector('.shared-micro-boundary ellipse').outerHTML;
+      const boundary = () => document.querySelector('[data-ecology-layer="micro"] ellipse').outerHTML;
       const mesoBoundary = boundary();
       expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(1);
       fireEvent.change(mapLayer(), { target: { value: 'micro' } });
@@ -6753,6 +6655,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(line).toHaveAttribute('stroke-dasharray', '7 5');
       expect(line).not.toHaveAttribute('marker-start');
       expect(line).not.toHaveAttribute('marker-end');
+      expectAttachedRelationship(edge);
       expect(document.querySelector(`[data-edge-id="${edge.id}"] .edge-label`)).toHaveTextContent(edge.verb);
       expect(document.querySelector(`[data-edge-id="${edge.id}"]`)).not.toHaveTextContent('0 families');
       expect(graphCsv(storedProject())).toContain('"connection_status","connection_strength","communication_channel","connecting_work","family_count"');
@@ -6868,7 +6771,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       await waitFor(() => expect(storedProject().graph.nodes.find(node => node.id === source.id)).toMatchObject(renderedNodePosition(source.id)));
       const displayed = new Map(project.graph.nodes.map(node => [node.id, renderedNodePosition(node.id)]));
       const saved = structuredClone(storedProject().graph);
-      expect(storedProject().layout).toEqual({ phoneOverview: 'preserve', manualNodeIds: expect.arrayContaining(project.graph.nodes.map(node => node.id)) });
+      expect(storedProject().layout).toEqual({ phoneOverview: 'preserve', readingAspect: expect.any(Number), manualNodeIds: expect.arrayContaining(project.graph.nodes.map(node => node.id)) });
       cleanup();
       render(<App />);
       await showResumeScreen();
@@ -6907,8 +6810,8 @@ Overall, the posting history documents a working student repeatedly turning to R
       await waitFor(() => expect(visibleMapBounds().bottom - visibleMapBounds().top).toBeCloseTo(840 * selectedHeight / width));
       // The visible split canvas remains large enough to read each node card;
       // the legacy 240-unit drawer fit would shrink these below 40px.
-      const nodeWidths = [...document.querySelectorAll('.node-card')].map(card => Number(card.getAttribute('width')) * viewportTransform().zoom * width / 840);
-      expect(Math.min(...nodeWidths)).toBeGreaterThan(70);
+      const fontPixels = 26 * viewportTransform().zoom * width / 840;
+      expect(fontPixels).toBeGreaterThan(10);
       expectVisibleNodesAndConnectionLabelsInsideCanvas();
       fireEvent.click(within(inspector).getByRole('button', { name: 'Done', exact: true }));
       canvasHeight = 680;

@@ -50,7 +50,7 @@ test('two memos retain the local map, model groups can be edited, and downloads 
       const members = input.carriedConnections.filter(edge => edge.scale === 'meso').slice(0, 2);
       const target = input.carriedNodes.find(node => node.id === members[0].source);
       base.connections = [{ source: heading.id, sourceLabel: heading.label, target: target.id, targetLabel: target.label,
-        verb: 'sets priorities for', rationale: 'A synthetic policy may shape these exchanges; its effects still need verification.',
+        verb: 'sets priorities for routine maintenance and determines which local repairs receive attention first', rationale: 'A synthetic policy may shape these exchanges; its effects still need verification.',
         relationshipIds: members.map(edge => edge.id), relationshipProcess: { direction: 'source to target' } }];
     }
     body.evaluation.review = base; await route.fulfill({ response, json: body });
@@ -85,6 +85,15 @@ test('two memos retain the local map, model groups can be edited, and downloads 
   await captureSourceRenderedScreenshot(page, testInfo, 'Two spheres and model-proposed relationship group');
   await page.locator(`[data-graph-id="${grouped.id}"]`).focus();
   await page.locator(`[data-graph-id="${grouped.id}"]`).press('Enter');
+  await page.locator('.graph-canvas').press('0');
+  const groupLabel = page.locator(`.graph-edge-label[data-edge-id="${grouped.id}"]`);
+  await expect(groupLabel).toHaveAttribute('data-full-label', grouped.verb);
+  const labelBox=await groupLabel.boundingBox(),canvasBox=await page.locator('.graph-canvas').boundingBox();
+  expect(labelBox.x).toBeGreaterThanOrEqual(canvasBox.x-1);
+  expect(labelBox.x+labelBox.width).toBeLessThanOrEqual(canvasBox.x+canvasBox.width+1);
+  expect(labelBox.y).toBeGreaterThanOrEqual(canvasBox.y-1);
+  expect(labelBox.y+labelBox.height).toBeLessThanOrEqual(canvasBox.y+canvasBox.height+1);
+  await expect(page.locator('.edge-label-leader')).toHaveCount(0);
   await editSelected(page);
   const picker = page.getByRole('group', { name: 'Local relationships', exact: true });
   const selected = picker.locator('input:checked');
@@ -207,9 +216,10 @@ test('retained local coordinates stay inside two fitted spheres after Part 2', a
   expect((await read(page)).graph).toEqual(original);
   await captureSourceRenderedScreenshot(page, testInfo, 'Retained graph inside fitted two-sphere outlines');
   const first = original.nodes[0];
+  const start = (await page.locator(`[data-graph-id="${first.id}"]`).getAttribute('transform')).match(/-?[\d.]+/g).map(Number);
   await page.locator(`[data-graph-id="${first.id}"]`).press('ArrowRight');
-  await expect.poll(async () => (await read(page)).graph.nodes.find(node => node.id === first.id).x).toBe(first.x + 8);
-  expect((await read(page)).graph.nodes.find(node => node.id === first.id).y).toBe(first.y);
+  await expect.poll(async () => (await read(page)).graph.nodes.find(node => node.id === first.id).x).toBe(start[0] + 8);
+  expect((await read(page)).graph.nodes.find(node => node.id === first.id).y).toBe(start[1]);
 });
 test('an older project uploading Part 2 from memo entry retains its first memo and map', async ({ page }) => {
   const p = localProject(); p.activeScale = 'exosphere'; p.stage = 0;

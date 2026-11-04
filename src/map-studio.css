@@ -94,3 +94,24 @@
 .memo-source-text { white-space: pre-wrap; max-height: 20rem; overflow: auto; }
 .memo-file-upload { margin-block: .75rem; }
 .memo-file-upload .upload-zone { min-height: 84px; padding: .8rem; }
+
+/* The overview establishes the places and people. Selection reveals wording
+   on the connecting line, and only one cross-system group at a time. */
+.is-reading-view .relationship-group-band { display: none; }
+.is-reading-view .is-inactive-group { opacity: 0; pointer-events: none; }
+.is-reading-view .relationship-group-vector { fill: none; stroke: var(--exosphere); stroke-opacity: .65; stroke-width: 1.6; stroke-dasharray: 6 4; }
+.is-reading-view .relationship-group-join { fill: var(--surface); stroke: var(--exosphere); stroke-width: 1.5; }
+.is-reading-view .graph-edge .edge-line { stroke: #64748b; stroke-width: 1.4; }
+.is-reading-view.has-reading-selection .graph-edge:not(.is-reading-active) { opacity: .18; }
+.is-reading-view .graph-edge.is-reading-active .edge-line { stroke: var(--micro); stroke-width: 2.4; }
+.is-reading-view .graph-edge[data-edge-scale="macrosphere"] .edge-line { stroke: var(--exosphere); stroke-dasharray: 7 4; stroke-width: 2; }
+.is-reading-view .edge-label-bg { stroke: none !important; fill: var(--surface); }
+.is-reading-view .edge-label { font-weight: 500 !important; fill: var(--ink); }
+.is-reading-view .graph-edge-label[data-edge-scale="macrosphere"] .edge-label { fill: var(--exosphere); }
+.is-reading-view .edge-label-leader { display: none; }
+.is-reading-view .graph-node--micro .node-card { fill: var(--surface); stroke: var(--micro); stroke-width: 1.2; }
+.is-reading-view .graph-node--exosphere .node-card,
+.is-reading-view .graph-node--macrosphere .node-card { fill: color-mix(in srgb, var(--exosphere) 7%, var(--surface)); stroke: var(--exosphere); stroke-width: 2; }
+.is-reading-view .ecology-layer > ellipse { stroke-width: 1.2; stroke-opacity: .7; }
+.map-reading-guide { position: absolute; left: 16px; bottom: 14px; z-index: 4; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); padding: 4px 8px; background: var(--surface); color: var(--muted); font-size: 13px; }
+.map-reading-guide button { border: 0; padding: 8px; min-height: 40px; color: var(--blue); background: transparent; font-size: inherit; text-decoration: underline; }

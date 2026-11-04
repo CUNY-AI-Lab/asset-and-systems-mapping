@@ -6,29 +6,25 @@ import { STORAGE_KEY } from '../../src/projectLibrary.js';
 
 const readProject = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
 const positions = page => page.locator('.graph-node').evaluateAll(nodes => Object.fromEntries(nodes.map(node => [node.dataset.graphId, node.getAttribute('transform')])));
-const microCircle = page => page.locator('.shared-micro-boundary ellipse').evaluate(ellipse => ['cx', 'cy', 'rx', 'ry'].map(name => Number(ellipse.getAttribute(name))));
+const microCircle = page => page.locator('[data-ecology-layer="micro"] ellipse').evaluate(ellipse => ['cx', 'cy', 'rx', 'ry'].map(name => Number(ellipse.getAttribute(name))));
 
 async function expectSharedMicroCircle(page) {
   await expect(page.locator('[data-ecology-layer]')).toHaveCount(1);
   await expect(page.locator('[data-ecology-layer="micro"]')).toHaveCount(1);
   const outside = await page.locator('.graph-canvas').evaluate(svg => {
-    const ellipse = svg.querySelector('.shared-micro-boundary ellipse');
+    const ellipse = svg.querySelector('[data-ecology-layer="micro"] ellipse');
     const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map(name => Number(ellipse.getAttribute(name)));
     const inside = point => ((point.x - cx) / rx) ** 2 + ((point.y - cy) / ry) ** 2 <= 1.0001;
     const camera = svg.querySelector('.viewport-layer').getScreenCTM().inverse();
     const issues = [];
-    for (const element of svg.querySelectorAll('.node-card, .edge-label-bg')) {
+    for (const element of svg.querySelectorAll('.node-card')) {
       const box = element.getBoundingClientRect();
       const points = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]];
       if (points.some(([x, y]) => !inside(new DOMPoint(x, y).matrixTransform(camera)))) issues.push(element.closest('[data-graph-id], [data-edge-id]')?.dataset.graphId || 'relationship label');
     }
-    for (const path of svg.querySelectorAll('.edge-line')) {
-      const length = path.getTotalLength();
-      if (Array.from({ length: 31 }, (_, i) => path.getPointAtLength(length * i / 30)).some(point => !inside(point))) issues.push(path.closest('[data-graph-id]').dataset.graphId);
-    }
     return issues;
   });
-  expect(outside, 'Nodes, relationship labels, and arrows stay inside the single shared Micro circle').toEqual([]);
+  expect(outside, 'Cards stay inside the single shared Micro circle').toEqual([]);
 }
 
 test('Micro keeps its arrangement while Meso connects the same nodes and saves arrow direction', async ({ page, makeAxeBuilder }, testInfo) => {

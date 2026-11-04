@@ -7,7 +7,7 @@ const saved = page => page.evaluate(key => JSON.parse(localStorage.getItem(key))
 const positions = page => page.locator('.graph-node').evaluateAll(nodes => Object.fromEntries(nodes.map(node => [node.dataset.graphId, node.getAttribute('transform')])));
 const view = page => page.locator('.viewport-layer').getAttribute('transform');
 
-test('dense cumulative arrangement stays straight and visible, and intentional placement survives undo and reload', async ({page},testInfo) => {
+test('dense cumulative arrangement stays readable and visible, and intentional placement survives undo and reload', async ({page},testInfo) => {
   test.setTimeout(90000);
   const project=denseCumulativeProject(),before=structuredClone(project.graph);
   let paidRequests=0;
@@ -37,9 +37,15 @@ test('dense cumulative arrangement stays straight and visible, and intentional p
       return {overlaps,badgeOverlaps,opacities:[...svg.querySelectorAll('.graph-node,.graph-edge,.graph-edge-label')].map(node=>getComputedStyle(node).opacity),fills:[...svg.querySelectorAll('.ecology-layer>ellipse')].map(node=>getComputedStyle(node).fill),paths:[...svg.querySelectorAll('.edge-line')].map(node=>node.getAttribute('d'))};
     });
     expect(quality.overlaps).toBe(0);expect(quality.badgeOverlaps).toBe(0);expect(new Set(quality.opacities)).toEqual(new Set(['1']));expect(new Set(quality.fills)).toEqual(new Set(['none']));
-    for(const path of quality.paths)expect(path).toMatch(/^M -?[\d.]+ -?[\d.]+ L -?[\d.]+ -?[\d.]+$/);
+    for(const path of quality.paths)expect(path).toMatch(/^M -?[\d.]+ -?[\d.]+(?: L -?[\d.]+ -?[\d.]+)+$/);
+    await expect(page.locator('.graph-edge-label')).toHaveCount(0);
+    const firstEdge=edges.first();await firstEdge.focus();await firstEdge.press('Enter');
+    const label=page.locator('.graph-edge-label');await expect(label).toHaveCount(1);
+    expect(await label.getAttribute('data-full-label')).toBeTruthy();
+    await expect(page.locator('.edge-label-leader')).toHaveCount(0);
+    await page.getByRole('button',{name:'Clear highlight',exact:true}).click();
     expect((await saved(page)).graph).toEqual(before);
-    await captureSourceRenderedScreenshot(page,testInfo,`Dense ${layer==='exosphere'?'Exo':'Macro'} full map with straight connections`);
+    await captureSourceRenderedScreenshot(page,testInfo,`Dense ${layer==='exosphere'?'Exo':'Macro'} full map with compact cards`);
   }
   await mapCommand(page,'Arrange map');const arranged=await positions(page);
   await mapCommand(page,'Arrange map');expect(await positions(page)).toEqual(arranged);
@@ -67,6 +73,20 @@ test('dense cumulative arrangement stays straight and visible, and intentional p
   await showMap(page);await page.reload();await open();await showMap(page);
   expect(await positions(page)).toEqual(moved);
   expect((await saved(page)).graph.edges).toEqual(before.edges);
+  const savedBeforeResize=await saved(page),initialSize=page.viewportSize();
+  for(const size of [{width:900,height:900},{width:1440,height:760},initialSize]) {
+    await page.setViewportSize(size);
+    await expect.poll(()=>page.locator('.graph-canvas').evaluate(svg=>{
+      const frame=svg.getBoundingClientRect();
+      return [...svg.querySelectorAll('.graph-node .node-card')].every(card=>{
+        const b=card.getBoundingClientRect();
+        return b.left>=frame.left-1&&b.right<=frame.right+1&&b.top>=frame.top-1&&b.bottom<=frame.bottom+1;
+      });
+    })).toBe(true);
+    await expect(page.locator('#map-inspector')).toBeVisible();
+    expect((await saved(page)).graph).toEqual(savedBeforeResize.graph);
+  }
+  await expect.poll(()=>positions(page)).toEqual(moved);
   expect(paidRequests).toBe(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);
 });

@@ -1,4 +1,4 @@
-/* Map and Notebook are views of the same mounted workspace. */
+/* Map and Notebook stay visible together in one mounted workspace. */
 .app-shell:has(.workspace--studio) { --footer: 0px; }
 .workspace.workspace--studio { padding-top: calc(var(--header) + var(--safe-top) + 4px); padding-bottom: calc(var(--footer) + var(--safe-bottom) + 4px); }
 .notebook-nav-row { display: flex; align-items: center; gap: 4px; min-height: 44px; width: 100%; }
@@ -20,6 +20,7 @@
 @container workspace-controls (max-width:280px) {
   .app-shell .notebook-controls-host .notebook-nav-row .notebook-switch > button,.app-shell .notebook-controls-host .notebook-nav-row .notebook-switch > .notebook-map-tools > summary,.app-shell .notebook-controls-host .notebook-switch .notebook-level select { font-size:13px; padding-inline:3px; }
 }
+
 .project-menu-account,.project-menu-level { display:none; }
 .notebook-footer.app-footer { min-height: 0; height: calc(48px + var(--safe-bottom)); padding: 0 60px var(--safe-bottom) 16px; justify-content: center !important; }
 .notebook-footer nav { display: flex; height: 48px; gap: 24px; align-items: center; }
@@ -254,3 +255,19 @@
 .map-connect-status button { flex: 0 0 auto; min-height: 44px; padding: .4rem .8rem; font: inherit; white-space: nowrap; }
 .reflection-entry > .field { display: grid; gap: 14px; }
 .reflection-entry .reflection-prompt { display: block; }
+
+/* Editing remains beside the map, including at tablet widths. */
+.workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector {
+  grid-template-columns: minmax(0,1fr) var(--sidebar-width,304px);
+  grid-template-rows: minmax(0,1fr);
+}
+.workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector > :is(.canvas-wrap,.map-list-view) { visibility:visible; pointer-events:auto; }
+.workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout > .inspector.is-open {
+  position:relative; inset:auto; grid-column:2; grid-row:1; width:100%; max-width:100%; height:100%; border-left:1px solid var(--line); box-shadow:none;
+}
+.map-stage--notebook .map-reading-guide { top:8px; bottom:auto; left:8px; max-width:calc(100% - 80px); }
+@media (max-width:600px) {
+  .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,55%) minmax(180px,45%); }
+  .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout > .inspector.is-open { grid-column:1; grid-row:2; border-left:0; border-top:1px solid var(--line); }
+  .map-stage--notebook .map-reading-guide { font-size:12px; max-width:calc(100% - 16px); padding:4px; }
+}

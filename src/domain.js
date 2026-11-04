@@ -2287,7 +2287,8 @@ export function validateProject(project) {
   assertFiniteNumber(project.viewport.zoom, 'project.viewport.zoom', PROJECT_LIMITS.zoomMin, PROJECT_LIMITS.zoomMax);
   if (project.layout !== undefined) {
     assertObject(project.layout, 'project.layout');
-    assertKnownKeys(project.layout, ['phoneOverview', 'manualNodeIds'], 'project.layout');
+    assertKnownKeys(project.layout, ['phoneOverview', 'manualNodeIds', 'readingAspect'], 'project.layout');
+    if (project.layout.readingAspect !== undefined) assertFiniteNumber(project.layout.readingAspect, 'project.layout.readingAspect', .05, 20);
     if (project.layout.phoneOverview !== undefined && project.layout.phoneOverview !== 'preserve') invalidProject('project.layout.phoneOverview', 'must be preserve');
     if (project.layout.manualNodeIds !== undefined) {
       if (!Array.isArray(project.layout.manualNodeIds) || project.layout.manualNodeIds.length > PROJECT_LIMITS.nodes) invalidProject('project.layout.manualNodeIds', 'must be a bounded list of node IDs');

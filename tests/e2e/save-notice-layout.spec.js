@@ -46,8 +46,9 @@ for (const populated of [false, true]) {
       expect(banner.y + banner.height).toBeLessThanOrEqual(stage.y + 1);
       expect(banner.height).toBeLessThan(120);
       expect(stage.width).toBeGreaterThan(width * .94);
-      expect(canvas.width).toBeGreaterThan(width * .9);
-      expect(canvas.height).toBeGreaterThan(450);
+      expect(canvas.width).toBeGreaterThan(width * (width > 600 ? .5 : .9));
+      expect(canvas.height).toBeGreaterThan(width > 600 ? 450 : 280);
+      await expect(page.locator('#map-inspector')).toBeVisible();
       const overflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth - innerWidth, height: document.documentElement.scrollHeight - innerHeight }));
       expect(overflow.width, JSON.stringify(overflow)).toBeLessThanOrEqual(0);
       expect(overflow.height, JSON.stringify(overflow)).toBeLessThanOrEqual(1);
@@ -58,7 +59,7 @@ for (const populated of [false, true]) {
       await notebookSection(page, 'suggestions');
       if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator(':scope > summary').click();
       await expect(page.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
-      expect((await page.locator('#map-inspector').boundingBox()).height).toBeGreaterThan(450);
+      expect((await page.locator('#map-inspector').boundingBox()).height).toBeGreaterThan(width > 600 ? 450 : 200);
       assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Recovery notebook ${width}`));
     }
     await page.evaluate(() => { window.failProjectSave = false; });

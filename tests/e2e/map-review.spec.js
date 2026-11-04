@@ -155,7 +155,7 @@ test('Space and middle-button drags pan over nodes without moving them, and Esca
     if (button === 'left') await page.keyboard.up('Space');
     await expect.poll(transform).not.toBe(before);
     expect((await readProject(page)).graph.nodes).toEqual(nodesBefore);
-    await expect(page.getByRole('complementary', { name: 'Notebook' })).not.toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Notebook' })).toBeVisible();
   }
   const beforeCancel = await transform();
   const box = await node.boundingBox();

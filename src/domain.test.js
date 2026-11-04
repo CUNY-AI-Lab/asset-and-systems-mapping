@@ -1960,7 +1960,7 @@ describe('mapping domain', () => {
 
   it('round-trips intentional node placements through private and shared exports', () => {
     const project = projectWithGraph();
-    project.layout = { manualNodeIds: project.graph.nodes.map(node => node.id) };
+    project.layout = { readingAspect: 1.6, manualNodeIds: project.graph.nodes.map(node => node.id) };
     expect(parseProject(serializeProject(project)).layout).toEqual(project.layout);
     for (const tier of ['private', 'course', 'public']) {
       expect(parseProject(JSON.stringify(createPortableProject(project, tier))).layout).toEqual(project.layout);
@@ -1973,6 +1973,11 @@ describe('mapping domain', () => {
     const project = projectWithGraph();
     project.layout = layout;
     expect(() => parseProject(JSON.stringify(project))).toThrow(/project\.layout/);
+  });
+  it.each([0, -1, 21, '1.5', null])('rejects an invalid saved canvas aspect (%j)', readingAspect => {
+    const project = projectWithGraph();
+    project.layout = { manualNodeIds: [], readingAspect };
+    expect(() => parseProject(JSON.stringify(project))).toThrow(/project\.layout\.readingAspect/);
   });
 
   it.each([null, [], {}, { phoneOverview: true }, { phoneOverview: 'automatic' }, { phoneOverview: 'preserve', privateNote: 'unrelated' }])('rejects invalid or additional phone layout data (%j)', (layout) => {

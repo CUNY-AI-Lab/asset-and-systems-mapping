@@ -119,7 +119,7 @@ test('relationship draft survives navigation and reload; blank wording commits w
   await expect(form.getByRole('combobox', { name: 'Direction', exact: true })).toHaveValue('varies');
   if (testInfo.project.name === 'chromium-phone') {
     await expect(nodes).toHaveCount(6);
-    await expect.poll(async () => nodes.evaluateAll(items => Math.min(...items.map(item => item.getBoundingClientRect().width)))).toBeGreaterThan(70);
+    await expect.poll(async () => page.locator('.node-label').evaluateAll(items => Math.min(...items.map(item => parseFloat(getComputedStyle(item).fontSize) * item.getScreenCTM().a)))).toBeGreaterThanOrEqual(10);
   }
   await captureSourceRenderedScreenshot(page, testInfo, 'Cached dotted relationship draft');
   await form.getByRole('button', { name: 'Add relationship', exact: true }).click();
@@ -134,6 +134,8 @@ test('relationship draft survives navigation and reload; blank wording commits w
   await expect(edge.locator('.edge-line')).not.toHaveAttribute('marker-end');
   await expect(edge.locator('.edge-line')).not.toHaveAttribute('marker-start');
   await expect(edge).toHaveAttribute('aria-label', /direction: varies/);
+  await expect(page.locator(`[data-edge-id="${saved.id}"]`)).toHaveCount(0);
+  await edge.focus(); await edge.press('Enter');
   await expect(page.locator(`[data-edge-id="${saved.id}"]`)).not.toContainText('direction varies');
   await expect(page.locator(`[data-edge-id="${saved.id}"] .edge-direction-symbol`)).toBeVisible();
   await edge.focus(); await edge.press('Enter'); await page.getByRole('button', { name: 'Edit', exact: true }).click();

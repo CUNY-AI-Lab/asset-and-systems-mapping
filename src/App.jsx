@@ -5,6 +5,7 @@ import { MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { isNodeReviewScale, isRelationshipReviewScale, nodeScaleFor, canConnectAtScale, cumulativeScales } from '../shared/mapping-grammar.js';
 import { useRelationshipDraft } from './relationshipDraft.js';
 import { readableNodePositions, straightConnectionLayout } from './readableGraphLayout.js';
+import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment } from './studentMapLayout.js';
 import { readMemoFile } from './documentImport.js';
 import { relationshipDescription, relationshipArrowheads, relationshipDirection, relationshipMapLabel, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
@@ -2017,12 +2018,14 @@ function stateClass(value) {
 }
 
 export function mapNodeGeometry(label, phoneLayout = false) {
-  const cardWidth = phoneLayout ? 272 : 224;
-  const fontSize = phoneLayout ? 30 : 18;
-  const lines = wrapMapText(String(label || '').trim() || 'Untitled', cardWidth - (phoneLayout ? 32 : 28), { fontSize, fontWeight: 750 });
-  const lineHeight = phoneLayout ? 34 : 22;
-  const minimumHeight = phoneLayout ? 100 : 72;
-  const cardHeight = Math.max(minimumHeight, lines.length * lineHeight + (phoneLayout ? 28 : 24));
+  const fontSize = phoneLayout ? 26 : 22;
+  const text = String(label || '').trim() || 'Untitled';
+  const padding = phoneLayout ? 22 : 20;
+  const cardWidth = clamp(measureMapText(text, fontSize, 750) + padding, phoneLayout ? 132 : 104, phoneLayout ? 260 : 224);
+  const lines = wrapMapText(text, cardWidth - padding, { fontSize, fontWeight: 750 });
+  const lineHeight = phoneLayout ? 30 : 26;
+  const minimumHeight = phoneLayout ? 54 : 42;
+  const cardHeight = Math.max(minimumHeight, lines.length * lineHeight + (phoneLayout ? 16 : 12));
   return {
     lines,
     fontSize,
@@ -3387,7 +3390,7 @@ function AnnotationField({ annotationId, label, value, hint, placeholder, onDraf
   </div>;
 }
 
-function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, onViewportChange, onAnnounce }) {
+function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, onViewportChange, onAnnounce }) {
   const sharedBands = ecologyBandGeometry || ecologyBands(phoneLayout, nodes.length, nodes);
   const interactionBands = ecologyInteractionBandGeometry || sharedBands;
   const retainedPlacement = useMemo(() => mapMode === 'ecology' && Boolean(retainedEcologyBoundaries(nodes, edges, phoneLayout, sharedBands)), [nodes, edges, phoneLayout, sharedBands, mapMode]);
@@ -3418,7 +3421,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   const shownViewport = transientViewport || viewport;
   liveViewportRef.current = shownViewport;
   const positions = useMemo(() => new Map(nodes.map((node) => [node.id, transientNode?.id === node.id ? { x: transientNode.x, y: transientNode.y } : { x: node.x, y: node.y }])), [nodes, transientNode]);
-  const activeRingExpansion = mapMode === 'ecology' && !detailMode ? ringExpansion : 1;
+  const activeRingExpansion = !readingMode && mapMode === 'ecology' && !detailMode ? ringExpansion : 1;
   const renderedPositions = useMemo(() => new Map([...positions].map(([id, position]) => [
     id,
     expandEcologyPosition(position, activeRingExpansion),
@@ -3445,7 +3448,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       return { x: transformed.x, y: transformed.y };
     }
     const rect = svg.getBoundingClientRect();
-    const fallbackViewBox = phoneLayout
+    const fallbackViewBox = phoneLayout || readingMode
       ? phoneViewBox
       : { x: 0, y: 0, width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
     const viewBox = svg.viewBox?.baseVal?.width ? svg.viewBox.baseVal : fallbackViewBox;
@@ -3722,10 +3725,10 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     onMoveNode(node.id, x, y, 'keyboard');
     onAnnounce(`${node.label} moved to x ${x}, y ${y}.`);
   };
-  const graphViewBox = phoneLayout
+  const graphViewBox = phoneLayout || readingMode
     ? `${phoneViewBox.x} ${phoneViewBox.y} ${phoneViewBox.width} ${phoneViewBox.height}`
     : `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`;
-  const graphViewBoxBounds = phoneLayout
+  const graphViewBoxBounds = phoneLayout || readingMode
     ? phoneViewBox
     : { x: 0, y: 0, width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
   const labelViewportInset = (phoneLayout ? 110 : 8) / viewport.zoom;
@@ -3740,17 +3743,27 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     geometry: mapNodeGeometry(node.label, phoneLayout),
   }])), [nodes, renderedPositions, phoneLayout, fontRevision]);
   const scopeTraces = storedScopeTraces(nodes);
-  const betweenEndpointLayout = useMemo(() => betweenEndpointCalloutLayout(
+  const selectedGroup = edges.find(edge => edge.relationshipIds?.length && (selection?.kind === 'edge' ? edge.id === selection.id : edge.source === selection?.id));
+  const readingEdgeIds = new Set(selection?.kind === 'edge' ? [selection.id, ...(selectedGroup?.relationshipIds || [])]
+    : edges.filter(edge => edge.source === selection?.id || edge.target === selection?.id).filter(edge => !edge.relationshipIds?.length).map(edge => edge.id));
+  if (selectedGroup) { readingEdgeIds.add(selectedGroup.id); selectedGroup.relationshipIds.forEach(id => readingEdgeIds.add(id)); }
+  const readingGeometry = new Map([...nodeVisuals].map(([id, visual]) => [id, visual.geometry]));
+  const contentBoundaries = readingMode ? studentMapBoundaries(nodes.map(node=>({...node,...renderedPositions.get(node.id)})),readingGeometry) : null;
+  const betweenEndpointLayout = useMemo(() => readingMode ? attachedConnectionLayout(
+    edges.filter(edge => !edge.relationshipIds?.length), nodes, renderedPositions,
+    new Map([...nodeVisuals].map(([id, visual]) => [id, visual.geometry])),
+    new Map(edges.map(edge => [edge.id, readingEdgeIds.has(edge.id) ? mapEdgeLabelGeometry(relationshipMapLabel(edge),phoneLayout,'') : {width:0,height:0}])),
+  ) : betweenEndpointCalloutLayout(
     [...edges.filter((edge) => edge.showLabel !== false), ...scopeTraces],
     nodes,
     renderedPositions,
     phoneLayout,
-  ), [edges, nodes, renderedPositions, phoneLayout, fontRevision]);
+  ), [edges, nodes, renderedPositions, phoneLayout, fontRevision, readingMode, selection?.id]);
   const edgeVisuals = edges.map((edge) => {
     const source = nodeVisuals.get(edge.source);
     const target = nodeVisuals.get(edge.target);
     if (!source?.position || !target?.position) return null;
-    const labelGeometry = mapEdgeLabelGeometry(relationshipMapLabel(edge), phoneLayout, edge.scale);
+    const labelGeometry = mapEdgeLabelGeometry(relationshipMapLabel(edge), phoneLayout, readingMode ? '' : edge.scale);
     const calloutAnchor = edge.relationshipIds?.length ? null : betweenEndpointLayout.anchors.get(edge.id) || null;
     const routedPoints = edge.relationshipIds?.length ? null : betweenEndpointLayout.paths.get(edge.id) || null;
     const sourceToward = calloutAnchor || target.position;
@@ -3758,19 +3771,28 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     const sourcePoint = routedPoints?.source || cardConnectionPoint(source.position, sourceToward, source.geometry);
     const groupPoints = groupedRelationships(edge, edges).flatMap(local => {
       const a = renderedPositions.get(local.source), b = renderedPositions.get(local.target);
-      return a && b ? [{ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }] : [];
+      return a && b ? [relationshipAttachment(betweenEndpointLayout,local.id) || { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }] : [];
     });
     const groupTarget = groupPoints.length ? { x: groupPoints.reduce((sum, point) => sum + point.x, 0) / groupPoints.length, y: groupPoints.reduce((sum, point) => sum + point.y, 0) / groupPoints.length } : null;
     const targetPoint = groupTarget || routedPoints?.target || cardConnectionPoint(target.position, targetToward, target.geometry, phoneLayout ? 12 : 7);
-    const labelPoint = calloutAnchor || {
+    let labelPoint = calloutAnchor || {
       x: (source.position.x + targetPoint.x) / 2,
       y: (source.position.y + targetPoint.y) / 2,
     };
-    const path = routedPoints?.points
+    let path = routedPoints?.points
       ? routedPoints.points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')
       : calloutAnchor
       ? `M ${sourcePoint.x} ${sourcePoint.y} L ${calloutAnchor.x} ${calloutAnchor.y} L ${targetPoint.x} ${targetPoint.y}`
       : `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
+    if (readingMode && selectedGroup?.id === edge.id && edge.relationshipIds?.length && groupPoints.length) {
+      const anchor = groupPoints[0], targetId = `relationship-anchor:${edge.id}`;
+      const groupLayout = attachedConnectionLayout([{...edge,target:targetId}], [...nodes,{id:targetId}],
+        new Map([...renderedPositions,[targetId,anchor]]),
+        new Map([...readingGeometry,[targetId,{cardWidth:0,cardHeight:0}]]),
+        new Map([[edge.id,labelGeometry]]), [...betweenEndpointLayout.bounds].filter(([id])=>readingEdgeIds.has(id)).map(([,bounds])=>bounds));
+      const route=groupLayout.paths.get(edge.id);
+      if(route) {path=route.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');labelPoint=groupLayout.anchors.get(edge.id);}
+    }
     return {
       edge,
       x1: sourcePoint.x,
@@ -3827,12 +3849,18 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     const heading = nodeVisuals.get(edge.source)?.position;
     const vectors = members.flatMap(local => {
       const a = nodeVisuals.get(local.source)?.position, b = nodeVisuals.get(local.target)?.position;
-      return heading && a && b ? [{ id: local.id, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }] : [];
+      if (!heading || !a || !b) return [];
+      const anchor=relationshipAttachment(betweenEndpointLayout,local.id) || {x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+      if (!readingMode || selectedGroup?.id !== edge.id) return [{id:local.id,...anchor}];
+      const targetId=`group-member:${local.id}`;
+      const routed=attachedConnectionLayout([{id:edge.id,source:edge.source,target:targetId}], [...nodes,{id:targetId}],
+        new Map([...renderedPositions,[targetId,anchor]]),new Map([...readingGeometry,[targetId,{cardWidth:0,cardHeight:0}]]),new Map());
+      return [{id:local.id,...anchor,path:routed.paths.get(edge.id)?.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')}];
     });
     return region && heading ? [{ ...region, edge, heading, vectors, maskId: `${regionMaskPrefix}-group-${edge.id}` }] : [];
   });
   const graphSummary = `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`;
-  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. Choose a node or connection for details. Drag the map or use arrow keys to pan. Use the mouse wheel or pinch to zoom.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
+  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. Choose a node or connection for details. Drag the map or use arrow keys to pan. Use the mouse wheel or pinch to zoom.${detailMode ? '' : ' Arrow keys move a focused node by 8 pixels; Shift plus an arrow moves it by 24.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
     if (event.key === 'Escape' && interactionRef.current) {
       event.preventDefault();
       const interaction = interactionRef.current;
@@ -3880,15 +3908,17 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       ))}
     </defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
-      {mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} phoneLayout={phoneLayout} nodeCount={nodes.length} ringExpansion={activeRingExpansion} nodes={nodes} edges={edges} positions={renderedPositions} visibleBounds={visibleLabelBounds} sharedBands={sharedBands} connectionLabelBounds={[...betweenEndpointLayout.bounds.values()]} /> : null}
-      {microBoundary && <g className="ecology-layers shared-micro-boundary" aria-hidden="true"><g data-ecology-layer="micro" className="ecology-layer ecology-layer--micro is-visible">
+      {contentBoundaries && <g className="ecology-layers" aria-hidden="true">{['exosphere','micro'].filter(scale=>contentBoundaries[scale]).map(scale=>{const b=contentBoundaries[scale];return <g key={scale} data-ecology-layer={scale} className={`ecology-layer ecology-layer--${scale} is-visible`}><ellipse cx={b.cx} cy={b.cy} rx={b.rx} ry={b.ry}/><g className="ecology-layer__label" transform={`translate(${b.cx} ${b.top+8})`}><rect x="-84" y="-16" width="168" height="32" rx="16"/><text y="5">{scale==='micro'?'Microsystem':'Macrosystem'}</text></g></g>;})}</g>}
+      {!readingMode && mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} phoneLayout={phoneLayout} nodeCount={nodes.length} ringExpansion={activeRingExpansion} nodes={nodes} edges={edges} positions={renderedPositions} visibleBounds={visibleLabelBounds} sharedBands={sharedBands} connectionLabelBounds={[...betweenEndpointLayout.bounds.values()]} /> : null}
+      {!readingMode && microBoundary && <g className="ecology-layers shared-micro-boundary" aria-hidden="true"><g data-ecology-layer="micro" className="ecology-layer ecology-layer--micro is-visible">
         <ellipse cx={microBoundary.cx} cy={microBoundary.cy} rx={microBoundary.rx} ry={microBoundary.ry} />
         <g className="ecology-layer__label" transform={`translate(${microBoundary.cx} ${microBoundary.top + 12})`}><rect x="-84" y="-18" width="168" height="36" rx="18" /><text y="5">Microsystem</text></g>
       </g></g>}
       <g className="micro-setting-regions" aria-hidden="true">{microSettingRegionVisuals.map(({ setting, memberCount, path, selected, maskId }) => <path key={`micro-setting-${setting.id}`} data-setting-region={setting.id} data-member-count={memberCount} className={`micro-setting-region ${selected ? 'is-selected' : ''} ${setting.visualMuted ? 'is-muted' : ''}`} d={path} mask={`url(#${maskId})`} />)}</g>
-      <g className="macrosystem-relationship-groups">{relationshipGroupVisuals.map(({ edge, path, maskId, heading, vectors }) => <g key={edge.id} data-relationship-group={edge.id} data-heading={edge.source}>
+      <g className="macrosystem-relationship-groups">{relationshipGroupVisuals.map(({ edge, path, maskId, heading, vectors }) => <g key={edge.id} data-relationship-group={edge.id} data-heading={edge.source} className={readingMode && selectedGroup?.id !== edge.id ? 'is-inactive-group' : 'is-active-group'}>
         <path className={`relationship-group-band ${selection?.id === edge.id ? 'is-selected' : ''}`} d={path} mask={`url(#${maskId})`} aria-hidden="true" />
-        {vectors.map(point => <line key={point.id} data-group-member={point.id} x1={heading.x} y1={heading.y} x2={point.x} y2={point.y} className="relationship-group-vector" vectorEffect="non-scaling-stroke" aria-hidden="true" />)}
+        {vectors.map(point => <path key={point.id} data-group-member={point.id} d={point.path || `M ${heading.x} ${heading.y} L ${point.x} ${point.y}`} className="relationship-group-vector" vectorEffect="non-scaling-stroke" aria-hidden="true" />)}
+        {readingMode && vectors.map(point=><circle key={`join-${point.id}`} className="relationship-group-join" cx={point.x} cy={point.y} r="4" aria-hidden="true" />)}
       </g>)}</g>
       <g className="scope-fields" aria-hidden="true">{macroScopeRegionVisuals.map(({ node, path, selected, maskId }) => (
         <path style={selected ? { fill: 'none' } : undefined} key={`scope-${node.id}`} data-scope-of={node.id} className={`scope-field ${selected ? 'is-selected' : ''} ${node.visualMuted ? 'is-muted' : ''}`} d={path} mask={`url(#${maskId})`} />
@@ -3921,7 +3951,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         const arrows = relationshipArrowheads({ relationshipProcess: { direction: previewConnection.direction } });
         return <g className="relationship-draft-preview" pointerEvents="none" aria-label="Relationship draft, not added to map"><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="var(--ink)" strokeWidth="2" strokeDasharray="3 6" vectorEffect="non-scaling-stroke" markerStart={arrows.start ? 'url(#arrowhead)' : undefined} markerEnd={arrows.end ? 'url(#arrowhead)' : undefined} /></g>;
       })()}
-      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space" aria-pressed={selected} className={`graph-edge graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
+      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space" aria-pressed={selected} className={`graph-edge ${readingMode && readingEdgeIds.has(edge.id) ? 'is-reading-active' : ''} ${readingMode && edge.relationshipIds?.length && selectedGroup?.id !== edge.id ? 'is-inactive-group' : ''} graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onFocus={() => { if(readingMode && selection?.id !== edge.id) onSelect('edge',edge.id,false); }} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onSelect('edge', edge.id, true);
@@ -3931,14 +3961,14 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         <title>{`Direction: ${relationshipDirection(edge)}`}</title>
         <path className="edge-line" style={{ '--edge-count-width': relationshipLineWidth(edge) }} strokeDasharray={edge.relationshipProcess?.connectionStatus === 'missing' ? '7 5' : undefined} data-connection-status={edge.relationshipProcess?.connectionStatus || 'unknown'} vectorEffect={phoneLayout ? "non-scaling-stroke" : undefined} d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerStart={relationshipArrowheads(edge).start ? 'url(#arrowhead)' : undefined} markerEnd={relationshipArrowheads(edge).end ? 'url(#arrowhead)' : undefined} />
       </g>)}</g>
-      <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
+      <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false && (!readingMode || readingEdgeIds.has(edge.id))).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
         return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} data-anchor-x={midX} data-anchor-y={midY} data-full-label={relationshipMapLabel(edge)} className={`graph-edge-label ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`}>
           {!['source to target', 'target to source', 'both directions'].includes(relationshipDirection(edge)) && <g className="edge-direction-symbol" transform={`translate(${edge.verb.trim() ? midX + geometry.width / 2 + 13 : midX} ${midY})`}>
             <title>{`Direction: ${relationshipDirection(edge)}`}</title>
             {relationshipDirection(edge) === 'varies' ? <path d="M0,-7 L7,0 L0,7 L-7,0 Z" fill="var(--surface)" stroke="var(--ink)" strokeWidth="1.5" /> : <><circle r="8" fill="var(--surface)" stroke="var(--ink)" /><text textAnchor="middle" dominantBaseline="central" fontSize="12" fill="var(--ink)">?</text></>}
           </g>}
           {betweenEndpointLayout.leaders?.has(edge.id) && (() => { const leader = betweenEndpointLayout.leaders.get(edge.id); return <line className="edge-label-leader" x1={leader.source.x} y1={leader.source.y} x2={leader.target.x} y2={leader.target.y} vectorEffect="non-scaling-stroke" />; })()}
-          {edge.verb.trim() && <><rect className="edge-label-bg" x={midX - (geometry.width / 2)} y={midY - (geometry.height / 2)} width={geometry.width} height={geometry.height} rx={phoneLayout ? 6 : 2} />
+          {edge.verb.trim() && <><rect className="edge-label-bg" x={midX - (geometry.width / 2)} y={midY - (geometry.height / 2)} width={geometry.width} height={geometry.height} rx={readingMode ? 0 : phoneLayout ? 6 : 2} />
           <text className="edge-label" style={{ fontSize: geometry.fontSize, fontFamily: '"Source Sans 3 Variable", "Source Sans 3", sans-serif' }} x={midX}>{geometry.lines.map((line, lineIndex) => <tspan key={`${edge.id}-line-${lineIndex}`} x={midX} y={midY + geometry.startY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text></>}
         </g>;
       })}</g>
@@ -3965,6 +3995,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
 }
 
 function sameGraphVisuals(previous, next) {
+  if (previous.readingMode !== next.readingMode) return false;
   if (previous.phoneLayout !== next.phoneLayout) return false;
   if (previous.phoneViewBox?.height !== next.phoneViewBox?.height) return false;
   if (previous.mapLabel !== next.mapLabel) return false;
@@ -4146,7 +4177,6 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const [inspectorTab, setInspectorTab] = useState('map');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsedPanel, setCollapsedPanel] = useState(null);
-  const sheetOpen = notebook ? notebook.open : panelContent ? collapsedPanel !== panelMode : drawerOpen;
   const [toolsOpen, setToolsOpen] = useState(false);
   const [notebookNavigationHost, setNotebookNavigationHost] = useState(null);
   const [workspaceNavigationRoot] = useState(() => document.createElement('div'));
@@ -4166,6 +4196,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const [legendOpen, setLegendOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const sheetOpen = notebook ? !fullscreen : panelContent ? collapsedPanel !== panelMode : drawerOpen;
   useEffect(() => { if (notebook?.open) setFullscreen(false); }, [notebook?.open]);
   const [announcement, setAnnouncementState] = useState({ message: '', revision: 0 });
   const [addMode, setAddMode] = useState(null);
@@ -4191,8 +4222,8 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const phoneOverviewViewportKeyRef = useRef('');
   const phoneLayout = usePhoneLayout();
   const fontRevision = useMapFontMetrics();
-  const phoneViewBox = useCanvasWindow(canvasWrapRef, phoneLayout && presentation === 'canvas');
-  const phoneFitHeight = Math.max(241, phoneViewBox.height - (fullscreen ? 280 : 200));
+  const phoneViewBox = useCanvasWindow(canvasWrapRef, (phoneLayout || Boolean(notebook)) && presentation === 'canvas');
+  const phoneFitHeight = Math.max(241, phoneViewBox.height - (notebook ? 96 : fullscreen ? 280 : 200));
   const legacyPhoneDrawer = phoneLayout && drawerOpen && !notebook;
   const previousPhoneLayoutRef = useRef(phoneLayout);
   const desktopEcologyViewRef = useRef(null);
@@ -4273,8 +4304,9 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   }, [fullscreen]);
   const readingViewport = useCallback((nodes, layer = visibleScale, extraBounds = []) => {
     const boundary = !notebook && ['micro', 'meso'].includes(layer) ? sharedMicroBoundary(nodes, project.graph.edges, phoneLayout) : null;
-    return fitViewport(nodes, phoneLayout ? phoneFitHeight : 420, phoneLayout,
-      boundary ? [...extraBounds, boundary] : extraBounds, notebook && phoneLayout && nodes.length > 12 ? 1 : VIEWPORT_LIMITS.minZoom);
+    const readingBounds = notebook ? Object.values(studentMapBoundaries(nodes, new Map(nodes.map(node => [node.id, mapNodeGeometry(node.label, phoneLayout)])))).filter(Boolean) : [];
+    return fitViewport(nodes, notebook || phoneLayout ? phoneFitHeight : 420, phoneLayout,
+      [...extraBounds, ...readingBounds, ...(boundary ? [boundary] : [])], VIEWPORT_LIMITS.minZoom);
   }, [Boolean(notebook), phoneFitHeight, phoneLayout, project.graph.edges, visibleScale]);
   const hasRemovedItems = project.graph.nodes.some((node) => node.claimState === 'retired') || project.graph.edges.some((edge) => edge.claimState === 'retired');
   const visibleScaleSet = useMemo(() => new Set(cumulativeScales(visibleScale, project.releasedScales)), [project.releasedScales, visibleScale]);
@@ -4378,8 +4410,9 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const focusedEcologyDetail = Boolean(focusedEcologyPositions);
   const manualPlacementKey = JSON.stringify(project.layout || {});
   const pinnedNodeIds = new Set(project.layout?.manualNodeIds || (project.layout?.phoneOverview === 'preserve' ? visibleLayoutNodes.map(node => node.id) : []));
-  const readableLayoutKey = `${Boolean(notebook)}:${phoneLayout}:${manualPlacementKey}:${visibleLayoutNodes.map(node => `${node.id}:${node.scale}${pinnedNodeIds.has(node.id) ? `:${node.x}:${node.y}` : ''}`).join('|')}:${layoutGraph.edges.map(edge => `${edge.id}:${edge.source}:${edge.target}:${edge.scale}`).join('|')}`;
-  const readablePositions = useMemo(() => notebook ? readableMapPositions(visibleLayoutNodes, layoutGraph.edges, phoneLayout, sharedEcologyBands, project.layout) : null,
+  const canvasAspect = GRAPH_WIDTH / Math.max(240,phoneViewBox.height);
+  const readableLayoutKey = `${Boolean(notebook)}:${phoneLayout}:${canvasAspect.toFixed(1)}:${manualPlacementKey}:${visibleLayoutNodes.map(node => `${node.id}:${node.scale}${pinnedNodeIds.has(node.id) ? `:${node.x}:${node.y}` : ''}`).join('|')}:${layoutGraph.edges.map(edge => `${edge.id}:${edge.source}:${edge.target}:${edge.scale}`).join('|')}`;
+  const readablePositions = useMemo(() => notebook ? studentMapPositions(visibleLayoutNodes, layoutGraph.edges, new Map(visibleLayoutNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect}) : null,
     // Text and annotation edits retain the current placement. New topology,
     // an explicit arrangement or a deliberate drag can establish a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4420,6 +4453,27 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const microBoundary = useMemo(() => innerMap ? sharedMicroBoundary(displayedNodes, project.graph.edges, phoneLayout) : null, [innerMap, displayedNodes, project.graph.edges, phoneLayout]);
   const visibleRelationshipBounds = useMemo(() => {
     const positions = new Map(displayedNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    if (notebook) {
+      const geometry = new Map(displayedNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)]));
+      const bounds = Object.values(studentMapBoundaries(displayedNodes,geometry)).filter(Boolean).map(b=>({...b,top:b.top-12}));
+      const group = visibleEdges.find(edge=>edge.relationshipIds?.length && (selection?.kind==='edge' ? edge.id===selection.id : edge.source===selection?.id));
+      const ids = new Set(selection?.kind==='edge' ? [selection.id] : visibleEdges.filter(edge=>edge.source===selection?.id||edge.target===selection?.id).map(edge=>edge.id));
+      group?.relationshipIds.forEach(id=>ids.add(id));
+      if(ids.size) {
+        const routes = attachedConnectionLayout(visibleEdges.filter(edge=>!edge.relationshipIds?.length),displayedNodes,positions,geometry,new Map(visibleEdges.map(edge=>[edge.id,ids.has(edge.id)?mapEdgeLabelGeometry(relationshipMapLabel(edge),phoneLayout,''):{width:0,height:0}])));
+        for(const [id,rect] of routes.bounds)if(ids.has(id))bounds.push(rect);
+        const anchor = group && relationshipAttachment(routes,group.relationshipIds[0]);
+        if(anchor) {
+          const targetId=`relationship-anchor:${group.id}`;
+          const groupRoute=attachedConnectionLayout([{...group,target:targetId}],[...displayedNodes,{id:targetId}],
+            new Map([...positions,[targetId,anchor]]),new Map([...geometry,[targetId,{cardWidth:0,cardHeight:0}]]),
+            new Map([[group.id,mapEdgeLabelGeometry(relationshipMapLabel(group),phoneLayout,'')]]),
+            [...routes.bounds].filter(([id])=>ids.has(id)).map(([,rect])=>rect));
+          bounds.push(...groupRoute.bounds.values());
+        }
+      }
+      return bounds;
+    }
     const bounds = focusedEcologyCalloutBounds(visibleEdges, displayedNodes, positions, phoneLayout);
     if (microBoundary && !notebook) bounds.push(microBoundary);
     if (mapMode !== 'ecology' || phoneRelationshipDetail || focusedEcologyDetail) return bounds;
@@ -4446,7 +4500,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       }
     }
     return bounds;
-  }, [displayedNodes, ecologyLayers, focusedEcologyDetail, fontRevision, fullscreen, mapMode, microBoundary, phoneLayout, phoneRelationshipDetail, sharedEcologyBands, visibleEdges, visibleScale]);
+  }, [displayedNodes, ecologyLayers, focusedEcologyDetail, fontRevision, fullscreen, mapMode, microBoundary, phoneLayout, phoneRelationshipDetail, sharedEcologyBands, visibleEdges, visibleScale, notebook, selection?.id]);
   const focusedDetailBounds = visibleRelationshipBounds;
   const focusedGeometryKey = useMemo(() => {
     if (!focusedEcologyDetail) return '';
@@ -4459,7 +4513,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     return `${focus?.kind || ''}:${focus?.id || ''}:page-${activeFocusPage}:${relationshipGeometry}::${nodeGeometry}`;
   }, [activeFocusPage, displayedNodes, focus?.id, focus?.kind, focusIncidentEdges, focusedEcologyDetail]);
   const focusedDetailMinimumZoom = VIEWPORT_LIMITS.minZoom;
-  const automaticCameraContext = `${ecologyGeometryKey}:${visibleScale}:${phoneLayout}:${presentation}:${fullscreen}:${typeof window === 'undefined' ? '' : window.innerWidth}`;
+  const automaticCameraContext = `${ecologyGeometryKey}:${visibleScale}:${phoneLayout}:${presentation}:${fullscreen}:${Math.round(phoneViewBox.height)}:${typeof window === 'undefined' ? '' : window.innerWidth}`;
   const automaticCameraKey = `${automaticCameraContext}:${phoneFitHeight}`;
   const userCameraRef = useRef({ context: '', manual: false });
   const preserveCamera = useCallback(() => {
@@ -4469,9 +4523,8 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     if (!notebook || presentation !== 'canvas') return;
     if (userCameraRef.current.context !== automaticCameraContext) userCameraRef.current = {context: automaticCameraContext, manual: false};
     if (userCameraRef.current.manual) return;
-    setMapViewport(fitViewport(displayedNodes, phoneLayout ? phoneFitHeight : 420, phoneLayout, visibleRelationshipBounds, phoneLayout && displayedNodes.length > 12 ? 1 : VIEWPORT_LIMITS.minZoom));
-    // Fit new topology and viewport widths. A dock or keyboard height change
-    // must not replace a camera the user deliberately chose.
+    setMapViewport(fitViewport(displayedNodes, phoneFitHeight, phoneLayout, visibleRelationshipBounds, VIEWPORT_LIMITS.minZoom));
+    // Fit changed topology or canvas dimensions. Text edits retain the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [automaticCameraKey]);
 
@@ -4935,7 +4988,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       });
       if (notebook && readablePositions) {
         draft.graph.nodes.forEach(node => { if (displayedNodeIds.has(node.id) && readablePositions.has(node.id)) Object.assign(node, readablePositions.get(node.id)); });
-        draft.layout = { ...(draft.layout || {}), manualNodeIds: [...new Set([...(draft.layout?.manualNodeIds || []), ...displayedNodeIds])] };
+        draft.layout = { ...(draft.layout || {}), readingAspect: canvasAspect, manualNodeIds: [...new Set([...(draft.layout?.manualNodeIds || []), ...displayedNodeIds])] };
       }
       const node = draft.graph.nodes.find((item) => item.id === id);
       if (node) { node.x = safePosition.x; node.y = safePosition.y; }
@@ -4946,7 +4999,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setAutomaticPositions(null);
     setLayoutMeasurementRevision(revision => revision + 1);
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
-  }, [preserveCamera, readablePositions, notebook, automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, interactionEcologyBands, update, visibleEdges]);
+  }, [preserveCamera, readablePositions, notebook, automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, interactionEcologyBands, update, visibleEdges, canvasAspect]);
   const minimumInteractiveZoom = VIEWPORT_LIMITS.minZoom;
   const changeViewport = useCallback((next) => {
     preserveCamera();
@@ -4985,7 +5038,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     const zoom = clamp(current.zoom + amount, minimumInteractiveZoom, VIEWPORT_LIMITS.maxZoom);
     const mapCenterX = (GRAPH_WIDTH / 2 - current.panX) / current.zoom;
     const mapCenterY = (GRAPH_HEIGHT / 2 - current.panY) / current.zoom;
-    if (mapMode === 'ecology' && !(focusedEcologyPositions || phoneRelationshipPositions) && zoom !== current.zoom) {
+    if (!notebook && mapMode === 'ecology' && !(focusedEcologyPositions || phoneRelationshipPositions) && zoom !== current.zoom) {
       const nextExpansion = resizedEcologyRingExpansion(ringExpansion, current.zoom, zoom);
       setRingExpansion(nextExpansion);
       if (!phoneLayout && amount < 0) {
@@ -5018,7 +5071,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     const detailLayout = focusedEcologyPositions || phoneRelationshipPositions;
     const nextViewport = fitViewport(
       nodes,
-      phoneLayout ? phoneFitHeight : 420,
+      notebook || phoneLayout ? phoneFitHeight : 420,
       phoneLayout,
       visibleRelationshipBounds,
       VIEWPORT_LIMITS.minZoom,
@@ -5037,7 +5090,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     rememberLayout();
     const liveNodes = project.graph.nodes.filter((node) => node.scale !== 'meso' && (showRemoved || node.claimState !== 'retired'));
     const nodes = visibleScale === 'all' ? liveNodes : visibleNodes.length ? visibleNodes : liveNodes;
-    const positions = notebook ? readableMapPositions(nodes, project.graph.edges, phoneLayout, interactionEcologyBands, { manualNodeIds: [] }) : mapMode === 'ecology'
+    const positions = notebook ? studentMapPositions(nodes, project.graph.edges, new Map(nodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {phone:phoneLayout,aspectRatio:canvasAspect}) : mapMode === 'ecology'
       ? phoneLayout && visibleScale === 'micro' ? arrangedPhoneMicroPositions(nodes) : arrangedEcologyPositions(nodes, phoneLayout, interactionEcologyBands)
       : phoneLayout
         ? arrangedPhoneOverviewPositions(nodes)
@@ -5058,7 +5111,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
         if (position) Object.assign(node, position);
       });
       draft.viewport = nextViewport;
-      if (notebook) draft.layout = { ...(draft.layout || {}), manualNodeIds: (draft.layout?.manualNodeIds || []).filter(id => !positions.has(id)) };
+      if (notebook) draft.layout = { ...(draft.layout || {}), readingAspect: canvasAspect, manualNodeIds: [...new Set([...(draft.layout?.manualNodeIds || []), ...positions.keys()])] };
     }, 'map.arranged', visibleScale === 'all' ? 'All layers arranged' : `${SCALES[visibleScale]?.label || visibleScale} arranged`);
     setAutomaticPositions(null);
     setLayoutMeasurementRevision(revision => revision + 1);
@@ -5399,6 +5452,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           canZoomOut={canvasViewport.zoom > minimumInteractiveZoom} canZoomIn={canvasViewport.zoom < VIEWPORT_LIMITS.maxZoom}
           onAdd={project.instructor.allowResearchLeads && SCALE_ORDER.includes(project.activeScale) ? () => { setConnecting(false); setConnectionSource(null); changePanel('inspector'); setNewNode(blankManualNode(project.activeScale)); setAddMode('node'); } : null}
           onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
+          onUndo={notebook ? ()=>restoreLayout('undo') : undefined} onRedo={()=>restoreLayout('redo')} canUndo={Boolean(layoutHistory.past.length)} canRedo={Boolean(layoutHistory.future.length)}
           onLegend={toggleLegend} onFullscreen={toggleFullscreen} fullscreen={fullscreen}
           hasRemoved={hasRemovedItems} showRemoved={showRemoved} onShowRemoved={setShowRemoved} />;
   useLayoutEffect(() => {
@@ -5453,7 +5507,8 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       {notebook && <>{createPortal(notebookNavigation, workspaceNavigationRoot)}<div ref={floatingControlsRef} className="notebook-floating-controls" /></>}
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && sheetOpen ? 'is-inspector-open' : ''} is-panel-${panelMode} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <div className="map-context-actions">{relationshipDraft.draft && addMode !== 'edge' && <button type="button" className="button relationship-resume" onClick={() => { setConnecting(false); setAddMode('edge'); changePanel('inspector'); }}>Resume relationship</button>}{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}</div>
-        <MemoGraphCanvas previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} onDeleteNode={(id) => { if (selection?.kind === 'node' && selection.id === id) setSelectedRemoved(true); }} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
+        {notebook && !connecting && <div className="map-reading-guide"><span>{selection ? 'Highlighted connections' : 'Select an item to explore its connections.'}</span>{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>Clear highlight</button>}</div>}
+        <MemoGraphCanvas readingMode={Boolean(notebook)} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} onDeleteNode={(id) => { if (selection?.kind === 'node' && selection.id === id) setSelectedRemoved(true); }} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         {!notebook && <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
           <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-key-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
           <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); onPanelMode?.('inspector'); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
@@ -5559,14 +5614,14 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
         </div>}
         {!addMode && inspectorTab === 'map' && <div id="map-inspector-panel-map" className="inspector__body" role={notebook ? "region" : "tabpanel"} aria-label={notebook ? "Map notes" : undefined} aria-labelledby={notebook ? undefined : "map-inspector-tab-map"}>
           <p className="inspector-guide">Select an item or a connecting line to work on its meaning and evidence. Use this view for patterns across the whole map.</p>
-          <details className="map-help"><summary>Map controls</summary><dl>
+          {!notebook && <details className="map-help"><summary>Map controls</summary><dl>
             <div><dt>Pan</dt><dd>Drag empty space, hold Space and drag, or use the middle mouse button.</dd></div>
             <div><dt>Zoom</dt><dd>Scroll or pinch; use + and − while the canvas is focused.</dd></div>
             <div><dt>Move an item</dt><dd>Drag it, or focus it and use arrow keys. Shift moves it farther.</dd></div>
             <div><dt>Fit map</dt><dd>Show the current map in the available space. Press 0 on the canvas.</dd></div>
             <div><dt>Undo layout</dt><dd>Use Ctrl/⌘ Z on the canvas; Shift redoes the change. Text fields keep their own undo.</dd></div>
-          </dl><div className="layout-history" role="group" aria-label="Layout history"><button type="button" disabled={!layoutHistory.past.length} onClick={() => restoreLayout('undo')}>Undo layout</button><button type="button" disabled={!layoutHistory.future.length} onClick={() => restoreLayout('redo')}>Redo layout</button></div></details>
-          <ProjectOverview project={project} />
+          </dl><div className="layout-history" role="group" aria-label="Layout history"><button type="button" disabled={!layoutHistory.past.length} onClick={() => restoreLayout('undo')}>Undo layout</button><button type="button" disabled={!layoutHistory.future.length} onClick={() => restoreLayout('redo')}>Redo layout</button></div></details>}
+          {!notebook && <ProjectOverview project={project} />}
           <div className="map-summary"><strong>{scaleNodes.length}</strong><span>nodes</span><strong>{scaleEdges.length}</strong><span>relationships</span></div><AnnotationField key={project.mapAnnotation.id} annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} hint="Write about a pattern, boundary, contradiction, or question across the map." placeholder="Across the map, I notice…" onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></div>}
         </>}
         {notebook && panelContent && notebook.action && <div className="notebook-task-end">{notebook.action}</div>}

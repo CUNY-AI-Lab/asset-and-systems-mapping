@@ -16,10 +16,12 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await showMap(page);
+    const clear = page.getByRole('button', {name:'Clear highlight',exact:true});
+    if (await clear.isVisible()) await clear.click();
     const canvas = page.locator('.canvas-wrap');
     const before = await canvas.boundingBox();
-    expect(before.width).toBeGreaterThan(width * .9);
-    expect(before.height).toBeGreaterThan(900 * .65);
+    expect(before.width).toBeGreaterThan(width > 600 ? width * .5 : width * .9);
+    expect(before.height).toBeGreaterThan(width > 600 ? 900 * .65 : 900 * .35);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
     await notebookSection(page, 'review');
     const notebook = page.locator('#map-inspector');
@@ -42,9 +44,12 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
       await expect(handle).toHaveAttribute('aria-valuenow', await handle.getAttribute('aria-valuemin'));
     } else {
       await expect(handle).not.toBeVisible();
-      await expect(canvas).not.toBeVisible();
-      expect((await notebook.boundingBox()).width).toBeCloseTo(before.width, 0);
+      await expect(canvas).toBeVisible();
+      const notes=await notebook.boundingBox();
+      if(width>600) expect(notes.x).toBeGreaterThanOrEqual(before.x+before.width-1);
+      else expect(notes.y).toBeGreaterThanOrEqual(before.y+before.height-1);
     }
+    const dockedCanvas = await canvas.boundingBox();
     const controls = notebook.locator('.notebook-controls-host');
     await expect(controls.getByRole('navigation', { name: 'Workspace', exact: true })).toBeVisible();
     await expect(controls.getByRole('combobox', { name: 'Work level', exact: true })).toBeVisible();
@@ -59,8 +64,13 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Notebook at ${width}px`));
     await captureSourceRenderedScreenshot(page, testInfo, `Notebook at ${width}px`);
     await showMap(page);
-    await expect(notebook).not.toBeVisible();
-    expect((await canvas.boundingBox()).width).toBeCloseTo(before.width, 0);
+    await expect(notebook).toBeVisible();
+    expect((await canvas.boundingBox()).width).toBeCloseTo(dockedCanvas.width, 0);
+    const instruction = await page.getByText('Select an item to explore its connections.', {exact:true}).boundingBox();
+    const mapBox = await canvas.boundingBox();
+    expect(instruction.x - mapBox.x).toBeLessThan(20);
+    expect(instruction.y - mapBox.y).toBeLessThan(20);
+    await expect(notebook.locator('summary').filter({hasText:/^(Map controls|Cumulative map)$/})).toHaveCount(0);
     const header = await page.locator('.app-header--student').boundingBox();
     expect((await canvas.boundingBox()).y).toBeLessThanOrEqual(header.y + header.height + 8);
     const workspaceNavigation = page.getByRole('navigation', { name: 'Workspace', exact: true });
@@ -74,7 +84,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     await expect(mapButton).toBeFocused();
     await captureSourceRenderedScreenshot(page, testInfo, `Map at ${width}px`);
     await page.locator('[data-graph-id="node_e2e_home_setting"]').press('Enter');
-    await expect(notebook).not.toBeVisible();
+    await expect(notebook).toBeVisible();
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     await expect(notebook.getByRole('heading', { name: 'Edit', exact: true })).toBeInViewport();
     await expect(notebook.getByRole('textbox', { name: 'Label', exact: true })).toHaveValue('Apartment building');
