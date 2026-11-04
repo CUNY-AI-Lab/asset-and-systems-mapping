@@ -4802,6 +4802,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setSelection({ kind, id });
     setInspectorTab(kind === 'edge' ? 'relationships' : 'node');
     if (openInspector) {
+      setToolsOpen(false);
       setFocus(notebook ? null : { kind, id });
       setFocusPage(0);
       setLegendOpen(false);
