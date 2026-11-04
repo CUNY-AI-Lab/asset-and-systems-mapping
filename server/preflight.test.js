@@ -228,6 +228,36 @@ describe('persistent preflight suggestion review queue', () => {
     return (await response.json()).submission;
   }
 
+  it('classifies second-memo nodes without generating guidance or student relationships', async () => {
+    const nodes = [
+      { label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: 'City Housing Authority allocates repair staff.' },
+      { label: 'Capital repair funding policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Capital repair funding policy delays elevator repairs.' },
+    ];
+    const review = { guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const provider = vi.fn(async input => { normalizeInput(input); return { suggestion: review, metadata: { provider: 'ollama-cloud', model: 'server-model' } }; });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'node-submission.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const body = submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial: nodes.map(n=>n.evidence).join(' '), carriedNodes: [{id:'resident',label:'Residents',type:'group',scale:'micro'},{id:'room',label:'Community room',type:'setting',scale:'micro'}], carriedConnections: [{id:'local-link',scale:'meso',source:'resident',target:'room',verb:'meet in'}] });
+    const result = await evaluate(cookie, body);
+    expect(result.review).toEqual(review);expect(provider).toHaveBeenCalledTimes(1);
+    expect(provider.mock.calls[0][0].systemPrompt).toContain('Students decide and draw ALL relationships');
+    expect(provider.mock.calls[0][0].carriedConnections).toEqual(body.carriedConnections);
+    const stored=JSON.parse(system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(result.id).suggestion_json);
+    expect(stored.generationContract).toBe('student-nodes-v1');expect(stored.nodes).toEqual(nodes);
+  });
+
+  it('rejects model-created links in the node-only contract after its bounded corrective attempt', async () => {
+    const provider = vi.fn(async()=>({suggestion:{guidance:[],nodes:[],connections:[{source:'a',target:'b',verb:'supports'}],example:null,readiness:{ready:true,note:'Nodes identified.'}},metadata:{provider:'ollama-cloud',model:'server-model'}}));
+    await system.close();
+    system=createSystemsMappingApp({dbPath:join(tempDirectory,'forbidden-links.sqlite'),now:()=>currentTime,teacherBootstrapToken:BOOTSTRAP_TOKEN,ollamaConfig:{apiKey:'test-only-key',model:'server-model'},ollamaRequest:provider});
+    const cookie=await grantStudent();
+    const {studentAnnotation,...body}=submissionBody({workflowMode:'student-nodes-v1'});
+    const result=await postJson(system.app,'/api/preflight/evaluations',body,{cookie});
+    expect(result.status).toBe(502);expect(provider).toHaveBeenCalledTimes(2);
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
   it('migrates strict constrained tables and database-level append-only review events', async () => {
     const tables = system.db.prepare(`
       SELECT name, strict FROM pragma_table_list

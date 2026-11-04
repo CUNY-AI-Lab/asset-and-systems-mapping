@@ -69,7 +69,10 @@ export default {
     if (mode === 'stall') await new Promise(resolve => setTimeout(resolve, 4000));
     if (mode === 'fallback' && body.model === 'glm-5.3-flash') return Response.json({ error: { code: 'upstream_unavailable', type: 'upstream_error', message: 'Controlled refusal', param: null } }, { status: 503, headers: { 'x-should-retry': 'true', 'retry-after': '1' } });
     if (mode === 'quota') return Response.json({ error: { code: 'quota_exceeded', type: 'insufficient_quota', message: 'Test refusal', param: null } }, { status: 429, headers: { 'x-should-retry': 'false', 'x-request-id': request.headers.get('x-cail-request-id')! } });
-    const suggestion = mode === 'invalid' ? { unsupported: 'Invalid structured output' } : { guidance: [{ point: 'Identify the immediate setting in this synthetic memo.' }], nodes: [], connections: [], example: null, readiness: { ready: false, note: 'More detail would support a map.' } };
+    const submissionNodes = String(captured.systemPrompt).includes('SECOND MEMO:')
+      ? [{label:'City Housing Authority',type:'agency',scale:'exosphere',basis:'memo',evidence:'City Housing Authority allocates repair staff.'},{label:'Capital repair funding policy',type:'policy',scale:'macrosphere',basis:'memo',evidence:'Capital repair funding policy delays elevator repairs.'}]
+      : [{label:'Residents',type:'group',scale:'micro',evidence:'Residents meet in the community room.'},{label:'Community room',type:'setting',scale:'micro',evidence:'Residents meet in the community room.'}];
+    const suggestion = mode === 'nodes' ? {guidance:[],nodes:submissionNodes,connections:[],example:null,readiness:{ready:true,note:'Nodes identified.'}} : mode === 'invalid' ? { unsupported: 'Invalid structured output' } : { guidance: [{ point: 'Identify the immediate setting in this synthetic memo.' }], nodes: [], connections: [], example: null, readiness: { ready: false, note: 'More detail would support a map.' } };
     return Response.json({ model: body.model, created: Math.floor(Date.now() / 1000), choices: [{ message: { role: 'assistant', content: JSON.stringify(suggestion) }, finish_reason: 'stop' }] });
   },
 };

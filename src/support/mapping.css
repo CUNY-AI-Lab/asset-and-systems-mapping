@@ -15,3 +15,4 @@
 /* Keep the compact report control aligned in the main header. */
 .workspace-bug-report .bug-report__trigger { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 44px; height: 44px; min-height: 44px; padding: 0; margin: 0; }
 .workspace-bug-report .bug-report__trigger > svg { display: block; flex: 0 0 18px; width: 18px; height: 18px; visibility: visible; opacity: 1; }
+.bug-report-host .bug-report__delivery-help { margin:12px 0 16px; font:400 14px/1.5 var(--body); }

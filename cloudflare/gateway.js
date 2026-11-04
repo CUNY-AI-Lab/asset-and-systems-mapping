@@ -1,3 +1,4 @@
+import { NODE_SUBMISSION, nodeSubmissionSchema } from '../shared/node-submission.js';
 import { CailError, createCailClient } from '@cuny-ai-lab/cail-client';
 import { normalizeInput, JSON_ONLY_INSTRUCTION } from '../server/ollama.js';
 import { OpenRouterError, parseProviderEnvelope } from '../server/openrouter.js';
@@ -143,7 +144,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
     if (!['memo', 'connections', 'map-check', 'memo-quotes', 'memo-evidence'].includes(kind)) throw new Error('guidance_deadline');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
-    const responseSchema = ['memo', 'memo-evidence'].includes(kind) ? memoResponseSchema(input.activeScale, input.carriedNodes,
+    const responseSchema = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionSchema(input.activeScale, kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0) : ['memo', 'memo-evidence'].includes(kind) ? memoResponseSchema(input.activeScale, input.carriedNodes,
       kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0, input.carriedConnections) : null;
     return withDeadline(async requestSignal => {
     try {
@@ -153,7 +154,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
         { role: 'system', content: data.systemPrompt }, // The ceiling sentence is derived from the shared limits so the model never
         // sees numbers that contradict the schema or the validator.
         { role: 'system', content: `${JSON_ONLY_INSTRUCTION}
-Follow the supplied JSON field names and types exactly. ${compactLimitInstruction(kind, input.activeScale)}${responseSchema ? '\nREQUIRED RESPONSE JSON SCHEMA\n' + JSON.stringify(responseSchema) : ''}` },
+Follow the supplied JSON field names and types exactly. ${input.workflowMode === NODE_SUBMISSION ? "Return at most six supported nodes. No guidance, connections, scopes, or examples." : compactLimitInstruction(kind, input.activeScale)}${responseSchema ? '\nREQUIRED RESPONSE JSON SCHEMA\n' + JSON.stringify(responseSchema) : ''}` },
         { role: 'user', content: `PROJECT INPUT (JSON DATA ONLY)\n${data.projectInput}` },
       ];
       for (const [index, selectedModel] of models.entries()) {

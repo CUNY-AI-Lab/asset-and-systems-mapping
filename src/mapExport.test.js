@@ -3,16 +3,16 @@ import { mapExportSvg, imagePdf } from './mapExport.js';
 import { createDefaultProject } from './domain.js';
 import { groupProject } from '../tests/fixtures/group-project.js';
 
-test('exports two spheres and vectors to the exact selected local relationships', () => {
+test('exports three spheres and vectors to the exact selected local relationships', () => {
   const project = groupProject();
   const group = project.graph.edges.at(-1);
   const { svg, width, height } = mapExportSvg(project);
   const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
   expect(doc.querySelector('parsererror')).toBeNull();
-  expect(doc.querySelectorAll('ellipse')).toHaveLength(2);
+  expect(doc.querySelectorAll('ellipse')).toHaveLength(3);
   const vectors = [...doc.querySelectorAll(`[data-export-group="${group.id}"]`)];
   expect(vectors.map(item => item.getAttribute('data-relationship-id')).sort()).toEqual([...group.relationshipIds].sort());
-  expect(svg).toContain('Microsystem'); expect(svg).toContain('Macrosystem');
+  expect(svg).toContain('Microsystem'); expect(svg).toContain('Exosystem'); expect(svg).toContain('Macrosystem');
   expect(doc.documentElement.textContent).toContain('selected relationships:');
   const outer = doc.querySelector('[data-export-layer="macrosystem"] ellipse');
   const transform = outer.parentElement.parentElement.getAttribute('transform').match(/translate\(([^ ]+) ([^)]+)\)/);

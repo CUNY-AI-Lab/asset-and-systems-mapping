@@ -88,7 +88,7 @@ async function layerLabelNodeCollisions(page) {
 
 async function ecologyLabelMembershipIssues(page) {
   return page.locator('.graph-canvas').evaluate((canvas) => {
-    const levels = ['micro', 'exosphere'];
+    const levels = ['micro', 'exosphere', 'macrosphere'];
     const geometry = new Map(levels.flatMap((level) => {
       const layer = canvas.querySelector(`[data-ecology-layer="${level}"]`);
       if (!layer) return [];
@@ -168,7 +168,7 @@ async function ecologyRingGeometry(page) {
 async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
   return page.locator('.graph-canvas').evaluate(async (canvas, requiredLayers) => {
     await document.fonts.ready;
-    const levels = ['micro', 'exosphere'];
+    const levels = ['micro', 'exosphere', 'macrosphere'];
     const issues = [];
     const nodes = [...canvas.querySelectorAll('.graph-node')];
     if (!nodes.length) issues.push('No graph nodes were available for geometry verification');
@@ -271,7 +271,7 @@ async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
       // Detail/focus views deliberately omit ring backdrops; text containment
       // still applies there, but an absent annulus cannot establish membership.
       if (!checkMembership) continue;
-      const levelIndex = node.classList.contains('graph-node--macrosphere') ? 1 : levels.findIndex((level) => node.classList.contains(`graph-node--${level}`));
+      const levelIndex = levels.findIndex((level) => node.classList.contains(`graph-node--${level}`));
       const outer = rings.get(levels[levelIndex]);
       if (levelIndex < 0 || !outer) {
         issues.push(`${name} semantic annulus geometry is missing`);
@@ -339,7 +339,7 @@ test.describe('student accessibility', () => {
       await expect.poll(() => ecologyNodeGeometryIssues(page, { requireLayers: layer === 'all' }), { message: `${layer} whole node cards should stay in their annuli and contain their rendered labels` }).toEqual([]);
       if (layer === 'all') {
         await expect(page.locator('[data-ecology-layer="meso"]')).toHaveCount(0);
-        await expect(page.locator('[data-ecology-layer]')).toHaveCount(2);
+        await expect(page.locator('[data-ecology-layer]')).toHaveCount(3);
         await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Microsystem and Macrosystem badges should remain distinct inside their own rings' }).toEqual([]);
       }
       if (layer === 'micro') await expect(page.locator('.graph-edge')).toHaveCount(0);

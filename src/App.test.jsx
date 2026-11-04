@@ -781,14 +781,14 @@ function renderedNodePosition(nodeId) {
 }
 
 function expectNodesInsideEcologyRings() {
-  const levels = ['micro', 'exosphere'];
+  const levels = ['micro', 'exosphere', 'macrosphere'];
   const rings = new Map(levels.flatMap(level => {
     const ellipse = document.querySelector(`[data-ecology-layer="${level}"] ellipse`);
     if (!ellipse) return [];
     return [[level, Object.fromEntries(['cx', 'cy', 'rx', 'ry'].map(key => [key, Number(ellipse.getAttribute(key))]))]];
   }));
   document.querySelectorAll('.graph-node').forEach(group => {
-    const scale = group.classList.contains('graph-node--macrosphere') ? 'exosphere' : levels.find(level => group.classList.contains(`graph-node--${level}`));
+    const scale = levels.find(level => group.classList.contains(`graph-node--${level}`));
     if (!scale) throw new Error(`Missing scale for ${group.getAttribute('data-full-label')}`);
     const position = renderedNodePosition(group.getAttribute('data-graph-id'));
     const card = group.querySelector('.node-card');
@@ -1066,6 +1066,57 @@ describe('Systems Mapping workflow', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.localStorage.clear();
+  });
+
+  it('runs the account memo workflow without a suggestion queue, required notes or automatic links', async () => {
+    const project=createBlankProject();project.title='Node submission acceptance';
+    project.submission.text='Residents meet in the community room.';project.submission.fileName='first.pdf';project.submission.fingerprint=stableId('src',project.submission.text);seedProject(project);
+    const submissions=[];
+    preflightEvaluationResponder=body=>{
+      submissions.push(body);
+      const nodes=body.activeScale==='micro' ? [{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text},{label:'Community room',type:'setting',scale:'micro',evidence:project.submission.text}]
+        : [{label:'City Housing Authority',type:'agency',scale:'exosphere',basis:'memo',evidence:'City Housing Authority allocates repair staff.'},{label:'Capital repair funding policy',type:'policy',scale:'macrosphere',basis:'memo',evidence:'Capital repair funding policy delays elevator repairs.'}];
+      return jsonResponse({evaluation:evaluationRecord(body,{review:{guidance:[],nodes,connections:[],example:null,readiness:{ready:true,note:'Nodes identified.'}}})},201);
+    };
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button',{name:'Submit memo and add nodes',exact:true}));
+    await waitFor(()=>expect(document.querySelectorAll('.graph-node')).toHaveLength(2));
+    expect(screen.queryByText('Set aside')).not.toBeInTheDocument();expect(screen.queryByText('Suggestions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'Map',exact:true})).not.toBeInTheDocument();
+    expect(document.querySelector('.map-reading-guide')).toHaveTextContent('Select a node to edit it.');
+    expect(document.querySelector('.graph-canvas').getAttribute('aria-label')).not.toContain('connections');
+    fireEvent.keyDown([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Residents')),{key:'Enter'});
+    fireEvent.click(await screen.findByRole('button',{name:'Remove',exact:true}));
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(1);
+    expect(screen.queryByRole('button',{name:'Remove',exact:true})).not.toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'Add to map',exact:true})).toBeVisible();
+    await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).graph.nodes.find(node=>node.label==='Residents').claimState).toBe('retired'));
+    fireEvent.click(screen.getByRole('button',{name:'Add to map',exact:true}));
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(2);
+    expect(screen.queryByRole('button',{name:'Add to map',exact:true})).not.toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'Remove',exact:true})).toBeVisible();
+    expect(screen.getByRole('button',{name:'Continue',exact:true}).closest('.notebook-task-top')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button',{name:'Continue'}));
+    expect(await screen.findByRole('heading',{name:'Meso · local relationships'})).toBeVisible();
+    expect(submissions).toHaveLength(1);expect(document.querySelectorAll('.graph-edge')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button',{name:'Continue'}));
+    fireEvent.change(await screen.findByRole('textbox',{name:'Second memo',exact:true}),{target:{value:'City Housing Authority allocates repair staff. Capital repair funding policy delays elevator repairs.'}});
+    fireEvent.click(screen.getByRole('button',{name:'Submit memo and add nodes',exact:true}));
+    await waitFor(()=>expect(document.querySelectorAll('.graph-node')).toHaveLength(4));
+    expect(submissions).toHaveLength(2);expect(submissions[1].workflowMode).toBe('student-nodes-v1');expect(submissions[1].sourceMaterial).not.toContain(project.submission.text);expect(submissions[1].carriedNodes.map(n=>n.label)).toContain('Residents');
+    expect(document.querySelectorAll('.graph-edge')).toHaveLength(0);
+    expect(document.querySelectorAll('.ecology-layers [data-ecology-layer]')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button',{name:'Continue'}));
+    expect(await screen.findByRole('heading',{name:'Macro · broader conditions'})).toBeVisible();expect(submissions).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button',{name:'Hide sidebar'}));
+    expect(screen.queryByRole('complementary',{name:'Notebook'})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Notebook',exact:true}));
+    expect(screen.getByRole('complementary',{name:'Notebook'})).toBeVisible();
+    fireEvent.click(screen.getByRole('button',{name:'Tools',exact:true}));
+    expect(within(screen.getByRole('complementary',{name:'Notebook'})).getByRole('region',{name:'Map tools'})).toBeVisible();
+    expect(document.querySelector('.notebook-tools-panel')).toBeNull();
+    expect(screen.getByRole('checkbox',{name:'Auto-fit layout'})).toBeChecked();
+    await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Capital repair funding policy'));
   });
 
   it('requires an async class-code exchange, keeps rejected codes out of storage, and resumes the saved stage after success', async () => {
@@ -4506,7 +4557,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     fireEvent.change(scale, { target: { value: activeScale } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`${activeScale === 'exosphere' ? 'Exo-level' : 'Macro-level'} map. ${active.nodes.length} nodes and ${active.edges.length} ${active.edges.length === 1 ? 'connection' : 'connections'}.`));
-    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(3);
     expect(document.querySelector('[data-ecology-layer="exosphere"]')).toHaveClass('is-visible');
     expect(document.querySelectorAll('.graph-node.is-dimmed, .graph-edge.is-dimmed')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
@@ -4527,7 +4578,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(scale, { target: { value: 'all' } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(screen.getByText('Select an item to inspect its connections')).toBeVisible();
-    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(3);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(0);
     expect(storedProject().graph).toEqual(graphBefore);
@@ -4681,14 +4732,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     expectNodesInsideEcologyRings();
   });
 
-  it('keeps the two content-sized boundaries stable when zooming and separates their labels', async () => {
+  it('keeps the three content-sized boundaries stable when zooming and separates their labels', async () => {
     installPhoneLayout(390);
     await openMapProject(makePhoneEcologyWithLegacyScope());
     fireEvent.change(mapLayer(), {target:{value:'all'}});
     const boundaries = () => [...document.querySelectorAll('[data-ecology-layer] ellipse')].map(e=>e.outerHTML);
     const before = boundaries();
     const badges = [...document.querySelectorAll('.ecology-layer__label')].map(g=>translatedRectBounds(g,g.querySelector('rect')));
-    expect(badges).toHaveLength(2);
+    expect(badges).toHaveLength(3);
     expect(rectsIntersect(badges[0],badges[1])).toBe(false);
     expectNodesInsideEcologyRings();
     const zoom = viewportTransform().zoom;
