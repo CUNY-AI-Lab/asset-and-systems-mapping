@@ -3390,6 +3390,7 @@ function AnnotationField({ annotationId, label, value, hint, placeholder, onDraf
 function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, onViewportChange, onAnnounce }) {
   const sharedBands = ecologyBandGeometry || ecologyBands(phoneLayout, nodes.length, nodes);
   const interactionBands = ecologyInteractionBandGeometry || sharedBands;
+  const retainedPlacement = useMemo(() => mapMode === 'ecology' && Boolean(retainedEcologyBoundaries(nodes, edges, phoneLayout, sharedBands)), [nodes, edges, phoneLayout, sharedBands, mapMode]);
   const svgRef = useRef(null);
   const regionMaskPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '-');
   const interactionRef = useRef(null);
@@ -3599,7 +3600,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       const delta = viewDelta(event, true);
       const rawX = mapMode === 'ecology' ? interaction.originX + delta.x : clamp(Math.round(interaction.originX + delta.x), PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
       const rawY = mapMode === 'ecology' ? interaction.originY + delta.y : clamp(Math.round(interaction.originY + delta.y), PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
-      const constrained = mapMode === 'ecology'
+      const constrained = mapMode === 'ecology' && !retainedPlacement
         ? constrainToEcologyBand(interaction.node, rawX, rawY, mapNodeGeometry(interaction.node.label, phoneLayout), phoneLayout, nodes.length, interactionBands)
         : { x: rawX, y: rawY };
       interaction.latestX = constrained.x;
@@ -3716,7 +3717,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     const geometry = mapNodeGeometry(node.label, phoneLayout);
     const rawX = mapMode === 'ecology' ? node.x + dx * step : clamp(node.x + dx * step, PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
     const rawY = mapMode === 'ecology' ? node.y + dy * step : clamp(node.y + dy * step, PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
-    const { x, y } = mapMode === 'ecology' ? constrainToEcologyBand(node, rawX, rawY, geometry, phoneLayout, nodes.length, interactionBands) : { x: rawX, y: rawY };
+    const { x, y } = mapMode === 'ecology' && !retainedPlacement ? constrainToEcologyBand(node, rawX, rawY, geometry, phoneLayout, nodes.length, interactionBands) : { x: rawX, y: rawY };
     onSelect('node', node.id, false);
     onMoveNode(node.id, x, y, 'keyboard');
     onAnnounce(`${node.label} moved to x ${x}, y ${y}.`);
@@ -4037,19 +4038,35 @@ export function readableMapPositions(nodes, edges, phoneLayout, bands = ecologyB
   const initial = arrangedEcologyPositions(nodes, phoneLayout, bands);
   const geometries = new Map(nodes.map(node => [node.id, mapNodeGeometry(node.label, phoneLayout)]));
   const manualIds = Array.isArray(layout?.manualNodeIds) ? layout.manualNodeIds : layout?.phoneOverview === 'preserve' ? nodes.map(node => node.id) : [];
+  const localNodes = nodes.filter(node => node.scale === 'micro').map(node => ({ ...node, ...(manualIds.includes(node.id) ? {} : initial.get(node.id)) }));
+  const retainedMicro = retainedEcologyBoundaries(localNodes, edges, phoneLayout, bands)?.micro;
+  const center = retainedMicro ? { x: retainedMicro.cx, y: retainedMicro.cy } : ECOLOGY_CENTER;
+  const outerCards = nodes.filter(node => node.scale !== 'micro').map(node => geometries.get(node.id));
+  const retainedBand = retainedMicro && outerCards.length ? {
+    innerRx: retainedMicro.rx + 20, innerRy: retainedMicro.ry + 20,
+    outerRx: retainedMicro.rx + Math.max(400, ...outerCards.map(card => card.cardWidth * 1.5 + 80)),
+    outerRy: retainedMicro.ry + Math.max(300, ...outerCards.map(card => card.cardHeight * 2 + 80)),
+  } : null;
   const candidates = new Map();
   for (const node of nodes) {
     if (node.scale === 'micro' || manualIds.includes(node.id)) continue;
-    const band = bands[node.scale];
+    const band = retainedBand || bands[node.scale];
     if (!band) continue;
     const rx = (band.innerRx + band.outerRx) / 2, ry = (band.innerRy + band.outerRy) / 2;
     const unique = new Map();
     for (let index = 0; index < 64; index++) {
       const angle = -Math.PI / 2 + index * Math.PI / 32;
-      const point = constrainToEcologyBand(node, ECOLOGY_CENTER.x + Math.cos(angle) * rx, ECOLOGY_CENTER.y + Math.sin(angle) * ry, geometries.get(node.id), phoneLayout, nodes.length, bands);
+      const proposed = { x: center.x + Math.cos(angle) * rx, y: center.y + Math.sin(angle) * ry };
+      const geometry = geometries.get(node.id);
+      const point = retainedBand ? projectRectangleToRing(proposed, { width: geometry.cardWidth, height: geometry.cardHeight, center, band, boundaryPadding: 20 })
+        : constrainToEcologyBand(node, proposed.x, proposed.y, geometry, phoneLayout, nodes.length, bands);
+      if (!point) continue;
       unique.set(`${point.x}:${point.y}`, point);
     }
     candidates.set(node.id, [...unique.values()]);
+    // Seed the same admissible area searched below, so an old world-centered
+    // position cannot win on short edge length while sitting inside Micro.
+    if (retainedBand && unique.size) initial.set(node.id, [...unique.values()][Math.floor((candidates.size - 1) * unique.size / outerCards.length) % unique.size]);
   }
   const ids = new Set(nodes.map(node => node.id));
   const connections = [...edges.filter(edge => isLiveMapItem(edge) && ids.has(edge.source) && ids.has(edge.target)), ...storedScopeTraces(nodes)];
@@ -4897,8 +4914,9 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     preserveCamera();
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     const displayedNode = displayedNodes.find((node) => node.id === id);
+    const movementMode = mapMode === 'ecology' && retainedEcologyBoundaries(displayedNodes, visibleEdges, phoneLayout, interactionEcologyBands) ? 'network' : mapMode;
     const safePosition = displayedNode
-      ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, mapMode, interactionEcologyBands, Boolean(notebook))
+      ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, movementMode, interactionEcologyBands, Boolean(notebook))
       : { x, y };
     rememberLayout();
     update((draft) => {

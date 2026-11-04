@@ -169,7 +169,7 @@ test('retained local coordinates stay inside two fitted spheres after Part 2', a
   p.graph.nodes.forEach((node, index) => { node.x = 120 + index % 3 * 300; node.y = 120 + Math.floor(index / 3) * 180; });
   p.graph.nodes.push({ ...structuredClone(p.graph.nodes[0]), id: 'retained-policy', label: 'Repair allocation policy', scale: 'exosphere', type: 'policy', x: 1300, y: 360,
     annotations: { analytical: { id: 'retained-policy-analytical', text: '' }, evidence: { id: 'retained-policy-evidence', text: '' } } });
-  p.layout = { manualNodeIds: p.graph.nodes.map(node => node.id) };
+  p.layout = { manualNodeIds: p.graph.nodes.filter(node => node.scale === 'micro').map(node => node.id) };
   parseProject(JSON.stringify(p));
   const original = structuredClone(p.graph);
   await openProject(page, p);
@@ -192,13 +192,24 @@ test('retained local coordinates stay inside two fitted spheres after Part 2', a
     const viewport = svg.getBoundingClientRect();
     const outer = svg.querySelector('[data-ecology-layer="exosphere"] ellipse').getBoundingClientRect();
     const overflow = Math.max(viewport.left - outer.left, outer.right - viewport.right, viewport.top - outer.top, outer.bottom - viewport.bottom, 0);
-    return { outside, center: rings.micro.cx, overflow };
+    const heading = svg.querySelector('[data-graph-id="retained-policy"]');
+    const [hx, hy] = heading.getAttribute('transform').match(/-?[\d.]+/g).map(Number);
+    const card = heading.querySelector('.node-card');
+    const left = hx + Number(card.getAttribute('x')), top = hy + Number(card.getAttribute('y'));
+    const dx = Math.max(left-rings.micro.cx, rings.micro.cx-left-Number(card.getAttribute('width')), 0);
+    const dy = Math.max(top-rings.micro.cy, rings.micro.cy-top-Number(card.getAttribute('height')), 0);
+    return { outside, center: rings.micro.cx, overflow, headingOutsideMicro: (dx/rings.micro.rx)**2 + (dy/rings.micro.ry)**2 };
   });
   expect(geometry.outside).toEqual([]);
   expect(geometry.center).toBeLessThan(1000);
   expect(geometry.overflow).toBeLessThanOrEqual(1);
+  expect(geometry.headingOutsideMicro).toBeGreaterThanOrEqual(1);
   expect((await read(page)).graph).toEqual(original);
   await captureSourceRenderedScreenshot(page, testInfo, 'Retained graph inside fitted two-sphere outlines');
+  const first = original.nodes[0];
+  await page.locator(`[data-graph-id="${first.id}"]`).press('ArrowRight');
+  await expect.poll(async () => (await read(page)).graph.nodes.find(node => node.id === first.id).x).toBe(first.x + 8);
+  expect((await read(page)).graph.nodes.find(node => node.id === first.id).y).toBe(first.y);
 });
 test('an older project uploading Part 2 from memo entry retains its first memo and map', async ({ page }) => {
   const p = localProject(); p.activeScale = 'exosphere'; p.stage = 0;
