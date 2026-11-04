@@ -1,3 +1,4 @@
+import { relationshipGroupIssue, relationshipIdsIssue } from '../shared/relationship-groups.js';
 import { isNodeReviewScale, isRelationshipReviewScale, canConnectAtScale } from '../shared/mapping-grammar.js';
 import { SYSTEMS_MAPPING_STAGE_IDS } from '../shared/systems-mapping-stages.js';
 import { FIELD_NOTES_QUESTION_LIMIT } from '../shared/field-notes.js';
@@ -214,7 +215,7 @@ export const NODE_ORIGINS = Object.freeze(['memo extraction', 'model suggestion'
 export const REVIEW_DECISIONS = Object.freeze(['pending', 'added', 'set aside', 'removed']);
 export const FOCAL_PARTICIPATION_STATES = Object.freeze(['direct', 'indirect', 'unclear', 'not applicable']);
 
-export const PROJECT_SCHEMA_VERSION = 9;
+export const PROJECT_SCHEMA_VERSION = 10;
 
 export const PROJECT_LIMITS = Object.freeze({
   importBytes: 8 * 1024 * 1024,
@@ -1479,11 +1480,11 @@ const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId', 'sourceId', 'evidenceRefs'];
 const CLAIM_EVIDENCE_PROVENANCE_FIELDS = ['evidenceId', 'sourceId', 'evidenceLocator', 'evidenceHash'];
 const CLAIM_EVIDENCE_KEYS = ['id', ...CLAIM_EVIDENCE_FIELDS, ...CLAIM_EVIDENCE_PROVENANCE_FIELDS];
-const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'layout', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
+const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'part2Submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'layout', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
 const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'mesoExplanation', 'claimEvidence', 'origin', 'reviewDecision', 'settingNodeIds', 'focalParticipation', ...EVIDENCE_KEYS];
-const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', 'claimEvidence', 'relationshipProcess', 'origin', 'reviewDecision', ...EVIDENCE_KEYS];
+const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', 'claimEvidence', 'relationshipProcess', 'relationshipIds', 'origin', 'reviewDecision', ...EVIDENCE_KEYS];
 
 function invalidProject(path, expectation) {
   throw new Error(`Invalid Systems Mapping project: ${path} ${expectation}.`);
@@ -1820,6 +1821,7 @@ function validateEdgeCollection(edges, nodes, nodeIds, path, annotationOwners, c
     validateEvidence(edge, itemPath);
     validateClaimEvidence(edge.claimEvidence, `${itemPath}.claimEvidence`);
     validateRelationshipProcess(edge.relationshipProcess, `${itemPath}.relationshipProcess`);
+    if (edge.relationshipIds !== undefined && relationshipIdsIssue(edge.relationshipIds)) invalidProject(`${itemPath}.relationshipIds`, 'must contain distinct bounded relationship IDs');
   });
 }
 
@@ -1985,7 +1987,7 @@ function validateMemoReview(review, path) {
   review.connections.forEach((connection, index) => {
     const connectionPath = `${path}.connections[${index}]`;
     assertObject(connection, connectionPath);
-    assertKnownKeys(connection, ['source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'rationale', 'relationshipProcess'], connectionPath);
+    assertKnownKeys(connection, ['source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'rationale', 'relationshipProcess', 'relationshipIds'], connectionPath);
     assertString(connection.source, `${connectionPath}.source`, false, 200);
     assertString(connection.target, `${connectionPath}.target`, false, 200);
     if (connection.sourceLabel !== undefined) assertString(connection.sourceLabel, `${connectionPath}.sourceLabel`, false, 200);
@@ -2000,6 +2002,7 @@ function validateMemoReview(review, path) {
     assertString(connection.verb, `${connectionPath}.verb`, false, 100);
     assertString(connection.rationale, `${connectionPath}.rationale`, true, PROJECT_LIMITS.rationaleText);
     validateRelationshipProcess(connection.relationshipProcess, `${connectionPath}.relationshipProcess`);
+    if (connection.relationshipIds !== undefined && relationshipIdsIssue(connection.relationshipIds)) invalidProject(`${connectionPath}.relationshipIds`, 'must contain distinct bounded relationship IDs');
   });
   if (review.example !== null) {
     assertString(review.example, `${path}.example`, false, PROJECT_LIMITS.memoReviewExample);
@@ -2176,6 +2179,25 @@ function validateInstitutionSphereBoundary(nodeCollections, reviewNodes = []) {
   });
 }
 
+function validateSubmission(submission, path) {
+  assertObject(submission, path);
+  assertKnownKeys(submission, SUBMISSION_KEYS, path);
+  ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'evidenceOwnership', 'text'].forEach((field) => {
+    const maximum = field === 'text' ? PROJECT_LIMITS.sourceText : field === 'id' ? 200 : field === 'title' || field === 'author' || field === 'sourceType' ? 500 : PROJECT_LIMITS.metadataText;
+    assertString(submission[field], `${path}.${field}`, field !== 'id', maximum);
+  });
+  assertBoolean(submission.sensitive, `${path}.sensitive`);
+  assertBoolean(submission.consent, `${path}.consent`);
+  if (submission.fileName !== undefined) assertString(submission.fileName, `${path}.fileName`, true, 255);
+  if (submission.fileSize !== undefined) assertFiniteNumber(submission.fileSize, `${path}.fileSize`, 0, 5 * 1024 * 1024);
+  if (submission.revision !== undefined) assertInteger(submission.revision, `${path}.revision`, 1, Number.MAX_SAFE_INTEGER);
+  if (submission.fingerprint !== undefined) {
+    assertString(submission.fingerprint, `${path}.fingerprint`, false, 200);
+    if (submission.fingerprint !== stableId('src', submission.text)) invalidProject(`${path}.fingerprint`, 'does not match the memo text');
+  }
+
+}
+
 export function validateProject(project) {
   assertObject(project, 'project');
   assertSafeProjectStructure(project);
@@ -2205,20 +2227,10 @@ export function validateProject(project) {
   assertString(project.updatedAt, 'project.updatedAt', false, 100);
   if (project.exportedAt !== undefined) assertString(project.exportedAt, 'project.exportedAt', false, 100);
 
-  assertObject(project.submission, 'project.submission');
-  assertKnownKeys(project.submission, SUBMISSION_KEYS, 'project.submission');
-  ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'evidenceOwnership', 'text'].forEach((field) => {
-    const maximum = field === 'text' ? PROJECT_LIMITS.sourceText : field === 'id' ? 200 : field === 'title' || field === 'author' || field === 'sourceType' ? 500 : PROJECT_LIMITS.metadataText;
-    assertString(project.submission[field], `project.submission.${field}`, field !== 'id', maximum);
-  });
-  assertBoolean(project.submission.sensitive, 'project.submission.sensitive');
-  assertBoolean(project.submission.consent, 'project.submission.consent');
-  if (project.submission.fileName !== undefined) assertString(project.submission.fileName, 'project.submission.fileName', true, 255);
-  if (project.submission.fileSize !== undefined) assertFiniteNumber(project.submission.fileSize, 'project.submission.fileSize', 0, 5 * 1024 * 1024);
-  if (project.submission.revision !== undefined) assertInteger(project.submission.revision, 'project.submission.revision', 1, Number.MAX_SAFE_INTEGER);
-  if (project.submission.fingerprint !== undefined) {
-    assertString(project.submission.fingerprint, 'project.submission.fingerprint', false, 200);
-    if (project.submission.fingerprint !== stableId('src', project.submission.text)) invalidProject('project.submission.fingerprint', 'does not match the memo text');
+  validateSubmission(project.submission, 'project.submission');
+  if (project.part2Submission !== undefined) {
+    validateSubmission(project.part2Submission, 'project.part2Submission');
+    if (project.part2Submission.id === project.submission.id) invalidProject('project.part2Submission.id', 'must differ from Part 1');
   }
 
   assertObject(project.configs, 'project.configs');
@@ -2261,6 +2273,13 @@ export function validateProject(project) {
   const candidateEdgeNodes = [...project.graph.nodes, ...project.candidates.nodes];
   validateEdgeCollection(project.candidates.edges, candidateEdgeNodes, candidateEdgeNodeIds, 'project.candidates.edges', annotationOwners, graphNodeIds);
   validateEdgeCollection(project.graph.edges, project.graph.nodes, graphNodeIds, 'project.graph.edges', annotationOwners);
+  for (const [collection, edges] of [['graph', project.graph.edges], ['candidates', project.candidates.edges]]) {
+    for (const edge of edges) {
+      if (edge.status === 'rejected' || edge.claimState === 'retired') continue;
+      const issue = relationshipGroupIssue(edge, project.graph.nodes, project.graph.edges);
+      if (issue) invalidProject(`project.${collection}.edges.relationshipIds`, issue);
+    }
+  }
   assertObject(project.viewport, 'project.viewport');
   assertKnownKeys(project.viewport, ['panX', 'panY', 'zoom'], 'project.viewport');
   assertFiniteNumber(project.viewport.panX, 'project.viewport.panX', PROJECT_LIMITS.panMin, PROJECT_LIMITS.panMax);
@@ -2761,7 +2780,7 @@ function migrateLegacyProject(project) {
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
     return migrateScaleVocabulary(migrateLegacyMappingSemantics(migrated));
   }
-  if (project?.schemaVersion === 6 || project?.schemaVersion === 7 || project?.schemaVersion === 8 || project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
+  if (project?.schemaVersion === 6 || project?.schemaVersion === 7 || project?.schemaVersion === 8 || project?.schemaVersion === 9 || project?.schemaVersion === PROJECT_SCHEMA_VERSION) {
     // Preserve saved relationship records and add the current evidence fields.
     const migrated = cloneProject(project);
     if (legacyPreflightShape(migrated.preflight)) migrated.preflight = null;
@@ -3088,8 +3107,8 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     portable.participantName = '';
     addRedaction(redactions, 'participantName', 'Student or group name excluded from broader export');
   }
-  const sensitive = portable.submission.sensitive;
-  const restrictedRights = /(?:course use only|restricted|private|confidential|no redistribution|permission required)/i.test(portable.submission.rights);
+  const sensitive = portable.submission.sensitive || Boolean(portable.part2Submission?.sensitive);
+  const restrictedRights = /(?:course use only|restricted|private|confidential|no redistribution|permission required)/i.test([portable.submission.rights, portable.part2Submission?.rights || ''].join(' '));
   const redactSource = (sharingTier !== 'private' && sensitive)
     || (sharingTier === 'public' && restrictedRights);
   portable.sharingTier = sharingTier;
@@ -3106,6 +3125,16 @@ export function createPortableProject(project, sharingTier = project.sharingTier
     const reason = `Restricted memo material excluded from ${sharingTier} export`;
     portable.submission.text = '';
     addRedaction(redactions, 'submission.text', reason);
+    if (portable.submission.fingerprint) portable.submission.fingerprint = stableId('src', '');
+    if (portable.part2Submission) {
+      portable.part2Submission.text = '';
+      if (portable.part2Submission.fingerprint) portable.part2Submission.fingerprint = stableId('src', '');
+      addRedaction(redactions, 'part2Submission.text', reason);
+      if (sensitive) {
+        for (const field of ['title', 'author', 'location']) { portable.part2Submission[field] = '[redacted]'; addRedaction(redactions, `part2Submission.${field}`, reason); }
+        delete portable.part2Submission.fileName;
+      }
+    }
     if (sensitive) {
       portable.submission.author = '[redacted]';
       portable.submission.location = '[redacted]';
@@ -3181,8 +3210,8 @@ export function parseProject(value) {
     throw new Error(`Invalid Systems Mapping project JSON: ${error.message}`);
   }
   assertSafeProjectStructure(parsed);
-  if (![1, 2, 3, 4, 5, 6, 7, 8, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
-    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, 6, 7, 8, or ${PROJECT_SCHEMA_VERSION}.`);
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, PROJECT_SCHEMA_VERSION].includes(parsed?.schemaVersion)) {
+    throw new Error(`This file is not a supported Systems Mapping project. Expected schemaVersion 1, 2, 3, 4, 5, 6, 7, 8, 9, or ${PROJECT_SCHEMA_VERSION}.`);
   }
   return validateProject(discardRetiredNodeTags(migrateLegacyProject(parsed)));
 }

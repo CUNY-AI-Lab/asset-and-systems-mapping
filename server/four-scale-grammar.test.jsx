@@ -14,12 +14,12 @@ const carried = [
 ];
 const source = 'A resident meets a teacher. City Housing Authority administers public housing funding policy. That policy shapes housing repairs for the resident.';
 const review = (scale, connections = []) => ({ guidance: [{ point: 'Check the connection to housing repairs.' }], nodes: scale === 'exosphere' ? [{ label: 'Housing repair budget', type: 'resource', scale, evidence: 'Housing repairs are shaped by the policy.', basis: 'inference' }] : [], connections, example: null, readiness: { ready: true, note: 'Review the supported items.' } });
-async function setup(scale, output) {
+async function setup(scale, output, connections = []) {
  const run = vi.fn(async () => ({ suggestion: output, metadata: { provider: 'cail-gateway', model: 'test-only' } }));
  const system = createSystemsMappingApp({ dbPath: ':memory:', classCode: '101', ollamaConfig: { apiKey: 'test-only', model: 'test-only' }, suggestionProvider: 'cail-gateway', ollamaRequest: run }); systems.push(system); await system.ready;
  const headers = { origin, 'content-type': 'application/json' };
  const access = await system.app.request(origin + '/api/student/access', { method: 'POST', headers, body: JSON.stringify({ code: '101' }) }); headers.cookie = access.headers.get('set-cookie').split(';')[0];
- const p = createDefaultProject(); p.activeScale = scale; p.submission.text = source; p.graph.nodes = carried.map(n => ({ ...n, status: 'confirmed', claimState: 'observed' }));
+ const p = createDefaultProject(); p.activeScale = scale; p.submission.text = source; p.graph.nodes = carried.map(n => ({ ...n, status: 'confirmed', claimState: 'observed' })); p.graph.edges = connections;
  return { run, evaluate: () => system.app.request(origin + '/api/preflight/evaluations', { method: 'POST', headers, body: JSON.stringify(preflightEvaluationPayload(p)) }) };
 }
 it('Exo proposes a larger-scale node without requiring a premature relationship', async () => {
@@ -48,4 +48,28 @@ it('Exo rejects edges and Macro rejects replacement node proposals', async () =>
  expect((await (await setup('exosphere', exo)).evaluate()).status).toBe(502);
  const macro = { ...review('macrosphere'), nodes: [{ label: 'Replacement policy', type: 'policy', scale: 'macrosphere', evidence: source, basis: 'memo', deontic: 'shapes', scope: ['resident','teacher'] }] };
  expect((await (await setup('macrosphere', macro)).evaluate()).status).toBe(502);
+});
+
+const localRelationship = { id: 'local-contact', source: 'resident', target: 'teacher', verb: 'meets', scale: 'meso', evidence: source };
+it('Macro populates an exact local relationship group and retains manual selection context', async () => {
+ const group = { source: 'housing-policy', target: 'resident', verb: 'shapes', rationale: source,
+   relationshipIds: ['local-contact'], relationshipProcess: { direction: 'source to target' } };
+ const { evaluate, run } = await setup('macrosphere', review('macrosphere', [group]), [localRelationship]);
+ const response = await evaluate(); expect(response.status).toBe(201);
+ expect((await response.json()).evaluation.review.connections[0]).toMatchObject(group);
+ const prompt = run.mock.calls[0][0].systemPrompt;
+ expect(prompt).toContain('TRY TO BUILD RELATIONSHIP GROUPS');
+ expect(prompt).not.toContain('Return no relationship edge');
+ const schema = memoResponseSchema('macrosphere', carried, undefined, [localRelationship]);
+ expect(schema.properties.connections.items.properties.relationshipIds.items.enum).toEqual(['local-contact']);
+});
+it.each(['invented-relationship', 'housing-policy'])('Macro rejects unsupported relationship membership %s and keeps retry grammar consistent', async id => {
+ const group = { source: 'housing-policy', target: 'resident', verb: 'shapes', rationale: source, relationshipIds: [id] };
+ const { evaluate, run } = await setup('macrosphere', review('macrosphere', [group]), [localRelationship]);
+ const response = await evaluate(); expect(response.status).toBe(201);
+ const evaluation = (await response.json()).evaluation;
+ expect(evaluation.review.connections).toEqual([]);
+ expect(evaluation.runtime.feedbackOnly).toBe(true);
+ expect(run.mock.calls[1][0].systemPrompt).toContain('For this Macro replacement, return an empty nodes array');
+ expect(run.mock.calls[1][0].systemPrompt).not.toContain('connections must be an empty array');
 });

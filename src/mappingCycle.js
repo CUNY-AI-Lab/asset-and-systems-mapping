@@ -1,8 +1,9 @@
+import { reviewMemoText } from './projectMemo.js';
 import { stableId } from './domain.js';
 
 // Existing saved maps remain continuations; a new, empty map needs a model seed.
 export function hasStartedMappingCycle(project) {
-  const fingerprint = project.submission.fingerprint || stableId('src', project.submission.text);
+  const fingerprint = stableId('src', reviewMemoText(project));
   const review = project.preflight;
   if (review?.memoReview && review.evaluation && review.sourceFingerprint === fingerprint) return true;
   if (project.events?.some(event => event.action === 'preflight.completed'
@@ -22,7 +23,7 @@ export function requiresInitialModel(project) {
 // Existing saved work at the active level remains available without regeneration.
 export function requiresLevelModel(project) {
   const scale = project.activeScale;
-  const fingerprint = project.submission.fingerprint || stableId('src', project.submission.text);
+  const fingerprint = stableId('src', reviewMemoText(project));
   if (project.preflight?.memoReview && project.preflight.sourceFingerprint === fingerprint
     && (!project.preflight.configurationSnapshot?.activeScale || project.preflight.configurationSnapshot.activeScale === scale)) return false;
   if ([...project.graph.nodes, ...project.graph.edges, ...project.candidates.nodes, ...project.candidates.edges]

@@ -144,7 +144,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
     const responseSchema = ['memo', 'memo-evidence'].includes(kind) ? memoResponseSchema(input.activeScale, input.carriedNodes,
-      kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0) : null;
+      kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0, input.carriedConnections) : null;
     return withDeadline(async requestSignal => {
     try {
       const models = [...new Set([model, ...fallbackModels])];

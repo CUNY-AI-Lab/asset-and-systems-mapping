@@ -1,6 +1,30 @@
 import { expect, test } from 'vitest';
 import { mapExportSvg, imagePdf } from './mapExport.js';
 import { createDefaultProject } from './domain.js';
+import { groupProject } from '../tests/fixtures/group-project.js';
+
+test('exports two spheres and vectors to the exact selected local relationships', () => {
+  const project = groupProject();
+  const group = project.graph.edges.at(-1);
+  const { svg, width, height } = mapExportSvg(project);
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  expect(doc.querySelector('parsererror')).toBeNull();
+  expect(doc.querySelectorAll('ellipse')).toHaveLength(2);
+  const vectors = [...doc.querySelectorAll(`[data-export-group="${group.id}"]`)];
+  expect(vectors.map(item => item.getAttribute('data-relationship-id')).sort()).toEqual([...group.relationshipIds].sort());
+  expect(svg).toContain('Microsystem'); expect(svg).toContain('Macrosystem');
+  expect(doc.documentElement.textContent).toContain('selected relationships:');
+  const outer = doc.querySelector('[data-export-layer="macrosystem"] ellipse');
+  const transform = outer.parentElement.parentElement.getAttribute('transform').match(/translate\(([^ ]+) ([^)]+)\)/);
+  const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map(key => Number(outer.getAttribute(key)));
+  expect(cx - rx + Number(transform[1])).toBeGreaterThanOrEqual(0);
+  expect(cy - ry + Number(transform[2])).toBeGreaterThanOrEqual(0);
+  expect(cx + rx + Number(transform[1])).toBeLessThan(width);
+  expect(cy + ry + Number(transform[2])).toBeLessThan(height);
+  group.relationshipIds = group.relationshipIds.slice(1);
+  const revised = new DOMParser().parseFromString(mapExportSvg(project).svg, 'image/svg+xml');
+  expect(revised.querySelectorAll('[data-export-group]')).toHaveLength(1);
+});
 test('escapes text, preserves earlier Meso records and scope links, and omits retired items and source memo', () => {
   const p = createDefaultProject(); p.title='<script>& title'; p.submission.text='Private source text';
   p.graph.nodes=[{id:'a',label:'Home <safe>',scale:'micro',settingNodeIds:['b']},{id:'b',label:'Coordination',scale:'meso',scopeNodeIds:['a']},{id:'c',label:'Retired secret',scale:'exosphere',claimState:'retired'}];
@@ -24,7 +48,7 @@ test('exports Micro items and Meso links inside one shared circle with no separa
   expect(document.querySelectorAll('ellipse')).toHaveLength(1);
   expect(document.querySelectorAll('[data-export-layer="meso"]')).toHaveLength(0);
   expect(svg).toContain('Map · 8 items · 7 connections');
-  expect(svg).toContain('Micro items · Meso relationships');
+  expect(svg).toContain('Microsystem');
   expect(width).toBe(900);
   const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map(name => Number(circle.getAttribute(name)));
   expect(cx - rx).toBeGreaterThan(0);

@@ -2,7 +2,7 @@ import { createDefaultProject, stableId, validateProject } from './domain.js';
 
 export const MEMO_DRAFT_PREFIX = 'systems-mapping-studio.memo-draft.v1.';
 const MAX_DRAFT_CHARACTERS = 2_000_000;
-const DRAFT_FIELDS = ['title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'updatedAt', 'submission', 'reflection'];
+const DRAFT_FIELDS = ['title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'updatedAt', 'submission', 'part2Submission', 'reflection'];
 
 export const memoDraftKey = projectId => `${MEMO_DRAFT_PREFIX}${encodeURIComponent(projectId)}`;
 

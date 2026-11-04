@@ -88,7 +88,7 @@ async function layerLabelNodeCollisions(page) {
 
 async function ecologyLabelMembershipIssues(page) {
   return page.locator('.graph-canvas').evaluate((canvas) => {
-    const levels = ['micro', 'exosphere', 'macrosphere'];
+    const levels = ['micro', 'exosphere'];
     const geometry = new Map(levels.flatMap((level) => {
       const layer = canvas.querySelector(`[data-ecology-layer="${level}"]`);
       if (!layer) return [];
@@ -150,7 +150,7 @@ async function ecologyRingGeometry(page) {
   return page.locator('.graph-canvas').evaluate((canvas) => {
     const viewport = canvas.querySelector('.viewport-layer');
     const zoom = Number(viewport.getAttribute('transform')?.match(/scale\(([-\d.]+)\)/)?.[1]);
-    const rings = Object.fromEntries(['micro', 'exosphere', 'macrosphere'].flatMap((level) => {
+    const rings = Object.fromEntries(['micro', 'exosphere'].flatMap((level) => {
       const ellipse = canvas.querySelector(`[data-ecology-layer="${level}"] ellipse`);
       if (!ellipse) return [];
       const bounds = ellipse.getBoundingClientRect();
@@ -168,7 +168,7 @@ async function ecologyRingGeometry(page) {
 async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
   return page.locator('.graph-canvas').evaluate(async (canvas, requiredLayers) => {
     await document.fonts.ready;
-    const levels = ['micro', 'exosphere', 'macrosphere'];
+    const levels = ['micro', 'exosphere'];
     const issues = [];
     const nodes = [...canvas.querySelectorAll('.graph-node')];
     if (!nodes.length) issues.push('No graph nodes were available for geometry verification');
@@ -271,7 +271,7 @@ async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
       // Detail/focus views deliberately omit ring backdrops; text containment
       // still applies there, but an absent annulus cannot establish membership.
       if (!checkMembership) continue;
-      const levelIndex = levels.findIndex((level) => node.classList.contains(`graph-node--${level}`));
+      const levelIndex = node.classList.contains('graph-node--macrosphere') ? 1 : levels.findIndex((level) => node.classList.contains(`graph-node--${level}`));
       const outer = rings.get(levels[levelIndex]);
       if (levelIndex < 0 || !outer) {
         issues.push(`${name} semantic annulus geometry is missing`);
@@ -339,8 +339,8 @@ test.describe('student accessibility', () => {
       await expect.poll(() => ecologyNodeGeometryIssues(page, { requireLayers: layer === 'all' }), { message: `${layer} whole node cards should stay in their annuli and contain their rendered labels` }).toEqual([]);
       if (layer === 'all') {
         await expect(page.locator('[data-ecology-layer="meso"]')).toHaveCount(0);
-        await expect(page.locator('[data-ecology-layer]')).toHaveCount(3);
-        await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Micro, Exo, and Macro badges should remain distinct inside their own rings' }).toEqual([]);
+        await expect(page.locator('[data-ecology-layer]')).toHaveCount(2);
+        await expect.poll(() => ecologyLabelMembershipIssues(page), { message: 'Microsystem and Macrosystem badges should remain distinct inside their own rings' }).toEqual([]);
       }
       if (layer === 'micro') await expect(page.locator('.graph-edge')).toHaveCount(0);
       if (layer === 'meso') {
@@ -380,7 +380,7 @@ test.describe('student accessibility', () => {
 
     const beforeZoomOut = await ecologyRingGeometry(page);
     const expectedMacroRadius = testInfo.project.name.includes('phone') ? 520 : 1230;
-    expect(beforeZoomOut.rings.macrosphere.rx, 'Macro ring must retain at least its baseline radius while allowing measured capacity growth').toBeGreaterThanOrEqual(expectedMacroRadius);
+    expect(beforeZoomOut.rings.exosphere.rx, 'Macrosystem ring must retain at least its baseline radius while allowing measured capacity growth').toBeGreaterThanOrEqual(expectedMacroRadius);
     await mapCommand(page, 'Zoom out');
     const afterZoomOut = await ecologyRingGeometry(page);
     expect(afterZoomOut.zoom).toBeLessThan(beforeZoomOut.zoom);

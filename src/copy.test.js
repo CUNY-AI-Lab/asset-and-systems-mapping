@@ -74,8 +74,8 @@ describe('student-facing copy', () => {
   });
 
   it('uses paired node and relationship language without obsolete pathway forms', () => {
-    expect(SYSTEMS_MAPPING_LEVELS.find(level => level.id === 'exosphere').reviewInstruction).toMatch(/additional larger-scale nodes/);
-    expect(SYSTEMS_MAPPING_LEVELS.find(level => level.id === 'macrosphere').chooseInstruction).toContain('Cross-scale connections are allowed');
+    expect(SYSTEMS_MAPPING_LEVELS.find(level => level.id === 'exosphere').reviewInstruction).toMatch(/Part 2 memo.*Part 1/);
+    expect(SYSTEMS_MAPPING_LEVELS.find(level => level.id === 'macrosphere').chooseInstruction).toContain('local relationships it affects');
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
     expect(source).not.toContain('Disclosure title="Add decision setting"');
     expect(source).not.toContain('Disclosure title="Add condition"');

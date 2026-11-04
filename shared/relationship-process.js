@@ -38,6 +38,7 @@ export function normalizeGeneratedRelationshipProcess(process) {
 
 
 export function relationshipDescription(edge, sourceLabel = edge.sourceLabel, targetLabel = edge.targetLabel) {
+  if (edge.relationshipIds?.length) targetLabel = `${edge.relationshipIds.length} local ${edge.relationshipIds.length === 1 ? 'relationship' : 'relationships'}`;
   const direction = edge.relationshipProcess?.direction || 'source to target';
   if (edge.relationshipProcess?.connectionStatus === 'missing') return `Missing connection between ${sourceLabel} and ${targetLabel}: ${edge.verb}`;
   if (direction === 'target to source') return `${targetLabel} ${edge.verb} ${sourceLabel}`;

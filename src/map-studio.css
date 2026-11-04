@@ -83,3 +83,14 @@
 .export-dropdown__import { display: flex; align-items: center; gap: 8px; position: relative; }
 .export-dropdown__import input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .export-dropdown__import:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Explicit links from a macrosystem heading to selected local relationships. */
+.relationship-group-band { fill: #776390; fill-opacity: .13; stroke: #776390; stroke-opacity: .45; stroke-width: 1; pointer-events: none; }
+.relationship-group-band.is-selected { fill-opacity: .22; stroke-width: 2; }
+.relationship-group-vector { stroke: #6b557e; stroke-opacity: .6; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
+.relationship-group-picker { margin: 1rem 0; padding: .75rem; border: 1px solid var(--border, #aaa); min-width: 0; }
+.relationship-group-picker .check-row { align-items: flex-start; min-height: 44px; }
+.relationship-group-picker span { overflow-wrap: anywhere; }
+.memo-source-text { white-space: pre-wrap; max-height: 20rem; overflow: auto; }
+.memo-file-upload { margin-block: .75rem; }
+.memo-file-upload .upload-zone { min-height: 84px; padding: .8rem; }

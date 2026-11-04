@@ -52,7 +52,9 @@ describe('course-setting prompt composition', () => {
     }
     expect(microPrompt).toContain('Micro returns nodes and an empty connections array.');
     expect(microPrompt).toContain('Micro identifies bounded immediate elements as nodes.');
-    expect(microPrompt).toContain('entity kind alone never determines a level');
+    expect(microPrompt).toContain('two spheres and four exercises');
+    expect(prompts.macrosphere).toContain('selected existing local relationships');
+    expect(prompts.macrosphere).not.toContain('Return no relationship edge');
     expect(microPrompt).toContain('Resolve references to supported named or role-resolved elements');
     expect(mesoPrompt).toContain('Meso returns an empty nodes array and supported relationships using exact carried Micro node IDs.');
     expect(mesoPrompt).toContain('Both endpoints must be different exact IDs of supplied Micro nodes.');

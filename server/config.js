@@ -91,7 +91,7 @@ const GLOBAL_CONTENT = {
     purpose: 'Review the student memo and prepare grounded suggestions the student can use while building a systems map. Keep the review encouraging, specific, and based only on the memo.',
     evidence: 'Point each suggestion to a passage in the memo. If the memo does not support something, ask a plain-language question instead of inventing an answer. Keep what the memo says separate from the student’s interpretation.',
     privacy: 'Require a documented permission or a privacy-safe treatment for sensitive material. Do not disclose names or identifying details that are not necessary to the analysis.',
-    scale_rubric: 'Use the focal person’s participation and the pathway of effect to decide placement; entity kind alone never determines a level. Micro returns immediate settings, their discrete elements and resources as nodes. Meso returns evidence-backed relationships between those carried Micro nodes. Exosphere returns outside decision settings and supported funding or decision pathways among them or into immediate settings. Macrosphere returns broader conditions and the map items they affect.',
+    scale_rubric: "Use one cumulative graph with two spheres and four exercises. Part 1 identifies local nodes at Micro and connects them at Meso. Part 2 builds on Part 1: Exo adds larger-scale headings, institutions, policies, resources and conditions; Macro connects these headings to each other and to selected existing local relationships. Preserve identities, positions, evidence, student interpretation and uncertainty.",
     interaction: 'Offer no more than three plain-language suggestions or questions. Help the student strengthen what is already in the memo and continue to the map; do not tell the student that progress is blocked.',
     output: 'Return only the memo-review object required by the application: guidance, nodes, connections, example, and readiness. Micro returns nodes and an empty connections array. Meso returns an empty nodes array and supported relationships using exact carried Micro node IDs. Readiness is a short, non-blocking note.',
   },
@@ -99,7 +99,7 @@ const GLOBAL_CONTENT = {
     purpose: 'Suggest map elements and level-appropriate connections that the memo supports. Every suggestion begins off the map and requires a student decision.',
     evidence: 'Attach a locatable evidence passage to every proposed node and relationship. Keep the student’s interpretation visible and do not turn an unsupported possibility into a confirmed claim.',
     privacy: 'Carry the project sharing tier and sensitivity treatment into every candidate. Do not place unnecessary identifying details in labels, notes, exports, or graph operations.',
-    scale_rubric: 'Use the active level as a filter on one durable graph. Preserve stable identifiers for elements already on the map. Place an entity by the focal person’s participation and the pathway of effect, not by whether it is an institution or service. Micro adds immediate settings, their discrete elements and resources as nodes. Meso adds relationships between the same Micro nodes, preserving their identities and positions. Exosphere adds outside decision settings and supported funding or decision pathways among them or into Micro settings. Macrosphere adds broader conditions and the map items they affect.',
+    scale_rubric: "Use one cumulative graph with two spheres and four exercises. Part 1 identifies local nodes at Micro and connects them at Meso. Part 2 builds on Part 1: Exo adds larger-scale headings, institutions, policies, resources and conditions; Macro connects these headings to each other and to selected existing local relationships. Preserve identities, positions, evidence, student interpretation and uncertainty.",
     interaction: 'Guide with questions rather than supplying conclusions. Let the student add a suggestion to the map, set it aside for more evidence, edit it, or remove it.',
     output: 'Return schema-valid node and edge operations with stable identifiers, type, scale, claim state, evidence locator, confidence, and notes. Allowed operations are add, revise, merge, contest, retire, and mark as research lead.',
   },
@@ -123,20 +123,20 @@ const SCALE_CONTENT = {
     output: 'Return an empty nodes array and relationship connections with source, target, verb, rationale, and optional relationshipProcess details supported by the memo. Both endpoints must be different exact IDs of supplied Micro nodes.',
   },
   exosphere: {
-    purpose: 'Focus Exosphere work on outside decision settings whose actions change what happens in an immediate setting even though the focal person does not participate in the decision setting.',
-    evidence: 'Name each outside office, agency, funder, service system, or decision-making body and trace its funding or decision pathway to another outside office or an immediate Micro setting it affects. Trace what resource, funding, rule, service, or decision moves through that path and what evidence supports it.',
+    purpose: "Build the Macrosystem from Part 2 while retaining Part 1 and the complete local map. Identify larger-scale institutions, policies, resources, histories and conditions that the memo supports.",
+    evidence: "Ground every heading in the memo. Preserve population, place, dates and uncertainty. Mark inferred effects as questions to investigate; a citation alone does not make an entity a map participant.",
     privacy: 'Use public or appropriately shared evidence. Do not include confidential, identifying, or nonpublic community information.',
-    scale_rubric: 'Classify by participation and effect, not entity kind: a named institution the focal person participates in directly remains at Micro; an outside decision setting belongs at Exosphere when its funding or decisions affect the focal situation through other outside offices or immediate settings. Keep supported intermediate steps and identify any unverified downstream step as a gap. An operational rule owned by that named decision setting may remain at Exosphere, while broader laws and public policies belong at Macrosphere.',
-    interaction: 'Ask for actual names, exact actions, direction, recipients or eligibility, evidence, and dates. Ask how each outside institution changes what happens in inner layers.',
-    output: 'Return named outside institution, agency, office, employer, funder, or service-system nodes when each one participates in a supported pathway to another outside office or an immediate Micro setting. Represent funding, eligibility, rule-setting, and service delivery as that decision pathway. Do not move a directly participated institution or service out of Micro merely because of its entity kind. A rule explicitly owned by the named outside decision setting may remain at Exosphere; a broader condition belongs at Macrosphere.',
+    scale_rubric: "Exo adds larger-scale nodes to the Macrosystem sphere. Keep all existing Micro nodes and Meso relationships. Relationship construction follows at Macro.",
+    interaction: "Suggest supported headings and invite students to edit, add, remove or investigate them before connecting relationships.",
+    output: "Return at most six Exo nodes using label, type, scale, evidence and basis. Return an empty connections array. Do not require a relationship before proposing a node.",
   },
   macrosphere: {
-    purpose: 'Focus Macrosphere work on broader laws, public policies, economic conditions, histories, cultural beliefs, and structures that affect multiple map items. A concrete institution belongs at Micro or Exosphere according to participation, not at Macrosphere.',
-    evidence: 'For each Macrosphere item, identify at least two affected map items and state what evidence supports the claim. Add dates when time matters.',
+    purpose: "Connect the larger-scale headings already mapped at Exo. Show how each supported heading shapes particular relationships within the Microsystem.",
+    evidence: "Use both memos, the existing graph and student interpretation. A group must name exact existing Meso relationship IDs and evidence for why this heading affects each relationship. Preserve missing, contested and inferred links.",
     privacy: 'Do not include confidential, identifying, or nonpublic community information anywhere in the map or final work.',
-    scale_rubric: 'Show how a broad law, public policy, economic condition, history, or cultural belief affects at least two map items. Keep an institution-specific operational rule with its named Exosphere decision setting; place a broader law or public policy at Macrosphere.',
-    interaction: 'Ask which map items each broader condition affects, how the student knows, and what evidence supports the claim.',
-    output: 'Return Macrosphere nodes for broader laws, public policies, economic conditions, histories, cultural beliefs, and structures. Each node uses a scope field containing at least two affected map item IDs. Return no relationship edge.',
+    scale_rubric: "Macro creates relationships, not new nodes. Connect existing Exo headings to each other or to the local map. Highlight selected local relationships together under their common heading using relationshipIds.",
+    interaction: "Try to propose supported relationship groups. Let students change the heading, membership, verb, direction and interpretation or construct groups manually. Ask a specific question where support is missing.",
+    output: "Return an empty nodes array and at most eight connections with exact carried source and target IDs, verb and rationale. A group uses an Exo heading as source, relationshipIds naming selected carried Meso relationships, and one selected local endpoint as target anchor. Ordinary node-to-node links omit relationshipIds.",
   },
 };
 
@@ -146,7 +146,7 @@ export function fingerprint(value) {
 
 // Fingerprints let the migration advance only untouched application defaults.
 // Instructor-edited module text never matches these values and is preserved.
-export const LEGACY_DEFAULT_MODULE_FINGERPRINTS = Object.freeze({
+const EARLIER_DEFAULT_MODULE_FINGERPRINTS = Object.freeze({
   'builder.exosphere.scale_rubric': Object.freeze(['6334d07ddfa2507da087f01c9b51c58d94d0d21c0af506e9fa45d276ccd5a151']),
   'preflight.exosphere.scale_rubric': Object.freeze(['6334d07ddfa2507da087f01c9b51c58d94d0d21c0af506e9fa45d276ccd5a151']),
   'builder.exosphere.output': Object.freeze(['96e8e5b823bc16f6562c33d6ed415b0b1452a6ad4c3f712f803494d2a2c8e892']),
@@ -201,6 +201,37 @@ export const LEGACY_DEFAULT_MODULE_FINGERPRINTS = Object.freeze({
   'preflight.macrosphere.output': Object.freeze(['ee5655b0fe41f27495dbd96bc9a09dd4e7b17f8866416134e037161e29069eea', '8b2803b6e5c4e3a854cd77da9c512ffc86ef6a314c96b66437aadeb68c8d8d46']),
   'builder.macrosphere.output': Object.freeze(['ee5655b0fe41f27495dbd96bc9a09dd4e7b17f8866416134e037161e29069eea', '8b2803b6e5c4e3a854cd77da9c512ffc86ef6a314c96b66437aadeb68c8d8d46']),
 });
+
+// Advance only exact untouched application defaults; instructor edits remain intact.
+const FOUR_SCALE_DEFAULT_FINGERPRINTS = {
+  "preflight.global.scale_rubric": "bf6671a26c88fd7783c5655e09cc3366e8ee8f2fbbf064f057ae38794c481b20",
+  "preflight.exosphere.purpose": "b5b7f3390a6f1390ae04d8626cc4c2ff1f83af1e03cc848d772e7ce4c302420c",
+  "preflight.exosphere.evidence": "cc6c1fac8d6f8353e845779e5c54f277bb70e2b8ca0b3667c4b7ca28a9ccd73b",
+  "preflight.exosphere.scale_rubric": "6b893db50146999ce0df2cb99130a90444ec570df8177bd1090fa35495cced23",
+  "preflight.exosphere.interaction": "507a60ab097e999b1b6e40d5031ae2dc084c76cffbb4d8aa24f0a4331a6c09e3",
+  "preflight.exosphere.output": "2e22fc0b18fc4e03b334b4bb527aa1f27615dbd41a206a8cf9e652eac826923e",
+  "preflight.macrosphere.purpose": "463d70e2683628c2e66c04db996d93ab5c51f9cef5b289f65d042a9cba5c6314",
+  "preflight.macrosphere.evidence": "79cf74391740c545cb2eacea9458f899a2f4dfa7c4aba7327542830d28e7ba86",
+  "preflight.macrosphere.scale_rubric": "c339fa6099697db115b34024080a875a1851e5f45d9eb0750869c976675f8495",
+  "preflight.macrosphere.interaction": "0fca1a1d43470bcc3089d99c23d861cde2dafb61fce1f8498e0c8c3c3623689a",
+  "preflight.macrosphere.output": "2556778b2700a2414606121645f1540341690175bfe31e391d936036328013cd",
+  "builder.global.scale_rubric": "ee2a3412da07f90d7ec8d40e07c1cbb7c1f939bdd4ba69512b54e115ee6dff6b",
+  "builder.exosphere.purpose": "b5b7f3390a6f1390ae04d8626cc4c2ff1f83af1e03cc848d772e7ce4c302420c",
+  "builder.exosphere.evidence": "cc6c1fac8d6f8353e845779e5c54f277bb70e2b8ca0b3667c4b7ca28a9ccd73b",
+  "builder.exosphere.scale_rubric": "6b893db50146999ce0df2cb99130a90444ec570df8177bd1090fa35495cced23",
+  "builder.exosphere.interaction": "507a60ab097e999b1b6e40d5031ae2dc084c76cffbb4d8aa24f0a4331a6c09e3",
+  "builder.exosphere.output": "2e22fc0b18fc4e03b334b4bb527aa1f27615dbd41a206a8cf9e652eac826923e",
+  "builder.macrosphere.purpose": "463d70e2683628c2e66c04db996d93ab5c51f9cef5b289f65d042a9cba5c6314",
+  "builder.macrosphere.evidence": "79cf74391740c545cb2eacea9458f899a2f4dfa7c4aba7327542830d28e7ba86",
+  "builder.macrosphere.scale_rubric": "c339fa6099697db115b34024080a875a1851e5f45d9eb0750869c976675f8495",
+  "builder.macrosphere.interaction": "0fca1a1d43470bcc3089d99c23d861cde2dafb61fce1f8498e0c8c3c3623689a",
+  "builder.macrosphere.output": "2556778b2700a2414606121645f1540341690175bfe31e391d936036328013cd"
+};
+export const LEGACY_DEFAULT_MODULE_FINGERPRINTS = Object.freeze(Object.fromEntries(
+  [...new Set([...Object.keys(EARLIER_DEFAULT_MODULE_FINGERPRINTS), ...Object.keys(FOUR_SCALE_DEFAULT_FINGERPRINTS)])].map(id => [id,
+    Object.freeze([...(Array.isArray(EARLIER_DEFAULT_MODULE_FINGERPRINTS[id]) ? EARLIER_DEFAULT_MODULE_FINGERPRINTS[id] : [EARLIER_DEFAULT_MODULE_FINGERPRINTS[id]]), FOUR_SCALE_DEFAULT_FINGERPRINTS[id]].filter(Boolean)),
+  ]),
+));
 
 const CONNECTION_GUIDANCE = 'Ask the student to describe connections between map elements in their own words. Use those words to propose connections that remain off the map until the student adds them.';
 

@@ -68,6 +68,17 @@ describe('Map Check route', () => {
     expect(ollamaRequest.mock.calls[0][0].sourceText).toMatch(/Reason only from the carried map/);
   });
 
+  it('preserves selected local relationships under a macro heading and rejects invented memberships before calling the model', async () => {
+    const local = { id: 'local', source: 'node_rosa', target: 'node_clinic', verb: 'visits', scale: 'meso' };
+    const group = { ...relationships[0], scale: 'macrosphere', relationshipIds: ['local'] };
+    const input = body({ activeScale: 'macrosphere', relationships: [local, group] });
+    expect((await postJson(system.app, '/api/map/check', input, cookie)).status).toBe(201);
+    expect(ollamaRequest.mock.calls[0][0].carriedConnections).toEqual([local, group]);
+    group.relationshipIds = ['invented'];
+    expect((await postJson(system.app, '/api/map/check', input, cookie)).status).toBe(400);
+    expect(ollamaRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects notes that reference items outside the map without a second paid attempt', async () => {
     ollamaRequest.mockResolvedValueOnce({ suggestion: { notes: [{ kind: 'gap', point: 'Add the school.', refs: ['node_school'] }] }, metadata: {} });
     const response = await postJson(system.app, '/api/map/check', body(), cookie);

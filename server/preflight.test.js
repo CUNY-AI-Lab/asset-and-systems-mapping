@@ -401,7 +401,7 @@ describe('persistent preflight suggestion review queue', () => {
     expect(input.systemPrompt).toContain('Attribute observations to the student, keep questions open');
     expect(input.systemPrompt).toContain('planned investigations as future work, never completed findings');
     expect(input.systemPrompt).toContain('Meso connects those existing Micro nodes with directional relationships using their exact carried IDs and returns no new nodes');
-    expect(input.systemPrompt).toContain('Macro uses scoped conditions and returns no directional connections');
+    expect(input.systemPrompt).toContain('Macro connects these headings to each other, to local nodes, and to specific carried local relationships');
     expect(input.systemPrompt).toContain('Do not infer what the rest of the note says');
     const stored = system.db.prepare('SELECT source_record_json, source_material FROM preflight_evaluations WHERE id = ?').get(evaluation.id);
     expect(JSON.parse(stored.source_record_json)).toEqual(body.sourceRecord);

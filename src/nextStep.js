@@ -1,3 +1,4 @@
+import { activeSubmission, reviewMemoText } from './projectMemo.js';
 import { SCALE_ORDER, SCALES, isExosphereDecisionPathway } from './domain.js';
 import { isLiveMapItem, needsEvidenceReview } from './mapInsights.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
@@ -74,7 +75,7 @@ const plural = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 export function nextStep(project, { reviewBusy = false, retryPending = false, initialModelRequired = requiresInitialModel(project) } = {}) {
   const scale = project.activeScale;
   const label = SCALES[scale].label;
-  const hasMemo = Boolean(project.submission.text.trim());
+  const hasMemo = Boolean(activeSubmission(project).text.trim());
   const nextScale = SCALE_ORDER[SCALE_ORDER.indexOf(scale) + 1] || null;
   if (project.stage === 0) {
     return { id: 'start-review', label: 'Memo review', detail: hasMemo ? `Read the memo for ${label}` : 'Add a memo to begin', blocking: false };

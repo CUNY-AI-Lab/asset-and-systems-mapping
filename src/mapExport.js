@@ -1,7 +1,7 @@
 import { relationshipDescription, relationshipArrowheads, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
+import { groupedRelationships } from '../shared/relationship-groups.js';
 
 const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
-const names = ['Micro', 'Meso', 'Exo', 'Macro'];
 const colors = ['#dbeafe', '#d1fae5', '#fef3c7', '#ede9fe'];
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]);
 function lines(text, width = 34) {
@@ -20,12 +20,12 @@ export function mapExportSvg(project) {
   const legacyNodes = liveNodes.filter(node => node.scale === 'meso');
   const nodes = liveNodes.filter(node => node.scale !== 'meso');
   const nodeById = new Map(liveNodes.map(node => [node.id, node]));
-  const exportLevels = ['micro', ...['exosphere', 'macrosphere'].filter(scale => nodes.some(node => node.scale === scale))];
-  const width = 900 + (exportLevels.length - 1) * 600;
+  const exportLevels = ['micro', ...[nodes.some(node => ['exosphere', 'macrosphere'].includes(node.scale)) ? 'exosphere' : null].filter(Boolean)];
+  let width = 900 + (exportLevels.length - 1) * 600;
   const positions = new Map(), bottoms = exportLevels.map(() => 150);
   const microBounds = [];
   const cards = nodes.map(node => {
-    const col = Math.max(0, exportLevels.indexOf(node.scale)), text = lines(node.label);
+    const col = node.scale === 'micro' ? 0 : 1, text = lines(node.label);
     const box = { x: col ? 930 + (col - 1) * 600 : 180, y: bottoms[col], width: 340, height: 32 + text.length * 22 };
     bottoms[col] += box.height + 68;
     positions.set(node.id, box);
@@ -37,7 +37,8 @@ export function mapExportSvg(project) {
     ? { source: node.id, target: id, verb: node.deontic || 'shapes', scope: true }
     : { source: id, target: node.id, verb: 'scope', scope: true }), ...(node.settingNodeIds || []).map(id => ({ source: node.id, target: id, verb: 'setting membership', scope: true }))])];
   const legend = [];
-  const paths = edges.flatMap((edge,index) => {
+  const anchors = new Map();
+  const paths = edges.filter(edge => !edge.relationshipIds?.length).flatMap((edge,index) => {
     const source = nodeById.get(edge.source)?.label, target = nodeById.get(edge.target)?.label;
     if (!source || !target) return [];
     const number = legend.length + 1;
@@ -55,6 +56,7 @@ export function mapExportSvg(project) {
     const x1 = a.x + (sameColumn || forward ? a.width : 0), y1 = a.y + a.height/2;
     const x2 = b.x + (sameColumn || !forward ? b.width : 0), y2 = b.y + b.height/2;
     const lane = sameColumn ? a.x + a.width + 28 + (index % 12)*14 : (x1+x2)/2;
+    if (edge.id) anchors.set(edge.id, { x: lane, y: (y1+y2)/2, x1, y1, x2, y2 });
     if (nodeById.get(edge.source).scale === 'micro' && nodeById.get(edge.target).scale === 'micro') {
       microBounds.push({ left: Math.min(x1, x2, lane) - 14, right: Math.max(x1, x2, lane) + 14, top: Math.min(y1, y2) - 14, bottom: Math.max(y1, y2) + 14 });
     }
@@ -65,16 +67,39 @@ export function mapExportSvg(project) {
     const top = Math.min(...microBounds.map(box => box.top)), bottom = Math.max(...microBounds.map(box => box.bottom));
     return { cx: (left + right) / 2, cy: (top + bottom) / 2, rx: (right - left) / 2 * Math.SQRT2 + 28, ry: (bottom - top) / 2 * Math.SQRT2 + 36 };
   })() : null;
-  const offsetY = micro ? Math.max(0, 150 - micro.cy + micro.ry) : 0;
-  const microCircle = micro ? `<g data-export-layer="micro"><ellipse cx="${micro.cx}" cy="${micro.cy}" rx="${micro.rx}" ry="${micro.ry}" fill="#f1f5f9" stroke="#2159a8" stroke-width="2"/><rect x="${micro.cx - 190}" y="${micro.cy - micro.ry + 5}" width="380" height="32" rx="16" fill="white" stroke="#2159a8"/><text x="${micro.cx}" y="${micro.cy - micro.ry + 26}" text-anchor="middle" font-size="20" font-weight="bold">Micro items · Meso relationships</text></g>` : '';
-  const mapBottom = Math.max(420, ...bottoms, micro ? micro.cy + micro.ry : 0) + offsetY;
+  const groupPaths = visibleEdges.filter(edge => edge.relationshipIds?.length).flatMap(edge => {
+    const heading = positions.get(edge.source);
+    if (!heading) return [];
+    const selected = groupedRelationships(edge, visibleEdges).filter(local => anchors.has(local.id));
+    const number = legend.length + 1;
+    legend.push(`${number}. ${relationshipDescription(edge, nodeById.get(edge.source)?.label)}; selected relationships: ${selected.map(local => relationshipDescription(local, nodeById.get(local.source)?.label, nodeById.get(local.target)?.label)).join('; ')}`);
+    const x = heading.x, y = heading.y + heading.height / 2;
+    const arrows = relationshipArrowheads(edge);
+    return selected.map(local => {
+      const a = anchors.get(local.id);
+      return `<g data-export-group="${xml(edge.id)}" data-relationship-id="${xml(local.id)}"><path d="M ${x} ${y} L ${a.x} ${a.y1 - 18} L ${a.x} ${a.y2 + 18} Z" fill="#8b5cf6" fill-opacity=".13"/><path d="M ${x} ${y} L ${a.x} ${a.y}" fill="none" stroke="#7c3aed" stroke-width="3" ${arrows.start ? 'marker-start="url(#arrow)"' : ''} ${arrows.end ? 'marker-end="url(#arrow)"' : ''}/><circle cx="${(x+a.x)/2}" cy="${(y+a.y)/2}" r="12" fill="white" stroke="#7c3aed"/><text x="${(x+a.x)/2}" y="${(y+a.y)/2+5}" text-anchor="middle" font-size="14">${number}</text></g>`;
+    });
+  });
+  const macro = exportLevels.length > 1 ? (() => {
+    const left = Math.min(100, micro ? micro.cx - micro.rx : 100);
+    const right = Math.max(...[...positions.values()].map(box => box.x + box.width + 200));
+    const top = Math.min(120, micro ? micro.cy - micro.ry : 120);
+    const bottom = Math.max(...bottoms, micro ? micro.cy + micro.ry : 420);
+    return { cx: (left+right)/2, cy: (top+bottom)/2, rx: (right-left)/2*Math.SQRT2+40, ry: (bottom-top)/2*Math.SQRT2+50 };
+  })() : null;
+  const outer = macro || micro;
+  const offsetX = outer ? Math.max(0, 30 - outer.cx + outer.rx) : 0;
+  const offsetY = outer ? Math.max(0, 120 - outer.cy + outer.ry) : 0;
+  if (outer) width = Math.max(width, Math.ceil(outer.cx + outer.rx + offsetX + 30));
+  const sphere = (bounds, scale, label, color) => bounds ? `<g data-export-layer="${scale}"><ellipse cx="${bounds.cx}" cy="${bounds.cy}" rx="${bounds.rx}" ry="${bounds.ry}" fill="${scale === 'micro' ? '#f1f5f9' : '#faf7ff'}" stroke="${color}" stroke-width="2"/><rect x="${bounds.cx - 130}" y="${bounds.cy - bounds.ry + 5}" width="260" height="32" rx="16" fill="white" stroke="${color}"/><text x="${bounds.cx}" y="${bounds.cy - bounds.ry + 26}" text-anchor="middle" font-size="20" font-weight="bold">${label}</text></g>` : '';
+  const circles = sphere(macro, 'macrosystem', 'Macrosystem', '#7c3aed') + sphere(micro, 'micro', 'Microsystem', '#2159a8');
+  const mapBottom = Math.max(420, ...bottoms, outer ? outer.cy + outer.ry : 0) + offsetY;
   const legendTop = mapBottom + 40;
   const countNote = visibleEdges.some(edge => Number.isInteger(edge.relationshipProcess?.familyCount)) ? ['Wider lines represent more recorded families, up to a fixed maximum. Labels give exact counts and connection strength.'] : [];
   const legacyLines = legacyNodes.length ? ['Preserved Meso records from earlier maps', ...legacyNodes.map(node => `${node.label}${node.scopeNodeIds?.length ? `; includes: ${node.scopeNodeIds.map(id => nodeById.get(id)?.label).filter(Boolean).join(', ')}` : ''}${node.mesoExplanation ? `; ${node.mesoExplanation}` : ''}`)] : [];
   const legendLines = [...legend, ...countNote, ...legacyLines].flatMap(text => lines(text, Math.floor((width - 60) / 10)));
   const height = legendTop + 50 + legendLines.length * 24;
-  const headings = exportLevels.filter(scale => scale !== 'micro').map(scale => `<text x="${930 + (exportLevels.indexOf(scale) - 1) * 600}" y="120" font-size="22" font-weight="bold">${names[levels.indexOf(scale)]}</text>`).join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/><defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#475569"/></marker></defs><g font-family="Arial, sans-serif" fill="#172033"><text x="30" y="42" font-size="26">${xml(project.title || 'Systems map')}</text><text x="30" y="74" font-size="16">Map · ${nodes.length} ${nodes.length === 1 ? 'item' : 'items'} · ${visibleEdges.length} ${visibleEdges.length === 1 ? 'connection' : 'connections'}</text>${headings}<g transform="translate(0 ${offsetY})">${microCircle}${paths.join('')}${cards.join('')}</g><text x="30" y="${legendTop}" font-size="22" font-weight="bold">Connections</text><text x="30" y="${legendTop+32}" font-size="18">${legendLines.map((line,i)=>`<tspan x="30" dy="${i?24:0}">${xml(line)}</tspan>`).join('')}</text></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/><defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#475569"/></marker></defs><g font-family="Arial, sans-serif" fill="#172033"><text x="30" y="42" font-size="26">${xml(project.title || 'Systems map')}</text><text x="30" y="74" font-size="16">Map · ${nodes.length} ${nodes.length === 1 ? 'item' : 'items'} · ${visibleEdges.length} ${visibleEdges.length === 1 ? 'connection' : 'connections'}</text><g transform="translate(${offsetX} ${offsetY})">${circles}${groupPaths.join('')}${paths.join('')}${cards.join('')}</g><text x="30" y="${legendTop}" font-size="22" font-weight="bold">Connections</text><text x="30" y="${legendTop+32}" font-size="18">${legendLines.map((line,i)=>`<tspan x="30" dy="${i?24:0}">${xml(line)}</tspan>`).join('')}</text></g></svg>`;
   return { svg, width, height };
 }
 

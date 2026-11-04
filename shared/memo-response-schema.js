@@ -10,7 +10,7 @@ const choice = values => ({ type: 'string', enum: [...values] });
 // Supply an explicit output contract to the model alongside the instructions.
 // The server checks source evidence, label meaning, endpoint pairs and the
 // complete review independently of the model response.
-export function memoResponseSchema(scale, carriedNodes = [], evidencePassageCount = 0) {
+export function memoResponseSchema(scale, carriedNodes = [], evidencePassageCount = 0, carriedConnections = []) {
   const limits = MEMO_REVIEW_SCALE_LIMITS[scale];
   const ids = [...new Set(carriedNodes.filter(node => scale !== 'meso' || node.scale === 'micro').map(node => node.id))];
   const endpoint = ids.length ? choice(ids) : text(200);
@@ -25,7 +25,7 @@ export function memoResponseSchema(scale, carriedNodes = [], evidencePassageCoun
   return object({
     guidance: array(object({ point: text(500), evidenceExcerpt: evidence(500) }, ['point']), MEMO_REVIEW_GUIDANCE_LIMIT),
     nodes: array(object({ label: text(200), type: choice(scale === 'exosphere' ? EXOSPHERE_NODE_TYPES : MICRO_NODE_TYPES), scale: choice([scale]), evidence: evidence(500), ...(scale === 'exosphere' ? { basis: choice(['memo', 'inference']) } : {}) }), limits.nodes),
-    connections: array(object({ source: endpoint, target: endpoint, verb: text(100), rationale: evidence(1000), relationshipProcess: process }, ['source', 'target', 'verb', 'rationale']), ids.length >= 2 ? limits.connections : 0),
+    connections: array(object({ source: endpoint, target: endpoint, verb: text(100), rationale: evidence(1000), relationshipProcess: process, ...(scale === 'macrosphere' && carriedConnections.some(edge => edge.id && edge.scale === 'meso') ? { relationshipIds: { type: 'array', minItems: 1, maxItems: 24, uniqueItems: true, items: choice(carriedConnections.filter(edge => edge.id && edge.scale === 'meso').map(edge => edge.id)) } } : {}) }, ['source', 'target', 'verb', 'rationale']), ids.length >= 2 ? limits.connections : 0),
     example: { type: 'null' },
     readiness: object({ ready: { type: 'boolean' }, note: text(500) }),
   });

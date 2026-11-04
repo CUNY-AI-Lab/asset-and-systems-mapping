@@ -2,7 +2,7 @@
 
 > **Active beta.** Systems Mapping is under active classroom development.
 
-Systems Mapping helps students turn a place-based inquiry into an evidence-informed account of people, settings, institutions, and broader conditions. Students build one cumulative map, revisit their interpretations, and explain how connections operate across four ecological levels. The map, supporting evidence, and revision notes form a record of their reasoning.
+Systems Mapping helps students turn a place-based inquiry into an evidence-informed account of people, settings, institutions, and broader conditions. Students build one cumulative map across two spheres, Microsystem and Macrosystem, using four analytical steps and two linked memos. The map, supporting evidence, and revision notes form a record of their reasoning.
 
 The prototype combines a guided student workspace with a Instructor Console for course guidance and materials. A new empty map begins with Generate guidance in Memo review. After a valid response, students review its suggestions and can add supported items themselves, edit labels and relationships, and remove suggestions. Existing saved maps remain available for manual revision. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
 
@@ -20,10 +20,10 @@ The course develops one inquiry through two Parts. Each level adds a distinct fo
 | --- | --- | --- | --- |
 | 1 | Micro | People, roles, activities, objects, and immediate settings relevant to the focal person or group. | Discrete nodes with evidence. Non-setting elements can identify the immediate settings in which they appear. |
 | 1 | Meso | How the people, groups, resources, and settings on the Micro map interact. | One-way or two-way relationship arrows between the existing Micro nodes, which retain their positions and IDs. |
-| 2 | Exo | Decisions made in outside settings that indirectly affect the focal person or group. | Outside decision settings with pathways into mapped Micro settings. |
-| 2 | Macro | Laws, policies, economic conditions, histories, beliefs, and structures that shape the system. | Broader conditions scoped to at least two earlier map elements. |
+| 2 | Exo | Larger-scale institutions, policies, resources and conditions identified in a second memo that builds on the first. | Additional heading nodes in the Macrosystem, retaining the local graph. |
+| 2 | Macro | How larger-scale headings interact and affect particular local relationships. | Connections among headings and shaded groups of selected Meso relationships under a heading. |
 
-The interface labels the later levels **Exo-level** and **Macro-level**; project records use `exosphere` and `macrosphere`. Meso shares the Micro map space and adds relationship arrows. Macro scope links identify influence across multiple map items. An institution belongs at Micro or Exo according to the focal person’s participation; broader policies and structural conditions belong at Macro.
+The interface labels the later levels **Exo-level** and **Macro-level**; project records use `exosphere` and `macrosphere`. Micro and Meso share the Microsystem sphere. Exo and Macro share the Macrosystem sphere. The model proposes supported nodes and relationship groups; students can add, edit or remove them manually. See the [two-memo workflow](./docs/TWO_MEMO_WORKFLOW_2026-11-04.md) for storage, compatibility and verification details.
 
 Evidence remains distinct from interpretation. Students can record a source passage, their claim and reasoning, uncertainty, counterevidence, and missing perspectives. Meso and Exo relationships can also describe frequency, duration, direction, conditions, and change over time. The application checks references and required structure; students remain responsible for the strength of the explanation.
 
@@ -46,7 +46,7 @@ The workspace has two views: **Map** and **Notebook**. The five stage records (`
 | **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Instructor Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
 | **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
 
-The notebook contains the current next action. **Map / Notebook / Tools / work level** share its top edge. When Notebook is closed, these controls float over the canvas so they remain available without reserving a separate toolbar strip. The report button stays in the main project header, including memo entry and the final summary. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading in the same click. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
+The notebook contains the current next action. **Map / Notebook / Tools / work level** share its top edge. When Notebook is closed, these controls float over the canvas so they remain available without reserving a separate toolbar strip. The report button stays in the main project header, including memo entry and the final summary. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading when its memo is available. Entering Part 2 opens a separate memo upload before guidance. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
 
 The compact footer reads: “Built through the Critical AI Literacy Institute. A continuing project with the CUNY AI Lab.” Only **CUNY AI Lab** links to the lab website. The credit appears across sign-in, account and project screens, wraps on phones and gives way to the canvas in full screen.
 
@@ -109,11 +109,11 @@ alone does not replace the account and course authorization check.
 The **Project → Export & share** dialog shows its controls directly, grouped as **Download or share** (PNG, PDF, project link) and **Other formats** (JSON, CSV, Markdown), followed by **Import JSON**:
 
 - **PNG / PDF** show the cumulative map and its connections; they omit the memo and Field Notes.
-- **JSON — Full project** preserves a reopenable project with the memo, Field Notes, stable IDs and layout. Keep this complete copy private. Import validates the file before replacing the open project.
+- **JSON — Full project** preserves a reopenable project with both memos, relationship group memberships, Field Notes, stable IDs and layout. Keep this complete copy private. Import validates the file before replacing the open project.
 - **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.
 - **Markdown** provides a readable account for review and discussion.
 
-Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. Project links retain their existing access, expiry and revocation rules. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v9 supports migration of v1–v8 projects.
+Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. Project links retain their existing access, expiry and revocation rules. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v10 supports migration of v1–v9 projects.
 
 ## Run locally
 

@@ -1,6 +1,8 @@
 # Micro and Meso workflow — October 28, 2026
 
-## Current product decision
+> Exo/Macro descriptions below record the October 28 state. The [November 4 two-memo workflow](TWO_MEMO_WORKFLOW_2026-11-04.md) supersedes them.
+
+## October 28 product decision
 
 The October 28 implementation request, based on the supplied meeting summary, supersedes the August 24 Micro/Meso correction for classroom workflow. Students build one map through the existing five stages and four levels.
 

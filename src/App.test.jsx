@@ -775,14 +775,14 @@ function renderedNodePosition(nodeId) {
 }
 
 function expectNodesInsideEcologyRings() {
-  const levels = ['micro', 'exosphere', 'macrosphere'];
+  const levels = ['micro', 'exosphere'];
   const rings = new Map(levels.flatMap(level => {
     const ellipse = document.querySelector(`[data-ecology-layer="${level}"] ellipse`);
     if (!ellipse) return [];
     return [[level, Object.fromEntries(['cx', 'cy', 'rx', 'ry'].map(key => [key, Number(ellipse.getAttribute(key))]))]];
   }));
   document.querySelectorAll('.graph-node').forEach(group => {
-    const scale = levels.find(level => group.classList.contains(`graph-node--${level}`));
+    const scale = group.classList.contains('graph-node--macrosphere') ? 'exosphere' : levels.find(level => group.classList.contains(`graph-node--${level}`));
     if (!scale) throw new Error(`Missing scale for ${group.getAttribute('data-full-label')}`);
     const position = renderedNodePosition(group.getAttribute('data-graph-id'));
     const card = group.querySelector('.node-card');
@@ -1637,7 +1637,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Map title (optional)' })).toHaveValue(legacy.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(legacy.submission.text);
-    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 9, title: legacy.title, participantName: '' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 10, title: legacy.title, participantName: '' }));
   });
 
   it('loads the v5 browser workspace as legacy data and persists it under the v6 key', async () => {
@@ -1651,7 +1651,7 @@ describe('Systems Mapping workflow', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     openProjectFromList(legacy.title);
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 9, participantName: '' }));
+    await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 10, participantName: '' }));
   });
 
   it('expires an ISO-timestamped class grant at the exact fake-clock boundary without erasing local project bytes', async () => {
@@ -1819,7 +1819,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(createDefaultProject());
 
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
-    expect(screen.getByText('Set the focus for your map')).toBeVisible();
+    expect(screen.getByText(/set the focus for your map/)).toBeVisible();
     expect(storedProject()).toMatchObject({ activeScale: 'micro', releasedScales: ['micro'], completedScales: [] });
   });
 
@@ -2161,10 +2161,16 @@ describe('Systems Mapping workflow', () => {
       preflight: null,
       reflection: '',
     }));
+    if (activeScale === 'meso') {
+      expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
+      expect(storedProject().part2Submission.text).toBe('');
+      fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: 'The policy extends our earlier analysis.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+    }
     await waitFor(() => expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations').map(([, options]) => JSON.parse(options.body).activeScale)).toEqual([expectedScale]));
     const payload = JSON.parse(fetchMock.mock.calls.find(([path]) => path === '/api/preflight/evaluations')[1].body);
     expect(payload.fieldNotes).toEqual({ scale: activeScale, text: note, truncated: false });
-    expect(payload.sourceMaterial).toBe(project.submission.text);
+    expect(payload.sourceMaterial).toContain(project.submission.text);
     expect(JSON.stringify(payload.sourceRecord)).not.toContain(note);
     expect(screen.getByRole('button', { name: 'Reading memo…' })).toBeDisabled();
     const stored = storedProject();
@@ -3390,7 +3396,14 @@ describe('Systems Mapping workflow', () => {
         await waitFor(() => expect(memoNextAction()).toBeEnabled());
         fireEvent.click(memoNextAction());
       }
-      // Later levels read the memo in the same click that completed the previous level.
+      if (scale === 'exosphere') {
+        expect(storedProject().part2Submission.text).toBe('');
+        fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: 'The outside agency supports the resident and clinic.' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
+        await waitFor(() => expect(storedProject().preflight?.memoReview).toBeTruthy());
+        fireEvent.click(memoNextAction());
+      }
+      // Part 2 explicitly begins at Exo; the remaining transitions reread it.
       await waitFor(() => expect(storedProject()).toMatchObject({ activeScale: scale, stage: 3 }));
       const graph = storedProject().graph;
       expect(graph.nodes).toHaveLength([3, 3, 4, 4][index]);
@@ -4279,7 +4292,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(within(addForm).getByLabelText('From'), { target: { value: microNodes[0].id } });
     fireEvent.change(within(addForm).getByLabelText('Relationship'), { target: { value: 'coordinates with' } });
     fireEvent.change(within(addForm).getByLabelText('To'), { target: { value: microNodes[1].id } });
-    expect(within(addForm).queryByLabelText('Evidence or question')).toBeNull();
+    expect(within(addForm).queryByLabelText('Evidence or question')).not.toBeInTheDocument();
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add relationship' }));
     await waitFor(() => expect(storedProject().graph.edges.at(-1)).toMatchObject({
       source: microNodes[0].id,
@@ -4463,8 +4476,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     fireEvent.change(scale, { target: { value: activeScale } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`${activeScale === 'exosphere' ? 'Exo-level' : 'Macro-level'} map. ${active.nodes.length} nodes and ${active.edges.length} ${active.edges.length === 1 ? 'connection' : 'connections'}.`));
-    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(project.releasedScales.length - 1);
-    expect(document.querySelector(`[data-ecology-layer="${activeScale}"]`)).toHaveClass('is-visible');
+    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(2);
+    expect(document.querySelector('[data-ecology-layer="exosphere"]')).toHaveClass('is-visible');
     expect(document.querySelectorAll('.graph-node.is-dimmed, .graph-edge.is-dimmed')).toHaveLength(0);
     const activeLabels = [...document.querySelectorAll(`.graph-edge-label[data-edge-scale="${activeScale}"][data-edge-route="straight"]`)];
     const allActiveLabels = [...document.querySelectorAll(`.graph-edge-label[data-edge-scale="${activeScale}"]`)];
@@ -4505,7 +4518,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(scale, { target: { value: 'all' } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(screen.getByText('Select an item to inspect its connections')).toBeVisible();
-    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(project.releasedScales.length - 1);
+    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(2);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(all.edges.length);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(0);
     expect(storedProject().graph).toEqual(graphBefore);
@@ -4665,7 +4678,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(mapLayer(), { target: { value: 'all' } });
     fireEvent.click(mapTool('Fit map'));
 
-    const levels = ['micro', 'exosphere', 'macrosphere'];
+    const levels = ['micro', 'exosphere'];
     const readGeometry = () => {
       const rings = new Map();
       const labels = new Map();
@@ -4739,12 +4752,12 @@ Overall, the posting history documents a working student repeatedly turning to R
     const durableGraph = structuredClone(storedProject().graph);
 
     resizeTo(390);
-    await waitFor(() => expect(Number(document.querySelector('.ecology-layer--macrosphere ellipse').getAttribute('rx'))).toBeGreaterThanOrEqual(600));
-    const phoneRadius = Number(document.querySelector('.ecology-layer--macrosphere ellipse').getAttribute('rx'));
+    await waitFor(() => expect(Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'))).toBeGreaterThanOrEqual(600));
+    const phoneRadius = Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'));
     expectNodesInsideEcologyRings();
     resizeTo(1024);
-    await waitFor(() => expect(Number(document.querySelector('.ecology-layer--macrosphere ellipse').getAttribute('rx'))).toBeGreaterThanOrEqual(1220));
-    expect(Number(document.querySelector('.ecology-layer--macrosphere ellipse').getAttribute('rx'))).toBeGreaterThan(phoneRadius);
+    await waitFor(() => expect(Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'))).toBeGreaterThanOrEqual(1220));
+    expect(Number(document.querySelector('.ecology-layer--exosphere ellipse').getAttribute('rx'))).toBeGreaterThan(phoneRadius);
     expectNodesInsideEcologyRings();
 
     expect(storedProject().graph).toEqual(durableGraph);
@@ -6097,7 +6110,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       fireEvent.click(screen.getByRole('button', { name: /^Markdown/ }));
       expect(blobs).toHaveLength(2);
       const markdown = blobs[1].parts.join('');
-      expect(markdown).toContain('## Memo');
+      expect(markdown).toContain('## Part 1 memo · Microsystem');
       expect(markdown).not.toMatch(/^## Source\b/m);
       expect(markdown).toContain('## Items needing evidence');
       expect(markdown).toContain(`${nodes[0].label} documents ${nodes[1].label} — arrow direction: source to target; level: Meso-level; evidence: Memo sentence 1`);
