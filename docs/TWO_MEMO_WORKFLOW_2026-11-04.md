@@ -4,7 +4,7 @@ The workflow keeps four analytical steps and one durable graph. Part 1 uses a lo
 
 ## Sources and continuity
 
-`submission` retains Part 1. Optional `part2Submission` has its own bounded ID, text, file metadata, revision, fingerprint and privacy declarations. New projects initialize both sources; the Meso-to-Exo transition opens Part 2. Existing outer-level projects keep their legacy memo until a student adds Part 2. Adding or uploading Part 2 never clears graph records or copies Part 1 permission into the new source.
+`submission` retains Part 1. Optional `part2Submission` has its own bounded ID, text, file metadata, revision, fingerprint and privacy declarations. New projects initialize both sources; the Meso-to-Exo transition opens Part 2. Existing outer-level projects keep their legacy memo until a student adds Part 2, uploads a new source, or edits the outer-level memo text. Those actions create Part 2 without replacing Part 1. Adding or uploading Part 2 never clears graph records or copies Part 1 permission into the new source.
 
 Memo upload remains available in the notebook at Meso, Exo and Macro. The reader accepts the existing PDF, DOCX and text formats. A delayed or unsuccessful import cannot overwrite a newer edit, another project, or another work level. Earlier graph IDs, coordinates, evidence, annotations and per-level Field Notes stay saved. Manual editing remains available when model guidance fails.
 
@@ -21,6 +21,8 @@ The model is instructed to try supported groups and larger-scale-to-larger-scale
 ## Compatibility and deployment
 
 Schema 10 accepts versions 1–9 and preserves legacy scoped nodes. The analytical IDs `micro`, `meso`, `exosphere`, `macrosphere` and stage IDs are unchanged. No new Durable Object namespace, database migration or service deployment is required. Guidance contract version `two-memos-two-spheres-v6` invalidates incompatible cached reviews. Default prompt modules advance only when their saved fingerprint exactly matches an untouched earlier default; instructor edits remain intact.
+
+After a student saves a schema-10 project, a rollback must retain the schema-10 reader and both source/group fields. The older schema-9 application cannot read the new format. Prefer a corrective release; do not downgrade stored projects or restore a database automatically.
 
 Private JSON and Markdown retain both source texts. JSON retains exact group IDs; CSV includes `grouped_relationship_ids`. Broader exports apply source restrictions across both memos. PNG/PDF contain the graph, not source memos or Field Notes.
 

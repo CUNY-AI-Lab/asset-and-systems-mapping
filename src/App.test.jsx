@@ -1175,7 +1175,7 @@ describe('Systems Mapping workflow', () => {
     expect(reads).toBe(2);
     expect(screen.getByRole('status')).toHaveTextContent('Checking sign-in');
     expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
-    expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: { text: memo } });
+    expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: project.submission, part2Submission: { text: memo } });
     await act(async () => { finishRefresh(); });
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
     expect(screen.queryByRole('link', { name: 'CUNY Login' })).not.toBeInTheDocument();
@@ -1328,7 +1328,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Use CUNY Login to continue');
     expect(screen.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
     expect(screen.queryByRole('textbox', { name: 'Class code' })).not.toBeInTheDocument();
-    expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: { text: revisedMemo } });
+    expect(storedProject()).toMatchObject({ id: project.id, stage: 0, graph: project.graph, submission: project.submission, part2Submission: { text: revisedMemo } });
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/student/session')).toHaveLength(2);
   });
 
@@ -5481,7 +5481,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(screen.getByRole('textbox', { name: /^Memo/ }), { target: { value: `${project.submission.text} A later memo correction changes the evidence anchor.` } });
     await waitFor(() => {
       const stored = storedProject();
-      expect(stored.submission.revision).toBe((project.submission.revision || 1) + 1);
+      expect(stored.submission).toEqual(project.submission);
+      expect(stored.part2Submission.revision).toBe(2);
+      expect(stored.part2Submission.text).toContain('A later memo correction');
       expect(stored.candidates.nodes).toHaveLength(project.candidates.nodes.length);
       expect(stored.candidates.edges).toHaveLength(project.candidates.edges.length);
       expect(stored.graph.nodes.every((node) => node.claimState === 'student interpretation')).toBe(true);

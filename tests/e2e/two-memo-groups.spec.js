@@ -163,6 +163,17 @@ const realFiles = [
   ['Micro Memo.pdf', /Bronx/],
   ['Microsystem EDITED.pdf.pdf', /Johnson|Harlem/],
 ];
+test('an older project uploading Part 2 from memo entry retains its first memo and map', async ({ page }) => {
+  const p = localProject(); p.activeScale = 'exosphere'; p.stage = 0;
+  p.levelProgress.exosphere.stage = 0;
+  await openProject(page, p);
+  await page.locator('.upload-zone input').setInputFiles({ name: 'second-memo.txt', mimeType: 'text/plain', buffer: Buffer.from(HOUSING_MACRO_MEMO) });
+  await expect.poll(async () => (await read(page)).part2Submission?.text).toBe(HOUSING_MACRO_MEMO);
+  const saved = await read(page);
+  expect(saved.submission).toEqual(p.submission); expect(saved.graph).toEqual(p.graph);
+  await page.reload();
+  expect((await read(page)).part2Submission.text).toBe(HOUSING_MACRO_MEMO);
+});
 for (const [filename, expected] of realFiles) test(`instructor example uploads at Meso: ${filename}`, async ({ page }) => {
   test.skip(!process.env.SYSTEMS_MAPPING_REAL_MEMOS_DIR, 'Local instructor examples are intentionally excluded from the repository.');
   const p = localProject(); await openProject(page, p);

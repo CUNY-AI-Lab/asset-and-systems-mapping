@@ -321,6 +321,7 @@ function handleCompositeKey(event, values, current, onChange) {
 }
 
 function invalidateSubmissionDerived(draft, field, value) {
+  if (field === 'text' && isPart2(draft.activeScale)) beginPart2(draft);
   const textChanged = field === 'text' && activeSubmission(draft).text !== value;
   activeSubmission(draft)[field] = value;
   if (!textChanged) return;
