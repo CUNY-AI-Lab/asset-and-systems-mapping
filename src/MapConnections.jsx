@@ -12,7 +12,7 @@ export default function MapConnections({ nodeId, index, onFollow, onConnect, onS
     groups.get(item.group).push({ ...item, key: link.id, scope: link.kind === 'condition' ? { source: link.source, target: link.target } : null });
   });
   return <>
-    {node && onConnect && <button className="map-item-action node-connect-action" type="button" onClick={() => onConnect(nodeId)}>Connect from {node.label}</button>}
+    {node && onConnect && <button className="map-item-action node-connect-action" type="button" onClick={() => onConnect(nodeId)}>Connect from <em>{node.label}</em></button>}
     {links.length > 0 && <details className="map-connections" key={nodeId}>
     <summary>{compact ? 'Connected items' : <>Connections across map <span>{links.length}</span></>}</summary>
     <div className="map-connections__body">

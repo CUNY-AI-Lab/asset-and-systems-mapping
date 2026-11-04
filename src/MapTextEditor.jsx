@@ -10,6 +10,19 @@ export default function MapTextEditor({ label, value, maxLength, options, valida
   const hasDraft = draft !== value;
   useEffect(() => { setDraft(value); setError(''); }, [value]);
   useLayoutEffect(() => {
+    const field = fieldRef.current;
+    if (!field || options) return;
+    const fit = () => { field.style.height = 'auto'; field.style.height = `${Math.max(44, field.scrollHeight + 2)}px`; };
+    fit();
+    let width = field.getBoundingClientRect().width;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      const nextWidth = field.getBoundingClientRect().width;
+      if (nextWidth !== width) { width = nextWidth; fit(); }
+    });
+    observer?.observe(field);
+    return () => observer?.disconnect();
+  }, [draft, options]);
+  useLayoutEffect(() => {
     // Keep explicit Save / Cancel reachable in the compact Notebook without
     // changing the map's size, camera, selection or keyboard focus.
     const actions = actionsRef.current;
@@ -40,7 +53,7 @@ export default function MapTextEditor({ label, value, maxLength, options, valida
   };
   return <div className="map-text-editor">
     <label className="field"><span className="field__label">{label}</span>
-      {options ? <select {...fieldProps}>{[...new Set([value, ...options])].map(option => <option key={option}>{option}</option>)}</select> : <input {...fieldProps} />}
+      {options ? <select {...fieldProps}>{[...new Set([value, ...options])].map(option => <option key={option}>{option}</option>)}</select> : <textarea className="map-label-input" rows="1" {...fieldProps} />}
     </label>
     {error && <p id={errorId} className="map-text-editor__error" role="alert">{error}</p>}
     {hasDraft && <div ref={actionsRef} className="map-text-editor__actions">

@@ -123,7 +123,7 @@ const SCALE_CONTENT = {
     output: 'Return an empty nodes array and relationship connections with source, target, verb, rationale, and optional relationshipProcess details supported by the memo. Both endpoints must be different exact IDs of supplied Micro nodes.',
   },
   exosphere: {
-    purpose: "Build the Macrosystem from Part 2 while retaining Part 1 and the complete local map. Identify larger-scale institutions, policies, resources, histories and conditions that the memo supports.",
+    purpose: "Build the Macrosystem from Part 2 while retaining Part 1 and the complete local map. Identify broader policies, resource arrangements, histories and conditions that the memo supports. Use conceptual headings rather than proper-named organizations or offices.",
     evidence: "Ground every heading in the memo. Preserve population, place, dates and uncertainty. Mark inferred effects as questions to investigate; a citation alone does not make an entity a map participant.",
     privacy: 'Use public or appropriately shared evidence. Do not include confidential, identifying, or nonpublic community information.',
     scale_rubric: "Exo adds larger-scale nodes to the Macrosystem sphere. Keep all existing Micro nodes and Meso relationships. Relationship construction follows at Macro.",

@@ -104,6 +104,17 @@
 .is-reading-view .graph-edge .edge-line { stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)) !important; stroke-width: .95 !important; }
 .is-reading-view #arrowhead path { fill: none; stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)); stroke-width: 1; stroke-linejoin: round; }
 .is-reading-view .edge-selection-halo { display: none; }
+.is-reading-view .graph-node { --node-color:#2566a0; }
+.is-reading-view .graph-node:is([data-node-type="organization"],[data-node-type="institution"],[data-node-type="agency"],[data-node-type="service"],[data-node-type="place"],[data-node-type="setting"]) { --node-color:#18746b; }
+.is-reading-view .graph-node:is([data-node-type="activity"],[data-node-type="object"],[data-node-type="resource"],[data-node-type="dataset"],[data-node-type="event"]) { --node-color:#94651f; }
+.is-reading-view .graph-node:is(.graph-node--exosphere,.graph-node--macrosphere) { --node-color:#805491; }
+.is-reading-view .graph-node .node-card { fill:color-mix(in srgb,var(--node-color) 10%,var(--surface)) !important; stroke:var(--node-color) !important; stroke-width:1.1; }
+.node-color-key { list-style:none; padding:0; display:grid; gap:8px; }
+.node-color-key li { --node-color:#2566a0; display:flex; align-items:center; gap:8px; }
+.node-color-key [data-node-color="settings"] { --node-color:#18746b; }
+.node-color-key [data-node-color="resources"] { --node-color:#94651f; }
+.node-color-key [data-node-color="macro"] { --node-color:#805491; }
+.node-color-key li::before { content:""; width:14px; height:14px; flex:none; border:1px solid var(--node-color); background:color-mix(in srgb,var(--node-color) 12%,var(--surface)); border-radius:3px; }
 .is-reading-view.has-reading-selection .graph-edge:not(.is-reading-active) { opacity: .18; }
 .is-reading-view .graph-edge.is-reading-active .edge-line { stroke: var(--micro) !important; stroke-width: 1.4 !important; }
 .is-reading-view .graph-edge[data-edge-scale="macrosphere"] .edge-line { stroke: var(--exosphere) !important; stroke-dasharray: 7 4; stroke-width: 1.15 !important; }
@@ -121,4 +132,5 @@
   .is-reading-view .graph-edge .edge-line { stroke: CanvasText !important; }
   .is-reading-view .graph-edge.is-reading-active .edge-line { stroke: Highlight !important; }
   .is-reading-view #arrowhead path { stroke: CanvasText; }
+  .is-reading-view .graph-node .node-card { fill:Canvas !important; stroke:CanvasText !important; }
 }

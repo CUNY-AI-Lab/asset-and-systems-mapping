@@ -2,7 +2,7 @@ import { relationshipDescription } from './relationship-process.js';
 // Reconstruct project-specific learning from durable, explicit student choices.
 // Automatic inclusion is not approval; model output remains an inference.
 export const STUDENT_JUDGMENT_LIMIT = 24;
-export const GUIDANCE_CONTRACT_VERSION = 'two-memos-two-spheres-v6';
+export const GUIDANCE_CONTRACT_VERSION = 'two-memos-two-spheres-v7';
 
 export function studentJudgments(project) {
   const live = new Map([...project.graph.nodes, ...project.graph.edges].map((item) => [item.id, item]));
@@ -43,6 +43,7 @@ export const STUDENT_JUDGMENT_INSTRUCTION = [
   'Use those choices to tailor the next suggestions to this project. Preserve the student\'s revised names and focus; do not suggest removed items again or silently add a deferred item. Address a deferred question in guidance only when the memo supplies new evidence. Do not mistake automatic inclusion for agreement.',
   'Suggest the next useful addition instead of re-presenting settled work. Do not infer personal traits or universal preferences from a single choice. A student\'s preference never substitutes for evidence or changes a scale boundary.',
   'NODE LABEL CHECK: identify the referent, then name it. The label is a noun phrase, not a subject plus predicate. For example, from "A neighbor brings the resident\'s mail upstairs" label the actors "Neighbor" and "Resident"; place "brings mail" in the connection and the remaining detail in evidence. From "The agency cut weekly allocations" label the supported agency, never "The agency cut weekly allocations". Resolve "he" to its unambiguous referent; never use "he", a weekday, a time, an entire clause, or a narrative sentence as a node.',
-  'Preserve official names and meaningful role names. Do not shorten a statement by chopping off words to fabricate a name. If the evidence cannot resolve an actor or setting, ask one concise question in guidance. Meso connects the existing Micro nodes. Exo node labels name larger-scale headings; Macro connects those headings to the carried map, including groups of local relationships.',
+  'Preserve official names and meaningful role names for Micro actors and settings. Do not shorten a statement by chopping off words to fabricate a name. If the evidence cannot resolve an actor or setting, ask one concise question in guidance. Meso connects the existing Micro nodes. Exo node labels name broader conditions, policies, resource arrangements, histories, beliefs or structures; Macro connects those headings to the carried map, including groups of local relationships.',
+  'MACROSYSTEM HEADING CHECK: name the broader pattern or condition, not a proper-named person, organization or office. For example, use "School counseling allocation policy" or "District support coordination" only when the memo supports that policy or structure; retain the named organization in evidence and the local map where appropriate. Do not invent a general condition from an organization name alone. Ask what broader policy or condition is supported when the memo names only an organization. Keep existing accepted records intact; propose any reframing for the student to review.',
   'Keep each guidance point to one short independent clause with no terminal period. Do not repeat navigation instructions or explain the interface.',
 ].join('\n');

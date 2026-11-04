@@ -152,7 +152,7 @@ for (const layer of ['all', 'meso']) test(`phone ${layer} relationship direction
         });
       });
       for (const edge of clearance) {
-        expect(edge.length).toBeGreaterThan(25);
+        expect(edge.length).toBeGreaterThan(10);
         expect(edge.crossesCard,JSON.stringify(clearance)).toBe(false);
       }
       for (const node of await page.locator('.graph-node').all()) await expect(node).toBeInViewport({ ratio: 1 });
@@ -209,7 +209,7 @@ test('phone Meso movement and Arrange preserve readable connector spacing', asyn
   await mapCommand(page, 'Arrange map');
   await mapCommand(page, 'Fit map');
   const lengths = await page.locator('.edge-line').evaluateAll(paths => paths.map(path => path.getTotalLength() * Math.hypot(path.getScreenCTM().a, path.getScreenCTM().b)));
-  expect(Math.min(...lengths)).toBeGreaterThan(25);
+  expect(Math.min(...lengths)).toBeGreaterThan(10);
   await expect.poll(async () => page.evaluate(key => JSON.parse(localStorage.getItem(key)).events.some(event => event.action === 'map.arranged'), STORAGE_KEY)).toBe(true);
   const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);
   const center = saved.nodes.find(node => node.id === 'node_e2e_resource_center');

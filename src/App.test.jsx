@@ -5202,10 +5202,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(renderedNode).not.toHaveTextContent('…');
     expect(renderedNode.querySelector('.node-scale-glyph')).toBeNull();
     expect(Number(card.getAttribute('height'))).toBeGreaterThan(phone ? 82 : 72);
-    expect(within(inspector).getByText(longNodeLabel, { selector: 'em' })).toHaveTextContent(longNodeLabel);
+    expect(within(inspector).getByText(longNodeLabel, { selector: '.item-editor-title p' })).toHaveTextContent(longNodeLabel);
 
     openEdgeInspector(incidentEdge.id);
-    expect(within(inspector).getByText(new RegExp(longEdgeLabel), { selector: 'em' })).toHaveTextContent(longEdgeLabel);
+    expect(within(inspector).getByText(new RegExp(longEdgeLabel), { selector: '.item-editor-title p' })).toHaveTextContent(longEdgeLabel);
     const renderedEdge = document.querySelector(`.graph-edge-label[data-edge-id="${incidentEdge.id}"]`);
     const edgeBackground = renderedEdge.querySelector('.edge-label-bg');
     const edgeText = renderedEdge.querySelector('.edge-label');
@@ -5213,7 +5213,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(svgTextLines(edgeText).join('')).toBe(longEdgeLabel);
     expect(renderedEdge).not.toHaveTextContent('…');
     expect(Number(edgeBackground.getAttribute('height'))).toBeGreaterThan(phone ? 44 : 24);
-    expect(within(inspector).getByText(new RegExp(longEdgeLabel), { selector: 'em' })).not.toHaveTextContent('…');
+    expect(within(inspector).getByText(new RegExp(longEdgeLabel), { selector: '.item-editor-title p' })).not.toHaveTextContent('…');
   });
 
   it('preserves every character in maximum-length unbroken map labels', async () => {
@@ -6548,10 +6548,10 @@ Overall, the posting history documents a working student repeatedly turning to R
       const unknownLine = document.querySelector('[data-graph-id="meeting-edge"] .edge-line');
       expect(unknownLine).not.toHaveAttribute('marker-start');
       expect(unknownLine).not.toHaveAttribute('marker-end');
-      expect(document.querySelector('.item-editor-title em')).toHaveTextContent('direction not yet known');
+      expect(document.querySelector('.item-editor-title p')).toHaveTextContent('direction not yet known');
       expect(screen.getByRole('combobox', { name: 'Arrow direction', exact: true })).toHaveValue('not yet known');
       fireEvent.change(screen.getByRole('combobox', { name: 'Arrow direction', exact: true }), { target: { value: 'target to source' } });
-      expect(document.querySelector('.item-editor-title em')).toHaveTextContent(`${target.label} talks with ${source.label}`);
+      expect(document.querySelector('.item-editor-title p')).toHaveTextContent(`${target.label} talks with ${source.label}`);
       await waitFor(() => expect(storedProject().graph.edges[0].relationshipProcess.direction).toBe('target to source'));
       const saved = parseProject(serializeProject(storedProject()));
       cleanup();

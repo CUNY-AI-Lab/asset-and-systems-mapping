@@ -3603,7 +3603,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       const delta = viewDelta(event, true);
       const rawX = mapMode === 'ecology' ? interaction.originX + delta.x : clamp(Math.round(interaction.originX + delta.x), PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
       const rawY = mapMode === 'ecology' ? interaction.originY + delta.y : clamp(Math.round(interaction.originY + delta.y), PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
-      const constrained = mapMode === 'ecology' && !retainedPlacement
+      const constrained = !readingMode && mapMode === 'ecology' && !retainedPlacement
         ? constrainToEcologyBand(interaction.node, rawX, rawY, mapNodeGeometry(interaction.node.label, phoneLayout), phoneLayout, nodes.length, interactionBands)
         : { x: rawX, y: rawY };
       interaction.latestX = constrained.x;
@@ -3720,7 +3720,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     const geometry = mapNodeGeometry(node.label, phoneLayout);
     const rawX = mapMode === 'ecology' ? node.x + dx * step : clamp(node.x + dx * step, PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
     const rawY = mapMode === 'ecology' ? node.y + dy * step : clamp(node.y + dy * step, PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax);
-    const { x, y } = mapMode === 'ecology' && !retainedPlacement ? constrainToEcologyBand(node, rawX, rawY, geometry, phoneLayout, nodes.length, interactionBands) : { x: rawX, y: rawY };
+    const { x, y } = !readingMode && mapMode === 'ecology' && !retainedPlacement ? constrainToEcologyBand(node, rawX, rawY, geometry, phoneLayout, nodes.length, interactionBands) : { x: rawX, y: rawY };
     onSelect('node', node.id, false);
     onMoveNode(node.id, x, y, 'keyboard');
     onAnnounce(`${node.label} moved to x ${x}, y ${y}.`);
@@ -3984,7 +3984,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         const microContextState = node.scale === 'micro'
           ? `, ${FOCAL_PARTICIPATION_LABELS[node.focalParticipation || 'unclear'] || 'Focal participation unclear'}, ${(node.settingNodeIds || []).length} immediate ${(node.settingNodeIds || []).length === 1 ? 'setting' : 'settings'}`
           : '';
-        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale}, ${evidenceState}${scopeState}${microContextState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} aria-pressed={selected} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${node.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => keyboardNode(event, node)}>
+        return <g key={node.id} data-graph-id={node.id} data-full-label={node.label} data-node-type={node.type} role="button" tabIndex="0" aria-label={`${node.label}, ${node.type}, ${SCALES[node.scale]?.label || node.scale}, ${evidenceState}${scopeState}${microContextState}`} aria-keyshortcuts={detailMode ? 'Enter Space' : 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'} aria-pressed={selected} className={`graph-node graph-node--${node.scale} graph-node--${stateClass(node.claimState)} ${node.visualMuted ? 'is-muted' : ''} ${node.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} transform={`translate(${position.x} ${position.y})`} onPointerDown={(event) => beginNode(event, node)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => keyboardNode(event, node)}>
           {selected && <rect className="node-selection-ring" x={geometry.ringX} y={geometry.ringY} width={geometry.ringWidth} height={geometry.ringHeight} rx={geometry.ringRadius} />}
           <rect className="node-card" x={geometry.cardX} y={geometry.cardY} width={geometry.cardWidth} height={geometry.cardHeight} rx={geometry.cardRadius} />
           <text className="node-label" style={{ fontSize: geometry.fontSize, fontFamily: '"Source Sans 3 Variable", "Source Sans 3", sans-serif' }}>{geometry.lines.map((line, lineIndex) => <tspan key={`${node.id}-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
@@ -4037,7 +4037,7 @@ function MapLegend() {
       <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Larger-scale institutions, resources, policies and conditions added to the local map.</dd></div>
       <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Relationships among larger-scale nodes and connections to the local map.</dd></div>
     <div><dt><span aria-hidden="true">◇</span> Direction varies</dt><dd>No fixed arrow direction is asserted.</dd></div><div><dt><span aria-hidden="true">?</span> Direction unknown</dt><dd>Direction has not been established.</dd></div></dl></section>
-    <section><h3>How to read this map</h3><ul className="map-conventions">
+    <section><h3>Node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions and policies</li></ul><h3>How to read this map</h3><ul className="map-conventions">
       <li><strong>Micro</strong><span>People, resources, and immediate settings</span></li>
       <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording.</span></li>
       <li><strong>Draft</strong><span>A dotted line previews an unfinished relationship.</span></li>
@@ -4411,7 +4411,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const manualPlacementKey = JSON.stringify(project.layout || {});
   const pinnedNodeIds = new Set(project.layout?.manualNodeIds || (project.layout?.phoneOverview === 'preserve' ? visibleLayoutNodes.map(node => node.id) : []));
   const canvasAspect = GRAPH_WIDTH / Math.max(240,phoneViewBox.height);
-  const readableLayoutKey = `${Boolean(notebook)}:${phoneLayout}:${canvasAspect.toFixed(1)}:${manualPlacementKey}:${visibleLayoutNodes.map(node => `${node.id}:${node.scale}${pinnedNodeIds.has(node.id) ? `:${node.x}:${node.y}` : ''}`).join('|')}:${layoutGraph.edges.map(edge => `${edge.id}:${edge.source}:${edge.target}:${edge.scale}`).join('|')}`;
+  const readableLayoutKey = `${Boolean(notebook)}:${phoneLayout}:${canvasAspect.toFixed(1)}:${manualPlacementKey}:${visibleLayoutNodes.map(node => `${node.id}:${node.scale}${pinnedNodeIds.has(node.id) ? `:${node.x}:${node.y}` : ''}`).join('|')}`;
   const readablePositions = useMemo(() => notebook ? studentMapPositions(visibleLayoutNodes, layoutGraph.edges, new Map(visibleLayoutNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect}) : null,
     // Text and annotation edits retain the current placement. New topology,
     // an explicit arrangement or a deliberate drag can establish a new one.
@@ -4834,7 +4834,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       nodes = scaleNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     if (notebook) {
-      const positions = studentMapPositions(scaleNodes, scaleEdges, new Map(scaleNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
+      const positions = scaleNodes.every(node=>readablePositions?.has(node.id)) ? readablePositions : studentMapPositions(scaleNodes, scaleEdges, new Map(scaleNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
       nodes = scaleNodes.map(node => ({ ...node, ...positions.get(node.id) }));
     }
     setRingExpansion(1);
@@ -4842,7 +4842,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setMapViewport(readingViewport(nodes.length ? nodes : project.graph.nodes, visibleScale, fullBounds));
     setAnnouncement('Full map shown.');
     window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
-  }, [automaticPositions, innerMap, interactionEcologyBands, Boolean(notebook), phoneLayout, project.graph.nodes, project.layout, readingViewport, scaleEdges, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale, canvasAspect]);
+  }, [automaticPositions, innerMap, interactionEcologyBands, Boolean(notebook), phoneLayout, project.graph.nodes, project.layout, readingViewport, scaleEdges, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale, canvasAspect, readablePositions]);
   const changeVisibleScale = (nextScale) => {
     phoneOverviewViewportKeyRef.current = '';
     setConnecting(false); setConnectionSource(null); setAddMode(null);
@@ -4868,7 +4868,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       nextNodes = nextNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     if (notebook) {
-      const positions = studentMapPositions(nextNodes, nextEdges, new Map(nextNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
+      const positions = nextNodes.every(node=>readablePositions?.has(node.id)) ? readablePositions : studentMapPositions(nextNodes, nextEdges, new Map(nextNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
       nextNodes = nextNodes.map(node => ({ ...node, ...positions.get(node.id) }));
     }
     setVisibleScale(nextScale);
@@ -4967,7 +4967,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     preserveCamera();
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     const displayedNode = displayedNodes.find((node) => node.id === id);
-    const movementMode = mapMode === 'ecology' && retainedEcologyBoundaries(displayedNodes, visibleEdges, phoneLayout, interactionEcologyBands) ? 'network' : mapMode;
+    const movementMode = notebook ? 'network' : mapMode === 'ecology' && retainedEcologyBoundaries(displayedNodes, visibleEdges, phoneLayout, interactionEcologyBands) ? 'network' : mapMode;
     const safePosition = displayedNode
       ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, movementMode, interactionEcologyBands, Boolean(notebook))
       : { x, y };
@@ -5529,7 +5529,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
         {(!notebook || panelMode === 'suggestions') && <MemoDrawer project={project} update={update} toast={toast} captureImportScope={captureImportScope} defaultOpen={isPart2(project.activeScale) && !activeSubmission(project).text.trim()} onRequestRestart={onRequestRestart} />}
         {panelContent ? <div className="work-panel__body">{notebook && panelMode === 'review' ? React.cloneElement(panel.content, { savedMapNote: <SavedMapNote key={project.id} project={project}><AnnotationField annotationId={project.mapAnnotation.id} label="Map note" value={project.mapAnnotation.text} onDraftValue={(text) => stageAnnotationDraft(project.mapAnnotation.id, text)} {...annotationProps} /></SavedMapNote> }) : panel.content}</div> : <>
         <div className={`inspector__head${!addMode && (selectedNode || selectedEdge) ? ' inspector__head--edit' : ''}`}>
-          {!addMode && (selectedNode || selectedEdge) ? <div className="item-editor-title"><h2>Edit</h2><p><em>{selectedNode?.label || relationshipDescription(selectedEdge)}</em></p></div> : <h2>{addMode === 'edge' && relationshipSource && relationshipTarget
+          {!addMode && (selectedNode || selectedEdge) ? <div className="item-editor-title"><h2>Edit</h2><p>{selectedNode?.label || relationshipDescription(selectedEdge)}</p></div> : <h2>{addMode === 'edge' && relationshipSource && relationshipTarget
             ? `${relationshipSource.label} and ${relationshipTarget.label}`
             : selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Map details')}</h2>}
           <div className="inspector__actions">
@@ -5545,7 +5545,8 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
         {addMode === 'node' && <div className="add-form">
           <h3>{project.activeScale === 'meso' ? 'Add a missing Micro item' : 'New node'}</h3>
           {project.activeScale === 'meso' && <p>Add a person, group, resource, or setting. It joins your Micro map and can be connected here in Meso.</p>}
-          <Field label="Label"><input maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
+          {isPart2(project.activeScale) && <p>Name a broader condition or policy, such as counseling allocation, rather than a named organization. Keep the specific source in Evidence.</p>}
+          <Field label="Label"><textarea className="map-label-input" rows="1" maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale)).map((type) => <option key={type}>{type}</option>)}</select></Field>
             <Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => {

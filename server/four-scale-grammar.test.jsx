@@ -25,6 +25,8 @@ async function setup(scale, output, connections = []) {
 it('Exo proposes a larger-scale node without requiring a premature relationship', async () => {
  const output = review('exosphere'); const { evaluate, run } = await setup('exosphere', output); const response = await evaluate();
  expect(response.status).toBe(201); const { evaluation } = await response.json(); expect(evaluation.review).toEqual(output); expect(run).toHaveBeenCalledTimes(1);
+ expect(run.mock.calls[0][0].systemPrompt).toContain('MACROSYSTEM HEADING CHECK');
+ expect(run.mock.calls[0][0].systemPrompt).toContain('not a proper-named person, organization or office');
  const schema = memoResponseSchema('exosphere', carried); expect(schema.properties.nodes.maxItems).toBe(6); expect(schema.properties.connections.maxItems).toBe(0);
 });
 it('Macro accepts larger-to-larger and larger-to-local exact-ID relationships', async () => {

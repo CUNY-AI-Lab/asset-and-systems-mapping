@@ -239,7 +239,7 @@ describe('map accessibility', () => {
     expect(within(panel).getByRole('textbox', { name: 'Interpretation' })).not.toHaveAttribute('placeholder');
     expect(within(panel).getByText('What does this node help explain? What is still uncertain?')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Edit' })).toBeVisible();
-    expect(document.querySelector('.item-editor-title em')).toHaveTextContent('Rosa');
+    expect(document.querySelector('.item-editor-title p')).toHaveTextContent('Rosa');
     expect(screen.getByRole('button', { name: 'Done' })).toBeVisible();
   });
 

@@ -47,3 +47,15 @@ it('keeps wording on its routed connection and reserves earlier labels',()=>{
   expect(result.leaders.size).toBe(0);expect(intersects(result.bounds.get('ab'),reserved)).toBe(false);
   const join=relationshipAttachment(result,'ab');expect(join).toBeTruthy();expect(join).not.toEqual(anchor);
 });
+
+it('keeps connected local pairs nearby without moving saved manual placements',()=>{
+  const nodes=Array.from({length:12},(_,i)=>({id:`n${i}`,label:'Local participant',scale:'micro',x:i*160,y:200}));
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:140,cardHeight:50}]));
+  const edges=Array.from({length:6},(_,i)=>({id:`e${i}`,source:`n${i}`,target:`n${11-i}`}));
+  const positions=studentMapPositions(nodes,edges,geometry,{aspectRatio:1.8});
+  for(const e of edges){const a=positions.get(e.source),b=positions.get(e.target);expect(Math.hypot(a.x-b.x,a.y-b.y)).toBeLessThan(240);}
+  const saved=nodes.map(n=>({...n,...positions.get(n.id)}));
+  saved[0].x+=30;saved[0].y-=30;
+  const preserved=studentMapPositions(saved,edges,geometry,{manualNodeIds:saved.map(n=>n.id),readingAspect:1.8,aspectRatio:1.8});
+  expect(preserved.get(saved[0].id)).toEqual({x:saved[0].x,y:saved[0].y});
+});

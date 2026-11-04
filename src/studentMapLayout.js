@@ -56,8 +56,27 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
     for(let i=0;i<local.length%rows;i++)counts[middleFirst[i]]++;
     let offset=0;
     const slots=counts.flatMap((count,row)=>Array.from({length:count},(_,column)=>({row,column,count,index:offset++})));
+    // Keep linked local items near each other. Swap items between stable slots
+    // to shorten connections; this never changes deliberately saved placement.
+    const localIds=new Set(local.map(n=>n.id));
+    const links=edges.filter(e=>localIds.has(e.source)&&localIds.has(e.target)&&!e.relationshipIds?.length);
+    if(links.length)local.sort((a,b)=>a.id.localeCompare(b.id));
+    const slotPoints=slots.map(s=>({x:(s.column-(s.count-1)/2)*240,y:s.row*130}));
+    const cost=()=>{
+      const index=new Map(local.map((n,i)=>[n.id,i]));
+      return links.reduce((sum,e)=>{const a=slotPoints[index.get(e.source)],b=slotPoints[index.get(e.target)];return sum+(a.x-b.x)**2+(a.y-b.y)**2;},0);
+    };
+    if(links.length)for(let pass=0;pass<8;pass++) {
+      let improved=false,best=cost();
+      for(let i=0;i<local.length;i++)for(let j=i+1;j<local.length;j++) {
+        [local[i],local[j]]=[local[j],local[i]];
+        const next=cost();
+        if(next<best-1){best=next;improved=true;}else [local[i],local[j]]=[local[j],local[i]];
+      }
+      if(!improved)break;
+    }
     const rowHeights=counts.map((_,row)=>Math.max(...slots.filter(s=>s.row===row).map(s=>geometries.get(local[s.index].id).cardHeight)));
-    const rowGap=phone?32:48;
+    const rowGap=phone?40:48;
     const totalHeight=rowHeights.reduce((sum,h)=>sum+h,0)+rowGap*(rows-1);
     const horizontalGap=phone?40:48;
     const rowWidths=counts.map((count,row)=>slots.filter(s=>s.row===row).reduce((sum,s)=>sum+geometries.get(local[s.index].id).cardWidth,0)+horizontalGap*(count-1));
@@ -108,8 +127,8 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
   const key=JSON.stringify([edges.map(e=>[e.id,e.source,e.target]),nodes.map(n=>[n.id,positions.get(n.id),geometries.get(n.id)]),[...labelGeometries],labelObstacles]);
   if(connectionCache.has(key))return connectionCache.get(key);
   const anchors=new Map(),bounds=new Map(),paths=new Map(),routeKinds=new Map(),occupied=[...labelObstacles];
-  const cards=new Map(nodes.filter(n=>geometries.get(n.id).cardWidth>0).map(n=>[n.id,box(positions.get(n.id),geometries.get(n.id),10)]));
-  const ports=id=>{const p=positions.get(id),g=geometries.get(id);return g.cardWidth===0?[p]:[{x:p.x-g.cardWidth/2-14,y:p.y},{x:p.x+g.cardWidth/2+14,y:p.y},{x:p.x,y:p.y-g.cardHeight/2-14},{x:p.x,y:p.y+g.cardHeight/2+14}];};
+  const cards=new Map(nodes.filter(n=>geometries.get(n.id).cardWidth>0).map(n=>[n.id,box(positions.get(n.id),geometries.get(n.id),4)]));
+  const ports=id=>{const p=positions.get(id),g=geometries.get(id);return g.cardWidth===0?[p]:[{x:p.x-g.cardWidth/2-6,y:p.y},{x:p.x+g.cardWidth/2+6,y:p.y},{x:p.x,y:p.y-g.cardHeight/2-6},{x:p.x,y:p.y+g.cardHeight/2+6}];};
   for(const edge of edges) {
     if(!positions.has(edge.source)||!positions.has(edge.target))continue;
     const label=labelGeometries.get(edge.id)||{width:0,height:0},a=positions.get(edge.source),b=positions.get(edge.target);

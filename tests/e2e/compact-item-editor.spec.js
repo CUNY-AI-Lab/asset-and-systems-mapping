@@ -34,6 +34,13 @@ test('selection preserves Notebook choice and the compact editor preserves saved
   await expect(notebook.getByRole('heading', { name: 'Edit', exact: true })).toBeVisible();
   await expect(notebook.locator('.notebook-controls-host').getByRole('combobox', { name: 'Work level', exact: true })).toHaveCount(1);
   expect(await notebook.locator('.inspector__scroll').locator('input:visible, select:visible, textarea:visible').count()).toBe(2);
+  const labelField = notebook.getByRole('textbox', { name: 'Label', exact: true });
+  const longName = 'Community center for learning, emotional wellbeing and family support';
+  await labelField.fill(longName);
+  await expect.poll(()=>labelField.evaluate(el=>el.scrollHeight<=el.clientHeight+1)).toBe(true);
+  expect(await labelField.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await expect(labelField).toHaveCSS('font-weight','400');
+  await notebook.getByRole('button',{name:'Cancel',exact:true}).click();
   const interpretation = notebook.getByRole('textbox', { name: 'Interpretation', exact: true });
   await expect(interpretation).not.toHaveAttribute('placeholder');
   const text = 'Synthetic observation: the resource center connects people. I need to check who coordinates appointments.';
@@ -90,6 +97,7 @@ test('relationship draft survives navigation and reload; blank wording commits w
   const originalIds = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph.edges.map(e => e.id), STORAGE_KEY);
   await nodes.first().focus(); await nodes.first().press('Enter');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.locator('.node-connect-action em')).toHaveCSS('font-style','italic');
   await page.getByRole('button', { name: /^Connect from / }).click();
   await nodes.nth(1).focus(); await nodes.nth(1).press('Enter');
   await expect(nav.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -159,7 +167,7 @@ test('Micro and Meso dragging uses available canvas after zoom and resize and su
   const open = () => page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
   await open(); const nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
   let id, last;
-  for (const scale of ['micro', 'meso']) {
+  for (const scale of ['micro', 'meso', 'macrosphere']) {
     await page.getByRole('combobox', { name: 'Work level' }).selectOption(scale);
     await nav.getByRole('button', { name: 'Map', exact: true }).click();
     await page.locator('.graph-canvas').focus();
