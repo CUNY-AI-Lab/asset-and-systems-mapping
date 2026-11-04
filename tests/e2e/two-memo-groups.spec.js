@@ -163,6 +163,43 @@ const realFiles = [
   ['Micro Memo.pdf', /Bronx/],
   ['Microsystem EDITED.pdf.pdf', /Johnson|Harlem/],
 ];
+test('retained local coordinates stay inside two fitted spheres after Part 2', async ({ page }, testInfo) => {
+  const p = localProject();
+  p.activeScale = 'macrosphere';
+  p.graph.nodes.forEach((node, index) => { node.x = 120 + index % 3 * 300; node.y = 120 + Math.floor(index / 3) * 180; });
+  p.graph.nodes.push({ ...structuredClone(p.graph.nodes[0]), id: 'retained-policy', label: 'Repair allocation policy', scale: 'exosphere', type: 'policy', x: 1300, y: 360,
+    annotations: { analytical: { id: 'retained-policy-analytical', text: '' }, evidence: { id: 'retained-policy-evidence', text: '' } } });
+  p.layout = { manualNodeIds: p.graph.nodes.map(node => node.id) };
+  parseProject(JSON.stringify(p));
+  const original = structuredClone(p.graph);
+  await openProject(page, p);
+  await showMap(page);
+  await page.locator('.graph-canvas').press('0');
+  await expect(page.locator('.ecology-layer')).toHaveCount(2);
+  const geometry = await page.locator('.graph-canvas').evaluate(svg => {
+    const rings = Object.fromEntries([...svg.querySelectorAll('[data-ecology-layer]')].map(group => {
+      const e = group.querySelector('ellipse');
+      return [group.dataset.ecologyLayer, Object.fromEntries(['cx','cy','rx','ry'].map(key => [key, Number(e.getAttribute(key))]))];
+    }));
+    const outside = [...svg.querySelectorAll('.graph-node')].flatMap(node => {
+      const [x,y] = node.getAttribute('transform').match(/-?[\d.]+/g).map(Number);
+      const card = node.querySelector('.node-card');
+      const left = x + Number(card.getAttribute('x')), top = y + Number(card.getAttribute('y'));
+      const right = left + Number(card.getAttribute('width')), bottom = top + Number(card.getAttribute('height'));
+      const ring = rings[node.classList.contains('graph-node--micro') ? 'micro' : 'exosphere'];
+      return [[left,top],[right,top],[left,bottom],[right,bottom]].some(([px,py]) => ((px-ring.cx)/ring.rx)**2 + ((py-ring.cy)/ring.ry)**2 > 1.001) ? [node.dataset.graphId] : [];
+    });
+    const viewport = svg.getBoundingClientRect();
+    const outer = svg.querySelector('[data-ecology-layer="exosphere"] ellipse').getBoundingClientRect();
+    const overflow = Math.max(viewport.left - outer.left, outer.right - viewport.right, viewport.top - outer.top, outer.bottom - viewport.bottom, 0);
+    return { outside, center: rings.micro.cx, overflow };
+  });
+  expect(geometry.outside).toEqual([]);
+  expect(geometry.center).toBeLessThan(1000);
+  expect(geometry.overflow).toBeLessThanOrEqual(1);
+  expect((await read(page)).graph).toEqual(original);
+  await captureSourceRenderedScreenshot(page, testInfo, 'Retained graph inside fitted two-sphere outlines');
+});
 test('an older project uploading Part 2 from memo entry retains its first memo and map', async ({ page }) => {
   const p = localProject(); p.activeScale = 'exosphere'; p.stage = 0;
   p.levelProgress.exosphere.stage = 0;

@@ -2870,13 +2870,26 @@ function constrainToEcologyBand(node, x, y, geometry, phoneLayout = false, nodeC
   return constrainWithinEcologyBand(node, x, y, geometry, phoneLayout, nodeCount, sharedBands);
 }
 
-function EcologicalLayerBackdrop({ layers, visibleLayer, phoneLayout = false, nodeCount = 0, ringExpansion = 1, nodes = [], positions = new Map(), visibleBounds = null, sharedBands = null, connectionLabelBounds = [] }) {
+function EcologicalLayerBackdrop({ layers, visibleLayer, phoneLayout = false, nodeCount = 0, ringExpansion = 1, nodes = [], edges = [], positions = new Map(), visibleBounds = null, sharedBands = null, connectionLabelBounds = [] }) {
   const available = new Set(layers.filter(scale => scale !== 'meso' && scale !== 'macrosphere'));
   if (layers.some(scale => ['exosphere', 'macrosphere'].includes(scale))) available.add('exosphere');
   const originalBands = sharedBands || ecologyBands(phoneLayout, nodeCount, nodes);
   const bands = { ...originalBands, exosphere: { ...originalBands.exosphere,
     ...(nodes.some(node => node.scale === 'macrosphere') ? { outerRx: originalBands.macrosphere.outerRx, outerRy: originalBands.macrosphere.outerRy } : {}),
   } };
+  const retained = retainedEcologyBoundaries(nodes.map(node => ({ ...node, ...positions.get(node.id) })), edges, phoneLayout, originalBands, ringExpansion);
+  if (retained) return <g className="ecology-layers" aria-hidden="true">
+    {['exosphere', 'micro'].filter(scale => available.has(scale) && retained[scale]).map(scale => {
+      const boundary = retained[scale];
+      const label = scale === 'micro' ? 'Microsystem' : 'Macrosystem';
+      return <g key={scale} data-ecology-layer={scale} className={`ecology-layer ecology-layer--${scale} is-visible`}>
+        <ellipse cx={boundary.cx} cy={boundary.cy} rx={boundary.rx} ry={boundary.ry} />
+        <g className="ecology-layer__label" transform={`translate(${boundary.cx} ${boundary.top + 12})`}>
+          <rect x="-84" y="-18" width="168" height="36" rx="18" /><text y="5">{label}</text>
+        </g>
+      </g>;
+    })}
+  </g>;
   const occupiedBounds = nodes.map((node) => {
     const position = positions.get(node.id);
     return position ? ecologyCardBounds(position, mapNodeGeometry(node.label, phoneLayout), 8) : null;
@@ -3123,18 +3136,43 @@ function sharedMicroBoundary(nodes, edges, phoneLayout = false) {
     ...nodes.map(node => ecologyCardBounds(node, mapNodeGeometry(node.label, phoneLayout), 18)),
     ...focusedEcologyCalloutBounds(relationships, nodes, positions, phoneLayout),
   ];
+  // Meso routes participate even while Micro hides arrows, so moving between
+  // the two levels keeps exactly the same initial boundary.
+  return enclosingMapBoundary(bounds);
+}
+
+function enclosingMapBoundary(bounds) {
   const left = Math.min(...bounds.map(box => box.left));
   const right = Math.max(...bounds.map(box => box.right));
   const top = Math.min(...bounds.map(box => box.top));
   const bottom = Math.max(...bounds.map(box => box.bottom));
   const cx = (left + right) / 2;
   const cy = (top + bottom) / 2;
-  // Every corner of the content rectangle fits inside this one Micro ellipse.
-  // Meso routes participate in the measurement even while Micro hides arrows,
-  // so moving between the two levels keeps exactly the same initial boundary.
+  // Every corner of the content rectangle fits inside the ellipse.
   const rx = Math.max(180, (right - left) / 2 * Math.SQRT2 + 28);
   const ry = Math.max(120, (bottom - top) / 2 * Math.SQRT2 + 36);
   return { cx, cy, rx, ry, left: cx - rx, right: cx + rx, top: cy - ry, bottom: cy + ry };
+}
+
+function retainedEcologyBoundaries(nodes, edges, phoneLayout, bands, expansion = 1) {
+  // Imported and deliberately placed maps keep their coordinates. If those
+  // cards are outside the planned annuli, measure the displayed content rather
+  // than leaving two empty outlines at the original world center.
+  if (!nodes.some(node => !rectangleFitsRing(node, {
+    width: mapNodeGeometry(node.label, phoneLayout).cardWidth,
+    height: mapNodeGeometry(node.label, phoneLayout).cardHeight,
+    center: ECOLOGY_CENTER,
+    band: Object.fromEntries(Object.entries(bands[node.scale]).map(([key, value]) => [key, value * expansion])),
+    boundaryPadding: 0,
+  }))) return null;
+  const micro = sharedMicroBoundary(nodes.filter(node => node.scale === 'micro'), edges, phoneLayout);
+  const positions = new Map(nodes.map(node => [node.id, node]));
+  const bounds = [
+    ...nodes.map(node => ecologyCardBounds(node, mapNodeGeometry(node.label, phoneLayout), 18)),
+    ...focusedEcologyCalloutBounds(edges, nodes, positions, phoneLayout),
+    ...(micro ? [micro] : []),
+  ];
+  return { micro, exosphere: bounds.length ? enclosingMapBoundary(bounds) : null };
 }
 
 function mapNeedsEcologyLayout(nodes, phoneLayout = false, sharedBands = null) {
@@ -3841,7 +3879,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       ))}
     </defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
-      {mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} phoneLayout={phoneLayout} nodeCount={nodes.length} ringExpansion={activeRingExpansion} nodes={nodes} positions={renderedPositions} visibleBounds={visibleLabelBounds} sharedBands={sharedBands} connectionLabelBounds={[...betweenEndpointLayout.bounds.values()]} /> : null}
+      {mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} phoneLayout={phoneLayout} nodeCount={nodes.length} ringExpansion={activeRingExpansion} nodes={nodes} edges={edges} positions={renderedPositions} visibleBounds={visibleLabelBounds} sharedBands={sharedBands} connectionLabelBounds={[...betweenEndpointLayout.bounds.values()]} /> : null}
       {microBoundary && <g className="ecology-layers shared-micro-boundary" aria-hidden="true"><g data-ecology-layer="micro" className="ecology-layer ecology-layer--micro is-visible">
         <ellipse cx={microBoundary.cx} cy={microBoundary.cy} rx={microBoundary.rx} ry={microBoundary.ry} />
         <g className="ecology-layer__label" transform={`translate(${microBoundary.cx} ${microBoundary.top + 12})`}><rect x="-84" y="-18" width="168" height="36" rx="18" /><text y="5">Microsystem</text></g>
@@ -4368,6 +4406,8 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     const bounds = focusedEcologyCalloutBounds(visibleEdges, displayedNodes, positions, phoneLayout);
     if (microBoundary && !notebook) bounds.push(microBoundary);
     if (mapMode !== 'ecology' || phoneRelationshipDetail || focusedEcologyDetail) return bounds;
+    const retained = retainedEcologyBoundaries(displayedNodes, visibleEdges, phoneLayout, sharedEcologyBands);
+    if (retained) return [...bounds, ...Object.values(retained).filter(Boolean).map(boundary => ({ ...boundary, top: boundary.top - 8 }))];
     const occupied = displayedNodes.map((node) => ecologyCardBounds(
       positions.get(node.id),
       mapNodeGeometry(node.label, phoneLayout),
