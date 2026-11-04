@@ -265,7 +265,7 @@ async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
         const points = pointsIn(corners(box), item, card, itemName);
         if (points?.some((point) => point.x < cardBox.x - .01 || point.x > cardBox.x + cardBox.width + .01
           || point.y < cardBox.y - .01 || point.y > cardBox.y + cardBox.height + .01)) {
-          issues.push(`${itemName} leaves its node card`);
+          issues.push(`${itemName} leaves its node card: ${JSON.stringify({ points, card: { x: cardBox.x, y: cardBox.y, width: cardBox.width, height: cardBox.height } })}`);
         }
       }
       // Detail/focus views deliberately omit ring backdrops; text containment

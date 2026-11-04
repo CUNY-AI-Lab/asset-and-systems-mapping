@@ -1230,8 +1230,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       if (node.type === 'person' && /^(?:adults?|people|persons?|participants?|residents?|children)$/i.test(node.label)) return 1;
       return { setting: 12, place: 11, institution: 10, organization: 9, service: 8, agency: 8, person: 7, role: 6, resource: 5, object: 4, activity: 3, group: 2, family: 1 }[node.type] || 0;
     }
-    if (activeScale === 'exosphere') return Number(isNamedInstitutionLabel(node.label)) * 20 + ({ institution: 8, agency: 7, organization: 6, service: 5, policy: 4, resource: 3 }[node.type] || 0);
-    if (activeScale === 'macrosphere') return { law: 8, policy: 7, 'economic condition': 6, history: 5, belief: 4, culture: 3, structure: 2 }[node.type] || 0;
+    if (activeScale === 'exosphere' || activeScale === 'macrosphere') return { law: 8, policy: 7, 'economic condition': 6, history: 5, belief: 4, culture: 3, structure: 2 }[node.type] || 0;
     return 0;
   };
   const orderedNodes = [...nodes].sort((left, right) => (
@@ -1247,7 +1246,7 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       .filter((node) => !carriedNodeByLabel.has(node.label.trim().toLocaleLowerCase()))
       .filter((node) => isNodeTypeAllowedAtScale(node.type, activeScale))
       .filter((node) => activeScale !== 'micro' || (isDiscreteMicroNodeLabel(node.label) && !NODE_ONLY_IGNORED_LABEL.test(node.label)))
-      .filter((node) => activeScale !== 'macrosphere' || (!labelRepeatsInstitution(node.label, carriedNodes) && !isObviousLowerLevelMacroLabel(node.label)))
+      .filter((node) => !['exosphere', 'macrosphere'].includes(activeScale) || (!isNamedInstitutionLabel(node.label) && !isObviousLowerLevelMacroLabel(node.label)))
       .map((node) => ({
         label: node.label,
         type: node.type,
@@ -1325,11 +1324,10 @@ export function deterministicMemoReview(submission, activeScale = 'micro', { car
       point: truncateCollapsedText(`${connection.sourceLabel} ${connection.verb} ${connection.targetLabel}`, PROJECT_LIMITS.memoGuidanceText),
       ...(connection.rationale ? { evidenceExcerpt: truncateCollapsedText(connection.rationale, PROJECT_LIMITS.memoGuidanceEvidence) } : {}),
       }));
-  // The outer levels are produced by elicitation, not extraction: the memo
-  // rarely names the institutions and structures behind it, so the review
-  // walks the standard categories the way an eco-map instrument does.
+  // This local reader cannot infer broader conditions from an agency name.
+  // Ask for the missing condition rather than proposing an agency as a heading.
   if (activeScale === 'exosphere') {
-    guidance.push({ point: 'Identify outside decisions affecting mapped settings' });
+    guidance.push({ point: 'Identify a policy, belief or broader condition affecting local relationships' });
   }
   if (activeScale === 'macrosphere') {
     guidance.push({ point: 'Connect broader conditions to affected map items' });

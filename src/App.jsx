@@ -2035,7 +2035,9 @@ export function mapNodeGeometry(label, phoneLayout = false) {
     cardX: -(cardWidth / 2),
     cardY: -(cardHeight / 2),
     cardRadius: phoneLayout ? 13 : 8,
-    labelStartY: -((lines.length - 1) * lineHeight) / 2 + (phoneLayout ? 8 : 4),
+    // Center Source Sans's ascender/descender box, leaving equal room for
+    // glyph bounds above and below the baseline at fractional zoom levels.
+    labelStartY: -((lines.length - 1) * lineHeight) / 2 + fontSize * .33,
     ringX: -(cardWidth / 2) - (phoneLayout ? 10 : 6),
     ringY: -(cardHeight / 2) - (phoneLayout ? 8 : 6),
     ringWidth: cardWidth + (phoneLayout ? 20 : 12),

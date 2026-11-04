@@ -281,7 +281,7 @@ describe('mapping domain', () => {
     ]));
   });
 
-  it('places the same institution by participation at Micro or an outside decision pathway at Exo', () => {
+  it('places direct institutions at Micro without turning outside agency names into broader headings', () => {
     const project = createDefaultProject();
     const directReview = deterministicMemoReview({
       ...project.submission,
@@ -313,9 +313,7 @@ describe('mapping domain', () => {
       ...project.submission,
       text: 'BMCC sets rules for BMCC classroom.',
     }, 'exosphere', { carriedNodes: [carriedClassroom] });
-    expect(outsideDecisionReview.nodes).toContainEqual(expect.objectContaining({
-      label: 'BMCC', type: 'institution', scale: 'exosphere',
-    }));
+    expect(outsideDecisionReview.nodes).toEqual([]);
     expect(outsideDecisionReview.connections).toEqual([]);
 
   });
@@ -722,10 +720,17 @@ describe('mapping domain', () => {
     expect(() => validateProject(project)).toThrow(/belongs at Micro/);
   });
 
-  it('identifies Exo nodes before requiring relationships', () => {
+  it('asks for a broader condition when the memo only names an outside agency', () => {
     const review = deterministicMemoReview({ ...createDefaultProject().submission, text: 'New York City Education Department funds School.' }, 'exosphere', { carriedNodes: [{ id: 'school', label: 'School', type: 'setting', scale: 'micro' }] });
     expect(review.connections).toEqual([]);
-    expect(review.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ label: 'New York City Education Department', scale: 'exosphere', basis: 'memo' })]));
+    expect(review.nodes).toEqual([]);
+    expect(review.guidance).toContainEqual({ point: 'Identify a policy, belief or broader condition affecting local relationships' });
+  });
+
+  it('retains memo-supported conceptual headings beside named-agency evidence', () => {
+    const review = deterministicMemoReview({ ...createDefaultProject().submission, text: 'New York City Education Department funds School. High housing costs constrain School.' }, 'exosphere');
+    expect(review.nodes).toEqual([expect.objectContaining({ label: 'High Housing Costs', type: 'economic condition', scale: 'exosphere', basis: 'memo' })]);
+    expect(review.connections).toEqual([]);
   });
 
   it('connects larger and local carried nodes at Macro without replacing them', () => {
