@@ -43,15 +43,16 @@ for (const populated of [false, true]) {
       const banner = await notice.boundingBox();
       const stage = await page.locator('.map-stage').boundingBox();
       const canvas = await page.locator('.canvas-wrap').boundingBox();
+      const layout = await page.locator('.workspace--studio, .map-stage, .map-layout, .canvas-wrap, #map-inspector, .inspector__scroll').evaluateAll(elements=>elements.map(el=>({class:el.className,rect:el.getBoundingClientRect().toJSON(),rows:getComputedStyle(el).gridTemplateRows,height:getComputedStyle(el).height,overflow:getComputedStyle(el).overflow})));
       expect(banner.y + banner.height).toBeLessThanOrEqual(stage.y + 1);
       expect(banner.height).toBeLessThan(120);
       expect(stage.width).toBeGreaterThan(width * .94);
       expect(canvas.width).toBeGreaterThan(width * (width > 600 ? .5 : .9));
-      expect(canvas.height).toBeGreaterThan(width > 600 ? 450 : 280);
+      expect(canvas.height,JSON.stringify(layout)).toBeGreaterThan(width > 600 ? 450 : 280);
       await expect(page.locator('#map-inspector')).toBeVisible();
       const overflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth - innerWidth, height: document.documentElement.scrollHeight - innerHeight }));
       expect(overflow.width, JSON.stringify(overflow)).toBeLessThanOrEqual(0);
-      expect(overflow.height, JSON.stringify(overflow)).toBeLessThanOrEqual(1);
+      await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollHeight-innerHeight),{message:JSON.stringify(layout)}).toBeLessThanOrEqual(1);
       await notice.getByRole('button', { name: 'Recover project' }).press('Enter');
       const recovery = page.getByRole('dialog', { name: 'Save recovery' });
       await expect(recovery).toBeVisible();

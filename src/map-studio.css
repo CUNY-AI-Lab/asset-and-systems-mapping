@@ -99,12 +99,14 @@
    on the connecting line, and only one cross-system group at a time. */
 .is-reading-view .relationship-group-band { display: none; }
 .is-reading-view .is-inactive-group { opacity: 0; pointer-events: none; }
-.is-reading-view .relationship-group-vector { fill: none; stroke: var(--exosphere); stroke-opacity: .65; stroke-width: 1.6; stroke-dasharray: 6 4; }
-.is-reading-view .relationship-group-join { fill: var(--surface); stroke: var(--exosphere); stroke-width: 1.5; }
-.is-reading-view .graph-edge .edge-line { stroke: #64748b; stroke-width: 1.4; }
+.is-reading-view .relationship-group-vector { fill: none; stroke: var(--exosphere); stroke-opacity: .65; stroke-width: .85; stroke-dasharray: 6 4; }
+.is-reading-view .relationship-group-join { fill: var(--surface); stroke: var(--exosphere); stroke-width: 1; }
+.is-reading-view .graph-edge .edge-line { stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)) !important; stroke-width: .95 !important; }
+.is-reading-view #arrowhead path { fill: none; stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)); stroke-width: 1; stroke-linejoin: round; }
+.is-reading-view .edge-selection-halo { display: none; }
 .is-reading-view.has-reading-selection .graph-edge:not(.is-reading-active) { opacity: .18; }
-.is-reading-view .graph-edge.is-reading-active .edge-line { stroke: var(--micro); stroke-width: 2.4; }
-.is-reading-view .graph-edge[data-edge-scale="macrosphere"] .edge-line { stroke: var(--exosphere); stroke-dasharray: 7 4; stroke-width: 2; }
+.is-reading-view .graph-edge.is-reading-active .edge-line { stroke: var(--micro) !important; stroke-width: 1.4 !important; }
+.is-reading-view .graph-edge[data-edge-scale="macrosphere"] .edge-line { stroke: var(--exosphere) !important; stroke-dasharray: 7 4; stroke-width: 1.15 !important; }
 .is-reading-view .edge-label-bg { stroke: none !important; fill: var(--surface); }
 .is-reading-view .edge-label { font-weight: 500 !important; fill: var(--ink); }
 .is-reading-view .graph-edge-label[data-edge-scale="macrosphere"] .edge-label { fill: var(--exosphere); }
@@ -115,3 +117,8 @@
 .is-reading-view .ecology-layer > ellipse { stroke-width: 1.2; stroke-opacity: .7; }
 .map-reading-guide { position: absolute; left: 16px; bottom: 14px; z-index: 4; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); padding: 4px 8px; background: var(--surface); color: var(--muted); font-size: 13px; }
 .map-reading-guide button { border: 0; padding: 8px; min-height: 40px; color: var(--blue); background: transparent; font-size: inherit; text-decoration: underline; }
+@media (forced-colors: active) {
+  .is-reading-view .graph-edge .edge-line { stroke: CanvasText !important; }
+  .is-reading-view .graph-edge.is-reading-active .edge-line { stroke: Highlight !important; }
+  .is-reading-view #arrowhead path { stroke: CanvasText; }
+}

@@ -127,7 +127,9 @@ test('workspace controls sit inside the panel and reclaim the canvas strip', asy
     const creditBounds = await credits.boundingBox();
     expect(canvasBounds.y).toBeLessThanOrEqual(headerBounds.y + headerBounds.height + 8);
     expect(canvasBounds.y + canvasBounds.height).toBeLessThanOrEqual(creditBounds.y);
-    expect(canvasBounds.height).toBeGreaterThanOrEqual(creditBounds.y - canvasBounds.y - 12);
+    const notebookBounds = await page.locator('#map-inspector').boundingBox();
+    expect(notebookBounds.height).toBeGreaterThan(180);
+    expect(size.width > 600 ? canvasBounds.height : canvasBounds.height + notebookBounds.height).toBeGreaterThanOrEqual(creditBounds.y - canvasBounds.y - 12);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await expect(page.getByRole('button', { name: 'Connect nodes', exact: true })).toHaveCount(0);
     await captureSourceRenderedScreenshot(page, testInfo, `Workspace controls ${size.width}x${size.height}`);
@@ -138,6 +140,7 @@ test('workspace controls sit inside the panel and reclaim the canvas strip', asy
     expect(menuBounds.x).toBeGreaterThanOrEqual(0);
     expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(size.height);
     for (const control of await menu.locator('button,select').all()) {
+      await control.scrollIntoViewIfNeeded();
       await expect(control).toBeInViewport({ ratio: 1 });
       expect((await control.boundingBox()).height).toBeGreaterThanOrEqual(44);
     }

@@ -153,7 +153,7 @@ for (const layer of ['all', 'meso']) test(`phone ${layer} relationship direction
       });
       for (const edge of clearance) {
         expect(edge.length).toBeGreaterThan(25);
-        expect(edge.crossesCard).toBe(false);
+        expect(edge.crossesCard,JSON.stringify(clearance)).toBe(false);
       }
       for (const node of await page.locator('.graph-node').all()) await expect(node).toBeInViewport({ ratio: 1 });
     }
@@ -167,13 +167,16 @@ for (const layer of ['all', 'meso']) test(`phone ${layer} relationship direction
     })));
     for (const cue of cues) {
       expect(cue.vectorEffect).toBe('non-scaling-stroke');
-      expect(cue.width).toBeGreaterThanOrEqual(2);
+      expect(cue.width).toBeGreaterThanOrEqual(.9);
+      expect(cue.width).toBeLessThanOrEqual(1.5);
       expect(cue.opacity).toBe('1');
       expect(cue.marker).toBe('url(#arrowhead)');
       expect(Number.isFinite(cue.endX) && Number.isFinite(cue.endY)).toBe(true);
     }
     await expect(page.locator('#arrowhead')).toHaveAttribute('refX', '8');
-    await expect(page.locator('#arrowhead')).toHaveAttribute('markerWidth', '6');
+    await expect(page.locator('#arrowhead')).toHaveAttribute('markerWidth', '9');
+    await expect(page.locator('#arrowhead')).toHaveAttribute('markerUnits', 'userSpaceOnUse');
+    await expect(page.locator('#arrowhead path')).toHaveCSS('fill', 'none');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   const graphAfter = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).graph, STORAGE_KEY);

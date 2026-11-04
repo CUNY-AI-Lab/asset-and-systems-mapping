@@ -116,7 +116,7 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
     const laneLimit=label.width?16:4;
     const ys=[(a.y+b.y)/2,...[...cards.values()].flatMap(r=>[r.top-24,r.bottom+24]).sort((x,y)=>Math.abs(x-(a.y+b.y)/2)-Math.abs(y-(a.y+b.y)/2)).slice(0,laneLimit)];
     const xs=[(a.x+b.x)/2,...[...cards.values()].flatMap(r=>[r.left-24,r.right+24]).sort((x,y)=>Math.abs(x-(a.x+b.x)/2)-Math.abs(y-(a.x+b.x)/2)).slice(0,laneLimit)];
-    if(label.width) {
+    {
       const all=[...cards.values(),...occupied];
       ys.push(Math.min(...all.map(r=>r.top))-label.height/2-20,Math.max(...all.map(r=>r.bottom))+label.height/2+20);
       xs.push(Math.min(...all.map(r=>r.left))-label.width/2-20,Math.max(...all.map(r=>r.right))+label.width/2+20);
@@ -142,6 +142,10 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
     if(label.width || !best || best.score>=1e7)for(const start of starts)for(const end of ends) {
       for(const y of ys)examine([start,{x:start.x,y},{x:end.x,y},end]);
       for(const x of xs)examine([start,{x,y:start.y},{x,y:end.y},end]);
+    }
+    if(best?.score>=1e7)for(const start of starts)for(const end of ends)for(const x of xs)for(const y of ys) {
+      examine([start,{x:start.x,y},{x,y},{x,y:end.y},end]);
+      examine([start,{x,y:start.y},{x,y},{x:end.x,y},end]);
     }
     if(!best)continue;
     anchors.set(edge.id,best.anchor);bounds.set(edge.id,best.area);

@@ -3899,7 +3899,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   }}>
     <title>Interactive systems map</title>
     <defs>
-      <marker id="arrowhead" markerWidth={phoneLayout ? 6 : 8} markerHeight={phoneLayout ? 5 : 6} viewBox="0 0 8 6" refX={phoneLayout ? 8 : 7} refY="3" orient="auto-start-reverse"><path d="M0,0 L8,3 L0,6 z" /></marker>
+      <marker id="arrowhead" markerUnits={readingMode ? 'userSpaceOnUse' : 'strokeWidth'} markerWidth={readingMode ? 9 : phoneLayout ? 6 : 8} markerHeight={readingMode ? 7 : phoneLayout ? 5 : 6} viewBox="0 0 8 6" refX={phoneLayout ? 8 : 7} refY="3" orient="auto-start-reverse"><path d={readingMode ? 'M0.5,0.5 L6.5,3 L0.5,5.5' : 'M0,0 L8,3 L0,6 z'} /></marker>
       {[...microSettingRegionVisuals, ...macroScopeRegionVisuals, ...relationshipGroupVisuals].map(({ maskId, bounds, exclusions }) => (
         <mask key={maskId} id={maskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x={bounds.left - 2} y={bounds.top - 2} width={bounds.right - bounds.left + 4} height={bounds.bottom - bounds.top + 4} style={{ maskType: 'luminance' }}>
           <rect x={bounds.left - 2} y={bounds.top - 2} width={bounds.right - bounds.left + 4} height={bounds.bottom - bounds.top + 4} fill="white" />
@@ -4834,15 +4834,15 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       nodes = scaleNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     if (notebook) {
-      const positions = readableMapPositions(scaleNodes, scaleEdges, phoneLayout, interactionEcologyBands, project.layout);
+      const positions = studentMapPositions(scaleNodes, scaleEdges, new Map(scaleNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
       nodes = scaleNodes.map(node => ({ ...node, ...positions.get(node.id) }));
     }
     setRingExpansion(1);
-    const fullBounds = focusedEcologyCalloutBounds(scaleEdges, nodes, new Map(nodes.map(node => [node.id, { x: node.x, y: node.y }])), phoneLayout);
+    const fullBounds = notebook ? [] : focusedEcologyCalloutBounds(scaleEdges, nodes, new Map(nodes.map(node => [node.id, { x: node.x, y: node.y }])), phoneLayout);
     setMapViewport(readingViewport(nodes.length ? nodes : project.graph.nodes, visibleScale, fullBounds));
     setAnnouncement('Full map shown.');
     window.requestAnimationFrame(() => canvasWrapRef.current?.querySelector('.graph-canvas')?.focus());
-  }, [automaticPositions, innerMap, interactionEcologyBands, Boolean(notebook), phoneLayout, project.graph.nodes, project.layout, readingViewport, scaleEdges, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale]);
+  }, [automaticPositions, innerMap, interactionEcologyBands, Boolean(notebook), phoneLayout, project.graph.nodes, project.layout, readingViewport, scaleEdges, scaleNodes, setAnnouncement, visibleRelationshipBounds, visibleScale, canvasAspect]);
   const changeVisibleScale = (nextScale) => {
     phoneOverviewViewportKeyRef.current = '';
     setConnecting(false); setConnectionSource(null); setAddMode(null);
@@ -4868,7 +4868,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       nextNodes = nextNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     if (notebook) {
-      const positions = readableMapPositions(nextNodes, nextEdges, phoneLayout, sharedEcologyBands, project.layout);
+      const positions = studentMapPositions(nextNodes, nextEdges, new Map(nextNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
       nextNodes = nextNodes.map(node => ({ ...node, ...positions.get(node.id) }));
     }
     setVisibleScale(nextScale);
@@ -4878,7 +4878,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setInspectorTab('map');
     setDrawerOpen(false);
     setRingExpansion(1);
-    const nextLabelBounds = focusedEcologyCalloutBounds(
+    const nextLabelBounds = notebook ? [] : focusedEcologyCalloutBounds(
       nextEdges.map((edge) => ({ ...edge, showLabel: nextScale !== 'all' })),
       nextNodes,
       new Map(nextNodes.map((node) => [node.id, { x: node.x, y: node.y }])),
