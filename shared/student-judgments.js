@@ -2,7 +2,7 @@ import { relationshipDescription } from './relationship-process.js';
 // Reconstruct project-specific learning from durable, explicit student choices.
 // Automatic inclusion is not approval; model output remains an inference.
 export const STUDENT_JUDGMENT_LIMIT = 24;
-export const GUIDANCE_CONTRACT_VERSION = 'two-memos-two-spheres-v7';
+export const GUIDANCE_CONTRACT_VERSION = 'two-memos-two-spheres-v8';
 
 export function studentJudgments(project) {
   const live = new Map([...project.graph.nodes, ...project.graph.edges].map((item) => [item.id, item]));

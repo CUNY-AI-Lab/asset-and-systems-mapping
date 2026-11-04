@@ -979,7 +979,7 @@ function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes,
     if (activeScale === 'micro' && !isDiscreteMicroNodeLabel(label)) throw new MemoReviewSemanticError(`nodes[${index}].label is a reference, action, clause, fragment, or non-entity Micro label.`);
     if (activeScale === 'meso' && (!isMesosystemLabel(label) || node.type !== MESOSYSTEM_NODE_TYPE)) throw new MemoReviewSemanticError(`nodes[${index}] is not a scoped mesosystem.`);
 
-    if (activeScale === 'macrosphere' && (isNamedInstitutionLabel(label) || isObviousLowerLevelMacroLabel(label))) throw new MemoReviewSemanticError(`nodes[${index}].label does not name a broader condition.`);
+    if (['exosphere', 'macrosphere'].includes(activeScale) && (isNamedInstitutionLabel(label) || isObviousLowerLevelMacroLabel(label))) throw new MemoReviewSemanticError(`nodes[${index}].label does not name a broader condition.`);
     if ((activeScale === 'exosphere' || activeScale === 'macrosphere') && !['memo', 'inference'].includes(node.basis)) {
       throw new MemoReviewSemanticError(`nodes[${index}].basis must be exactly memo or inference.`);
     }

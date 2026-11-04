@@ -38,6 +38,18 @@ it('Macro accepts larger-to-larger and larger-to-local exact-ID relationships', 
  const result = (await response.json()).evaluation.review; expect(result.nodes).toEqual([]); expect(result.connections.map(c => [c.source,c.target,c.verb])).toEqual(connections.map(c => [c.source,c.target,c.verb])); expect(result.connections[1].relationshipProcess.direction).toBe('varies');
  const schema = memoResponseSchema('macrosphere', carried); expect(schema.properties.nodes.maxItems).toBe(0); expect(schema.properties.connections.items.properties.source.enum).toContain('housing-office');
 });
+it.each(['NYC Department of Education', 'NYC Police Department', 'District Student Support Office'])('corrects the named agency heading %s without altering carried nodes', async label => {
+ const output = { ...review('exosphere'), nodes: [{ label, type: 'agency', scale: 'exosphere', evidence: source, basis: 'inference' }] };
+ const { evaluate, run } = await setup('exosphere', output);
+ run.mockResolvedValueOnce({ suggestion: output, metadata: { provider: 'cail-gateway', model: 'test-only' } })
+   .mockResolvedValueOnce({ suggestion: review('exosphere'), metadata: { provider: 'cail-gateway', model: 'test-only' } });
+ const response = await evaluate(); expect(response.status).toBe(201);
+ const evaluation = (await response.json()).evaluation;
+ expect(evaluation.review.nodes).toEqual(review('exosphere').nodes);
+ expect(evaluation.runtime.correctiveRetries).toBe(1);
+ expect(run.mock.calls[1][0].systemPrompt).toContain('CORRECTIVE RETRY');
+ expect(carried.find(node => node.id === 'housing-office').label).toBe('City Housing Authority');
+});
 it.each(['invented-node', 'City Housing Authority'])('Macro excludes unknown or label-only endpoint %s while retaining valid feedback', async bad => {
  const { evaluate } = await setup('macrosphere', review('macrosphere', [{ source: bad, target: 'resident', verb: 'affects', rationale: source }]));
  const response = await evaluate(); expect(response.status).toBe(201);
