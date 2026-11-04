@@ -67,7 +67,9 @@ subsequent saves. Shared review retention follows the existing product rules.
   observed active in the public Gateway catalog on October 3. Provider
   credentials, routing controls and accounting identities are not supplied by
   this application. GLM and its GPT-OSS backup use low reasoning. A
-  4,096-token completion ceiling bounds output, and truncated results fail
+  4,096-token completion ceiling bounds legacy review output; the account
+  node-submission contract uses 8,192 tokens to include reasoning while still
+  allowing only six nodes and no relationships. Truncated results fail
   validation. A compact first pass asks the model for at most six nodes and
   four connections, subject to the stricter active-level contract. No returned
   items are silently filtered or relabeled.

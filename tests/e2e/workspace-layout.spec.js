@@ -66,7 +66,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     await showMap(page);
     await expect(notebook).toBeVisible();
     expect((await canvas.boundingBox()).width).toBeCloseTo(dockedCanvas.width, 0);
-    const instruction = await page.getByText('Select an item to explore its connections.', {exact:true}).boundingBox();
+    const instruction = await page.getByText('Select a node or relationship to edit it.', {exact:true}).boundingBox();
     const mapBox = await canvas.boundingBox();
     expect(instruction.x - mapBox.x).toBeLessThan(20);
     expect(instruction.y - mapBox.y).toBeLessThan(20);

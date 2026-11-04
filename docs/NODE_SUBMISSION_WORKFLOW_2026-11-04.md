@@ -50,3 +50,5 @@ desktop/phone inspection, and exact-source production package verification.
 Controlled model fixtures are not evidence of live model acceptance.
 
 Account displays verified profile details when supplied and otherwise shows CUNY Login and the verified access role, without unavailable-name/email placeholders. This changes display only, not the identity contract.
+
+The node-submission call allows up to 8,192 completion tokens because GPT-OSS reasoning shares that limit with JSON output; a live six-page memo was cut short at 4,096. Node counts, no-relationship validation and the existing 85-second job deadline remain bounded. Legacy review calls retain their earlier limits.

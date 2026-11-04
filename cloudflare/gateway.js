@@ -162,7 +162,10 @@ Follow the supplied JSON field names and types exactly. ${input.workflowMode ===
         let response;
         try {
           response = await client.chatCompletions({ model: selectedModel, stream: false,
-            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'memo-quotes' ? 512 : kind === 'map-check' ? 1024 : 4096,
+            // Reasoning shares this ceiling with JSON. Real multi-page memo
+            // extraction needs headroom; the response still permits six nodes
+            // and no relationships, within the existing overall deadline.
+            reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'memo-quotes' ? 512 : kind === 'map-check' ? 1024 : input.workflowMode === NODE_SUBMISSION ? 8192 : 4096,
             response_format: { type: 'json_object' }, messages,
           }, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: kind === 'map-check' ? 'systems-mapping-map-check' : 'systems-mapping-guidance' });
         } catch (error) {
