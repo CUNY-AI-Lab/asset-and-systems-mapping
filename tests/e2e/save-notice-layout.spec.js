@@ -29,7 +29,7 @@ for (const populated of [false, true]) {
     await page.getByRole('button', { name: 'Open project', exact: true }).click();
     await notebookSection(page, 'suggestions');
     const memoDrawer = page.locator('.memo-drawer');
-    if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator('summary').click();
+    if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator(':scope > summary').click();
     await page.evaluate(() => { window.failProjectSave = true; });
     const memo = `${project.submission.text} Preserve this synthetic ${populated ? 'populated' : 'empty'} map through recovery.`;
     await page.getByRole('textbox', { name: /^Memo/ }).fill(memo);
@@ -56,7 +56,7 @@ for (const populated of [false, true]) {
       await expect(recovery).toBeVisible();
       await recovery.getByRole('button', { name: 'Close Save recovery' }).click();
       await notebookSection(page, 'suggestions');
-      if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator('summary').click();
+      if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator(':scope > summary').click();
       await expect(page.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
       expect((await page.locator('#map-inspector').boundingBox()).height).toBeGreaterThan(450);
       assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Recovery notebook ${width}`));
@@ -65,16 +65,21 @@ for (const populated of [false, true]) {
     await notice.getByRole('button', { name: 'Recover project' }).click();
     await page.getByRole('button', { name: /try again|Try saving again/ }).click();
     await expect(notice).toHaveCount(0);
-    await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).submission.text, STORAGE_KEY)).toBe(memo);
+    await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).part2Submission?.text, STORAGE_KEY)).toBe(memo);
     const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
     expect(saved.graph).toEqual(project.graph);
-    expect(saved.submission.text).toBe(memo);
+    expect(saved.submission).toEqual(project.submission);
+    expect(saved.part2Submission.text).toBe(memo);
     expect(saved.reflection).toBe(project.reflection);
     await page.reload();
     await page.getByRole('button', { name: 'Open project', exact: true }).click();
     await notebookSection(page, 'suggestions');
-    if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator('summary').click();
+    if (!await memoDrawer.evaluate(el => el.open)) await memoDrawer.locator(':scope > summary').click();
     await expect(page.getByRole('textbox', { name: /^Memo/ })).toHaveValue(memo);
+    const reloaded = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
+    expect(reloaded.submission).toEqual(project.submission);
+    expect(reloaded.part2Submission.text).toBe(memo);
+    expect(reloaded.graph).toEqual(project.graph);
     expect(errors).toEqual([]);
   });
 }
