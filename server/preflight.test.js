@@ -250,6 +250,22 @@ describe('persistent preflight suggestion review queue', () => {
     expect(stored.generationContract).toBe('student-nodes-v1');expect(stored.nodes).toEqual(nodes);
   });
 
+  it('supplies the rejected node label to the node-only corrective attempt', async () => {
+    const sourceMaterial = 'Teachers and school staff meet families at PS 102.';
+    const provider = vi.fn(async input => {
+      const repairing = Boolean(input.memoContext?.contractRepair);
+      if (repairing) expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: 'Teachers and school staff' });
+      return { suggestion: { guidance: [], nodes: [{ label: repairing ? 'Teachers' : 'Teachers and school staff', type: 'person', scale: 'micro', evidence: sourceMaterial }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'node-label-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', sourceMaterial }));
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(result.review.nodes.map(node => node.label)).toEqual(['Teachers']);
+    expect(result.review.connections).toEqual([]);
+  });
+
   it('rejects model-created links in the node-only contract after its bounded corrective attempt', async () => {
     const provider = vi.fn(async()=>({suggestion:{guidance:[],nodes:[],connections:[{source:'a',target:'b',verb:'supports'}],example:null,readiness:{ready:true,note:'Nodes identified.'}},metadata:{provider:'ollama-cloud',model:'server-model'}}));
     await system.close();

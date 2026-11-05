@@ -28,7 +28,8 @@ export function submittedReviewIssue(review, scale, sourceText) {
   for (const [index, node] of review.nodes.entries()) {
     const field = `nodes[${index}]`;
     if (!exact(node, scale === 'micro' ? ['label', 'type', 'scale', 'evidence'] : ['label', 'type', 'scale', 'evidence', 'basis'])) return `${field} has incorrect fields; do not return scopes or relationship verbs.`;
-    if (!text(node.label, 200) || !text(node.evidence, 500) || normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label) return `${field}.label and evidence must be complete, bounded text.`;
+    if (!text(node.label, 200) || normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label) return `${field}.label must name a complete map element rather than a statement.`;
+    if (!text(node.evidence, 500)) return `${field}.evidence must quote the supplied narrative within 500 characters.`;
     if (!(scale === 'micro' ? node.scale === 'micro' : ['exosphere', 'macrosphere'].includes(node.scale)) || !isNodeTypeAllowedAtScale(node.type, node.scale)) return `${field}.scale or type does not match its level.`;
     if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) return `${field}.label must name one local participant, group, setting or resource. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit. Do not use a sentence or an action as the label.`;
     if (node.scale === 'exosphere' && !EXO_SETTING_TYPES.includes(node.type)) return `${field}.type must identify an outside organization, setting or resource; classify broader conditions at macrosphere.`;

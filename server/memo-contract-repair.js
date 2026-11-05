@@ -78,7 +78,7 @@ export function createMemoContractRepair(review, message, activeScale) {
     repair.valueOmitted = true;
     return isMemoContractRepair(repair, activeScale) ? repair : null;
   }
-  const label = /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|does not name a broader condition|duplicates an existing or proposed element)\.$/u.exec(message);
+  const label = /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
   if (label && Array.isArray(review.nodes)) {
     const repair = { path: `nodes[${label[1]}].label`, value: review.nodes[Number(label[1])]?.label };
     return isMemoContractRepair(repair, activeScale) ? repair : null;

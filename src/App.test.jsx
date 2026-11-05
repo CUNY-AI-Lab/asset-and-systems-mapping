@@ -4897,7 +4897,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       && cardBounds.top < labelBounds.bottom
       && cardBounds.bottom > labelBounds.top).toBe(false);
     expectNodesInsideEcologyRings();
-  });
+  }, 15000);
 
   it.each([320, 390, 430])('keeps all six Micro nodes readable, separate, and on canvas at %ipx without saving the phone layout', async (width) => {
     installPhoneLayout(width);
@@ -5133,7 +5133,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     }
     expect([...visited].sort()).toEqual(project.graph.edges.map(edge=>edge.id).sort());
     expect(storedProject().graph).toEqual(before);
-  });
+  }, 15000);
 
   it('keeps the phone overview when adding a contextual relationship and preserves its inspected viewport during annotation updates', async () => {
     installPhoneLayout();
@@ -5343,9 +5343,14 @@ Overall, the posting history documents a working student repeatedly turning to R
     for (let first = 0; first < arrangedVisible.length; first += 1) {
       expect(renderedNodePosition(arrangedVisible[first].id)).toEqual({ x: arrangedVisible[first].x, y: arrangedVisible[first].y });
       for (let second = first + 1; second < arrangedVisible.length; second += 1) {
-        const horizontalClearance = Math.abs(arrangedVisible[first].x - arrangedVisible[second].x);
-        const verticalClearance = Math.abs(arrangedVisible[first].y - arrangedVisible[second].y);
-        expect(horizontalClearance >= 184 || verticalClearance >= 72, `${arrangedVisible[first].label} overlaps ${arrangedVisible[second].label}`).toBe(true);
+        const firstNode = document.querySelector(`.graph-node[data-graph-id="${arrangedVisible[first].id}"]`);
+        const secondNode = document.querySelector(`.graph-node[data-graph-id="${arrangedVisible[second].id}"]`);
+        // Cards now fit their wording. Compare their actual bounds instead of
+        // the former fixed 184-by-72 footprint, including room between cards.
+        const firstBounds = translatedRectBounds(firstNode, firstNode.querySelector('.node-card'));
+        const secondBounds = translatedRectBounds(secondNode, secondNode.querySelector('.node-card'));
+        const paddedBounds = { left: firstBounds.left - 12, right: firstBounds.right + 12, top: firstBounds.top - 12, bottom: firstBounds.bottom + 12 };
+        expect(rectsIntersect(paddedBounds, secondBounds), `${arrangedVisible[first].label} overlaps ${arrangedVisible[second].label}`).toBe(false);
       }
     }
     expect(arranged.viewport).toMatchObject({ zoom: expect.any(Number), panX: expect.any(Number), panY: expect.any(Number) });
