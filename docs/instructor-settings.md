@@ -54,3 +54,9 @@ submitted review snapshots. Private or unsubmitted maps and Field Notes do not
 become instructor-visible. No role or cross-course permission changes are included.
 The verification uses synthetic accounts and work; Agustina's actual account and
 production course membership have not been inspected or verified.
+
+## Account interface alignment — November 5, 2026
+
+Account and Instructor Console navigation use the same active underline as Memo / Notebook / Tools. Prompt editing actions appear above the scale selector and prompt. Disclosure rows have an outlined full-row target and a chevron beside their label; Student preview, Guidance and materials, and Versions remain collapsed until opened and preserve keyboard operation. Guidance usage is shown directly inside its section. Text uses the shared interface tokens: 14px controls and labels, 16px editable content, and 44px minimum action targets. Broad console border-reset overrides have been removed.
+
+The account console describes Field Notes as optional. The separate Node workflow retains its required reflection wording. This visual update does not change publication, revision conflict, model, roster access, or saved-draft behavior.

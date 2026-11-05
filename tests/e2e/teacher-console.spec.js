@@ -209,6 +209,18 @@ test('lesson customization opens an editable copy and publishes directly from th
   await expect(page.getByLabel('Draft name')).toHaveCount(0);
   await expect(page.getByLabel('Version', { exact: true })).not.toBeVisible();
   expect(await page.locator('.course-settings textarea:visible').count()).toBe(1);
+  const actionBox = await page.getByRole('button', { name: 'Edit prompts', exact: true }).boundingBox();
+  const promptBox = await page.getByRole('textbox', { name: 'Field Notes prompt', exact: true }).boundingBox();
+  expect(actionBox.y + actionBox.height).toBeLessThan(promptBox.y);
+  for (const name of ['Student preview', 'Guidance and materials', 'Versions']) {
+    const summary = page.locator('summary').filter({ hasText: name });
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(summary.locator('..')).toHaveAttribute('open', '');
+    await page.keyboard.press('Enter');
+    await expect(summary.locator('..')).not.toHaveAttribute('open', '');
+  }
+
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(page.getByRole('button', { name: 'Edit prompts', exact: true })).toBeInViewport({ ratio: 1 });
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Course customization published'));

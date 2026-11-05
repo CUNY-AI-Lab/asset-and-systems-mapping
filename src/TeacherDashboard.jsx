@@ -547,7 +547,7 @@ function ReviewSubmissions({ active = true }) {
   </section>;
 }
 
-function TeachingProfiles({ onConfigurationChanged }) {
+function TeachingProfiles({ onConfigurationChanged, institutionalMode = false }) {
   const [catalog, setCatalog] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -810,6 +810,13 @@ function TeachingProfiles({ onConfigurationChanged }) {
     <span className="sr-only" role="status">{message?.type === 'success' ? message.text : ''}</span>
     {detail && draft && <>
       <div className="course-settings__body">
+        <div className="course-settings__actions">
+          <p className="course-settings__status" role="status">{busy ? 'Saving…' : editable ? dirty ? 'Unsaved changes' : 'Saved draft' : detail.status === 'active' ? 'Published prompts' : 'Previous version'}</p>
+          <div>{editable ? <>
+            <button type="button" className="button button--secondary" disabled={busy || loading || !dirty} onClick={saveDraft}>Save draft</button>
+            <button type="button" className="button" disabled={busy || loading} onClick={publish}>Publish changes</button>
+          </> : <button type="button" className="button" disabled={busy || loading} onClick={editPrompts}>Edit prompts</button>}</div>
+        </div>
         <fieldset className="course-prompt-editor" aria-label="Field Notes customization" disabled={busy || loading}>
           <label className="field course-settings__scale"><span className="field__label">Scale</span><select aria-label="Scale" value={previewScale} onChange={(event) => {
             const scale = event.target.value;
@@ -826,24 +833,18 @@ function TeachingProfiles({ onConfigurationChanged }) {
                 setDraft(current => ({ ...current, profile: { ...current.profile, fieldNotesQuestions: { ...fieldNotesQuestions(current.profile), [previewScale]: question } } }));
               }} />
           </label>
-          <p id="course-prompt-help" className="field__hint">Students answer this question before completing the scale.</p>
+          <p id="course-prompt-help" className="field__hint">{institutionalMode ? 'Students can use this optional question in Notebook.' : 'Students answer this question before completing the scale.'}</p>
           <details className="course-student-preview"><summary>Student preview</summary>
             <div className="course-student-preview__page"><h3>Field Notes</h3><p className="course-student-preview__scale">{scaleLabel(previewScale)}</p><p className="course-student-preview__question">{fieldNotesQuestions(draft.profile)[previewScale] || 'Your prompt will appear here.'}</p></div>
           </details>
         </fieldset>
         {conflict && <div className="teacher-message teacher-message--error" role="group" aria-label="Draft conflict actions"><p>A newer revision is available. Load it only if you want to replace the text in this editor.</p><button type="button" className="button button--ghost" disabled={busy} onClick={loadConflict}>Load server revision {conflict.revision}</button></div>}
-        <div className="course-settings__actions">
-          <p className="course-settings__status" role="status">{busy ? 'Saving…' : editable ? dirty ? 'Unsaved changes' : 'Saved draft' : detail.status === 'active' ? 'Published prompts' : 'Previous version'}</p>
-          <div>{editable ? <>
-            <button type="button" className="button button--secondary" disabled={busy || loading || !dirty} onClick={saveDraft}>Save draft</button>
-            <button type="button" className="button" disabled={busy || loading} onClick={publish}>Publish changes</button>
-          </> : <button type="button" className="button" disabled={busy || loading} onClick={editPrompts}>Edit prompts</button>}</div>
-        </div>
+
       </div>
       <div className="course-settings__additional">
         <details className="course-model-settings"><summary>Guidance and materials</summary>
           <fieldset className="course-model-fields" disabled={busy || loading}>
-        <details className="course-runtime-details"><summary>How this guidance is used</summary><p role="note">{stageUse.active ? `${runtime.label} ${runtime.detail}` : 'Saved as course reference.'}</p></details>
+        <p className="course-runtime-note" role="note">{stageUse.active ? `${runtime.label} ${runtime.detail}` : 'Saved as course reference.'}</p>
         {selectedPart ? <>
           <div className="teacher-controls teaching-profile-controls" role="group" aria-label="Course section">
             <label><span>Part</span><select aria-label="Part" value={selectedPart.id} onChange={(event) => selectPart(event.target.value)}>{profileParts.map((part) => <option key={part.id} value={part.id}>{part.label}</option>)}</select></label>
@@ -938,7 +939,7 @@ function AuthenticatedDashboard({ user, onLogout, onConfigurationChanged, instit
       </details>}
       <ReviewSubmissions active={active && section === 'reviews'} />
     </div>
-    {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} /></div>}
+    {guidanceVisited && <div id="teacher-section-panel-guidance" role="tabpanel" aria-labelledby="teacher-section-tab-guidance" hidden={section !== 'guidance'}><TeachingProfiles onConfigurationChanged={onConfigurationChanged} institutionalMode={institutionalMode} /></div>}
   </div>;
 }
 

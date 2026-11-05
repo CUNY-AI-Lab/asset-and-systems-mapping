@@ -613,3 +613,10 @@ The authority order remains in `docs/SOURCE_LEDGER.md`: the direct 2026-08-24 co
 
 ## Current cross-process model alignment
 The model owner completed a user-requested runtime switch to GPT-OSS 120B in Dev and production on 2026-11-02. Deployment configuration and generated Env type now preserve that setting; GLM-specific adapter tests and historical evaluations remain valid unchanged. The model evaluation completed before the coordinated UI rollout; the verified current release is recorded at the top of this ledger.
+
+## Account interface and expanded CUNY memos — November 5, 2026
+
+- [x] Expand factual Micro, Exo and Macro memos from the Lab website and public GitHub teaching/software documentation, with sources and a readable HTML edition.
+- [x] Test GPT-OSS 120B marginal updates: separate Micro and Exo submissions failed label validation; combined Exo/Macro succeeded after bounded repair and refreshed four existing nodes. Transparency received specific new evidence; Sustainability remained broad. No new relationships.
+- [x] Standardize Account/Console navigation and disclosure hierarchy; move prompt actions above content; preserve keyboard navigation and drafts.
+- [ ] Verify interface regressions and Dev screenshots before promoting the checked main package to production.

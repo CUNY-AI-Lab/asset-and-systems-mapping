@@ -268,6 +268,8 @@ describe('TeacherDashboard', () => {
     expect(roster.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
     expect(await screen.findByLabelText('Field Notes prompt')).toBeVisible();
+    expect(screen.getByText('Students can use this optional question in Notebook.')).toBeVisible();
+    expect(screen.queryByText('Students answer this question before completing the scale.')).not.toBeInTheDocument();
     expect(roster).not.toBeVisible();
     expect(request.mock.calls.some(([path]) => path === '/api/cloud/course-students')).toBe(false);
     fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
@@ -723,7 +725,6 @@ describe('TeacherDashboard', () => {
     expect(screen.getByLabelText('Mapping step')).not.toBeVisible();
     fireEvent.click(screen.getByText('Guidance and materials'));
     fireEvent.click(screen.getByText('Saved guidance preview'));
-    fireEvent.click(screen.getByText('How this guidance is used'));
     expect(screen.getByRole('note')).toHaveTextContent('Saved as course reference.');
     const versionDetails = screen.getByText('Versions').closest('details');
     expect(versionDetails).not.toHaveAttribute('open');
