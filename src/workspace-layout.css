@@ -77,7 +77,8 @@ html[data-theme="dark"] .inspector .inspector-done { color: var(--ink); }
 .inspector-disclosure > div { display: grid; gap: 12px; padding-bottom: 12px; }
 .inspector-disclosure .claim-evidence { border: 0; padding: 0; }
 .inspector .node-summary > summary { min-height: 44px; }
-.inspector .node-position-controls { padding: 12px 0; }
+.inspector .node-position-controls { padding: 4px 0; }
+.inspector .node-position-controls > div { width: fit-content; grid-template-columns: repeat(4, 44px); }
 .inspector .node-position-controls > span { font: var(--weight-label) var(--type-label)/1.4 var(--body); letter-spacing: 0; }
 .inspector .coverage-banner { margin: 8px 0 0; padding: 12px 0; }
 .inspector .map-check { padding-top: 12px; }

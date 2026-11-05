@@ -126,6 +126,31 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
   } finally {await context.unrouteAll({behavior:'wait'});await browser.close();await control({mode:'success'});}
 },60000);
 
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome reopens a saved legacy review without resubmission', async () => {
+  const project = JSON.parse(serializedEastHarlemDisabilityProject());
+  project.id='legacy-review-notebook';project.title='Legacy mapped review';project.activeScale='micro';project.stage=2;
+  expect((await request(`/api/cloud/projects/${project.id}`,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(project),revision:0})})).status).toBe(200);
+  const browser=await chromium.launch({headless:true});
+  const context=await browser.newContext({viewport:{width:1024,height:900}});
+  await context.addCookies([{name:'__Host-systems-mapping-session',value:sessions.alice,url:ORIGIN,secure:true,httpOnly:true,sameSite:'Lax'}]);
+  await context.route('**/*',async route=>{
+    const source=route.request();if(new URL(source.url()).origin!==ORIGIN)return route.abort();
+    const response=await worker.fetch(source.url(),{method:source.method(),headers:await source.allHeaders(),body:source.postDataBuffer()??undefined,redirect:'manual'});
+    await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+  });
+  const page=await context.newPage();
+  try {
+    for(let reopen=0;reopen<2;reopen++){
+      await page.goto(ORIGIN);await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
+      await browserExpect(page.getByRole('heading',{name:'Micro · local nodes',exact:true})).toBeVisible();
+      await browserExpect(page.getByRole('button',{name:'Submit memo and add nodes',exact:true})).toHaveCount(0);
+      await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
+    }
+    await page.getByRole('button',{name:'Edit',exact:true}).click();
+    await browserExpect(page.getByRole('textbox',{name:'First memo',exact:true})).toHaveValue(project.submission.text);
+  } finally {await context.unrouteAll({behavior:'wait'});await browser.close();}
+},30000);
+
 test('production entrypoint rejects forged headers, other origins, encoded paths and cross-origin writes', async () => {
   expect((await request('/api/health', '')).status).toBe(200);
   const reporting = await request('/api/bug-reports/availability', '');

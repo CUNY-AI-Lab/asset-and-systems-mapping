@@ -54,6 +54,8 @@ export function isMemoContractRepair(value, activeScale) {
     }
     if (!keysAre(value, ['path', 'value'])) return false;
     if (/^nodes\[\d{1,2}\]\.label$/u.test(value.path)) return shortString(value.value);
+    if (/^nodes\[\d{1,2}\]\.evidence$/u.test(value.path)) return keysAre(value.value, ['label', 'evidence'])
+      && shortString(value.value.label) && typeof value.value.evidence === 'string' && value.value.evidence.length <= 500;
     if (/^guidance\[\d{1,2}\]\.evidenceExcerpt$/u.test(value.path)) return typeof value.value === 'string' && value.value.length <= 500;
     if (/^connections\[\d{1,2}\]$/u.test(value.path)) return keysAre(value.value, ['source', 'target'])
       && shortString(value.value.source) && shortString(value.value.target);
@@ -78,9 +80,15 @@ export function createMemoContractRepair(review, message, activeScale) {
     repair.valueOmitted = true;
     return isMemoContractRepair(repair, activeScale) ? repair : null;
   }
-  const label = /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
+  const label = /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|names a person or institution, not a Macro condition|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
   if (label && Array.isArray(review.nodes)) {
     const repair = { path: `nodes[${label[1]}].label`, value: review.nodes[Number(label[1])]?.label };
+    return isMemoContractRepair(repair, activeScale) ? repair : null;
+  }
+  const nodeEvidence = /^nodes\[(\d{1,2})\]\.evidence (?:must quote the supplied narrative, not a bibliography or an invented explanation|must describe an established condition, not only a wish, recommendation or research question)\.$/u.exec(message);
+  if (nodeEvidence && Array.isArray(review.nodes)) {
+    const node = review.nodes[Number(nodeEvidence[1])];
+    const repair = { path: `nodes[${nodeEvidence[1]}].evidence`, value: { label: node?.label, evidence: node?.evidence } };
     return isMemoContractRepair(repair, activeScale) ? repair : null;
   }
   const excerpt = /^guidance\[(\d{1,2})\]\.evidenceExcerpt (?:must quote the supplied memo; Field Notes are not memo evidence|cites only a bibliography entry; use a narrative passage about the mapped situation|must quote a narrative passage during evidence repair)\.$/u.exec(message);

@@ -202,6 +202,14 @@ export function isInstitutionScopedPolicyLabel(value) {
   return Boolean(match && isNamedInstitutionLabel(match[1]));
 }
 
+// The institution and its explicitly named rule are different map elements.
+// Keep the legacy institution recognizer for its other consumers, while allowing
+// policy/law nodes to retain an institution-qualified title at Macro.
+export function isExplicitMacroPolicyLabel(value, type) {
+  return ['policy', 'law'].includes(type) && typeof value === 'string'
+    && /\b(?:polic(?:y|ies)|laws?|acts?|rules?|regulations?|protocols?|procedures?|statutes?|requirements?)(?:\s+(?:of\s+)?\d{4})?$/iu.test(value.trim());
+}
+
 export function labelRepeatsInstitution(value, institutions) {
   if (isNamedInstitutionLabel(value)) return true;
   const normalized = normalizedEntityLabel(value);
@@ -1732,7 +1740,7 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     if (nodeIsLive && canonicalLabel !== node.label) invalidProject(`${itemPath}.label`, 'must name a complete, concrete map element rather than a reference, modifier, action fragment, or time expression');
     if (nodeIsLive && node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${itemPath}.label`, 'must name one discrete Micro element');
 
-    if (nodeIsLive && node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${itemPath}.label`, 'names a concrete institution and must be placed at Micro or Exosphere according to participation');
+    if (nodeIsLive && node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label) && !isExplicitMacroPolicyLabel(node.label, node.type)) invalidProject(`${itemPath}.label`, 'names a concrete institution and must be placed at Micro or Exosphere according to participation');
     if (nodeIsLive && node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) invalidProject(`${itemPath}.label`, 'names an immediate person, role, activity, or schedule and belongs at Micro');
     if (node.type === MESOSYSTEM_NODE_TYPE && nodeIsLive && (!Array.isArray(node.scopeNodeIds) || node.scopeNodeIds.length < 2)) {
       invalidProject(`${itemPath}.scopeNodeIds`, 'must identify at least two Micro settings for a mesosystem node');
@@ -1954,7 +1962,7 @@ function validateMemoReview(review, path) {
     if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name one discrete Micro element');
 
     if (node.type === MESOSYSTEM_NODE_TYPE && !isMesosystemLabel(node.label)) invalidProject(`${nodePath}.label`, 'must be a noun label without a relationship verb');
-    if (node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label)) invalidProject(`${nodePath}.label`, 'names a concrete institution and must be placed at Micro or Exosphere according to participation');
+    if (node.scale === 'macrosphere' && isNamedInstitutionLabel(node.label) && !isExplicitMacroPolicyLabel(node.label, node.type)) invalidProject(`${nodePath}.label`, 'names a concrete institution and must be placed at Micro or Exosphere according to participation');
     if (node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(node.label)) invalidProject(`${nodePath}.label`, 'names an immediate person, role, activity, or schedule and belongs at Micro');
     assertString(node.evidence, `${nodePath}.evidence`, true, PROJECT_LIMITS.memoGuidanceEvidence);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${nodePath}.basis`);
@@ -2166,12 +2174,12 @@ function validateInstitutionSphereBoundary(nodeCollections, reviewNodes = []) {
     .map(({ node }) => node)
     .filter((node) => node?.scale === 'exosphere' && node.status !== 'rejected' && node.claimState !== 'retired');
   records.forEach(({ node, path }) => {
-    if (node?.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions)) {
+    if (node?.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions) && !isExplicitMacroPolicyLabel(node.label, node.type)) {
       invalidProject(`${path}.label`, 'repeats a concrete institution instead of naming a broader condition');
     }
   });
   (Array.isArray(reviewNodes) ? reviewNodes : []).forEach((node, index) => {
-    if (node?.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions)) {
+    if (node?.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions) && !isExplicitMacroPolicyLabel(node.label, node.type)) {
       invalidProject(`project.preflight.memoReview.nodes[${index}].label`, 'repeats a concrete institution instead of naming a broader condition');
     }
   });
@@ -2488,7 +2496,7 @@ function migrateScaleTypeSemantics(project) {
       node.claimState = 'retired';
       appendSemanticMigrationNote(node, retiredInterfaceLanguageNote);
     }
-    if (node.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions)) {
+    if (node.scale === 'macrosphere' && labelRepeatsInstitution(node.label, exosphereInstitutions) && !isExplicitMacroPolicyLabel(node.label, node.type)) {
       const priorScope = Array.isArray(node.scopeNodeIds) && node.scopeNodeIds.length ? node.scopeNodeIds.join(', ') : '';
       const priorMode = node.deontic || '';
       node.scale = 'exosphere';
@@ -2683,7 +2691,7 @@ function migrateScaleTypeSemantics(project) {
       || normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label
       || !isNodeTypeAllowedAtScale(node.type, node.scale)
       || (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label))
-      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || isObviousLowerLevelMacroLabel(node.label) || node.scope !== undefined && (!Array.isArray(node.scope) || node.scope.length < 2)))
+      || (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) && !isExplicitMacroPolicyLabel(node.label, node.type) || isObviousLowerLevelMacroLabel(node.label) || node.scope !== undefined && (!Array.isArray(node.scope) || node.scope.length < 2)))
       || (node.scale === 'meso' && (node.type !== MESOSYSTEM_NODE_TYPE || node.scope !== undefined && (!Array.isArray(node.scope) || node.scope.length < 2)))
     ));
     const reviewScale = project?.preflight?.configurationSnapshot?.activeScale

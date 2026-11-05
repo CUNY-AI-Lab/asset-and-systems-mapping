@@ -7,9 +7,11 @@ import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { correlationFromHeaders } from '@cuny-ai-lab/cail-log';
 import { createSystemsMappingApp } from '../server/app.js';
-import { createDefaultProject } from '../src/domain.js';
+import { createDefaultProject, parseProject, serializeProject } from '../src/domain.js';
 import { preflightEvaluationPayload } from '../src/App.jsx';
 import { beginPart2 } from '../src/projectMemo.js';
+import { appendSubmittedNodes, openMemoWorkflowScale } from '../src/memoWorkflow.js';
+import { NODE_SUBMISSION, submittedReviewIssue } from '../shared/node-submission.js';
 import { gatewaySuggestion, safeGatewayFailure } from './gateway.js';
 import { STRONG_MACRO_MEMO, WEAK_MACRO_MEMO, FLUSHING_MACRO_MEMO, HOUSING_MACRO_MEMO } from '../tests/fixtures/two-memo-cases.js';
 
@@ -17,7 +19,7 @@ const HELPER = 'http://127.0.0.1:8796', ORIGIN = 'http://127.0.0.1:4177';
 const MODEL = 'gpt-oss-120b';
 const enabled = process.env.SYSTEMS_MAPPING_LIVE_TWO_MEMOS === '1';
 const cases = [
-  { id: 'strong-meso', file: /Layer_2_Mesosystem_Table_Template.*\.pdf$/, scale: 'meso' },
+  { id: 'amina-table-micro', file: /Layer_2_Mesosystem_Table_Template.*\.pdf$/, scale: 'micro' },
   { id: 'flushing-micro', file: /Assignment 2 Layer 1.*Microsystem\.pdf$/, scale: 'micro' },
   { id: 'bronx-micro', file: /^Micro Memo\.pdf$/, scale: 'micro' },
   { id: 'weaker-housing-micro', file: /^Microsystem EDITED\.pdf\.pdf$/, scale: 'micro' },
@@ -60,8 +62,12 @@ async function withLiveReview(caseId, work) {
     const cookie = access.headers.get('set-cookie').split(';')[0];
     const evaluate = async project => {
       const started = Date.now();
+      const payload = preflightEvaluationPayload(project, true);
+      expect(payload.workflowMode).toBe(NODE_SUBMISSION);
+      expect(['micro', 'exosphere']).toContain(payload.activeScale);
+      expect(payload.sourceMaterial).toBe(project.activeScale === 'micro' ? project.submission.text : project.part2Submission.text);
       const response = await system.app.request(ORIGIN + '/api/preflight/evaluations', { method: 'POST',
-        headers: { origin: ORIGIN, 'content-type': 'application/json', cookie }, body: JSON.stringify(preflightEvaluationPayload(project)),
+        headers: { origin: ORIGIN, 'content-type': 'application/json', cookie }, body: JSON.stringify(payload),
         signal: AbortSignal.timeout(90000),
       }, { verifiedAccount: { studentSession: { sessionRef: 'two-memo-acceptance', expiresAt: Date.now() + 600000 }, guidanceTimeoutMs: 85000 } });
       const result = await response.json();
@@ -71,7 +77,10 @@ async function withLiveReview(caseId, work) {
         groups: result.evaluation?.review?.connections?.filter(edge => edge.relationshipIds?.length).length }));
       expect(response.status).toBe(201);
       expect(result.evaluation.runtime.model).toBe(MODEL);
-      expect(result.evaluation.review.guidance.length).toBeGreaterThan(0);
+      expect(result.evaluation.review.guidance).toEqual([]);
+      expect(result.evaluation.review.connections).toEqual([]);
+      expect(result.evaluation.review.example).toBeNull();
+      expect(submittedReviewIssue(result.evaluation.review, project.activeScale, payload.sourceMaterial)).toBeNull();
       return result.evaluation.review;
     };
     await work(evaluate);
@@ -89,15 +98,14 @@ async function withLiveReview(caseId, work) {
 
 describe.skipIf(!enabled)('approved instructor examples through the real Gateway provider', () => {
   for (const fixture of cases) test(fixture.id, () => withLiveReview(fixture.id, async evaluate => {
-    const project = projectFor(memo(fixture.file), fixture.scale === 'meso' ? ['Classroom teachers', 'Guidance counselors', 'Parents', 'The Door counselors'] : []);
+    const project = projectFor(memo(fixture.file));
     project.activeScale = fixture.scale;
     const review = await evaluate(project);
-    if (fixture.scale === 'micro') { expect(review.nodes.length).toBeGreaterThan(0); expect(review.connections).toEqual([]); }
-    else {
-      expect(review.nodes).toEqual([]); expect(review.connections.length).toBeGreaterThan(0);
-      expect(review.connections.some(edge => edge.relationshipProcess?.connectionStatus === 'missing')).toBe(true);
-      expect(review.connections.some(edge => edge.relationshipProcess?.familyCount === 14232)).toBe(false);
-    }
+    expect(review.nodes.length).toBeGreaterThan(0);
+    appendSubmittedNodes(project, review);
+    expect(project.graph.nodes).toHaveLength(review.nodes.length);
+    expect(project.graph.edges).toEqual([]);
+    expect(parseProject(serializeProject(project)).graph).toEqual(project.graph);
   }), 120000);
 
   const continuations = [
@@ -110,20 +118,28 @@ describe.skipIf(!enabled)('approved instructor examples through the real Gateway
     project.graph.edges = pairs.map(([source, target, verb], index) => ({ id: `local-edge-${index}`, source: `local-${source}`, target: `local-${target}`, verb, scale: 'meso', status: 'confirmed', evidence: continuation,
       ...(id === 'bronx-continuation' && index === 2 ? { relationshipProcess: { connectionStatus: 'missing', direction: 'not yet known' } } : {}) }));
     const original = structuredClone(project.graph);
+    const firstMemo = structuredClone(project.submission);
     beginPart2(project); project.part2Submission.text = continuation; project.activeScale = 'exosphere';
     const exo = await evaluate(project);
-    expect(exo.nodes.length).toBeGreaterThan(0); expect(exo.connections).toEqual([]);
-    project.graph.nodes.push(...exo.nodes.map((node, index) => ({ ...node, id: `outer-${index}`, status: 'confirmed', claimState: 'inference' })));
-    project.activeScale = 'macrosphere'; const macro = await evaluate(project);
-    expect(macro.nodes).toEqual([]);
-    expect(macro.connections.some(edge => edge.relationshipIds?.length)).toBe(true);
-    for (const edge of macro.connections) for (const member of edge.relationshipIds || []) expect(original.edges.map(local => local.id)).toContain(member);
+    expect(exo.nodes.some(node => node.scale === 'exosphere')).toBe(true);
+    expect(exo.nodes.some(node => node.scale === 'macrosphere')).toBe(true);
+    appendSubmittedNodes(project, exo);
+    // Macro is a manual drawing step. No provider call or auto-created group.
+    openMemoWorkflowScale(project, 'macrosphere');
     expect(project.graph.nodes.slice(0, original.nodes.length)).toEqual(original.nodes); expect(project.graph.edges).toEqual(original.edges);
-  }), 220000);
+    expect(project.submission).toEqual(firstMemo);
+    const restored = parseProject(serializeProject(project));
+    expect(restored.graph).toEqual(project.graph);
+    expect(restored.part2Submission.text).toBe(continuation);
+    expect(restored.submission).toEqual(firstMemo);
+  }), 120000);
 
-  test('vague-continuation-asks-for-evidence', () => withLiveReview('vague-continuation', async evaluate => {
+  test('vague-continuation-returns-no-nodes', () => withLiveReview('vague-continuation', async evaluate => {
     const project = projectFor('A synthetic local case: a teacher talks with a parent.', ['Teacher', 'Parent']);
     beginPart2(project); project.part2Submission.text = WEAK_MACRO_MEMO; project.activeScale = 'exosphere';
+    const original = structuredClone(project.graph);
     const review = await evaluate(project); expect(review.nodes).toEqual([]); expect(review.connections).toEqual([]);
+    expect(appendSubmittedNodes(project, review)).toBe(0);
+    expect(project.graph).toEqual(original);
   }), 120000);
 });

@@ -9,7 +9,7 @@ const ORGANIZATION_REFERENCE = /^(?:\[\d+\]\s*)?(?:[\p{Lu}][\p{L}'’&.-]*|of|th
 const WEB_TITLE_REFERENCE = /^(.{2,240}?)\.\s*\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*/u;
 const WEB_SOURCE_CREDIT = /^([\p{Lu}][\p{L}'’&.-]*(?:\s+(?:[\p{Lu}][\p{L}'’&.-]*|of|the|for|and|&|in|on|at|to)){0,24})\.\s*(?:https?:\/\/|doi\s*:)/u;
 const ORGANIZATION_WORD = /\b(?:Office|Center|Centre|Department|University|School|Schools|Library|Institute|Association|Organization|Organisation|Council|Bureau|Agency|Foundation|Commission|Comptroller|Press|Publisher|Publishers|Publishing|Services|Museum)\b/u;
-const NARRATIVE_LINE = /^(?:(?:I|we|he|she|they|my|our)\b|(?:the\s+)?[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,6}\s+(?:meets?|visits?|attends?|accompanies|helps?|coordinates?|works?|observes?|said|says|describes?|spoke|speaks|asks?|goes|went|lives?|receives?|serves?|is|are|was|were|has|have|had|can|could|will|would|[\p{L}]{3,}ed)\b)/iu;
+const NARRATIVE_LINE = /^(?:(?:I|we|he|she|they|my|our)\b|(?:(?:the|a|an)\s+)?[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,6}\s+(?:meets?|visits?|attends?|accompanies|helps?|coordinates?|works?|shares?|references?|observes?|said|says|describes?|spoke|speaks|asks?|goes|went|lives?|receives?|serves?|is|are|was|were|has|have|had|can|could|will|would|[\p{L}]{3,}ed)\b)/iu;
 const PUBLICATION_METADATA = /(?:\b[\p{Lu}][\p{L}&.-]*(?:\s+[\p{Lu}][\p{L}&.-]*){0,5}\s+(?:Press|Publisher|Publishers|Publishing)\b|\b(?:Journal|Proceedings|Review|Transactions)\s+(?:of|on|for|the)\b|\bJournal,\s*\d|\b(?:vol|pp)\.\s*\d|https?:\/\/|\bdoi\s*:)/u;
 const INLINE_CITATION_CANDIDATE = /\([^()\n]*\)|\[\d+(?:\s*[,–-]\s*\d+)*\]/gu;
 const AUTHOR_DATE_CITATION = /^(?:see\s+)?[\p{Lu}][\p{L}'’.-]+(?:\s+(?:[\p{Lu}][\p{L}'’.-]+|and|&|et\s+al\.))*[,]?\s+(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*p{1,2}\.\s*[\d–-]+)?$/u;
@@ -50,6 +50,7 @@ function isReferenceEntry(value, headed = false) {
   // A PDF page counter can precede a continued reference list. Ignore it only
   // while testing the following block; uncertain blocks remain untouched.
   const text = value.replace(/^\s*\d{1,4}\s*\n/u, '').replace(/\s+/gu, ' ').trim();
+  if (looksLikeNarrative(text)) return false;
   const publication = PUBLICATION_METADATA.test(text);
   const date = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*/iu.exec(text);
   if ((!headed || !publication) && date && looksLikeNarrative(text.slice(date.index + date[0].length))) return false;
@@ -90,16 +91,17 @@ function referenceRanges(text, lines) {
       continue;
     }
     let end = index + 1;
-    let checkedWebEntry = false;
     while (end < lines.length && lines[end].text.trim()
       && !REFERENCE_HEADING.test(headingText(lines[end].text))
       && !BODY_HEADING.test(headingText(lines[end].text))
       && !looksLikeNarrative(lines[end].text)) {
-      if (!checkedWebEntry && REFERENCE_URL.test(lines[end - 1].text)) {
-        checkedWebEntry = true;
-        // Test the first URL while scanning, so consecutive web references
-        // each consume their own lines without rescanning the remaining list.
-        if (isWebTitleReference(text.slice(lines[index].start, lines[end - 1].end))) break;
+      if (REFERENCE_URL.test(lines[end - 1].text)) {
+        // An uncertain entry must not swallow later, recognizable references.
+        // Keep clear PDF URL continuations with this entry, then examine the
+        // next block independently even if this block is not a reference.
+        while (end < lines.length && /^[\p{L}\p{N}%_.~&=?#\/-]+$/u.test(lines[end].text.trim())
+          && (lines[end - 1].text.trim().endsWith('-') || lines[end].text.trim().endsWith('/'))) end += 1;
+        break;
       }
       end += 1;
     }
@@ -142,6 +144,35 @@ function referenceRanges(text, lines) {
   return ranges;
 }
 
+// PDF imports can place a reference heading and every entry on one line. Only
+// infer boundaries after an explicit heading, and only through individually
+// recognizable, URL-terminated entries. Never consume arbitrary trailing
+// prose merely because it follows a References heading.
+function flattenedReferenceRanges(text) {
+  const headings = /(?:^|[.!?]\s+|(?:^|\s)\d{1,4}[ \t]+)(references|reference list|bibliography|works? cited|works consulted|literature cited)[ \t]*:?[ \t]+/gimu;
+  const ranges = [];
+  for (const match of text.matchAll(headings)) {
+    const start = match.index + match[0].toLocaleLowerCase().lastIndexOf(match[1].toLocaleLowerCase());
+    let cursor = match.index + match[0].length;
+    let end = cursor;
+    while (cursor < text.length) {
+      const window = text.slice(cursor, cursor + 2048);
+      const url = /https?:\/\/[^\s]+|\bdoi\s*:\s*[^\s]+/iu.exec(window);
+      if (!url) break;
+      const candidate = window.slice(0, url.index + url[0].length);
+      const clean = candidate.replace(/^\d{1,4}\s+(?=\p{Lu})/u, '').trim();
+      const date = /\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:,\s*[^)]{1,35})?\)\.\s*/iu.exec(clean);
+      if (!isReferenceEntry(clean) || looksLikeNarrative(clean)
+        || date && looksLikeNarrative(clean.slice(date.index + date[0].length))) break;
+      end = cursor + candidate.length;
+      cursor = end;
+      while (/\s/u.test(text[cursor] || '') && cursor < text.length) cursor += 1;
+    }
+    if (end > match.index + match[0].length) ranges.push({ start, end });
+  }
+  return ranges;
+}
+
 const mask = value => value.replace(/[^\r\n]/g, ' ');
 const words = value => canonicalQuoteText(value).match(/[\p{L}\p{N}]+/gu) || [];
 const hasPhrase = (text, phrase) => (` ${words(text).join(' ')} `).includes(` ${words(phrase).join(' ')} `);
@@ -150,7 +181,12 @@ const hasPhrase = (text, phrase) => (` ${words(text).join(' ')} `).includes(` ${
 export function analyzeMemoSource(value) {
   const text = String(value || '');
   const lines = linesWithOffsets(text);
-  const bibliographyRanges = referenceRanges(text, lines);
+  const bibliographyRanges = [];
+  for (const range of [...referenceRanges(text, lines), ...flattenedReferenceRanges(text)].sort((a, b) => a.start - b.start)) {
+    const previous = bibliographyRanges.at(-1);
+    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
+    else bibliographyRanges.push({ ...range });
+  }
   let narrativeText = text;
   for (const range of bibliographyRanges.toReversed()) {
     narrativeText = narrativeText.slice(0, range.start) + mask(narrativeText.slice(range.start, range.end)) + narrativeText.slice(range.end);

@@ -1,8 +1,61 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeMemoSource, bibliographyOnlyEvidence, bibliographyOnlyLabel, memoRepairPassages, memoStructure } from './memo-source.js';
 import { CITATION_MEMO, CITATION_COMPARISON_CASES } from '../tests/fixtures/memo-citation-cases.js';
+import { submittedReviewIssue } from './node-submission.js';
 
 describe('memo source boundaries', () => {
+  it('does not let an uncertain reference swallow later standalone entries', () => {
+    const narrative = 'Students visit the River Youth Center for counseling.';
+    const uncertain = 'Regional District #10. (2023). Directory.Example.\nhttps://example.test/district/';
+    const wrapped = 'Smith, A. (2025). Community schooling. Example Press.\nhttps://example.test/long-guide-ad\ndress-for-families/';
+    const reference = 'River Youth Center. (2023). https://example.test/youth/';
+    const later = 'The teacher helps students at school.';
+    const text = `${narrative}\n\n${uncertain}\n${wrapped}\n${reference}\n${later}`;
+    const source = analyzeMemoSource(text);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.narrativeText).toContain(uncertain);
+    expect(source.narrativeText).toContain(later);
+    expect(source.bibliographyText).toContain(wrapped);
+    expect(source.bibliographyText).toContain(reference);
+    expect(bibliographyOnlyEvidence(reference, source)).toBe(true);
+    expect(source.text).toBe(text);
+    expect(source.narrativeText).toHaveLength(text.length);
+  });
+
+  it('recognizes a flattened PDF bibliography while preserving narrative and exact offsets', () => {
+    const narrative = 'Students visit the River Youth Center for counseling (Community Office, 2025).';
+    const first = 'Community Office. (2025). Youth support. https://example.test/support';
+    const second = 'River Youth Center. (n.d.). Counseling services. https://example.test/counseling';
+    const later = 'A parent shares attendance updates at the school.';
+    const text = `${narrative} 3 References ${first} ${second} ${later}`;
+    const source = analyzeMemoSource(text);
+    expect(source.text).toBe(text);
+    expect(source.narrativeText).toHaveLength(text.length);
+    expect(source.narrativeText).toContain(narrative);
+    expect(source.narrativeText).toContain(later);
+    expect(source.bibliographyText).toContain(first);
+    expect(source.bibliographyText).toContain(second);
+    expect(source.bibliographyText).not.toContain(later);
+    expect(bibliographyOnlyLabel('River Youth Center', source)).toBe(false);
+    expect(bibliographyOnlyEvidence(second, source)).toBe(true);
+    const review = { guidance: [], nodes: [{ label: 'River Youth Center', type: 'organization', scale: 'micro', evidence: second }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    expect(submittedReviewIssue(review, 'micro', text)).toContain('not a bibliography');
+    review.nodes[0].evidence = narrative;
+    expect(submittedReviewIssue(review, 'micro', text)).toBeNull();
+    expect(memoRepairPassages(source).every(passage => !passage.text.includes('https://example.test/'))).toBe(true);
+    for (const range of source.bibliographyRanges) expect(text.slice(range.start, range.end)).toContain('References');
+  });
+
+  it.each([
+    'References Smith, A. (2025). The teacher helps Rosa complete a form. https://example.test/notes',
+    'References School Office. (2025). A parent shares attendance updates at the school. https://example.test/notes',
+    'References The teacher references a report (2025) while helping Rosa. https://example.test/notes',
+    'The teacher references Smith, A. (2025). Community schooling. https://example.test/book',
+    'References are useful for the students. School Office. (2025). Guide. https://example.test/guide',
+  ])('retains ambiguous flattened narrative: %s', text => {
+    expect(analyzeMemoSource(text).narrativeText).toBe(text);
+  });
+
   it('keeps the complete source and citation-bearing narrative while identifying a reference list', () => {
     const source = analyzeMemoSource(CITATION_MEMO);
     expect(source.text).toBe(CITATION_MEMO);

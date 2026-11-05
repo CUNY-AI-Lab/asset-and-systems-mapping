@@ -5875,11 +5875,17 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   // The read waits for the stage change to settle because generateSuggestions
   // reads the rendered project, not the draft being committed.
   const [pendingLevelRead, setPendingLevelRead] = useState(null);
+  const queueLevelRead = scale => setPendingLevelRead({
+    scale, projectId: projectRef.current.id,
+    activationGeneration: projectActivationGenerationRef.current,
+    accessGeneration: accessGenerationRef.current,
+  });
   const [studioHighlight, setStudioHighlight] = useState(null);
   useEffect(() => {
     setReviewBusy(null);
     setReviewFailure(null);
     setReviewRetryAt(0);
+    setPendingLevelRead(null);
     return () => {
       reviewRequestRef.current?.controller.abort();
       reviewRequestRef.current = null;
@@ -7083,7 +7089,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
         toast(nextScale
           ? `${SCALES[currentScale].label} complete. Continue with ${SCALES[nextScale].label}.`
           : `${SCALES[currentScale].label} complete. Your cumulative project is ready to review or export.`);
-        if (nextScale) setPendingLevelRead(nextScale);
+        if (nextScale) queueLevelRead(nextScale);
         break;
         }
       default: break;
@@ -7131,7 +7137,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
 
   const selectWorkScale = (scale, targetStage = null) => {
     if (memoFirstWorkflow) {
-      if (!SCALE_ORDER.includes(scale)) return;
+      if (reviewInFlightRef.current || pendingLevelRead || !SCALE_ORDER.includes(scale)) return;
       update(draft => openMemoWorkflowScale(draft, scale), 'scale.selected', `${SCALES[scale].label} opened`);
       setWorkflowPanelMode('review'); setNotebookOpen(true); setMapPreviewOpen(false); setCompletionDismissed(true); setModal(null);
       return;
@@ -7157,13 +7163,13 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   };
 
   const submitWorkflowMemo = () => {
-    if (!isNodeReviewScale(project.activeScale) || reviewInFlightRef.current) return;
+    if (!isNodeReviewScale(project.activeScale) || reviewInFlightRef.current || pendingLevelRead) return;
     setWorkflowPanelMode('review'); setNotebookOpen(true);
-    if (project.stage === 1) { void generateSuggestions(); return; }
-    setStage(1, { preserveNotebook: true });
-    setPendingLevelRead(project.activeScale);
+    if (project.stage !== 1) setStage(1, { preserveNotebook: true });
+    queueLevelRead(project.activeScale);
   };
   const editWorkflowMemo = (scale) => {
+    if (reviewInFlightRef.current || pendingLevelRead) return;
     update(draft => {
       openMemoWorkflowScale(draft, scale || (isPart2(draft.activeScale) ? 'exosphere' : 'micro'));
       draft.stage = 1;
@@ -7176,6 +7182,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const step = nextStep(project, { reviewBusy: Boolean(reviewBusy), retryPending: reviewRetryAt > Date.now(), initialModelRequired });
   const runNextStep = () => {
     if (memoFirstWorkflow) {
+      if (reviewInFlightRef.current || pendingLevelRead) return;
       if (project.stage === 0) return submitWorkflowMemo();
       const next = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) + 1];
       if (next) {
@@ -7203,7 +7210,15 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     }
   };
   useEffect(() => {
-    if (!pendingLevelRead || project.activeScale !== pendingLevelRead || project.stage !== 1) return;
+    if (!pendingLevelRead) return;
+    if (pendingLevelRead.projectId !== project.id
+      || pendingLevelRead.activationGeneration !== projectActivationGenerationRef.current
+      || pendingLevelRead.accessGeneration !== accessGenerationRef.current
+      || !workspaceStarted || accessState.status !== 'granted') {
+      setPendingLevelRead(null);
+      return;
+    }
+    if (project.activeScale !== pendingLevelRead.scale || project.stage !== 1) return;
     // The course appendix is refetched for each level and stage. A read issued before
     // that refresh settles is keyed to the previous level's governance, and its result is
     // discarded if the snapshot changes mid-flight. Wait for the refresh of this level and
@@ -7218,11 +7233,12 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     if (memoFirstWorkflow) { void generateSuggestions(); return; }
     void primary();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingLevelRead, project.activeScale, project.stage, project.teacherGovernance, governanceSettled]);
+  }, [pendingLevelRead, project.id, project.activeScale, project.stage, project.teacherGovernance, governanceSettled, workspaceStarted, accessState.status]);
   const backDisabled = project.stage === 0;
   const activateProject = useCallback((next, records, { openWorkspace = true } = {}) => {
     if (memoFirstWorkflow && isPart2(next.activeScale)) beginPart2(next);
     projectActivationGenerationRef.current += 1;
+    setPendingLevelRead(null);
     window.clearTimeout(persistTimer.current);
     window.clearTimeout(linkSyncTimer.current);
     pendingAnnotationsRef.current.clear();
@@ -7619,14 +7635,15 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const suggestionsPanel = <SuggestionsPanel project={project} update={update} toast={toast} prompt={connectionPrompt} onPromptChange={setConnectionPrompt} busy={connectionBusy} suggestions={connectionSuggestions} onSuggest={generateConnectionSuggestions} onEdit={editConnectionSuggestion} onDecision={decideConnectionSuggestion} onRefreshCandidates={refreshCandidatesFromMemo} refreshBusy={Boolean(reviewBusy)} reviewBusy={reviewBusy} reviewProgress={reviewProgress} reviewFailure={reviewFailure} retryPending={reviewRetryAt > Date.now()} onGenerate={generateSuggestions} onHighlight={setStudioHighlight} />;
   const reviewPanel = <ReviewPanel onSaveNote={flushPersistence} saveState={saveState} onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} onReviewLevel={(scale) => selectWorkScale(scale, 4)} onSubmitRevision={onSubmitRevision ? submitRevision : undefined} revisionSubmitting={revisionSubmitting} submitDisabled={Boolean(reviewBusy) || Boolean(connectionBusy)} />;
   const captureMemoImportScope = () => { const access = accessGenerationRef.current; const activation = projectActivationGenerationRef.current; return () => access === accessGenerationRef.current && activation === projectActivationGenerationRef.current; };
-  const workflowNotebook = <MemoWorkflowNotebook key={`${project.id}:${project.activeScale}`} project={project} update={update} uploadControl={<MemoFileUpload project={project} update={update} toast={toast} captureImportScope={captureMemoImportScope} />} onTextChange={text => update(draft => invalidateSubmissionDerived(draft, 'text', text))} onSelectStep={selectWorkScale} onSubmitMemo={submitWorkflowMemo} onEditMemo={editWorkflowMemo} busy={Boolean(reviewBusy)} failure={reviewFailure} retryPending={reviewRetryAt > Date.now()} saveState={saveState} onSaveNote={flushPersistence} />;
+  const workflowBusy = Boolean(reviewBusy) || Boolean(pendingLevelRead);
+  const workflowNotebook = <MemoWorkflowNotebook key={`${project.id}:${project.activeScale}`} project={project} update={update} uploadControl={<MemoFileUpload project={project} update={update} toast={toast} captureImportScope={captureMemoImportScope} />} onTextChange={text => update(draft => invalidateSubmissionDerived(draft, 'text', text))} onSelectStep={selectWorkScale} onSubmitMemo={submitWorkflowMemo} onEditMemo={editWorkflowMemo} busy={workflowBusy} failure={reviewFailure} retryPending={reviewRetryAt > Date.now()} saveState={saveState} onSaveNote={flushPersistence} />;
   const panel = memoFirstWorkflow ? { mode: workflowPanelMode, ...(workflowPanelMode !== 'inspector' ? { content: workflowNotebook } : {}), disabled: [] }
     : project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
     : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
     : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
   const workflowLevels = levelRailState(project).map(level => memoFirstWorkflow && level.state === 'locked' ? { ...level, state: 'available' } : level);
   const workflowPrevious = SCALE_ORDER[SCALE_ORDER.indexOf(project.activeScale) - 1];
-  const workflowAction = <><div className="workflow-actions">{workflowPrevious && <button type="button" className="button button--secondary" disabled={Boolean(reviewBusy)} onClick={() => selectWorkScale(workflowPrevious)}>Back</button>}<button className="button notebook-next" type="button" disabled={Boolean(reviewBusy)} onClick={runNextStep}>{project.activeScale === 'macrosphere' ? 'Finish map' : 'Continue'}</button></div>{project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}</>;
+  const workflowAction = <><div className="workflow-actions">{workflowPrevious && <button type="button" className="button button--secondary" disabled={workflowBusy} onClick={() => selectWorkScale(workflowPrevious)}>Back</button>}<button className="button notebook-next" type="button" disabled={workflowBusy} onClick={runNextStep}>{project.activeScale === 'macrosphere' ? 'Finish map' : 'Continue'}</button></div>{project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}</>;
   const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, open: notebookOpen, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
   const intakeOpen = project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
@@ -7671,6 +7688,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   };
   const openProjects = () => {
     if (!flushPersistence()) return;
+    setPendingLevelRead(null);
     const dashboard = onOpenProjects || onAccountDashboard;
     if (dashboard) { void dashboard(); return; }
     setMapPreviewOpen(false);
