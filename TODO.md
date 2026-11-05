@@ -1,12 +1,25 @@
-# Connected Microsystem layout — November 5, afternoon
+# Systems Mapping release record
 
-- [x] Center connected hubs, add space as degree/density increases, and group unconnected nodes by their existing colors outside connection routes.
-- [x] Recompute automatic placement when relationships or grouping colors change; preserve student pins, text-only edits and layer-filter stability.
-- [x] Verify Edit beside the selected item at the top left, separated from Memo · Notebook · Tools; retain unsaved copies in stale open tabs.
-- [x] Update the Map key and current layout contracts.
-- [x] Fix source-grounded Exo validation for a functional office name and explicitly named focal participant, identified by the live CUNY AI Lab test; retain failed-run evidence and rerun the unchanged memo.
-- [ ] Finish regression checks, deploy to Dev, and verify the signed-in CUNY AI Lab teaching example at Micro, Micro + Exo and the complete map.
-- [ ] Capture the verified Dev layouts, promote the exact successful main CI package to production, and record source/asset/traffic checks.
+## Connected Microsystem layout — November 5, 2026
+
+Application source **`c40a172349fd86c1be1b833a3051beb52c3e2d83`** is verified on Dev and production. The current six-image progression uses factual paraphrases of the [CUNY AI Lab website](https://ailab.gc.cuny.edu/); older invented examples remain explicitly labeled as historical tests.
+
+- [x] Enlarge automatic Micro placement with connected density and measured relationship labels, center connected hubs, and group isolated nodes by existing color away from routes. Preserve saved pins and stable identities; Arrange map explicitly reorganizes saved positions. Fit map changes the view.
+- [x] Keep Edit beside the selected item at the top left. Preserve the compact Memo · Notebook · Tools navigation and readable two-column phone placement. Consume native touch compatibility focus and double-clicks so a target tap after a saved drag keeps the correct connection editor.
+- [x] Correct recognition of established access and duration rules. Retain the exact classification error and bounded rejected field in final evidence repair. Unsupported offices remain omitted; real quotations alone do not prove missing participation facts. No silent partial application or extra retries.
+- [x] Pass [exact-main CI](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42114824773): **2,011 unit/Worker/account checks**, 12 skipped; **114 browser/accessibility checks**, 12 skipped. Verify artifact digest, source/tree, configuration, lockfile and all 41 checksums. Earlier CI caught phone text/rounding, then touch focus and a trailing native double-click that discarded a connection draft. The double-click failure was reproduced twice under slow rendering and regression-tested on both phone sizes. The superseded 27e run was cancelled; it is not counted as a passing release.
+- [x] Verify Dev `a3311cd0-329c-44d9-a17f-e8aa88da525b` / `909adf5a-1f29-4153-a2ee-7e09ed3f0dd3` at `2026-11-05T21:41:52.070421Z`, and production `b71e2260-397c-4692-a95a-50c82358763c` / `18f1d496-1ca9-4fd2-a837-9043a7222a0d` at `2026-11-05T22:03:02.616287Z`: exact source, all 36 served files, 100% traffic and unchanged runtime/bindings.
+- [x] Test the factual memos in signed-in Dev with GPT-OSS 120B: **6 Micro nodes, 1 Exo access policy, 3 Macro principles, zero model-generated relationships**. Author five relationships manually, including Exo and Macro headings connected to local relationships.
+- [x] Verify all six earlier Micro nodes, three local relationships and Memo 1 remain exact through Part 2. Reload and saved Undo/Redo preserve graph, both memos, history and active scale exactly. Undo removes the fifth relationship; Redo restores it.
+- [x] Save and inspect six factual progression screenshots: Micro nodes; local relationships; Micro plus Exo; Exo connection; Macro principles; complete map. First two captures used the f9 frontend; final four, Exo/Macro generation and persistence checks used 4b2fd69. The earlier Micro backend source was not separately captured. The final c40a172 build reopens the same factual project with graph, both memo records, edit history and scale exactly matching the prior export. These are Dev captures, not production screenshots.
+
+Three factual upload-ready memos are saved in `outputs/connected-micro-layout/test-memos/`. The third retains the Exo memo and adds the Macro continuation; replace Part 2 and click Update map. Sources are documented. The first factual Exo attempts failed without altering saved work; the unchanged memo succeeded after the repair correction. The first Macro draft updated existing evidence but produced no new Macro nodes. Clearer wording of the Lab's published principles produced critical AI literacy, transparency and environmental sustainability on the first response. Both drafts and outcomes are preserved. Administrative names alone did not prove student nonparticipation, so the automatic Exo result contains a policy rather than invented office evidence. Micro participation metadata remains unclear. Finite tests do not establish universal semantic accuracy.
+
+The older Gemma/Kimi comparison used the superseded ontology; it is not a new comparison of this release. Real-PDF limitations, independent audit findings, the stale production tab's unsaved revision conflict and previously blocked unrelated actions remain separately tracked. No production model call, map mutation or ticket was used.
+
+Private evidence: `work/connected-micro-layout/`. Factual gallery: `outputs/connected-micro-layout/factual-progression/index.html`. Sanitized local archive: `~/.local/share/cail-change-records/2026-11-05-systems-mapping-connected-layout/`.
+
+**Historical release below; superseded by the receipt above.**
 
 ## Policy classification and map controls release — November 5, 2026
 

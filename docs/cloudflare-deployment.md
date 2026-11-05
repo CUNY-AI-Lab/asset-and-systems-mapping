@@ -88,7 +88,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   automatic corrective call. A completed memo review that fails semantic
   validation gets one ordinary corrective call. If that completed correction
   still fails source grounding, one final evidence repair supplies bounded
-  exact narrative passages and requires quoted evidence. Each call receives
+  exact narrative passages and requires quoted evidence. It retains the failed classification rule and a bounded rejected node label/evidence pair where available; unsupported items must be omitted by the model, and the replacement is still validated atomically. Failure responses expose only a fixed grounding-rule enum, never raw rejected source text. Each call receives
   separate Gateway admission and shares the original generation deadline.
   Malformed JSON/parser failures, repeated generic schema errors, connection
   suggestions and Map Check do not receive this evidence repair. Successful
@@ -157,7 +157,7 @@ the check of the deployed signing/verifier relationship.
 
 ## Release and recovery
 
-For the November 4 changes, the user authorized **all changes on Dev first, screenshots, then production**. Source tests and CI precede deployment. Verify the integrated Dev behavior, saved-map reload and ten screenshots before promoting the checked source. Record the exact SHA, Worker version, traffic, assets, authenticated/model checks and unresolved limitations at each boundary. This document is a procedure, not a release receipt; historical deployment paragraphs below remain dated evidence only.
+For the November 4 changes, the user authorized **all changes on Dev first, screenshots, then production**. Source tests and CI precede deployment. Verify the integrated Dev behavior, saved-map reload and the requested progression screenshots (six for the November 5 connected-layout release) before promoting the checked source. Record the exact SHA, Worker version, traffic, assets, authenticated/model checks and unresolved limitations at each boundary. This document is a procedure, not a release receipt; historical deployment paragraphs below remain dated evidence only.
 
 
 Cloudflare account: `452c33847cf5cb1e46f391fca32fd1b5` (CUNY AI Lab).
