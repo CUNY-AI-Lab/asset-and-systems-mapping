@@ -2,10 +2,10 @@
 :root {
   --type-title: 22px;
   --type-section: 17px;
-  --type-label: 14px;
+  --type-label: 13px;
   --type-detail: 13px;
   --weight-title: 600;
-  --weight-label: 550;
+  --weight-label: 600;
 }
 .field__label, .studio-disclosure > summary, .project-details > summary { font-weight: var(--weight-label); }
 .studio-project h2, .section-heading h2 { font-weight: var(--weight-title); }
@@ -67,7 +67,7 @@ html[data-theme="dark"] .inspector .inspector-done { color: var(--ink); }
 .item-editor-title { min-width: 0; flex: 1; }
 .inspector .inspector__head--edit .item-editor-title h2 { min-height: 44px; display: flex; align-items: center; font-size: var(--type-title); font-weight: 650; }
 .item-editor-title p { margin: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
-.item-editor-title em { font-style: italic; }
+.item-editor-title em { font-style: normal; }
 .inspector__head--edit .inspector__actions { align-self: flex-start; }
 .inspector-evidence { margin: 16px 14px 20px; padding: 12px 14px; border: 0; border-left: 3px solid var(--line-strong); border-radius: 0 4px 4px 0; background: var(--surface-subtle); color: var(--ink); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; white-space: normal; }
 .inspector-evidence p { margin: 0; font-size: inherit; }

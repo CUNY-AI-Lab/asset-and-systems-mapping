@@ -41,6 +41,17 @@ async function setup(rejected, scale = 'micro', { sourceText = passage, existing
 }
 
 describe('ordinary memo contract correction', () => {
+  it('supplies the exact rejected Exo role label for the bounded corrective attempt', () => {
+    const evidence = 'This fictional protocol requires recorded permission before Centralized School Response Clinicians share a student case with a community counselor.';
+    const rejected = { guidance: [], nodes: [{ label: 'Community counselor', type: 'resource', scale: 'exosphere', evidence, basis: 'memo' }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const issue = submittedReviewIssue(rejected, 'exosphere', evidence);
+    expect(issue).toMatch(/person or role/);
+    const repair = createMemoContractRepair(rejected, issue, 'exosphere');
+    expect(repair).toEqual({ path: 'nodes[0].label', value: 'Community counselor' });
+    expect(isMemoContractRepair(repair, 'exosphere')).toBe(true);
+    expect(bytes(repair)).toBeLessThanOrEqual(MEMO_CONTRACT_REPAIR_BYTES);
+  });
+
   it.each([
     ['guidance', [{ point: 'One' }, { point: 'Two' }, { point: 'Three' }, { point: 'Four' }], 'array', 4, 3, 'micro'],
     ['guidance', { point: 'A wrapped object' }, 'object', null, 3, 'micro'],

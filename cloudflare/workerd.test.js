@@ -71,6 +71,22 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await browserExpect(page.locator('.graph-node')).toHaveCount(2);await browserExpect(page.locator('.graph-edge')).toHaveCount(0);
     await browserExpect(page.getByText('Set aside',{exact:true})).toHaveCount(0);
     await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
+    const residentBefore=(await stored()).graph.nodes.find(node=>node.label==='Residents');
+    await browserExpect(page.getByRole('button',{name:'Save classification',exact:true})).toHaveCount(0);
+    await page.getByRole('combobox',{name:'Type',exact:true}).selectOption('role');
+    await page.getByRole('button',{name:'Save classification',exact:true}).click();
+    await browserExpect.poll(async()=>(await stored()).graph.nodes.find(node=>node.id===residentBefore.id)?.type).toBe('role');
+    const residentAfter=(await stored()).graph.nodes.find(node=>node.id===residentBefore.id);
+    expect(residentAfter.evidence).toBe(residentBefore.evidence);
+    expect(residentAfter.annotations).toEqual(residentBefore.annotations);
+    const hierarchy=await page.locator('#map-inspector').evaluate(panel=>{
+      const size=selector=>parseFloat(getComputedStyle(panel.querySelector(selector)).fontSize);
+      return {label:size('.field__label'),value:size('select'),caption:size('.item-editor-title h2'),title:size('.item-editor-title p'),
+        actionWidth:panel.querySelector('.notebook-next').getBoundingClientRect().width,panelWidth:panel.getBoundingClientRect().width};
+    });
+    expect(hierarchy.label).toBeLessThan(hierarchy.value);
+    expect(hierarchy.caption).toBeLessThan(hierarchy.title);
+    expect(hierarchy.actionWidth).toBeLessThan(hierarchy.panelWidth*.65);
     await page.getByRole('button',{name:'Done',exact:true}).click();
     await browserExpect(page.getByRole('heading',{name:'Micro · local nodes',exact:true})).toBeVisible();
     await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
@@ -146,8 +162,17 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome reop
       await browserExpect(page.getByRole('button',{name:'Submit memo and add nodes',exact:true})).toHaveCount(0);
       await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
     }
+    // Edit changes the course-guidance stage and starts two fixture reads.
+    // Wait for their completion before unrouteAll changes interception; waiting
+    // only for the textarea leaves the slower builder response in flight.
+    const editResponses=Promise.all(['preflight','builder'].map(kind=>page.waitForResponse(response=>{
+      const url=new URL(response.url());
+      return url.pathname==='/api/config/public' && url.searchParams.get('configKind')===kind
+        && url.searchParams.get('stageId')==='review-suggestions';
+    })));
     await page.getByRole('button',{name:'Edit',exact:true}).click();
     await browserExpect(page.getByRole('textbox',{name:'First memo',exact:true})).toHaveValue(project.submission.text);
+    for(const response of await editResponses) { expect(response.ok()).toBe(true); expect(await response.finished()).toBeNull(); }
   } finally {await context.unrouteAll({behavior:'wait'});await browser.close();}
 },30000);
 

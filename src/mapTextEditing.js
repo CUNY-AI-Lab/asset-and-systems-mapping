@@ -1,6 +1,6 @@
 import {
   containsRetiredSystemsLanguage, isDiscreteMicroNodeLabel, isMesosystemLabel,
-  isNamedInstitutionLabel, isObviousLowerLevelMacroLabel, isStatementMapElementLabel,
+  isNamedInstitutionLabel, isObviousLowerLevelMacroLabel, isStatementMapElementLabel, isExplicitMacroPolicyLabel,
   labelRepeatsInstitution, normalizeMapElementLabel, scaleLexiconVerb,
 } from './domain.js';
 
@@ -11,8 +11,8 @@ export function nodeLabelIssue(value, node, nodes) {
   if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(value)) return 'Name one specific person, role, group, activity, object, or immediate setting.';
   if (node.scale === 'meso' && !isMesosystemLabel(value)) return 'Name a linkage among at least two Micro settings, such as “home–school coordination.”';
   if (node.scale === 'macrosphere' && isObviousLowerLevelMacroLabel(value)) return 'That label names an immediate person, role, activity, or schedule. Add it at Micro instead.';
-  if (node.scale === 'macrosphere' && isNamedInstitutionLabel(value)) return 'Name a broader policy, condition, or belief rather than an institution.';
-  if (node.scale === 'macrosphere' && labelRepeatsInstitution(value, nodes.filter(item => item.scale === 'exosphere'))) return 'That label names or repeats an institution. Add it at Exo-level instead.';
+  if (node.scale === 'macrosphere' && isNamedInstitutionLabel(value) && !isExplicitMacroPolicyLabel(value, node.type)) return 'Name a broader policy, condition, or belief rather than an institution.';
+  if (node.scale === 'macrosphere' && !isExplicitMacroPolicyLabel(value, node.type) && labelRepeatsInstitution(value, nodes.filter(item => item.scale === 'exosphere'))) return 'That label names or repeats an institution. Add it at Exo-level instead.';
   return '';
 }
 

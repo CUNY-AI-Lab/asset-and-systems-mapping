@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { createDefaultProject, parseProject, serializeProject, validateProject } from './domain.js';
 import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
 import { activeSubmission } from './projectMemo.js';
-import { submittedReviewIssue, nodeSubmissionSchema } from '../shared/node-submission.js';
+import { submittedReviewIssue, nodeSubmissionSchema, nodeSubmissionInstruction, EXO_SETTING_TYPES } from '../shared/node-submission.js';
 
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
 const local = { label:'Residents', type:'group', scale:'micro', evidence:'Residents meet in the community room.' };
@@ -99,6 +99,42 @@ it.each(['government', 'schools', 'big institutions', 'society'])('cannot disgui
   expect(submittedReviewIssue(review([node]), 'exosphere', node.evidence)).toMatch(/not a named institution/);
 });
 
+it.each(EXO_SETTING_TYPES)('rejects the reported community counselor misclassification under Exo type %s', type => {
+  const evidence = 'This fictional protocol requires recorded permission before Centralized School Response Clinicians share a student case with a community counselor.';
+  const node = { label: 'Community counselor', type, scale: 'exosphere', basis: 'memo', evidence };
+  expect(submittedReviewIssue(review([node]), 'exosphere', evidence)).toBe('nodes[0].label names a person or role, not an outside setting or resource.');
+});
+
+it.each([
+  ['Guidance counselors', 'Guidance counselors meet with students.'],
+  ['Licensed community counselors', 'Licensed community counselors receive referrals.'],
+  ['Centralized School Response Clinicians', 'Centralized School Response Clinicians share a student case.'],
+  ['Classroom teachers', 'Classroom teachers support students.'],
+  ['Rosa Alvarez', 'Rosa Alvarez is a community counselor who receives student referrals.'],
+])('does not turn the participant %s into an outside resource', (label, evidence) => {
+  const node = { label, type: 'resource', scale: 'exosphere', basis: 'memo', evidence };
+  expect(submittedReviewIssue(review([node]), 'exosphere', evidence)).toMatch(/person or role/);
+});
+
+it('keeps local roles eligible for Micro and asks Part 2 to omit them without generating relationships', () => {
+  const node = { label: 'Community counselor', type: 'role', scale: 'micro', evidence: 'A community counselor meets with students.' };
+  expect(submittedReviewIssue(review([node]), 'micro', node.evidence)).toBeNull();
+  const instruction = nodeSubmissionInstruction('exosphere');
+  expect(instruction).toContain('Omit these local participants from this second-memo output');
+  expect(instruction).toContain('return NO links, scopes, memberships or recommendations');
+  expect(nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf.map(node => node.properties.scale.enum)).toEqual([['exosphere'], ['macrosphere']]);
+});
+
+it.each([
+  ['District Counseling Office', 'institution', 'District Counseling Office allocates counseling staff across the district.'],
+  ['Community Counselor Referral Service', 'service', 'Community Counselor Referral Service coordinates referral rules for district clinics.'],
+  ['School Counselor Association', 'organization', 'School Counselor Association sets professional training requirements.'],
+  ['School counselor training fund', 'resource', 'The School counselor training fund pays for district training.'],
+  ['City Housing Authority', 'agency', 'City Housing Authority allocates repair staff.'],
+])('preserves the specifically identified outside setting or resource %s', (label, type, evidence) => {
+  expect(submittedReviewIssue(review([{ label, type, evidence, scale: 'exosphere', basis: 'memo' }]), 'exosphere', evidence)).toBeNull();
+});
+
 it.each([
   ['Divya Patel', 'structure', 'Divya Patel teaches social studies at the school.', /person or institution/],
   ['Rosa Alvarez', 'culture', 'Rosa Alvarez is a teacher at the school.', /person or institution/],
@@ -124,6 +160,7 @@ it.each([
   ['Structural racism', 'structure', 'Structural racism means Black residents need more documentation to obtain housing assistance.'],
   ['Financial insecurity', 'economic condition', 'Financial insecurity means families need more time to pay rent.'],
   ['School confidentiality policy', 'policy', 'Parents should provide written permission under the School confidentiality policy.'],
+  ['Community counselor confidentiality protocol', 'policy', 'Community counselor confidentiality protocol requires recorded permission before sharing a student case.'],
 ])('retains grounded named policies and broader conditions: %s', (label, type, evidence) => {
   const node = { label, type, evidence, scale: 'macrosphere', basis: 'memo' };
   expect(submittedReviewIssue(review([node]), 'exosphere', evidence)).toBeNull();

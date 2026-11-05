@@ -11,6 +11,8 @@ This is the current account-workspace contract, incorporating the user's later N
 
 The model returns at most six nodes per submission, with no guidance, relationships, examples, scopes or group memberships. Part 2 permits at most three Exo and three Macro nodes. Weak evidence may correctly produce no nodes. Source text is data, never authority to alter this contract. Successful processing is not certification of a student's interpretation.
 
+People and participant roles (such as a community counselor) cannot become Exo nodes by being labeled resources. Part 2 omits those local roles; a named counseling office or an outside funding resource may still qualify. Students can correct a saved node's System and Type in the editor. Saving retains its ID, evidence, notes, position and existing relationships; a change that conflicts with a saved connection or membership is rejected without modifying the map.
+
 The canvas and resizable Notebook remain visible together. Tools is inside that sidebar; Hide closes it explicitly. Continue, Back and selected-item actions stay above scrolling content. Field Notes are optional. Remove and Add to map reflect one saved state, and never appear together for a node. Removing a connection source or double-clicking during connection mode cancels the operation. Micro's instruction is “Select a node to edit it.” Evidence excerpts are labeled “Quote from memo.”
 
 ## Independent sources and persistence
@@ -22,6 +24,8 @@ The account node-submission path uses `student-nodes-v1` and `preflightEvaluatio
 ## Map and manual groups
 
 Three content-fitted nested regions show **Microsystem**, **Exosystem** and **Macrosystem**; Meso relationships occupy Micro space. Node type and level colors are supplemented by labels and line patterns. Relationship verbs remain attached to their routes. Auto-fit separates cards and shared route segments; unavoidable crossings have visual separation. Manual positions persist when auto-fit is off.
+
+Region boundaries fit uneven content in both axes and enclose each inner contour and caption. This view calculation does not rewrite node coordinates. The account sidebar uses small semibold field labels and captions, readable content, compact secondary controls and one prominent content-width progression button. Desktop controls are 40 pixels high; phone and coarse-pointer controls retain 44-pixel targets. Focus states, dark-mode contrast and text wrapping remain part of the shared styling contract.
 
 A manually created group records 1–24 exact live Meso `relationshipIds`. Its heading is an Exo or Macro node. The serialized target is a real member endpoint for compatibility; membership is defined by relationship IDs, not that anchor. Validation rejects unknown, retired, nested and out-of-scale members. Students must revise/remove a dependent group before removing its member relationship. Ordinary node-to-node links omit `relationshipIds`.
 
