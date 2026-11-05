@@ -4,6 +4,7 @@
 - [x] Recompute automatic placement when relationships or grouping colors change; preserve student pins, text-only edits and layer-filter stability.
 - [x] Verify Edit beside the selected item at the top left, separated from Memo · Notebook · Tools; retain unsaved copies in stale open tabs.
 - [x] Update the Map key and current layout contracts.
+- [x] Fix source-grounded Exo validation for a functional office name and explicitly named focal participant, identified by the live CUNY AI Lab test; retain failed-run evidence and rerun the unchanged memo.
 - [ ] Finish regression checks, deploy to Dev, and verify the signed-in CUNY AI Lab teaching example at Micro, Micro + Exo and the complete map.
 - [ ] Capture the verified Dev layouts, promote the exact successful main CI package to production, and record source/asset/traffic checks.
 

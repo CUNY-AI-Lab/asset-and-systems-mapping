@@ -72,3 +72,28 @@ it.each(['These decisions delay repairs in their buildings.', 'Northside Housing
   const evidence = `Residents do not participate in Northside Housing Office allocation decisions. ${consequence}`;
   expect(submittedReviewIssue(wrap([exo(evidence)]), 'exosphere', evidence)).toBeNull();
 });
+
+const labOffice = 'Lab account administration office';
+const labEvidence = 'A hypothetical Lab account administration office decides whether workshop accounts can use the Sandbox. Nia does not work in or attend this office.';
+const labSource = `The focal participant is still Nia from the first memo. ${labEvidence}`;
+const labNode = { label: labOffice, type: 'organization', scale: 'exosphere', basis: 'memo', evidence: labEvidence };
+
+it('accepts a source-named functional office and an explicitly identified focal person across adjacent sentences', () => {
+  expect(submittedReviewIssue(wrap([labNode]), 'exosphere', labSource)).toBeNull();
+  expect(submittedReviewIssue(wrap([labNode]), 'exosphere')).toBeNull();
+});
+
+it.each([
+  labEvidence,
+  `The focal participant is still Nia. A hypothetical Lab account administration office is mentioned. Nia does not work in or attend this office.`,
+  `The focal participant is still Nia. ${labEvidence} Nia also attends Lab account administration office meetings.`,
+  `The focal participant is still Nia. A hypothetical Lab account administration office refers decisions to the school board. Nia does not attend this board.`,
+])('withholds named-person placement when focal identity, indirect effect or consistent participation is missing', source => {
+  const evidence = source.replace(/^The focal participant is still Nia\.\s*/u, '');
+  expect(submittedReviewIssue(wrap([{ ...labNode, evidence }]), 'exosphere', source)).toBeTruthy();
+});
+
+it('does not accept an invented functional office name from a generic mention', () => {
+  const node = { ...labNode, evidence: 'An office decides access.' };
+  expect(submittedReviewIssue(wrap([node]), 'exosphere', node.evidence)).toMatch(/not a named institution/);
+});

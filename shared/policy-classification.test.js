@@ -9,6 +9,13 @@ it('classifies the operative policy at Exo without inventing nonparticipation in
   expect(submittedReviewIssue(wrap([policy]), 'exosphere', policy.evidence)).toBeNull();
 });
 
+it.each([
+  ['workshop account access policy', 'A hypothetical workshop account access policy determines the authorization that the office applies before Nia can use the Sandbox.'],
+  ['course approval rule', "A hypothetical course approval rule determines whether the facilitator can arrange Sandbox access for the workshop's peer review circle."],
+])('accepts the specific authorization operation in the illustrative Lab policy: %s', (label, evidence) => {
+  expect(submittedReviewIssue(wrap([{ ...policy, label, evidence }]), 'exosphere', evidence)).toBeNull();
+});
+
 it.each(['policy', 'structure', 'culture', 'belief'])('rejects a policy mislabeled as Macro/%s and supports bounded repair', type => {
   const node = { ...policy, type, scale: 'macrosphere' };
   const issue = submittedReviewIssue(wrap([node]), 'exosphere', node.evidence);
