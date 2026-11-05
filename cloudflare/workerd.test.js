@@ -537,7 +537,9 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.clearCookies();
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
-    await browserExpect(page.getByRole('heading', { name: 'Start your first map' })).toBeVisible();
+    await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+    await browserExpect(page.getByRole('form', { name: 'New project', exact: true })).toBeVisible();
+    await browserExpect(page.getByRole('article')).toHaveCount(0);
     await page.getByRole('button', { name: 'Account', exact: true }).click();
     await browserExpect(page.getByText('Approximately 90% remaining', { exact: false })).toBeVisible();
     expect(await page.getByText('East Harlem disability resources').count()).toBe(0);

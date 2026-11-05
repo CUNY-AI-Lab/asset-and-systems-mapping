@@ -24,7 +24,7 @@ Design: [wireframe and behavior](docs/MEMO_WORKSPACE_2026-11-04.md) · [interact
 - [x] Verify desktop/phone layouts, info dismissal/focus, visible canvas, tab history and keyboard controls.
 - [x] Simplify Projects to visible Project title / Creator name fields, searchable saved names, and an accessible Project details editor.
 - [x] Route new bug/feature reports directly to Redmine with existing credentials, no automatic email fallback; preserve old receipts.
-- [ ] Commit with verified zmuhls author/committer, deploy the checked revision to Dev, and perform a signed-in workflow test with approved synthetic content.
+- [ ] Commit with verified zmuhls author/committer, deploy the checked revision to Dev, and perform signed-in workflow tests with the approved synthetic examples and all four supplied PDFs.
 - [ ] Record Dev evidence and screenshots, run an independent regression audit, then promote the exact checked release to production and verify it.
 - [ ] Demonstrate participation-based Micro/Exo classification with source-grounded explanations and minimal-pair live Dev tests; withhold unsupported placements.
 - [x] Update all current documentation affected by these changes; retain dated receipts as historical evidence.

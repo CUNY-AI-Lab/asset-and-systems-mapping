@@ -47,7 +47,7 @@ Upload your first memo to place people, places, and resources on the map, then u
 - Existing IDs and original generated labels are the identity anchors, including renamed, reclassified and removed nodes. Do not match solely on their current labels.
 - Existing manual records and every relationship are preserved. Deletions in memo prose do not automatically delete a student's node or its connections.
 - Apply a validated update atomically and capture it in saved Undo. Reject unknown IDs, duplicate identities, stale responses, oversize input and unsupported evidence before graph mutation.
-- Model output stays small and node-only. Part 2 classifies Exo organizations and Macro conditions using the retained local graph; the separate Part 1 memo is context, never the Part 2 editor's value.
+- Model output stays small and node-only. Part 2 classifies Exo organizations and Macro conditions using the retained Part 1 map as context and the active Part 2 memo as source. The Part 1 memo is never copied into the Part 2 editor or submitted as its source.
 - Legacy projects without a submitted baseline are handled conservatively and never rewritten just by opening them.
 
 ## Reports
