@@ -2,30 +2,37 @@
 const box = (p, g, gap = 0) => ({ left:p.x-g.cardWidth/2-gap, right:p.x+g.cardWidth/2+gap, top:p.y-g.cardHeight/2-gap, bottom:p.y+g.cardHeight/2+gap });
 const overlaps = (a,b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 const corners = b => [[b.left,b.top],[b.right,b.top],[b.left,b.bottom],[b.right,b.bottom]];
-export function contentEllipse(bounds, padding = 24, fitOuter = false) {
+export const REGION_CAPTION = Object.freeze({ width: 192, height: 36, offsetY: 6 });
+
+export function contentEllipse(bounds, padding = 24) {
   if (!bounds.length) return null;
   const left=Math.min(...bounds.map(b=>b.left)), right=Math.max(...bounds.map(b=>b.right));
   const top=Math.min(...bounds.map(b=>b.top)), bottom=Math.max(...bounds.map(b=>b.bottom));
   const cx=(left+right)/2,cy=(top+bottom)/2;
-  const a=Math.max(140,(right-left)/2+padding),b=Math.max(100,(bottom-top)/2+padding);
-  const factor=Math.max(1,...bounds.flatMap(corners).map(([x,y])=>Math.hypot((x-cx)/a,(y-cy)/b)));
-  const rx=a*factor+padding,ry=b*factor+padding;
-  if(fitOuter) {
-    // Move the outer center toward its headings instead of leaving an empty
-    // band above the local map. Every sampled inner boundary and card corner
-    // remains enclosed; choose the smallest of these candidate ellipses.
-    const points=bounds.flatMap(corners);
-    let best={cx,cy,rx,ry,area:rx*ry};
-    for(let shift=-10;shift<=10;shift++)for(let step=0;step<=24;step++) {
-      const nextCy=cy+shift*(bottom-top)/40;
-      const nextRx=a+step*(right-left)/80;
-      const nextRy=Math.max(100,...points.map(([x,y])=>Math.abs(y-nextCy)/Math.sqrt(1-((x-cx)/nextRx)**2)));
-      const area=(nextRx+padding)*(nextRy+padding);
-      if(area<best.area)best={cx,cy:nextCy,rx:nextRx+padding,ry:nextRy+padding,area};
+  const points=bounds.flatMap(corners);
+  const a=Math.max(REGION_CAPTION.width/2+12,(right-left)/2+padding);
+  const b=Math.max(60,(bottom-top)/2+padding);
+  const factor=Math.max(1,...points.map(([x,y])=>Math.hypot((x-cx)/a,(y-cy)/b)));
+  let best={cx,cy,rx:a*factor,ry:b*factor};
+  const area=ellipse=>(ellipse.rx+padding)*(ellipse.ry+padding);
+  // Fit both axes to the occupied shape. A fixed horizontal center made a
+  // sparse item at one side inflate the opposite side of every outer sphere.
+  // A bounded coarse-to-fine search keeps this deterministic during resizing.
+  let xStep=Math.max(8,(right-left)/8),yStep=Math.max(8,(bottom-top)/8),radiusStep=.24;
+  for(let pass=0;pass<5;pass++) {
+    const origin=best;
+    for(const dx of [-1,0,1])for(const dy of [-1,0,1])for(const dr of [-1,0,1]) {
+      const nextCx=origin.cx+dx*xStep,nextCy=origin.cy+dy*yStep;
+      const reach=Math.max(nextCx-left,right-nextCx);
+      const rx=Math.max(a,reach+.01,origin.rx*Math.exp(dr*radiusStep));
+      const ry=Math.max(60,...points.map(([x,y])=>Math.abs(y-nextCy)/Math.sqrt(1-((x-nextCx)/rx)**2)));
+      const candidate={cx:nextCx,cy:nextCy,rx,ry};
+      if(Number.isFinite(ry)&&area(candidate)<area(best)-.001)best=candidate;
     }
-    return {...best,left:best.cx-best.rx,right:best.cx+best.rx,top:best.cy-best.ry,bottom:best.cy+best.ry};
+    xStep/=2;yStep/=2;radiusStep/=2;
   }
-  return {cx,cy,rx,ry,left:cx-rx,right:cx+rx,top:cy-ry,bottom:cy+ry};
+  const rx=best.rx+padding,ry=best.ry+padding;
+  return {cx:best.cx,cy:best.cy,rx,ry,left:best.cx-rx,right:best.cx+rx,top:best.cy-ry,bottom:best.cy+ry};
 }
 export function studentMapBoundaries(nodes, geometries) {
   const local=nodes.filter(n=>n.scale==='micro');
@@ -35,14 +42,19 @@ export function studentMapBoundaries(nodes, geometries) {
   const boundaries={micro};
   let inner=micro;
   for(const scale of ['exosphere','macrosphere']) {
-    // Enclose the actual preceding ellipse, not its empty bounding-box corners.
+    // Circumscribed polygon vertices guarantee that the whole preceding
+    // ellipse is enclosed, including the arcs between the sampled points.
+    // Unlike its bounding rectangle, this does not reserve empty corners.
     const bounds=outer.filter(n=>n.scale===scale).map(n=>box(n,geometries.get(n.id),8));
+    const circumscribed=1/Math.cos(Math.PI/64);
     if(inner) for(let i=0;i<64;i++) {
-      const angle=i*Math.PI/32,x=inner.cx+inner.rx*Math.cos(angle),y=inner.cy+inner.ry*Math.sin(angle);
+      const angle=i*Math.PI/32,x=inner.cx+inner.rx*circumscribed*Math.cos(angle),y=inner.cy+inner.ry*circumscribed*Math.sin(angle);
       bounds.push({left:x,right:x,top:y,bottom:y});
     }
-    if(inner)bounds.push({left:inner.cx,right:inner.cx,top:inner.top-36,bottom:inner.top-36});
-    inner=contentEllipse(bounds,scale==='exosphere'?18:22,true);
+    if(inner)bounds.push({left:inner.cx-REGION_CAPTION.width/2,right:inner.cx+REGION_CAPTION.width/2,
+      top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,
+      bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2});
+    inner=contentEllipse(bounds,scale==='exosphere'?18:22);
     if(inner)boundaries[scale]=inner;
   }
   return boundaries;

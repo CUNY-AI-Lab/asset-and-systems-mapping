@@ -239,7 +239,7 @@
 .map-stage--notebook .inspector__actions { width: auto; }
 .map-stage--notebook .inspector-done { border: 0; background: none; }
 
-.map-stage--notebook :is(.map-connections, .node-summary) { border: 0; border-top: 1px solid var(--line); background: none; }
+.map-stage--notebook :is(.map-connections, .node-summary) { border: 0; background: none; }
 .map-stage--notebook :is(.map-connections, .node-summary) > summary { min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 400; }
 .map-stage--notebook .inspector__head { display: flex; flex-wrap: nowrap; gap: 8px; }
 .map-stage--notebook .inspector__actions { flex: 0 0 auto; }
@@ -270,20 +270,21 @@
 }
 .map-stage--notebook .map-reading-guide { top:8px; bottom:auto; left:8px; max-width:calc(100% - 80px); }
 /* A compact editor uses one readable type scale; long names remain visible. */
-.map-stage--notebook #map-inspector .inspector__head--edit { padding:6px 12px; gap:8px; }
-.map-stage--notebook #map-inspector .item-editor-title h2 { min-height:32px; font:600 16px/1.4 var(--body); }
-.map-stage--notebook #map-inspector .item-editor-title p { margin:0; font:400 14px/1.4 var(--body); }
-.map-stage--notebook #map-inspector .inspector-evidence { margin:8px 12px; padding:6px 8px; font:400 14px/1.4 var(--body); }
-.map-stage--notebook #map-inspector :is(.inspector__body,.add-form) { padding:8px 12px 12px; gap:10px; }
-.map-stage--notebook #map-inspector :is(.field,.annotation-field) { gap:5px; }
-.map-stage--notebook #map-inspector :is(.field__label,.field__hint,.map-connections > summary,.node-connect-action,.inspector-done) { font:400 14px/1.4 var(--body); }
-.map-stage--notebook #map-inspector .field__label { font-weight:550; }
-.map-stage--notebook #map-inspector .node-connect-action { display:block; min-height:44px; padding:6px 10px; margin:0; }
+.map-stage--notebook #map-inspector .inspector__head--edit { padding:12px; gap:12px; }
+.map-stage--notebook #map-inspector .item-editor-title h2 { min-height:0; margin-bottom:4px; color:var(--muted); font:600 13px/1.35 var(--body); }
+.map-stage--notebook #map-inspector .item-editor-title p { margin:0; font:600 18px/1.3 var(--body); }
+.map-stage--notebook #map-inspector .inspector-evidence { margin:0 12px 12px; padding:10px 12px; font:400 16px/1.5 var(--body); }
+.map-stage--notebook #map-inspector :is(.inspector__body,.add-form) { padding:0 12px 16px; gap:14px; }
+.map-stage--notebook #map-inspector :is(.field,.annotation-field) { gap:6px; }
+.map-stage--notebook #map-inspector .field__label { color:var(--ink); font:600 13px/1.35 var(--body); }
+.map-stage--notebook #map-inspector .field__hint { color:var(--muted); font:400 14px/1.45 var(--body); }
+.map-stage--notebook #map-inspector :is(.map-connections > summary,.node-connect-action,.inspector-done) { font:550 14px/1.35 var(--body); }
+.map-stage--notebook #map-inspector .node-connect-action { display:block; justify-self:start; width:auto; max-width:100%; min-height:var(--control-height); padding:8px 10px; margin:0; text-align:left; }
 .map-stage--notebook #map-inspector .node-connect-action em { font-weight:400; }
-.map-stage--notebook #map-inspector :is(input:not([type=checkbox]),textarea,select) { font:400 14px/1.4 var(--body); padding:7px 9px; }
-.map-stage--notebook #map-inspector .map-label-input { min-height:44px; overflow:hidden; resize:none; field-sizing:content; }
+.map-stage--notebook #map-inspector :is(input:not([type=checkbox]),textarea,select) { font:400 16px/1.4 var(--body); padding:8px 10px; }
+.map-stage--notebook #map-inspector .map-label-input { min-height:var(--control-height); overflow:hidden; resize:none; field-sizing:content; }
 .map-stage--notebook #map-inspector .map-connections { margin:0; }
-.map-stage--notebook #map-inspector .map-connections > summary { padding:8px 0; min-height:36px; }
+.map-stage--notebook #map-inspector .map-connections > summary { padding:8px 10px; min-height:var(--control-height); }
 .map-stage--notebook #map-inspector .annotation-field textarea { min-height:80px; }
 
 /* Keep the Notebook focused on the current memo or note, with one type scale

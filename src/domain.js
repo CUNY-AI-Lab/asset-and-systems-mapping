@@ -570,6 +570,14 @@ export function isObviousLowerLevelMacroLabel(value) {
   return obviousLowerLevelMacroKind(value) !== null;
 }
 
+// A role remains a participant even when a provider labels it as a resource.
+// Match whole role phrases, not role words inside office or policy names.
+// This guard validates new model output; it does not migrate saved nodes.
+const IMMEDIATE_PARTICIPANT_ROLE_LABEL = /^(?:(?:working|home|center|school|community|care|case|service|support|peer|personal|family|student|teacher|classroom|workplace|guidance|licensed|centralized|response|public|high|mental|health)\s+){0,5}(?:aides?|attendants?|caregivers?|clinicians?|counselors?|employees?|facilitators?|instructors?|librarians?|managers?|navigators?|parents?|participants?|people|persons?|residents?|social\s+workers?|students?|supervisors?|teachers?|therapists?|workers?)$/i;
+export function isImmediateParticipantRoleLabel(value) {
+  return typeof value === 'string' && IMMEDIATE_PARTICIPANT_ROLE_LABEL.test(normalizeWhitespace(value));
+}
+
 // A mesosystem label names the interrelation among immediate settings, not an
 // institution, actor, or action. Requiring an explicit relational noun keeps
 // entity-like phrases such as "CUNY administrative systems" from being

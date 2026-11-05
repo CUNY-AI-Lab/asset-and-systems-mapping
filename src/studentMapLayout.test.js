@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { mapNodeGeometry } from './App.jsx';
-import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment, contentEllipse, REGION_CAPTION } from './studentMapLayout.js';
 
 const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
 const area=(p,g)=>({left:p.x-g.cardWidth/2,right:p.x+g.cardWidth/2,top:p.y-g.cardHeight/2,bottom:p.y+g.cardHeight/2});
@@ -73,4 +73,57 @@ it('uses the width of desktop canvases when Exo and Macro are added',()=>{
     const nearX=Math.max(b.left-r.cx,r.cx-b.right,0),nearY=Math.max(b.top-r.cy,r.cy-b.bottom,0);
     expect((nearX/r.rx)**2+(nearY/r.ry)**2).toBeGreaterThan(1);
   }
+});
+
+it('fits a lopsided arrangement in either horizontal direction without reserving empty rectangle corners',()=>{
+  const bounds=[
+    {left:0,right:180,top:0,bottom:50},
+    {left:0,right:180,top:100,bottom:160},
+    {left:600,right:740,top:80,bottom:110},
+  ];
+  const before=structuredClone(bounds),region=contentEllipse(bounds,20);
+  const reflected=contentEllipse(bounds.map(b=>({...b,left:-b.right,right:-b.left})),20);
+  expect(region.cx).toBeLessThan(320);
+  expect(reflected.cx).toBeCloseTo(-region.cx,6);
+  expect(reflected.rx).toBeCloseTo(region.rx,6);
+  expect(reflected.ry).toBeCloseTo(region.ry,6);
+  // The previous fixed-center fit took over 72,000 square-radius units.
+  expect(region.rx*region.ry).toBeLessThan(61000);
+  for(const b of bounds)for(const [x,y]of [[b.left,b.top],[b.right,b.top],[b.left,b.bottom],[b.right,b.bottom]]) {
+    expect(((x-region.cx)/region.rx)**2+((y-region.cy)/region.ry)**2).toBeLessThan(1);
+  }
+  expect(bounds).toEqual(before);
+});
+
+it('encloses continuous inner contours and complete captions for uneven three-sphere maps',()=>{
+  const nodes=[
+    {id:'a',scale:'micro',x:250,y:210},
+    {id:'b',scale:'micro',x:610,y:290},
+    {id:'c',scale:'micro',x:420,y:470},
+    {id:'office',scale:'exosphere',x:800,y:530},
+    {id:'service',scale:'exosphere',x:170,y:600},
+    {id:'policy',scale:'macrosphere',x:880,y:850},
+  ];
+  const geometry=new Map(nodes.map((node,index)=>[node.id,{cardWidth:index%2?190:120,cardHeight:index%3?56:82}]));
+  const before=structuredClone(nodes),regions=studentMapBoundaries(nodes,geometry);
+  for(const [innerScale,outerScale]of [['micro','exosphere'],['exosphere','macrosphere']]) {
+    const inner=regions[innerScale],outer=regions[outerScale];
+    for(let i=0;i<2048;i++) {
+      const angle=2*Math.PI*i/2048,x=inner.cx+inner.rx*Math.cos(angle),y=inner.cy+inner.ry*Math.sin(angle);
+      expect(((x-outer.cx)/outer.rx)**2+((y-outer.cy)/outer.ry)**2).toBeLessThan(1);
+    }
+    const caption={left:inner.cx-REGION_CAPTION.width/2,right:inner.cx+REGION_CAPTION.width/2,
+      top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2};
+    for(const [x,y]of [[caption.left,caption.top],[caption.right,caption.top],[caption.left,caption.bottom],[caption.right,caption.bottom]]) {
+      expect(((x-outer.cx)/outer.rx)**2+((y-outer.cy)/outer.ry)**2).toBeLessThan(1);
+    }
+    expect(outer.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2).toBeLessThan(caption.top);
+  }
+  for(const node of nodes) {
+    const region=regions[node.scale],b=area(node,geometry.get(node.id));
+    for(const [x,y]of [[b.left,b.top],[b.right,b.top],[b.left,b.bottom],[b.right,b.bottom]]) {
+      expect(((x-region.cx)/region.rx)**2+((y-region.cy)/region.ry)**2).toBeLessThan(1);
+    }
+  }
+  expect(nodes).toEqual(before);
 });

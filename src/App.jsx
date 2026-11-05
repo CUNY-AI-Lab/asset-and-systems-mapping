@@ -8,7 +8,7 @@ import { MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { isNodeReviewScale, isRelationshipReviewScale, nodeScaleFor, canConnectAtScale, cumulativeScales } from '../shared/mapping-grammar.js';
 import { useRelationshipDraft } from './relationshipDraft.js';
 import { readableNodePositions, straightConnectionLayout } from './readableGraphLayout.js';
-import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment, REGION_CAPTION } from './studentMapLayout.js';
 import { readMemoFile } from './documentImport.js';
 import { relationshipDescription, relationshipArrowheads, relationshipDirection, relationshipMapLabel, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
@@ -33,6 +33,8 @@ import { hasPendingGuidance } from './durableGuidance.js';
 import { exportMapImage, downloadBlob } from './mapExport.js';
 import MapListView from './MapListView.jsx';
 import MapTextEditor from './MapTextEditor.jsx';
+import NodeClassificationEditor from './NodeClassificationEditor.jsx';
+import { reclassifyNode } from './nodeClassification.js';
 import { correspondingNode, nodeLabelIssue, relationshipIssue, reviseMapText } from './mapTextEditing.js';
 import MapConnections from './MapConnections.jsx';
 import MapSearch from './MapSearch.jsx';
@@ -3906,7 +3908,16 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       ))}
     </defs>
     <g className="viewport-layer" transform={`translate(${shownViewport.panX} ${shownViewport.panY}) scale(${shownViewport.zoom})`}>
-      {contentBoundaries && <g className="ecology-layers" aria-hidden="true">{['macrosphere','exosphere','micro'].filter(scale=>contentBoundaries[scale]).map(scale=>{const b=contentBoundaries[scale];return <g key={scale} data-ecology-layer={scale} className={`ecology-layer ecology-layer--${scale} is-visible`}><ellipse cx={b.cx} cy={b.cy} rx={b.rx} ry={b.ry}/><g className="ecology-layer__label" transform={`translate(${b.cx} ${b.top+8})`}><rect x="-84" y="-16" width="168" height="32" rx="16"/><text y="5">{scale==='micro'?'Microsystem':scale==='exosphere'?'Exosystem':'Macrosystem'}</text></g></g>;})}</g>}
+      {contentBoundaries && <g className="ecology-layers" aria-hidden="true">{['macrosphere','exosphere','micro'].filter(scale=>contentBoundaries[scale]).map(scale=>{
+        const boundary=contentBoundaries[scale];
+        return <g key={scale} data-ecology-layer={scale} className={`ecology-layer ecology-layer--${scale} is-visible`}>
+          <ellipse cx={boundary.cx} cy={boundary.cy} rx={boundary.rx} ry={boundary.ry}/>
+          <g className="ecology-layer__label ecology-layer__label--reading" transform={`translate(${boundary.cx} ${boundary.top+REGION_CAPTION.offsetY})`}>
+            <rect x={-REGION_CAPTION.width/2} y={-REGION_CAPTION.height/2} width={REGION_CAPTION.width} height={REGION_CAPTION.height} rx="6"/>
+            <text y="6">{scale==='micro'?'Microsystem':scale==='exosphere'?'Exosystem':'Macrosystem'}</text>
+          </g>
+        </g>;
+      })}</g>}
       {!readingMode && mapMode === 'ecology' && !detailMode ? <EcologicalLayerBackdrop layers={ecologyLayers} visibleLayer={visibleLayer} phoneLayout={phoneLayout} nodeCount={nodes.length} ringExpansion={activeRingExpansion} nodes={nodes} edges={edges} positions={renderedPositions} visibleBounds={visibleLabelBounds} sharedBands={sharedBands} connectionLabelBounds={[...betweenEndpointLayout.bounds.values()]} /> : null}
       {!readingMode && microBoundary && <g className="ecology-layers shared-micro-boundary" aria-hidden="true"><g data-ecology-layer="micro" className="ecology-layer ecology-layer--micro is-visible">
         <ellipse cx={microBoundary.cx} cy={microBoundary.cy} rx={microBoundary.rx} ry={microBoundary.ry} />
@@ -5608,10 +5619,19 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           <MapConnections compact={Boolean(notebook)} nodeId={selectedNode.id} index={connectionIndex} onFollow={followMapItem} onScopeFollow={followScope} selectedScope={selectedScope}
             onConnect={project.activeScale !== 'micro' && canConnectAtScale(project.activeScale, selectedNode) && isLiveMapItem(selectedNode) && project.instructor.allowResearchLeads && connectionIndex.nodes.filter(node => canConnectAtScale(project.activeScale, node)).length > 1 ? startConnection : undefined} />
           <MapTextEditor key={`node:${selectedNode.id}`} label="Label" maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={(value) => nodeLabelIssue(value, selectedNode, project.graph.nodes)} onSave={(value) => editNode('label', value)} />
+          {notebook?.simple && selectedNode.scale !== 'meso' && <NodeClassificationEditor key={`classification:${selectedNode.id}:${selectedNode.scale}:${selectedNode.type}`} node={selectedNode} scales={project.releasedScales} onSave={(scale, type) => {
+            const check = structuredClone(project);
+            const issue = reclassifyNode(check, selectedNode.id, scale, type);
+            if (issue) return issue;
+            if (connecting) cancelConnection();
+            if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); }
+            update(draft => { reclassifyNode(draft, selectedNode.id, scale, type); }, 'node.reclassified', 'Changed node classification');
+            return '';
+          }} />}
           <AnnotationField key={selectedNode.annotations.analytical.id} annotationId={selectedNode.annotations.analytical.id} label="Interpretation" value={selectedNode.annotations.analytical.text} hint="Where does this connect? What is still uncertain?" onDraftValue={(text) => stageAnnotationDraft(selectedNode.annotations.analytical.id, text)} {...annotationProps} />
           <section className="node-summary" aria-label="Edit node">
             <div className="node-summary__body">
-              <p className="field__hint">{selectedNode.type} · {SCALES[selectedNode.scale].label}</p>
+              {!notebook?.simple && <p className="field__hint">{selectedNode.type} · {SCALES[selectedNode.scale].label}</p>}
               <SavedItemContext item={selectedNode} />
               {!notebook?.simple && ['meso', 'macrosphere'].includes(selectedNode.scale) && <div className="scope-editor" aria-label={selectedNode.scale === 'meso' ? `Micro settings included in ${selectedNode.label}` : `Map items affected by ${selectedNode.label}`}>
                 {selectedNode.scale === 'macrosphere' && <div className="scope-editor__mode"><label><span>Effect</span><select aria-label={`How ${selectedNode.label} affects map items`} value={SCALE_VERB_LEXICONS.macrosphere.includes(selectedNode.deontic) ? selectedNode.deontic : 'shapes'} onChange={(event) => editNode('deontic', event.target.value)}>{SCALE_VERB_LEXICONS.macrosphere.map((verb) => <option key={verb}>{verb}</option>)}</select></label></div>}
