@@ -8,6 +8,16 @@ const storage = () => {
 const response = (now, id = 'review') => ({ evaluation: { id, expiresAt: new Date(now + 3600000).toISOString() } });
 
 describe('bounded guidance reuse', () => {
+  it('does not reuse a result saved before the classification contract changed', () => {
+    const s = storage(), now = Date.now(), result = response(now, 'older-review');
+    const oldKey = 'systems-mapping.guidance.two-memos-two-spheres-v8.project-one';
+    const previous = JSON.stringify([{ key: 'same-memo', response: result, createdAt: now }]);
+    s.setItem(oldKey, previous);
+    expect(readGuidanceCache(s, 'project-one', 'same-memo', now)).toBeNull();
+    writeGuidanceCache(s, 'project-one', 'same-memo', response(now, 'current-review'), now);
+    expect(readGuidanceCache(s, 'project-one', 'same-memo', now).evaluation.id).toBe('current-review');
+    expect(s.getItem(oldKey)).toBe(previous);
+  });
   it('reuses a matching request only inside its project and validity window', () => {
     const s = storage(), now = Date.now(), result = response(now);
     writeGuidanceCache(s, 'project-one', 'memo-and-choices', result, now);

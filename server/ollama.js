@@ -1,4 +1,5 @@
 import { relationshipProcessIssue } from '../shared/relationship-process.js';
+import { MEMO_UPDATE_BYTES, memoUpdateIssue } from '../shared/memo-update.js';
 import { isMemoContractRepair } from './memo-contract-repair.js';
 import { isMemoQuoteSelectionContext } from '../shared/memo-guidance-quotes.js';
 const DEFAULT_BASE_URL = 'https://ollama.com';
@@ -10,6 +11,7 @@ export const OLLAMA_CLOUD_LIMITS = Object.freeze({
   inquiryBytes: 8 * 1024,
   sourceMetadataBytes: 16 * 1024,
   memoContextBytes: 8 * 1024,
+  memoUpdateContextBytes: MEMO_UPDATE_BYTES + 16 * 1024,
   carriedNodesBytes: 16 * 1024,
   sourceTextBytes: 128 * 1024,
   requestBodyBytes: 256 * 1024,
@@ -291,11 +293,14 @@ function normalizeInput(input) {
 
   let memoContext;
   if (input.memoContext !== undefined) {
-    if (!isPlainObject(input.memoContext) || Object.keys(input.memoContext).some(key => !['structure', 'evidenceRepair', 'mesoEvidence', 'mesoTableCoverage', 'contractRepair', 'quoteSelection'].includes(key))) fail('Memo reading context is invalid.', 'invalid_input');
+    if (!isPlainObject(input.memoContext) || Object.keys(input.memoContext).some(key => !['structure', 'evidenceRepair', 'mesoEvidence', 'mesoTableCoverage', 'contractRepair', 'quoteSelection', 'memoUpdate'].includes(key))) fail('Memo reading context is invalid.', 'invalid_input');
     assertJsonCompatible(input.memoContext, 'Memo reading context');
     if (input.memoContext.contractRepair !== undefined && !isMemoContractRepair(input.memoContext.contractRepair, input.activeScale)) fail('Memo contract correction context is invalid.', 'invalid_input');
     if (input.memoContext.quoteSelection !== undefined && !isMemoQuoteSelectionContext(input.memoContext.quoteSelection)) fail('Memo quotation selection context is invalid.', 'invalid_input');
-    if (byteLength(JSON.stringify(input.memoContext)) > OLLAMA_CLOUD_LIMITS.memoContextBytes) fail('Memo reading context is too large.', 'input_too_large');
+    if (input.memoContext.memoUpdate !== undefined
+      && (input.workflowMode !== 'student-nodes-v1' || memoUpdateIssue(input.memoContext.memoUpdate, undefined, input.activeScale, input.carriedNodes))) fail('Memo update context is invalid.', 'invalid_input');
+    const contextLimit = input.memoContext.memoUpdate ? OLLAMA_CLOUD_LIMITS.memoUpdateContextBytes : OLLAMA_CLOUD_LIMITS.memoContextBytes;
+    if (byteLength(JSON.stringify(input.memoContext)) > contextLimit) fail('Memo reading context is too large.', 'input_too_large');
     memoContext = input.memoContext;
   }
   return {

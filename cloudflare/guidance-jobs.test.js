@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, expect, test, vi } from 'vitest';
-import { GuidanceJobs, guidanceJobKey } from './guidance-jobs.js';
+import { GuidanceJobs, guidanceJobKey, guidanceJobScope } from './guidance-jobs.js';
+import { GUIDANCE_CONTRACT_VERSION } from '../shared/student-judgments.js';
+import { submittedReviewIssue } from '../shared/node-submission.js';
 const databases = [];
 afterEach(() => databases.splice(0).forEach(db => db.close()));
 function setup() {
@@ -26,6 +28,34 @@ test('duplicate starts and later recovery reuse the saved outcome with account a
   expect(run).toHaveBeenCalledTimes(1);
   expect(guidanceJobKey('alice','memo',input,'scope2')).not.toBe(a.job.id);
   expect(restored.resume('alice', a.job.id, 'scope2', run)).toEqual({ conflict: true });
+});
+test('a new classification contract starts fresh instead of reusing an older successful result', async () => {
+  const { jobs, pending } = setup();
+  const sourceMaterial = 'City Housing Authority allocates repair staff.';
+  const memo = { ...input, activeScale: 'exosphere', workflowMode: 'student-nodes-v1', sourceMaterial };
+  const config = { fingerprint: 'unchanged-course-guidance' }, model = 'same-model';
+  const oldScope = JSON.stringify({ config, model });
+  const currentScope = guidanceJobScope(config, model);
+  expect(JSON.parse(currentScope).contract).toBe(GUIDANCE_CONTRACT_VERSION);
+  const oldReview = { guidance: [], nodes: [{ label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: sourceMaterial }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+  const currentReview = { ...oldReview, nodes: [] };
+  const run = vi.fn()
+    .mockResolvedValueOnce(Response.json({ evaluation: { id: 'older-review', review: oldReview } }))
+    .mockResolvedValueOnce(Response.json({ evaluation: { id: 'current-review', review: currentReview } }));
+  const previous = jobs.create('alice', 'memo', memo, oldScope, undefined, run, crypto.randomUUID());
+  await Promise.all(pending);
+  // The old result remains readable history, but is not valid new placement.
+  expect(submittedReviewIssue(oldReview, 'exosphere')).toBeNull();
+  expect(submittedReviewIssue(oldReview, 'exosphere', sourceMaterial)).not.toBeNull();
+  const next = jobs.create('alice', 'memo', memo, currentScope, undefined, run, crypto.randomUUID());
+  expect(next.job.id).not.toBe(previous.job.id);
+  await Promise.all(pending);
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(jobs.read('alice', next.job.id).result.evaluation).toEqual({ id: 'current-review', review: currentReview });
+  expect(jobs.read('alice', previous.job.id).result.evaluation).toEqual({ id: 'older-review', review: oldReview });
+  expect(jobs.resume('alice', previous.job.id, currentScope, run)).toEqual({ conflict: true });
+  expect(jobs.create('alice', 'memo', memo, currentScope, undefined, run, crypto.randomUUID()).job.id).toBe(next.job.id);
+  expect(run).toHaveBeenCalledTimes(2);
 });
 test('only explicit retryable refusals resume after backoff and stop at three attempts', async () => {
   const { jobs, pending, advance } = setup();

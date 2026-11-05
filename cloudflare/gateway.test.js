@@ -4,6 +4,7 @@ import { correlationFromHeaders } from '@cuny-ai-lab/cail-log';
 import { CailError } from '@cuny-ai-lab/cail-client';
 import { unstable_readConfig } from 'wrangler';
 import { OpenRouterError } from '../server/openrouter.js';
+import { memoSourceFingerprint } from '../shared/memo-update.js';
 import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvelope } from './gateway.js';
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
@@ -18,6 +19,41 @@ test('node submission reserves reasoning headroom while keeping six nodes and no
   expect(schema.properties.connections.maxItems).toBe(0);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+test('incremental Gateway requests keep only permitted existing identities and no relationship output', async () => {
+  let body;
+  const sourceText = 'Teachers meet families daily.';
+  const carriedNodes = [{ id: 'teacher', label: 'School staff', type: 'role', scale: 'micro' }];
+  const memoUpdate = { version: 1, part: 1, baselineFingerprint: 'src_previous', sourceFingerprint: memoSourceFingerprint(sourceText),
+    passages: [{ start: 0, end: sourceText.length, text: sourceText }], existingNodes: [
+      { ...carriedNodes[0], evidence: 'Teachers meet families weekly.', originalLabel: 'Teachers', originalType: 'person', originalScale: 'micro', removed: false },
+      { id: 'removed', label: 'Community room', type: 'setting', scale: 'micro', evidence: 'The community room is open.', originalLabel: 'Community room', originalType: 'setting', originalScale: 'micro', removed: true },
+    ] };
+  const fetch = vi.fn(async request => { body = await request.json(); return Response.json({ model: 'gpt-oss-120b', created: 1, choices: [{ message: { role: 'assistant', content: '{"nodes":[]}' }, finish_reason: 'stop' }] }); });
+  await gatewaySuggestion({ fetch }, 'fixture-identity', 'gpt-oss-120b', correlation)({ ...input, sourceText, workflowMode: 'student-nodes-v1', carriedNodes, memoContext: { memoUpdate } });
+  const schema = JSON.parse(body.messages[1].content.split('REQUIRED RESPONSE JSON SCHEMA\n')[1]);
+  expect(schema.properties.nodes.maxItems).toBe(6);
+  expect(schema.properties.connections.maxItems).toBe(0);
+  expect(JSON.stringify(schema.properties.nodes)).toContain('existingId');
+  expect(JSON.stringify(schema.properties.nodes)).toContain('teacher');
+  expect(JSON.stringify(schema.properties.nodes)).not.toContain('removed');
+  const sent = JSON.parse(body.messages[2].content.split('PROJECT INPUT (JSON DATA ONLY)\n')[1]);
+  expect(sent.memoContext.memoUpdate).toEqual(memoUpdate);
+  expect(sent.memoText).toBe(sourceText);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test('oversize combined request fails before a Gateway call despite individually bounded fields', async () => {
+  const fetch = vi.fn();
+  const oversized = { ...input, systemPrompt: 's'.repeat(64 * 1024), sourceText: 'm'.repeat(128 * 1024),
+    sourceMetadata: { details: 'd'.repeat(15 * 1024) }, carriedNodes: Array.from({ length: 40 }, (_, index) => ({ id: String(index), label: 'n'.repeat(350) })),
+    carriedConnections: Array.from({ length: 40 }, (_, index) => ({ source: String(index), target: String(index + 1), verb: 'r'.repeat(340) })) };
+  // Escaping is part of the actual wire size. Each source field is below its
+  // byte ceiling; the JSON-encoded request still must stay within 256 KiB.
+  oversized.sourceText = '\\'.repeat(128 * 1024);
+  await expect(gatewaySuggestion({ fetch }, 'fixture-identity', 'gpt-oss-120b', correlation)(oversized)).rejects.toMatchObject({ code: 'input_too_large' });
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 test.each(['wrangler.jsonc', 'wrangler.dev.jsonc'])('%s sends the configured GPT-OSS model to the Gateway', async configPath => {
   const model = unstable_readConfig({ config: configPath, env: '' }, { hideWarnings: true }).vars.GATEWAY_MODEL;
   const fetch = vi.fn(async request => {

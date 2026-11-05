@@ -1,4 +1,5 @@
 import { NODE_SUBMISSION, nodeSubmissionInstruction, submittedReviewIssue } from '../shared/node-submission.js';
+import { memoUpdateIssue } from '../shared/memo-update.js';
 import { relationshipGroupIssue, relationshipIdsIssue } from '../shared/relationship-groups.js';
 import { isNodeReviewScale, isRelationshipReviewScale, canConnectAtScale } from '../shared/mapping-grammar.js';
 import { appendCoursePrompt } from '../shared/course-prompt.js';
@@ -861,9 +862,9 @@ function boundedEvidenceText(value, maximum) {
     && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value) ? value : null;
 }
 
-function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false, workflowMode } = {}) {
+function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false, workflowMode, memoUpdate } = {}) {
   if (workflowMode === NODE_SUBMISSION) {
-    const issue = submittedReviewIssue(value, activeScale, sourceMaterial);
+    const issue = submittedReviewIssue(value, activeScale, sourceMaterial, memoUpdate);
     if (issue) throw new MemoReviewSemanticError(issue, { grounding: issue.includes('.evidence') });
     return structuredClone(value);
   }
@@ -1435,7 +1436,7 @@ function carriedRelationshipProcess(record, path) {
 
 function validatePreflightEvaluationRequest(value) {
   assertOnlyKeys(value, [
-    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments', 'fieldNotes', 'workflowMode',
+    'projectMetadata', 'activeScale', 'stageId', 'inquiry', 'sourceRecord', 'sourceMaterial', 'projectOverlay', 'carriedNodes', 'carriedConnections', 'studentJudgments', 'fieldNotes', 'workflowMode', 'memoUpdate',
   ]);
   if (value.workflowMode !== undefined && (value.workflowMode !== NODE_SUBMISSION || !['micro', 'exosphere'].includes(value.activeScale))) throw new HttpError(400, 'Submit a memo at Micro or Exo. Relationships are drawn by students.');
   const projectMetadata = validateProjectMetadata(value.projectMetadata);
@@ -1506,10 +1507,16 @@ function validatePreflightEvaluationRequest(value) {
   try { fieldNotes = validateFieldNotesContext(value.fieldNotes, value.activeScale); }
   catch { throw new HttpError(400, 'Previous-level Field Notes must be a bounded excerpt from the preceding scale.'); }
   const sourceMaterial = requireSnapshotText(value.sourceMaterial, 'sourceMaterial', { max: 500_000 });
+  if (value.memoUpdate !== undefined) {
+    if (value.workflowMode !== NODE_SUBMISSION) throw new HttpError(400, 'Memo updates require the node-only workflow.');
+    const issue = memoUpdateIssue(value.memoUpdate, sourceMaterial, value.activeScale, carriedNodes);
+    if (issue) throw new HttpError(400, issue);
+  }
   const { metadata: projectOverlay, customInstructions } = validateProjectOverlay(value.projectOverlay);
   return {
     projectMetadata,
     ...(value.workflowMode ? { workflowMode: value.workflowMode } : {}),
+    ...(value.memoUpdate ? { memoUpdate: structuredClone(value.memoUpdate) } : {}),
     activeScale: value.activeScale,
     stageId,
     inquiry,
@@ -3202,7 +3209,9 @@ export function createSystemsMappingApp(options = {}) {
       throw new HttpError(413, 'The combined memo details, map choices and Field Notes excerpt exceed 16 KiB. Shorten the submitted metadata; your saved memo and notes are unchanged.');
     }
     const providerMemo = ollamaConfig ? prepareProviderMemo(input.sourceMaterial) : null;
-    if (ollamaConfig && Buffer.byteLength(providerMemo.sourceText, 'utf8') > OLLAMA_CLOUD_LIMITS.sourceTextBytes) {
+    const providerSourceText = input.memoUpdate?.passages.length
+      ? input.memoUpdate.passages.map(passage => passage.text).join('\n\n') : providerMemo?.sourceText;
+    if (ollamaConfig && Buffer.byteLength(providerSourceText, 'utf8') > OLLAMA_CLOUD_LIMITS.sourceTextBytes) {
       throw new HttpError(
         413,
         `The narrative sent to the model must contain no more than ${OLLAMA_CLOUD_LIMITS.sourceTextBytes} UTF-8 bytes. Your complete memo remains saved.`,
@@ -3245,7 +3254,7 @@ export function createSystemsMappingApp(options = {}) {
       );
       const missingRolesReview = input.activeScale === 'meso' && providerMemo ? missingMesoTableRolesReview(providerMemo.sourceText, input.carriedNodes) : null;
       if (missingRolesReview) {
-        const review = validateGeneratedMemoReviewAtomically(missingRolesReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
+        const review = validateGeneratedMemoReviewAtomically(missingRolesReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
         suggestion = { ...review, generationContract: input.workflowMode || 'atomic-v1', evaluatedAt: new Date(createdAt).toISOString(), configurationSnapshot: configSnapshot };
         runtimeMetadata = authoritativeRuntimeMetadata({}, { provider: 'source-check', model: 'Meso role coverage', createdAt });
       } else if (ollamaConfig) {
@@ -3254,8 +3263,12 @@ export function createSystemsMappingApp(options = {}) {
         if (!providerMemo.sourceText.trim()) throw new HttpError(400, 'Add narrative text to the memo before requesting guidance.');
         let deadline;
         try {
-          const memoSource = providerMemo.source;
-          const readingContext = providerReadingContext(providerMemo, input.activeScale, input.carriedNodes);
+          // Repair passages come only from text that was sent for this update.
+          // The full saved memo remains the authority for final quote validation.
+          const memoSource = input.memoUpdate?.passages.length ? analyzeMemoSource(providerSourceText) : providerMemo.source;
+          const memoReadingContext = providerReadingContext(providerMemo, input.activeScale, input.carriedNodes);
+          const readingContext = input.memoUpdate ? { ...memoReadingContext, memoUpdate: input.memoUpdate } : memoReadingContext;
+          const memoContextBytes = input.memoUpdate ? OLLAMA_CLOUD_LIMITS.memoUpdateContextBytes : OLLAMA_CLOUD_LIMITS.memoContextBytes;
           // All model attempts share one deadline and the original cancellation.
           const configuredDeadline = context.env?.verifiedAccount?.guidanceTimeoutMs;
           const generationTimeoutMs = Number.isSafeInteger(configuredDeadline) && configuredDeadline >= 1 && configuredDeadline <= 85_000
@@ -3269,7 +3282,7 @@ export function createSystemsMappingApp(options = {}) {
             generationSignal.throwIfAborted();
             return generated;
           };
-          const contractInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale) : memoReviewSchemaInstruction(input.activeScale);
+          const contractInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale, input.memoUpdate) : memoReviewSchemaInstruction(input.activeScale);
           // Node submission has a different teaching contract from the older
           // suggestion workflow. Reusing its scale/output modules tells the model
           // to put policies at Exo and propose relationships, contradicting Part 2.
@@ -3287,7 +3300,7 @@ export function createSystemsMappingApp(options = {}) {
             ...(input.workflowMode ? { workflowMode: input.workflowMode } : {}),
             inquiry: input.inquiry,
             sourceMetadata,
-            sourceText: providerMemo.sourceText,
+            sourceText: providerSourceText,
             ...(readingContext ? { memoContext: readingContext } : {}),
             ...(input.activeScale === 'meso' || input.carriedNodes.length ? { carriedNodes: input.carriedNodes } : {}),
             ...(input.carriedConnections.length ? { carriedConnections: input.carriedConnections } : {}),
@@ -3299,15 +3312,15 @@ export function createSystemsMappingApp(options = {}) {
           let feedbackOnly = false;
           try {
             try {
-              review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
+              review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
             } catch (error) {
               if (!(error instanceof MemoReviewSemanticError)) throw error;
               options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message });
               generationSignal.throwIfAborted();
               correctiveRetries = 1;
               const retryContext = memoContractRepairContext(readingContext,
-                createMemoContractRepair(generated.suggestion, error.message, input.activeScale), OLLAMA_CLOUD_LIMITS.memoContextBytes);
-              const endpointInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale) : input.activeScale === 'meso'
+                createMemoContractRepair(generated.suggestion, error.message, input.activeScale), memoContextBytes);
+              const endpointInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale, input.memoUpdate) : input.activeScale === 'meso'
                 ? 'For this Meso replacement, every connection source and target must be a different exact ID from carriedNodes at Micro. Labels cannot replace IDs. Return no new nodes; explain missing endpoints in guidance.'
                 : input.activeScale === 'exosphere'
                   ? 'For this Exosphere replacement, return larger-scale nodes and an empty connections array.'
@@ -3321,7 +3334,7 @@ export function createSystemsMappingApp(options = {}) {
               });
               completedReview = generated.suggestion;
               try {
-                review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
+                review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
               } catch (repairError) {
                 // A distinct final strategy for completed source-grounding failures:
                 // supply bounded narrative passages and require quoted evidence.
@@ -3346,30 +3359,30 @@ export function createSystemsMappingApp(options = {}) {
                 if (quotationOnly) {
                   // This strategy changes quotations only. Verify every other
                   // field first, so it cannot conceal a separate map failure.
-                  try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode }); }
+                  try { validateGeneratedMemoReviewAtomically(guidanceWithoutExcerpts(generated.suggestion), input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate }); }
                   catch { quotationOnly = false; }
                 }
                 if (quotationOnly) {
                   const rejectedReview = generated.suggestion;
                   const quoteSelection = { points: rejectedReview.guidance.map(item => item.point), passages };
                   const quoteContext = { quoteSelection };
-                  while (Buffer.byteLength(JSON.stringify(quoteContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+                  while (Buffer.byteLength(JSON.stringify(quoteContext), 'utf8') > memoContextBytes && passages.length) passages.pop();
                   if (!passages.length) throw repairError;
                   generated = await generate({ ...providerInput, systemPrompt: MEMO_QUOTE_SELECTION_INSTRUCTION, memoContext: quoteContext }, 'memo-quotes');
                   let selectedReview;
                   try { selectedReview = applyMemoQuoteSelection(rejectedReview, generated.suggestion, passages); }
                   catch { throw new MemoReviewSemanticError('The quotation selection does not match the supplied guidance and passages.', { grounding: true }); }
                   completedReview = selectedReview;
-                  review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
+                  review = validateGeneratedMemoReviewAtomically(selectedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
                 } else {
                   let repairContext = { ...readingContext, evidenceRepair: { passages } };
                   const rejectedExcerpt = createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
                   // Prefer both the rejected field and source passages. Preserve at
                   // least one passage, falling back to source-only context if needed.
                   while (rejectedExcerpt && passages.length > 1
-                    && Buffer.byteLength(JSON.stringify({ ...repairContext, contractRepair: rejectedExcerpt }), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes) passages.pop();
-                  repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, OLLAMA_CLOUD_LIMITS.memoContextBytes);
-                  while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > OLLAMA_CLOUD_LIMITS.memoContextBytes && passages.length) passages.pop();
+                    && Buffer.byteLength(JSON.stringify({ ...repairContext, contractRepair: rejectedExcerpt }), 'utf8') > memoContextBytes) passages.pop();
+                  repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, memoContextBytes);
+                  while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > memoContextBytes && passages.length) passages.pop();
                   if (!passages.length) throw repairError;
                   generated = await generate({
                     ...providerInput,
@@ -3381,7 +3394,7 @@ export function createSystemsMappingApp(options = {}) {
                   catch { throw new MemoReviewSemanticError('The evidence indices must select supplied narrative passages.', { grounding: true }); }
                   completedReview = expandedReview;
                   strictFallbackEvidence = true;
-                  review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true, workflowMode: input.workflowMode });
+                  review = validateGeneratedMemoReviewAtomically(expandedReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: true, workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
                 }
               }
             }
@@ -3443,7 +3456,7 @@ export function createSystemsMappingApp(options = {}) {
               ...(Array.isArray(node.scope) ? { scope: node.scope.map(member => typeof member === 'string' ? member : member.id) } : {}),
             })),
           };
-          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode });
+          review = validateGeneratedMemoReviewAtomically(providerReview, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
         } catch (error) {
           if (!(error instanceof MemoReviewSemanticError)) throw error;
           throw new HttpError(502, 'Suggestion generation is temporarily unavailable.');

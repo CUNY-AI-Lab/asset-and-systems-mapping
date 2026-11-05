@@ -1,30 +1,37 @@
-# Report a bug
+# Report a bug or request a feature
+
+## Control placement
+
+The bug icon stays at the far right of the project header. The matching information icon sits immediately to its left; it opens introductory copy rather than a report form. Preserve recognizable button boundaries and 44px targets. The report form keeps margins between its text area, delivery explanation and submit action, and wraps at phone widths. The information flag's timeout and dismissal do not submit or clear a bug-report draft.
 
 ## Delivery configuration
 
-The release configuration selects `BUG_REPORT_MODE=email` in
-[wrangler.jsonc](../wrangler.jsonc). Reports use the existing `BUG_REPORTS`
-service binding to `cail-tools-admission`, whose email receiver manages the
-recipient and provider. Zach confirmed `zmuhlbauer1@gmail.com` for this workflow.
-The application carries no Gmail credential and accepts no browser-supplied
-recipient. Release acceptance checks a fresh report against that inbox.
+Both [production](../wrangler.jsonc) and [Dev](../wrangler.dev.jsonc) select
+`BUG_REPORT_MODE=redmine`. New bug reports and feature requests go directly to
+CAIL Ticketing using the existing `REDMINE_API_KEY` secret. Explicit Redmine mode
+never substitutes email, including when the key is missing or Redmine refuses a
+request. A missing key disables reporting and returns 503; it does not create a
+receipt or send data elsewhere.
 
-Explicit `email` and `redmine` modes both keep the contact form and its account
-checks. A delivery-mode change therefore preserves the authorization rules for
-an in-flight draft. In email mode, new reports go directly to the email receiver.
-In Redmine mode, new reports use Redmine when its key is configured and email
-when the key is absent. A definitive Redmine rejection also permits email
-fallback. The receipt rules below distinguish these cases from uncertain sends.
+The dialog heading is **Report a bug or request a feature** and the description
+prompt is **What went wrong? What could be better?**. The delivery explanation
+states that the report becomes a private ticket. The form accepts either kind
+of report in the same description field; the existing support tracker handles
+triage without adding another required choice.
 
-`GET /api/bug-reports/availability` returns `enabled`, `mode: "contact"`, the
-preferred `delivery`, and an optional email `fallback`. These fields describe
-configured capabilities; actual provider acceptance and inbox arrival require
-a report transaction. When both delivery capabilities are absent, reporting is
-disabled and requests return 503.
+`GET /api/bug-reports/availability` returns `enabled`, `mode: "contact"`,
+`delivery: "redmine"`, and `fallback: null` for this configuration. This establishes
+configuration only; it does not prove a live ticket was accepted.
+
+The retained `BUG_REPORTS` binding in production supports receipt recovery for
+reports sent by earlier email releases. It is not used for new reports in
+explicit Redmine mode. Older installations may still select `email` or use the
+legacy automatic preference; those compatibility paths retain their prior
+account checks and receipt behavior.
 
 ## Identity, report contents, and routes
 
-The footer opens a form for either CUNY Login or a guest's first name, last name,
+The header bug icon opens a form for either CUNY Login or a guest's first name, last name,
 and .edu email address. Guest details are self-reported contact information.
 Signed-in names come from the verified application identity.
 
@@ -41,7 +48,7 @@ includes the unchanged report description, a fixed page category, release,
 reference, and server-derived daily rate metadata. It adds neither account
 identity nor guest contact fields to the message. The form explains that a
 reporter who wants a reply should include contact details in the description.
-The complete 4,000-character description survives fallback.
+The complete 4,000-character description remains intact in this compatibility path.
 
 Redmine delivery creates a private issue in CAIL Ticketing project 15, Bug
 tracker 2. Its description includes the report, page category, release,
@@ -54,7 +61,7 @@ identifiers, shared-link capabilities, query strings, and fragments stay out of
 this context. Memo or map contents are included only when a reporter adds them
 to the description.
 
-## Durable receipts and safe fallback
+## Durable receipts and recovery
 
 The application's Durable Object stores receipt metadata: owner reference,
 report UUID, content fingerprint, creation time, state, delivery channel,
@@ -63,34 +70,25 @@ Guest receipts also retain a network rate reference. It stores neither the
 report description nor contact text. Browser drafts stay in tab memory, with a
 leave-page warning while work is pending.
 
-The channel is persisted before dispatch. Email uses a stable UUID derived from
-the local owner and report UUID; the shared receiver owns the durable email
-claim and provider-acceptance receipt. Its source records the claim before
-calling SES and replays an accepted receipt for the same reference. Concurrent
-local requests share one in-flight submission. Eviction or deployment changes
-preserve each report's selected channel.
+The selected channel is persisted before dispatch. Concurrent local requests
+share one in-flight submission; saved receipts replay after eviction or deployment.
+The same UUID with different content returns an idempotency conflict.
 
-| Outcome | Application behavior |
+| Outcome in explicit Redmine mode | Application behavior |
 |---|---|
-| New report with email preference, or Redmine key absent | Submit through the email binding. |
-| Redmine returns 400, 401, 403, 404, 422, or 429 | Persist the definitive refusal, then use email if available. |
-| Redmine timeout, connection exception, 408, 5xx, redirect, or unreadable success | Retain the Redmine receipt as pending; a status check searches for the original issue marker. |
-| Redmine issue is found after a lost acknowledgement | Save and replay the Redmine receipt. |
-| Email receiver confirms acceptance | Save and replay the email receipt with its delivery reference. |
-| Email response or acknowledgement is uncertain | Keep the same email UUID for a status check against the receiver's durable receipt. |
-| Email receiver explicitly permits retry | Retain the UUID and respect its retry delay. |
-| Terminal email refusal | Preserve the draft and show a support action. |
+| Redmine confirms a valid issue ID | Save and replay the private-ticket receipt. |
+| Redmine returns 400, 401, 403, 404, or 422 | Preserve the rejected receipt and the browser draft; do not send email. |
+| Redmine returns 429 | Retain the reference for a retry; do not send email. |
+| Timeout, connection exception, 408, 5xx, redirect, or unreadable success | Keep the Redmine receipt pending; a status check searches for the original issue marker. |
+| The original issue is found after a lost acknowledgement | Save and replay that receipt without another creation request. |
+| A prior email receipt is checked | Retain its original channel and derived UUID; never duplicate it as a Redmine ticket. |
 
 An uncertain Redmine request never triggers another creation request or a
 second-channel send. An unsuccessful reconciliation remains pending. Earlier
-rejected Redmine receipts may have represented redirects after creation; their
-migration preserves that uncertainty. Only newly classified definitive
-rejections, or the earlier 429 retryable state, permit fallback.
-
-An additional metadata table keeps the original receipt-table shapes intact.
-Earlier records default to Redmine, so switching the configured preference cannot reinterpret a prior
-receipt as an email acceptance. Changed content under the same report reference
-returns an idempotency conflict.
+receipt tables and rejection metadata stay readable. The legacy automatic mode
+still permits fallback only after a classified definitive rejection, while
+explicit Redmine mode disables it. Existing email receipts continue using the
+original owner-scoped UUID and Admission's durable acceptance contract.
 
 ## Acknowledgements and limits
 
@@ -131,7 +129,12 @@ checks channel-specific acknowledgements and retains the same draft reference
 through status checks. The email runtime harness exercises the production
 Worker, real local storage, and a synthetic email receiver.
 
-A production acceptance record should pair the application's email
-`deliveryReference` with the message received at Zach's confirmed inbox.
-Availability and health responses establish configuration only. See the
-[deployment guide](cloudflare-deployment.md) for release verification.
+Tests for the current configuration cover direct private-ticket creation,
+feature-request text, duplicate receipts, missing credentials, and definitive
+rejections without email dispatch. The existing email tests remain as recovery
+coverage for earlier releases. No automated fixture creates a live support ticket.
+
+A live acceptance record must separately verify an explicitly authorized report
+and its private Redmine issue. Secret-name presence, availability and health
+responses establish configuration only. See the [deployment guide](cloudflare-deployment.md)
+for release verification.

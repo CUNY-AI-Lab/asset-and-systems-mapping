@@ -168,6 +168,7 @@ export default function MapListView({
   edges = EMPTY_LIST,
   visibleScale = 'all',
   showRemoved = false,
+  compact = false,
   onSelect,
 }) {
   const nodeList = Array.isArray(nodes) ? nodes : EMPTY_LIST;
@@ -191,7 +192,7 @@ export default function MapListView({
   const sortedEdges = useMemo(() => visibleRecords.edges.toSorted(compareRecords), [visibleRecords.edges]);
   const itemCount = visibleRecords.nodes.length + visibleRecords.edges.length;
 
-  return <section className="map-list-view" aria-labelledby="map-list-view-title">
+  return <section className={`map-list-view${compact ? ' map-list-view--compact' : ''}`} tabIndex={compact ? 0 : undefined} aria-labelledby="map-list-view-title">
     <header className="map-list-view__header">
       <div>
         <h2 id="map-list-view-title">Map list</h2>

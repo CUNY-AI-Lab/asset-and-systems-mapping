@@ -8,12 +8,12 @@ Systems Mapping and STEM Splitter ask teachers to control different classroom ac
 | --- | --- | --- |
 | Student work | Memos, evidence, inquiry, nodes, relationships, ecological spheres, and graph annotations | Audio stems, mixer actions, class labels, and timestamped notes |
 | Instructor role | Review a memo and write one focus without controlling map access | Set repertoire and vocabulary emphasis while students listen and describe what they hear |
-| Student handoff | Guidance can be revisited while the map remains available | The Listening Guide returns one listening move or question at a time |
+| Student handoff | Independent memos add or update bounded nodes; Notebook supports student-authored relationships and optional notes while the canvas stays visible | The Listening Guide returns one listening move or question at a time |
 | Current control | One published version with guidance and course material for each Part and section | One versioned class amendment appended beneath a code-owned prompt |
-| Runtime effect | Deterministic rules record the version and section as provenance; Ollama receives only the current section | The active amendment changes the Listening Guide prompt |
+| Runtime effect | Account Gateway receives only applicable course context under the node-only contract; legacy Node deterministic/Ollama modes remain separate | The active amendment changes the Listening Guide prompt |
 | Fixed boundary | Evaluation schema, privacy rules, evidence grounding, and graph operations | No invented timestamps, student data as data, supported mixer tools, and short turn-taking |
 
-Systems Mapping lets the instructor redirect attention to evidence while the student remains responsible for the map and may continue working at any stage. Part 1 groups Micro and Meso; Part 2 groups Exosphere and Macrosphere. Micro guidance may address discrete elements and their direct relationships, including the relationship verbs. Meso guidance may address noun-labeled linkages among at least two carried Micro settings, but it cannot ask for generic relationship edges or verbs. Exosphere and Macrosphere guidance may shape institutional and structural interpretation. STEM Splitter lets the instructor tune a listening conversation while the student remains responsible for naming and describing what they hear. A shared console should preserve that difference.
+Systems Mapping lets the instructor redirect attention to evidence while students own the map's relationships and interpretations. Part 1 groups Micro and Meso; Part 2 groups Exo and Macro. The account model identifies local nodes in the first memo and outside settings/broader conditions in the second; it never proposes relationships. Meso relationships link the retained local nodes. Exo classification requires an outside participation setting and an indirect path; Macro distinguishes a broader condition from the organization administering it. Published material cannot make notes or relationships progression requirements, overwrite manual edits or bypass evidence validation. STEM Splitter tunes a listening conversation while students name and describe what they hear. A shared console must preserve that difference.
 
 ## Shared application contract
 
@@ -46,6 +46,6 @@ The shared layer owns validation, stable identifiers, draft revisions, publicati
 
 Systems Mapping uses this split in the Instructor Console. The portable contract lives in `shared/educator-resource-contract.js`. Its STEM Splitter adapter registers four sections and composes them into STEM Splitter's existing versioned amendment format. That adapter does not replace STEM Splitter's present console or persistence yet. It fixes the boundary for a later migration without adding another configuration matrix.
 
-Instructor review and evaluation capacity remain separate from progression. No pending review or outstanding evaluation may block a stage, level, or cycle. This pass removes only the course-wide active-evaluation ceiling; per-session supersession and retention purges remain unchanged.
+Instructor review and evaluation capacity remain separate from progression. No instructor review or outstanding legacy evaluation may block account editing or navigation. Continue requires only the current part’s successful memo submission, including an empty result; this is not an instructor approval or required-note gate. This pass removes only the course-wide active-evaluation ceiling; per-session supersession and retention purges remain unchanged.
 
 Future applications should register only controls that a teacher can interpret, test, and reverse. Internal prompt fragments may remain modular in code, but they do not become instructor tasks by default.

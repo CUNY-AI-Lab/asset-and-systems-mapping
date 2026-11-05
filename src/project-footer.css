@@ -16,7 +16,7 @@
 .has-project-footer .app-footer { bottom: var(--project-footer-height); height: var(--footer); padding-bottom: 0; }
 .has-project-footer .workspace { padding-bottom: calc(var(--footer) + var(--project-footer-height) + 32px); }
 .has-project-footer .workspace.workspace--studio { padding-bottom: calc(var(--footer) + var(--project-footer-height) + 4px); }
-.has-project-footer .workspace--studio .notebook-tools-body { max-height: max(88px, calc(100dvh - 180px - var(--project-footer-height))); }
+.has-project-footer .workspace--studio .notebook-tools-panel .notebook-tools-body { max-height: max(88px, calc(100dvh - 180px - var(--project-footer-height))); }
 .has-project-footer .access-shell { padding-bottom: 0; }
 .has-project-footer :is(.access-main, .studio-dashboard, .teacher-main) { padding-bottom: calc(var(--project-footer-height) + 40px); }
 .has-project-footer .toast { bottom: calc(var(--footer) + var(--project-footer-height) + 20px); }

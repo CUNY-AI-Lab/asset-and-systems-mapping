@@ -16,7 +16,7 @@ export default function ProjectFooter({ children }) {
     };
   }, []);
   return <footer ref={footer} className="project-footer" aria-label="Project credits">
-    <p className="project-credit">Built through the Critical AI Literacy Institute. A continuing project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
+    <p className="project-credit">Built through the <a href="https://criticalai.commons.gc.cuny.edu/">Critical AI Literacy Institute</a>. A continuing project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
     {children}
   </footer>;
 }

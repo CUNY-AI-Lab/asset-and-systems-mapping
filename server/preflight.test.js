@@ -14,6 +14,7 @@ import {
 import { assertDatabaseIntegrity } from './database.js';
 import { normalizeInput, OLLAMA_CLOUD_LIMITS, OllamaCloudError } from './ollama.js';
 import { fieldNotesExcerpt } from '../shared/field-notes-context.js';
+import { memoSourceFingerprint } from '../shared/memo-update.js';
 
 const BASE_URL = 'http://127.0.0.1:4177';
 const BOOTSTRAP_TOKEN = 'preflight-test-bootstrap-token';
@@ -230,7 +231,7 @@ describe('persistent preflight suggestion review queue', () => {
 
   it('classifies second-memo nodes without generating guidance or student relationships', async () => {
     const nodes = [
-      { label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: 'City Housing Authority allocates repair staff.' },
+      { label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: 'Residents do not participate in City Housing Authority allocation decisions, which delay repairs in their buildings.' },
       { label: 'Capital repair funding policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Capital repair funding policy delays elevator repairs.' },
     ];
     const review = { guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
@@ -248,6 +249,104 @@ describe('persistent preflight suggestion review queue', () => {
     expect(provider.mock.calls[0][0].carriedConnections).toEqual(body.carriedConnections);
     const stored=JSON.parse(system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(result.id).suggestion_json);
     expect(stored.generationContract).toBe('student-nodes-v1');expect(stored.nodes).toEqual(nodes);
+  });
+
+  function incrementalFixture() {
+    const before = 'Teachers meet families weekly.';
+    const evidence = 'Teachers meet families daily.';
+    const sourceMaterial = `Families live near PS 102.\n\n${evidence}\n\nA community room hosts monthly events.`;
+    const carriedNodes = [{ id: 'teacher', label: 'School staff', type: 'role', scale: 'micro' }];
+    const existingNodes = [{ ...carriedNodes[0], evidence: before, originalLabel: 'Teachers', originalType: 'person', originalScale: 'micro', removed: false },
+      { id: 'room', label: 'Community room', type: 'setting', scale: 'micro', evidence: 'A community room hosts monthly events.', originalLabel: 'Community room', originalType: 'setting', originalScale: 'micro', removed: true }];
+    const memoUpdate = { version: 1, part: 1, baselineFingerprint: memoSourceFingerprint(sourceMaterial.replace(evidence, before)), sourceFingerprint: memoSourceFingerprint(sourceMaterial),
+      passages: [{ start: sourceMaterial.indexOf(evidence), end: sourceMaterial.indexOf(evidence) + evidence.length, text: evidence }], existingNodes };
+    const node = { ...carriedNodes[0], existingId: 'teacher', evidence }; delete node.id;
+    const review = { guidance: [], nodes: [node], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const { studentAnnotation, ...body } = submissionBody({ workflowMode: 'student-nodes-v1', sourceMaterial, carriedNodes, memoUpdate });
+    return { body, review, evidence };
+  }
+
+  async function useIncrementalProvider(provider, name) {
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, `${name}.sqlite`), now: () => currentTime,
+      teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    return grantStudent();
+  }
+
+  it('updates one existing node from a meaningful one-word memo edit using its preserved identity', async () => {
+    const { body, review, evidence } = incrementalFixture();
+    const provider = vi.fn(async input => { normalizeInput(input); return { suggestion: review, metadata: { provider: 'ollama-cloud', model: 'server-model' } }; });
+    const cookie = await useIncrementalProvider(provider, 'incremental-one-word');
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
+    expect(response.status).toBe(201);
+    const result = (await response.json()).evaluation;
+    expect(result.review).toEqual(review);
+    expect(provider).toHaveBeenCalledTimes(1);
+    const input = provider.mock.calls[0][0];
+    expect(input.sourceText).toBe(evidence);
+    expect(input.sourceText).not.toContain('community room');
+    expect(input.memoContext.memoUpdate).toEqual(body.memoUpdate);
+    expect(input.systemPrompt).toContain('existingId');
+    expect(input.systemPrompt).toContain('Students decide and draw ALL relationships');
+    const row = system.db.prepare('SELECT source_material, suggestion_json FROM preflight_evaluations WHERE id = ?').get(result.id);
+    expect(row.source_material).toBe(body.sourceMaterial);
+    expect(JSON.parse(row.suggestion_json).nodes[0]).toEqual(review.nodes[0]);
+  });
+
+  it('rejects invalid incremental identity and source context before a model call', async () => {
+    const provider = vi.fn();
+    const cookie = await useIncrementalProvider(provider, 'incremental-input-rejections');
+    const variants = [
+      body => { body.memoUpdate.passages[0].text = 'Teachers meet families never.'; },
+      body => { body.memoUpdate.sourceFingerprint = 'src_wrong'; },
+      body => { body.memoUpdate.part = 2; },
+      body => { body.memoUpdate.existingNodes[0].id = 'unknown'; },
+      body => { body.memoUpdate.existingNodes[0].label = 'Other teachers'; },
+      body => { body.memoUpdate.existingNodes.push({ ...body.memoUpdate.existingNodes[0] }); },
+      body => { delete body.workflowMode; },
+      body => { body.memoUpdate.passages = [{ start: 0, end: 70000, text: 'x'.repeat(70000) }]; body.sourceMaterial = 'x'.repeat(70000); body.memoUpdate.sourceFingerprint = memoSourceFingerprint(body.sourceMaterial); },
+    ];
+    for (const mutate of variants) {
+      const { body } = incrementalFixture(); mutate(body);
+      expect((await postJson(system.app, '/api/preflight/evaluations', body, { cookie })).status).toBe(400);
+    }
+    expect(provider).not.toHaveBeenCalled();
+    expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+  });
+
+  it.each(['unknown identity', 'removed identity', 'renamed identity', 'duplicate identity', 'automatic relationship'])(
+    'rejects an incremental response with %s without saving partial results', async failure => {
+      const { body, review } = incrementalFixture();
+      if (failure === 'unknown identity') review.nodes[0].existingId = 'unknown';
+      if (failure === 'removed identity') { review.nodes[0].existingId = 'room'; review.nodes[0].label = 'Community room'; review.nodes[0].type = 'setting'; }
+      if (failure === 'renamed identity') review.nodes[0].label = 'Teachers';
+      if (failure === 'duplicate identity') review.nodes.push({ ...review.nodes[0] });
+      if (failure === 'automatic relationship') review.connections.push({ source: 'teacher', target: 'room', verb: 'visits' });
+      const provider = vi.fn(async input => { normalizeInput(input); expect(input.memoContext.memoUpdate).toEqual(body.memoUpdate); return { suggestion: review, metadata: { provider: 'ollama-cloud', model: 'server-model' } }; });
+      const cookie = await useIncrementalProvider(provider, `incremental-${failure.replaceAll(' ', '-')}`);
+      expect((await postJson(system.app, '/api/preflight/evaluations', body, { cookie })).status).toBe(502);
+      expect(provider).toHaveBeenCalledTimes(2);
+      expect(system.db.prepare('SELECT COUNT(*) AS count FROM preflight_evaluations').get().count).toBe(0);
+    });
+
+  it('keeps identity context and limits final evidence repair to the changed text actually supplied', async () => {
+    const { body, review, evidence } = incrementalFixture();
+    const provider = vi.fn(async (input, _config, options) => {
+      normalizeInput(input);
+      expect(input.memoContext.memoUpdate).toEqual(body.memoUpdate);
+      expect(input.sourceText).toBe(evidence);
+      const result = structuredClone(review);
+      if (options.kind === 'memo-evidence') {
+        expect(input.memoContext.evidenceRepair.passages.every(passage => evidence.includes(passage.text))).toBe(true);
+        result.nodes[0].evidence = 0;
+      } else result.nodes[0].evidence = 'A community room hosts monthly events.';
+      return { suggestion: result, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    const cookie = await useIncrementalProvider(provider, 'incremental-evidence-repair');
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
+    expect(response.status).toBe(201);
+    expect((await response.json()).evaluation.review).toEqual(review);
+    expect(provider).toHaveBeenCalledTimes(3);
   });
 
   it('supplies the rejected node label to the node-only corrective attempt', async () => {

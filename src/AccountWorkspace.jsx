@@ -25,6 +25,8 @@ export default function AccountWorkspace() {
   });
   const [account,setAccount] = useState(null);
   const [records,setRecords] = useState([]);
+  const [newTitle,setNewTitle] = useState('');
+  const [creatorName,setCreatorName] = useState('');
   const [active,setActive] = useState(null);
   const [accountView,setAccountView] = useState({open:false,tab:'overview'});
   const [configurationRevision,setConfigurationRevision] = useState(0);
@@ -76,6 +78,7 @@ export default function AccountWorkspace() {
         storageRef.current = useAccountStorage(result.account.cacheKey, null, courseSelection);
         setRecoveries(deletedProjects(storageRef.current));
         setAccount(result.account);
+        setCreatorName(result.account.preferredName?.trim() || '');
         let remembered;
         try { remembered = JSON.parse(storageRef.current.getItem('account-navigation')); } catch { /* Start with Overview if UI state is unavailable. */ }
         const requested = instructorRequested && result.account.role === 'instructor';
@@ -140,11 +143,10 @@ export default function AccountWorkspace() {
       const reconciled = record ? await reconcileCloudProject(storage, record.id, result) : { project: createBlankProject(), conflict: false };
       const project = reconciled.project || linkedProject;
       if (!project) throw new Error('The saved device copy is unavailable.');
-      // Use the verified profile only when creating a project. A student's
-      // chosen title and every reopened or shared project retain their names.
-      if (!record && !linkedProject && typeof workspaceAccount.preferredName === 'string') {
-        const preferredName = workspaceAccount.preferredName.trim().slice(0, 160);
-        if (preferredName) project.title = preferredName;
+      // Creation details are separate: a person's name is not the project title.
+      if (!record && !linkedProject) {
+        project.title = newTitle.trim() || 'Untitled systems map';
+        project.participantName = creatorName.trim();
       }
       revisions.current.set(project.id,result?.revision || 0);
       if (result) {
@@ -163,6 +165,7 @@ export default function AccountWorkspace() {
       storageRef.current = useAccountStorage(workspaceAccount.cacheKey,persist,courseSelection);
       if (!reconciled.conflict) persist(project);
       setActive(project.id);
+      if (!record && !linkedProject) setNewTitle('');
       navigateAccount({open:false});
     } catch (failure) { setError(userFacingError(failure, 'This map could not be opened. Return to Projects and try again.')); }
     finally { setBusy(false); }
@@ -296,9 +299,13 @@ export default function AccountWorkspace() {
         <NollSketch className="account-landing__noll" />
       </> : account ? <>
         <div hidden={accountView.open}>
-        <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : undefined} actions={records.length ? <Action disabled={busy} onClick={() => open(null)}>New project</Action> : null} />
-        {records.length ? <SavedProjects records={records} busy={busy} onOpen={open} onInspect={inspect} onDelete={record=>inspect(record,'delete')} />
-          : <EmptyState title="Start your first map" description="Begin with a memo" action={<Action disabled={busy} onClick={() => open(null)}>New project</Action>} />}
+        <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : undefined} />
+        <form className="project-create" aria-label="New project" onSubmit={event => {event.preventDefault(); void open(null);}}>
+          <label className="field"><span>Project title</span><input aria-label="Project title" value={newTitle} onChange={event=>setNewTitle(event.target.value)} maxLength={160} placeholder="Name your map" /></label>
+          <label className="field"><span>Creator name</span><input aria-label="Creator name" value={creatorName} onChange={event=>setCreatorName(event.target.value)} maxLength={160} autoComplete="name" placeholder="Name or group" /></label>
+          <Action type="submit" disabled={busy}>New project</Action>
+        </form>
+        {records.length > 0 && <SavedProjects simple records={records} busy={busy} onOpen={open} onInspect={inspect} onDelete={record=>inspect(record,'delete')} />}
         {recoveries.length > 0 && <details className="project-recoveries"><summary>Project recovery ({recoveries.length})</summary><p>Private copies saved on this device before deletion.</p><ul>{recoveries.map(entry=><li key={entry.key}><span>{entry.title}</span><div className="button-row"><Action variant="secondary" disabled={busy} onClick={()=>restoreDeleted(entry)}>Restore</Action><Action variant="ghost" disabled={busy} onClick={()=>downloadRecovery(entry)}>Download</Action>{entry.remoteProject && <Action variant="ghost" disabled={busy} onClick={()=>downloadRecovery(entry,true)}>Account backup</Action>}</div></li>)}</ul></details>}
         <NollSketch className="noll-sketch--page" />
         </div>

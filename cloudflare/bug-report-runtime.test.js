@@ -5,6 +5,7 @@ import { chromium, expect as browserExpect } from '@playwright/test';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { serializedEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
+import { appendSubmittedNodes } from '../src/memoWorkflow.js';
 let harness, url, worker;
 const sample = { reportId: '11111111-1111-4111-8111-111111111111', description: 'The map could not be saved after opening my project.', path: '/' };
 const control = value => harness.fetch('/__bug-fixture', { method: 'POST', body: JSON.stringify(value) });
@@ -70,11 +71,153 @@ async function browserFixture(viewport) {
   return { browser, context, page, errors, signIn };
 }
 const browserTest = test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1');
+browserTest('Projects keeps the two-field creation form prominent and existing names searchable at desktop and phone widths', async () => {
+  if (process.env.WORKSPACE_SCREENSHOTS) await mkdir(process.env.WORKSPACE_SCREENSHOTS, { recursive: true });
+  for (const viewport of [{ width: 806, height: 758 }, { width: 390, height: 844 }]) {
+    const project = JSON.parse(serializedEastHarlemDisabilityProject());
+    project.id = `project-page-${viewport.width}`;
+    project.participantName = 'Community study group';
+    await control({ project });
+    const { browser, page, errors, signIn } = await browserFixture(viewport);
+    try {
+      await signIn('alice'); await page.goto(url.href);
+      const form = page.getByRole('form', { name: 'New project', exact: true });
+      await browserExpect(form).toBeInViewport({ ratio: 1 });
+      await browserExpect(form.getByRole('textbox')).toHaveCount(2);
+      const title = form.getByRole('textbox', { name: 'Project title', exact: true });
+      const creator = form.getByRole('textbox', { name: 'Creator name', exact: true });
+      await browserExpect(title).toHaveValue('');
+      for (const control of [title, creator, form.getByRole('button', { name: 'New project', exact: true })]) {
+        await browserExpect(control).toBeInViewport({ ratio: 1 });
+        expect(await control.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+      }
+      const saved = page.getByRole('region', { name: 'Saved projects', exact: true });
+      const record = saved.getByRole('article', { name: project.title, exact: true });
+      await browserExpect(record.getByText(project.participantName, { exact: true })).toBeVisible();
+      await browserExpect(saved.getByRole('combobox')).toHaveCount(0);
+      expect(await form.evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(await saved.evaluate(element => element.getBoundingClientRect().top));
+      const search = saved.getByRole('searchbox', { name: 'Find projects', exact: true });
+      await search.fill('community study'); await browserExpect(record).toBeVisible();
+      await search.fill('no such project'); await browserExpect(saved.getByText('No matching projects.')).toBeVisible();
+      await search.fill(project.title); await browserExpect(record).toBeVisible();
+      await search.fill('');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (process.env.WORKSPACE_SCREENSHOTS) await page.screenshot({ animations: 'disabled', path: `${process.env.WORKSPACE_SCREENSHOTS}/${viewport.width}-projects.png` });
+      await title.fill('Neighborhood learning map'); await creator.fill('Study group A');
+      const newSave = page.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).pathname.startsWith('/api/cloud/projects/'));
+      await form.getByRole('button', { name: 'New project', exact: true }).click();
+      const savedProject = JSON.parse((await newSave).postDataJSON().project);
+      expect(savedProject).toMatchObject({ title: 'Neighborhood learning map', participantName: 'Study group A' });
+      expect(savedProject.id).not.toBe(project.id);
+      expect(savedProject.graph.nodes).toEqual([]);
+      await browserExpect(page.locator('.workspace--studio')).toBeVisible();
+      expect(JSON.parse((await (await request(`/api/cloud/projects/${project.id}`)).json()).project)).toEqual(project);
+      expect(errors).toEqual([]);
+    } finally { await browser.close(); }
+  }
+}, 60000);
+browserTest('account workspace keeps compact actions and one Tools scroller at five responsive sizes', async () => {
+  const viewports = [{ width: 806, height: 758 }, { width: 320, height: 740 }, { width: 390, height: 844 }, { width: 1024, height: 900 }, { width: 1440, height: 1000 }];
+  if (process.env.WORKSPACE_SCREENSHOTS) await mkdir(process.env.WORKSPACE_SCREENSHOTS, { recursive: true });
+  for (const viewport of viewports) {
+    const project = JSON.parse(serializedEastHarlemDisabilityProject()); project.id = `responsive-map-${viewport.width}`;
+    project.activeScale = 'micro';
+    appendSubmittedNodes(project, { guidance: [], nodes: [], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
+    await control({ project, resetReports: true });
+    const { browser, context, page, errors, signIn } = await browserFixture(viewport);
+    try {
+      await context.addInitScript(() => localStorage.setItem('systems-mapping.sidebar-width', '260'));
+      await signIn('alice'); await page.goto(url.href);
+      await page.getByRole('article', { name: project.title, exact: true }).getByRole('button', { name: 'Open project', exact: true }).click();
+      await browserExpect(page.locator('.app-header--student .brand__home')).toBeVisible();
+      await browserExpect(page.locator('.app-header--student .brand__home')).toHaveText('Systems Mapping');
+      const checkActions = async () => {
+        for (const name of ['Back', 'Undo', 'Redo', 'Continue']) {
+          const control = page.getByRole('button', { name, exact: true });
+          await browserExpect(control).toBeInViewport({ ratio: 1 });
+          const metrics = await control.evaluate(element => {
+            const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+            const range = document.createRange(); range.selectNodeContents(element);
+            return { width: rect.width, height: rect.height, textHeight: range.getBoundingClientRect().height, lineHeight: parseFloat(style.lineHeight) };
+          });
+          expect(metrics.width).toBeGreaterThanOrEqual(44); expect(metrics.height).toBeGreaterThanOrEqual(44);
+          if (name === 'Back') expect(metrics.textHeight).toBeLessThanOrEqual(metrics.lineHeight + 2);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await checkActions();
+      await page.getByRole('button', { name: 'Tools', exact: true }).click();
+      expect(await page.getByRole('button', { name: 'Tools', exact: true }).evaluate(element => {
+        const style = getComputedStyle(element);
+        return { background: style.backgroundColor, underlineWidth: style.borderBottomWidth, radius: style.borderRadius };
+      })).toEqual({ background: 'rgba(0, 0, 0, 0)', underlineWidth: '2px', radius: '0px' });
+      const tools = page.getByRole('region', { name: 'Map tools', exact: true });
+      for (const name of ['Add item', 'Map key']) await browserExpect(tools.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 });
+      await browserExpect(tools.getByRole('group', { name: 'Map zoom', exact: true }).getByRole('button')).toHaveText(['−', '+', 'Fit map']);
+      expect(await tools.locator('.notebook-tools-body').evaluate(element => ({ maxHeight: getComputedStyle(element).maxHeight, overflowY: getComputedStyle(element).overflowY }))).toEqual({ maxHeight: 'none', overflowY: 'visible' });
+      await tools.getByRole('button', { name: 'Full screen map', exact: true }).scrollIntoViewIfNeeded();
+      await browserExpect(tools.getByRole('button', { name: 'Full screen map', exact: true })).toBeInViewport({ ratio: 1 });
+      await checkActions();
+      await page.locator('.inspector__scroll').evaluate(element => { element.scrollTop = 0; });
+      if (process.env.WORKSPACE_SCREENSHOTS) await page.screenshot({ animations: 'disabled', path: `${process.env.WORKSPACE_SCREENSHOTS}/${viewport.width}-tools.png` });
+      expect(await page.locator('.notebook-task-top').evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(90);
+      if ([806, 390].includes(viewport.width)) {
+        await tools.getByRole('button', { name: 'List', exact: true }).click();
+        const list = page.locator('.map-list-view--compact');
+        await browserExpect(list).toBeVisible();
+        const geometry = await list.evaluate(element => {
+          const list = element.getBoundingClientRect(), sidebar = document.querySelector('#map-inspector').getBoundingClientRect();
+          return { left: list.left, right: list.right, top: list.top, bottom: list.bottom, sidebarLeft: sidebar.left, sidebarTop: sidebar.top,
+            heights: [...element.querySelectorAll('.map-list-record__button')].map(node => node.getBoundingClientRect().height) };
+        });
+        expect(geometry.heights.every(height => height >= 44 && height <= 64)).toBe(true);
+        if (viewport.width === 806) expect(geometry.right).toBeLessThanOrEqual(geometry.sidebarLeft + 1);
+        else expect(geometry.bottom).toBeLessThanOrEqual(geometry.sidebarTop + 1);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (process.env.WORKSPACE_SCREENSHOTS) await page.screenshot({ animations: 'disabled', path: `${process.env.WORKSPACE_SCREENSHOTS}/${viewport.width}-list.png` });
+        await tools.getByRole('button', { name: 'Canvas', exact: true }).click();
+      }
+      await page.getByRole('button', { name: 'Memo', exact: true }).click();
+      await browserExpect(page.getByRole('region', { name: 'Memo editor', exact: true })).toBeVisible();
+      await checkActions();
+      expect(await page.getByRole('textbox', { name: 'First memo', exact: true }).evaluate(element => getComputedStyle(element, '::placeholder').fontSize)).toBe('14px');
+      if (viewport.width <= 600) expect(await page.getByRole('textbox', { name: 'First memo', exact: true }).evaluate(element => getComputedStyle(element).fontSize)).toBe('16px');
+      if (process.env.WORKSPACE_SCREENSHOTS) await page.screenshot({ animations: 'disabled', path: `${process.env.WORKSPACE_SCREENSHOTS}/${viewport.width}-memo.png` });
+      await page.getByRole('button', { name: 'Notebook', exact: true }).click();
+      await page.locator('[data-graph-id="node_e2e_resident"]').press('Enter');
+      const itemHeader = page.locator('.inspector-item-header');
+      await browserExpect(itemHeader.getByRole('heading', { name: 'Resident', exact: true })).toBeVisible();
+      await browserExpect(itemHeader.getByText('On map', { exact: true })).toBeVisible();
+      const widths = [];
+      for (const name of ['Remove', 'Done']) {
+        const button = itemHeader.getByRole('button', { name, exact: true });
+        await browserExpect(button).toBeInViewport({ ratio: 1 });
+        widths.push(await button.evaluate(element => element.getBoundingClientRect().width));
+      }
+      expect(Math.abs(widths[0] - widths[1])).toBeLessThan(1);
+      expect(await itemHeader.getByRole('heading').evaluate(element => getComputedStyle(element).fontSize)).toBe('14px');
+      const itemHeading = await itemHeader.locator('.inspector-item-heading').evaluate(element => {
+        const title = element.querySelector('h2').getBoundingClientRect();
+        const status = element.querySelector('.inspector-item-state').getBoundingClientRect();
+        return { titleBottom: title.bottom, statusTop: status.top, titleLeft: title.left, statusLeft: status.left };
+      });
+      expect(itemHeading.statusTop).toBeGreaterThanOrEqual(itemHeading.titleBottom);
+      expect(Math.abs(itemHeading.titleLeft - itemHeading.statusLeft)).toBeLessThan(1);
+      await page.getByRole('radio', { name: 'Rose', exact: true }).check();
+      await browserExpect(page.locator('[data-graph-id="node_e2e_resident"]')).toHaveAttribute('data-node-color', 'rose');
+      if (process.env.WORKSPACE_SCREENSHOTS) await page.screenshot({ animations: 'disabled', path: `${process.env.WORKSPACE_SCREENSHOTS}/${viewport.width}-selected.png` });
+      await page.getByRole('button', { name: 'About Systems Mapping', exact: true }).click();
+      await browserExpect(page.getByRole('region', { name: 'About Systems Mapping', exact: true })).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press('Escape');
+      expect(errors).toEqual([]);
+    } finally { await browser.close(); }
+  }
+}, 120000);
 browserTest('signed-out visitors use a one-field popup without login or identity attachment',async()=>{
  await control({resetReports:true});const {browser,page,errors}=await browserFixture({width:1280,height:900});
  try {
   await page.goto(url.href);await page.getByRole('button',{name:'Report a problem',exact:true}).click();
-  const description=page.getByLabel('What went wrong?');await browserExpect(description).toBeEditable();
+  const description=page.getByLabel('What went wrong? What could be better?');await browserExpect(description).toBeEditable();
   await browserExpect(page.locator('.bug-report input')).toHaveCount(0);await browserExpect(page.locator('.bug-report textarea')).toHaveCount(1);
   await browserExpect(page.locator('.bug-report a')).toHaveCount(0);await description.fill(sample.description);
   await page.getByRole('button',{name:'Send report',exact:true}).click();await browserExpect(page.locator('.bug-report__status')).toContainText('accepted for email delivery');
@@ -87,7 +230,7 @@ browserTest('lost acknowledgements keep the same report and exclude shared-link 
   await control({ mode: 'lost-ack', resetReports: true }); const { browser, page, signIn } = await browserFixture({ width: 390, height: 844 });
   try {
     await signIn('alice'); await page.goto(url.href); await page.getByRole('button', { name: 'Report a problem', exact: true }).click();
-    const description = page.getByLabel('What went wrong?'); await browserExpect(description).toBeEditable();
+    const description = page.getByLabel('What went wrong? What could be better?'); await browserExpect(description).toBeEditable();
     await page.evaluate(() => history.replaceState(null, '', '/p/secretSharedMapCapability12345?secret=query#fragment'));
     await description.fill(sample.description); const posted = [];
     page.on('request', request => { if (request.url().endsWith('/api/bug-reports')) posted.push(request.postDataJSON()); });
@@ -110,6 +253,8 @@ browserTest('lost acknowledgements keep the same report and exclude shared-link 
 browserTest('compact pop-out preserves keyboard focus, draft and map navigation on desktop and phone', async () => {
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
     const project = JSON.parse(serializedEastHarlemDisabilityProject()); project.id = 'bug-report-saved-map';
+    project.activeScale = 'micro';
+    appendSubmittedNodes(project, { guidance: [], nodes: [], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
     project.activeScale = 'meso'; project.stage = 3;
     project.levelProgress.meso = { ...project.levelProgress.meso, stage: 3 };
     await control({ project, resetReports: true }); const { browser, page, errors, signIn } = await browserFixture(viewport);
@@ -118,15 +263,15 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await page.getByRole('article', { name: project.title, exact: true }).getByRole('button', { name: 'Open project', exact: true }).click();
       await browserExpect(page.locator('.workspace--studio')).toBeVisible();
       const trigger = page.getByRole('button', { name: 'Report a problem', exact: true });
-      const panel = page.getByRole('dialog', { name: 'Report a problem', exact: true });
+      const panel = page.getByRole('dialog', { name: 'Report a bug or request a feature', exact: true });
       const close = page.getByRole('button', { name: 'Close bug report', exact: true });
-      const description = page.getByLabel('What went wrong?');
+      const description = page.getByLabel('What went wrong? What could be better?');
       const reportHost = await page.locator('.bug-report-host').elementHandle();
       await browserExpect(page.locator('.app-header--student .workspace-bug-report .bug-report__trigger')).toBeVisible();
       await browserExpect(page.locator('.bug-report-footer')).toBeHidden();
       await browserExpect(panel).toBeHidden();
       await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Notebook', exact: true }).click();
-      await browserExpect(page.getByRole('button', { name: '2 Meso', exact: true })).toHaveAttribute('aria-current', 'step');
+      await browserExpect(page.getByRole('button', { name: 'Meso', exact: true })).toHaveAttribute('aria-current', 'step');
       const layout = await page.evaluate(() => {
         const rect = selector => {
           const { x, y, width, height, right, bottom } = document.querySelector(selector).getBoundingClientRect();
@@ -134,7 +279,7 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
         };
         return {
           viewport: { width: innerWidth, height: innerHeight },
-          header: rect('.app-header--student'), map: rect('.map-layout'),
+          header: rect('.app-header--student'), map: rect('.map-layout'), footer: rect('.project-footer'),
           project: rect('.project-menu > summary'), tools: rect('.notebook-switch button[aria-pressed="false"]'),
           level: rect('.workflow-steps'), navigation: rect('.notebook-switch'),
           report: rect('.workspace-bug-report .bug-report__trigger'),
@@ -150,8 +295,9 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       expect(layout.navigation.y).toBeGreaterThanOrEqual(layout.map.y);
       expect(layout.navigation.right).toBeLessThanOrEqual(viewport.width);
       if (viewport.width < 600) {
-        expect(layout.brandDisplay).toBe('none');
-        expect(layout.map.height).toBeGreaterThan(viewport.height * 0.85);
+        expect(layout.brandDisplay).toBe('flex');
+        expect(layout.map.bottom).toBeLessThanOrEqual(layout.footer.y);
+        expect(layout.footer.y - layout.map.bottom).toBeLessThanOrEqual(12);
       }
       if (process.env.BUG_REPORT_SCREENSHOTS) {
         await mkdir(process.env.BUG_REPORT_SCREENSHOTS, { recursive: true });
@@ -218,14 +364,14 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(page.locator('.bug-report-host')).toBeVisible();
       await page.locator('[data-graph-id="node_e2e_resident"]').click();
       await browserExpect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Notebook',exact:true})).toHaveAttribute('aria-pressed','true');
-      await browserExpect(page.locator('.inspector__head h2')).toHaveText('Item details');
-      await browserExpect(page.locator('.inspector__head h2')).toHaveClass('sr-only');
-      await browserExpect(page.locator('.inspector__head').getByText('Edit', { exact: true })).toHaveCount(0);
-      await browserExpect(page.locator('.item-editor-title p')).toHaveText('Resident');
+      await browserExpect(page.locator('.inspector-item-header h2')).toHaveText('Resident');
+      await browserExpect(page.locator('.inspector-item-header .inspector-item-state')).toHaveText('On map');
+      await browserExpect(page.locator('#map-inspector').getByRole('heading', { name: 'Edit', exact: true })).toHaveCount(0);
+      await browserExpect(page.locator('.inspector__head')).toHaveCount(0);
       if (process.env.BUG_REPORT_SCREENSHOTS) {
-        const editorBounds = await page.locator('.inspector__head').evaluate(element => {
+        const editorBounds = await page.locator('.inspector-item-header').evaluate(element => {
           const bounds = node => ({ className: node.className, rect: node.getBoundingClientRect().toJSON(), width: getComputedStyle(node).width, flex: getComputedStyle(node).flex, display: getComputedStyle(node).display });
-          return { head: bounds(element), children: [...element.children].map(bounds), done: bounds(element.querySelector('.inspector-done')), scroller: bounds(element.parentElement) };
+          return { head: bounds(element), children: [...element.children].map(bounds), done: bounds(element.querySelector('.inspector-done')), scroller: bounds(element.parentElement.querySelector('.inspector__scroll')) };
         });
         await writeFile(`${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-editor.json`, JSON.stringify(editorBounds, null, 2));
       }
@@ -273,13 +419,13 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
   }
 }, 60000);
 
-test('unconfigured Redmine exposes contact email fallback while retaining sign-in checks', async () => {
+test('explicit Redmine mode never substitutes email when its key is missing', async () => {
  await control({resetReports:true,reportMode:'redmine'});
  const response=await request('/api/bug-reports/availability','');
- expect(await response.json()).toEqual({enabled:true,mode:'contact',delivery:'email',fallback:null});
- expect((await submit(sample,'')).status).toBe(401);
+ expect(await response.json()).toEqual({enabled:false,mode:'contact',delivery:'redmine',fallback:null});
+ expect((await submit(sample,'')).status).toBe(503);
  await control({reportMode:'redmine',binding:false});
- expect(await (await request('/api/bug-reports/availability','')).json()).toEqual({enabled:false,mode:'contact',delivery:'email',fallback:null});
+ expect(await (await request('/api/bug-reports/availability','')).json()).toEqual({enabled:false,mode:'contact',delivery:'redmine',fallback:null});
  expect((await submit(sample,'')).status).toBe(503);
  expect((await stats()).calls).toHaveLength(0);
  await control({resetReports:true});

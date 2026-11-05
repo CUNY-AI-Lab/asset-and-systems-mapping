@@ -1,5 +1,7 @@
 # Cloudflare source acceptance — September 23, 2026
 
+> **Historical record.** Claims of “current,” “implemented,” or “verified” below refer to this document’s dated source and environment. The November 4 [Memo workspace](MEMO_WORKSPACE_2026-11-04.md), [two-memo workflow](TWO_MEMO_WORKFLOW_2026-11-04.md) and [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md) govern the account application. Older screen, model-output and sphere rules do not override them; the receipts below are preserved, not rerun acceptance.
+
 The isolated candidate starts from canonical main `ae5ea57` and preserves the
 existing Cloudflare draft from `Projects/dev/systems-mapping-cloudflare`.
 That original checkout and the Node/Railway deployment were not changed.

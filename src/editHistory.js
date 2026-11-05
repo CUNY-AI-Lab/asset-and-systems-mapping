@@ -10,7 +10,7 @@ const hash = value => `${value.length}:${stableId('text', value)}`;
 const own = (value, key) => value != null && Object.hasOwn(value, key);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function memo(source) {
-  return Object.fromEntries(MEMO_EDIT_FIELDS.map(key => [key, source?.[key] ?? (['sensitive', 'consent'].includes(key) ? false : key === 'fileSize' ? 0 : '')]));
+  return Object.fromEntries(MEMO_EDIT_FIELDS.map(key => [key, key === 'analysis' ? clone(source?.analysis ?? null) : source?.[key] ?? (['sensitive', 'consent'].includes(key) ? false : key === 'fileSize' ? 0 : '')]));
 }
 function records(collection) {
   return { nodes: Object.fromEntries(collection.nodes.map(item => [item.id, clone(item)])), nodeOrder: collection.nodes.map(item => item.id),
@@ -66,7 +66,7 @@ function applySnapshot(project, state) {
     const changedText = project[key].text !== state[key].text;
     for (const field of MEMO_EDIT_FIELDS) {
       if (equal(previous[key][field], state[key][field])) continue;
-      if (['fileName', 'fileSize'].includes(field) && !state[key][field]) delete project[key][field];
+      if (['fileName', 'fileSize', 'analysis'].includes(field) && !state[key][field]) delete project[key][field];
       else project[key][field] = state[key][field];
     }
     if (changedText) { project[key].revision = (project[key].revision || 1) + 1; project[key].fingerprint = stableId('src', project[key].text); }

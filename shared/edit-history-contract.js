@@ -1,6 +1,6 @@
 export const EDIT_HISTORY_LIMIT = 30;
 export const EDIT_HISTORY_BYTES = 256 * 1024;
-export const MEMO_EDIT_FIELDS = Object.freeze(['title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize']);
+export const MEMO_EDIT_FIELDS = Object.freeze(['title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'analysis']);
 const plain = value => value && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const safeKey = key => typeof key === 'string' && key.length > 0 && key.length <= 200 && !['__proto__', 'prototype', 'constructor'].includes(key);
@@ -9,7 +9,7 @@ export function editPathAllowed(path) {
   const [root, field] = path;
   if (['graph', 'candidates'].includes(root)) return path.length === 2 && ['nodeOrder', 'edgeOrder'].includes(field)
     || path.length >= 3 && ['nodes', 'edges'].includes(field);
-  if (['submission', 'part2Submission'].includes(root)) return path.length === 2 && MEMO_EDIT_FIELDS.includes(field);
+  if (['submission', 'part2Submission'].includes(root)) return path.length === 2 && MEMO_EDIT_FIELDS.includes(field) || field === 'analysis' && path.length >= 3;
   if (root === 'notes') return path.length === 2 && ['micro', 'meso', 'exosphere', 'macrosphere'].includes(field);
   if (root === 'layout') return path.length === 2 && ['autoFit', 'manualNodeIds', 'readingAspect', 'phoneOverview'].includes(field);
   return path.length === 1 && ['title', 'participantName', 'inquiry', 'mapNote'].includes(root);

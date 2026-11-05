@@ -1,3 +1,40 @@
+# Current task — Memo workspace (November 4, late evening)
+
+Design: [wireframe and behavior](docs/MEMO_WORKSPACE_2026-11-04.md) · [interactive wireframe](docs/wireframes/memo-workspace.html)
+
+- [x] Create wireframes before implementation: new/existing project, Memo, edited memo, updated map, Notebook, Tools, info flag and responsive layout.
+- [x] Verify current production matches remote main `9fa6e00b78ae08292b10acc148c5c3c4925a7d4e`: readiness, anonymous denial, three entry assets and 100% traffic pass.
+- [x] Extend the wireframe with canvas-driven memo checkpoints, optional node colors and both double-click connection targets.
+- [x] Verify compact List rows, contained scrolling and one combined title/status/Remove/Done header.
+- [x] Fix compact sidebar controls: unbroken Back text, smaller type, full-height Tools, adjacent −/+, visible Add item and Map key, persistent Systems Mapping title and linked CALI credit.
+- [x] Keep Continue visible and gate only on successful memo generation for the current part; remove review/notes/relationship prerequisites.
+- [x] Add accessible named node colors with Automatic reset, saved Undo/reload and export parity.
+- [x] Double-click starts a connection: another node selects the target, empty canvas opens an atomic new-node-and-relationship editor.
+- [x] Verify cancellation, deleted source, direction, invalid input and zero partial writes for direct connections.
+- [x] Add the i icon immediately left of the bug icon, with the exact supplied description and two how-to sentences in a subtle transient flag.
+- [x] Reuse current CSS tokens, compact header controls, focus states and reduced-motion behavior.
+- [x] Open every account project on its canvas; emphasize Memo upload at the top right when a memo is needed.
+- [x] Add Memo · Notebook · Tools to one resizable sidebar, preserving a visible canvas and accessible collapsed navigation.
+- [x] Move upload, memo text, privacy and submission into Memo. Keep Notebook for map progression and student work.
+- [x] Keep Part 1 and Part 2 editors independent and their drafts stateful.
+- [x] Provide Update map after memo edits; skip unchanged submissions.
+- [x] Pass significant memo changes and retained map context to the model; persist independent successful baselines.
+- [x] Preserve node identities, manual edits, positions, notes, relationships and removal decisions during incremental updates.
+- [x] Verify unknown IDs, invalid evidence, stale results, request limits, cancellation/failure and Undo/reload behavior.
+- [x] Verify desktop/phone layouts, info dismissal/focus, visible canvas, tab history and keyboard controls.
+- [x] Simplify Projects to visible Project title / Creator name fields, searchable saved names, and an accessible Project details editor.
+- [x] Route new bug/feature reports directly to Redmine with existing credentials, no automatic email fallback; preserve old receipts.
+- [ ] Commit with verified zmuhls author/committer, deploy the checked revision to Dev, and perform a signed-in workflow test with approved synthetic content.
+- [ ] Record Dev evidence and screenshots, run an independent regression audit, then promote the exact checked release to production and verify it.
+- [ ] Demonstrate participation-based Micro/Exo classification with source-grounded explanations and minimal-pair live Dev tests; withhold unsupported placements.
+- [x] Update all current documentation affected by these changes; retain dated receipts as historical evidence.
+
+Local test checks above do not imply live acceptance. Dev/model verification and production promotion remain unchecked until their release receipts are recorded.
+
+The historical ledger below records earlier releases; newer requests above supersede incompatible earlier interface requirements.
+
+---
+
 # Systems Mapping release evidence ledger
 
 Updated: 2026-11-03

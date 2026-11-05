@@ -1,6 +1,6 @@
 import { NODE_SUBMISSION, nodeSubmissionSchema } from '../shared/node-submission.js';
 import { CailError, createCailClient } from '@cuny-ai-lab/cail-client';
-import { normalizeInput, JSON_ONLY_INSTRUCTION } from '../server/ollama.js';
+import { normalizeInput, JSON_ONLY_INSTRUCTION, OLLAMA_CLOUD_LIMITS } from '../server/ollama.js';
 import { OpenRouterError, parseProviderEnvelope } from '../server/openrouter.js';
 import { boundedText, cancelBody, withSignal, withDeadline } from './bounded.js';
 import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
@@ -144,7 +144,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
     if (!['memo', 'connections', 'map-check', 'memo-quotes', 'memo-evidence'].includes(kind)) throw new Error('guidance_deadline');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 85000) throw new Error('guidance_deadline');
     const data = normalizeInput(input);
-    const responseSchema = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionSchema(input.activeScale, kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0) : ['memo', 'memo-evidence'].includes(kind) ? memoResponseSchema(input.activeScale, input.carriedNodes,
+    const responseSchema = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionSchema(input.activeScale, kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0, input.memoContext?.memoUpdate) : ['memo', 'memo-evidence'].includes(kind) ? memoResponseSchema(input.activeScale, input.carriedNodes,
       kind === 'memo-evidence' ? input.memoContext?.evidenceRepair?.passages?.length : 0, input.carriedConnections) : null;
     return withDeadline(async requestSignal => {
     try {
@@ -161,13 +161,17 @@ Follow the supplied JSON field names and types exactly. ${input.workflowMode ===
         requestSignal.throwIfAborted();
         let response;
         try {
-          response = await client.chatCompletions({ model: selectedModel, stream: false,
+          const payload = { model: selectedModel, stream: false,
             // Reasoning shares this ceiling with JSON. Real multi-page memo
             // extraction needs headroom; the response still permits six nodes
             // and no relationships, within the existing overall deadline.
             reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'memo-quotes' ? 512 : kind === 'map-check' ? 1024 : input.workflowMode === NODE_SUBMISSION ? 8192 : 4096,
             response_format: { type: 'json_object' }, messages,
-          }, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: kind === 'map-check' ? 'systems-mapping-map-check' : 'systems-mapping-guidance' });
+          };
+          if (new TextEncoder().encode(JSON.stringify(payload)).byteLength > OLLAMA_CLOUD_LIMITS.requestBodyBytes) {
+            throw new CailError('input_too_large', 'The memo and map context exceed the supported request size.', 400);
+          }
+          response = await client.chatCompletions(payload, { kind: 'jwt', token }, { signal: requestSignal, correlation, sessionId: kind === 'map-check' ? 'systems-mapping-map-check' : 'systems-mapping-guidance' });
         } catch (error) {
           if (requestSignal.aborted || index === models.length - 1 || !(error instanceof CailError)
             || !AVAILABILITY_FAILURES.has(error.code) || error.extras.should_retry !== true) throw error;

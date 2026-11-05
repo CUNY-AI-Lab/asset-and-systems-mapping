@@ -9,13 +9,21 @@ checkout remains unchanged.
 
 ## Product and data contract
 
-Micro identifies nodes and Meso connects those same nodes with directional
-relationships while retaining their positions. Meso shares the Micro map space.
-Exosphere and Macrosphere, five stages, instructor guidance, retained reviews,
-map editing and filtering, and privacy-aware exports continue to use the shared
-implementation. `docs/MICRO_MESO_WORKFLOW_2026-10-28.md` governs this workflow.
-Schema version 8 preserves saved graph records while moving earlier Micro
-relationships into Meso; existing scoped Meso records remain readable.
+The current account contract is [Memo workspace](MEMO_WORKSPACE_2026-11-04.md),
+[two-memo workflow](TWO_MEMO_WORKFLOW_2026-11-04.md) and [node submission](NODE_SUBMISSION_WORKFLOW_2026-11-04.md).
+Projects open on the canvas with Memo · Notebook · Tools in one resizable sidebar.
+Two independent memos support Micro → Meso → Exo → Macro within three nested
+regions. The model supplies bounded supported nodes; students create every
+relationship. Continue requires only a successful submission for the current
+memo part, including an empty result. Stored numeric stages remain compatible;
+they do not imply the older five-screen student review interface.
+
+Schema 10 preserves graph records, both sources, evidence, student decisions,
+node colors, saved edit history and optional independent last-successful analysis
+baselines. Incremental source updates preserve existing student customizations
+and apply graph/baseline changes atomically. Earlier Micro relationships migrate
+to Meso; legacy scoped Meso records remain readable. No Durable Object namespace
+or database reset is part of these interface changes.
 
 The `systems-mapping` Worker uses one SQLite-backed `MappingCourse` Durable
 Object per deployment-controlled teaching workspace. Account maps are keyed
@@ -70,9 +78,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   4,096-token completion ceiling bounds legacy review output; the account
   node-submission contract uses 8,192 tokens to include reasoning while still
   allowing only six nodes and no relationships. Truncated results fail
-  validation. A compact first pass asks the model for at most six nodes and
-  four connections, subject to the stricter active-level contract. No returned
-  items are silently filtered or relabeled.
+  validation. The account path has no relationship, guidance, scope or example output; Part 2 adds at most three Exo and three Macro nodes. The retained legacy review path may request up to four connections under its separate level rules. No returned items are silently filtered or relabeled.
 - An explicit model action normally makes one attempt. The requested backup,
   `gpt-oss-20b`, gets a separately admitted Gateway call only after
   a known availability refusal with affirmative Gateway retry advice. This
@@ -92,7 +98,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   item, a server-constructed feedback-only result may be saved only after the
   nonempty guidance passes its normal source and shape checks; it carries no
   map suggestions and is labeled in runtime metadata and the interface. This
-  adds no provider call and does not rescue provider or transport failures.
+  adds no provider call and does not rescue provider or transport failures. This feedback-only result belongs to the retained legacy review contract; account node submissions never revive a guidance queue.
   The count records
   attempted calls, rather than proof of provider execution or zero cost.
   An outer cancellation or disconnect can prevent a result from being recorded;
@@ -139,6 +145,10 @@ subsequent saves. Shared review retention follows the existing product rules.
   identifiers, credentials or provider bodies. Logging is separate from the
   product's private data and semantic validation.
 
+Account incremental requests retain `workflowMode: "student-nodes-v1"` and add a bounded `memoUpdate` identity/passages object. Only significant changed narrative is sent where possible; broad or deletion-only edits can explicitly fall back to the complete active memo. Provider context is limited to 80 KiB for incremental calls, the analysis/update object to 64 KiB, current source to 128 KiB and total wire payload to 256 KiB. Identity is never silently truncated. Optional `existingId` refreshes only eligible generated evidence and must echo the current saved identity. Current-source evidence validation and repairs retain the same supplied passages and identity context. Neither Continue nor unchanged memo saving triggers a paid request. See [node submission](NODE_SUBMISSION_WORKFLOW_2026-11-04.md) for complete baseline and preservation rules.
+
+Classification follows focal participation and the supported indirect path, not organization names. The [classification evidence and regression gates](CLASSIFICATION_EVIDENCE_2026-11-04.md) define the minimal-pair live model acceptance cases. Passing schema validation alone does not establish correct ecological interpretation.
+
 The bundled public JWKS exactly matches the live Doorway public JWKS read on
 September 23 at `/cail-sso/.well-known/jwks.json`, including key ID
 `a4d816154d18135a15c2ee76998a57eb`. The live Gateway stores its verifier value
@@ -147,9 +157,12 @@ the check of the deployed signing/verifier relationship.
 
 ## Release and recovery
 
+For the November 4 changes, the user authorized **all changes on Dev first, screenshots, then production**. Source tests and CI precede deployment. Verify the integrated Dev behavior, saved-map reload and ten screenshots before promoting the checked source. Record the exact SHA, Worker version, traffic, assets, authenticated/model checks and unresolved limitations at each boundary. This document is a procedure, not a release receipt; historical deployment paragraphs below remain dated evidence only.
+
+
 Cloudflare account: `452c33847cf5cb1e46f391fca32fd1b5` (CUNY AI Lab).
 Target: `https://systems-mapping.ailab-452.workers.dev`.
-No Worker existed at that target during the September 23 preflight.
+Historical boundary: no Worker existed at that target during the September 23 preflight. This is not the current deployment status.
 
 `pnpm check:cloudflare` typechecks, builds the account frontend and bundles the
 Worker without deploying. `pnpm test` exercises both shared product code and
@@ -167,7 +180,7 @@ before deployment. This repository had no release secret at preflight; the
 workflow is not active evidence of a completed CI release. Never copy a local
 OAuth credential into repository secrets to make that check pass.
 
-The initial isolated candidate can be released by the authorized operator from
+The initial September candidate procedure allowed an authorized operator release from
 a clean, pushed, checked commit using checkout-local Wrangler and
 `--var RELEASE:<full-source-SHA>`. Record the actual version and deployment
 readback. The release marker and SQLite initialization/health check must pass,
@@ -253,7 +266,9 @@ every 20 seconds instead of one every 2 seconds. Retry waits and resumes are
 unchanged. A job whose attempt runs on another instance returns at once and the
 browser falls back to ordinary polling.
 
-## Map Check
+## Retained Map Check API
+
+This compatibility API is not exposed as a student account-workspace control. It does not belong in the new Memo/Notebook progression and must not be used to add automatic relationships.
 
 `POST /api/map/check` (job kind `map-check`) sends the carried map as
 `carriedNodes` and `carriedConnections`, memberships as `scopes`, an optional
@@ -266,3 +281,9 @@ uses `revise-and-export`. The published course appendix applies through the
 builder prompt. Output budget is 1,024 completion tokens; the Gateway session
 label is `systems-mapping-map-check`. Logging is unchanged: outcomes only.
 
+
+## November 4 integrated release checks
+
+Before promotion, check the complete build on Dev: canvas-first new/existing projects; independent memo drafts and successful baselines; meaningful, unchanged and one-word updates; successful empty results; current-part Continue gating; stable manual labels/classification/colors/evidence and removed nodes; failure/cancel/stale job recovery; saved Undo/Redo across reload; both double-click connection targets and atomic cancel; source deletion; three content-sized regions; color parity in PNG/PDF/private JSON; info copy/timer/focus; keyboard/touch and narrow sidebar/phone layouts. The model must demonstrate the Micro/Exo participation distinction on the documented same-name cases and return no relationships.
+
+Use approved real PDFs as well as synthetic continuations, keep those source files outside Git, and record every actual model failure and retry. A finite passing test set establishes those cases only. Production verification must read back the exact checked source and assets separately from Dev evidence. Do not mark the new design released merely because it is documented or passes local tests.

@@ -14,7 +14,8 @@
 
 .app-shell:has(> .workspace--studio) { --header: 54px; --footer: 58px; }
 .app-shell:has(> .workspace--studio) .app-header--student { height: calc(var(--header) + var(--safe-top)); flex-wrap: nowrap; padding: var(--safe-top) 16px 0; }
-.app-shell:has(> .workspace--studio) .app-header--student .brand { width: auto; }
+.app-shell:has(> .workspace--studio) .app-header--student .brand { display:flex; width:auto; min-width:0; }
+.app-shell:has(> .workspace--studio) .app-header--student .brand__home { display:grid; }
 .app-shell:has(> .workspace--studio) .app-header--student .header-actions { display: flex; width: auto; }
 .workspace.workspace--studio {
   height: 100dvh; max-height: 100dvh; min-height: 0; display: flex; flex-direction: column;
@@ -118,7 +119,9 @@ html[data-theme="dark"] .inspector .inspector-done { color: var(--ink); }
 }
 @media (max-width: 700px) {
   .app-shell:has(> .workspace--studio) .app-header--student { padding-inline: 10px; gap: 6px; }
-  .app-shell:has(> .workspace--studio) .brand__home { display: none; }
+  .app-shell:has(> .workspace--studio) .app-header--student .brand__home { display:grid; padding-left:0; }
+  .app-shell:has(> .workspace--studio) .app-header--student .brand strong { font:600 14px/1.15 var(--body); }
+  .app-shell:has(> .workspace--studio) .app-header--student .brand__lab { display:none; }
   .app-shell:has(> .workspace--studio) .app-header--student .text-button { padding-inline: 7px; font-size: 13px; }
   .app-shell:has(> .workspace--studio) .theme-toggle--labeled { min-width: 36px; width: 36px; }
   .app-shell:has(> .workspace--studio) .theme-toggle--labeled span { display: none; }

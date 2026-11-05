@@ -6,6 +6,12 @@ Open **Instructor Console → Course settings**. Choose **Edit prompts**, select
 
 **Student preview** shows the current text immediately, including unsaved edits. **Publish changes** saves pending edits and publishes them in one action. Use **Save draft** to keep work for later without publishing. Students' existing answers remain intact when the question changes. Editing and previewing the prompt make no model request.
 
+## Student-workflow boundary
+
+The account workspace uses Memo · Notebook · Tools and four direct analytical steps, with optional Field Notes. Publishing a question does not make the answer required for Continue; the only checkpoint is successful memo-to-nodes processing for the current part. Students create all relationships. Model guidance and course material may inform source-grounded classification but cannot override the node-only output, independent source/update contract or student edits. Classification depends on focal participation and pathways, not institution names; see [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md).
+
+The five internal Part × step settings remain a compatibility and provenance contract, not five student-facing account screens. Prompt editing never regenerates an unchanged student memo or changes a saved graph. Existing student notes and private analysis baselines are not exposed to instructors by these interface changes.
+
 ## Dashboard pattern
 
 The primary screen contains one scale selector, one prompt field, a collapsed student preview, and a status/action bar. Prompt text is limited to the existing 1,200-character course contract. Publication requires a nonblank question for every scale. The editor finds and focuses a missing question before any write.

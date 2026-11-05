@@ -1,5 +1,7 @@
 # Reconciliation record — 2026-08-13
 
+> **Historical record.** Claims of “current,” “implemented,” or “verified” below refer to this document’s dated source and environment. The November 4 [Memo workspace](MEMO_WORKSPACE_2026-11-04.md), [two-memo workflow](TWO_MEMO_WORKFLOW_2026-11-04.md) and [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md) govern the account application. Older screen, model-output and sphere rules do not override them; the receipts below are preserved, not rerun acceptance.
+
 ## Outcome
 
 Local `main` initially stopped at `7ad83ae`. `origin/main` had advanced to `fd7ca0b` through two README-only commits: `1129313` and `fd7ca0b`. Neither upstream commit changed application code, tests, data, configuration, or deployment behavior.

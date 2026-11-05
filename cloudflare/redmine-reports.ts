@@ -8,8 +8,11 @@ type ReportEnv = { REDMINE_API_KEY?: string; RELEASE: string; PUBLIC_ORIGIN?: st
 type Delivery = 'redmine' | 'email';
 type Receipt = { fingerprint: string; state: string; created_at: string; issue_id: number | null; delivery: Delivery; fallback_safe: number };
 export const contactReporting = (env: ReportEnv) => ['redmine', 'email'].includes(env.BUG_REPORT_MODE || '') || Boolean(env.REDMINE_API_KEY);
-export const reportDelivery = (env: ReportEnv): Delivery => env.BUG_REPORT_MODE === 'email' || !env.REDMINE_API_KEY ? 'email' : 'redmine';
-export const reportsEnabled = (env: ReportEnv) => reportDelivery(env) === 'email' ? Boolean(env.BUG_REPORTS) : Boolean(env.REDMINE_API_KEY || env.BUG_REPORTS);
+export const reportDelivery = (env: ReportEnv): Delivery => env.BUG_REPORT_MODE === 'redmine' ? 'redmine'
+  : env.BUG_REPORT_MODE === 'email' || !env.REDMINE_API_KEY ? 'email' : 'redmine';
+export const reportFallback = (env: ReportEnv): 'email' | null => env.BUG_REPORT_MODE !== 'redmine'
+  && reportDelivery(env) === 'redmine' && Boolean(env.BUG_REPORTS) ? 'email' : null;
+export const reportsEnabled = (env: ReportEnv) => reportDelivery(env) === 'email' ? Boolean(env.BUG_REPORTS) : Boolean(env.REDMINE_API_KEY);
 // The shared receiver scopes UUIDs to an application. Derive a stable UUID per
 // local owner/report so an unrelated reporter cannot reuse another receipt.
 function emailReportId(owner: string, reportId: string) {
@@ -201,7 +204,7 @@ export class RedmineReports {
       if (existing?.state === 'rejected' || existing?.state === 'retryable') {
         // Older rejected rows may represent redirects after an issue was
         // created. Only new classified rejections (or a 429) allow fallback.
-        if (this.env.BUG_REPORTS && (existing.state === 'retryable' || existing.fallback_safe === 1)) return await sendEmail();
+        if (reportFallback(this.env) && (existing.state === 'retryable' || existing.fallback_safe === 1)) return await sendEmail();
         if (existing.state === 'rejected') return fail('redmine_rejected', 502);
       }
       return await withDeadline(async signal => {
@@ -230,7 +233,7 @@ export class RedmineReports {
         }
         if (result.status === 429) {
           this.db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).run(owner, id);
-          return this.env.BUG_REPORTS ? sendEmail() : fail('rate_limited', 429, 60);
+          return reportFallback(this.env) ? sendEmail() : fail('rate_limited', 429, 60);
         }
         if ([400,401,403,404,422].includes(result.status)) {
           this.storage.transactionSync(() => {
@@ -238,7 +241,7 @@ export class RedmineReports {
             this.db.prepare(`INSERT INTO bug_report_delivery(kind,owner,report_id,delivery,fallback_safe) VALUES (?,?,?,'redmine',1)
               ON CONFLICT(kind,owner,report_id) DO UPDATE SET fallback_safe=1`).run(table, owner, id);
           });
-          return this.env.BUG_REPORTS ? sendEmail() : fail('redmine_rejected', 502);
+          return reportFallback(this.env) ? sendEmail() : fail('redmine_rejected', 502);
         }
         return fail('pending', 503, 60);
       }, undefined, 18000);

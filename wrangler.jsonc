@@ -19,7 +19,7 @@
   "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350908", "simple": { "limit": 60, "period": 60 } }],
   "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
   "vars": {
-    "BUG_REPORT_MODE": "email",
+    "BUG_REPORT_MODE": "redmine",
     "PUBLIC_ORIGIN": "https://systems-mapping.ailab-452.workers.dev",
     "LOGIN_URL": "/auth/start",
     "COURSE_ID": "systems-mapping-default",

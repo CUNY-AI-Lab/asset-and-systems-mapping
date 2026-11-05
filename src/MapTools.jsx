@@ -20,9 +20,19 @@ export default function MapTools({ embedded = false, open, onOpenChange, scales,
     return () => document.removeEventListener('pointerdown', dismiss);
   }, [open, onOpenChange, embedded]);
   const run = (action) => { if (!embedded) onOpenChange(false); action(); };
+  const zoom = presentation === 'canvas' && <div className={`map-tools-zoom${embedded ? ' map-tools-zoom--adjacent' : ''}`} role="group" aria-label="Map zoom">
+    <button type="button" aria-label="Zoom out" disabled={!canZoomOut} onClick={() => onZoom(-0.15)}>−</button>
+    {embedded && <button type="button" aria-label="Zoom in" disabled={!canZoomIn} onClick={() => onZoom(0.15)}>+</button>}
+    <button type="button" className="map-tools-fit" onClick={() => run(onFit)}>Fit map</button>
+    {!embedded && <button type="button" aria-label="Zoom in" disabled={!canZoomIn} onClick={() => onZoom(0.15)}>+</button>}
+  </div>;
   const content = <div id={panelId} className={embedded ? "notebook-tools-inline" : "notebook-tools-panel"} style={{ '--map-tools-width': `${size.width}px` }}>
       {!embedded && <MapToolsResizeHandle panelId={panelId} {...size} />}
       <div className="notebook-tools-body">
+      {embedded && <><div className="map-tools-primary" role="group" aria-label="Create and understand the map">
+        {onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
+        <button type="button" onClick={() => run(onLegend)}>Map key</button>
+      </div>{zoom}</>}
       <div className="map-tools-view" role="group" aria-label="Map presentation">
         <button type="button" aria-pressed={presentation === 'canvas'} onClick={() => run(() => onPresentation('canvas'))}>Canvas</button>
         <button type="button" aria-pressed={presentation === 'list'} onClick={() => run(() => onPresentation('list'))}>List</button>
@@ -33,19 +43,15 @@ export default function MapTools({ embedded = false, open, onOpenChange, scales,
           {scales.map((value) => <option key={value} value={value}>{SCALES[value].label}</option>)}
         </select>
       </label>}
-      {presentation === 'canvas' && <div className="map-tools-zoom" role="group" aria-label="Map zoom">
-        <button type="button" aria-label="Zoom out" disabled={!canZoomOut} onClick={() => onZoom(-0.15)}>−</button>
-        <button type="button" onClick={() => run(onFit)}>Fit map</button>
-        <button type="button" aria-label="Zoom in" disabled={!canZoomIn} onClick={() => onZoom(0.15)}>+</button>
-      </div>}
+      {!embedded && zoom}
       {onAutoFit && <label className="map-tools-autofit"><input type="checkbox" checked={autoFit} onChange={event => onAutoFit(event.target.checked)} />Auto-fit layout</label>}
       <div className="map-tools-commands">
-        {onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
+        {!embedded && onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
         <MapSearch nodes={nodes} onSelect={(kind, id) => run(() => onSelect(kind, id))} />
-        {presentation === 'canvas' && <div className="map-tools-layout-actions">
+        {presentation === 'canvas' && (embedded ? <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button> : <div className="map-tools-layout-actions">
           <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button>
           <button type="button" onClick={() => run(onLegend)}>Map key</button>
-        </div>}
+        </div>)}
         {onUndo && !editHistory && <div className="map-tools-layout-actions" role="group" aria-label="Layout history">
           <button type="button" disabled={!canUndo} onClick={()=>run(onUndo)}>Undo layout</button>
           <button type="button" disabled={!canRedo} onClick={()=>run(onRedo)}>Redo layout</button>

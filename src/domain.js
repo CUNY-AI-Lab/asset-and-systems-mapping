@@ -8,6 +8,8 @@ import { RELATIONSHIP_PROCESS_FIELDS, RELATIONSHIP_PROCESS_TEXT_FIELDS, RELATION
 export { RELATIONSHIP_PROCESS_FIELDS, RELATIONSHIP_STRENGTHS, RELATIONSHIP_STATUSES } from '../shared/relationship-process.js';
 import { SYSTEMS_MAPPING_LEVELS, SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
 import { editHistoryIssue } from '../shared/edit-history-contract.js';
+import { memoAnalysisIssue } from '../shared/memo-update.js';
+import { NODE_COLORS } from '../shared/node-colors.js';
 
 export const SCALE_ORDER = ['micro', 'meso', 'exosphere', 'macrosphere'];
 export const SCALE_PARTS = SYSTEMS_MAPPING_PARTS;
@@ -1496,9 +1498,9 @@ const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'eviden
 const CLAIM_EVIDENCE_PROVENANCE_FIELDS = ['evidenceId', 'sourceId', 'evidenceLocator', 'evidenceHash'];
 const CLAIM_EVIDENCE_KEYS = ['id', ...CLAIM_EVIDENCE_FIELDS, ...CLAIM_EVIDENCE_PROVENANCE_FIELDS];
 const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'part2Submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'layout', 'mapAnnotation', 'reflection', 'events', 'editHistory', 'exportedAt', 'portableExport'];
-const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
+const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint', 'analysis'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
-const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'mesoExplanation', 'claimEvidence', 'origin', 'reviewDecision', 'settingNodeIds', 'focalParticipation', ...EVIDENCE_KEYS];
+const NODE_KEYS = ['id', 'label', 'type', 'color', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'mesoExplanation', 'claimEvidence', 'origin', 'reviewDecision', 'settingNodeIds', 'focalParticipation', ...EVIDENCE_KEYS];
 const EDGE_KEYS = ['id', 'source', 'target', 'sourceLabel', 'targetLabel', 'verb', 'scale', 'status', 'claimState', 'notes', 'directed', 'confidence', 'rationale', 'annotation', 'sourceFingerprint', 'claimEvidence', 'relationshipProcess', 'relationshipIds', 'origin', 'reviewDecision', ...EVIDENCE_KEYS];
 
 function invalidProject(path, expectation) {
@@ -1705,6 +1707,7 @@ function validateNodeCollection(nodes, path, annotationOwners) {
     assertKnownKeys(node.annotations, ['analytical', 'evidence'], `${itemPath}.annotations`);
     validateAnnotation(node.annotations.analytical, `${itemPath}.annotations.analytical`, `node:${node.id}:analytical`, annotationOwners);
     validateAnnotation(node.annotations.evidence, `${itemPath}.annotations.evidence`, `node:${node.id}:evidence`, annotationOwners);
+    if (node.color !== undefined) assertEnum(node.color, NODE_COLORS, `${itemPath}.color`);
     if (node.sourceFingerprint !== undefined) assertString(node.sourceFingerprint, `${itemPath}.sourceFingerprint`, false, 200);
     if (node.basis !== undefined) assertEnum(node.basis, NODE_BASES, `${itemPath}.basis`);
     if (node.origin !== undefined) assertEnum(node.origin, NODE_ORIGINS, `${itemPath}.origin`);
@@ -1959,7 +1962,8 @@ function validateMemoReview(review, path) {
   review.nodes.forEach((node, index) => {
     const nodePath = `${path}.nodes[${index}]`;
     assertObject(node, nodePath);
-    assertKnownKeys(node, ['label', 'type', 'scale', 'evidence', 'basis', 'deontic', 'scope'], nodePath);
+    assertKnownKeys(node, ['label', 'type', 'scale', 'evidence', 'basis', 'deontic', 'scope', 'existingId'], nodePath);
+    if (node.existingId !== undefined) assertString(node.existingId, `${nodePath}.existingId`, false, 200);
     assertString(node.label, `${nodePath}.label`, false, 200);
     if (normalizeMapElementLabel(node.label, { micro: node.scale === 'micro' }) !== node.label || isStatementMapElementLabel(node.label)) invalidProject(`${nodePath}.label`, 'must name a complete map element rather than a statement, reference, modifier, action fragment, or time expression');
     if (containsRetiredSystemsLanguage(node.label)) invalidProject(`${nodePath}.label`, 'must use a literal, conventional name for the map element');
@@ -2203,6 +2207,10 @@ function validateSubmission(submission, path) {
   });
   assertBoolean(submission.sensitive, `${path}.sensitive`);
   assertBoolean(submission.consent, `${path}.consent`);
+  if (submission.analysis !== undefined) {
+    const issue = memoAnalysisIssue(submission.analysis);
+    if (issue) invalidProject(`${path}.analysis`, issue);
+  }
   if (submission.fileName !== undefined) assertString(submission.fileName, `${path}.fileName`, true, 255);
   if (submission.fileSize !== undefined) assertFiniteNumber(submission.fileSize, `${path}.fileSize`, 0, 5 * 1024 * 1024);
   if (submission.revision !== undefined) assertInteger(submission.revision, `${path}.revision`, 1, Number.MAX_SAFE_INTEGER);
@@ -3123,6 +3131,9 @@ export function createPortableProject(project, sharingTier = project.sharingTier
   }
   const portable = cloneProject(project);
   const redactions = [];
+  if (sharingTier !== 'private') for (const key of ['submission', 'part2Submission']) {
+    if (portable[key]?.analysis) { delete portable[key].analysis; addRedaction(redactions, `${key}.analysis`, 'Previous generated memo evidence excluded from shared export'); }
+  }
   if (sharingTier !== 'private' && portable.editHistory) {
     delete portable.editHistory;
     addRedaction(redactions, 'editHistory', 'Previous memo and map edits excluded from shared export');

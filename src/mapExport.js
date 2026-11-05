@@ -1,5 +1,6 @@
 import { relationshipDescription, relationshipArrowheads, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { groupedRelationships } from '../shared/relationship-groups.js';
+import { nodeColorTokens } from '../shared/node-colors.js';
 
 const levels = ['micro', 'meso', 'exosphere', 'macrosphere'];
 const colors = ['#dbeafe', '#d1fae5', '#e6f4ef', '#ede9fe'];
@@ -26,11 +27,12 @@ export function mapExportSvg(project) {
   const microBounds = [];
   const cards = nodes.map(node => {
     const col = exportLevels.indexOf(node.scale), text = lines(node.label);
+    const chosenColor = nodeColorTokens(node.color);
     const box = { x: col ? 930 + (col - 1) * 600 : 180, y: bottoms[col], width: 340, height: 32 + text.length * 22 };
     bottoms[col] += box.height + 68;
     positions.set(node.id, box);
     if (node.scale === 'micro') microBounds.push({ left: box.x, right: box.x + box.width, top: box.y, bottom: box.y + box.height });
-    return `<g><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10" fill="${colors[levels.indexOf(node.scale)]}" stroke="#475569"/><text x="${box.x + 14}" y="${box.y + 27}" font-size="17">${text.map((line,i) => `<tspan x="${box.x + 14}" dy="${i ? 22 : 0}">${xml(line)}</tspan>`).join('')}</text></g>`;
+    return `<g data-export-node="${xml(node.id)}"${chosenColor ? ` data-node-color="${xml(node.color)}"` : ''}><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10" fill="${chosenColor?.fill || colors[levels.indexOf(node.scale)]}" stroke="${chosenColor?.stroke || '#475569'}"/><text x="${box.x + 14}" y="${box.y + 27}" font-size="17"${chosenColor ? ` fill="${chosenColor.text}"` : ''}>${text.map((line,i) => `<tspan x="${box.x + 14}" dy="${i ? 22 : 0}">${xml(line)}</tspan>`).join('')}</text></g>`;
   });
   const visibleEdges = project.graph.edges.filter(edge => edge.claimState !== 'retired' && edge.status !== 'rejected' && nodeById.has(edge.source) && nodeById.has(edge.target));
   const edges = [...visibleEdges, ...liveNodes.flatMap(node => [...(node.scopeNodeIds || []).map(id => node.scale === 'macrosphere'

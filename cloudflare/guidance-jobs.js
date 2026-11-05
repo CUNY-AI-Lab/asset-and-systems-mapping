@@ -1,4 +1,9 @@
 import { createHash } from 'node:crypto';
+import { GUIDANCE_CONTRACT_VERSION } from '../shared/student-judgments.js';
+
+export function guidanceJobScope(config, model) {
+  return JSON.stringify({ config, model, contract: GUIDANCE_CONTRACT_VERSION });
+}
 
 const TTL = 86400000;
 const retryCodes = new Set(['upstream_rate_limited', 'upstream_unavailable', 'model_unavailable', 'guidance_in_progress']);

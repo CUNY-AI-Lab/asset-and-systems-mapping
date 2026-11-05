@@ -1,6 +1,8 @@
 # Micro and Meso correction — 2026-08-24
 
-> Historical decision: the October 28 classroom update supersedes this contract. See [Current Micro/Meso workflow](MICRO_MESO_WORKFLOW_2026-10-28.md). Existing source and records remain available for provenance.
+> **Historical record.** Claims of “current,” “implemented,” or “verified” below refer to this document’s dated source and environment. The November 4 [Memo workspace](MEMO_WORKSPACE_2026-11-04.md), [two-memo workflow](TWO_MEMO_WORKFLOW_2026-11-04.md) and [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md) govern the account application. Older screen, model-output and sphere rules do not override them; the receipts below are preserved, not rerun acceptance.
+
+> Historical decision: October 28 superseded this boundary, followed by the November 4 account contract linked above. Existing source and records remain available for provenance.
 
 ## Direct decision
 
