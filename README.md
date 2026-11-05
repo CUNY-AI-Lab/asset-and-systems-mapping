@@ -8,6 +8,8 @@ The [Cloudflare account application](docs/cloudflare-deployment.md) uses CUNY Lo
 
 The current account design is specified in the [Memo workspace wireframe](docs/MEMO_WORKSPACE_2026-11-04.md) and [two-memo workflow](docs/TWO_MEMO_WORKFLOW_2026-11-04.md). These describe the implementation contract; a source change or passing test does not establish that a feature is live. Dev inspection, screenshots and production readback are separate release steps.
 
+The [November 5 release receipt](TODO.md#memo-workspace-release-receipt--november-5-2026) records source `4fe7b550e644664ed631f0c51107cd4118943c79` deployed to Dev and production from successful exact-main CI. It separates signed-in Dev/model and persistence checks, ten uniform-source fictional Dev captures, bounded production navigation checks and remaining model-classification limits.
+
 ## Learning model
 
 | Part | Step | Analytical focus | Map representation |

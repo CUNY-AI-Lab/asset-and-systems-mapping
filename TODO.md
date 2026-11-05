@@ -3,7 +3,7 @@
 Design: [wireframe and behavior](docs/MEMO_WORKSPACE_2026-11-04.md) · [interactive wireframe](docs/wireframes/memo-workspace.html)
 
 - [x] Create wireframes before implementation: new/existing project, Memo, edited memo, updated map, Notebook, Tools, info flag and responsive layout.
-- [x] Verify current production matches remote main `9fa6e00b78ae08292b10acc148c5c3c4925a7d4e`: readiness, anonymous denial, three entry assets and 100% traffic pass.
+- [x] Verify the pre-change production baseline `9fa6e00b78ae08292b10acc148c5c3c4925a7d4e`: readiness, anonymous denial, three entry assets and 100% traffic pass. The final release receipt below supersedes this baseline.
 - [x] Extend the wireframe with canvas-driven memo checkpoints, optional node colors and both double-click connection targets.
 - [x] Verify compact List rows, contained scrolling and one combined title/status/Remove/Done header.
 - [x] Fix compact sidebar controls: unbroken Back text, smaller type, full-height Tools, adjacent −/+, visible Add item and Map key, persistent Systems Mapping title and linked CALI credit.
@@ -26,12 +26,45 @@ Design: [wireframe and behavior](docs/MEMO_WORKSPACE_2026-11-04.md) · [interact
 - [x] Keep legal outer-node moves exact; with auto-fit on, stop an inward active move at the preceding sphere along its path. Preserve imported pins and auto-fit-off coordinates; verify keyboard movement and tall/shallow retained layouts.
 - [x] Simplify Projects to visible Project title / Creator name fields, searchable saved names, and an accessible Project details editor.
 - [x] Route new bug/feature reports directly to Redmine with existing credentials, no automatic email fallback; preserve old receipts.
-- [ ] Commit with verified zmuhls author/committer, deploy the checked revision to Dev, and perform signed-in workflow tests with the approved synthetic examples and all four supplied PDFs.
-- [ ] Record Dev evidence and screenshots, run an independent regression audit, then promote the exact checked release to production and verify it.
-- [ ] Demonstrate participation-based Micro/Exo classification with source-grounded explanations and minimal-pair live Dev tests; withhold unsupported placements.
+- [x] Commit with verified zmuhls author/committer and deploy the checked candidate to Dev; source, traffic, entry assets and preserved runtime/bindings verified.
+- [x] Perform signed-in Dev workflow tests with the approved fictional examples and all four supplied PDFs. Record corrective retries and remaining classification limits separately.
+- [x] Record ten reviewed disidentified Dev captures and an independent regression audit; retain their actual source revisions.
+- [x] Demonstrate participation-based Micro/Exo classification with same-office live controls, and bounded vague/specific Micro, Exo and Macro comparisons. These examples do not establish universal model accuracy.
+- [x] Restore memo readiness through saved Undo/Redo, including initial empty results, both memo parts, legacy completion and view-only navigation; 455 affected local checks passed.
+- [x] Verify first-generation Undo/Redo and reload in signed-in Dev on `d9edf27`: Undo restores zero nodes with Continue disabled and Submit enabled; Redo restores six nodes, the exact graph and analysis, Continue enabled and unchanged Update map disabled. No model calls.
+- [x] Record successful exact-main CI [41988552500](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/41988552500) for `4fe7b550e644664ed631f0c51107cd4118943c79`; the checked package contains 41 verified files with matching source/tree, configuration and lockfile.
+- [x] Deploy the exact-main package to Dev and replace the delivery gallery with ten uniformly sourced captures; all ten passed visual review.
+- [x] Promote the exact checked package to production and verify source, 100% traffic, all 36 served files, stable runtime/bindings and signed-in navigation of an existing saved fictional map. Production verification made no model calls, map edits or support-ticket submissions.
 - [x] Update all current documentation affected by these changes; retain dated receipts as historical evidence.
 
-Local test checks above do not imply live acceptance. Dev/model verification and production promotion remain unchecked until their release receipts are recorded.
+The receipt below separates local checks, signed-in Dev/model acceptance, the exact hosted package and production. Historical model results and screenshots retain their own source versions; they are not relabeled as final-source inference or production captures.
+
+## Memo workspace release receipt — November 5, 2026
+
+**Deployed to Dev and production from the successful exact-main package.** Application source remains `4fe7b550e644664ed631f0c51107cd4118943c79`; this receipt changes documentation only. Source checks, signed-in Dev/model work, the ten Dev captures and bounded production inspection are described separately below.
+
+| Evidence | Verified scope |
+| --- | --- |
+| Main application release | `4fe7b550e644664ed631f0c51107cd4118943c79`, tree `6865a6510c9edc62874e030c438898daeedf644c`; identical tree to tested Dev `d9edf27ffc1dbf01679e1e0ad7d89b9fd84efa55`; verified `zmuhls` author/committer |
+| Successful main CI | [Run 41988552500](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/41988552500): 1,969 unit/Worker/account checks passed and 12 skipped; 112 legacy browser checks passed and 12 skipped, with no reported flaky result |
+| Checked artifact | `systems-mapping-cloudflare-4fe7b550e644664ed631f0c51107cd4118943c79`, artifact `13397618251`; archive SHA-256 `81a5d4b0eef08e7f62fd6c8483a7577c2e85f444560ba67ae7c495be1357395a`; 41 package files verified, source/tree/configuration/lockfile match |
+| Dev deployment | Version `4891490a-408d-4730-ba78-4e961dfacdf5`; deployment `ec99e140-6152-4f85-b3d9-b7b2d8d432ac` at `2026-11-05T08:00:25.422078Z`; 100% traffic |
+| Production deployment | Version `50d9ff40-6c85-4dd1-85f1-b2e1433584fd`; deployment `956092f8-bd0e-4cd5-9618-0f7a112e7028` at `2026-11-05T08:06:32.537593Z`; 100% traffic |
+| Both served origins | Exact source, readiness, anonymous project denial and all 36 served files verified against the checked package; stable runtime/bindings preserved; authorized report mode Redmine |
+| Signed-in Dev Undo/reload | On identical-tree `d9edf27`, first-generation Undo persisted through reload with zero nodes, Continue disabled and Submit enabled; Redo restored all six nodes and the exact graph/analysis, Continue enabled and unchanged Update map disabled. No model calls. |
+| Signed-in production | Existing fictional map reopened with 10 nodes and 8 saved relationships; Project title / Creator name, visible canvas, Memo · Notebook · Tools, memo editor/upload, view Back, compact Tools and saved-account status inspected. Navigation only; no graph or memo edits, new generation, production Undo mutation or support ticket. |
+
+The account application opens on the canvas with **Memo · Notebook · Tools**, two independent memo editors, a successful-generation checkpoint, student-authored relationships, incremental node reconciliation and durable Undo/Redo. The final Undo correction prevents a removed first-generation baseline from being mistaken for an older completed memo; new edits and reload cannot silently revive that completion. Its 455 affected local checks passed before the full hosted run.
+
+Signed-in Dev work exercised all four approved real PDFs and fictional direct/indirect participation controls. A genuine new marginal node was added while all nine prior node records and three student-created relationships remained intact; Undo, reload and Redo restored the expected saved states. No model-generated relationships were applied. Earlier rejected atomic-subject outputs and the table-quote false negative are recorded as failures followed by bounded corrections, not erased from the evidence. These live-model and mutation checks were performed on Dev, not repeated on production.
+
+**Model comparison:** six fictional cases across GPT-OSS 120B, Gemma 4 26B and Kimi K2.5 yielded 18 supported final responses using 22 submitted inference calls, including corrective attempts. Inference used v11 source `f326ed5765bf85654e6c390bfdb42ba9db419ef2`; the same 18 stored outputs passed offline v12 validation at `7ed8f65887160fba680da0c9d7a04259d754d05e`. This is not a v12 inference run. Kimi required a test-only response-model alias normalization and remains incompatible with the unchanged product adapter. The comparison preserved six fixture baseline nodes and tested zero initial edges; separate signed-in tests establish nonempty relationship preservation. Short-lived comparison credentials were revoked and the local helper stopped. Production remains configured for GPT-OSS 120B.
+
+**Remaining model limits:** the supplied Mesosystem table eventually completed with six atomic Micro nodes and no relationships, but two human-role nodes were typed as organizations. The focal student population was omitted and one evidence selection came from the template row. Manual correction is available; these results do not support a claim of uniformly correct classification.
+
+**Ten disidentified captures:** all ten reviewed images were recaptured from Dev source `4fe7b550e644664ed631f0c51107cd4118943c79`, version `4891490a-408d-4730-ba78-4e961dfacdf5`, replacing the earlier mixed-source set. The gallery contains fictional content only; original-name and investigation captures are excluded. Per-image hashes, actual dimensions and visual review are recorded. These are Dev screenshots, not production screenshots. The first encoded image is 1265×712 and the other nine are 1280×720. The long native Part 2 selector wording truncates at its field edge; Upload Part 2 memo, Second memo, node labels and sphere captions remain visible. The report dialog was inspected without submitting a support ticket. The allowlisted delivery archive `systems-mapping-fictional-release-4fe7b55.zip` contains 14 files and has SHA-256 `72cfda9da466c4197059661429d9695cc90dc9e3f279cffd4710971be18a9e7e`.
+
+Private verification records remain in the task workspace under `work/memo-workspace-release/` and `outputs/memo-workspace/audit/`; the reviewed gallery is `outputs/memo-workspace/disidentified-screenshot-gallery.html`. The sanitized local record was saved and read back at `/Users/milwright/.local/share/cail-change-records/2026-11-05-systems-mapping-memo-workspace/`; its offline board passed inspection with no external requests. External board publication remains approval-blocked; no external publication is claimed. Application documentation contains no supplied memo text, private project identifiers, credentials or raw model responses. The earlier approval-blocked production test-field restoration remains untouched and separate from this release.
 
 The historical ledger below records earlier releases; newer requests above supersede incompatible earlier interface requirements.
 
