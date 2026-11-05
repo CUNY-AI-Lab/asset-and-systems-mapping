@@ -59,3 +59,18 @@ it('keeps connected local pairs nearby without moving saved manual placements',(
   const preserved=studentMapPositions(saved,edges,geometry,{manualNodeIds:saved.map(n=>n.id),readingAspect:1.8,aspectRatio:1.8});
   expect(preserved.get(saved[0].id)).toEqual({x:saved[0].x,y:saved[0].y});
 });
+
+it('uses the width of desktop canvases when Exo and Macro are added',()=>{
+  const nodes=Array.from({length:6},(_,i)=>({id:`m${i}`,label:'Local people and settings',scale:'micro',x:0,y:0}));
+  for(const scale of ['exosphere','macrosphere'])for(let i=0;i<2;i++)nodes.push({id:`${scale}${i}`,label:'Broader setting or condition',scale,x:0,y:0});
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:190,cardHeight:60}]));
+  const positions=studentMapPositions(nodes,[],geometry,{aspectRatio:1.55});
+  const regions=studentMapBoundaries(nodes.map(n=>({...n,...positions.get(n.id)})),geometry);
+  expect(regions.macrosphere.rx/regions.macrosphere.ry).toBeGreaterThan(1.3);
+  for(const n of nodes.filter(n=>n.scale!=='micro')){
+    const p=positions.get(n.id),r=n.scale==='exosphere'?regions.micro:regions.exosphere;
+    const b=area(p,geometry.get(n.id));
+    const nearX=Math.max(b.left-r.cx,r.cx-b.right,0),nearY=Math.max(b.top-r.cy,r.cy-b.bottom,0);
+    expect((nearX/r.rx)**2+(nearY/r.ry)**2).toBeGreaterThan(1);
+  }
+});

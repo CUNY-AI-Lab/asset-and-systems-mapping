@@ -55,7 +55,7 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
   const manual=new Set(manualNodeIds);
   const preserveLegacy=readingAspect === undefined && phoneOverview === 'preserve';
   if(local.length && !preserveLegacy && (!compatibleView || !local.every(n=>manual.has(n.id)))) {
-    const columns=Math.min(phone?3:5,Math.max(2,Math.ceil(Math.sqrt(local.length*aspectRatio*.42))));
+    const columns=Math.min(phone?3:5,Math.max(2,Math.ceil(Math.sqrt(local.length*aspectRatio*(phone ? .42 : .75)))));
     const cx=840;
     const cy=600;
     const rows=Math.ceil(local.length/columns);
@@ -112,10 +112,22 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
       const row=Math.floor(i/perRow),count=Math.min(perRow,outer.length-row*perRow),g=geometries.get(n.id);
       const savedBox=box(n,g,12),dx=Math.max(savedBox.left-localBounds.cx,localBounds.cx-savedBox.right,0),dy=Math.max(savedBox.top-localBounds.cy,localBounds.cy-savedBox.bottom,0);
       if(manual.has(n.id) && (dx/localBounds.rx)**2+(dy/localBounds.ry)**2>=1 && !placed.some(b=>overlaps(savedBox,b))) {placed.push(savedBox);return;}
-      const x=localBounds.cx+(i%perRow-(count-1)/2)*pitch;
-      const nearX=Math.max(0,Math.abs(x-localBounds.cx)-g.cardWidth/2-16);
-      const ellipseY=localBounds.ry*Math.sqrt(Math.max(0,1-(nearX/localBounds.rx)**2));
-      const p={x:Math.round(x),y:Math.round(localBounds.cy+ellipseY+rowHeight/2+28+row*(rowHeight+40))};
+      // Wide canvases have room beside the local graph. Stacking both outer
+      // levels below it made the whole map shrink into a narrow vertical strip.
+      const wide = !phone && aspectRatio >= 1.35;
+      let p;
+      if (wide) {
+        const side = scale === 'exosphere' ? 1 : -1;
+        const y = localBounds.cy + (i - (outer.length - 1) / 2) * (rowHeight + 32);
+        const nearY = Math.max(0, Math.abs(y-localBounds.cy)-g.cardHeight/2-16);
+        const ellipseX = localBounds.rx*Math.sqrt(Math.max(0,1-(nearY/localBounds.ry)**2));
+        p = {x:Math.round(localBounds.cx+side*(ellipseX+g.cardWidth/2+24)),y:Math.round(y)};
+      } else {
+        const x=localBounds.cx+(i%perRow-(count-1)/2)*pitch;
+        const nearX=Math.max(0,Math.abs(x-localBounds.cx)-g.cardWidth/2-16);
+        const ellipseY=localBounds.ry*Math.sqrt(Math.max(0,1-(nearX/localBounds.rx)**2));
+        p={x:Math.round(x),y:Math.round(localBounds.cy+ellipseY+rowHeight/2+28+row*(rowHeight+40))};
+      }
       while(placed.some(b=>overlaps(box(p,g,12),b)))p.y+=rowHeight+40;
       positions.set(n.id,p);placed.push(box(p,g,12));
     });
