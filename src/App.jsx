@@ -4078,6 +4078,7 @@ function MapLegend() {
       <li><strong>Exo</strong><span>Policies and outside offices; teal dotted connections link to local relationships.</span></li>
       <li><strong>Macro</strong><span>Cultural, historical and economic conditions; purple dashed connections.</span></li>
       <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording.</span></li>
+      <li><strong>Auto-fit</strong><span>Busy nodes sit near the center. Unconnected items are grouped by color away from the connection routes. Use Arrange map to reorganize a saved layout.</span></li>
       <li><strong>Draft</strong><span>A dotted line previews an unfinished relationship.</span></li>
       <li><strong>Stored scope</strong><span>A dash-dot line with hollow endpoints marks a recorded scope membership, not a directional relationship.</span></li>
     </ul><p className="map-legend__note">Choose a node’s color in Notebook. Color does not change its system or type. Regions appear as the map grows: Micro, then Exo, then Macro. You create every relationship.</p></section>
@@ -4339,7 +4340,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   // camera fit. Keep layout measurements until topology, positions, fonts, or
   // the responsive breakpoint change. Arrange/Fit still use current wording.
   const layoutGeometryKey = JSON.stringify([phoneLayout, fontRevision, layoutMeasurementRevision,
-    project.graph.nodes.map(node => [node.id, node.scale, node.x, node.y, node.status === 'rejected' || node.claimState === 'retired']),
+    project.graph.nodes.map(node => [node.id, node.scale, node.type, node.color, node.x, node.y, node.status === 'rejected' || node.claimState === 'retired']),
     project.graph.edges.map(edge => [edge.id, edge.scale, edge.source, edge.target, edge.status === 'rejected' || edge.claimState === 'retired']),
   ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4499,11 +4500,12 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const pinnedNodeIds = new Set(project.layout?.manualNodeIds || (project.layout?.phoneOverview === 'preserve' ? visibleLayoutNodes.map(node => node.id) : []));
   const canvasAspect = GRAPH_WIDTH / Math.max(240,phoneViewBox.height);
   const readableLayoutKey = `${Boolean(notebook)}:${phoneLayout}:${canvasAspect.toFixed(1)}:${manualPlacementKey}:${visibleLayoutNodes.map(node => `${node.id}:${node.scale}${pinnedNodeIds.has(node.id) ? `:${node.x}:${node.y}` : ''}`).join('|')}`;
+  const readableTopologyKey = JSON.stringify([layoutGraph.edges.map(edge=>[edge.id,edge.source,edge.target,edge.relationshipIds]),visibleLayoutNodes.map(node=>[node.id,node.type,node.color])]);
   const readablePositions = useMemo(() => notebook ? studentMapPositions(visibleLayoutNodes, layoutGraph.edges, new Map(visibleLayoutNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect}) : null,
     // Text and annotation edits retain the current placement. New topology,
     // an explicit arrangement or a deliberate drag can establish a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [readableLayoutKey]);
+    [readableLayoutKey,readableTopologyKey]);
   const displayedNodes = useMemo(() => visibleNodes.map((node) => ({
     ...node,
     ...(automaticPositions?.get(node.id) || {}),

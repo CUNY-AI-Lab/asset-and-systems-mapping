@@ -1,3 +1,5 @@
+import { connectedMicroPositions } from './connectedMicroLayout.js';
+
 // A reading view of the saved map. These positions never mutate its records.
 const box = (p, g, gap = 0) => ({ left:p.x-g.cardWidth/2-gap, right:p.x+g.cardWidth/2+gap, top:p.y-g.cardHeight/2-gap, bottom:p.y+g.cardHeight/2+gap });
 const overlaps = (a,b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
@@ -100,7 +102,10 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
   const compatibleView=readingAspect === undefined ? phoneOverview === 'preserve' : Math.abs(Math.log(aspectRatio/readingAspect))<.16;
   const manual=new Set(manualNodeIds);
   const preserveLegacy=readingAspect === undefined && phoneOverview === 'preserve';
-  if(local.length && !preserveLegacy && (!compatibleView || !local.every(n=>manual.has(n.id)))) {
+  const canArrangeLocal=local.length && !preserveLegacy && (!compatibleView || !local.every(n=>manual.has(n.id)));
+  const connected=canArrangeLocal?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone}):null;
+  if(connected)for(const [id,position]of connected)positions.set(id,position);
+  if(canArrangeLocal && !connected) {
     const columns=Math.min(phone?3:5,Math.max(2,Math.ceil(Math.sqrt(local.length*aspectRatio*(phone ? .42 : .75)))));
     const cx=840;
     const cy=600;

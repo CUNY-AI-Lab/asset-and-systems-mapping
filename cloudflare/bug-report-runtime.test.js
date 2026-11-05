@@ -6,6 +6,7 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { mkdir, writeFile } from 'node:fs/promises';
 import { serializedEastHarlemDisabilityProject } from '../tests/e2e/fixtures/east-harlem-disability-project.js';
 import { appendSubmittedNodes } from '../src/memoWorkflow.js';
+import { connectedMicroProject } from '../tests/e2e/fixtures/connected-micro-project.js';
 let harness, url, worker;
 const sample = { reportId: '11111111-1111-4111-8111-111111111111', description: 'The map could not be saved after opening my project.', path: '/' };
 const control = value => harness.fetch('/__bug-fixture', { method: 'POST', body: JSON.stringify(value) });
@@ -116,6 +117,45 @@ browserTest('Projects keeps the two-field creation form prominent and existing n
     } finally { await browser.close(); }
   }
 }, 60000);
+browserTest('account Micro map centers its connected network and keeps routes away from isolated items',async()=>{
+  const project=connectedMicroProject();
+  await control({project,resetReports:true});
+  const {browser,page,errors,signIn}=await browserFixture({width:1280,height:900});
+  try {
+    await signIn('alice');await page.goto(url.href);
+    await page.getByRole('article',{name:project.title,exact:true}).getByRole('button',{name:'Open project',exact:true}).click();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(12);
+    const hide=page.getByRole('button',{name:'Hide sidebar',exact:true});
+    if(await hide.isVisible())await hide.click();
+    const quality=await page.locator('.graph-canvas').evaluate(svg=>{
+      const cards=[...svg.querySelectorAll('.graph-node .node-card')].map(el=>({id:el.closest('.graph-node').dataset.graphId,box:el.getBoundingClientRect()}));
+      const core=cards.filter(c=>Number(c.id.split('-')[1])<8),isolated=cards.filter(c=>Number(c.id.split('-')[1])>=8);
+      const separated=isolated.every(c=>c.box.left>Math.max(...core.map(c=>c.box.right)))||isolated.every(c=>c.box.top>Math.max(...core.map(c=>c.box.bottom)));
+      const hits=[...svg.querySelectorAll('.edge-line')].some(path=>Array.from({length:121},(_,i)=>path.getPointAtLength(path.getTotalLength()*i/120)).some(p=>{
+        const point=new DOMPoint(p.x,p.y).matrixTransform(path.getScreenCTM());
+        return isolated.some(({box:b})=>point.x>b.left&&point.x<b.right&&point.y>b.top&&point.y<b.bottom);
+      }));
+      return {separated,hits};
+    });
+    expect(quality).toEqual({separated:true,hits:false});
+    if(process.env.WORKSPACE_SCREENSHOTS) {
+      await mkdir(process.env.WORKSPACE_SCREENSHOTS,{recursive:true});
+      await page.screenshot({path:`${process.env.WORKSPACE_SCREENSHOTS}/connected-micro-account.png`});
+      await page.evaluate(()=>{localStorage.setItem('systems-mapping.theme','dark');document.documentElement.dataset.theme='dark';});
+      await page.screenshot({path:`${process.env.WORKSPACE_SCREENSHOTS}/connected-micro-account-dark.png`});
+    }
+    await page.locator('[data-graph-id="micro-2"]').click();
+    await page.getByRole('button',{name:'Hide sidebar',exact:true}).click();
+    const edit=page.getByRole('group',{name:'Selected map item'}).getByRole('button',{name:'Edit',exact:true});
+    await browserExpect(edit).toBeVisible();
+    expect(await edit.evaluate(el=>el.getBoundingClientRect().left)).toBeLessThan(640);
+    expect(await page.locator('.map-context-actions .selected-item-edit').count()).toBe(0);
+    await edit.click();
+    await browserExpect(page.getByRole('textbox',{name:'Label',exact:true})).toHaveValue('Librarian Jo');
+    expect(errors).toEqual([]);
+  } finally {await browser.close();}
+},60000);
+
 browserTest('account workspace keeps compact actions and one Tools scroller at five responsive sizes', async () => {
   const viewports = [{ width: 806, height: 758 }, { width: 320, height: 740 }, { width: 390, height: 844 }, { width: 1024, height: 900 }, { width: 1440, height: 1000 }];
   if (process.env.WORKSPACE_SCREENSHOTS) await mkdir(process.env.WORKSPACE_SCREENSHOTS, { recursive: true });

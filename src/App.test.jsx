@@ -1529,12 +1529,12 @@ describe('Systems Mapping workflow', () => {
     expect(fetchMock.mock.calls.filter(([path])=>String(path)==='/api/preflight/evaluations')).toHaveLength(0);
   });
 
-  async function openDirectConnectionProject({ oneNode = false } = {}) {
+  async function openDirectConnectionProject({ oneNode = false, autoFit = false } = {}) {
     const project = createBlankProject();
     project.submission.text = 'Residents meet in the community room.';
     project.submission.fingerprint = stableId('src', project.submission.text);
     project.instructor.evidenceRequired = false;
-    project.layout = { ...project.layout, autoFit: false };
+    project.layout = { ...project.layout, autoFit };
     appendSubmittedNodes(project,{guidance:[],example:null,readiness:{ready:true,note:'Nodes identified.'},nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text},
       ...(!oneNode ? [{label:'Community room',type:'setting',scale:'micro',evidence:project.submission.text}] : [])],connections:[]});
     seedProject(project);
@@ -1569,7 +1569,8 @@ describe('Systems Mapping workflow', () => {
   });
 
   it('double-clicks a Micro node then explicitly saves a student-authored relationship to another node', async () => {
-    const project = await openDirectConnectionProject();
+    const project = await openDirectConnectionProject({autoFit:true});
+    const before=project.graph.nodes.map(node=>renderedNodePosition(node.id));
     const source = document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`);
     const target = document.querySelector(`[data-graph-id="${project.graph.nodes[1].id}"]`);
     fireEvent.doubleClick(source);
@@ -1585,6 +1586,7 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().activeScale).toBe('micro');
     expect(storedProject().graph.edges[0]).toMatchObject({ source: project.graph.nodes[0].id, target: project.graph.nodes[1].id, verb: 'meet in', scale: 'meso', origin: 'student entry' });
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(1);
+    await waitFor(()=>expect(project.graph.nodes.map(node=>renderedNodePosition(node.id))).not.toEqual(before));
   });
 
   it('adds a connected node from blank canvas space in one saved edit and reverses both with Undo', async () => {
@@ -7162,15 +7164,17 @@ Overall, the posting history documents a working student repeatedly turning to R
       const line = document.querySelector(`[data-graph-id="${edge.id}"] .edge-line`);
       expect(line).toHaveAttribute('marker-start', 'url(#arrowhead)');
       expect(line).toHaveAttribute('marker-end', 'url(#arrowhead)');
+      const connectedPositions=new Map(project.graph.nodes.map(node=>[node.id,renderedNodePosition(node.id)]));
+      expect(connectedPositions).not.toEqual(before);
       fireEvent.click(screen.getByRole('button', { name: 'Done', exact: true }));
       fireEvent.change(mapLayer(), { target: { value: 'micro' } });
       expect(document.querySelectorAll('.graph-edge')).toHaveLength(0);
       expect(document.querySelectorAll('.graph-node')).toHaveLength(project.graph.nodes.length);
-      project.graph.nodes.forEach((node) => expect(renderedNodePosition(node.id)).toEqual(before.get(node.id)));
+      project.graph.nodes.forEach((node) => expect(renderedNodePosition(node.id)).toEqual(connectedPositions.get(node.id)));
       fireEvent.change(mapLayer(), { target: { value: 'meso' } });
       expect(document.querySelectorAll('.graph-edge')).toHaveLength(1);
       expect(document.querySelector('[data-ecology-layer="meso"]')).toBeNull();
-      project.graph.nodes.forEach((node) => expect(renderedNodePosition(node.id)).toEqual(before.get(node.id)));
+      project.graph.nodes.forEach((node) => expect(renderedNodePosition(node.id)).toEqual(connectedPositions.get(node.id)));
       expect(() => validateProject(storedProject())).not.toThrow();
     });
     it('opens the relationship form from the clicked source after a target tap', async () => {

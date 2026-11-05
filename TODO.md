@@ -1,3 +1,12 @@
+# Connected Microsystem layout — November 5, afternoon
+
+- [x] Center connected hubs, add space as degree/density increases, and group unconnected nodes by their existing colors outside connection routes.
+- [x] Recompute automatic placement when relationships or grouping colors change; preserve student pins, text-only edits and layer-filter stability.
+- [x] Verify Edit beside the selected item at the top left, separated from Memo · Notebook · Tools; retain unsaved copies in stale open tabs.
+- [x] Update the Map key and current layout contracts.
+- [ ] Finish regression checks, deploy to Dev, and verify the signed-in CUNY AI Lab teaching example at Micro, Micro + Exo and the complete map.
+- [ ] Capture the verified Dev layouts, promote the exact successful main CI package to production, and record source/asset/traffic checks.
+
 ## Policy classification and map controls release — November 5, 2026
 
 Deployed application source **`15d0656d61bd3c4a995403c72a5449c8b4203e09`** is verified on Dev and production. [PR 80](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/pull/80) integrated the classification and Map key work; the final follow-up places Edit beside the selected item’s name at the top left. This completion receipt changes documentation only.

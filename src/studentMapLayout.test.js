@@ -4,6 +4,57 @@ import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, at
 
 const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
 const area=(p,g)=>({left:p.x-g.cardWidth/2,right:p.x+g.cardWidth/2,top:p.y-g.cardHeight/2,bottom:p.y+g.cardHeight/2});
+
+function hubFixture() {
+  const labels=['Maya','Coordinator Lee','Librarian Jo','Neighborhood library','Community garden','Library workshop','Shared calendar','Gardening books','Tools','Seeds','Storage room','Volunteer handbook'];
+  const types=['person','person','person','setting','setting','activity','object','object','object','object','setting','object'];
+  const nodes=labels.map((label,i)=>({id:`n${i}`,label,type:types[i],scale:'micro',x:300+i*50,y:400}));
+  const pairs=[[1,0],[1,6],[2,0],[2,7],[0,3],[0,4],[0,5]];
+  const edges=pairs.map(([source,target],i)=>({id:`e${i}`,source:`n${source}`,target:`n${target}`}));
+  return {nodes,edges,geometry:new Map(nodes.map(n=>[n.id,mapNodeGeometry(n.label)]))};
+}
+
+it.each([1.8,.7])('centers a busy participant and groups isolated cards outside its routes at aspect %s',aspectRatio=>{
+  const {nodes,edges,geometry}=hubFixture(),before=structuredClone(nodes);
+  const positions=studentMapPositions(nodes,edges,geometry,{aspectRatio,phone:aspectRatio<1});
+  const core=nodes.slice(0,8).map(n=>area(positions.get(n.id),geometry.get(n.id)));
+  const b={left:Math.min(...core.map(b=>b.left)),right:Math.max(...core.map(b=>b.right)),top:Math.min(...core.map(b=>b.top)),bottom:Math.max(...core.map(b=>b.bottom))};
+  const hub=positions.get('n0');
+  expect(Math.abs(hub.x-(b.left+b.right)/2)).toBeLessThan((b.right-b.left)*.2);
+  expect(Math.abs(hub.y-(b.top+b.bottom)/2)).toBeLessThan((b.bottom-b.top)*.2);
+  const isolated=nodes.slice(8).map(n=>area(positions.get(n.id),geometry.get(n.id)));
+  expect(isolated.every(r=>r.left>b.right+40)||isolated.every(r=>r.top>b.bottom+40)).toBe(true);
+  const boxes=nodes.map(n=>area(positions.get(n.id),geometry.get(n.id)));
+  expect(boxes.some((b,i)=>boxes.slice(i+1).some(other=>intersects(b,other)))).toBe(false);
+  const routes=attachedConnectionLayout(edges,nodes,positions,geometry,new Map(edges.map(e=>[e.id,{width:105,height:28}])));
+  for(const route of routes.paths.values())for(let i=1;i<route.points.length;i++) {
+    const a=route.points[i-1],b=route.points[i];
+    for(let t=0;t<=100;t++) {
+      const p={x:a.x+(b.x-a.x)*t/100,y:a.y+(b.y-a.y)*t/100};
+      expect(isolated.some(r=>p.x>r.left&&p.x<r.right&&p.y>r.top&&p.y<r.bottom)).toBe(false);
+    }
+  }
+  expect(nodes).toEqual(before);
+  expect(studentMapPositions(nodes,edges,geometry,{aspectRatio,phone:aspectRatio<1})).toEqual(positions);
+});
+
+it('expands routing room for a denser connected microsystem without changing card sizes',()=>{
+  const {nodes:all,geometry}=hubFixture(),nodes=all.slice(0,6);
+  const chain=nodes.slice(1).map((n,i)=>({id:`e${i}`,source:nodes[i].id,target:n.id}));
+  const dense=[...chain,...nodes.slice(2).map((n,i)=>({id:`h${i}`,source:'n0',target:n.id}))];
+  const region=edges=>{const p=studentMapPositions(nodes,edges,geometry,{aspectRatio:1.8});return studentMapBoundaries(nodes.map(n=>({...n,...p.get(n.id)})),geometry).micro;};
+  const sparse=region(chain),busy=region(dense);
+  expect(busy.rx*busy.ry).toBeGreaterThan(sparse.rx*sparse.ry*1.2);
+});
+
+it('keeps explicit placement and auto-fit-off positions when connections change',()=>{
+  const {nodes,edges,geometry}=hubFixture();
+  const manualNodeIds=nodes.map(n=>n.id),readingAspect=1.8;
+  for(const options of [{manualNodeIds,readingAspect},{autoFit:false}]) {
+    const positions=studentMapPositions(nodes,edges,geometry,options);
+    for(const n of nodes)expect(positions.get(n.id)).toEqual({x:n.x,y:n.y});
+  }
+});
 it.each([false,true])('separates crowded retained cards without changing the saved graph (phone=%s)',phone=>{
   const nodes=Array.from({length:13},(_,i)=>({id:`local-${i}`,scale:'micro',label:i%3?'Community support setting':'Residents and their neighborhood support staff',x:120+i%4*200,y:60+Math.floor(i/4)*75}));
   nodes.push(...Array.from({length:3},(_,i)=>({id:`policy-${i}`,scale:'exosphere',label:`District resource policy ${i+1}`,x:1600+i*300,y:400})));
