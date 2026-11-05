@@ -33,7 +33,7 @@ describe('explicit node classification corrections', () => {
   });
 
   it.each([
-    ['meso', 'role'], ['micro', 'policy'], ['unknown', 'resource'], ['exosphere', 'policy'], ['exosphere', 'law'], ['exosphere', 'belief'], ['exosphere', 'structure'], ['macrosphere', 'agency'],
+    ['meso', 'role'], ['micro', 'policy'], ['unknown', 'resource'], ['macrosphere', 'policy'], ['macrosphere', 'law'], ['exosphere', 'belief'], ['exosphere', 'structure'], ['macrosphere', 'agency'],
   ])('rejects an invalid %s/%s combination without changing the project', (scale, type) => {
     const { project, counselor } = fixture(), before = structuredClone(project);
     expect(reclassifyNode(project, counselor.id, scale, type)).toMatch(/type/);
@@ -95,10 +95,10 @@ describe('explicit node classification corrections', () => {
     expect(project).toEqual(before);
   });
 
-  it('allows institution-qualified policies while keeping the institution itself out of Macro', () => {
+  it('moves institution-qualified policies to Exo while keeping the institution itself out of Macro', () => {
     const { project, counselor } = fixture();
     reviseMapText(project, 'graph', 'nodes', counselor.id, 'NYC DOE confidentiality policy');
-    expect(reclassifyNode(project, counselor.id, 'macrosphere', 'policy')).toBe('');
+    expect(reclassifyNode(project, counselor.id, 'exosphere', 'policy')).toBe('');
     expect(() => validateProject(project)).not.toThrow();
     expect(nodeLabelIssue('NYC DOE', { scale: 'macrosphere', type: 'policy' }, [])).toMatch(/institution/);
   });

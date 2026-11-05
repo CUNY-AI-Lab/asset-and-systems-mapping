@@ -273,7 +273,7 @@ describe('bounded contract correction context', () => {
   it.each([
     ['Divya Patel', 'structure', 'macrosphere', 'Divya Patel teaches social studies at the school.', 'label'],
     ['government', 'resource', 'exosphere', 'Government should help.', 'label'],
-    ['School funding policy', 'policy', 'macrosphere', 'Schools need more funding and government should help.', 'evidence'],
+    ['School funding policy', 'policy', 'macrosphere', 'Schools need more funding and government should help.', 'label'],
   ])('carries the actual rejected Part 2 value for %s into correction', (label, type, scale, evidence, field) => {
     const node = { label, type, scale, evidence, basis: 'memo' };
     const rejected = { guidance: [], nodes: [node], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };

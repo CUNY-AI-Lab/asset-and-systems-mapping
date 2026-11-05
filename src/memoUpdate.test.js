@@ -56,7 +56,7 @@ it('prioritizes a new marginal subject even when the retained map already exceed
   openMemoWorkflowScale(p, 'exosphere');
   const outside = [
     { label: 'Regional Housing Office', type: 'organization', scale: 'exosphere', basis: 'memo', evidence: 'Residents do not participate in Regional Housing Office staffing decisions, which delay repairs in their homes.' },
-    { label: 'Universal repair access policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Universal repair access policy requires access across all local housing developments.' },
+    { label: 'Universal repair access policy', type: 'policy', scale: 'exosphere', basis: 'memo', evidence: 'Universal repair access policy requires access across all local housing developments.' },
   ];
   edit(p, outside.map(node => node.evidence).join(' '), 'part2Submission'); appendSubmittedNodes(p, review(outside));
   openMemoWorkflowScale(p, 'micro');
@@ -165,7 +165,7 @@ it.each(['micro', 'exosphere'].flatMap(scale => [false, true].map(empty => ({ sc
   if (scale === 'exosphere') {
     appendSubmittedNodes(before, review([original]));
     openMemoWorkflowScale(before, scale);
-    node = { label: 'Equal access policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Equal access policy requires access to services across all neighborhood settings.' };
+    node = { label: 'Equal access policy', type: 'policy', scale: 'exosphere', basis: 'memo', evidence: 'Equal access policy requires access to services across all neighborhood settings.' };
     before.part2Submission.text = node.evidence;
   }
   const sourceKey = scale === 'micro' ? 'submission' : 'part2Submission';

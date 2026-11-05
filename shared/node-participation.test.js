@@ -40,9 +40,9 @@ it('respects an explicit negative statement about resident participation without
   expect(submittedReviewIssue(wrap([exo(evidence.replace('never ', ''))]), 'exosphere', evidence)).toBeTruthy();
 });
 
-it('keeps a Macro rule separate from its administering office', () => {
-  const evidence = 'The Regional Housing Finance Rule distributes repair eligibility across many buildings.';
-  expect(submittedReviewIssue(wrap([{ label: 'Regional Housing Finance Rule', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence }]), 'exosphere', evidence)).toBeNull();
+it('places a policy at Exo separately from its administering office', () => {
+  const evidence = 'The Regional Housing Finance Rule governs repair eligibility across many buildings.';
+  expect(submittedReviewIssue(wrap([{ label: 'Regional Housing Finance Rule', type: 'policy', scale: 'exosphere', basis: 'memo', evidence }]), 'exosphere', evidence)).toBeNull();
   expect(submittedReviewIssue(wrap([{ ...exo(indirect), scale: 'macrosphere', type: 'policy' }]), 'exosphere', indirect)).toMatch(/person or institution/);
 });
 

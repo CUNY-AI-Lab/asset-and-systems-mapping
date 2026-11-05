@@ -4070,10 +4070,10 @@ function MapLegend() {
     <section><h3>Levels</h3><dl className="level-guide">
       <div><dt><i className="legend-symbol legend-symbol--micro" />Micro-level</dt><dd>Person participates directly in this setting or interaction.</dd></div>
       <div><dt><i className="legend-symbol legend-symbol--meso" />Meso-level</dt><dd>Arrows connect the people, resources, and settings already on the Micro map.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Outside organizations and decision settings; dotted connections attach them to local relationships.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Broader policies, values and structural conditions; purple dashed lines mark their connections.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Outside offices, policies and decision settings; dotted connections attach them to local relationships.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Cultural beliefs, economic structures and broader conditions; purple dashed lines mark their connections.</dd></div>
     <div><dt><span aria-hidden="true">◇</span> Direction varies</dt><dd>No fixed arrow direction is asserted.</dd></div><div><dt><span aria-hidden="true">?</span> Direction unknown</dt><dd>Direction has not been established.</dd></div></dl></section>
-    <section><h3>Node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions and policies</li></ul><h3>How to read this map</h3><ul className="map-conventions">
+    <section><h3>Node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><h3>How to read this map</h3><ul className="map-conventions">
       <li><strong>Micro</strong><span>People, resources, and immediate settings</span></li>
       <li><strong>Exo</strong><span>Outside settings; teal dotted connections link to local relationships.</span></li>
       <li><strong>Macro</strong><span>Broader policies and conditions; purple dashed connections.</span></li>
@@ -4191,7 +4191,7 @@ function blankManualNode(scale, threeSpheres = false) {
   scale = threeSpheres && scale === 'macrosphere' ? scale : nodeScaleFor(scale);
   return {
     label: '',
-    type: scale === 'macrosphere' ? 'policy' : scale === 'exosphere' ? 'institution' : 'person',
+    type: scale === 'macrosphere' ? (threeSpheres ? 'belief' : 'policy') : scale === 'exosphere' ? 'institution' : 'person',
     scale,
     evidence: '',
     claimState: 'research lead',
@@ -5731,14 +5731,14 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           <h3>{addMode === 'connected-node' ? 'New connected node' : project.activeScale === 'meso' ? 'Add a missing Micro item' : 'New node'}</h3>
           {addMode === 'connected-node' && <p className="field__hint">From {relationshipSource?.label}</p>}
           {project.activeScale === 'meso' && <p>Add a person, group, resource, or setting. It joins your Micro map and can be connected here in Meso.</p>}
-          {isPart2(project.activeScale) && <p>{newNode.scale === 'macrosphere' ? 'Name a broader policy, value or condition. Named organizations belong in Exo.' : 'Name an outside organization, resource or decision setting that affects the local situation.'}</p>}
+          {isPart2(project.activeScale) && <p>{newNode.scale === 'macrosphere' ? 'Name a cultural belief, historical pattern or economic condition. Policies and offices belong in Exo.' : 'Name a policy, outside office, resource or decision setting that affects the local situation.'}</p>}
           <Field label="Label"><textarea className="map-label-input" rows="1" maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{(notebook?.simple ? nodeClassificationTypes(newNode.scale) : NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale))).map((type) => <option key={type}>{type}</option>)}</select></Field>
             <Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => {
               const scale = event.target.value;
               const allowed = notebook?.simple ? nodeClassificationTypes(scale).includes(current.type) : isNodeTypeAllowedAtScale(current.type, scale);
-              const type = allowed ? current.type : (scale === 'macrosphere' ? 'policy' : scale === 'exosphere' ? 'institution' : 'person');
+              const type = allowed ? current.type : (scale === 'macrosphere' ? (notebook?.simple ? 'belief' : 'policy') : scale === 'exosphere' ? 'institution' : 'person');
               return { ...blankManualNode(scale, notebook?.simple), label: current.label, evidence: current.evidence, type };
             })}>{project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere').map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
           </div>

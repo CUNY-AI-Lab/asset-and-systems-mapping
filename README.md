@@ -54,6 +54,8 @@ The report dialog accepts bugs and feature requests. Dev and production configur
 
 ## Working with the map
 
+The course places concrete policies/laws and outside offices at Exo; Macro contains independently evidenced cultural, ideological, historical and economic conditions. See [classification evidence](docs/CLASSIFICATION_EVIDENCE_2026-11-04.md). Existing maps are preserved, and students can correct classifications in Notebook.
+
 Three content-fitted, nested ecological regions accommodate uneven geometry while reserving the most space for local work. Auto-fit places unpinned Exo and Macro cards around the retained Micro map according to the available canvas, including space above and below. Saved manual positions remain exact; opening or resizing a map does not rewrite them. Labels and line patterns supplement colors. Relationship wording stays attached to its own route; auto-fit separates cards, labels and shared route segments, with visible separation at unavoidable crossings. Filtering hides records without deleting them.
 
 With auto-fit on, an active Exo or Macro move from a valid position stops before entering its preceding sphere, along the requested path. Valid moves keep their chosen position. Existing imported placements are preserved; **System** changes classification. Turning auto-fit off uses saved coordinates and removes this movement constraint.

@@ -59,3 +59,7 @@ Report a bug or request a feature asks “What went wrong? What could be better?
 ## Release boundary
 
 The pre-change production baseline was `9fa6e00b78ae08292b10acc148c5c3c4925a7d4e`; its source, readiness, three entry-asset hashes and 100% traffic were checked before this work. The user authorized this design on Dev, ten screenshots and a regression audit, followed by production. The [November 5 release receipt](../TODO.md#memo-workspace-release-receipt--november-5-2026) records the exact candidate, current deployment evidence and remaining acceptance. Earlier saved-map test/restoration incidents remain in their dated audit records; this specification is not an assertion about their current state.
+
+## November 5 classification correction
+
+Concrete policies/laws and outside offices belong at Exo. Macro contains separately evidenced cultural, ideological, historical and economic conditions; a policy does not prove those conditions. Prompt, schema, validation and manual classification controls agree, with a new cache contract and preserved saved identities. See [primary-source research and course convention](CLASSIFICATION_EVIDENCE_2026-11-04.md).

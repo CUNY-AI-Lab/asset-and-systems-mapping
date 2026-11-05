@@ -1,8 +1,8 @@
-import { MICRO_NODE_TYPES, MACROSPHERE_NODE_TYPES, validateProject } from './domain.js';
-import { EXO_SETTING_TYPES } from '../shared/node-submission.js';
+import { MICRO_NODE_TYPES, validateProject } from './domain.js';
+import { EXO_NODE_TYPES, MACRO_CONDITION_TYPES } from '../shared/node-submission.js';
 import { correspondingNode, nodeLabelIssue } from './mapTextEditing.js';
 
-const CLASSIFICATION_TYPES = Object.freeze({ micro: MICRO_NODE_TYPES, exosphere: EXO_SETTING_TYPES, macrosphere: MACROSPHERE_NODE_TYPES });
+const CLASSIFICATION_TYPES = Object.freeze({ micro: MICRO_NODE_TYPES, exosphere: EXO_NODE_TYPES, macrosphere: MACRO_CONDITION_TYPES });
 export function nodeClassificationTypes(scale) {
   return CLASSIFICATION_TYPES[scale] || [];
 }

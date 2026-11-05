@@ -232,7 +232,7 @@ describe('persistent preflight suggestion review queue', () => {
   it('classifies second-memo nodes without generating guidance or student relationships', async () => {
     const nodes = [
       { label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: 'Residents do not participate in City Housing Authority allocation decisions, which delay repairs in their buildings.' },
-      { label: 'Capital repair funding policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Capital repair funding policy delays elevator repairs.' },
+      { label: 'Unequal housing investment', type: 'structure', scale: 'macrosphere', basis: 'memo', evidence: 'Unequal housing investment delays elevator repairs.' },
     ];
     const review = { guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
     const provider = vi.fn(async input => { normalizeInput(input); return { suggestion: review, metadata: { provider: 'ollama-cloud', model: 'server-model' } }; });
@@ -243,7 +243,7 @@ describe('persistent preflight suggestion review queue', () => {
     const result = await evaluate(cookie, body);
     expect(result.review).toEqual(review);expect(provider).toHaveBeenCalledTimes(1);
     expect(provider.mock.calls[0][0].systemPrompt).toContain('Students decide and draw ALL relationships');
-    expect(provider.mock.calls[0][0].systemPrompt).toContain('A policy is ALWAYS macrosphere');
+    expect(provider.mock.calls[0][0].systemPrompt).toContain('Policies and offices are Exo, not Macro');
     expect(provider.mock.calls[0][0].systemPrompt).not.toContain('EXOSPHERE MODULES');
     expect(provider.mock.calls[0][0].systemPrompt).not.toContain('GLOBAL MODULES');
     expect(provider.mock.calls[0][0].carriedConnections).toEqual(body.carriedConnections);

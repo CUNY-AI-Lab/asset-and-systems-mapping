@@ -19,7 +19,7 @@ export default function NodeClassificationEditor({ node, scales = Object.keys(SY
       <label className="field"><span className="field__label">System</span><select value={scale} onChange={event => {
         const next = event.target.value;
         setScale(next); setError('');
-        if (!nodeClassificationTypes(next).includes(type)) setType(next === 'micro' ? 'role' : next === 'exosphere' ? 'institution' : 'policy');
+        if (!nodeClassificationTypes(next).includes(type)) setType(next === 'micro' ? 'role' : next === 'exosphere' ? 'institution' : 'belief');
       }}>{Object.entries(SYSTEMS).filter(([value]) => scales.includes(value) || value === node.scale).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label className="field"><span className="field__label">Type</span><select value={type} onChange={event => { setType(event.target.value); setError(''); }}>
         {retainedLegacyType && <option value={type} disabled>{type[0].toUpperCase() + type.slice(1)} (current)</option>}

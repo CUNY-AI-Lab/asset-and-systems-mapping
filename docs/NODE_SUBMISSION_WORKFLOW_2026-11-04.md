@@ -12,7 +12,7 @@ separate application; its stored data and review flow are not migrated here.
 3. **Exo:** upload a distinct second memo into an empty, independent field. Use
    the existing graph as context, without copying or submitting the first memo
    as second-memo content. Classify outside decision settings at Exo and broader
-   policies, values and structural conditions at Macro. Students connect Exo
+   cultural beliefs, historical patterns and economic structures at Macro. Students connect Exo
    settings to selected local relationships.
 4. **Macro:** students decide how broader conditions connect to mapped settings
    and relationships. Named institutions remain at Exo or Micro, according to
@@ -96,3 +96,5 @@ A previously successful Part 1 baseline satisfies the initial Part 2 prerequisit
 ## Manual editing acceptance
 
 Continue checks only the current part's successful memo submission. After successful current-part memo processing, double-click, keyboard Shift+Enter or Connect from starts a student connection; an empty-canvas click or keyboard N can draft a node only when its relationship is also named and saved atomically. Cancel creates no records. A local connection created while viewing Micro stores Meso scale and appears immediately without changing the current step. Node colors are Automatic or Blue, Teal, Purple, Amber, Rose and Slate; colors are independent of ecological classification and survive save, Undo, reload and visual export. These behaviors require local tests and Dev inspection before claiming release.
+
+Policies/laws and external offices are represented at Exo under the explicit course convention. Macro names independently evidenced cultural, ideological, historical and economic conditions. See [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md). Existing saved maps are preserved; new classifications and explicit corrections use this convention.

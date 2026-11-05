@@ -1077,7 +1077,7 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder=body=>{
       submissions.push(body);
       const nodes=body.activeScale==='micro' ? [{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text},{label:'Community room',type:'setting',scale:'micro',evidence:project.submission.text}]
-        : [{label:'City Housing Authority',type:'agency',scale:'exosphere',basis:'memo',evidence:'Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home.'},{label:'Capital repair funding policy',type:'policy',scale:'macrosphere',basis:'memo',evidence:'Capital repair funding policy delays elevator repairs.'}];
+        : [{label:'City Housing Authority',type:'agency',scale:'exosphere',basis:'memo',evidence:'Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home.'},{label:'Unequal housing investment',type:'structure',scale:'macrosphere',basis:'memo',evidence:'Unequal housing investment delays elevator repairs.'}];
       return jsonResponse({evaluation:evaluationRecord(body,{review:{guidance:[],nodes,connections:[],example:null,readiness:{ready:true,note:'Nodes identified.'}}})},201);
     };
     render(<App memoFirstWorkflow startInWorkspace />);
@@ -1103,7 +1103,7 @@ describe('Systems Mapping workflow', () => {
     expect(await screen.findByRole('heading',{name:'Meso · local relationships'})).toBeVisible();
     expect(submissions).toHaveLength(1);expect(document.querySelectorAll('.graph-edge')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button',{name:'Continue'}));
-    fireEvent.change(await screen.findByRole('textbox',{name:'Second memo',exact:true}),{target:{value:'Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home. Capital repair funding policy delays elevator repairs.'}});
+    fireEvent.change(await screen.findByRole('textbox',{name:'Second memo',exact:true}),{target:{value:'Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home. Unequal housing investment delays elevator repairs.'}});
     fireEvent.click(screen.getByRole('button',{name:'Submit memo and add nodes',exact:true}));
     await waitFor(()=>expect(document.querySelectorAll('.graph-node')).toHaveLength(4));
     expect(submissions).toHaveLength(2);expect(submissions[1].workflowMode).toBe('student-nodes-v1');expect(submissions[1].sourceMaterial).not.toContain(project.submission.text);expect(submissions[1].carriedNodes.map(n=>n.label)).toContain('Residents');
@@ -1119,13 +1119,13 @@ describe('Systems Mapping workflow', () => {
     expect(within(screen.getByRole('complementary',{name:'Notebook'})).getByRole('region',{name:'Map tools'})).toBeVisible();
     expect(document.querySelector('.notebook-tools-panel')).toBeNull();
     expect(screen.getByRole('checkbox',{name:'Auto-fit layout'})).toBeChecked();
-    fireEvent.keyDown([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Capital repair funding policy')),{key:'Enter'});
+    fireEvent.keyDown([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Unequal housing investment')),{key:'Enter'});
     expect(screen.queryByRole('region',{name:'Map tools'})).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button',{name:'Remove',exact:true}));
     expect(screen.getByRole('button',{name:'Add to map',exact:true})).toBeVisible();
     fireEvent.click(screen.getByRole('button',{name:'Add to map',exact:true}));
     expect(screen.getByRole('button',{name:'Remove',exact:true})).toBeVisible();
-    await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Capital repair funding policy'));
+    await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Unequal housing investment'));
   });
 
   it('shows saved-request progress beside the sticky memo action and clears busy state after a pending failure', async () => {
@@ -1222,7 +1222,7 @@ describe('Systems Mapping workflow', () => {
     const counselor = project.graph.nodes.find(node=>node.label==='Community counselor');
     const historyButton = name => within(screen.getByRole('group',{name:'Edit history'})).getByRole('button',{name,exact:true});
     seedProject(project); render(<App memoFirstWorkflow startInWorkspace />);
-    await screen.findByRole('heading',{name:'Exo · outside settings'});
+    await screen.findByRole('heading',{name:'Exo · policies and offices'});
     expect(historyButton('Undo')).toBeDisabled();
     fireEvent.keyDown(document.querySelector(`[data-graph-id="${counselor.id}"]`),{key:'Enter'});
     fireEvent.change(screen.getByRole('combobox',{name:'System',exact:true}),{target:{value:'micro'}});

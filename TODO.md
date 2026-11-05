@@ -1,3 +1,12 @@
+## November 5: policies at Exo and three cumulative screenshots
+
+- [x] Research primary ecological definitions and document the explicit course convention.
+- [x] Correct new-output prompt/schema/validation and manual classifications: policies/offices at Exo; cultural and structural conditions at Macro.
+- [ ] Verify focused and full regressions, including saved-map compatibility and manual connections.
+- [ ] Deploy to Dev; exercise fictional Micro, Exo-policy and Macro-cultural examples through the model.
+- [ ] Capture Micro only, Micro + Exo, and the complete map, with fictional names and student-authored example connections.
+- [ ] Promote the checked version to production and record exact deployment evidence.
+
 # Current task — Memo workspace (November 4, late evening)
 
 Design: [wireframe and behavior](docs/MEMO_WORKSPACE_2026-11-04.md) · [interactive wireframe](docs/wireframes/memo-workspace.html)

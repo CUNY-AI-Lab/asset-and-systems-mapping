@@ -6,8 +6,8 @@ import { submittedReviewIssue } from '../shared/node-submission.js';
 export const MEMO_WORKFLOW = Object.freeze({
   micro: { title: 'Micro · local nodes', instruction: 'Submit your first memo to add people, places and resources to the map.', next: 'Next: Meso · draw relationships' },
   meso: { title: 'Meso · local relationships', instruction: 'Select a node on the map, choose Connect from, then select the other node.', next: 'Next: Exo · add second memo' },
-  exosphere: { title: 'Exo · outside settings', instruction: 'Submit your second memo to add Exo settings and Macro conditions. Then select an Exo node and connect it to the local relationships it affects.', next: 'Next: Macro · broader conditions' },
-  macrosphere: { title: 'Macro · broader conditions', instruction: 'Connect policies, values and broader conditions to the settings or local relationships they affect. Choose a node, then Connect from.', next: 'Finish map' },
+  exosphere: { title: 'Exo · policies and offices', instruction: 'Submit your second memo to add Exo policies and offices, plus Macro conditions. Then select an Exo node and connect it to the local relationships it affects.', next: 'Next: Macro · broader conditions' },
+  macrosphere: { title: 'Macro · broader conditions', instruction: 'Connect cultural beliefs, economic structures and broader conditions to the settings or local relationships they affect. Choose a node, then Connect from.', next: 'Finish map' },
 });
 
 // A submitted memo may append nodes. It can never create, retire or rewrite

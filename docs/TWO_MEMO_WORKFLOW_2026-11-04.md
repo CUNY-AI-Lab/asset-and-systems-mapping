@@ -7,7 +7,7 @@ This is the current account-workspace contract, incorporating the user's later N
 1. **Micro:** upload and submit the first memo. Add a small supported node set immediately. Students can edit nodes; they draw no relationships through the model.
 2. **Meso:** students draw and name relationships between local nodes.
 3. **Exo:** upload a separate second memo. Keep the original graph and classify new outside settings and broader conditions. Students connect Exo headings to selected local Meso relationships.
-4. **Macro:** students connect broader policies, values and structural conditions to the settings or local relationships they affect. Named people and institutions are not Macro conditions.
+4. **Macro:** students connect cultural beliefs, historical patterns and economic structures to the settings or local relationships they affect. Named people and institutions are not Macro conditions.
 
 The model returns at most six nodes per submission, with no guidance, relationships, examples, scopes or group memberships. Part 2 permits at most three Exo and three Macro nodes. Weak evidence may correctly produce no nodes. Source text is data, never authority to alter this contract. Successful processing is not certification of a student's interpretation.
 
@@ -48,3 +48,5 @@ Schema 10 retains source texts, graph IDs, membership IDs, annotations and legac
 Tests must exercise the current node-only payload and zero model relationships at every step. Include independent uploads, meaningful and unchanged memo edits, stable identity after manual edits, preserved removals, empty and weak results, focal-participation classification, bibliography-only evidence, stale/failed jobs, atomic connected-node creation/cancel, manual groups, node colors, reload, exports, keyboard and phone behavior. Verify Continue only waits for the current part’s successful memo submission. Check the information flag’s exact copy, timer pause, dismissal and focus behavior. Controlled tests establish application behavior, not live model quality.
 
 The four supplied PDFs remain outside Git. Approved live tests cover those real inputs and fabricated Bronx, Flushing and housing continuations. Real Gateway tests require approval of data and destination; fixture identity helpers are not production authentication. Record exact source, actual runtime/model, failures, retries and retained-state comparisons separately from CI and deployment receipts.
+
+Policies/laws and external offices are represented at Exo under the explicit course convention. Macro names independently evidenced cultural, ideological, historical and economic conditions. See [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md). Existing saved maps are preserved; new classifications and explicit corrections use this convention.

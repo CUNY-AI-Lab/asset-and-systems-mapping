@@ -8,7 +8,7 @@ const review = nodes => ({ guidance: [], nodes, connections: [], example: null, 
 const local = { label:'Residents', type:'group', scale:'micro', evidence:'Residents meet in the community room.' };
 const outer = [
   { label:'City Housing Authority', type:'agency', scale:'exosphere', basis:'memo', evidence:'Residents do not participate in City Housing Authority allocation decisions, which delay repairs in their buildings.' },
-  { label:'Capital repair funding policy', type:'policy', scale:'macrosphere', basis:'memo', evidence:'Capital repair funding policy delays elevator repairs.' },
+  { label:'Unequal housing investment', type:'structure', scale:'macrosphere', basis:'memo', evidence:'Unequal housing investment delays elevator repairs.' },
 ];
 function blank() {
   const p=createDefaultProject(); p.graph={nodes:[],edges:[]}; p.candidates={nodes:[],edges:[]}; p.preflight=null;
@@ -138,12 +138,12 @@ it.each([
 it.each([
   ['Divya Patel', 'structure', 'Divya Patel teaches social studies at the school.', /person or institution/],
   ['Rosa Alvarez', 'culture', 'Rosa Alvarez is a teacher at the school.', /person or institution/],
-  ['school funding policy', 'policy', 'Schools need more funding and the government should help.', /established condition/],
-  ['Family communication belief', 'belief', 'Families need better communication.', /established condition/],
-  ['School funding policy', 'policy', 'School funding policy should prioritize families.', /established condition/],
-  ['School funding policy', 'policy', 'School funding policy should provide more support.', /established condition/],
-  ['School funding policy', 'policy', 'Schools should receive more support under a proposed School funding policy.', /established condition/],
-  ['School allocation policy', 'policy', 'What policy governs school allocation?', /established condition/],
+  ['school funding policy', 'policy', 'Schools need more funding and the government should help.', /policy or law|established condition/],
+  ['Family communication belief', 'belief', 'Families need better communication.', /policy or law|established condition/],
+  ['School funding policy', 'policy', 'School funding policy should prioritize families.', /policy or law|established condition/],
+  ['School funding policy', 'policy', 'School funding policy should provide more support.', /policy or law|established condition/],
+  ['School funding policy', 'policy', 'Schools should receive more support under a proposed School funding policy.', /policy or law|established condition/],
+  ['School allocation policy', 'policy', 'What policy governs school allocation?', /policy or law|established condition/],
 ])('rejects a mislabeled or unestablished Macro condition: %s', (label, type, evidence, issue) => {
   expect(submittedReviewIssue(review([{ label, type, evidence, scale: 'macrosphere', basis: 'memo' }]), 'exosphere', evidence)).toMatch(issue);
 });
@@ -161,14 +161,15 @@ it.each([
   ['Financial insecurity', 'economic condition', 'Financial insecurity means families need more time to pay rent.'],
   ['School confidentiality policy', 'policy', 'Parents should provide written permission under the School confidentiality policy.'],
   ['Community counselor confidentiality protocol', 'policy', 'Community counselor confidentiality protocol requires recorded permission before sharing a student case.'],
-])('retains grounded named policies and broader conditions: %s', (label, type, evidence) => {
-  const node = { label, type, evidence, scale: 'macrosphere', basis: 'memo' };
+])('places grounded policies at Exo and broader conditions at Macro: %s', (label, type, evidence) => {
+  const scale = ['policy', 'law'].includes(type) ? 'exosphere' : 'macrosphere';
+  const node = { label, type, evidence, scale, basis: 'memo' };
   expect(submittedReviewIssue(review([node]), 'exosphere', evidence)).toBeNull();
   const project = blank(); openMemoWorkflowScale(project, 'exosphere'); project.part2Submission.text = evidence;
   appendSubmittedNodes(project, review([node]));
   const restored = parseProject(serializeProject(project));
-  expect(restored.graph.nodes[0]).toMatchObject({ label, type, scale: 'macrosphere', status: 'confirmed' });
-  expect(restored.candidates.nodes[0]).toMatchObject({ label, type, scale: 'macrosphere' });
+  expect(restored.graph.nodes[0]).toMatchObject({ label, type, scale, status: 'confirmed' });
+  expect(restored.candidates.nodes[0]).toMatchObject({ label, type, scale });
 });
 
 it('keeps the institution itself out of Macro even when submitted with policy type', () => {
@@ -184,9 +185,9 @@ it('retains a specifically identified outside resource', () => {
 it('keeps Exo and Macro type choices paired with their level in the model schema',()=>{
   const [exo,macro]=nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf;
   expect(exo.properties.scale.enum).toEqual(['exosphere']);
-  expect(exo.properties.type.enum).not.toContain('policy');
+  expect(exo.properties.type.enum).toContain('policy');
   expect(macro.properties.scale.enum).toEqual(['macrosphere']);
-  expect(macro.properties.type.enum).toContain('policy');
+  expect(macro.properties.type.enum).not.toContain('policy');
   expect(macro.properties.type.enum).not.toContain('agency');
 });
 
