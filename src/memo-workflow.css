@@ -77,6 +77,19 @@ html[data-theme=dark] .is-reading-view { --exo-accent:#75c6b9; --macro-accent:#c
 .workflow-next-label { font:400 13px/1.35 var(--body); color:var(--muted); text-align:right; }
 .inspector-item-actions { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; border-bottom:1px solid var(--line); font:500 13px/1.4 var(--body); }
 .inspector-item-actions > span { color:var(--muted); }
+.inspector-item-state { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:4px; background:var(--surface-hover); font:600 12px/1.35 var(--body); }
+.inspector-item-state::before { content:''; width:5px; height:5px; flex:none; border-radius:50%; background:currentColor; }
+.map-stage--notebook #map-inspector { --item-accent:var(--blue); }
+.map-stage--notebook #map-inspector[data-item-scale=exosphere] { --item-accent:#26756d; }
+.map-stage--notebook #map-inspector[data-item-scale=macrosphere] { --item-accent:#805491; }
+html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=exosphere] { --item-accent:#75c6b9; }
+html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macrosphere] { --item-accent:#c6a9e2; }
+.map-stage--notebook #map-inspector[data-item-scale] .node-connect-action { color:var(--ink); border-color:var(--item-accent); background:color-mix(in srgb,var(--item-accent) 10%,var(--surface)); }
+.map-stage--notebook #map-inspector[data-item-scale] .node-connect-action:hover { background:color-mix(in srgb,var(--item-accent) 18%,var(--surface)); }
+.map-edit-history { display:inline-flex; flex:0 0 auto; align-items:center; gap:4px; }
+.map-stage--notebook .map-edit-history button { min-height:var(--control-height); padding:6px 10px; border:1px solid var(--line); border-radius:5px; background:var(--surface-subtle); color:var(--ink); font:550 13px/1.35 var(--body); }
+.map-stage--notebook .map-edit-history button:hover:not(:disabled) { background:var(--surface-hover); }
+.map-edit-history svg { width:16px; height:16px; flex:none; }
 .memo-submit-top { position:sticky; top:0; z-index:2; padding-block:6px; background:var(--surface); }
 .memo-submit-top .button { width:auto; max-width:100%; }
 .intake-stage .memo-submit-top { max-width:420px; margin-bottom:12px; }

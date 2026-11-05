@@ -43,7 +43,7 @@
 .workspace--studio :is(.canvas-wrap, .graph-canvas, .graph-canvas--ecology) { height: 100%; min-height: 0; }
 .workspace--studio .map-list-view { min-width: 0; min-height: 0; overflow: auto; }
 .workspace--studio .map-layout > .inspector { position: relative; min-width: 0; height: 100%; max-height: 100%; overflow: visible; border-radius: 0 8px 8px 0; }
-.inspector__scroll { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; container-type: inline-size; container-name: inspector; }
+.inspector__scroll { height: 100%; overflow: auto; overscroll-behavior: contain; scroll-padding-block:12px; scrollbar-gutter: stable; container-type: inline-size; container-name: inspector; }
 .work-panel__close { display: flex; justify-content: flex-end; padding: 8px 12px 0; }
 .inspector .memo-drawer { margin: 10px 12px; }
 .inspector .memo-drawer > summary { min-height: 40px; padding: 8px 10px; font-size: 13px; }
@@ -85,7 +85,7 @@ html[data-theme="dark"] .inspector .inspector-done { color: var(--ink); }
 .inspector :is(.review-intro, .stage-title-row, .section-heading) { gap: 10px; flex-wrap: wrap; }
 .inspector :is(.candidate-row, .claim-evidence) { padding: 12px; }
 .inspector :is(.candidate-expression, .candidate-expression--edge, .field-pair) { grid-template-columns: minmax(0, 1fr); }
-.inspector :is(input:not([type="checkbox"], [type="radio"]), textarea, select) { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.inspector :is(input:not([type="checkbox"], [type="radio"]), textarea, select) { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; scroll-margin-block:12px; }
 .inspector textarea { resize: vertical; }
 .inspector :is(p, h2, h3, label, summary, button, strong, span, li, dd) { overflow-wrap: anywhere; }
 .inspector :is(.field, .candidate-expression, .candidate-expression > *, .review-summary li, .claim-evidence, fieldset) { min-width: 0; max-width: 100%; }

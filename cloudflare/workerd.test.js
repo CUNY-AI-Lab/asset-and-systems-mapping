@@ -79,6 +79,22 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     const residentAfter=(await stored()).graph.nodes.find(node=>node.id===residentBefore.id);
     expect(residentAfter.evidence).toBe(residentBefore.evidence);
     expect(residentAfter.annotations).toEqual(residentBefore.annotations);
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    await browserExpect.poll(async()=>(await stored()).graph.nodes.find(node=>node.id===residentBefore.id)?.type).toBe('group');
+    await page.getByRole('button',{name:'Redo',exact:true}).click();
+    await browserExpect.poll(async()=>(await stored()).graph.nodes.find(node=>node.id===residentBefore.id)?.type).toBe('role');
+    await page.getByRole('button',{name:'Remove',exact:true}).click();
+    await browserExpect(page.getByRole('button',{name:'Add to map',exact:true})).toBeVisible();
+    await browserExpect.poll(async()=>(await stored()).graph.nodes.find(node=>node.id===residentBefore.id)?.claimState).toBe('retired');
+    await page.reload();
+    await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    await browserExpect(page.locator('.graph-node')).toHaveCount(2);
+    await browserExpect.poll(async()=>(await stored()).graph.nodes.find(node=>node.id===residentBefore.id)?.claimState).toBe(residentAfter.claimState);
+    await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
+    await browserExpect(page.getByRole('heading',{name:'Edit',exact:true})).toHaveCount(0);
+    await browserExpect(page.locator('button[aria-label="Hide sidebar"] svg')).toHaveCount(0);
+    await browserExpect(page.locator('.inspector-evidence strong')).toHaveText('Residents');
     const hierarchy=await page.locator('#map-inspector').evaluate(panel=>{
       const size=selector=>parseFloat(getComputedStyle(panel.querySelector(selector)).fontSize);
       return {label:size('.field__label'),value:size('select'),caption:size('.item-editor-title h2'),title:size('.item-editor-title p'),
@@ -90,6 +106,10 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await page.getByRole('button',{name:'Done',exact:true}).click();
     await browserExpect(page.getByRole('heading',{name:'Micro · local nodes',exact:true})).toBeVisible();
     await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
+    await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await page.getByRole('button',{name:'Back',exact:true}).click();
+    await browserExpect(page.getByRole('heading',{name:'Micro · local nodes',exact:true})).toBeVisible();
+    await browserExpect(page.getByRole('button',{name:'Redo',exact:true})).toBeEnabled();
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
     await page.getByRole('button',{name:'Connect from Residents',exact:true}).click();

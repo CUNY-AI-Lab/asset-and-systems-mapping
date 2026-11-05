@@ -7,7 +7,7 @@ import { MapToolsResizeHandle, useMapToolsSize } from './MapToolsResize.jsx';
 export default function MapTools({ embedded = false, open, onOpenChange, scales, scale, onScale,
   presentation, onPresentation, nodes, onSelect, onZoom, canZoomOut, canZoomIn,
   onAdd, onFit, onArrange, canArrange, autoFit, onAutoFit, onLegend, onFullscreen, fullscreen,
-  hasRemoved, showRemoved, onShowRemoved, onUndo, onRedo, canUndo, canRedo }) {
+  hasRemoved, showRemoved, onShowRemoved, onUndo, onRedo, canUndo, canRedo, editHistory = false }) {
   const menu = useRef(null);
   const panelId = useId();
   const size = useMapToolsSize();
@@ -46,7 +46,7 @@ export default function MapTools({ embedded = false, open, onOpenChange, scales,
           <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button>
           <button type="button" onClick={() => run(onLegend)}>Map key</button>
         </div>}
-        {onUndo && <div className="map-tools-layout-actions" role="group" aria-label="Layout history">
+        {onUndo && !editHistory && <div className="map-tools-layout-actions" role="group" aria-label="Layout history">
           <button type="button" disabled={!canUndo} onClick={()=>run(onUndo)}>Undo layout</button>
           <button type="button" disabled={!canRedo} onClick={()=>run(onRedo)}>Redo layout</button>
         </div>}
