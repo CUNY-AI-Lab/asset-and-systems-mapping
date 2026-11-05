@@ -76,3 +76,14 @@ it('matches adjacent table cells as quotations while retaining words, order and 
   expect(classifyExcerptMatch('The symbol A | B appears here.', 'The symbol A B appears here.')).toBeNull();
   expect(classifyExcerptMatch('| A | B |\n| one | two |','one two')).toBeNull();
 });
+
+
+it('normalizes typography in a partial table row without deleting its retained column separators', () => {
+  const memo = '| People | Information |\n| --- | --- |\n| Caregivers and Tutors | Children’s well-being at Cedar Hall. |\n| Pupils | Learners do not attend the office. |';
+  expect(classifyExcerptMatch(memo, 'Caregivers and Tutors | Children’s well‑being at Cedar Hall.')).toBe('normalized');
+  expect(classifyExcerptMatch(memo, "Caregivers and Tutors | Children's well-being at Cedar Hall.")).toBe('normalized');
+  // The same normalization must not invent words, drop negation or reorder cells.
+  expect(classifyExcerptMatch(memo, 'Caregivers and Tutors | Children’s poor well‑being at Cedar Hall.')).toBeNull();
+  expect(classifyExcerptMatch(memo, 'Pupils | Learners attend the office.')).toBeNull();
+  expect(classifyExcerptMatch(memo, 'Children’s well‑being at Cedar Hall. | Caregivers and Tutors')).toBeNull();
+});

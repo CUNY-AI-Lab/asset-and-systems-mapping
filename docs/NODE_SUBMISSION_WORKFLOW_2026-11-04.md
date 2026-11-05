@@ -58,7 +58,10 @@ Fresh subject bundles are checked across the response before evidence repairs,
 so an early bad quote cannot conceal a later combined role until the final
 attempt. Table evidence must copy actual source passages or cells, never
 reconstruct quotations by joining columns. Quote validation remains strict.
-The shared cache contract is `memo-workspace-table-subjects-v11`, used by both
+Typography-only quotation differences are normalized against the literal saved
+text before structural table separators are removed. A partial row may retain
+its real pipes; invented words, omitted negation and reordered cells still fail.
+The shared cache contract is `memo-workspace-table-quotes-v12`, used by both
 browser reuse and durable generation jobs.
 
 Acceptance requires source regressions, Worker/browser tests, real supplied
