@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { SCALE_ORDER } from './domain.js';
+import { SCALE_ORDER, stableId } from './domain.js';
 import { activeSubmission, isPart2 } from './projectMemo.js';
 import { MEMO_WORKFLOW } from './memoWorkflow.js';
 import ReflectionEntry from './ReflectionEntry.jsx';
@@ -11,11 +11,18 @@ export default function MemoWorkflowNotebook({ project, update, uploadControl, o
   const nodeStep = ['micro', 'exosphere'].includes(project.activeScale);
   const submission = activeSubmission(project);
   const info = MEMO_WORKFLOW[project.activeScale];
-  const showMemo = nodeStep && (editingMemo || project.stage < 3 || !submission.text.trim() || !project.graph.nodes.some(node => node.scale === project.activeScale && node.status !== 'rejected' && node.claimState !== 'retired'));
+  const fingerprint = stableId('src', submission.text);
+  const submitted = project.events.some(event => event.action === 'preflight.completed' && event.detail === 'Submitted memo nodes added to map' && event.sourceFingerprint === fingerprint);
+  const hasNodes = project.graph.nodes.some(node => isPart2(node.scale) === isPart2(project.activeScale));
+  const showMemo = nodeStep && (editingMemo || project.stage < 3 || !submission.text.trim() || !submitted && !hasNodes);
+  const instruction = !showMemo && nodeStep
+    ? project.activeScale === 'micro' ? 'Edit a node, or Continue to draw relationships.' : 'Select an Exo node and connect it to the local relationships it affects.'
+    : info.instruction;
   useEffect(() => { setEditingMemo(false); }, [project.activeScale, project.stage]);
   return <section className="memo-workflow-notebook" aria-label="Current mapping step">
     <nav className="workflow-steps" aria-label="Mapping steps">{SCALE_ORDER.map((scale, index) => <button key={scale} type="button" aria-current={scale === project.activeScale ? 'step' : undefined} onClick={() => onSelectStep(scale)}><span>{index + 1}</span>{['Micro', 'Meso', 'Exo', 'Macro'][index]}</button>)}</nav>
-    <h2>{info.title}</h2><p className="workflow-instruction">{info.instruction}</p>
+    <h2>{info.title}</h2><p className="workflow-instruction">{instruction}</p>
+    {nodeStep && submitted && !hasNodes && !showMemo && <p role="status">No supported nodes were identified. You can add a node in Tools or Continue.</p>}
     <div className="workflow-memos" aria-label="Saved memos">{[project.submission, project.part2Submission].map((memo, index) => Boolean(index) === isPart2(project.activeScale) && memo?.text.trim() ? <div key={index}><span><strong>Memo {index + 1}</strong><span>{memo.fileName || memo.title || 'Typed memo'}</span></span><button className="button button--secondary" type="button" onClick={() => { if (nodeStep && isPart2(project.activeScale) === Boolean(index)) setEditingMemo(true); else onEditMemo(index ? 'exosphere' : 'micro'); }}>Edit</button></div> : null)}</div>
     {showMemo && <div className="workflow-memo-editor">
       <div className="memo-submit-top"><button type="button" className="button" disabled={busy || retryPending || !submission.text.trim() || submission.sensitive && !submission.consent} onClick={onSubmitMemo}>{busy ? 'Adding nodes…' : 'Submit memo and add nodes'}</button></div>
