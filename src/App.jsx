@@ -3535,7 +3535,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   };
   const beginViewportGesture = (event, kind, selectionId = null) => {
     if (interactionRef.current?.kind === 'pinch' || (event.button !== undefined && ![0, 1].includes(event.button))) return;
-    if (event.button === 1) event.preventDefault();
+    if (event.button === 1 || event.pointerType === 'touch') event.preventDefault();
     event.stopPropagation();
     svgRef.current?.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -3563,6 +3563,9 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   const beginNode = (event, node) => {
     if (event.button === 1 || panModifierRef.current) { beginViewportGesture(event, 'pan'); return; }
     if (event.button !== undefined && event.button !== 0) return;
+    // The completed touch selects the item itself. Suppress compatibility
+    // mouse focus: opening the drawer can move a different edge under the tap.
+    if (event.pointerType === 'touch') event.preventDefault();
     event.stopPropagation();
     if (interactionRef.current?.kind === 'pinch') return;
     if (detailMode) {
