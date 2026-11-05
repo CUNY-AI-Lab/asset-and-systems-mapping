@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createDefaultProject, createPortableProject, parseProject, serializeProject, validateProject } from './domain.js';
+import { createDefaultProject, createEvent, createPortableProject, parseProject, serializeProject, validateProject } from './domain.js';
 import { appendSubmittedNodes, memoUpdatePayload, memoUpdateState, memoUpdateSummary, openMemoWorkflowScale } from './memoWorkflow.js';
 import { recordEdit, restoreEdit } from './editHistory.js';
 import { memoAnalysisIssue, memoContentFingerprint, memoSourceFingerprint, memoUpdateIssue } from '../shared/memo-update.js';
@@ -156,4 +156,57 @@ it('accepts only palette keys and preserves a custom node color through private 
   const next = clone(p); next.graph.nodes[0].color = 'amber'; recordEdit(p, next, 'Change color');
   expect(restoreEdit(next).project.graph.nodes[0].color).toBe('teal');
   p.graph.nodes[0].color = 'automatic'; expect(() => validateProject(p)).toThrow(/color/);
+});
+
+
+it.each(['micro', 'exosphere'].flatMap(scale => [false, true].map(empty => ({ scale, empty }))))('restores first $scale submission readiness with $empty empty-result flag through saved Undo/Redo', ({ scale, empty }) => {
+  const before = blank();
+  let node = original;
+  if (scale === 'exosphere') {
+    appendSubmittedNodes(before, review([original]));
+    openMemoWorkflowScale(before, scale);
+    node = { label: 'Equal access policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Equal access policy requires access to services across all neighborhood settings.' };
+    before.part2Submission.text = node.evidence;
+  }
+  const sourceKey = scale === 'micro' ? 'submission' : 'part2Submission';
+  const next = clone(before); appendSubmittedNodes(next, review(empty ? [] : [node]));
+  next.events.push(createEvent('preflight.completed', 'Submitted memo nodes added to map', 'student', { sourceFingerprint: memoSourceFingerprint(next[sourceKey].text), configurationSnapshot: { activeScale: scale } }));
+  recordEdit(before, next, 'Submitted memo nodes added to map', { coalesce: false });
+  const undone = restoreEdit(parseProject(serializeProject(next))).project;
+  expect(undone).toBeTruthy(); expect(undone.graph).toEqual(before.graph);
+  expect(undone[sourceKey].analysis).toBeUndefined();
+  expect(memoUpdateState(undone)).toMatchObject({ hasBaseline: false, submitted: false, pending: true });
+  if (scale === 'exosphere') expect(undone.submission).toEqual(before.submission);
+  const redone = restoreEdit(parseProject(serializeProject(undone)), 'redo').project;
+  expect(redone.graph).toEqual(next.graph); expect(redone[sourceKey].analysis).toEqual(next[sourceKey].analysis);
+  expect(memoUpdateState(redone).submitted).toBe(true);
+  // Readiness is not inferred only from the future stack, which new edits clear.
+  const edited = clone(undone); edited.inquiry = 'A later student note'; recordEdit(undone, edited, 'Update inquiry');
+  expect(edited.editHistory.future).toEqual([]);
+  expect(memoUpdateState(parseProject(serializeProject(edited))).submitted).toBe(false);
+});
+
+it('keeps genuine legacy success when its first modern baseline is undone', () => {
+  const before = blank();
+  before.events.push(createEvent('preflight.completed', 'Submitted memo nodes added to map', 'student', { sourceFingerprint: memoSourceFingerprint(before.submission.text), configurationSnapshot: { activeScale: 'micro' } }));
+  expect(memoUpdateState(before).submitted).toBe(true);
+  const next = clone(before); appendSubmittedNodes(next, review([]));
+  next.events.push(createEvent('preflight.completed', 'Submitted memo nodes added to map', 'student', { sourceFingerprint: memoSourceFingerprint(next.submission.text), configurationSnapshot: { activeScale: 'micro' } }));
+  recordEdit(before, next, 'Submitted memo nodes added to map', { coalesce: false });
+  const undone = restoreEdit(parseProject(serializeProject(next))).project;
+  expect(undone.submission.analysis).toBeUndefined();
+  expect(memoUpdateState(undone).submitted).toBe(true);
+  expect(restoreEdit(undone, 'redo').project.submission.analysis).toEqual(next.submission.analysis);
+});
+
+it.each([false, true])('reads older generation journals while preserving only genuine prior legacy success: %s', legacy => {
+  const before = blank();
+  const completion = () => createEvent('preflight.completed', 'Submitted memo nodes added to map', 'student', { sourceFingerprint: memoSourceFingerprint(before.submission.text), configurationSnapshot: { activeScale: 'micro' } });
+  if (legacy) before.events.push(completion());
+  const next = clone(before); appendSubmittedNodes(next, review([original])); next.events.push(completion());
+  recordEdit(before, next, 'Submitted memo nodes added to map', { coalesce: false });
+  next.editHistory.past.at(-1).changes = next.editHistory.past.at(-1).changes.filter(change => change.path[0] !== 'memoCompletion');
+  const undone = restoreEdit(parseProject(serializeProject(next))).project;
+  expect(undone).toBeTruthy(); expect(undone.submission.analysis).toBeUndefined();
+  expect(memoUpdateState(undone).submitted).toBe(legacy);
 });

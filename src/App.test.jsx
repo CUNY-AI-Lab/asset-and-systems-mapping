@@ -25,7 +25,8 @@ import {
 import { loadLibraryProject, loadProjectLibrary, loadStoredLink, rememberStoredLink, saveProjectToLibrary } from './projectLibrary.js';
 import { memoDraftKey } from './memoDraft.js';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
-import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
+import { appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState } from './memoWorkflow.js';
+import { recordEdit, restoreEdit } from './editHistory.js';
 
 function expectAttachedRelationship(edge) {
   const group = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
@@ -1261,6 +1262,58 @@ describe('Systems Mapping workflow', () => {
     await waitFor(()=>expect(storedProject().graph).toEqual(project.graph));
     expect(document.querySelectorAll('.graph-node')).toHaveLength(2);
     expect(history.getByRole('button',{name:'Redo',exact:true})).toBeEnabled();
+  });
+
+  it('persists first-generation Undo readiness and restores Continue with Redo after reload', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    seedProject(project);
+    preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, { review: {
+      guidance: [], nodes: [{ label: 'Residents', type: 'group', scale: 'micro', evidence: project.submission.text }],
+      connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' },
+    } }) }, 201);
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
+    await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
+    expect(screen.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Edit history' })).getByRole('button', { name: 'Undo', exact: true }));
+    await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(0));
+    expect(storedProject().submission.analysis).toBeUndefined();
+    expect(storedProject().preflight).toBeNull();
+    expect(screen.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+    cleanup(); render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Memo', exact: true }));
+    expect(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Edit history' })).getByRole('button', { name: 'Redo', exact: true }));
+    await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
+    expect(storedProject().submission.analysis).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+    cleanup(); render(<App memoFirstWorkflow startInWorkspace />);
+    expect(await screen.findByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+    expect(storedProject().graph.nodes).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
+  });
+
+  it('retains preflight-only legacy readiness after modern baseline Undo and event pruning', () => {
+    const before = createBlankProject();
+    before.submission.text = 'Residents meet in the community room.';
+    before.submission.fingerprint = stableId('src', before.submission.text);
+    const review = { guidance: [], nodes: [], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const evaluation = evaluationRecord(preflightEvaluationPayload(before, true), { review });
+    before.preflight = { memoReview: review, configurationSnapshot: evaluation.configSnapshot,
+      evaluation: { evaluationId: evaluation.id, runtime: evaluation.runtime, createdAt: evaluation.createdAt, expiresAt: evaluation.expiresAt },
+      sourceFingerprint: stableId('src', before.submission.text) };
+    expect(memoUpdateState(before).submitted).toBe(true);
+    const navigation = structuredClone(before); openMemoWorkflowScale(navigation, 'meso');
+    expect(recordEdit(before, navigation, 'Meso opened')).toBe(false);
+    expect(navigation.editHistory).toBeUndefined();
+    const next = structuredClone(before); appendSubmittedNodes(next, review); recordEdit(before, next, 'Submit memo');
+    const undone = restoreEdit(parseProject(serializeProject(next))).project;
+    expect(undone.submission.analysis).toBeUndefined(); expect(undone.preflight).toEqual(before.preflight);
+    undone.events = [];
+    expect(memoUpdateState(parseProject(serializeProject(undone))).submitted).toBe(true);
   });
 
   it('flushes a pending account interpretation before Undo and restores the visible field', async () => {

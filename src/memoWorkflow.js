@@ -18,8 +18,10 @@ export function memoUpdateState(project) {
   const fingerprint = memoSourceFingerprint(submission.text);
   const outer = ['exosphere', 'macrosphere'].includes(project.activeScale);
   const belongsToPart = scale => scale ? ['exosphere', 'macrosphere'].includes(scale) === outer : !outer && !project.part2Submission;
-  const legacySubmitted = !hasBaseline && Boolean(project.preflight?.evaluation && project.preflight.sourceFingerprint === fingerprint && belongsToPart(project.preflight.configurationSnapshot?.activeScale)
-    || project.events.some(event => event.action === 'preflight.completed' && event.detail === 'Submitted memo nodes added to map' && event.sourceFingerprint === fingerprint && belongsToPart(event.configurationSnapshot?.activeScale)));
+  const restored = project.events.slice().reverse().flatMap(event => ['edit.undo', 'edit.redo'].includes(event.action) && Array.isArray(event.memoSubmissionState) ? event.memoSubmissionState : [])
+    .find(state => state?.part === (outer ? 2 : 1) && state.sourceFingerprint === fingerprint && typeof state.submitted === 'boolean');
+  const legacySubmitted = !hasBaseline && (restored ? restored.submitted : Boolean(project.preflight?.evaluation && project.preflight.sourceFingerprint === fingerprint && belongsToPart(project.preflight.configurationSnapshot?.activeScale)
+    || project.events.some(event => event.action === 'preflight.completed' && event.detail === 'Submitted memo nodes added to map' && event.sourceFingerprint === fingerprint && belongsToPart(event.configurationSnapshot?.activeScale))));
   const changed = hasBaseline ? analysis.contentFingerprint !== memoContentFingerprint(submission.text) : Boolean(submission.text.trim()) && !legacySubmitted;
   return { hasBaseline, changed, pending: changed, submitted: hasBaseline ? !changed : legacySubmitted };
 }

@@ -1,4 +1,5 @@
 import { createEvent, stableId, validateProject, SCALE_ORDER } from './domain.js';
+import { memoUpdateState } from './memoWorkflow.js';
 import { EDIT_HISTORY_LIMIT, EDIT_HISTORY_BYTES, MEMO_EDIT_FIELDS, editHistoryIssue } from '../shared/edit-history-contract.js';
 
 const empty = () => ({ version: 1, past: [], future: [] });
@@ -18,6 +19,7 @@ function records(collection) {
 }
 function snapshot(project) {
   return { graph: records(project.graph), candidates: records(project.candidates), submission: memo(project.submission), part2Submission: memo(project.part2Submission),
+    memoCompletion: { part1: memoUpdateState({ ...project, activeScale: 'micro' }).submitted, part2: Boolean(project.part2Submission && memoUpdateState({ ...project, activeScale: 'exosphere' }).submitted) },
     title: project.title, participantName: project.participantName || '', inquiry: project.inquiry,
     notes: Object.fromEntries(SCALE_ORDER.map(scale => [scale, scale === project.activeScale ? project.reflection : project.levelProgress[scale].reflection])),
     mapNote: project.mapAnnotation.text, layout: clone(project.layout || {}) };
@@ -83,7 +85,19 @@ function applySnapshot(project, state) {
 /** Record only editable values; navigation and transient view state are absent. */
 export function recordEdit(before, after, label = 'Edit map', { at = Date.now(), coalesce = true } = {}) {
   if (before.id !== after.id) return false;
-  const previous = snapshot(before), current = snapshot(after), changes = difference(previous, current);
+  const previous = snapshot(before), current = snapshot(after), rawChanges = difference(previous, current);
+  // Clearing a transient preflight while opening a view is navigation, not an
+  // edit. Readiness belongs in history only alongside that memo's content.
+  const changes = rawChanges.filter(change => change.path[0] !== 'memoCompletion'
+    || rawChanges.some(item => item.path[0] === (change.path[1] === 'part1' ? 'submission' : 'part2Submission')));
+  // Even true-to-true legacy adoption must retain the earlier readiness proof.
+  // Otherwise undoing its first modern baseline is indistinguishable from the
+  // first successful submission of a new memo.
+  for (const [key, part] of [['submission', 'part1'], ['part2Submission', 'part2']]) {
+    if (!previous[key].analysis && current[key].analysis && !changes.some(change => change.path[0] === 'memoCompletion' && change.path[1] === part)) {
+      changes.push({ kind: 'value', path: ['memoCompletion', part], before: { present: true, value: previous.memoCompletion[part] }, after: { present: true, value: current.memoCompletion[part] } });
+    }
+  }
   if (!changes.length) return false;
   const history = before.editHistory && !editHistoryIssue(before.editHistory) ? clone(before.editHistory) : empty();
   const boundedLabel = String(label || 'Edit map').slice(0, 160);
@@ -121,10 +135,34 @@ export function restoreEdit(project, direction = 'undo') {
   if (!entry) return { project: null, error: `Nothing to ${direction}.` };
   try {
     const next = clone(project);
-    applySnapshot(next, applyChanges(snapshot(project), entry.changes, direction));
+    const restored = applyChanges(snapshot(project), entry.changes, direction);
+    applySnapshot(next, restored);
+    const memoSubmissionState = [];
+    for (const [key, part] of [['submission', 1], ['part2Submission', 2]]) {
+      if (!next[key]) continue;
+      const readinessPath = entry.changes.some(change => change.path[0] === 'memoCompletion' && change.path[1] === `part${part}`);
+      const removedBaseline = Boolean(project[key]?.analysis && !next[key].analysis);
+      if (!readinessPath && !removedBaseline) continue;
+      let submitted = restored.memoCompletion[`part${part}`];
+      const fingerprint = stableId('src', next[key].text);
+      if (!readinessPath && removedBaseline) {
+        // Older journals have no readiness value. Exclude the completion that
+        // created this baseline, while retaining genuinely earlier proofs.
+        const matches = event => event.action === 'preflight.completed' && event.detail === 'Submitted memo nodes added to map'
+          && event.sourceFingerprint === project[key].analysis.sourceFingerprint
+          && (['exosphere', 'macrosphere'].includes(event.configurationSnapshot?.activeScale) ? 2 : 1) === part;
+        const completion = project.events.findLastIndex(event => matches(event) && Date.parse(event.at) <= entry.at);
+        const historical = { ...next, activeScale: part === 1 ? 'micro' : 'exosphere', preflight: null,
+          events: completion >= 0 ? project.events.slice(0, completion) : [] };
+        submitted = memoUpdateState(historical).submitted;
+      }
+      if (removedBaseline && !submitted && next.preflight?.sourceFingerprint === fingerprint
+        && (['exosphere', 'macrosphere'].includes(next.preflight.configurationSnapshot?.activeScale) ? 2 : 1) === part) next.preflight = null;
+      memoSubmissionState.push({ part, sourceFingerprint: fingerprint, submitted });
+    }
     next.editHistory[source].pop(); next.editHistory[target].push(entry);
     next.updatedAt = new Date(Math.max(Date.now(), Date.parse(project.updatedAt) + 1)).toISOString();
-    next.events.push(createEvent(`edit.${direction}`, `${direction === 'undo' ? 'Undid' : 'Redid'} ${entry.label}`));
+    next.events.push(createEvent(`edit.${direction}`, `${direction === 'undo' ? 'Undid' : 'Redid'} ${entry.label}`, 'student', memoSubmissionState.length ? { memoSubmissionState } : {}));
     if (next.events.length > 500) next.events = next.events.slice(-500);
     validateProject(next);
     return { project: next, error: '' };

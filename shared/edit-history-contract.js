@@ -10,6 +10,7 @@ export function editPathAllowed(path) {
   if (['graph', 'candidates'].includes(root)) return path.length === 2 && ['nodeOrder', 'edgeOrder'].includes(field)
     || path.length >= 3 && ['nodes', 'edges'].includes(field);
   if (['submission', 'part2Submission'].includes(root)) return path.length === 2 && MEMO_EDIT_FIELDS.includes(field) || field === 'analysis' && path.length >= 3;
+  if (root === 'memoCompletion') return path.length === 2 && ['part1', 'part2'].includes(field);
   if (root === 'notes') return path.length === 2 && ['micro', 'meso', 'exosphere', 'macrosphere'].includes(field);
   if (root === 'layout') return path.length === 2 && ['autoFit', 'manualNodeIds', 'readingAspect', 'phoneOverview'].includes(field);
   return path.length === 1 && ['title', 'participantName', 'inquiry', 'mapNote'].includes(root);
@@ -38,6 +39,7 @@ export function editHistoryIssue(history) {
     if (changes > 4000) return 'contains too many changes';
     for (const change of entry.changes) {
       if (!plain(change) || !editPathAllowed(change.path)) return 'contains a disallowed edit path';
+      if (change.path[0] === 'memoCompletion' && (change.kind !== 'value' || change.before?.present !== true || change.after?.present !== true || typeof change.before.value !== 'boolean' || typeof change.after.value !== 'boolean')) return 'contains invalid memo completion state';
       if (change.kind === 'value') {
         if (!exact(change, ['kind', 'path', 'before', 'after']) || !box(change.before) || !box(change.after)) return 'contains an invalid value change';
       } else if (change.kind === 'text') {
