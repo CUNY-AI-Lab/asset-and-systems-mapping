@@ -162,8 +162,17 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome reop
       await browserExpect(page.getByRole('button',{name:'Submit memo and add nodes',exact:true})).toHaveCount(0);
       await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
     }
+    // Edit changes the course-guidance stage and starts two fixture reads.
+    // Wait for their completion before unrouteAll changes interception; waiting
+    // only for the textarea leaves the slower builder response in flight.
+    const editResponses=Promise.all(['preflight','builder'].map(kind=>page.waitForResponse(response=>{
+      const url=new URL(response.url());
+      return url.pathname==='/api/config/public' && url.searchParams.get('configKind')===kind
+        && url.searchParams.get('stageId')==='review-suggestions';
+    })));
     await page.getByRole('button',{name:'Edit',exact:true}).click();
     await browserExpect(page.getByRole('textbox',{name:'First memo',exact:true})).toHaveValue(project.submission.text);
+    for(const response of await editResponses) { expect(response.ok()).toBe(true); expect(await response.finished()).toBeNull(); }
   } finally {await context.unrouteAll({behavior:'wait'});await browser.close();}
 },30000);
 

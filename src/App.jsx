@@ -34,7 +34,7 @@ import { exportMapImage, downloadBlob } from './mapExport.js';
 import MapListView from './MapListView.jsx';
 import MapTextEditor from './MapTextEditor.jsx';
 import NodeClassificationEditor from './NodeClassificationEditor.jsx';
-import { reclassifyNode } from './nodeClassification.js';
+import { reclassifyNode, nodeClassificationTypes } from './nodeClassification.js';
 import { correspondingNode, nodeLabelIssue, relationshipIssue, reviseMapText } from './mapTextEditing.js';
 import MapConnections from './MapConnections.jsx';
 import MapSearch from './MapSearch.jsx';
@@ -5330,7 +5330,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     if (!newNode.label.trim()) return toast('Name the node before adding it.', 'error');
     if (!isCanonicalMapElementLabel(newNode.label, newNode.scale)) return toast('Name one complete map item instead of a reference, time, modifier, action, or fragment.', 'error');
     if (containsRetiredSystemsLanguage(newNode.label)) return toast('Use a direct, conventional name for the map item.', 'error');
-    if (!isNodeTypeAllowedAtScale(newNode.type, newNode.scale) || !(isNodeReviewScale(newNode.scale) || notebook?.simple && newNode.scale === 'macrosphere')) return toast('Choose a type and level that belong together.', 'error');
+    if (!(notebook?.simple ? nodeClassificationTypes(newNode.scale).includes(newNode.type) : isNodeTypeAllowedAtScale(newNode.type, newNode.scale)) || !(isNodeReviewScale(newNode.scale) || notebook?.simple && newNode.scale === 'macrosphere')) return toast('Choose a type and level that belong together.', 'error');
     if (newNode.scale === 'micro' && !isDiscreteMicroNodeLabel(newNode.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (project.instructor.evidenceRequired && !newNode.evidence.trim()) return toast('Add evidence or a question before adding the node.', 'error');
     const id = stableId('node', `${newNode.label}:${Date.now()}`);
@@ -5595,10 +5595,11 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
           {isPart2(project.activeScale) && <p>{newNode.scale === 'macrosphere' ? 'Name a broader policy, value or condition. Named organizations belong in Exo.' : 'Name an outside organization, resource or decision setting that affects the local situation.'}</p>}
           <Field label="Label"><textarea className="map-label-input" rows="1" maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
           <div className="field-pair">
-            <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale)).map((type) => <option key={type}>{type}</option>)}</select></Field>
+            <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{(notebook?.simple ? nodeClassificationTypes(newNode.scale) : NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale))).map((type) => <option key={type}>{type}</option>)}</select></Field>
             <Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => {
               const scale = event.target.value;
-              const type = isNodeTypeAllowedAtScale(current.type, scale) ? current.type : (scale === 'macrosphere' ? 'policy' : scale === 'exosphere' ? 'institution' : 'person');
+              const allowed = notebook?.simple ? nodeClassificationTypes(scale).includes(current.type) : isNodeTypeAllowedAtScale(current.type, scale);
+              const type = allowed ? current.type : (scale === 'macrosphere' ? 'policy' : scale === 'exosphere' ? 'institution' : 'person');
               return { ...blankManualNode(scale, notebook?.simple), label: current.label, evidence: current.evidence, type };
             })}>{project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere').map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
           </div>
