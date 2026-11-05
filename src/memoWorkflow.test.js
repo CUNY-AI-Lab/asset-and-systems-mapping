@@ -57,6 +57,14 @@ it('caps the initial set instead of filling the map with suggestions',()=>{
   expect(submittedReviewIssue({...review([]),guidance:[{point:'Try adding more nodes'}]},'micro',local.evidence)).toMatch(/no guidance/);
 });
 
+it.each(['government', 'schools', 'big institutions'])('rejects an unspecified Exo setting: %s',label=>{
+  const node = {...outer[0], label, evidence: `${label} should help.`};
+  expect(submittedReviewIssue(review([node]),'exosphere',node.evidence)).toMatch(/not a named institution/);
+});
+it('accepts an empty grounded result when Part 2 provides only broad wishes',()=>{
+  expect(submittedReviewIssue(review([]),'exosphere','Schools need more funding. Government should help.')).toBeNull();
+});
+
 it('keeps Exo and Macro type choices paired with their level in the model schema',()=>{
   const [exo,macro]=nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf;
   expect(exo.properties.scale.enum).toEqual(['exosphere']);

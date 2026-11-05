@@ -5360,6 +5360,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setSelection({ kind: 'edge', id });
     setInspectorTab('relationships');
     setConnectionSource(null);
+    if (notebook?.simple) { setConnecting(false); setAnnouncement('Relationship added.'); }
     setAddMode(null);
     toast('Relationship added.');
   };
@@ -5562,7 +5563,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
             ? `${relationshipSource.label} and ${relationshipTarget.label}`
             : selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Map details')}</h2>}
           <div className="inspector__actions">
-            {project.instructor.allowResearchLeads && (!notebook || addMode) && SCALE_ORDER.includes(project.activeScale) && <div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions">{<button type="button" onClick={() => { setNewNode(blankManualNode(project.activeScale, notebook?.simple)); setAddMode('node'); setCreateMenuOpen(false); }}>{isRelationshipReviewScale(project.activeScale) ? 'Missing node' : 'Node'}</button>}{project.activeScale !== 'micro' && <button type="button" onClick={() => { relationshipDraft.start(); setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button>}</div>}</div>}
+            {project.instructor.allowResearchLeads && !notebook?.simple && (!notebook || addMode) && SCALE_ORDER.includes(project.activeScale) && <div className="inspector-add-menu"><button type="button" aria-expanded={createMenuOpen} aria-controls="inspector-add-actions" onClick={() => setCreateMenuOpen((current) => !current)}>Add</button>{createMenuOpen && <div id="inspector-add-actions">{<button type="button" onClick={() => { setNewNode(blankManualNode(project.activeScale, notebook?.simple)); setAddMode('node'); setCreateMenuOpen(false); }}>{isRelationshipReviewScale(project.activeScale) ? 'Missing node' : 'Node'}</button>}{project.activeScale !== 'micro' && <button type="button" onClick={() => { relationshipDraft.start(); setAddMode('edge'); setCreateMenuOpen(false); }}>Relationship</button>}</div>}</div>}
             <button className="inspector-done" type="button" onClick={closeInspector}>Done</button>
           </div>
         </div>
