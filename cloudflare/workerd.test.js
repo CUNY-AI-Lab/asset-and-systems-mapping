@@ -63,7 +63,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   const stored=async()=>JSON.parse((await(await request(`/api/cloud/projects/${project.id}`)).json()).project);
   const first='Residents meet in the community room.';
-  const second='Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home. Capital repair funding policy delays elevator repairs.';
+  const second='Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home. Unequal housing investment delays elevator repairs.';
   try {
     await page.goto(ORIGIN);await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
     await page.getByLabel('Upload Part 1 memo',{exact:true}).setInputFiles({name:'first.txt',mimeType:'text/plain',buffer:Buffer.from(first)});

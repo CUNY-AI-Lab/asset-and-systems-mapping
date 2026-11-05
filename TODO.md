@@ -3,8 +3,8 @@
 - [x] Research primary ecological definitions and document the explicit course convention.
 - [x] Correct new-output prompt/schema/validation and manual classifications: policies/offices at Exo; cultural and structural conditions at Macro.
 - [ ] Verify focused and full regressions, including saved-map compatibility and manual connections.
-- [ ] Deploy to Dev; exercise fictional Micro, Exo-policy and Macro-cultural examples through the model.
-- [ ] Capture Micro only, Micro + Exo, and the complete map, with fictional names and student-authored example connections.
+- [x] Deploy to Dev; five live GPT-OSS 120B submissions passed: vague Micro/Part 2 returned zero nodes, specific Micro six, Exo office/policy two, incremental Macro cultural/economic conditions two; zero generated relationships.
+- [x] Capture Micro only, Micro + Exo, and complete map with fictional names and manual connections. Corrected the empty Macro ring that appeared before Macro content. Exports verify eight prior nodes, two prior relationships and Memo 1 unchanged; reopening preserves the entire graph and both memos.
 - [ ] Promote the checked version to production and record exact deployment evidence.
 
 # Current task — Memo workspace (November 4, late evening)
