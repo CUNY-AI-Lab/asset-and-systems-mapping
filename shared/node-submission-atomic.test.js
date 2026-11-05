@@ -68,3 +68,33 @@ it('keeps the same subject restriction in initial and corrective prompts without
     expect(instruction).toContain('Never split or rename an existing student node');
   }
 });
+
+
+it('reports a later new subject bundle before an earlier assembled table quotation', () => {
+  const narrative = 'Caregivers meet pupils at Birch Hall. Principals meet pupils at Birch Hall. Assistant principals also attend.';
+  const nodes = [
+    { label: 'Caregivers', type: 'group', scale: 'micro', evidence: 'Caregivers | meet pupils at Birch Hall.' },
+    { label: 'Principals/Assistant Principals', type: 'role', scale: 'micro', evidence: 'Principals meet pupils at Birch Hall.' },
+  ];
+  const response = wrap(nodes), before = structuredClone(response);
+  const issue = submittedReviewIssue(response, 'micro', narrative);
+  expect(issue).toBe(`nodes[1].label ${SUBMISSION_SUBJECT_ISSUE}`);
+  expect(createMemoContractRepair(response, issue, 'micro')).toEqual({ path: 'nodes[1].label', value: nodes[1].label });
+  expect(response).toEqual(before);
+  // Repairing the subject does not excuse a reconstructed quote.
+  nodes[1].label = 'Principals';
+  expect(submittedReviewIssue(response, 'micro', narrative)).toMatch(/^nodes\[0\]\.evidence must quote/);
+  nodes[0].evidence = 'Caregivers meet pupils at Birch Hall.';
+  expect(submittedReviewIssue(response, 'micro', narrative)).toBeNull();
+});
+
+it('keeps table quotation rules in both initial and incremental node prompts', () => {
+  for (const scale of ['micro', 'exosphere']) {
+    for (const update of [undefined, { existingNodes: [] }]) {
+      const instruction = nodeSubmissionInstruction(scale, update);
+      expect(instruction).toContain('TABLE EVIDENCE');
+      expect(instruction).toContain('copy a contiguous source passage or cell exactly');
+      expect(instruction).toContain('Do not assemble separate cells or columns with pipes');
+    }
+  }
+});

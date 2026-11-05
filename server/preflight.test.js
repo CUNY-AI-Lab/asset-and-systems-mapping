@@ -389,6 +389,32 @@ describe('persistent preflight suggestion review queue', () => {
     expect(rows[0].suggestion_json).not.toContain(bundled);
   });
 
+  it('repairs a later compound table subject before spending the correction only on an earlier assembled quote', async () => {
+    const sourceMaterial = 'Case: pupils attend Birch Hall each weekday. Caregivers meet pupils at Birch Hall. Principals meet pupils at Birch Hall. Assistant principals also attend. These entries describe direct participants in the same local setting.';
+    const provider = vi.fn(async input => {
+      const repairing = Boolean(input.memoContext?.contractRepair);
+      expect(input.systemPrompt).toContain('copy a contiguous source passage or cell exactly');
+      if (repairing) expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[1].label', value: 'Principals/Assistant Principals' });
+      return { suggestion: { guidance: [], nodes: [
+        { label: 'Caregivers', type: 'group', scale: 'micro', evidence: repairing ? 'Caregivers meet pupils at Birch Hall.' : 'Caregivers | meet pupils at Birch Hall.' },
+        { label: repairing ? 'Principals' : 'Principals/Assistant Principals', type: 'role', scale: 'micro', evidence: 'Principals meet pupils at Birch Hall.' },
+      ], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'table-subject-first.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', sourceMaterial }));
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(result.runtime.correctiveRetries).toBe(1);
+    expect(result.runtime.evidenceRepairAttempts).toBeUndefined();
+    expect(result.review.nodes.map(node => node.label)).toEqual(['Caregivers', 'Principals']);
+    expect(result.review.connections).toEqual([]);
+    const rows = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].suggestion_json).not.toContain('Principals/Assistant Principals');
+    expect(rows[0].suggestion_json).not.toContain('Caregivers |');
+  });
+
   it('rejects model-created links in the node-only contract after its bounded corrective attempt', async () => {
     const provider = vi.fn(async()=>({suggestion:{guidance:[],nodes:[],connections:[{source:'a',target:'b',verb:'supports'}],example:null,readiness:{ready:true,note:'Nodes identified.'}},metadata:{provider:'ollama-cloud',model:'server-model'}}));
     await system.close();

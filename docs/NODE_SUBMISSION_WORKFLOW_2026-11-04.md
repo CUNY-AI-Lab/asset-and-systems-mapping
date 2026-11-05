@@ -54,7 +54,11 @@ separate nodes within the same six-node limit. A single official name, acronym,
 locality qualifier or demographic/caregiving population remains eligible. This
 narrow guard applies only to new submissions: stored reviews and exact
 `existingId` echoes of student-edited labels remain readable and unchanged.
-The shared cache contract is `memo-workspace-atomic-nodes-v10`, used by both
+Fresh subject bundles are checked across the response before evidence repairs,
+so an early bad quote cannot conceal a later combined role until the final
+attempt. Table evidence must copy actual source passages or cells, never
+reconstruct quotations by joining columns. Quote validation remains strict.
+The shared cache contract is `memo-workspace-table-subjects-v11`, used by both
 browser reuse and durable generation jobs.
 
 Acceptance requires source regressions, Worker/browser tests, real supplied
