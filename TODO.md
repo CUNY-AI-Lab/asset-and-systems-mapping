@@ -1,11 +1,17 @@
-## November 5: policies at Exo and three cumulative screenshots
+## Policy classification and map controls release — November 5, 2026
 
-- [x] Research primary ecological definitions and document the explicit course convention.
-- [x] Correct new-output prompt/schema/validation and manual classifications: policies/offices at Exo; cultural and structural conditions at Macro.
-- [ ] Verify focused and full regressions, including saved-map compatibility and manual connections.
-- [x] Deploy to Dev; five live GPT-OSS 120B submissions passed: vague Micro/Part 2 returned zero nodes, specific Micro six, Exo office/policy two, incremental Macro cultural/economic conditions two; zero generated relationships.
-- [x] Capture Micro only, Micro + Exo, and complete map with fictional names and manual connections. Corrected the empty Macro ring that appeared before Macro content. Exports verify eight prior nodes, two prior relationships and Memo 1 unchanged; reopening preserves the entire graph and both memos.
-- [ ] Promote the checked version to production and record exact deployment evidence.
+Deployed application source **`15d0656d61bd3c4a995403c72a5449c8b4203e09`** is verified on Dev and production. [PR 80](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/pull/80) integrated the classification and Map key work; the final follow-up places Edit beside the selected item’s name at the top left. This completion receipt changes documentation only.
+
+- Concrete policies/laws and outside offices belong at Exo under the explicit course convention. Macro requires independently evidenced cultural, ideological, historical or economic conditions. Prompt, schema, validation, editing choices and Map key agree; stored student maps remain unchanged until explicitly edited.
+- The map reveals one, two and three nested regions as Micro, Exo and Macro content is added. Empty Macro space is not shown early. The Map key explains default/custom colors and student-authored relationships. Edit is grouped with the selected label, separate from workspace navigation.
+- [Exact-main CI](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42079295705): 1,983 unit/Worker/account checks passed, 12 skipped; 112 legacy browser checks passed, 12 skipped. All 41 package checksums, source/tree, configuration, lockfile and GitHub archive digest match. Earlier failed browser checks exposed stale empty-Macro expectations; six corrected desktop/phone scenarios passed before final CI.
+- Dev: version `4714e0db-f9cc-4743-8cb0-00c415c7c307`, deployment `b1c65df6-274a-4215-a4ae-6a1f4db27f83`, at `2026-11-05T17:55:53.492086Z`. Production: version `7fe7c6c7-b1be-4a0f-9ffc-50fd993072e5`, deployment `d8cbdd0a-7648-43ed-b82f-61dc960a5754`, at `2026-11-05T18:25:28.001421Z`. Both serve the exact checked source and all 36 matching files at 100% traffic, with stable runtime/bindings preserved.
+- Signed-in Dev acceptance used five fictional memo submissions on the configured GPT-OSS 120B route: vague Micro/outer passages returned zero nodes; specific Micro returned six, Exo two (office/policy), and an incremental Macro passage added two (cultural/economic conditions). No generated relationships. Eight prior nodes, two prior student relationships and Memo 1 remained exact; reload/reopen preserved the entire graph and both memos.
+- Three reviewed Dev captures show Micro only, Micro + Exo and the complete map. They retain their actual `f8355cd`/`cf84f1a` source provenance; later key/Edit text changes do not alter the pictured graph. The final source passed 17 account browser checks and 15 editing/responsive checks locally (one duplicate viewport skip). The CUNY session expired before a final authenticated UI repeat; no new production model or map mutation is claimed.
+
+Research and bounded validation: [classification evidence](docs/CLASSIFICATION_EVIDENCE_2026-11-04.md). The earlier Gemma/Kimi comparison used the old policy-as-Macro rubric and is historical evidence, not proof of this corrected ontology. Finite tests do not guarantee flawless semantic classification.
+
+Private records: `work/macro-classification-review/`; three screenshots and manifests: `outputs/macro-classification-review/`. Sanitized local archive: `~/.local/share/cail-change-records/2026-11-05-systems-mapping-policy-classification/`. Prior external-board publication and production test-field restoration remain separately approval-blocked and untouched.
 
 # Current task — Memo workspace (November 4, late evening)
 
@@ -50,7 +56,7 @@ The receipt below separates local checks, signed-in Dev/model acceptance, the ex
 
 ## Memo workspace release receipt — November 5, 2026
 
-**Deployed to Dev and production from the successful exact-main package.** Application source remains `4fe7b550e644664ed631f0c51107cd4118943c79`; this receipt changes documentation only. Source checks, signed-in Dev/model work, the ten Dev captures and bounded production inspection are described separately below.
+**Earlier memo-workspace release, superseded by the classification release above.** Application source was `4fe7b550e644664ed631f0c51107cd4118943c79`; this receipt changes documentation only. Source checks, signed-in Dev/model work, the ten Dev captures and bounded production inspection are described separately below.
 
 | Evidence | Verified scope |
 | --- | --- |
