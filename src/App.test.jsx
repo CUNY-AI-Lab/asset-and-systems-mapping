@@ -1117,6 +1117,12 @@ describe('Systems Mapping workflow', () => {
     expect(within(screen.getByRole('complementary',{name:'Notebook'})).getByRole('region',{name:'Map tools'})).toBeVisible();
     expect(document.querySelector('.notebook-tools-panel')).toBeNull();
     expect(screen.getByRole('checkbox',{name:'Auto-fit layout'})).toBeChecked();
+    fireEvent.keyDown([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Capital repair funding policy')),{key:'Enter'});
+    expect(screen.queryByRole('region',{name:'Map tools'})).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button',{name:'Remove',exact:true}));
+    expect(screen.getByRole('button',{name:'Add to map',exact:true})).toBeVisible();
+    fireEvent.click(screen.getByRole('button',{name:'Add to map',exact:true}));
+    expect(screen.getByRole('button',{name:'Remove',exact:true})).toBeVisible();
     await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Capital repair funding policy'));
   });
 

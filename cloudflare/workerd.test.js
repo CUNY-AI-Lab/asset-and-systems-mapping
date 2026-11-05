@@ -73,6 +73,10 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
     await page.getByRole('button',{name:'Connect from Residents',exact:true}).click();
+    await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await browserExpect(page.getByRole('button',{name:'Resume relationship',exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'Connect from Residents',exact:true}).click();
     await page.locator('.graph-node').filter({hasText:'Community room'}).press('Enter');
     await page.getByRole('textbox',{name:'Relationship',exact:true}).fill('meet in');
     await page.getByRole('button',{name:'Add relationship',exact:true}).click();
