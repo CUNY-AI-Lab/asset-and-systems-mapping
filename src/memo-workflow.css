@@ -55,6 +55,9 @@
 .memo-submit-top { position:sticky; top:0; z-index:2; padding-block:6px; background:var(--surface); }
 .memo-submit-top .button { width:100%; }
 .intake-stage .memo-submit-top { max-width:420px; margin-bottom:12px; }
+@media (min-width: 701px) {
+  .map-stage--notebook:has(.notebook-nav-row--simple) .sidebar-resizer { display:flex; }
+}
 
 .is-reading-view .graph-node.graph-node--exosphere { --node-color:#26756d; }
 .is-reading-view .graph-node.graph-node--macrosphere { --node-color:#805491; }

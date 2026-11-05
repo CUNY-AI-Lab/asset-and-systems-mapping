@@ -103,7 +103,12 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     expect(before.graph.edges[1].relationshipIds).toEqual([before.graph.edges[0].id]);
     await page.getByRole('button',{name:'Hide sidebar',exact:true}).click();await browserExpect(page.getByRole('complementary',{name:'Notebook'})).toHaveCount(0);
     await page.getByRole('button',{name:'Notebook',exact:true}).click();
-    const resizer=page.getByRole('separator',{name:'Resize sidebar',exact:true});const width=Number(await resizer.getAttribute('aria-valuenow'));await resizer.press('ArrowLeft');await browserExpect(resizer).toHaveAttribute('aria-valuenow',String(width+16));
+    const resizer=page.getByRole('separator',{name:'Resize sidebar',exact:true});
+    for(const viewportWidth of [1024,1440]) {
+      await page.setViewportSize({width:viewportWidth,height:1000});
+      await browserExpect(resizer).toBeVisible();
+      const width=Number(await resizer.getAttribute('aria-valuenow'));await resizer.press('ArrowLeft');await browserExpect(resizer).toHaveAttribute('aria-valuenow',String(width+16));
+    }
     await page.getByRole('button',{name:'Tools',exact:true}).click();await browserExpect(page.locator('#map-inspector .notebook-tools-inline')).toBeVisible();await browserExpect(page.locator('.notebook-tools-panel')).toHaveCount(0);
     await browserExpect(page.getByRole('checkbox',{name:'Auto-fit layout'})).toBeChecked();
     expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
