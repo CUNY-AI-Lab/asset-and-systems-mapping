@@ -70,6 +70,10 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await page.getByRole('button',{name:'Submit memo and add nodes',exact:true}).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(2);await browserExpect(page.locator('.graph-edge')).toHaveCount(0);
     await browserExpect(page.getByText('Set aside',{exact:true})).toHaveCount(0);
+    await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
+    await page.getByRole('button',{name:'Done',exact:true}).click();
+    await browserExpect(page.getByRole('heading',{name:'Micro · local nodes',exact:true})).toBeVisible();
+    await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
     await page.getByRole('button',{name:'Connect from Residents',exact:true}).click();
@@ -115,7 +119,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await page.screenshot({path:'/tmp/systems-three-spheres-desktop.png'});
     await page.reload();await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(4);expect((await stored()).graph).toEqual(before.graph);
-    await page.getByRole('button',{name:'Notebook',exact:true}).click();
+    await browserExpect(page.getByRole('complementary',{name:'Notebook'})).toBeVisible();
     for(const width of [390,320]){await page.setViewportSize({width,height:844});await browserExpect(page.locator('.graph-node')).toHaveCount(4);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await browserExpect(page.getByRole('button',{name:'Finish map',exact:true})).toBeInViewport();}
     expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
     await page.screenshot({path:'/tmp/systems-three-spheres-phone.png'});expect(errors).toEqual([]);
@@ -433,9 +437,13 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await browserExpect(page.getByRole('alert')).toContainText('Your unsynced copy remains on this device');
     for (const width of [1440, 1024, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      const alert = await page.getByRole('alert').boundingBox();
+      // The wrapped account notice updates the measured stage inset on resize.
+      await browserExpect.poll(async () => {
+        const alert = await page.getByRole('alert').boundingBox();
+        const stage = await page.locator('.map-stage').boundingBox();
+        return alert.y + alert.height - stage.y;
+      }).toBeLessThanOrEqual(1);
       const stage = await page.locator('.map-stage').boundingBox();
-      expect(alert.y + alert.height).toBeLessThanOrEqual(stage.y + 1);
       expect(stage.width).toBeGreaterThan(width * .94);
       expect(stage.height).toBeGreaterThan(450);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

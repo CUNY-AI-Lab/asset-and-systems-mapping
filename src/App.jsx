@@ -4827,6 +4827,12 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   };
   const closeInspector = useCallback(() => {
     if (connecting) { cancelConnection(); return; }
+    if (notebook?.simple) {
+      setSelection(null); setFocus(null); setAddMode(null); setToolsOpen(false);
+      setCollapsedPanel(null); setDrawerOpen(true); notebook.onChange(true);
+      onPanelMode?.('review');
+      return;
+    }
     setCollapsedPanel(panelMode);
     notebook?.onChange(false);
     setDrawerOpen(false);
@@ -4836,7 +4842,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       const trigger = selectionTriggerRef.current;
       (target || (trigger?.isConnected ? trigger : null) || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
     });
-  }, [selection, panelMode, notebook?.onChange, connecting, addMode, connectionSource, cancelConnection]);
+  }, [selection, panelMode, notebook?.onChange, notebook?.simple, onPanelMode, connecting, addMode, connectionSource, cancelConnection]);
   const showFullMap = useCallback(() => {
     phoneOverviewViewportKeyRef.current = '';
     onHighlight?.(null);
@@ -7602,7 +7608,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       toast('Copy is unavailable. Select the link text and copy it by hand.', 'error');
     }
   }, [toast]);
-  useEffect(() => { setNotebookOpen(project.stage !== 3); setCompletionDismissed(false); }, [project.id]);
+  useEffect(() => { setNotebookOpen(memoFirstWorkflow || project.stage !== 3); setCompletionDismissed(false); }, [project.id, memoFirstWorkflow]);
   useEffect(() => { if (project.stage !== 3) setNotebookOpen(true); }, [project.stage, project.activeScale]);
   const panelDisabled = initialModelRequired ? ['inspector', 'review'] : [];
   const changePanelMode = (mode, options = {}) => {
