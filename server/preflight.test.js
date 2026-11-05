@@ -242,6 +242,9 @@ describe('persistent preflight suggestion review queue', () => {
     const result = await evaluate(cookie, body);
     expect(result.review).toEqual(review);expect(provider).toHaveBeenCalledTimes(1);
     expect(provider.mock.calls[0][0].systemPrompt).toContain('Students decide and draw ALL relationships');
+    expect(provider.mock.calls[0][0].systemPrompt).toContain('A policy is ALWAYS macrosphere');
+    expect(provider.mock.calls[0][0].systemPrompt).not.toContain('EXOSPHERE MODULES');
+    expect(provider.mock.calls[0][0].systemPrompt).not.toContain('GLOBAL MODULES');
     expect(provider.mock.calls[0][0].carriedConnections).toEqual(body.carriedConnections);
     const stored=JSON.parse(system.db.prepare('SELECT suggestion_json FROM preflight_evaluations WHERE id = ?').get(result.id).suggestion_json);
     expect(stored.generationContract).toBe('student-nodes-v1');expect(stored.nodes).toEqual(nodes);

@@ -105,6 +105,7 @@ describe('map accessibility', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -125,7 +126,7 @@ describe('map accessibility', () => {
       onAnnounce={vi.fn()}
     />);
 
-    const canvas = screen.getByRole('group', { name: /Micro-level map.*Choose a node or connection for details/i });
+    const canvas = screen.getByRole('group', { name: /Micro-level map.*Select a node or relationship to edit it/i });
     const node = screen.getByRole('button', { name: /Rosa, person, Micro-level, evidence recorded/i });
     const connection = screen.getByRole('button', { name: /Rosa supports Peer support group, direction: source to target, Micro-level connection/i });
     expect(canvas).toHaveAttribute('tabindex', '0');
@@ -174,7 +175,7 @@ describe('map accessibility', () => {
       onAnnounce={onAnnounce}
     />);
 
-    const canvas = screen.getByRole('group', { name: /Drag the map or use arrow keys to pan/i });
+    const canvas = screen.getByRole('group', { name: /Micro-level map/i });
     canvas.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 840, bottom: 540, width: 840, height: 540, toJSON: () => ({}) });
     fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: 200, clientY: 180 });
     fireEvent.pointerMove(canvas, { pointerId: 1, button: 0, clientX: 240, clientY: 215 });
@@ -237,7 +238,7 @@ describe('map accessibility', () => {
     expect(within(panel).queryByRole('button', { name: 'Add record' })).not.toBeInTheDocument();
     expect(within(panel).getAllByRole('textbox')).toHaveLength(2);
     expect(within(panel).getByRole('textbox', { name: 'Interpretation' })).not.toHaveAttribute('placeholder');
-    expect(within(panel).getByText('What does this node help explain? What is still uncertain?')).toBeVisible();
+    expect(within(panel).getByText('Where does this connect? What is still uncertain?')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Edit' })).toBeVisible();
     expect(document.querySelector('.item-editor-title p')).toHaveTextContent('Rosa');
     expect(screen.getByRole('button', { name: 'Done' })).toBeVisible();
@@ -259,7 +260,7 @@ describe('map accessibility', () => {
       onViewportChange={onViewportChange}
       onAnnounce={vi.fn()}
     />);
-    const canvas = screen.getByRole('group', { name: /mouse wheel or pinch to zoom/i });
+    const canvas = screen.getByRole('group', { name: /Micro-level map/i });
     canvas.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 840, bottom: 540, width: 840, height: 540, toJSON: () => ({}) });
     const wheelEvent = new WheelEvent('wheel', { deltaY: -100, clientX: 420, clientY: 270, bubbles: true, cancelable: true });
     fireEvent(canvas, wheelEvent);
@@ -285,7 +286,7 @@ describe('map accessibility', () => {
       onViewportChange={onViewportChange}
       onAnnounce={vi.fn()}
     />);
-    const pinchCanvas = screen.getByRole('group', { name: /mouse wheel or pinch to zoom/i });
+    const pinchCanvas = screen.getByRole('group', { name: /Micro-level map/i });
     pinchCanvas.getBoundingClientRect = canvas.getBoundingClientRect;
     fireEvent.pointerDown(pinchCanvas, { pointerId: 11, pointerType: 'touch', button: 0, clientX: 300, clientY: 270 });
     fireEvent.pointerDown(pinchCanvas, { pointerId: 12, pointerType: 'touch', button: 0, clientX: 500, clientY: 270 });
