@@ -135,9 +135,11 @@ browserTest('account Micro map centers its connected network and keeps routes aw
         const point=new DOMPoint(p.x,p.y).matrixTransform(path.getScreenCTM());
         return isolated.some(({box:b})=>point.x>b.left&&point.x<b.right&&point.y>b.top&&point.y<b.bottom);
       }));
-      return {separated,hits};
+      const minNodeFont=Math.min(...[...svg.querySelectorAll('.node-label')].map(el=>parseFloat(getComputedStyle(el).fontSize)*Math.abs(el.getScreenCTM().a)));
+      return {separated,hits,minNodeFont};
     });
-    expect(quality).toEqual({separated:true,hits:false});
+    expect(quality).toMatchObject({separated:true,hits:false});
+    expect(quality.minNodeFont).toBeGreaterThanOrEqual(14);
     if(process.env.WORKSPACE_SCREENSHOTS) {
       await mkdir(process.env.WORKSPACE_SCREENSHOTS,{recursive:true});
       await page.screenshot({path:`${process.env.WORKSPACE_SCREENSHOTS}/connected-micro-account.png`});

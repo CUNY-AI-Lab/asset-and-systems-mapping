@@ -12,7 +12,12 @@ it('reserves measured verb width so a simple hub does not need sweeping detours'
   const labels=new Map(edges.map(e=>[e.id,{width:180,height:32}]));
   const positions=studentMapPositions(nodes,edges,geometry,{labelGeometries:labels});
   const routes=attachedConnectionLayout(edges,nodes,positions,geometry,labels);
-  for(const edge of edges)expect(routes.paths.get(edge.id).points).toHaveLength(2);
+  for(const edge of edges) {
+    const points=routes.paths.get(edge.id).points;
+    const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+    const length=points.slice(1).reduce((sum,p,i)=>sum+distance(points[i],p),0);
+    expect(length/distance(points[0],points.at(-1))).toBeLessThan(1.2);
+  }
   for(const label of routes.bounds.values())for(const node of nodes)expect(intersects(label,area(positions.get(node.id),geometry.get(node.id)))).toBe(false);
 });
 

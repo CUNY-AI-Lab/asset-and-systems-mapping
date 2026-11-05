@@ -26,14 +26,16 @@ export function connectedMicroPositions(nodes, edges, geometries, {manual,aspect
   // Reserve routing lanes as degree/density grows, instead of making the
   // router take long detours around tightly packed cards. Sparse pairs stay close.
   const pressure=Math.min(72,Math.max(0,busiest-2)*10+Math.max(0,links.length-connected.length)*3);
-  const labelWidth=Math.max(0,...links.map(edge=>labelGeometries?.get(edge.id)?.width||0));
-  const gap=Math.max(phone?40:48,labelWidth?labelWidth+36:0)+pressure;
+  const gap=(phone?40:48)+pressure;
   const width=Math.max(...connected.map(n=>geometries.get(n.id).cardWidth));
   const height=Math.max(...connected.map(n=>geometries.get(n.id).cardHeight));
+  const horizontalPitch=Math.max(width+gap,...links.map(edge=>
+    (geometries.get(edge.source).cardWidth+geometries.get(edge.target).cardWidth)/2+(labelGeometries?.get(edge.id)?.width||0)+36));
+  const verticalPitch=height+Math.max(gap,...links.map(edge=>(labelGeometries?.get(edge.id)?.height||0)+40));
   const columns=Math.min(phone?3:5,Math.max(connected.length>=3?3:1,2*Math.round((Math.sqrt(connected.length*Math.min(2,aspectRatio)*.65)-1)/2)+1));
   const rows=2*Math.ceil((Math.ceil(connected.length/columns)-1)/2)+1;
   const center={x:840,y:600};
-  const slots=Array.from({length:rows*columns},(_,i)=>({x:center.x+(i%columns-(columns-1)/2)*(width+gap),y:center.y+(Math.floor(i/columns)-(rows-1)/2)*(height+gap)}))
+  const slots=Array.from({length:rows*columns},(_,i)=>({x:center.x+(i%columns-(columns-1)/2)*horizontalPitch,y:center.y+(Math.floor(i/columns)-(rows-1)/2)*verticalPitch}))
     .sort((a,b)=>distance(a,center)-distance(b,center)||a.y-b.y||a.x-b.x);
   const assigned=new Map(),remaining=[...slots];
   for(const node of connected) {
@@ -61,7 +63,7 @@ export function connectedMicroPositions(nodes, edges, geometries, {manual,aspect
   for(const node of connected) {
     if(manual.has(node.id))continue;
     const p={...assigned.get(node.id)},g=geometries.get(node.id);
-    while(occupied.some(b=>overlaps(bounds(p,g,12),b)))p.y+=height+gap;
+    while(occupied.some(b=>overlaps(bounds(p,g,12),b)))p.y+=verticalPitch;
     positions.set(node.id,p);occupied.push(bounds(p,g,12));
   }
   const core=extent(connected.map(n=>bounds(positions.get(n.id),geometries.get(n.id))));
