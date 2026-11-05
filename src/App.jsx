@@ -4810,9 +4810,10 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       setCreateMenuOpen(false);
       if (panelContent) onPanelMode?.('inspector', { preserveNotebook: true });
       setDrawerOpen(true);
-      if (!notebook || notebook.open) focusInspector();
+      if (notebook?.simple) notebook.onChange(true);
+      if (!notebook || notebook.open || notebook.simple) focusInspector();
     }
-  }, [connecting, connectionSource, project.activeScale, project.graph.nodes, visibleScale, phoneLayout, focusInspector, panelContent, onPanelMode, onHighlight, notebook?.open, newEdge]);
+  }, [connecting, connectionSource, project.activeScale, project.graph.nodes, visibleScale, phoneLayout, focusInspector, panelContent, onPanelMode, onHighlight, notebook?.open, notebook?.simple, notebook?.onChange, newEdge]);
   const followScope = (source, target) => {
     const previous = selection ? [...traceHistory, {selection, visibleScale, focusPage, presentation}].slice(-12) : [];
     if (!scaleNodeIds.has(source) || !scaleNodeIds.has(target)) changeVisibleScale('all');

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { createDefaultProject, parseProject, serializeProject, validateProject } from './domain.js';
 import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
 import { reviewMemoText } from './projectMemo.js';
-import { submittedReviewIssue } from '../shared/node-submission.js';
+import { submittedReviewIssue, nodeSubmissionSchema } from '../shared/node-submission.js';
 
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
 const local = { label:'Residents', type:'group', scale:'micro', evidence:'Residents meet in the community room.' };
@@ -55,4 +55,13 @@ it.each([
 it('caps the initial set instead of filling the map with suggestions',()=>{
   expect(submittedReviewIssue(review(Array.from({length:7},(_,i)=>({...local,label:`Residents ${i}`}))),'micro',local.evidence)).toMatch(/limit/);
   expect(submittedReviewIssue({...review([]),guidance:[{point:'Try adding more nodes'}]},'micro',local.evidence)).toMatch(/no guidance/);
+});
+
+it('keeps Exo and Macro type choices paired with their level in the model schema',()=>{
+  const [exo,macro]=nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf;
+  expect(exo.properties.scale.enum).toEqual(['exosphere']);
+  expect(exo.properties.type.enum).not.toContain('policy');
+  expect(macro.properties.scale.enum).toEqual(['macrosphere']);
+  expect(macro.properties.type.enum).toContain('policy');
+  expect(macro.properties.type.enum).not.toContain('agency');
 });

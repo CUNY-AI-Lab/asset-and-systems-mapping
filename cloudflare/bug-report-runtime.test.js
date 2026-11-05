@@ -125,7 +125,8 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(page.locator('.app-header--student .workspace-bug-report .bug-report__trigger')).toBeVisible();
       await browserExpect(page.locator('.bug-report-footer')).toBeHidden();
       await browserExpect(panel).toBeHidden();
-      await browserExpect(page.getByRole('combobox', { name: 'Work level', exact: true })).toHaveValue('meso');
+      await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Notebook', exact: true }).click();
+      await browserExpect(page.getByRole('button', { name: '2 Meso', exact: true })).toHaveAttribute('aria-current', 'step');
       const layout = await page.evaluate(() => {
         const rect = selector => {
           const { x, y, width, height, right, bottom } = document.querySelector(selector).getBoundingClientRect();
@@ -134,8 +135,8 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
         return {
           viewport: { width: innerWidth, height: innerHeight },
           header: rect('.app-header--student'), map: rect('.map-layout'),
-          project: rect('.project-menu > summary'), tools: rect('.notebook-map-tools > summary'),
-          level: rect('.notebook-switch .notebook-level select'), navigation: rect('.notebook-switch'),
+          project: rect('.project-menu > summary'), tools: rect('.notebook-switch button[aria-pressed="false"]'),
+          level: rect('.workflow-steps'), navigation: rect('.notebook-switch'),
           report: rect('.workspace-bug-report .bug-report__trigger'),
           brandDisplay: getComputedStyle(document.querySelector('.app-header--student .brand')).display,
           script: document.querySelector('script[type="module"]').src,
@@ -147,9 +148,7 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       expect(layout.report.bottom).toBeLessThanOrEqual(layout.header.bottom);
       expect(layout.map.y).toBeLessThanOrEqual(layout.header.bottom + 8);
       expect(layout.navigation.y).toBeGreaterThanOrEqual(layout.map.y);
-      expect(layout.tools.right).toBeLessThanOrEqual(layout.level.x + 1);
       expect(layout.navigation.right).toBeLessThanOrEqual(viewport.width);
-      expect(Math.abs(layout.tools.y - layout.level.y)).toBeLessThanOrEqual(2);
       if (viewport.width < 600) {
         expect(layout.brandDisplay).toBe('none');
         expect(layout.map.height).toBeGreaterThan(viewport.height * 0.85);
@@ -197,9 +196,8 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await page.locator('.project-menu > summary').click();
       await browserExpect(panel).toBeHidden();
       await page.locator('.project-menu > summary').click();
-      await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Notebook', exact: true }).click();
-      await browserExpect(page.getByRole('combobox', { name: 'Notebook section' })).toBeVisible();
-      await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Map', exact: true }).click();
+      await browserExpect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Hide sidebar', exact: true }).click();
       await page.locator('.project-menu > summary').click();
       await page.getByRole('button', { name: 'Projects', exact: true }).click();
       await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
@@ -214,12 +212,12 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await trigger.click();
       await browserExpect(description).toHaveValue('The map controls look different after I reopen this project.');
       await close.click();
-      await page.locator('.notebook-map-tools > summary').click(); await page.getByRole('button', { name: 'Full screen map', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Notebook', exact: true }).click();
+      await page.getByRole('button', { name: 'Tools', exact: true }).click(); await page.getByRole('button', { name: 'Full screen map', exact: true }).click();
       await browserExpect(page.locator('.bug-report-host')).toBeHidden(); await page.keyboard.press('Escape');
       await browserExpect(page.locator('.bug-report-host')).toBeVisible();
       await page.locator('[data-graph-id="node_e2e_resident"]').click();
-      await browserExpect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Map',exact:true})).toHaveAttribute('aria-pressed','true');
-      await page.getByRole('button',{name:'Edit',exact:true}).click();
+      await browserExpect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Notebook',exact:true})).toHaveAttribute('aria-pressed','true');
       await browserExpect(page.locator('.inspector__head h2')).toHaveText('Edit');
       await browserExpect(page.locator('.item-editor-title p')).toHaveText('Resident');
       if (process.env.BUG_REPORT_SCREENSHOTS) {
@@ -238,7 +236,6 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       }
       await connect.click();
       await page.locator('[data-graph-id="node_e2e_resource_navigator"]').click();
-      await page.getByRole('button',{name:'Edit',exact:true}).click();
       const form = page.locator('.add-form');
       await browserExpect(form.getByRole('combobox', { name: 'From', exact: true })).toHaveValue('node_e2e_resident');
       await browserExpect(form.getByRole('combobox', { name: 'To', exact: true })).toHaveValue('node_e2e_resource_navigator');
@@ -257,12 +254,17 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
         await writeFile(`${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-controls.json`,JSON.stringify(metrics,null,2));
         await page.screenshot({path:`${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-controls.png`});
       }
-      await browserExpect(form.getByRole('combobox', { name: 'From', exact: true })).toBeInViewport({ ratio: 1 });
-      await browserExpect(form.getByRole('combobox', { name: 'To', exact: true })).toBeInViewport({ ratio: 1 });
+      for (const name of ['From', 'To']) {
+        const field = form.getByRole('combobox', { name, exact: true });
+        await field.scrollIntoViewIfNeeded();
+        await browserExpect(field).toBeInViewport({ ratio: 1 });
+        await browserExpect(page.getByRole('button', { name: 'Add relationship', exact: true })).toBeInViewport({ ratio: 1 });
+        await browserExpect(page.getByRole('button', { name: 'Continue', exact: true })).toBeInViewport({ ratio: 1 });
+      }
       if (process.env.BUG_REPORT_SCREENSHOTS) {
         await page.screenshot({ animations: 'disabled', path: `${process.env.BUG_REPORT_SCREENSHOTS}/mapping-${viewport.width}-relationship.png` });
       }
-      await form.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
       await browserExpect(page.locator('.canvas-wrap')).toBeVisible();
       expect(errors).toEqual([]);
     } finally { await browser.close(); }

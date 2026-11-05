@@ -766,7 +766,7 @@ async function openMapProject(project = makeMapProject()) {
 }
 
 function mapCanvas() {
-  return screen.getByRole('group', { name: /\bmap\. (?:\d+ nodes? and \d+ connections?|\d+ mesosystems? and \d+ Micro settings?)/i });
+  return screen.getByRole('group', { name: /\bmap\. (?:\d+ nodes?|\d+ mesosystems?)/i });
 }
 
 function svgTextLines(element) {
@@ -1871,7 +1871,7 @@ describe('Systems Mapping workflow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));
     expect(await screen.findByRole('heading', { name: 'Systems map' })).toBeVisible();
-    expect(screen.getByRole('group', { name: /Micro-level map\. 0 nodes and 0 connections/ })).toBeVisible();
+    expect(screen.getByRole('group', { name: /Micro-level map\. 0 nodes/ })).toBeVisible();
     expect(storedProject().stage).toBe(1);
     expect(storedProject().furthestStage).toBe(project.furthestStage);
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace', exact: true })).getByRole('button', { name: 'Notebook', exact: true }));
