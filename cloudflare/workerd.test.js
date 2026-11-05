@@ -71,6 +71,9 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await browserExpect(page.locator('.graph-node')).toHaveCount(2);await browserExpect(page.locator('.graph-edge')).toHaveCount(0);
     await browserExpect(page.getByText('Set aside',{exact:true})).toHaveCount(0);
     await page.locator('.graph-node').filter({hasText:'Residents'}).press('Enter');
+    // Rendering the returned nodes precedes the debounced account save.
+    // Read the baseline only after the server has that same result.
+    await browserExpect.poll(async()=>(await stored()).graph.nodes.some(node=>node.label==='Residents')).toBe(true);
     const residentBefore=(await stored()).graph.nodes.find(node=>node.label==='Residents');
     await browserExpect(page.getByRole('button',{name:'Save classification',exact:true})).toHaveCount(0);
     await page.getByRole('combobox',{name:'Type',exact:true}).selectOption('role');
