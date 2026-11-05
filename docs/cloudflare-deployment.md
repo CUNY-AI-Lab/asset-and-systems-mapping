@@ -258,6 +258,14 @@ anonymous 401 passed. Production was not redeployed.
 
 ## Guidance jobs: long-poll reads
 
+Each account retains at most 40 generation payloads for 24 hours. A new request
+can evict the oldest completed or failed outcome; running, queued and retry-wait
+jobs are preserved. This cache limit does not cap completed memo edits. Request
+tokens remain for seven days so an expired response cannot replay inference.
+The existing 1,000-token, retry and Gateway admission limits remain in force.
+Busy, oversized, invalid and unavailable-storage failures have distinct safe
+messages; a rejected creation does not leave an orphan request token.
+
 `GET /api/cloud/guidance-jobs/<id>?wait=1` holds inside the Durable Object for
 up to 20 seconds while the attempt it owns is running, then returns the current
 page. The browser uses this form with a 30-second request budget and a short

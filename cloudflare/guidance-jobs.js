@@ -6,7 +6,25 @@ export function guidanceJobScope(config, model) {
 }
 
 const TTL = 86400000;
+const JOB_LIMIT = 40;
 const retryCodes = new Set(['upstream_rate_limited', 'upstream_unavailable', 'model_unavailable', 'guidance_in_progress']);
+
+export function guidanceJobFailure(error) {
+  /** @type {Record<string, [number, string, string]>} */
+  const failures = {
+    job_limit: [429, 'guidance_workspace_busy', 'Other requests are still running. Wait for one to finish, then try again.'],
+    request_limit: [429, 'guidance_request_limit', 'Too many recent requests. Try again later; your map remains editable.'],
+    retry_limit: [429, 'guidance_retry_limit', 'This request has reached its retry limit. Try again later; your map remains editable.'],
+    job_input_size: [413, 'guidance_input_too_large', 'This request is too large. Shorten the memo or project details and try again.'],
+    job_input: [400, 'guidance_request_invalid', 'The generation request could not be read. Reopen the map and try again.'],
+    input_depth: [400, 'guidance_request_invalid', 'The generation request could not be read. Reopen the map and try again.'],
+  };
+  /** @type {[number, string, string]} */
+  const detail = Object.hasOwn(failures, error?.message) ? failures[error.message]
+    : [503, 'guidance_storage_unavailable', 'The generation request could not be saved. Try again; your map is unchanged.'];
+  const [status, code, message] = detail;
+  return { status, message, details: { code, shouldRetry: false } };
+}
 function canonical(value, depth = 0) {
   if (depth > 24) throw new Error('input_depth');
   if (Array.isArray(value)) return value.map(item => canonical(item, depth + 1));
@@ -63,6 +81,15 @@ export class GuidanceJobs {
     this.db.prepare("UPDATE cloud_guidance_jobs SET state='failed',outcome=?,status=503,updated_at=? WHERE owner=? AND id=? AND attempt_id=?")
       .run(JSON.stringify({ error, details: { code, shouldRetry: false } }), this.now(), owner, id, attemptId);
   }
+  makeRoom(owner) {
+    if (this.db.prepare('SELECT count(*) AS n FROM cloud_guidance_jobs WHERE owner=?').get(owner).n < JOB_LIMIT) return;
+    // This bounds cached payloads, not how many completed edits a student may
+    // make. Never evict running/queued work or another owner's records. Keep
+    // request-token tombstones so a lost response cannot replay old inference.
+    const oldest = this.db.prepare("SELECT id FROM cloud_guidance_jobs WHERE owner=? AND state IN ('succeeded','failed') ORDER BY updated_at,created_at,id LIMIT 1").get(owner);
+    if (!oldest) throw new Error('job_limit');
+    this.db.prepare("DELETE FROM cloud_guidance_jobs WHERE owner=? AND id=? AND state IN ('succeeded','failed')").run(owner, oldest.id);
+  }
   create(owner, kind, input, scope, retry, run, requestToken = crypto.randomUUID()) {
     if (!['memo', 'connections', 'map-check'].includes(kind) || !input || typeof input !== 'object' || Array.isArray(input)) throw new Error('job_input');
     const encoded = JSON.stringify(input);
@@ -76,10 +103,9 @@ export class GuidanceJobs {
       return this.resume(owner, id, scope, run);
     }
     if (this.db.prepare('SELECT count(*) AS n FROM cloud_guidance_requests WHERE owner=?').get(owner).n >= 1000) throw new Error('request_limit');
-    this.db.prepare('INSERT INTO cloud_guidance_requests VALUES (?,?,?,?)').run(owner, requestToken, id, now);
     let row = this.row(owner, id);
     if (!row) {
-      if (this.db.prepare('SELECT count(*) AS n FROM cloud_guidance_jobs WHERE owner=?').get(owner).n >= 40) throw new Error('job_limit');
+      this.makeRoom(owner);
       this.db.prepare('INSERT INTO cloud_guidance_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
         .run(owner, id, kind, encoded, scope, 'queued', 0, 0, now, now, null, null, JSON.stringify(typeof retry === 'string' ? [retry] : []), null);
     } else {
@@ -93,6 +119,8 @@ export class GuidanceJobs {
         if (row.state === 'failed') this.db.prepare("UPDATE cloud_guidance_jobs SET state='queued',attempts=0,retry_at=0,outcome=NULL,status=NULL,updated_at=? WHERE owner=? AND id=?").run(now, owner, id);
       }
     }
+    // Failed admission must not leave a token pointing to a job never created.
+    this.db.prepare('INSERT INTO cloud_guidance_requests VALUES (?,?,?,?)').run(owner, requestToken, id, now);
     return this.resume(owner, id, scope, run);
   }
   resume(owner, id, scope, run) {

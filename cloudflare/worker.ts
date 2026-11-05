@@ -14,7 +14,7 @@ import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
 import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
-import { GuidanceJobs, guidanceJobScope } from './guidance-jobs.js';
+import { GuidanceJobs, guidanceJobFailure, guidanceJobScope } from './guidance-jobs.js';
 import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
 import { RedmineReports, contactReporting, reportDelivery, reportFallback, reportsEnabled } from './redmine-reports';
@@ -179,7 +179,10 @@ export class MappingCourse extends DurableObject<Bindings> {
         result = creating ? this.jobs.create(owner, body.kind, input, scope, body.retryToken, run, body.requestToken)
           : match![2] ? this.jobs.resume(owner, match![1], scope, run)
           : body.scope === scope ? this.jobs.read(owner, match![1]) : { conflict: true };
-      } catch { return failure('This generation request exceeds the workspace limit or has invalid input.', 400); }
+      } catch (error) {
+        const safe = guidanceJobFailure(error);
+        return Response.json({ error: safe.message, details: safe.details }, { status: safe.status });
+      }
       if (!result) return failure('Generation request expired. Your saved map remains available.', 404);
       if ('expired' in result) return failure('Generation request expired. Choose Generate again to start a new request.', 410);
       if ('conflict' in result) return failure('Course guidance changed. Start generation again with the current settings.', 409);
