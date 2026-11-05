@@ -5,6 +5,17 @@ import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, at
 const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
 const area=(p,g)=>({left:p.x-g.cardWidth/2,right:p.x+g.cardWidth/2,top:p.y-g.cardHeight/2,bottom:p.y+g.cardHeight/2});
 
+it('reserves measured verb width so a simple hub does not need sweeping detours',()=>{
+  const nodes=['Nia','Workshop','Sandbox','Peer circle'].map((label,i)=>({id:`lab-${i}`,label,scale:'micro',x:0,y:0}));
+  const edges=nodes.slice(1).map((node,i)=>({id:`link-${i}`,source:nodes[0].id,target:node.id,verb:'participates in'}));
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:180,cardHeight:48}]));
+  const labels=new Map(edges.map(e=>[e.id,{width:180,height:32}]));
+  const positions=studentMapPositions(nodes,edges,geometry,{labelGeometries:labels});
+  const routes=attachedConnectionLayout(edges,nodes,positions,geometry,labels);
+  for(const edge of edges)expect(routes.paths.get(edge.id).points).toHaveLength(2);
+  for(const label of routes.bounds.values())for(const node of nodes)expect(intersects(label,area(positions.get(node.id),geometry.get(node.id)))).toBe(false);
+});
+
 function hubFixture() {
   const labels=['Maya','Coordinator Lee','Librarian Jo','Neighborhood library','Community garden','Library workshop','Shared calendar','Gardening books','Tools','Seeds','Storage room','Volunteer handbook'];
   const types=['person','person','person','setting','setting','activity','object','object','object','object','setting','object'];

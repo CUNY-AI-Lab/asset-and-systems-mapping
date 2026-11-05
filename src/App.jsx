@@ -2085,6 +2085,13 @@ function mapEdgeLabelGeometry(label, phoneLayout = false, scale = '') {
   };
 }
 
+function studentReadingPositions(nodes, edges, layout) {
+  return studentMapPositions(nodes, edges, new Map(nodes.map(node => [node.id, mapNodeGeometry(node.label, layout.phone)])), {
+    ...layout,
+    labelGeometries: new Map(edges.map(edge => [edge.id, mapEdgeLabelGeometry(relationshipMapLabel(edge), layout.phone, '')])),
+  });
+}
+
 // A visible relationship label needs a real corridor between its endpoint
 // cards. Keep a dragged endpoint far enough from every connected card to hold
 // the complete, untruncated label while preserving the requested direction of
@@ -4501,7 +4508,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
   const canvasAspect = GRAPH_WIDTH / Math.max(240,phoneViewBox.height);
   const readableLayoutKey = `${Boolean(notebook)}:${phoneLayout}:${canvasAspect.toFixed(1)}:${manualPlacementKey}:${visibleLayoutNodes.map(node => `${node.id}:${node.scale}${pinnedNodeIds.has(node.id) ? `:${node.x}:${node.y}` : ''}`).join('|')}`;
   const readableTopologyKey = JSON.stringify([layoutGraph.edges.map(edge=>[edge.id,edge.source,edge.target,edge.relationshipIds]),visibleLayoutNodes.map(node=>[node.id,node.type,node.color])]);
-  const readablePositions = useMemo(() => notebook ? studentMapPositions(visibleLayoutNodes, layoutGraph.edges, new Map(visibleLayoutNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect}) : null,
+  const readablePositions = useMemo(() => notebook ? studentReadingPositions(visibleLayoutNodes, layoutGraph.edges, {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect}) : null,
     // Text and annotation edits retain the current placement. New topology,
     // an explicit arrangement or a deliberate drag can establish a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4978,7 +4985,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       nodes = scaleNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     if (notebook) {
-      const positions = scaleNodes.every(node=>readablePositions?.has(node.id)) ? readablePositions : studentMapPositions(scaleNodes, scaleEdges, new Map(scaleNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
+      const positions = scaleNodes.every(node=>readablePositions?.has(node.id)) ? readablePositions : studentReadingPositions(scaleNodes, scaleEdges, {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
       nodes = scaleNodes.map(node => ({ ...node, ...positions.get(node.id) }));
     }
     setRingExpansion(1);
@@ -5012,7 +5019,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       nextNodes = nextNodes.map(node => ({ ...node, ...(projection?.get(node.id) || {}) }));
     }
     if (notebook) {
-      const positions = nextNodes.every(node=>readablePositions?.has(node.id)) ? readablePositions : studentMapPositions(nextNodes, nextEdges, new Map(nextNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
+      const positions = nextNodes.every(node=>readablePositions?.has(node.id)) ? readablePositions : studentReadingPositions(nextNodes, nextEdges, {...project.layout,phone:phoneLayout,aspectRatio:canvasAspect});
       nextNodes = nextNodes.map(node => ({ ...node, ...positions.get(node.id) }));
     }
     setVisibleScale(nextScale);
@@ -5238,7 +5245,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     rememberLayout();
     const liveNodes = project.graph.nodes.filter((node) => node.scale !== 'meso' && (showRemoved || node.claimState !== 'retired'));
     const nodes = visibleScale === 'all' ? liveNodes : visibleNodes.length ? visibleNodes : liveNodes;
-    const positions = notebook ? studentMapPositions(nodes, project.graph.edges, new Map(nodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)])), {phone:phoneLayout,aspectRatio:canvasAspect}) : mapMode === 'ecology'
+    const positions = notebook ? studentReadingPositions(nodes, project.graph.edges, {phone:phoneLayout,aspectRatio:canvasAspect}) : mapMode === 'ecology'
       ? phoneLayout && visibleScale === 'micro' ? arrangedPhoneMicroPositions(nodes) : arrangedEcologyPositions(nodes, phoneLayout, interactionEcologyBands)
       : phoneLayout
         ? arrangedPhoneOverviewPositions(nodes)

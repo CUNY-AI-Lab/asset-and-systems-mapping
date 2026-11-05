@@ -95,7 +95,7 @@ export function constrainStudentNodeMove(node, requested, nodes, geometries, {au
   return {x:Math.round(node.x+(requested.x-node.x)*low),y:Math.round(node.y+(requested.y-node.y)*low)};
 }
 
-export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],phoneOverview,phone=false,aspectRatio=1.8,readingAspect,autoFit=true}={}) {
+export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],phoneOverview,phone=false,aspectRatio=1.8,readingAspect,autoFit=true,labelGeometries}={}) {
   const positions=new Map(nodes.map(n=>[n.id,{x:n.x,y:n.y}]));
   if(!autoFit)return positions;
   const local=nodes.filter(n=>n.scale==='micro').sort((a,b)=>a.y-b.y||a.x-b.x||a.id.localeCompare(b.id));
@@ -103,7 +103,7 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
   const manual=new Set(manualNodeIds);
   const preserveLegacy=readingAspect === undefined && phoneOverview === 'preserve';
   const canArrangeLocal=local.length && !preserveLegacy && (!compatibleView || !local.every(n=>manual.has(n.id)));
-  const connected=canArrangeLocal?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone}):null;
+  const connected=canArrangeLocal?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone,labelGeometries}):null;
   if(connected)for(const [id,position]of connected)positions.set(id,position);
   if(canArrangeLocal && !connected) {
     const columns=Math.min(phone?3:5,Math.max(2,Math.ceil(Math.sqrt(local.length*aspectRatio*(phone ? .42 : .75)))));

@@ -14,7 +14,7 @@ export function microColorGroup(node) {
   return 'blue';
 }
 
-export function connectedMicroPositions(nodes, edges, geometries, {manual,aspectRatio,phone}) {
+export function connectedMicroPositions(nodes, edges, geometries, {manual,aspectRatio,phone,labelGeometries}) {
   const degree=new Map(nodes.map(n=>[n.id,0]));
   for(const edge of edges)for(const id of new Set([edge.source,edge.target]))if(degree.has(id))degree.set(id,degree.get(id)+1);
   const connected=nodes.filter(n=>degree.get(n.id)>0).sort((a,b)=>degree.get(b.id)-degree.get(a.id)||a.id.localeCompare(b.id));
@@ -26,7 +26,8 @@ export function connectedMicroPositions(nodes, edges, geometries, {manual,aspect
   // Reserve routing lanes as degree/density grows, instead of making the
   // router take long detours around tightly packed cards. Sparse pairs stay close.
   const pressure=Math.min(72,Math.max(0,busiest-2)*10+Math.max(0,links.length-connected.length)*3);
-  const gap=(phone?40:48)+pressure;
+  const labelWidth=Math.max(0,...links.map(edge=>labelGeometries?.get(edge.id)?.width||0));
+  const gap=Math.max(phone?40:48,labelWidth?labelWidth+36:0)+pressure;
   const width=Math.max(...connected.map(n=>geometries.get(n.id).cardWidth));
   const height=Math.max(...connected.map(n=>geometries.get(n.id).cardHeight));
   const columns=Math.min(phone?3:5,Math.max(connected.length>=3?3:1,2*Math.round((Math.sqrt(connected.length*Math.min(2,aspectRatio)*.65)-1)/2)+1));
