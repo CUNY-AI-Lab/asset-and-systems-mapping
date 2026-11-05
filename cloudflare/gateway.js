@@ -84,6 +84,17 @@ function semanticValidationReason(error) {
   return categories.find(([, pattern]) => pattern.test(message))?.[0] || 'contract_other';
 }
 
+function groundingRule(error) {
+  const message = String(error.message);
+  if (/must quote the focal participants/u.test(message)) return 'outside_participation';
+  if (/taking part in the setting|not direct participation at Micro/u.test(message)) return 'participation_conflict';
+  if (/specific established policy and its operation/u.test(message)) return 'policy_operation';
+  if (/established condition, not only a wish/u.test(message)) return 'condition_established';
+  if (/supplied changed passages/u.test(message)) return 'changed_passage';
+  if (/not a bibliography or an invented explanation/u.test(message)) return 'narrative_quote';
+  return 'source_contract';
+}
+
 export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
   // Completed output failures are distinct from transport failures. Only fixed
   // classifications and schema paths cross this boundary, never response text.
@@ -94,7 +105,7 @@ export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
     return { status: 502, message: 'The model returned a response the map could not use. Your existing work was not changed.',
       details: { code: error?.code === 'response_too_large' ? 'guidance_output_truncated' : semantic ? 'guidance_contract_invalid' : 'guidance_output_invalid',
         shouldRetry: false, requestId: fallbackRequestId,
-        ...(semantic ? { validationReason: semanticValidationReason(error) } : {}),
+        ...(semantic ? { validationReason: semanticValidationReason(error), ...(error.grounding === true ? { validationRule: groundingRule(error) } : {}) } : {}),
         ...(field ? { validationField: field } : {}) } };
   }
 

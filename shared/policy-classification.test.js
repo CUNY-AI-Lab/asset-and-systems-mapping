@@ -10,6 +10,23 @@ it('classifies the operative policy at Exo without inventing nonparticipation in
 });
 
 it.each([
+  ['Class access duration', 'Class access lasts for approved course dates.'],
+  ['Application review requirement', 'Access depends on an application review.'],
+  ['Undergraduate class access', 'Undergraduates currently enter through approved classes rather than individual applications.'],
+])('recognizes the operative access condition in factual public-facing prose: %s', (label, evidence) => {
+  expect(submittedReviewIssue(wrap([{ ...policy, label, evidence }]), 'exosphere', evidence)).toBeNull();
+});
+
+it.each([
+  'Access to a class is discussed.',
+  'Class access should last for approved course dates.',
+  'Could access depend on an application review?',
+  'We recommend that access depends on an application review.',
+])('does not turn an access mention, question or recommendation into an established rule: %s', evidence => {
+  expect(submittedReviewIssue(wrap([{ ...policy, label: 'Class access conditions', evidence }]), 'exosphere', evidence)).toBeTruthy();
+});
+
+it.each([
   ['workshop account access policy', 'A hypothetical workshop account access policy determines the authorization that the office applies before Nia can use the Sandbox.'],
   ['course approval rule', "A hypothetical course approval rule determines whether the facilitator can arrange Sandbox access for the workshop's peer review circle."],
 ])('accepts the specific authorization operation in the illustrative Lab policy: %s', (label, evidence) => {

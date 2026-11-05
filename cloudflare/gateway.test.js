@@ -316,6 +316,18 @@ test('source-grounding diagnostics expose a fixed reason and preserve no source 
   expect(JSON.stringify(safe)).not.toContain('PRIVATE_QUOTATION');
 });
 
+test.each([
+  ['nodes[0].evidence must quote the focal participants’ nonparticipation in this named outside setting, not another setting.', 'outside_participation'],
+  ['nodes[0].evidence must describe a specific established policy and its operation in the focal situation.', 'policy_operation'],
+  ['nodes[0].evidence must quote the supplied narrative, not a bibliography or an invented explanation.', 'narrative_quote'],
+  ['PRIVATE_SOURCE_OR_RESPONSE', 'source_contract'],
+])('reports a fixed grounding rule without exposing source or provider text', (message, rule) => {
+  const error = Object.assign(new Error(message), {name:'MemoReviewSemanticError',code:'MEMO_REVIEW_SEMANTIC_INVALID',grounding:true});
+  const safe = safeGatewayFailure(error, correlation.request_id);
+  expect(safe.details).toMatchObject({validationReason:'source_evidence',validationRule:rule});
+  expect(JSON.stringify(safe)).not.toContain(message);
+});
+
 test('transport and unreadable-output errors do not invent a semantic validation reason', () => {
   for (const error of [new OpenRouterError('private response', 'invalid_response'), new CailError('upstream_failure', 'private response', 503)]) {
     expect(safeGatewayFailure(error, correlation.request_id).details).not.toHaveProperty('validationReason');

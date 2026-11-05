@@ -114,6 +114,13 @@ function narrativeNamesPerson(label, narrative) {
 // This is a narrow evidence guard, not a semantic classifier. It excludes
 // recommendations/questions offered as established conditions while preserving
 // reported cultural norms and actual rules containing normative words.
+function hasPolicyOperation(evidence) {
+  if (/\b(?:requires?|mandates?|stipulates?|provides?|reserves?|directs?|specifies?|allocat\w*|restrict\w*|prohibit\w*|guarantee\w*|delay\w*|limit\w*|fund\w*|govern\w*|establish\w*|determines? (?:the authorization|whether)|permission|consent)\b/iu.test(evidence)) return true;
+  // An eligibility or duration rule can be stated without the word policy or
+  // a command verb. Accept the operative condition, not a mere mention of access.
+  return /\baccess\s+(?:depends on\s+(?:an?\s+)?(?:application|approval|review)|(?:lasts|runs)\s+(?:for|until)\s+(?:the\s+)?approved\s+(?:course|class)\s+dates)\b/iu.test(evidence)
+    || /\bundergraduates?\s+(?:currently\s+)?(?:enter|join)\s+through\s+approved\s+classes\s+rather than\s+individual\s+applications\b/iu.test(evidence);
+}
 function hasEstablishedCondition(node) {
   const label = escaped(normalized(node.label));
   const describesConsequence = new RegExp(`^(?:the\\s+)?${label}\\s+(?:means|causes|results in|leads to)\\b`, 'iu');
@@ -185,7 +192,7 @@ export function submittedReviewIssue(review, scale, sourceText, memoUpdate) {
     if (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) && !isExplicitMacroPolicyLabel(node.label, node.type) || isObviousLowerLevelMacroLabel(node.label) || narrativeNamesPerson(node.label, source?.narrativeText || node.evidence))) return `${field}.label names a person or institution, not a Macro condition.`;
     if (sourceText !== undefined && node.scale === 'macrosphere' && (!MACRO_CONDITION_TYPES.includes(node.type) || /\b(?:polic(?:y|ies)|laws?|rules?|regulations?|protocols?|procedures?|acts?|funding formula)\s*$/iu.test(node.label))) return `${field}.label ${SUBMISSION_MACRO_ISSUE}`;
     if (scale !== 'micro' && node.basis !== 'memo') return `${field}.basis must be memo; do not invent conditions.`;
-    if (sourceText !== undefined && node.scale === 'exosphere' && ['policy', 'law'].includes(node.type) && (!/\b(?:requires?|mandates?|stipulates?|provides?|reserves?|directs?|specifies?|allocat\w*|restrict\w*|prohibit\w*|guarantee\w*|delay\w*|limit\w*|fund\w*|govern\w*|establish\w*|determines? (?:the authorization|whether)|permission|consent)\b/iu.test(node.evidence) || /^(?:(?:the|a|local|national|regional|school|housing)\s+)*(?:policy|law|rule|protocol|procedure)s?$/iu.test(node.label))) return `${field}.evidence must describe a specific established policy and its operation in the focal situation.`;
+    if (sourceText !== undefined && node.scale === 'exosphere' && ['policy', 'law'].includes(node.type) && (!hasPolicyOperation(node.evidence) || /^(?:(?:the|a|local|national|regional|school|housing)\s+)*(?:policy|law|rule|protocol|procedure)s?$/iu.test(node.label))) return `${field}.evidence must describe a specific established policy and its operation in the focal situation.`;
     if (labels.has(node.label.toLocaleLowerCase())) return `${field}.label duplicates another node.`;
     labels.add(node.label.toLocaleLowerCase()); counts[node.scale] = (counts[node.scale] || 0) + 1;
     if (scale !== 'micro' && counts[node.scale] > 3) return `${field}.scale exceeds the three-node limit for this level.`;
