@@ -3,7 +3,7 @@ import { createDefaultProject, createPortableProject, parseProject, serializePro
 import { appendSubmittedNodes, memoUpdatePayload, memoUpdateState, memoUpdateSummary, openMemoWorkflowScale } from './memoWorkflow.js';
 import { recordEdit, restoreEdit } from './editHistory.js';
 import { memoAnalysisIssue, memoContentFingerprint, memoSourceFingerprint, memoUpdateIssue } from '../shared/memo-update.js';
-import { submittedReviewIssue } from '../shared/node-submission.js';
+import { nodeSubmissionInstruction, submittedReviewIssue } from '../shared/node-submission.js';
 
 const clone = value => structuredClone(value);
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
@@ -47,6 +47,33 @@ it('selects exact changed passages with context and rejects forged spans or wron
   const forged = clone(payload); forged.passages[0].text = forged.passages[0].text.replace('Residents', 'Inventors');
   expect(memoUpdateIssue(forged, p.submission.text, 'micro', p.graph.nodes)).toBeTruthy();
   expect(memoUpdateIssue(payload, p.submission.text, 'exosphere', p.graph.nodes)).toMatch(/another part/);
+});
+
+it('prioritizes a new marginal subject even when the retained map already exceeds six nodes', () => {
+  const p = blank();
+  const locals = ['Residents', 'Teachers', 'Nurses', 'Repair workers', 'Community room', 'Apartments'].map((label, index) => ({ label, type: index < 4 ? 'group' : 'setting', scale: 'micro', evidence: `The memo identifies ${label}.` }));
+  edit(p, locals.map(node => node.evidence).join(' ')); appendSubmittedNodes(p, review(locals));
+  openMemoWorkflowScale(p, 'exosphere');
+  const outside = [
+    { label: 'Regional Housing Office', type: 'organization', scale: 'exosphere', basis: 'memo', evidence: 'Residents do not participate in Regional Housing Office staffing decisions, which delay repairs in their homes.' },
+    { label: 'Universal repair access policy', type: 'policy', scale: 'macrosphere', basis: 'memo', evidence: 'Universal repair access policy requires access across all local housing developments.' },
+  ];
+  edit(p, outside.map(node => node.evidence).join(' '), 'part2Submission'); appendSubmittedNodes(p, review(outside));
+  openMemoWorkflowScale(p, 'micro');
+  const preserved = clone(p.graph), secondMemo = clone(p.part2Submission);
+  const evidence = 'Residents also meet the resident advocate at the community room to organize repair requests.';
+  edit(p, p.submission.text + ' ' + evidence);
+  const context = memoUpdatePayload(p), instruction = nodeSubmissionInstruction('micro', context);
+  expect(context.passages.some(passage => passage.text.includes(evidence))).toBe(true);
+  expect(instruction).toContain('Review the changed passages first');
+  expect(instruction).toContain('saved nodes supplied as context do not count against it');
+  expect(instruction).toContain('A map with six or more nodes can still receive supported new nodes');
+  const response = review([{ label: 'Resident advocate', type: 'role', scale: 'micro', evidence }]);
+  expect(submittedReviewIssue(response, 'micro', p.submission.text, context)).toBeNull();
+  expect(appendSubmittedNodes(p, response)).toBe(1);
+  expect(p.graph.nodes).toHaveLength(9); expect(p.graph.nodes.slice(0, 8)).toEqual(preserved.nodes);
+  expect(p.graph.edges).toEqual(preserved.edges); expect(p.part2Submission).toEqual(secondMemo);
+  expect(() => validateProject(p)).not.toThrow();
 });
 
 it('refreshes only generated evidence and preserves all student fields and relationships', () => {
