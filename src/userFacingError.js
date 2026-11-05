@@ -17,6 +17,7 @@ const messagesByCode = Object.freeze({
   course_prompt_changed: 'The course instructions changed. Reload this page before requesting guidance again.',
   quota_exceeded: 'The model usage limit has been reached. Try again later.',
   guidance_in_progress: 'Guidance is already being generated. Wait for it to finish before trying again.',
+  guidance_pending: 'Your request is saved. Reopen this map to check its progress.',
   guidance_timeout: 'Guidance took too long. Try again.',
   guidance_output_truncated: 'The model response was cut short, so the app could not use it. Your existing work was not changed. Try again.',
   guidance_output_invalid: 'The app could not read the model response. Your existing work was not changed. Try again.',

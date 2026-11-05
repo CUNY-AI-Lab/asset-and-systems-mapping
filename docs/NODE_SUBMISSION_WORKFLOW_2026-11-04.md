@@ -46,6 +46,17 @@ and rejects guidance, relationships and scopes. Server, Gateway and client use
 that contract. Account-interface components are isolated from legacy review
 components; storage and draft journals remain shared.
 
+Each newly generated node names one supported subject. A parenthetical list of
+distinct named providers or a slash-separated bundle of distinct professional
+roles is rejected for a bounded model correction, never silently split or
+renamed by the app. The replacement may choose one evidenced subject or return
+separate nodes within the same six-node limit. A single official name, acronym,
+locality qualifier or demographic/caregiving population remains eligible. This
+narrow guard applies only to new submissions: stored reviews and exact
+`existingId` echoes of student-edited labels remain readable and unchanged.
+The shared cache contract is `memo-workspace-atomic-nodes-v10`, used by both
+browser reuse and durable generation jobs.
+
 Acceptance requires source regressions, Worker/browser tests, real supplied
 memo tests on Dev, separate file persistence through reload, manual grouping,
 desktop/phone inspection, and exact-source production package verification.

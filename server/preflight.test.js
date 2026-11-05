@@ -365,6 +365,30 @@ describe('persistent preflight suggestion review queue', () => {
     expect(result.review.connections).toEqual([]);
   });
 
+  it('requires the provider to replace a composite subject with an evidenced individual subject before saving', async () => {
+    const sourceMaterial = 'Students attend Elm Learning Center and Oak Tutoring Center.';
+    const bundled = 'Academic support centers (Elm Learning Center, Oak Tutoring Center)';
+    const provider = vi.fn(async input => {
+      const repairing = Boolean(input.memoContext?.contractRepair);
+      expect(input.systemPrompt).toContain('ONE SUBJECT PER NEW NODE');
+      if (repairing) {
+        expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: bundled });
+        expect(input.systemPrompt).toContain('never invent an umbrella name or rename an existing node');
+      }
+      return { suggestion: { guidance: [], nodes: [{ label: repairing ? 'Elm Learning Center' : bundled, type: 'organization', scale: 'micro', evidence: sourceMaterial }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'atomic-subject-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', sourceMaterial }));
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(result.review.nodes.map(node => node.label)).toEqual(['Elm Learning Center']);
+    expect(result.review.connections).toEqual([]);
+    const rows = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].suggestion_json).not.toContain(bundled);
+  });
+
   it('rejects model-created links in the node-only contract after its bounded corrective attempt', async () => {
     const provider = vi.fn(async()=>({suggestion:{guidance:[],nodes:[],connections:[{source:'a',target:'b',verb:'supports'}],example:null,readiness:{ready:true,note:'Nodes identified.'}},metadata:{provider:'ollama-cloud',model:'server-model'}}));
     await system.close();

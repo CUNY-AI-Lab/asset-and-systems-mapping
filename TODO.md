@@ -22,6 +22,8 @@ Design: [wireframe and behavior](docs/MEMO_WORKSPACE_2026-11-04.md) · [interact
 - [x] Preserve node identities, manual edits, positions, notes, relationships and removal decisions during incremental updates.
 - [x] Verify unknown IDs, invalid evidence, stale results, request limits, cancellation/failure and Undo/reload behavior.
 - [x] Verify desktop/phone layouts, info dismissal/focus, visible canvas, tab history and keyboard controls.
+- [x] Fit unpinned Exo/Macro cards around retained Micro content while preserving manual pins and retired records. Local actual-export inspection at 1280×720 with a 304px sidebar measured 14.82px node text, unchanged visible Micro pins, and no card collisions or clipped captions; deployed acceptance remains separate.
+- [x] Keep legal outer-node moves exact; with auto-fit on, stop an inward active move at the preceding sphere along its path. Preserve imported pins and auto-fit-off coordinates; verify keyboard movement and tall/shallow retained layouts.
 - [x] Simplify Projects to visible Project title / Creator name fields, searchable saved names, and an accessible Project details editor.
 - [x] Route new bug/feature reports directly to Redmine with existing credentials, no automatic email fallback; preserve old receipts.
 - [ ] Commit with verified zmuhls author/committer, deploy the checked revision to Dev, and perform signed-in workflow tests with the approved synthetic examples and all four supplied PDFs.

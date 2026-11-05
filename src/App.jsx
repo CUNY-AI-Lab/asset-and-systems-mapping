@@ -14,7 +14,7 @@ import { useRelationshipDraft } from './relationshipDraft.js';
 import { useWorkspaceViewHistory } from './workspaceViewHistory.js';
 import { editHistoryState, recordEdit, restoreEdit } from './editHistory.js';
 import { readableNodePositions, straightConnectionLayout } from './readableGraphLayout.js';
-import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment, REGION_CAPTION } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, attachedConnectionLayout, relationshipAttachment, REGION_CAPTION } from './studentMapLayout.js';
 import { readMemoFile } from './documentImport.js';
 import { relationshipDescription, relationshipArrowheads, relationshipDirection, relationshipMapLabel, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
@@ -5105,9 +5105,13 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     const displayedNode = displayedNodes.find((node) => node.id === id);
     const movementMode = notebook ? 'network' : mapMode === 'ecology' && retainedEcologyBoundaries(displayedNodes, visibleEdges, phoneLayout, interactionEcologyBands) ? 'network' : mapMode;
-    const safePosition = displayedNode
+    const cardSafePosition = displayedNode
       ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, movementMode, interactionEcologyBands, Boolean(notebook))
       : { x, y };
+    const safePosition = notebook && displayedNode
+      ? constrainStudentNodeMove(displayedNode, cardSafePosition, displayedNodes,
+        new Map(displayedNodes.map(node => [node.id, mapNodeGeometry(node.label, phoneLayout)])), { autoFit: project.layout?.autoFit !== false })
+      : cardSafePosition;
     rememberLayout();
     update((draft) => {
       if (phoneLayout && mapMode === 'network') draft.layout = { ...(draft.layout || {}), phoneOverview: 'preserve' };
@@ -5136,7 +5140,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setAutomaticPositions(null);
     setLayoutMeasurementRevision(revision => revision + 1);
     logPrototype('node_moved', { keyboard: method === 'keyboard', pointer: method === 'pointer' });
-  }, [preserveCamera, readablePositions, notebook, automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, interactionEcologyBands, update, visibleEdges, canvasAspect]);
+  }, [preserveCamera, readablePositions, notebook, automaticPositions, displayedNodes, logPrototype, mapMode, mapViewport, phoneEcologyPositions, phoneEcologyScope, phoneLayout, phoneOverviewPositions, phoneOverviewScope, rememberLayout, interactionEcologyBands, update, visibleEdges, canvasAspect, project.layout?.autoFit]);
   const minimumInteractiveZoom = VIEWPORT_LIMITS.minZoom;
   const changeViewport = useCallback((next) => {
     preserveCamera();
@@ -7898,7 +7902,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const editControls = memoFirstWorkflow ? { ...savedEdits, canUndo: !workflowBusy && savedEdits.canUndo, canRedo: !workflowBusy && savedEdits.canRedo, onUndo: () => restoreSavedEdit('undo'), onRedo: () => restoreSavedEdit('redo') } : null;
   const workflowAction = ({ canGoBack, onBack, view }) => <>
     <div className="workflow-actions"><button type="button" className="button button--secondary" disabled={workflowBusy || !canGoBack} onClick={onBack}>Back</button><div className="map-edit-history" role="group" aria-label="Edit history"><button type="button" aria-label="Undo" title={savedEdits.undoLabel ? `Undo: ${savedEdits.undoLabel}` : 'Undo'} disabled={!editControls.canUndo} onClick={editControls.onUndo}><Icon name="undo" /></button><button type="button" aria-label="Redo" title={savedEdits.redoLabel ? `Redo: ${savedEdits.redoLabel}` : 'Redo'} disabled={!editControls.canRedo} onClick={editControls.onRedo}><Icon name="redo" /></button></div><button className="button notebook-next" type="button" disabled={workflowBusy || !workflowMemoState.submitted || !memoPrerequisiteReady} onClick={runNextStep}>{project.activeScale === 'macrosphere' ? 'Finish map' : 'Continue'}</button></div>
-    {view === 'memo' && <div className="memo-action-row"><button className="button" type="button" disabled={workflowBusy || reviewRetryAt > Date.now() || !memoPrerequisiteReady || !activeSubmission(project).text.trim() || workflowMemoState.submitted || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>{workflowBusy ? 'Updating map…' : workflowMemoState.hasBaseline ? 'Update map' : 'Submit memo and add nodes'}</button><span>{workflowMemoState.submitted ? 'Map is up to date' : !memoPrerequisiteReady ? 'Add Part 1 to the map first.' : 'Add this memo to the map to continue.'}</span></div>}
+    {view === 'memo' && <div className="memo-action-row"><button className="button" type="button" disabled={workflowBusy || reviewRetryAt > Date.now() || !memoPrerequisiteReady || !activeSubmission(project).text.trim() || workflowMemoState.submitted || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>{workflowBusy ? 'Updating map…' : workflowMemoState.hasBaseline ? 'Update map' : 'Submit memo and add nodes'}</button><span role={workflowBusy ? 'status' : undefined}>{workflowBusy ? reviewProgress || 'Reading your memo…' : workflowMemoState.submitted ? 'Map is up to date' : !memoPrerequisiteReady ? 'Add Part 1 to the map first.' : 'Add this memo to the map to continue.'}</span></div>}
     {view !== 'memo' && !workflowMemoState.submitted ? <button type="button" className="text-button memo-needed-action" onClick={() => editWorkflowMemo()}>Open Memo to continue</button> : project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}
   </>;
   const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, memoReady: workflowMemoState.submitted && memoPrerequisiteReady, memoPending: !workflowMemoState.submitted, onMemo: () => editWorkflowMemo(), edits: editControls, open: notebookOpen, onRestoreView: restoreWorkflowView, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;

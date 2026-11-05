@@ -34,6 +34,20 @@ export function contentEllipse(bounds, padding = 24) {
   const rx=best.rx+padding,ry=best.ry+padding;
   return {cx:best.cx,cy:best.cy,rx,ry,left:best.cx-rx,right:best.cx+rx,top:best.cy-ry,bottom:best.cy+ry};
 }
+function outerBoundary(inner,nodes,geometries,scale) {
+  // Circumscribed polygon vertices guarantee containment of the continuous
+  // inner ellipse without reserving its empty rectangular corners.
+  const bounds=nodes.map(n=>box(n,geometries.get(n.id),8));
+  const circumscribed=1/Math.cos(Math.PI/64);
+  if(inner)for(let i=0;i<64;i++) {
+    const angle=i*Math.PI/32,x=inner.cx+inner.rx*circumscribed*Math.cos(angle),y=inner.cy+inner.ry*circumscribed*Math.sin(angle);
+    bounds.push({left:x,right:x,top:y,bottom:y});
+  }
+  if(inner)bounds.push({left:inner.cx-REGION_CAPTION.width/2,right:inner.cx+REGION_CAPTION.width/2,
+    top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,
+    bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2});
+  return contentEllipse(bounds,scale==='exosphere'?18:22);
+}
 export function studentMapBoundaries(nodes, geometries) {
   const local=nodes.filter(n=>n.scale==='micro');
   const micro=contentEllipse(local.map(n=>box(n,geometries.get(n.id))),20);
@@ -42,23 +56,40 @@ export function studentMapBoundaries(nodes, geometries) {
   const boundaries={micro};
   let inner=micro;
   for(const scale of ['exosphere','macrosphere']) {
-    // Circumscribed polygon vertices guarantee that the whole preceding
-    // ellipse is enclosed, including the arcs between the sampled points.
-    // Unlike its bounding rectangle, this does not reserve empty corners.
-    const bounds=outer.filter(n=>n.scale===scale).map(n=>box(n,geometries.get(n.id),8));
-    const circumscribed=1/Math.cos(Math.PI/64);
-    if(inner) for(let i=0;i<64;i++) {
-      const angle=i*Math.PI/32,x=inner.cx+inner.rx*circumscribed*Math.cos(angle),y=inner.cy+inner.ry*circumscribed*Math.sin(angle);
-      bounds.push({left:x,right:x,top:y,bottom:y});
-    }
-    if(inner)bounds.push({left:inner.cx-REGION_CAPTION.width/2,right:inner.cx+REGION_CAPTION.width/2,
-      top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,
-      bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2});
-    inner=contentEllipse(bounds,scale==='exosphere'?18:22);
+    inner=outerBoundary(inner,outer.filter(n=>n.scale===scale),geometries,scale);
     if(inner)boundaries[scale]=inner;
   }
   return boundaries;
 }
+
+// Keep an active move in its system without rewriting saved or imported pins.
+// Clamping along the gesture stops at the near boundary instead of jumping the
+// card to an unrelated free slot on the other side of the map.
+export function constrainStudentNodeMove(node, requested, nodes, geometries, {autoFit=true}={}) {
+  if(!autoFit||!['exosphere','macrosphere'].includes(node.scale))return requested;
+  const regions=studentMapBoundaries(nodes,geometries);
+  const inner=regions[node.scale==='exosphere'?'micro':'exosphere'];
+  if(!inner)return requested;
+  const geometry=geometries.get(node.id);
+  const caption={left:inner.cx-REGION_CAPTION.width/2,right:inner.cx+REGION_CAPTION.width/2,
+    top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2};
+  const clearsInner=position=>{
+    const bounds=box(position,geometry,2);
+    const dx=Math.max(bounds.left-inner.cx,inner.cx-bounds.right,0),dy=Math.max(bounds.top-inner.cy,inner.cy-bounds.bottom,0);
+    return (dx/inner.rx)**2+(dy/inner.ry)**2>=1&&!overlaps(bounds,caption);
+  };
+  // A previously saved card inside a sphere remains editable; auto-fit never
+  // retroactively moves it. Only a move from a valid position is constrained.
+  if(clearsInner(requested)||!clearsInner(node))return requested;
+  let low=0,high=1;
+  for(let step=0;step<20;step++) {
+    const fraction=(low+high)/2;
+    const candidate={x:node.x+(requested.x-node.x)*fraction,y:node.y+(requested.y-node.y)*fraction};
+    if(clearsInner(candidate))low=fraction;else high=fraction;
+  }
+  return {x:Math.round(node.x+(requested.x-node.x)*low),y:Math.round(node.y+(requested.y-node.y)*low)};
+}
+
 export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],phoneOverview,phone=false,aspectRatio=1.8,readingAspect,autoFit=true}={}) {
   const positions=new Map(nodes.map(n=>[n.id,{x:n.x,y:n.y}]));
   if(!autoFit)return positions;
@@ -112,41 +143,51 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
       positions.set(n.id,p);occupied.push(box(p,geometries.get(n.id),12));
     });
   }
-  let localBounds=studentMapBoundaries(local.map(n=>({...n,...positions.get(n.id)})),geometries).micro;
+  const micro=studentMapBoundaries(local.map(n=>({...n,...positions.get(n.id)})),geometries).micro;
+  if(!micro)return positions;
+  // A wide viewport does not imply free space beside a wide retained Micro
+  // map. Compare complete nested layouts in all four directions, using the
+  // final sphere bounds rather than a card-only rectangle. At most 16 layouts
+  // are considered; saved manual positions are fixed in every candidate.
+  let layouts=[{positions,inner:micro}];
   for(const scale of ['exosphere','macrosphere']) {
-  const outer=nodes.filter(n=>n.scale===scale).sort((a,b)=>a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
-  if(localBounds && outer.length) {
-    const pitch=Math.max(...outer.map(n=>geometries.get(n.id).cardWidth))+48;
-    const rowHeight=Math.max(...outer.map(n=>geometries.get(n.id).cardHeight));
-    const perRow=Math.max(1,Math.floor((localBounds.rx*1.9)/pitch));
-    const placed=[];
-    outer.forEach((n,i)=>{
-      const row=Math.floor(i/perRow),count=Math.min(perRow,outer.length-row*perRow),g=geometries.get(n.id);
-      const savedBox=box(n,g,12),dx=Math.max(savedBox.left-localBounds.cx,localBounds.cx-savedBox.right,0),dy=Math.max(savedBox.top-localBounds.cy,localBounds.cy-savedBox.bottom,0);
-      if(manual.has(n.id) && (dx/localBounds.rx)**2+(dy/localBounds.ry)**2>=1 && !placed.some(b=>overlaps(savedBox,b))) {placed.push(savedBox);return;}
-      // Wide canvases have room beside the local graph. Stacking both outer
-      // levels below it made the whole map shrink into a narrow vertical strip.
-      const wide = !phone && aspectRatio >= 1.35;
-      let p;
-      if (wide) {
-        const side = scale === 'exosphere' ? 1 : -1;
-        const y = localBounds.cy + (i - (outer.length - 1) / 2) * (rowHeight + 32);
-        const nearY = Math.max(0, Math.abs(y-localBounds.cy)-g.cardHeight/2-16);
-        const ellipseX = localBounds.rx*Math.sqrt(Math.max(0,1-(nearY/localBounds.ry)**2));
-        p = {x:Math.round(localBounds.cx+side*(ellipseX+g.cardWidth/2+24)),y:Math.round(y)};
-      } else {
-        const x=localBounds.cx+(i%perRow-(count-1)/2)*pitch;
-        const nearX=Math.max(0,Math.abs(x-localBounds.cx)-g.cardWidth/2-16);
-        const ellipseY=localBounds.ry*Math.sqrt(Math.max(0,1-(nearX/localBounds.rx)**2));
-        p={x:Math.round(x),y:Math.round(localBounds.cy+ellipseY+rowHeight/2+28+row*(rowHeight+40))};
-      }
-      while(placed.some(b=>overlaps(box(p,g,12),b)))p.y+=rowHeight+40;
-      positions.set(n.id,p);placed.push(box(p,g,12));
-    });
+    const outer=nodes.filter(n=>n.scale===scale).sort((a,b)=>a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
+    const movable=outer.filter(n=>!manual.has(n.id));
+    const directions=movable.length?['bottom','right','top','left']:['bottom'];
+    layouts=layouts.flatMap(layout=>directions.map(direction=>{
+      const next=new Map(layout.positions),inner=layout.inner;
+      const horizontal=direction==='left'||direction==='right',sign=direction==='left'||direction==='top'?-1:1;
+      const width=Math.max(0,...movable.map(n=>geometries.get(n.id).cardWidth));
+      const height=Math.max(0,...movable.map(n=>geometries.get(n.id).cardHeight));
+      const pitch=horizontal?height+40:width+48;
+      const perRow=Math.max(1,Math.floor((horizontal?inner.ry:inner.rx)*1.9/pitch));
+      const occupied=nodes.filter(n=>n.scale==='micro'||manual.has(n.id)||scale==='macrosphere'&&n.scale==='exosphere')
+        .map(n=>box(next.get(n.id),geometries.get(n.id),12));
+      occupied.push({left:inner.cx-REGION_CAPTION.width/2-12,right:inner.cx+REGION_CAPTION.width/2+12,
+        top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2+12});
+      movable.forEach((n,i)=>{
+        const row=Math.floor(i/perRow),count=Math.min(perRow,movable.length-row*perRow),g=geometries.get(n.id);
+        const along=(i%perRow-(count-1)/2)*pitch;
+        const near=Math.max(0,Math.abs(along)-(horizontal?g.cardHeight:g.cardWidth)/2-16);
+        const reach=(horizontal?inner.rx:inner.ry)*Math.sqrt(Math.max(0,1-(near/(horizontal?inner.ry:inner.rx))**2));
+        const outward=reach+(horizontal?width:height)/2+28+row*((horizontal?width:height)+40);
+        const p=horizontal?{x:Math.round(inner.cx+sign*outward),y:Math.round(inner.cy+along)}
+          :{x:Math.round(inner.cx+along),y:Math.round(inner.cy+sign*outward)};
+        // Start with every pinned card, including later levels, so a generated
+        // card cannot take its position and force a manual card to move.
+        while(occupied.some(b=>overlaps(box(p,g,12),b)))p[horizontal?'x':'y']+=sign*((horizontal?width:height)+40);
+        next.set(n.id,p);occupied.push(box(p,g,12));
+      });
+      return {positions:next,inner:outerBoundary(inner,outer.map(n=>({...n,...next.get(n.id)})),geometries,scale)||inner};
+    }));
   }
-  if(scale==='exosphere')localBounds=studentMapBoundaries(nodes.filter(n=>n.scale!=='macrosphere').map(n=>({...n,...positions.get(n.id)})),geometries).exosphere||localBounds;
-  }
-  return positions;
+  const fitCost=layout=>Math.max((layout.inner.rx*2+40)/Math.max(.2,aspectRatio),layout.inner.ry*2+52);
+  const connectionLength=layout=>edges.reduce((total,edge)=>{
+    const a=layout.positions.get(edge.source),b=layout.positions.get(edge.target);
+    return total+(a&&b?Math.hypot(a.x-b.x,a.y-b.y):0);
+  },0);
+  layouts.sort((a,b)=>fitCost(a)-fitCost(b)||connectionLength(a)-connectionLength(b));
+  return layouts[0].positions;
 }
 
 const segmentHits = (a,b,r) => {

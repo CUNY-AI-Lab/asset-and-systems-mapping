@@ -52,7 +52,9 @@ The report dialog accepts bugs and feature requests. Dev and production configur
 
 ## Working with the map
 
-Three content-fitted, nested ecological regions accommodate uneven geometry while reserving the most space for local work. Labels and line patterns supplement colors. Relationship wording stays attached to its own route; auto-fit separates cards, labels and shared route segments, with visible separation at unavoidable crossings. Filtering hides records without deleting them. Manual placement persists when auto-fit is off.
+Three content-fitted, nested ecological regions accommodate uneven geometry while reserving the most space for local work. Auto-fit places unpinned Exo and Macro cards around the retained Micro map according to the available canvas, including space above and below. Saved manual positions remain exact; opening or resizing a map does not rewrite them. Labels and line patterns supplement colors. Relationship wording stays attached to its own route; auto-fit separates cards, labels and shared route segments, with visible separation at unavoidable crossings. Filtering hides records without deleting them.
+
+With auto-fit on, an active Exo or Macro move from a valid position stops before entering its preceding sphere, along the requested path. Valid moves keep their chosen position. Existing imported placements are preserved; **System** changes classification. Turning auto-fit off uses saved coordinates and removes this movement constraint.
 
 The sidebar keeps map context visible. Controls retain 44px targets with compact 13–14px labels, readable 14px body text and distinct primary and secondary actions. Tools puts Add item and Map key first, followed by adjacent zoom controls and Fit map; the sidebar supplies its only scrollbar. The Systems Mapping header stays visible at narrow widths. Narrow screens retain canvas context above the scrolling panel and 44-pixel touch targets. Selecting a node opens its label, evidence, classification, color and interpretation. The **On map** status is distinct from the stateful **Remove** action; Add to map and Remove never appear together for a node. Evidence is labeled **Quote from memo**, with the relevant item name bolded inside unchanged quoted text. A single compact item header places the smaller status below its name, followed by equal-width Remove/Add to map and Done buttons. No visible Edit heading repeats the purpose of the fields. The account List uses single-line records in its own horizontal scroller, contained within the map area.
 
@@ -60,7 +62,7 @@ The sidebar keeps map context visible. Controls retain 44px targets with compact
 | --- | --- |
 | Move around the map | Drag empty canvas, use a middle-button drag, or hold Space while dragging. Arrow keys pan a focused canvas. |
 | Zoom | Scroll at the pointer, pinch, use zoom controls, or press `+` / `−` with canvas focus. |
-| Move a node | Drag the node; preserve its chosen position when auto-fit is off. |
+| Move a node | Drag the node or use arrow keys while it is focused. Auto-fit keeps an outer node outside its preceding sphere; saved manual positions persist. |
 | Connect existing nodes | Double-click a source (keyboard Shift+Enter), or choose **Connect from [node name]**, then choose the target and name the relationship. |
 | Create a connected node | Start from a source, click empty canvas (keyboard N), name the new node and relationship, then save both together. Cancel or Escape creates neither. |
 | Correct classification | Change System and Type; save while preserving identity, evidence and connections. Incompatible dependencies require explicit repair. |

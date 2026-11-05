@@ -1127,6 +1127,35 @@ describe('Systems Mapping workflow', () => {
     await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Capital repair funding policy'));
   });
 
+  it('shows saved-request progress beside the sticky memo action and clears busy state after a pending failure', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    seedProject(project);
+    const api = await import('./api.js');
+    let progress, rejectRequest;
+    vi.spyOn(api, 'createPreflightEvaluation').mockImplementation((_body, options) => {
+      progress = options.onProgress;
+      return new Promise((_resolve, reject) => { rejectRequest = reject; });
+    });
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
+    const action = document.querySelector('.memo-action-row');
+    expect(action.closest('.notebook-task-top')).not.toBeNull();
+    await waitFor(() => expect(within(action).getByRole('status')).toHaveTextContent('Saving your generation request…'));
+    expect(within(action).getByRole('button', { name: 'Updating map…' })).toBeDisabled();
+    for (const message of ['Reading memo (attempt 1 of 3)…', 'Reconnecting to your saved request…', '']) {
+      await act(async () => progress(message));
+      expect(within(action).getByRole('status')).toHaveTextContent(message || 'Reading your memo…');
+    }
+    await act(async () => rejectRequest(new api.ApiError('Your request is saved. Reopen this map to check its progress.', 503, { details: { code: 'guidance_pending' } })));
+    expect(await screen.findByText('Your request is saved. Reopen this map to check its progress.')).toBeVisible();
+    expect(within(action).getByRole('button', { name: 'Submit memo and add nodes' })).toBeEnabled();
+    expect(within(action).queryByRole('status')).toBeNull();
+    expect(storedProject().graph.nodes).toEqual([]);
+    expect(storedProject().submission.analysis).toBeUndefined();
+  });
+
   it('uses Back for visited account views and preserves edits when returning across systems', async () => {
     const project = createBlankProject();
     project.submission.text = 'Residents meet in the community room.';
