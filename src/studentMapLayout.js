@@ -56,6 +56,9 @@ export function studentMapBoundaries(nodes, geometries) {
   const boundaries={micro};
   let inner=micro;
   for(const scale of ['exosphere','macrosphere']) {
+    // Reveal the outer sphere when Macro material exists. Keep the intervening
+    // Exo boundary when Macro exists without Exo nodes so nesting stays clear.
+    if(scale==='macrosphere'&&!outer.some(n=>n.scale==='macrosphere'))continue;
     inner=outerBoundary(inner,outer.filter(n=>n.scale===scale),geometries,scale);
     if(inner)boundaries[scale]=inner;
   }

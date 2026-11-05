@@ -245,3 +245,14 @@ it('adds an unpinned Exo card without enclosing retained Macro cards in the Exo 
   expect(nodes).toEqual(before);
   expect(studentMapPositions(nodes,[],geometry,layout)).toEqual(positions);
 });
+
+it('reveals cumulative spheres as their nodes arrive without an empty Macro ring',()=>{
+  const micro={id:'local',label:'Learners',scale:'micro',x:300,y:300};
+  const exo={id:'rule',label:'Referral consent protocol',scale:'exosphere',x:300,y:550};
+  const macro={id:'norm',label:'Mental-health stigma',scale:'macrosphere',x:300,y:800};
+  const geometry=new Map([micro,exo,macro].map(n=>[n.id,mapNodeGeometry(n.label)]));
+  expect(Object.keys(studentMapBoundaries([micro],geometry))).toEqual(['micro']);
+  expect(Object.keys(studentMapBoundaries([micro,exo],geometry))).toEqual(['micro','exosphere']);
+  expect(Object.keys(studentMapBoundaries([micro,exo,macro],geometry))).toEqual(['micro','exosphere','macrosphere']);
+  expect(Object.keys(studentMapBoundaries([micro,macro],geometry))).toEqual(['micro','exosphere','macrosphere']);
+});
