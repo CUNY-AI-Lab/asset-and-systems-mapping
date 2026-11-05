@@ -88,7 +88,7 @@ export function createMemoContractRepair(review, message, activeScale) {
     const repair = { path: `nodes[${label[1]}].label`, value: review.nodes[Number(label[1])]?.label };
     return isMemoContractRepair(repair, activeScale) ? repair : null;
   }
-  const nodeEvidence = /^nodes\[(\d{1,2})\]\.evidence (?:must quote the supplied narrative, not a bibliography or an invented explanation|must describe an established condition, not only a wish, recommendation or research question|must describe a specific established policy and its operation in the focal situation)\.$/u.exec(message);
+  const nodeEvidence = /^nodes\[(\d{1,2})\]\.evidence (?:must quote the supplied narrative, not a bibliography or an invented explanation|must describe an established condition, not only a wish, recommendation or research question|must describe a specific established policy and its operation in the focal situation|must quote the focal participants’ nonparticipation in this named outside setting, not another setting|must quote the focal participants’ nonparticipation in an outside decision and its indirect effect on their local setting|describes focal participants taking part in the setting; do not classify that setting as Exo)\.$/u.exec(message);
   if (nodeEvidence && Array.isArray(review.nodes)) {
     const node = review.nodes[Number(nodeEvidence[1])];
     const repair = { path: `nodes[${nodeEvidence[1]}].evidence`, value: { label: node?.label, evidence: node?.evidence } };

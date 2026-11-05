@@ -3386,7 +3386,7 @@ export function createSystemsMappingApp(options = {}) {
                   if (!passages.length) throw repairError;
                   generated = await generate({
                     ...providerInput,
-                    systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`,
+                    systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\nValidation failure: ${repairError.message}\nIf the required classification facts are absent from the source, omit the proposed node. Copying a real quotation does not establish facts missing from that quotation.\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`,
                     memoContext: repairContext,
                   }, 'memo-evidence');
                   let expandedReview;

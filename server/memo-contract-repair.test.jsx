@@ -21,7 +21,7 @@ const systems = [];
 afterEach(async () => { for (const system of systems.splice(0)) await system.close(); });
 const bytes = value => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
-async function setup(rejected, scale = 'micro', { sourceText = passage, existingMicroNodes = [] } = {}) {
+async function setup(rejected, scale = 'micro', { sourceText = passage, existingMicroNodes = [], nodeSubmission = false } = {}) {
   const accepted = review(scale);
   const run = vi.fn().mockResolvedValueOnce({ suggestion: rejected, metadata: {} }).mockResolvedValue({ suggestion: accepted, metadata: {} });
   const failures = vi.fn();
@@ -36,11 +36,43 @@ async function setup(rejected, scale = 'micro', { sourceText = passage, existing
   if (scale === 'meso' || existingMicroNodes.length) project.graph.nodes = (scale === 'meso' ? carried : existingMicroNodes)
     .map(node => ({ ...node, status: 'confirmed', claimState: 'inference' }));
   const payload = preflightEvaluationPayload(project);
+  if (nodeSubmission) Object.assign(payload, { workflowMode: 'student-nodes-v1', sourceMaterial: sourceText });
   const evaluate = () => system.app.request(`${ORIGIN}/api/preflight/evaluations`, { method: 'POST', headers, body: JSON.stringify(payload) });
   return { run, failures, system, evaluate, accepted, project };
 }
 
 describe('ordinary memo contract correction', () => {
+  it.each([true, false])('retains classification feedback in the final repair without relaxing source validation (corrected=%s)', async corrected => {
+    const administration = 'The Lab is jointly administered by Graduate Center Digital Initiatives and the Teaching and Learning Center.';
+    const access = 'Class access lasts for approved course dates.';
+    const sourceText = `${administration}\n\n${access}`;
+    const rejected = { guidance: [], nodes: [{ label: 'Graduate Center Digital Initiatives', type: 'organization', scale: 'exosphere', evidence: administration, basis: 'memo' }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const { evaluate, run, failures } = await setup(rejected, 'exosphere', { sourceText, existingMicroNodes: carried, nodeSubmission: true });
+    run.mockReset().mockResolvedValueOnce({ suggestion: rejected, metadata: {} }).mockResolvedValueOnce({ suggestion: rejected, metadata: {} })
+      .mockImplementationOnce(async input => ({ suggestion: { ...rejected, nodes: [{ ...(corrected
+        ? { label: 'Class access period', type: 'policy', scale: 'exosphere', basis: 'memo' }
+        : rejected.nodes[0]), evidence: input.memoContext.evidenceRepair.passages.findIndex(item => item.text.includes(corrected ? access : administration)) }] }, metadata: {} }));
+    const response = await evaluate();
+    expect(response.status).toBe(corrected ? 201 : 502);
+    expect(run).toHaveBeenCalledTimes(3);
+    const final = run.mock.calls[2][0];
+    expect(final.systemPrompt).toContain('Validation failure: nodes[0].evidence must quote the focal participants’ nonparticipation in this named outside setting');
+    expect(final.systemPrompt).toContain('omit the proposed node');
+    expect(final.systemPrompt).not.toContain(administration);
+    expect(final.memoContext.contractRepair).toEqual({ path: 'nodes[0].evidence', value: { label: rejected.nodes[0].label, evidence: administration } });
+    expect(JSON.parse(normalizeInput(final).projectInput).memoContext.contractRepair).toEqual(final.memoContext.contractRepair);
+    expect(final.sourceText).toBe(run.mock.calls[0][0].sourceText);
+    expect(final.carriedNodes).toEqual(run.mock.calls[0][0].carriedNodes);
+    const body = await response.json();
+    if (corrected) {
+      expect(body.evaluation.review.nodes).toHaveLength(1);
+      expect(body.evaluation.review.nodes[0]).toMatchObject({ label: 'Class access period', type: 'policy', scale: 'exosphere' });
+      expect(body.evaluation.review.connections).toEqual([]);
+      expect(body.evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    } else expect(body.details).toMatchObject({ validationRule: 'outside_participation', correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(failures).toHaveBeenCalledTimes(2);
+  });
+
   it('supplies the exact rejected Exo role label for the bounded corrective attempt', () => {
     const evidence = 'This fictional protocol requires recorded permission before Centralized School Response Clinicians share a student case with a community counselor.';
     const rejected = { guidance: [], nodes: [{ label: 'Community counselor', type: 'resource', scale: 'exosphere', evidence, basis: 'memo' }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
