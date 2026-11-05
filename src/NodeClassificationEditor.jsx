@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NODE_TYPES, isNodeTypeAllowedAtScale } from './domain.js';
+import { nodeClassificationTypes } from './nodeClassification.js';
 
 const SYSTEMS = { micro: 'Microsystem', exosphere: 'Exosystem', macrosphere: 'Macrosystem' };
 
@@ -8,6 +8,8 @@ export default function NodeClassificationEditor({ node, scales = Object.keys(SY
   const [type, setType] = useState(node.type);
   const [error, setError] = useState('');
   const changed = scale !== node.scale || type !== node.type;
+  const types = nodeClassificationTypes(scale);
+  const retainedLegacyType = scale === node.scale && type === node.type && !types.includes(type);
   return <form className="node-classification" aria-label="Node classification" onSubmit={event => {
     event.preventDefault();
     if (!changed) return;
@@ -17,10 +19,11 @@ export default function NodeClassificationEditor({ node, scales = Object.keys(SY
       <label className="field"><span className="field__label">System</span><select value={scale} onChange={event => {
         const next = event.target.value;
         setScale(next); setError('');
-        if (!isNodeTypeAllowedAtScale(type, next)) setType(next === 'micro' ? 'role' : next === 'exosphere' ? 'institution' : 'policy');
+        if (!nodeClassificationTypes(next).includes(type)) setType(next === 'micro' ? 'role' : next === 'exosphere' ? 'institution' : 'policy');
       }}>{Object.entries(SYSTEMS).filter(([value]) => scales.includes(value) || value === node.scale).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label className="field"><span className="field__label">Type</span><select value={type} onChange={event => { setType(event.target.value); setError(''); }}>
-        {NODE_TYPES.filter(value => isNodeTypeAllowedAtScale(value, scale)).map(value => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}
+        {retainedLegacyType && <option value={type} disabled>{type[0].toUpperCase() + type.slice(1)} (current)</option>}
+        {types.map(value => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}
       </select></label>
     </div>
     {error && <p className="field__error" role="alert">{error}</p>}

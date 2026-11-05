@@ -33,7 +33,7 @@ describe('explicit node classification corrections', () => {
   });
 
   it.each([
-    ['meso', 'role'], ['micro', 'policy'], ['unknown', 'resource'],
+    ['meso', 'role'], ['micro', 'policy'], ['unknown', 'resource'], ['exosphere', 'policy'], ['exosphere', 'law'], ['exosphere', 'belief'], ['exosphere', 'structure'], ['macrosphere', 'agency'],
   ])('rejects an invalid %s/%s combination without changing the project', (scale, type) => {
     const { project, counselor } = fixture(), before = structuredClone(project);
     expect(reclassifyNode(project, counselor.id, scale, type)).toMatch(/type/);
@@ -45,6 +45,25 @@ describe('explicit node classification corrections', () => {
     expect(reclassifyNode(project, counselor.id, counselor.scale, counselor.type)).toBe('');
     expect(reclassifyNode(project, 'missing', 'micro', 'role')).toMatch(/Select a node/);
     expect(project).toEqual(before);
+  });
+
+  it.each([
+    ['rejected', 'retired', 'removed'],
+    ['rejected', 'inference', 'removed'],
+    ['pending', 'inference', 'pending'],
+    ['research lead', 'research lead', 'set aside'],
+  ])('preserves the %s node’s saved mapping decision when its classification changes', (status, claimState, reviewDecision) => {
+    const { project, counselor } = fixture();
+    project.graph.edges = project.graph.edges.filter(edge => edge.source !== counselor.id && edge.target !== counselor.id);
+    for (const records of [project.graph, project.candidates]) Object.assign(records.nodes.find(node => node.id === counselor.id), { status, claimState, reviewDecision });
+    validateProject(project);
+    const before = structuredClone(project);
+    expect(reclassifyNode(project, counselor.id, 'micro', 'role')).toBe('');
+    for (const key of ['graph', 'candidates']) {
+      const old = before[key].nodes.find(node => node.id === counselor.id);
+      expect(project[key].nodes.find(node => node.id === counselor.id)).toEqual({ ...old, scale: 'micro', type: 'role', settingNodeIds: [], focalParticipation: 'unclear' });
+      expect(project[key].edges).toEqual(before[key].edges);
+    }
   });
 
   it('rejects moving an endpoint out of a saved local relationship atomically', () => {

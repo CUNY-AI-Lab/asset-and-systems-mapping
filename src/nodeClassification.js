@@ -1,10 +1,16 @@
-import { isNodeTypeAllowedAtScale, validateProject } from './domain.js';
+import { MICRO_NODE_TYPES, MACROSPHERE_NODE_TYPES, validateProject } from './domain.js';
+import { EXO_SETTING_TYPES } from '../shared/node-submission.js';
 import { correspondingNode, nodeLabelIssue } from './mapTextEditing.js';
+
+const CLASSIFICATION_TYPES = Object.freeze({ micro: MICRO_NODE_TYPES, exosphere: EXO_SETTING_TYPES, macrosphere: MACROSPHERE_NODE_TYPES });
+export function nodeClassificationTypes(scale) {
+  return CLASSIFICATION_TYPES[scale] || [];
+}
 
 // An explicit student correction keeps the node's identity, evidence, placement
 // and relationships. Test the whole change before touching the saved project.
 export function reclassifyNode(project, id, scale, type) {
-  if (!['micro', 'exosphere', 'macrosphere'].includes(scale) || !isNodeTypeAllowedAtScale(type, scale)) {
+  if (!nodeClassificationTypes(scale).includes(type)) {
     return 'Choose a type that belongs in this system.';
   }
   const next = structuredClone(project);
@@ -32,8 +38,11 @@ export function reclassifyNode(project, id, scale, type) {
     }
     item.scale = scale;
     item.type = type;
-    item.reviewDecision = 'added';
-    item.claimState = 'student interpretation';
+    // Changing classification is not an Add to map action. Preserve removed,
+    // pending and set-aside decisions in both the graph and candidate record.
+    if (item.status === 'confirmed' && item.claimState !== 'retired' && !['removed', 'set aside'].includes(item.reviewDecision)) {
+      item.claimState = 'student interpretation';
+    }
   }
   try { validateProject(next); }
   catch { return 'This change conflicts with a saved connection or setting. Update that connection or setting first.'; }
