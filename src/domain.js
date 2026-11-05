@@ -7,6 +7,7 @@ import { analyzeMemoSource, bibliographyOnlyEvidence, bibliographyOnlyLabel } fr
 import { RELATIONSHIP_PROCESS_FIELDS, RELATIONSHIP_PROCESS_TEXT_FIELDS, RELATIONSHIP_STRENGTHS, RELATIONSHIP_STATUSES } from '../shared/relationship-process.js';
 export { RELATIONSHIP_PROCESS_FIELDS, RELATIONSHIP_STRENGTHS, RELATIONSHIP_STATUSES } from '../shared/relationship-process.js';
 import { SYSTEMS_MAPPING_LEVELS, SYSTEMS_MAPPING_PARTS } from '../shared/systems-mapping-parts.js';
+import { editHistoryIssue } from '../shared/edit-history-contract.js';
 
 export const SCALE_ORDER = ['micro', 'meso', 'exosphere', 'macrosphere'];
 export const SCALE_PARTS = SYSTEMS_MAPPING_PARTS;
@@ -1494,7 +1495,7 @@ const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const EVIDENCE_KEYS = ['evidence', 'evidenceLocator', 'evidenceExcerpt', 'evidenceHash', 'evidenceId', 'sourceId', 'evidenceRefs'];
 const CLAIM_EVIDENCE_PROVENANCE_FIELDS = ['evidenceId', 'sourceId', 'evidenceLocator', 'evidenceHash'];
 const CLAIM_EVIDENCE_KEYS = ['id', ...CLAIM_EVIDENCE_FIELDS, ...CLAIM_EVIDENCE_PROVENANCE_FIELDS];
-const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'part2Submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'layout', 'mapAnnotation', 'reflection', 'events', 'exportedAt', 'portableExport'];
+const PROJECT_KEYS = ['schemaVersion', 'id', 'title', 'participantName', 'inquiry', 'activeScale', 'releasedScales', 'completedScales', 'stage', 'furthestStage', 'levelProgress', 'sharingTier', 'createdAt', 'updatedAt', 'submission', 'part2Submission', 'configs', 'instructor', 'teacherGovernance', 'preflight', 'candidates', 'graph', 'viewport', 'layout', 'mapAnnotation', 'reflection', 'events', 'editHistory', 'exportedAt', 'portableExport'];
 const SUBMISSION_KEYS = ['id', 'title', 'author', 'date', 'sourceType', 'location', 'rights', 'sensitive', 'consent', 'evidenceOwnership', 'text', 'fileName', 'fileSize', 'revision', 'fingerprint'];
 const CONFIG_KEYS = ['id', 'profileVersion', 'outputSchemaVersion', 'label', 'provider', 'baseModel', 'fixedPrompt', 'customInstructions', 'contextLimit', 'confidenceThreshold', 'relationVocabulary', 'revision', 'changeNote', 'history', 'fingerprint'];
 const NODE_KEYS = ['id', 'label', 'type', 'scale', 'status', 'claimState', 'notes', 'x', 'y', 'annotations', 'sourceFingerprint', 'basis', 'deontic', 'scopeNodeIds', 'mesoExplanation', 'claimEvidence', 'origin', 'reviewDecision', 'settingNodeIds', 'focalParticipation', ...EVIDENCE_KEYS];
@@ -2314,6 +2315,10 @@ export function validateProject(project) {
   }
   validateAnnotation(project.mapAnnotation, 'project.mapAnnotation', `project:${project.id}:map`, annotationOwners);
   assertString(project.reflection, 'project.reflection', true, PROJECT_LIMITS.promptText);
+  if (project.editHistory !== undefined) {
+    const issue = editHistoryIssue(project.editHistory);
+    if (issue) invalidProject('project.editHistory', issue);
+  }
   if (!Array.isArray(project.events)) invalidProject('project.events', 'must be an array');
   if (project.events.length > PROJECT_LIMITS.events) invalidProject('project.events', `must contain no more than ${PROJECT_LIMITS.events} events`);
   assertUniqueIds(project.events, 'project.events');
@@ -3118,6 +3123,10 @@ export function createPortableProject(project, sharingTier = project.sharingTier
   }
   const portable = cloneProject(project);
   const redactions = [];
+  if (sharingTier !== 'private' && portable.editHistory) {
+    delete portable.editHistory;
+    addRedaction(redactions, 'editHistory', 'Previous memo and map edits excluded from shared export');
+  }
   if (['CUNY', 'public'].includes(sharingTier) && portable.participantName) {
     portable.participantName = '';
     addRedaction(redactions, 'participantName', 'Student or group name excluded from broader export');

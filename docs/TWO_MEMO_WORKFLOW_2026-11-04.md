@@ -15,6 +15,8 @@ People and participant roles (such as a community counselor) cannot become Exo n
 
 The canvas and resizable Notebook remain visible together. Tools is inside that sidebar; Hide closes it explicitly. Continue, Back and selected-item actions stay above scrolling content. Field Notes are optional. Remove and Add to map reflect one saved state, and never appear together for a node. Removing a connection source or double-clicking during connection mode cancels the operation. Micro's instruction is “Select a node to edit it.” Evidence excerpts are labeled “Quote from memo.”
 
+Back returns to visited workspace views without reverting map or memo edits; Continue advances the workflow. Undo and Redo restore saved edits separately and remain at the top of the sidebar. Their enabled state follows the current project, including after save/reload. Local view history resets when a different project opens. The item editor has no visible “Edit” caption, uses a distinct On map status, and tints Connect from to match the selected node's system. Hide has no X. In evidence passages, matching item names are bolded without changing the quoted text.
+
 ## Independent sources and persistence
 
 `submission` retains Part 1. `part2Submission` has its own text, filename, revision, fingerprint and privacy declarations. The second editor starts empty; it never displays or submits Part 1 as Part 2. The previous graph provides context. Changing a source does not clear prior nodes, relationships, positions, notes or retired-item decisions. Delayed imports and model results cannot replace a newer edit or a different project.
@@ -30,6 +32,8 @@ Region boundaries fit uneven content in both axes and enclose each inner contour
 A manually created group records 1–24 exact live Meso `relationshipIds`. Its heading is an Exo or Macro node. The serialized target is a real member endpoint for compatibility; membership is defined by relationship IDs, not that anchor. Validation rejects unknown, retired, nested and out-of-scale members. Students must revise/remove a dependent group before removing its member relationship. Ordinary node-to-node links omit `relationshipIds`.
 
 ## Compatibility and verification
+
+The optional schema-10 `editHistory` journal retains up to 30 edits, capped at 256 KiB with room for the serialized save envelope. It records editable data, not navigation or viewport state. Memo restoration advances source revisions and fingerprints; it never reruns the model. Preconditions reject an undo that conflicts with newer unrecorded work. Private backups preserve the journal; every non-private export removes it. Earlier readers reject this new field, so a code rollback must retain the history-aware reader or use a forward fix. A database rollback or automatic stripping of user history is not authorized.
 
 Schema 10 retains source texts, graph IDs, membership IDs, annotations and legacy scoped nodes. Analytical IDs and stored stage numbers remain unchanged. No Durable Object namespace or database restore is involved. Rollbacks must retain the schema-10 reader and both memo fields. Private JSON/Markdown retain both sources; CSV includes group IDs; PNG/PDF render the three regions and manual links. Audience restrictions continue to apply.
 

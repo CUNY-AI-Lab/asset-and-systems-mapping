@@ -218,7 +218,9 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
       await browserExpect(page.locator('.bug-report-host')).toBeVisible();
       await page.locator('[data-graph-id="node_e2e_resident"]').click();
       await browserExpect(page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Notebook',exact:true})).toHaveAttribute('aria-pressed','true');
-      await browserExpect(page.locator('.inspector__head h2')).toHaveText('Edit');
+      await browserExpect(page.locator('.inspector__head h2')).toHaveText('Item details');
+      await browserExpect(page.locator('.inspector__head h2')).toHaveClass('sr-only');
+      await browserExpect(page.locator('.inspector__head').getByText('Edit', { exact: true })).toHaveCount(0);
       await browserExpect(page.locator('.item-editor-title p')).toHaveText('Resident');
       if (process.env.BUG_REPORT_SCREENSHOTS) {
         const editorBounds = await page.locator('.inspector__head').evaluate(element => {

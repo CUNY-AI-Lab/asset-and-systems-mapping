@@ -1127,6 +1127,128 @@ describe('Systems Mapping workflow', () => {
     await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Capital repair funding policy'));
   });
 
+  it('uses Back for visited account views and preserves edits when returning across systems', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text},{label:'Community room',type:'setting',scale:'micro',evidence:project.submission.text}],connections:[]});
+    seedProject(project);
+    render(<App memoFirstWorkflow startInWorkspace />);
+    await screen.findByRole('heading',{name:'Micro · local nodes'});
+    expect(screen.getByRole('button',{name:'Back',exact:true})).toBeDisabled();
+    const openResident = () => fireEvent.keyDown(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`),{key:'Enter'});
+    openResident();
+    fireEvent.click(screen.getByRole('button',{name:'Tools',exact:true}));
+    expect(screen.getByRole('region',{name:'Map tools'})).toBeVisible();
+    fireEvent.click(screen.getByRole('button',{name:'Back',exact:true}));
+    expect(await screen.findByRole('textbox',{name:'Label',exact:true})).toHaveValue('Residents');
+    expect(screen.queryByRole('region',{name:'Map tools'})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Back',exact:true}));
+    expect(await screen.findByRole('heading',{name:'Micro · local nodes'})).toBeVisible();
+    expect(screen.getByRole('button',{name:'Back',exact:true})).toBeDisabled();
+    openResident();
+    fireEvent.change(screen.getByRole('textbox',{name:'Label',exact:true}),{target:{value:'Neighbors'}});
+    fireEvent.click(screen.getByRole('button',{name:'Save',exact:true}));
+    await waitFor(()=>expect(storedProject().graph.nodes[0].label).toBe('Neighbors'));
+    const editedGraph = structuredClone(storedProject().graph);
+    fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));
+    expect(await screen.findByRole('heading',{name:'Meso · local relationships'})).toBeVisible();
+    fireEvent.click(screen.getByRole('button',{name:'Back',exact:true}));
+    expect(await screen.findByRole('textbox',{name:'Label',exact:true})).toHaveValue('Neighbors');
+    await waitFor(()=>expect(storedProject().activeScale).toBe('micro'));
+    expect(storedProject().graph).toEqual(editedGraph);
+    expect(storedProject().submission.text).toBe(project.submission.text);
+  });
+
+  it('returns to the visited memo editor without replacing its newer text', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text}],connections:[]});
+    seedProject(project);
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button',{name:'Edit',exact:true}));
+    const revised = `${project.submission.text} They discuss repairs.`;
+    fireEvent.change(screen.getByRole('textbox',{name:'First memo',exact:true}),{target:{value:revised}});
+    fireEvent.click(screen.getByRole('button',{name:/Meso$/}));
+    await screen.findByRole('heading',{name:'Meso · local relationships'});
+    fireEvent.click(screen.getByRole('button',{name:'Back',exact:true}));
+    expect(await screen.findByRole('textbox',{name:'First memo',exact:true})).toHaveValue(revised);
+    await waitFor(()=>expect(storedProject().submission.text).toBe(revised));
+    expect(storedProject().graph).toEqual(project.graph);
+    await waitFor(()=>expect(storedProject().stage).toBe(1));
+  });
+
+  it('undoes and redoes account classification and clears Redo after a new edit', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src',project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text}],connections:[]});
+    openMemoWorkflowScale(project,'exosphere'); project.part2Submission.text = 'A community counselor receives a referral.';
+    appendSubmittedNodes(project,{nodes:[{label:'Community counselor',type:'resource',scale:'exosphere',basis:'memo',evidence:project.part2Submission.text}],connections:[]});
+    const counselor = project.graph.nodes.find(node=>node.label==='Community counselor');
+    const historyButton = name => within(screen.getByRole('group',{name:'Edit history'})).getByRole('button',{name,exact:true});
+    seedProject(project); render(<App memoFirstWorkflow startInWorkspace />);
+    await screen.findByRole('heading',{name:'Exo · outside settings'});
+    expect(historyButton('Undo')).toBeDisabled();
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${counselor.id}"]`),{key:'Enter'});
+    fireEvent.change(screen.getByRole('combobox',{name:'System',exact:true}),{target:{value:'micro'}});
+    fireEvent.change(screen.getByRole('combobox',{name:'Type',exact:true}),{target:{value:'role'}});
+    fireEvent.click(screen.getByRole('button',{name:'Save classification',exact:true}));
+    await waitFor(()=>expect(storedProject().graph.nodes.find(node=>node.id===counselor.id)).toMatchObject({scale:'micro',type:'role'}));
+    fireEvent.click(historyButton('Undo'));
+    await waitFor(()=>expect(storedProject().graph.nodes.find(node=>node.id===counselor.id)).toEqual(counselor));
+    expect(historyButton('Redo')).toBeEnabled();
+    fireEvent.click(historyButton('Redo'));
+    await waitFor(()=>expect(storedProject().graph.nodes.find(node=>node.id===counselor.id)).toMatchObject({scale:'micro',type:'role'}));
+    fireEvent.click(historyButton('Undo'));
+    fireEvent.change(screen.getByRole('textbox',{name:'Label',exact:true}),{target:{value:'Community support counselor'}});
+    fireEvent.click(screen.getByRole('button',{name:'Save',exact:true}));
+    expect(historyButton('Redo')).toBeDisabled();
+    await waitFor(()=>expect(storedProject().graph.nodes.find(node=>node.id===counselor.id).label).toBe('Community support counselor'));
+    expect(storedProject().graph.edges).toEqual(project.graph.edges);
+    expect(fetchMock.mock.calls.filter(([path])=>String(path)==='/api/preflight/evaluations')).toHaveLength(0);
+  });
+
+  it('restores an account node removed before reload using the persisted Undo action', async () => {
+    const project = createBlankProject(); project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src',project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text},{label:'Community room',type:'setting',scale:'micro',evidence:project.submission.text}],connections:[]});
+    seedProject(project); render(<App memoFirstWorkflow startInWorkspace />);
+    await screen.findByRole('heading',{name:'Micro · local nodes'});
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`),{key:'Enter'});
+    fireEvent.click(screen.getByRole('button',{name:'Remove',exact:true}));
+    await waitFor(()=>expect(storedProject().graph.nodes[0].claimState).toBe('retired'));
+    expect(storedProject().editHistory.past).toHaveLength(1);
+    cleanup(); render(<App memoFirstWorkflow startInWorkspace />);
+    await screen.findByRole('heading',{name:'Micro · local nodes'});
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(1);
+    const history = within(screen.getByRole('group',{name:'Edit history'}));
+    expect(history.getByRole('button',{name:'Undo',exact:true})).toBeEnabled();
+    fireEvent.click(history.getByRole('button',{name:'Undo',exact:true}));
+    await waitFor(()=>expect(storedProject().graph).toEqual(project.graph));
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(2);
+    expect(history.getByRole('button',{name:'Redo',exact:true})).toBeEnabled();
+  });
+
+  it('flushes a pending account interpretation before Undo and restores the visible field', async () => {
+    const project = createBlankProject(); project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src',project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text}],connections:[]});
+    seedProject(project); render(<App memoFirstWorkflow startInWorkspace />);
+    await screen.findByRole('heading',{name:'Micro · local nodes'});
+    fireEvent.keyDown(document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`),{key:'Enter'});
+    fireEvent.change(screen.getByRole('textbox',{name:'Label',exact:true}),{target:{value:'Neighbors'}});
+    fireEvent.click(screen.getByRole('button',{name:'Save',exact:true}));
+    await waitFor(()=>expect(storedProject().graph.nodes[0].label).toBe('Neighbors'));
+    fireEvent.change(screen.getByRole('textbox',{name:'Interpretation',exact:true}),{target:{value:'An unfinished interpretation.'}});
+    fireEvent.click(within(screen.getByRole('group',{name:'Edit history'})).getByRole('button',{name:'Undo',exact:true}));
+    await waitFor(()=>expect(storedProject().graph.nodes[0].annotations.analytical.text).toBe(''));
+    await waitFor(()=>expect(screen.getByRole('textbox',{name:'Interpretation',exact:true})).toHaveValue(''));
+    expect(storedProject().graph.nodes[0].label).toBe('Neighbors');
+    expect(within(screen.getByRole('group',{name:'Edit history'})).getByRole('button',{name:'Redo',exact:true})).toBeEnabled();
+  });
+
   it('keeps account scale navigation disabled until a submitted memo has finished adding nodes', async () => {
     const project = createBlankProject();
     project.submission.text = 'Residents meet in the community room.';
