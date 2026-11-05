@@ -149,7 +149,7 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
   // map. Compare complete nested layouts in all four directions, using the
   // final sphere bounds rather than a card-only rectangle. At most 16 layouts
   // are considered; saved manual positions are fixed in every candidate.
-  let layouts=[{positions,inner:micro}];
+  let layouts=[{positions,inner:micro,boundaries:{micro}}];
   for(const scale of ['exosphere','macrosphere']) {
     const outer=nodes.filter(n=>n.scale===scale).sort((a,b)=>a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
     const movable=outer.filter(n=>!manual.has(n.id));
@@ -178,15 +178,26 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
         while(occupied.some(b=>overlaps(box(p,g,12),b)))p[horizontal?'x':'y']+=sign*((horizontal?width:height)+40);
         next.set(n.id,p);occupied.push(box(p,g,12));
       });
-      return {positions:next,inner:outerBoundary(inner,outer.map(n=>({...n,...next.get(n.id)})),geometries,scale)||inner};
+      const boundary=outerBoundary(inner,outer.map(n=>({...n,...next.get(n.id)})),geometries,scale)||inner;
+      return {positions:next,inner:boundary,boundaries:{...layout.boundaries,[scale]:boundary}};
     }));
   }
+  // A compact new Exo placement must not expand its sphere over retained Macro
+  // cards. Preserve every pin and prefer a candidate with correct membership
+  // before optimizing fit; an existing invalid pin is never moved implicitly.
+  const membershipConflicts=layout=>nodes.reduce((count,node)=>{
+    const inner=layout.boundaries[node.scale==='exosphere'?'micro':node.scale==='macrosphere'?'exosphere':''];
+    if(!inner)return count;
+    const bounds=box(layout.positions.get(node.id),geometries.get(node.id));
+    const dx=Math.max(bounds.left-inner.cx,inner.cx-bounds.right,0),dy=Math.max(bounds.top-inner.cy,inner.cy-bounds.bottom,0);
+    return count+Number((dx/inner.rx)**2+(dy/inner.ry)**2<1);
+  },0);
   const fitCost=layout=>Math.max((layout.inner.rx*2+40)/Math.max(.2,aspectRatio),layout.inner.ry*2+52);
   const connectionLength=layout=>edges.reduce((total,edge)=>{
     const a=layout.positions.get(edge.source),b=layout.positions.get(edge.target);
     return total+(a&&b?Math.hypot(a.x-b.x,a.y-b.y):0);
   },0);
-  layouts.sort((a,b)=>fitCost(a)-fitCost(b)||connectionLength(a)-connectionLength(b));
+  layouts.sort((a,b)=>membershipConflicts(a)-membershipConflicts(b)||fitCost(a)-fitCost(b)||connectionLength(a)-connectionLength(b));
   return layouts[0].positions;
 }
 

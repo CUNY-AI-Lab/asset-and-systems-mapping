@@ -216,3 +216,32 @@ it.each(['exosphere','macrosphere'])('keeps legal %s moves exact and stops an in
   expect(constrainStudentNodeMove(moving,inward,displayed,geometry,{autoFit:false})).toEqual(inward);
   expect(displayed).toEqual(before);
 });
+
+it('adds an unpinned Exo card without enclosing retained Macro cards in the Exo sphere',()=>{
+  // World card dimensions measured from the fictional ten-node Dev case.
+  // The smaller bottom placement previously engulfed both pinned Macro cards.
+  const measured=[
+    ['micro',841,656,174.1529998779297,42],['micro',1075,544,224,64],
+    ['micro',1087,656,174.89425659179688,42],['micro',617,656,224,64],
+    ['micro',840,544,150.6991424560547,42],['micro',605,544,224,64],
+    ['exosphere',840,804,224,64],['macrosphere',704,941,224,90],
+    ['macrosphere',976,941,224,64],['exosphere',420,270,217.16812133789062,42],
+  ];
+  const nodes=measured.map(([scale,x,y],i)=>({id:`item-${i}`,label:`Item ${i}`,scale,x,y}));
+  const geometry=new Map(measured.map(([,x,y,cardWidth,cardHeight],i)=>[`item-${i}`,{cardWidth,cardHeight}]));
+  const before=structuredClone(nodes),layout={manualNodeIds:nodes.slice(0,9).map(n=>n.id),readingAspect:1.5288461538461537,aspectRatio:1.5288461538461537};
+  const positions=studentMapPositions(nodes,[],geometry,layout),displayed=nodes.map(n=>({...n,...positions.get(n.id)}));
+  const regions=studentMapBoundaries(displayed,geometry);
+  for(const node of nodes.slice(0,9))expect(positions.get(node.id)).toEqual({x:node.x,y:node.y});
+  for(const node of displayed.filter(n=>n.scale!=='micro')) {
+    const inner=regions[node.scale==='exosphere'?'micro':'exosphere'],card=area(node,geometry.get(node.id));
+    const dx=Math.max(card.left-inner.cx,inner.cx-card.right,0),dy=Math.max(card.top-inner.cy,inner.cy-card.bottom,0);
+    expect((dx/inner.rx)**2+(dy/inner.ry)**2).toBeGreaterThanOrEqual(1);
+  }
+  const cards=displayed.map(n=>area(n,geometry.get(n.id)));
+  expect(cards.some((card,i)=>cards.slice(i+1).some(other=>intersects(card,other)))).toBe(false);
+  const outer=regions.macrosphere,zoom=Math.min(760/(outer.rx*2+40),(800/955*625-96)/(outer.ry*2+40));
+  expect(22*zoom*955/800).toBeGreaterThanOrEqual(12);
+  expect(nodes).toEqual(before);
+  expect(studentMapPositions(nodes,[],geometry,layout)).toEqual(positions);
+});
