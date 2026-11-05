@@ -63,3 +63,7 @@ The pre-change production baseline was `9fa6e00b78ae08292b10acc148c5c3c4925a7d4e
 ## November 5 classification correction
 
 Concrete policies/laws and outside offices belong at Exo. Macro contains separately evidenced cultural, ideological, historical and economic conditions; a policy does not prove those conditions. Prompt, schema, validation and manual classification controls agree, with a new cache contract and preserved saved identities. See [primary-source research and course convention](CLASSIFICATION_EVIDENCE_2026-11-04.md).
+
+## Map key and selection actions — November 5
+
+The Map key places concrete policies and outside offices at Exo, with cultural, historical and economic conditions at Macro. It explains default colors, manual color choices, cumulative regions and student-authored relationships. When the sidebar is hidden, Edit appears in the top-left selection strip beside the selected item’s name; Memo/Notebook/Tools remain separate navigation.

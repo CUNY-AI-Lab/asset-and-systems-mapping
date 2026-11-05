@@ -145,3 +145,8 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
   .map-layout:not(.has-inspector):has(.notebook-nav-row--simple) .map-reading-guide { top:58px; max-width:calc(100% - 16px); }
 }
 @media (prefers-reduced-motion:reduce) { .app-shell .notebook-switch > .memo-tab-needs-input { animation:none; } }
+
+/* Selection actions belong with the selected label, separate from workspace tabs. */
+.map-reading-guide { flex-wrap:wrap; }
+.map-reading-guide > span { min-width:0; overflow-wrap:anywhere; }
+.map-reading-guide .selected-item-edit { flex:0 0 auto; min-height:44px; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font:600 13px/1.35 var(--body); text-decoration:none; white-space:nowrap; }

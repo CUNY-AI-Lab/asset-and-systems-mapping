@@ -6408,7 +6408,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.pointerDown(document.querySelector(`[data-graph-id="${node.id}"]`), { pointerId: 30, button: 0, clientX: draggedPosition.x, clientY: draggedPosition.y });
     fireEvent.pointerUp(svg, { pointerId: 30, clientX: draggedPosition.x, clientY: draggedPosition.y });
     expect(inspector).not.toHaveAttribute('aria-hidden');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    const selectedActions = screen.getByRole('group', { name: 'Selected map item' });
+    expect(selectedActions).toHaveTextContent(node.label);
+    fireEvent.click(within(selectedActions).getByRole('button', { name: 'Edit', exact: true }));
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
     expect(inspector).not.toHaveAttribute('aria-hidden');
 
