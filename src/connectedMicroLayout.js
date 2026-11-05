@@ -32,8 +32,10 @@ export function connectedMicroPositions(nodes, edges, geometries, {manual,aspect
   const horizontalPitch=Math.max(width+gap,...links.map(edge=>
     (geometries.get(edge.source).cardWidth+geometries.get(edge.target).cardWidth)/2+(labelGeometries?.get(edge.id)?.width||0)+36));
   const verticalPitch=height+Math.max(gap,...links.map(edge=>(labelGeometries?.get(edge.id)?.height||0)+40));
-  const columns=Math.min(phone?3:5,Math.max(connected.length>=3?3:1,2*Math.round((Math.sqrt(connected.length*Math.min(2,aspectRatio)*.65)-1)/2)+1));
-  const rows=2*Math.ceil((Math.ceil(connected.length/columns)-1)/2)+1;
+  // A three-column hub fan shrinks long labels below readable size when the
+  // phone editor shares the screen. Use the height available above the sheet.
+  const columns=phone?Math.min(2,connected.length):Math.min(5,Math.max(connected.length>=3?3:1,2*Math.round((Math.sqrt(connected.length*Math.min(2,aspectRatio)*.65)-1)/2)+1));
+  const rows=phone?Math.ceil(connected.length/columns):2*Math.ceil((Math.ceil(connected.length/columns)-1)/2)+1;
   const center={x:840,y:600};
   const slots=Array.from({length:rows*columns},(_,i)=>({x:center.x+(i%columns-(columns-1)/2)*horizontalPitch,y:center.y+(Math.floor(i/columns)-(rows-1)/2)*verticalPitch}))
     .sort((a,b)=>distance(a,center)-distance(b,center)||a.y-b.y||a.x-b.x);

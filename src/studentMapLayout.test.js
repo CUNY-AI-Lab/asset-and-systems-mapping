@@ -36,7 +36,10 @@ it.each([1.8,.7])('centers a busy participant and groups isolated cards outside 
   const core=nodes.slice(0,8).map(n=>area(positions.get(n.id),geometry.get(n.id)));
   const b={left:Math.min(...core.map(b=>b.left)),right:Math.max(...core.map(b=>b.right)),top:Math.min(...core.map(b=>b.top)),bottom:Math.max(...core.map(b=>b.bottom))};
   const hub=positions.get('n0');
-  expect(Math.abs(hub.x-(b.left+b.right)/2)).toBeLessThan((b.right-b.left)*.2);
+  // Phones use two readable columns, so the central hub occupies one of the
+  // two middle slots rather than a third, screen-shrinking center column.
+  expect(Math.abs(hub.x-(b.left+b.right)/2)).toBeLessThan((b.right-b.left)*(aspectRatio<1?.35:.2));
+  if(aspectRatio<1)expect(new Set(nodes.slice(0,8).map(n=>positions.get(n.id).x)).size).toBeLessThanOrEqual(2);
   expect(Math.abs(hub.y-(b.top+b.bottom)/2)).toBeLessThan((b.bottom-b.top)*.2);
   const isolated=nodes.slice(8).map(n=>area(positions.get(n.id),geometry.get(n.id)));
   expect(isolated.every(r=>r.left>b.right+40)||isolated.every(r=>r.top>b.bottom+40)).toBe(true);

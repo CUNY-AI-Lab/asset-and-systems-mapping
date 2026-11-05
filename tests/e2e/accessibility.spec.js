@@ -354,7 +354,8 @@ test.describe('student accessibility', () => {
         const smallestRenderedLabel = await page.locator('.node-label').evaluateAll((labels) => (
           Math.min(...labels.map((label) => label.getBoundingClientRect().height))
         ));
-        expect(smallestRenderedLabel, 'Phone All layers labels should retain a readable rendered height').toBeGreaterThanOrEqual(10);
+        // SVG fractional transforms can report 9.9999847 for a 10px glyph box.
+        expect(smallestRenderedLabel + .001, 'Phone All layers labels should retain a readable rendered height').toBeGreaterThanOrEqual(10);
       }
     }
 
