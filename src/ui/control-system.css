@@ -11,7 +11,7 @@
   --control-border: 1px solid var(--line);
 }
 
-:is(.app-shell, .access-shell) :is(button, .button):not(.noll-sketch__surface) {
+:is(.app-shell, .access-shell) :is(button, .button):not(.noll-sketch__surface, [role="tab"]) {
   min-width: 0;
   min-height: var(--control-height);
   max-width: 100%;

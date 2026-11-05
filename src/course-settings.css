@@ -3,8 +3,8 @@
 .teacher-dashboard > .studio-heading { align-items: center; flex-wrap: nowrap; gap: 16px; margin-bottom: 24px; }
 .teacher-dashboard > .studio-heading h1 { font-size: 28px; line-height: 1.2; }
 .teacher-dashboard > .studio-heading > .studio-heading__actions { width: auto; }
-.teacher-dashboard__sections { width: 100%; gap: 24px; margin: 0 0 24px; border-bottom: 1px solid var(--line); }
-.teacher-dashboard__sections button { min-height: 44px; padding: 8px 4px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 15px; font-weight: 550; }
+.teacher-dashboard__sections { width: 100%; gap: 24px; margin: 0 0 16px; border-bottom: 1px solid var(--line); }
+.teacher-dashboard__sections button { min-height: 44px; padding: 8px 4px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 15px; font-weight: 550; }
 .teacher-dashboard__sections button.is-active { border-bottom-color: var(--blue); background: transparent; color: var(--blue); font-weight: 650; }
 .teacher-dashboard .button { min-height: 44px; padding: 8px 14px; font-size: 14px; line-height: 1.3; }
 .teacher-dashboard :is(p, h2, h3, h4, label, strong) { overflow-wrap: anywhere; }
@@ -167,6 +167,14 @@
 .course-settings .teacher-history strong { font-size: 15px; }
 .course-settings .teacher-history p { max-width: 72ch; font-size: 15px; line-height: 1.5; }
 .course-settings .teacher-history small { font: 14px/1.5 var(--body); }
+
+@media (min-width: 701px) {
+  .course-settings .course-prompt-editor { grid-template-columns: 180px minmax(0, 1fr); align-items: start; }
+  .course-settings__scale { width:100%; grid-column:1; grid-row:1; }
+  .course-prompt-editor > .field:not(.course-settings__scale), .course-prompt-editor > .field__hint { grid-column:2; }
+  .course-prompt-editor textarea { height:96px; min-height:96px; }
+  .course-prompt-editor > .course-student-preview { grid-column:1 / -1; }
+}
 
 @media (max-width: 1100px) and (min-width: 701px) {
   .teacher-review-grid { grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr); }
