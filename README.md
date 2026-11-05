@@ -16,8 +16,8 @@ The [November 5 release receipt](TODO.md#memo-workspace-release-receipt--novembe
 | --- | --- | --- | --- |
 | 1 | Micro | People, roles, activities, objects and immediate settings relevant to the focal person or group. | Evidence-supported nodes in the Microsystem. |
 | 1 | Meso | Relationships among those local elements and settings. | Student-created, named directional arrows between the same Micro nodes. |
-| 2 | Exo | Outside settings whose decisions affect the focal participants without their direct participation in that setting. | Exo nodes and student-created connections to local relationships. |
-| 2 | Macro | Policies, values, historical patterns and structural conditions shaping the mapped settings and relationships. | Macro nodes and student-created links or groups identifying what they affect. |
+| 2 | Exo | Concrete policies and laws, and outside settings whose decisions affect the focal participants without their direct participation in that setting. | Exo nodes and student-created connections to local relationships. |
+| 2 | Macro | Independently evidenced cultural, ideological, historical and economic conditions shaping the mapped settings and relationships. | Macro nodes and student-created links or groups identifying what they affect. |
 
 Classification depends on the focal participants and the pathway of influence, not the presence of a proper noun or the size of an organization. A named institution can be an immediate Micro setting or an outside Exo setting. A person or institution alone is not a Macro condition. Meso uses the Micro map space; it is not a fourth region. Stable internal level IDs remain `micro`, `meso`, `exosphere` and `macrosphere`.
 
@@ -56,7 +56,7 @@ The report dialog accepts bugs and feature requests. Dev and production configur
 
 The course places concrete policies/laws and outside offices at Exo; Macro contains independently evidenced cultural, ideological, historical and economic conditions. See [classification evidence](docs/CLASSIFICATION_EVIDENCE_2026-11-04.md). Existing maps are preserved, and students can correct classifications in Notebook.
 
-Three content-fitted, nested ecological regions accommodate uneven geometry while reserving the most space for local work. Auto-fit places unpinned Exo and Macro cards around the retained Micro map according to the available canvas, including space above and below. Saved manual positions remain exact; opening or resizing a map does not rewrite them. Labels and line patterns supplement colors. Relationship wording stays attached to its own route; auto-fit separates cards, labels and shared route segments, with visible separation at unavoidable crossings. Filtering hides records without deleting them.
+Content-fitted ecological regions appear cumulatively: Micro only, Micro + Exo, then all three nested regions. They accommodate uneven geometry while reserving the most space for local work. Auto-fit places unpinned Exo and Macro cards around the retained Micro map according to the available canvas, including space above and below. Saved manual positions remain exact; opening or resizing a map does not rewrite them. Labels and line patterns supplement colors. Relationship wording stays attached to its own route; auto-fit separates cards, labels and shared route segments, with visible separation at unavoidable crossings. Filtering hides records without deleting them.
 
 With auto-fit on, an active Exo or Macro move from a valid position stops before entering its preceding sphere, along the requested path. Valid moves keep their chosen position. Existing imported placements are preserved; **System** changes classification. Turning auto-fit off uses saved coordinates and removes this movement constraint.
 

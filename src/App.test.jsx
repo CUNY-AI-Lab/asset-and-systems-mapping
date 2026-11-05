@@ -5160,7 +5160,8 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     fireEvent.change(scale, { target: { value: activeScale } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`${activeScale === 'exosphere' ? 'Exo-level' : 'Macro-level'} map. ${active.nodes.length} nodes and ${active.edges.length} ${active.edges.length === 1 ? 'connection' : 'connections'}.`));
-    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(3);
+    expect(document.querySelectorAll('[data-ecology-layer]')).toHaveLength(activeScale === 'exosphere' ? 2 : 3);
+    expect(Boolean(document.querySelector('[data-ecology-layer="macrosphere"]'))).toBe(activeScale === 'macrosphere');
     expect(document.querySelector('[data-ecology-layer="exosphere"]')).toHaveClass('is-visible');
     expect(document.querySelectorAll('.graph-node.is-dimmed, .graph-edge.is-dimmed')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
@@ -5181,7 +5182,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.change(scale, { target: { value: 'all' } });
     expect(mapCanvas()).toHaveAttribute('aria-label', expect.stringContaining(`All-layers map. ${all.nodes.length} nodes and ${all.edges.length} ${all.edges.length === 1 ? 'connection' : 'connections'}.`));
     expect(screen.getByText('Select an item to inspect its connections')).toBeVisible();
-    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(3);
+    expect(document.querySelectorAll('[data-ecology-layer].is-visible')).toHaveLength(activeScale === 'exosphere' ? 2 : 3);
     expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(0);
     expect(document.querySelectorAll('.graph-edge.is-muted')).toHaveLength(0);
     expect(storedProject().graph).toEqual(graphBefore);
