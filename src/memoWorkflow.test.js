@@ -65,3 +65,9 @@ it('keeps Exo and Macro type choices paired with their level in the model schema
   expect(macro.properties.type.enum).toContain('policy');
   expect(macro.properties.type.enum).not.toContain('agency');
 });
+
+it('explains how to repair bundled Micro roles without inventing or dropping evidence',()=>{
+  const issue=submittedReviewIssue(review([{...local,label:'Teachers and school staff'}]),'micro','Teachers and school staff work with residents.');
+  expect(issue).toContain('Do not bundle different roles');
+  expect(issue).toContain('choose one supported role or return separate nodes');
+});
