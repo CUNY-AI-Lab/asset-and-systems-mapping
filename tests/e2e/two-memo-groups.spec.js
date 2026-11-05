@@ -79,10 +79,11 @@ test('two memos retain the local map, model groups can be edited, and downloads 
   expect(macroInput.sourceMaterial).toContain(first); expect(macroInput.sourceMaterial).toContain(HOUSING_MACRO_MEMO);
   const grouped = (await read(page)).graph.edges.find(edge => edge.relationshipIds);
   await showMap(page);
-  await expect(page.locator('.ecology-layer')).toHaveCount(3);
-  await expect(page.locator('.ecology-layer__label')).toContainText(['Macrosystem', 'Exosystem', 'Microsystem']);
+  await expect(page.locator('.ecology-layer')).toHaveCount(2);
+  await expect(page.locator('[data-ecology-layer="macrosphere"]')).toHaveCount(0);
+  await expect(page.locator('.ecology-layer__label')).toContainText(['Exosystem', 'Microsystem']);
   await expect(page.locator('.relationship-group-vector')).toHaveCount(2);
-  await captureSourceRenderedScreenshot(page, testInfo, 'Three spheres and legacy relationship group');
+  await captureSourceRenderedScreenshot(page, testInfo, 'Micro and Exo spheres with legacy relationship group');
   await page.locator(`[data-graph-id="${grouped.id}"]`).focus();
   await page.locator(`[data-graph-id="${grouped.id}"]`).press('Enter');
   await page.locator('.graph-canvas').press('0');
@@ -172,7 +173,7 @@ const realFiles = [
   ['Micro Memo.pdf', /Bronx/],
   ['Microsystem EDITED.pdf.pdf', /Johnson|Harlem/],
 ];
-test('retained local coordinates stay inside three fitted spheres after Part 2', async ({ page }, testInfo) => {
+test('retained local coordinates stay inside two fitted spheres before Macro nodes', async ({ page }, testInfo) => {
   const p = localProject();
   p.activeScale = 'macrosphere';
   p.graph.nodes.forEach((node, index) => { node.x = 120 + index % 3 * 300; node.y = 120 + Math.floor(index / 3) * 180; });
@@ -184,7 +185,8 @@ test('retained local coordinates stay inside three fitted spheres after Part 2',
   await openProject(page, p);
   await showMap(page);
   await page.locator('.graph-canvas').press('0');
-  await expect(page.locator('.ecology-layer')).toHaveCount(3);
+  await expect(page.locator('.ecology-layer')).toHaveCount(2);
+  await expect(page.locator('[data-ecology-layer="macrosphere"]')).toHaveCount(0);
   const geometry = await page.locator('.graph-canvas').evaluate(svg => {
     const rings = Object.fromEntries([...svg.querySelectorAll('[data-ecology-layer]')].map(group => {
       const e = group.querySelector('ellipse');

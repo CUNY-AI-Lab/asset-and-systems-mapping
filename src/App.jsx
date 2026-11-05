@@ -4073,14 +4073,14 @@ function MapLegend() {
       <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Outside offices, policies and decision settings; dotted connections attach them to local relationships.</dd></div>
       <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Cultural beliefs, economic structures and broader conditions; purple dashed lines mark their connections.</dd></div>
     <div><dt><span aria-hidden="true">◇</span> Direction varies</dt><dd>No fixed arrow direction is asserted.</dd></div><div><dt><span aria-hidden="true">?</span> Direction unknown</dt><dd>Direction has not been established.</dd></div></dl></section>
-    <section><h3>Node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><h3>How to read this map</h3><ul className="map-conventions">
+    <section><h3>Default node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><h3>How to read this map</h3><ul className="map-conventions">
       <li><strong>Micro</strong><span>People, resources, and immediate settings</span></li>
-      <li><strong>Exo</strong><span>Outside settings; teal dotted connections link to local relationships.</span></li>
-      <li><strong>Macro</strong><span>Broader policies and conditions; purple dashed connections.</span></li>
+      <li><strong>Exo</strong><span>Policies and outside offices; teal dotted connections link to local relationships.</span></li>
+      <li><strong>Macro</strong><span>Cultural, historical and economic conditions; purple dashed connections.</span></li>
       <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording.</span></li>
       <li><strong>Draft</strong><span>A dotted line previews an unfinished relationship.</span></li>
       <li><strong>Stored scope</strong><span>A dash-dot line with hollow endpoints marks a recorded scope membership, not a directional relationship.</span></li>
-    </ul><p className="map-legend__note">Level shows how each item relates to the focal person. It does not show causal strength.</p></section>
+    </ul><p className="map-legend__note">Choose a node’s color in Notebook. Color does not change its system or type. Regions appear as the map grows: Micro, then Exo, then Macro. You create every relationship.</p></section>
   </div>;
 }
 

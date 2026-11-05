@@ -168,9 +168,11 @@ async function ecologyRingGeometry(page) {
 async function ecologyNodeGeometryIssues(page, { requireLayers = false } = {}) {
   return page.locator('.graph-canvas').evaluate(async (canvas, requiredLayers) => {
     await document.fonts.ready;
-    const levels = ['micro', 'exosphere', 'macrosphere'];
     const issues = [];
     const nodes = [...canvas.querySelectorAll('.graph-node')];
+    const hasMacro = nodes.some(node => node.classList.contains('graph-node--macrosphere'));
+    const hasExo = hasMacro || nodes.some(node => node.classList.contains('graph-node--exosphere'));
+    const levels = ['micro', ...(hasExo || requiredLayers ? ['exosphere'] : []), ...(hasMacro || requiredLayers ? ['macrosphere'] : [])];
     if (!nodes.length) issues.push('No graph nodes were available for geometry verification');
     const hasLayers = Boolean(canvas.querySelector('.ecology-layers'));
     const checkMembership = requiredLayers || (canvas.dataset.mapMode === 'ecology' && !canvas.classList.contains('is-detail-view'));

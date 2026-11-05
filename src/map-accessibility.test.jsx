@@ -320,6 +320,9 @@ describe('map accessibility', () => {
     expect(trigger).toHaveAttribute('aria-controls', 'map-key-panel');
     fireEvent.click(trigger);
 
+    expect(screen.getByText('Policies and outside offices; teal dotted connections link to local relationships.')).toBeVisible();
+    expect(screen.getByText('Cultural, historical and economic conditions; purple dashed connections.')).toBeVisible();
+    expect(screen.queryByText(/Broader policies/)).not.toBeInTheDocument();
     const close = screen.getByRole('button', { name: 'Close map key' });
     await waitFor(() => expect(close).toHaveFocus());
     fireEvent.keyDown(document.getElementById('map-key-panel'), { key: 'Escape' });
