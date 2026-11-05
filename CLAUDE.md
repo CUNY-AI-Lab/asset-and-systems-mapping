@@ -23,13 +23,7 @@ make an old browser tab write into the new account. A code rollback never
 authorizes a database rollback. Report source tests, hosted CI, deployed source,
 and real signed-in model acceptance as separate evidence.
 
-The student interface uses Map / Notebook: the mounted canvas and one current
-notebook task share each level (`src/App.jsx` `MapStage`, `src/MapStudio.jsx`,
-`src/ReflectionEntry.jsx`, `src/nextStep.js`). Map tools and Project menus
-consolidate secondary controls. Map | Notebook | Tools and the work-level selector share the Notebook panel header. When the panel is closed, these controls float over the canvas; never reserve a full-width toolbar strip. The bug-report dock belongs in the main header. Keep the controls readable in a resized narrow panel and preserve keyboard focus when moving between Map and Notebook. Notebook has two writing tasks: memo/suggestions and Field Notes; selected-item editing is contextual. Map tools must use their own flex layout, not legacy toolbar grid selectors. Full screen must close Notebook, switch List to Canvas, fill the viewport, and expose an exit. Field Notes are one string per scale, required only to complete that scale. Questions are published by scale through teaching profiles; navigation back to Map remains available. Keep the existing draft journal and the `reflection` storage keys;
-preserve older labeled Macro prose without parsing or rewriting it. Stage numbers and labels are still the
-record of progress and must not be renumbered. `wrangler.dev.jsonc` deploys the
-separate `systems-mapping-dev` Worker; production releases stay manual.
+The account workspace follows `docs/TWO_MEMO_WORKFLOW_2026-11-04.md` and the user's latest corrections: two independent memos, four direct steps, three nested spheres, small node-only model output, and all relationships created by students. Notebook and Tools share one resizable sidebar; remove the redundant Map button. Progression and item actions stay at the top. Field Notes are optional. Do not revive obsolete suggestion queues or mandatory notes. Preserve `reflection` storage keys, numeric stage IDs, earlier prose, map identity and draft recovery. The separate Node application retains its legacy review workflow. `wrangler.dev.jsonc` deploys the separate Dev Worker; production stays manual.
 
 Instructor prompt editing follows `docs/instructor-settings.md`: one scale selector and prompt field, optional student preview, and Publish changes that saves pending edits first. Routine editing generates draft metadata; preserve optimistic revision checks, failed-publication drafts, and the advanced version/history controls.
 Course rosters stay in a collapsed disclosure under Submissions and load on demand; they must not displace the console navigation or course-settings editor.

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { createDefaultProject, parseProject, serializeProject, validateProject } from './domain.js';
 import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
-import { reviewMemoText } from './projectMemo.js';
+import { activeSubmission } from './projectMemo.js';
 import { submittedReviewIssue, nodeSubmissionSchema } from '../shared/node-submission.js';
 
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
@@ -21,7 +21,7 @@ it('adds submitted nodes immediately, without creating relationships or replacin
   const memo1=structuredClone(p.submission);
   openMemoWorkflowScale(p,'meso'); p.reflection='Student observation';
   openMemoWorkflowScale(p,'exosphere'); p.part2Submission.text=outer.map(n=>n.evidence).join(' ');p.part2Submission.fileName='second.pdf';
-  expect(submittedReviewIssue(review(outer),'exosphere',reviewMemoText(p))).toBeNull();
+  expect(submittedReviewIssue(review(outer),'exosphere',activeSubmission(p).text)).toBeNull();
   appendSubmittedNodes(p,review(outer));
   expect(p.graph.nodes[0]).toEqual(first);expect(p.submission).toEqual(memo1);expect(p.graph.edges).toEqual([]);
   for(const scale of ['macrosphere','micro','meso','exosphere'])openMemoWorkflowScale(p,scale);
@@ -45,6 +45,35 @@ it('permits manual connections before any field notes are written',()=>{
   const p=blank();for(const scale of ['meso','exosphere','macrosphere']){openMemoWorkflowScale(p,scale);expect(p.activeScale).toBe(scale);expect(p.reflection).toBe('');}
   expect(()=>validateProject(p)).not.toThrow();
 });
+it.each(['micro', 'exosphere'])('restores an unsubmitted %s memo edit after navigation and reload', scale => {
+  let project = blank();
+  appendSubmittedNodes(project, review([local]));
+  if (scale === 'exosphere') {
+    openMemoWorkflowScale(project, scale);
+    project.part2Submission.text = outer.map(node => node.evidence).join(' ');
+    appendSubmittedNodes(project, review(outer));
+  }
+  project.stage = 1;
+  activeSubmission(project).text += ' This revision has not been submitted.';
+  const nextScale = scale === 'micro' ? 'meso' : 'macrosphere';
+  openMemoWorkflowScale(project, nextScale);
+  project = parseProject(serializeProject(project));
+  openMemoWorkflowScale(project, scale);
+  expect(project.stage).toBe(1);
+  expect(activeSubmission(project).text).toContain('This revision has not been submitted.');
+  appendSubmittedNodes(project, review([]));
+  openMemoWorkflowScale(project, nextScale);
+  openMemoWorkflowScale(project, scale);
+  expect(project.stage).toBe(3);
+});
+it.each([2,3])('returns completed legacy stage %i maps to their node view', stage => {
+  const project = blank();
+  appendSubmittedNodes(project, review([local]));
+  project.stage = stage;
+  openMemoWorkflowScale(project, 'meso');
+  openMemoWorkflowScale(project, 'micro');
+  expect(project.stage).toBe(3);
+});
 it.each([
   { ...outer[0], scale:'macrosphere', type:'structure' },
   { ...outer[1], evidence:'Invented evidence that does not occur in the memo.' },
@@ -63,6 +92,56 @@ it.each(['government', 'schools', 'big institutions'])('rejects an unspecified E
 });
 it('accepts an empty grounded result when Part 2 provides only broad wishes',()=>{
   expect(submittedReviewIssue(review([]),'exosphere','Schools need more funding. Government should help.')).toBeNull();
+});
+
+it.each(['government', 'schools', 'big institutions', 'society'])('cannot disguise generic Exo %s as a resource', label => {
+  const node = { ...outer[0], label, type: 'resource', evidence: `${label} should help.` };
+  expect(submittedReviewIssue(review([node]), 'exosphere', node.evidence)).toMatch(/not a named institution/);
+});
+
+it.each([
+  ['Divya Patel', 'structure', 'Divya Patel teaches social studies at the school.', /person or institution/],
+  ['Rosa Alvarez', 'culture', 'Rosa Alvarez is a teacher at the school.', /person or institution/],
+  ['school funding policy', 'policy', 'Schools need more funding and the government should help.', /established condition/],
+  ['Family communication belief', 'belief', 'Families need better communication.', /established condition/],
+  ['School funding policy', 'policy', 'School funding policy should prioritize families.', /established condition/],
+  ['School funding policy', 'policy', 'School funding policy should provide more support.', /established condition/],
+  ['School funding policy', 'policy', 'Schools should receive more support under a proposed School funding policy.', /established condition/],
+  ['School allocation policy', 'policy', 'What policy governs school allocation?', /established condition/],
+])('rejects a mislabeled or unestablished Macro condition: %s', (label, type, evidence, issue) => {
+  expect(submittedReviewIssue(review([{ label, type, evidence, scale: 'macrosphere', basis: 'memo' }]), 'exosphere', evidence)).toMatch(issue);
+});
+
+it.each([
+  ['NYC DOE confidentiality policy', 'policy', 'NYC DOE confidentiality policy requires recorded permission before sharing case details.'],
+  ['CUNY affordability policy', 'policy', 'CUNY affordability policy provides tuition assistance.'],
+  ['Individuals with Disabilities Education Act', 'law', 'Individuals with Disabilities Education Act requires individualized education programs.'],
+  ['Divya Patel Act', 'law', 'The fictional Divya Patel Act requires accessible school buildings.'],
+  ['Structural Racism', 'structure', 'Structural racism restricts access to housing and education.'],
+  ['Per-pupil funding formula', 'policy', 'Funding is allocated per pupil, reducing the allocation when enrollment falls.'],
+  ['Respect for elders', 'belief', 'Families believe children should show respect for elders.'],
+  ['Unpredictable work schedules', 'economic condition', 'Unpredictable work schedules reduce time available for school meetings.'],
+  ['Structural racism', 'structure', 'Structural racism means Black residents need more documentation to obtain housing assistance.'],
+  ['Financial insecurity', 'economic condition', 'Financial insecurity means families need more time to pay rent.'],
+  ['School confidentiality policy', 'policy', 'Parents should provide written permission under the School confidentiality policy.'],
+])('retains grounded named policies and broader conditions: %s', (label, type, evidence) => {
+  const node = { label, type, evidence, scale: 'macrosphere', basis: 'memo' };
+  expect(submittedReviewIssue(review([node]), 'exosphere', evidence)).toBeNull();
+  const project = blank(); openMemoWorkflowScale(project, 'exosphere'); project.part2Submission.text = evidence;
+  appendSubmittedNodes(project, review([node]));
+  const restored = parseProject(serializeProject(project));
+  expect(restored.graph.nodes[0]).toMatchObject({ label, type, scale: 'macrosphere', status: 'confirmed' });
+  expect(restored.candidates.nodes[0]).toMatchObject({ label, type, scale: 'macrosphere' });
+});
+
+it('keeps the institution itself out of Macro even when submitted with policy type', () => {
+  const node = { ...outer[1], label: 'NYC DOE', type: 'policy', evidence: 'NYC DOE administers the confidentiality policy.' };
+  expect(submittedReviewIssue(review([node]), 'exosphere', node.evidence)).toMatch(/person or institution/);
+});
+
+it('retains a specifically identified outside resource', () => {
+  const node = { ...outer[0], label: 'City repair reserve fund', type: 'resource', evidence: 'The City repair reserve fund pays for emergency elevator repairs.' };
+  expect(submittedReviewIssue(review([node]), 'exosphere', node.evidence)).toBeNull();
 });
 
 it('keeps Exo and Macro type choices paired with their level in the model schema',()=>{

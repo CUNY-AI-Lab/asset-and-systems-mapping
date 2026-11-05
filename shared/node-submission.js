@@ -1,4 +1,4 @@
-import { MICRO_NODE_TYPES, MACROSPHERE_NODE_TYPES, isNodeTypeAllowedAtScale, normalizeMapElementLabel, isDiscreteMicroNodeLabel, isNamedInstitutionLabel, isObviousLowerLevelMacroLabel } from '../src/domain.js';
+import { MICRO_NODE_TYPES, MACROSPHERE_NODE_TYPES, isNodeTypeAllowedAtScale, normalizeMapElementLabel, isDiscreteMicroNodeLabel, isNamedInstitutionLabel, isObviousLowerLevelMacroLabel, isExplicitMacroPolicyLabel } from '../src/domain.js';
 import { classifyExcerptMatch } from './memo-quote-match.js';
 import { analyzeMemoSource, bibliographyOnlyLabel, bibliographyOnlyEvidence } from './memo-source.js';
 
@@ -17,6 +17,38 @@ Return exactly guidance: [], nodes: [...], connections: [], example: null, readi
 
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const text = (value, max) => typeof value === 'string' && value.trim() && value.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
+const normalized = value => String(value).normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+const escaped = value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+const genericOutsideSetting = /^(?:(?:the|our|local|public|private|big|large|larger|outside)\s+)*(?:government|society|schools?|institutions?|organizations?|agencies|resources?)$/iu;
+
+// Reject an identified actor using the memo's description, never capitalization
+// or a guessed list of personal names. Named laws and abstract conditions remain
+// eligible even when their labels contain capital letters or a person's name.
+function narrativeNamesPerson(label, narrative) {
+  const name = escaped(normalized(label));
+  const role = '(?:teacher|counselor|parent|student|resident|director|principal|professor|researcher|social worker|case worker|nurse|doctor|employee|mayor)';
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${name}(?:\\s*,?\\s+(?:(?:is|was|works as|serves as)\\s+(?:a|an|the)\\s+${role}\\b|(?:a|an|the)\\s+${role}\\b|teaches\\b|works at\\b|lives (?:at|in)\\b))|\\b${role}\\s+${name}(?:$|[^\\p{L}\\p{N}])`, 'iu').test(normalized(narrative));
+}
+
+// This is a narrow evidence guard, not a semantic classifier. It excludes
+// recommendations/questions offered as established conditions while preserving
+// reported cultural norms and actual rules containing normative words.
+function hasDescribedMacroCondition(node) {
+  const label = escaped(normalized(node.label));
+  const describesConsequence = new RegExp(`^(?:the\\s+)?${label}\\s+(?:means|causes|results in|leads to)\\b`, 'iu');
+  const citesNamedRule = ['policy', 'law'].includes(node.type)
+    ? new RegExp(`\\b(?:under|according to|as required by)\\s+(?:the\\s+)?${label}(?:$|[^\\p{L}\\p{N}])`, 'iu') : null;
+  return normalized(node.evidence).split(/(?<=[.!?])\s+/u).some(sentence => {
+    if (/\?$/u.test(sentence)) return false;
+    if (/\b(?:we (?:do not|have not|haven't|cannot)|no (?:specific |named )?)(?:.{0,55})(?:identif|establish|document|policy exists|law exists)/iu.test(sentence)) return false;
+    const reportedRule = /\b(?:policy|law|act|rule|regulation|protocol|procedure)\b(?:(?!\b(?:should|could|would|may|might)\b).){0,45}\b(?:states?|requires?|mandates?|stipulates?|provides?|reserves?|directs?|specifies?|says?)\b/iu.test(sentence);
+    const reportedBelief = /\b(?:believ(?:e|es|ed)|belief|value[sd]?|tradition|cultural norm|expectation)\b/iu.test(sentence)
+      && !/\b(?:should|could|wish|hope|recommend)\b.{0,35}\b(?:belie(?:ve|f)|value|tradition|norm)\b/iu.test(sentence);
+    const wished = /\b(?:should|wish|hope|recommend(?:s|ed)?|would like|need(?:s)? (?:more|better|a|an)|(?:is|are) needed|could (?:help|improve|support|provide))\b/iu.test(sentence);
+    if (wished && !reportedRule && !reportedBelief && !describesConsequence.test(sentence) && !citesNamedRule?.test(sentence)) return false;
+    return true;
+  });
+}
 export function submittedReviewIssue(review, scale, sourceText) {
   if (!['micro', 'exosphere'].includes(scale)) return 'Nodes are submitted at Micro or Exo; students draw relationships at every step.';
   if (!exact(review, ['guidance', 'nodes', 'connections', 'example', 'readiness'])) return 'The response must contain exactly guidance, nodes, connections, example and readiness.';
@@ -32,14 +64,15 @@ export function submittedReviewIssue(review, scale, sourceText) {
     if (!text(node.evidence, 500)) return `${field}.evidence must quote the supplied narrative within 500 characters.`;
     if (!(scale === 'micro' ? node.scale === 'micro' : ['exosphere', 'macrosphere'].includes(node.scale)) || !isNodeTypeAllowedAtScale(node.type, node.scale)) return `${field}.scale or type does not match its level.`;
     if (node.scale === 'micro' && !isDiscreteMicroNodeLabel(node.label)) return `${field}.label must name one local participant, group, setting or resource. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit. Do not use a sentence or an action as the label.`;
-    if (node.scale === 'exosphere' && ['organization', 'institution', 'agency', 'service'].includes(node.type) && !isNamedInstitutionLabel(node.label)) return `${field}.label is not a named institution or service system.`;
+    if (node.scale === 'exosphere' && (genericOutsideSetting.test(node.label) || ['organization', 'institution', 'agency', 'service'].includes(node.type) && !isNamedInstitutionLabel(node.label))) return `${field}.label is not a named institution or service system.`;
     if (node.scale === 'exosphere' && !EXO_SETTING_TYPES.includes(node.type)) return `${field}.type must identify an outside organization, setting or resource; classify broader conditions at macrosphere.`;
-    if (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) || isObviousLowerLevelMacroLabel(node.label))) return `${field}.label names a person or institution, not a Macro condition.`;
+    if (node.scale === 'macrosphere' && (isNamedInstitutionLabel(node.label) && !isExplicitMacroPolicyLabel(node.label, node.type) || isObviousLowerLevelMacroLabel(node.label) || narrativeNamesPerson(node.label, source?.narrativeText || node.evidence))) return `${field}.label names a person or institution, not a Macro condition.`;
     if (scale !== 'micro' && node.basis !== 'memo') return `${field}.basis must be memo; do not invent conditions.`;
     if (labels.has(node.label.toLocaleLowerCase())) return `${field}.label duplicates another node.`;
     labels.add(node.label.toLocaleLowerCase()); counts[node.scale] = (counts[node.scale] || 0) + 1;
     if (scale !== 'micro' && counts[node.scale] > 3) return `${field}.scale exceeds the three-node limit for this level.`;
     if (source && (bibliographyOnlyLabel(node.label, source) || bibliographyOnlyEvidence(node.evidence, source) || !classifyExcerptMatch(source.narrativeText, node.evidence))) return `${field}.evidence must quote the supplied narrative, not a bibliography or an invented explanation.`;
+    if (node.scale === 'macrosphere' && !hasDescribedMacroCondition(node)) return `${field}.evidence must describe an established condition, not only a wish, recommendation or research question.`;
   }
   return null;
 }

@@ -47,7 +47,9 @@ export function openMemoWorkflowScale(project, scale) {
   if (['exosphere', 'macrosphere'].includes(scale)) beginPart2(project);
   project.activeScale = scale;
   project.reflection = project.levelProgress[scale]?.reflection || '';
-  project.stage = 3;
+  // Editing a memo is saved as stage 1. Keep that entry open when returning
+  // to its node step, while legacy review-stage maps open their mapped work.
+  project.stage = ['micro', 'exosphere'].includes(scale) && project.levelProgress[scale]?.stage === 1 ? 1 : 3;
   project.furthestStage = Math.max(project.furthestStage || 0, 3);
   project.releasedScales = SCALE_ORDER.filter(item => project.releasedScales.includes(item) || SCALE_ORDER.indexOf(item) <= SCALE_ORDER.indexOf(scale));
   project.preflight = null;

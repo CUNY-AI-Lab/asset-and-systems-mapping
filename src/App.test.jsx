@@ -22,9 +22,10 @@ import {
   validateProject,
   withDefaultNodeLayout,
 } from './domain.js';
-import { loadLibraryProject, loadProjectLibrary, loadStoredLink, rememberStoredLink } from './projectLibrary.js';
+import { loadLibraryProject, loadProjectLibrary, loadStoredLink, rememberStoredLink, saveProjectToLibrary } from './projectLibrary.js';
 import { memoDraftKey } from './memoDraft.js';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
+import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
 
 function expectAttachedRelationship(edge) {
   const group = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
@@ -1124,6 +1125,131 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(screen.getByRole('button',{name:'Add to map',exact:true}));
     expect(screen.getByRole('button',{name:'Remove',exact:true})).toBeVisible();
     await waitFor(()=>expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).part2Submission.text).toContain('Capital repair funding policy'));
+  });
+
+  it('keeps account scale navigation disabled until a submitted memo has finished adding nodes', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    seedProject(project);
+    let finishEvaluation;
+    preflightEvaluationResponder = body => new Promise(resolve => {
+      finishEvaluation = () => resolve(jsonResponse({evaluation:evaluationRecord(body,{review:{guidance:[],nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text}],connections:[],example:null,readiness:{ready:true,note:'Nodes identified.'}}})},201));
+    });
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button',{name:'Submit memo and add nodes',exact:true}));
+    for (const button of within(screen.getByRole('navigation',{name:'Mapping steps'})).getAllByRole('button')) expect(button).toBeDisabled();
+    expect(screen.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+    await waitFor(() => expect(finishEvaluation).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button',{name:/Meso$/}));
+    fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));
+    expect(storedProject().activeScale).toBe('micro');
+    await act(async () => finishEvaluation());
+    await waitFor(() => expect(document.querySelectorAll('.graph-node')).toHaveLength(1));
+    expect(screen.getByRole('button',{name:/Meso$/})).toBeEnabled();
+    expect(screen.getByRole('button',{name:'Continue',exact:true})).toBeEnabled();
+    expect(screen.queryByText(/memo or model setup changed/)).toBeNull();
+    fireEvent.click(screen.getByRole('button',{name:/Meso$/}));
+    expect(await screen.findByRole('heading',{name:'Meso · local relationships'})).toBeVisible();
+  });
+
+  it.each(['pending', 'complete', 'same'])('cancels a queued account submission when opening a %s project', async destination => {
+    const project = createBlankProject();
+    project.title = 'Queued source project';
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    const other = createBlankProject();
+    other.title = 'Other saved project';
+    other.submission.text = 'Neighbors meet in a garden. This is a different memo.';
+    other.submission.fingerprint = stableId('src', other.submission.text);
+    appendSubmittedNodes(other,{nodes:[{label:'Neighbors',type:'group',scale:'micro',evidence:other.submission.text}],connections:[]});
+    other.stage = destination === 'pending' ? 1 : 3;
+    const records = saveProjectToLibrary(localStorage,project,[]);
+    saveProjectToLibrary(localStorage,other,records);
+    seedProject(project);
+    let holdConfiguration = false;
+    let heldRequests = 0;
+    let releaseConfiguration;
+    const configuration = new Promise(resolve => { releaseConfiguration = resolve; });
+    publicConfigurationResponder = path => {
+      if (!holdConfiguration) return jsonResponse(publicConfiguration(path));
+      heldRequests += 1;
+      return configuration.then(() => jsonResponse(publicConfiguration(path)));
+    };
+    render(<App memoFirstWorkflow startInWorkspace />);
+    const submit = await screen.findByRole('button',{name:'Submit memo and add nodes',exact:true});
+    holdConfiguration = true;
+    fireEvent.click(submit);
+    await waitFor(() => expect(heldRequests).toBeGreaterThan(0));
+    expect(screen.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+    openProjectMenu('Projects');
+    await showResumeScreen();
+    holdConfiguration = false;
+    openProjectFromList(destination === 'same' ? project.title : other.title);
+    await screen.findByRole('heading',{name:'Micro · local nodes'});
+    await act(async () => releaseConfiguration());
+    await waitFor(() => expect(screen.getByRole('button',{name:'Continue',exact:true})).toBeEnabled());
+    expect(screen.getByRole('button',{name:/Meso$/})).toBeEnabled();
+    expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(0);
+    if (destination !== 'complete') expect(screen.getByRole('textbox',{name:'First memo',exact:true})).toHaveValue(destination === 'same' ? project.submission.text : other.submission.text);
+    expect(storedProject().id).toBe(destination === 'same' ? project.id : other.id);
+  });
+
+  it('keeps an edited account memo open across scale navigation and reload until it is submitted', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text}],connections:[]});
+    project.stage = 2;
+    seedProject(project);
+    preflightEvaluationResponder = body => jsonResponse({evaluation:evaluationRecord(body,{review:{guidance:[],nodes:[],connections:[],example:null,readiness:{ready:true,note:'No additional nodes identified.'}}})},201);
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button',{name:'Edit',exact:true}));
+    const revised = `${project.submission.text} They discuss weekly events.`;
+    fireEvent.change(screen.getByRole('textbox',{name:'First memo',exact:true}),{target:{value:revised}});
+    fireEvent.click(screen.getByRole('button',{name:/Meso$/}));
+    fireEvent.click(screen.getByRole('button',{name:/Micro$/}));
+    expect(screen.getByRole('textbox',{name:'First memo',exact:true})).toHaveValue(revised);
+    await waitFor(() => expect(storedProject().stage).toBe(1));
+    cleanup();
+    render(<App memoFirstWorkflow startInWorkspace />);
+    expect(await screen.findByRole('textbox',{name:'First memo',exact:true})).toHaveValue(revised);
+    expect(document.querySelectorAll('.graph-node')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button',{name:'Submit memo and add nodes',exact:true}));
+    await waitFor(() => expect(screen.queryByRole('textbox',{name:'First memo',exact:true})).toBeNull());
+    await waitFor(() => expect(storedProject().stage).toBe(3));
+    expect(storedProject().graph.nodes).toHaveLength(1);
+    expect(storedProject().graph.edges).toHaveLength(0);
+  });
+
+  it.each([false,true])('cancels an active account connection on double-click without saving a relationship (draft=%s)', async draftStarted => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    appendSubmittedNodes(project,{nodes:[{label:'Residents',type:'group',scale:'micro',evidence:project.submission.text},{label:'Community room',type:'setting',scale:'micro',evidence:project.submission.text}],connections:[]});
+    openMemoWorkflowScale(project,'meso');
+    seedProject(project);
+    render(<App memoFirstWorkflow startInWorkspace />);
+    await screen.findByRole('heading',{name:'Meso · local relationships'});
+    const source = () => document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`);
+    const target = () => document.querySelector(`[data-graph-id="${project.graph.nodes[1].id}"]`);
+    fireEvent.keyDown(source(),{key:'Enter'});
+    fireEvent.click(screen.getByRole('button',{name:'Connect from Residents',exact:true}));
+    expect(document.querySelector('.map-connect-status')).not.toBeNull();
+    if (draftStarted) {
+      fireEvent.keyDown(target(),{key:'Enter'});
+      expect(document.querySelector('.relationship-draft-preview')).not.toBeNull();
+      expect(screen.getByRole('button',{name:'Add relationship',exact:true})).toBeVisible();
+    }
+    fireEvent.doubleClick(target());
+    expect(document.querySelector('.map-connect-status')).toBeNull();
+    expect(document.querySelector('.relationship-draft-preview')).toBeNull();
+    expect(screen.queryByRole('button',{name:'Add relationship',exact:true})).toBeNull();
+    expect(screen.queryByRole('button',{name:'Resume relationship',exact:true})).toBeNull();
+    expect(storedProject().graph.edges).toHaveLength(0);
+    fireEvent.keyDown(target(),{key:'Enter'});
+    expect(screen.getByRole('button',{name:'Connect from Community room',exact:true})).toBeVisible();
+    expect(document.querySelector('.relationship-draft-preview')).toBeNull();
   });
 
   it('requires an async class-code exchange, keeps rejected codes out of storage, and resumes the saved stage after success', async () => {

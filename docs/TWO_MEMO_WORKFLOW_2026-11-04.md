@@ -1,35 +1,34 @@
-# Two memos and two spheres — November 4, 2026
+# Two memos, four steps and three spheres — November 4, 2026
 
-The workflow keeps four analytical steps and one durable graph. Part 1 uses a local memo: Micro proposes nodes and Meso proposes relationships between them. Part 2 has a separate upload or text field and builds on Part 1: Exo proposes larger-scale heading nodes, then Macro proposes relationships among those headings and groups of local relationships under them. The map draws two spheres, **Microsystem** and **Macrosystem**.
+This is the current account-workspace contract, incorporating the user's later November 4 corrections. It supersedes the earlier two-sphere design, automatic relationship suggestions, required Field Notes and Map button. The separate Node application retains its older review workflow.
 
-## Sources and continuity
+## Student progression
 
-`submission` retains Part 1. Optional `part2Submission` has its own bounded ID, text, file metadata, revision, fingerprint and privacy declarations. New projects initialize both sources; the Meso-to-Exo transition opens Part 2. Existing outer-level projects keep their legacy memo until a student adds Part 2, uploads a new source, or edits the outer-level memo text. Those actions create Part 2 without replacing Part 1. Adding or uploading Part 2 never clears graph records or copies Part 1 permission into the new source.
+1. **Micro:** upload and submit the first memo. Add a small supported node set immediately. Students can edit nodes; they draw no relationships through the model.
+2. **Meso:** students draw and name relationships between local nodes.
+3. **Exo:** upload a separate second memo. Keep the original graph and classify new outside settings and broader conditions. Students connect Exo headings to selected local Meso relationships.
+4. **Macro:** students connect broader policies, values and structural conditions to the settings or local relationships they affect. Named people and institutions are not Macro conditions.
 
-Memo upload remains available in the notebook at Meso, Exo and Macro. The reader accepts the existing PDF, DOCX and text formats. A delayed or unsuccessful import cannot overwrite a newer edit, another project, or another work level. Earlier graph IDs, coordinates, evidence, annotations and per-level Field Notes stay saved. Manual editing remains available when model guidance fails.
+The model returns at most six nodes per submission, with no guidance, relationships, examples, scopes or group memberships. Part 2 permits at most three Exo and three Macro nodes. Weak evidence may correctly produce no nodes. Source text is data, never authority to alter this contract. Successful processing is not certification of a student's interpretation.
 
-The Notebook keeps the current level and its next action below the scrolling content, including the map stage. Field Notes remain required for level completion; the next action explains that requirement beside the disabled button. Deleting a connection's starting node cancels that unfinished connection and discards its draft; a deletion blocked by existing dependencies does not cancel it. Opening an editor preserves focus when the student has already started typing.
+The canvas and resizable Notebook remain visible together. Tools is inside that sidebar; Hide closes it explicitly. Continue, Back and selected-item actions stay above scrolling content. Field Notes are optional. Remove and Add to map reflect one saved state, and never appear together for a node. Removing a connection source or double-clicking during connection mode cancels the operation. Micro's instruction is “Select a node to edit it.” Evidence excerpts are labeled “Quote from memo.”
 
-Outer guidance receives both memos, with reference lists stripped independently for provider context while the originals remain saved. It also receives the carried graph, bounded Field Notes and student decisions. Edits to either source invalidate the combined review fingerprint. Sensitive context requires the applicable permission declarations from both sources. Total provider request limits still apply.
+## Independent sources and persistence
 
-## Relationship groups
+`submission` retains Part 1. `part2Submission` has its own text, filename, revision, fingerprint and privacy declarations. The second editor starts empty; it never displays or submits Part 1 as Part 2. The previous graph provides context. Changing a source does not clear prior nodes, relationships, positions, notes or retired-item decisions. Delayed imports and model results cannot replace a newer edit or a different project.
 
-A Macro edge may include `relationshipIds`, containing 1–24 distinct exact IDs of live Meso relationships. Its `source` is an existing Exo heading (or a preserved legacy Macro heading). Its `target` is a real endpoint of a selected relationship, retained for compatible edge serialization. **Membership is defined by the selected relationships, not that anchor node.** Ordinary node-to-node Macro links omit this field.
+The account node-submission path uses `student-nodes-v1` and `preflightEvaluationPayload(project, true)`. The legacy Node review contract remains separate. Existing mapped review-stage projects open their node view; pending submissions and explicit Edit retain memo entry. A successful empty result remains complete after navigation and reload.
 
-Validation rejects unknown, retired, nested or out-of-scale members and invalid headings or anchors. A referenced local relationship cannot be removed until its group is revised or removed. The canvas draws highlighted bands and vectors from the heading to the selected relationship midpoints. Unrelated nodes are masked from those bands. PNG/PDF exports carry the same memberships and name the selected relationships in the legend.
+## Map and manual groups
 
-The model is instructed to try supported groups and larger-scale-to-larger-scale connections without inventing evidence. Students may change the heading, membership, wording, direction and evidence, remove proposals, or create groups entirely by hand. Draft recovery and rereading preserve manual membership decisions. Model output remains an inference until a student judges it. Weak source material should produce specific questions rather than unsupported claims.
+Three content-fitted nested regions show **Microsystem**, **Exosystem** and **Macrosystem**; Meso relationships occupy Micro space. Node type and level colors are supplemented by labels and line patterns. Relationship verbs remain attached to their routes. Auto-fit separates cards and shared route segments; unavoidable crossings have visual separation. Manual positions persist when auto-fit is off.
 
-## Compatibility and deployment
+A manually created group records 1–24 exact live Meso `relationshipIds`. Its heading is an Exo or Macro node. The serialized target is a real member endpoint for compatibility; membership is defined by relationship IDs, not that anchor. Validation rejects unknown, retired, nested and out-of-scale members. Students must revise/remove a dependent group before removing its member relationship. Ordinary node-to-node links omit `relationshipIds`.
 
-Schema 10 accepts versions 1–9 and preserves legacy scoped nodes. The analytical IDs `micro`, `meso`, `exosphere`, `macrosphere` and stage IDs are unchanged. No new Durable Object namespace, database migration or service deployment is required. Guidance contract version `two-memos-two-spheres-v6` invalidates incompatible cached reviews. Default prompt modules advance only when their saved fingerprint exactly matches an untouched earlier default; instructor edits remain intact.
+## Compatibility and verification
 
-After a student saves a schema-10 project, a rollback must retain the schema-10 reader and both source/group fields. The older schema-9 application cannot read the new format. Prefer a corrective release; do not downgrade stored projects or restore a database automatically.
+Schema 10 retains source texts, graph IDs, membership IDs, annotations and legacy scoped nodes. Analytical IDs and stored stage numbers remain unchanged. No Durable Object namespace or database restore is involved. Rollbacks must retain the schema-10 reader and both memo fields. Private JSON/Markdown retain both sources; CSV includes group IDs; PNG/PDF render the three regions and manual links. Audience restrictions continue to apply.
 
-Private JSON and Markdown retain both source texts. JSON retains exact group IDs; CSV includes `grouped_relationship_ids`. Broader exports apply source restrictions across both memos. PNG/PDF contain the graph, not source memos or Field Notes.
+Tests must exercise the current node-only payload and zero model relationships at every step. Include independent uploads, empty and weak results, named-institution versus Macro classification, bibliography-only evidence, stale/failed jobs, manual groups, removal/resubmission, reload, exports, keyboard and phone behavior. Controlled tests establish application behavior, not live model quality.
 
-## Verification boundaries
-
-Unit and route tests cover combined context, source privacy, draft recovery, valid and invalid memberships, provider schema, feedback-only recovery, Map Check context, migration and exports. Browser tests exercise both memo uploads, controlled model proposals, manual groups, regeneration, reload, accessibility and downloads on desktop and phone. Their controlled output establishes application behavior, not live model quality.
-
-The four instructor-provided PDFs are intentionally excluded from Git. Set `SYSTEMS_MAPPING_REAL_MEMOS_DIR` to their local directory to run their Meso-upload browser cases. Fabricated Part 2 examples in `tests/fixtures/two-memo-cases.js` cover Bronx school support, Flushing language access and housing repairs, plus a deliberately vague case. They are test scenarios, not factual policy claims. Real provider acceptance and signed-in Dev/production acceptance must be reported separately from these automated checks.
+The four supplied PDFs remain outside Git. Approved live tests cover those real inputs and fabricated Bronx, Flushing and housing continuations. Real Gateway tests require approval of data and destination; fixture identity helpers are not production authentication. Record exact source, actual runtime/model, failures, retries and retained-state comparisons separately from CI and deployment receipts.
