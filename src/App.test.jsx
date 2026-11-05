@@ -1490,6 +1490,31 @@ describe('Systems Mapping workflow', () => {
     return project;
   }
 
+  it.each(['start', 'cancel'])('does not steal a newly focused target after a deferred connection %s', async action => {
+    const project = await openDirectConnectionProject();
+    const source = document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`);
+    const target = document.querySelector(`[data-graph-id="${project.graph.nodes[1].id}"]`);
+    const frames = [];
+    window.requestAnimationFrame = vi.fn(callback => { frames.push(callback); return frames.length; });
+    source.focus(); fireEvent.keyDown(source, { key: 'Enter' });
+    act(() => { frames.splice(0).forEach(callback => callback(0)); });
+    const connect = screen.getByRole('button', { name: 'Connect from Residents', exact: true });
+    connect.focus(); fireEvent.click(connect);
+    if (action === 'cancel') {
+      act(() => { frames.splice(0).forEach(callback => callback(0)); });
+      const cancel = screen.getByRole('button', { name: 'Cancel', exact: true });
+      cancel.focus(); fireEvent.click(cancel);
+    }
+    target.focus();
+    act(() => { frames.splice(0).forEach(callback => callback(0)); });
+    expect(document.activeElement).toBe(target);
+    fireEvent.keyDown(document.activeElement, { key: 'Enter' });
+    if (action === 'start') {
+      expect(screen.getByRole('textbox', { name: 'Relationship', exact: true })).toBeVisible();
+      expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(project.graph.nodes[1].id);
+    } else expect(screen.getByRole('textbox', { name: 'Label', exact: true })).toHaveValue('Community room');
+  });
+
   it('double-clicks a Micro node then explicitly saves a student-authored relationship to another node', async () => {
     const project = await openDirectConnectionProject();
     const source = document.querySelector(`[data-graph-id="${project.graph.nodes[0].id}"]`);

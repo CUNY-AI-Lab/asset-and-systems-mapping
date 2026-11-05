@@ -4836,9 +4836,11 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setDrawerOpen(Boolean(notebook?.simple)); notebook?.onChange(Boolean(notebook?.simple));
     if (notebook?.simple) relationshipDraft.discard();
     setAnnouncement(notebook?.simple ? 'Connection cancelled.' : 'Relationship draft saved.');
+    const focusBeforeCancel = document.activeElement;
     window.requestAnimationFrame(() => {
+      if (document.activeElement !== focusBeforeCancel && document.activeElement !== document.body) return;
       const nodes = canvasWrapRef.current?.querySelectorAll('[data-graph-id]') || [];
-      ([...nodes].find(node => node.getAttribute('data-graph-id') === source?.id) || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
+      ([...nodes].find(node => node.getAttribute('data-graph-id') === source?.id) || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus({ preventScroll: true });
     });
   }, [connectionSource, project.graph.nodes, notebook?.onChange, notebook?.simple, relationshipDraft.discard, setAnnouncement]);
   useEffect(() => {
@@ -4872,9 +4874,12 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setDrawerOpen(Boolean(notebook?.simple)); notebook?.onChange(Boolean(notebook?.simple)); setToolsOpen(false);
     if (notebook?.simple) { setInspectorTab('node'); onPanelMode?.('inspector', { preserveNotebook: true }); }
     setAnnouncement(`${source.label} selected. ${notebook?.simple ? 'Choose another node or empty space.' : 'Choose the ending item.'}`);
+    const focusBeforeConnection = document.activeElement;
     window.requestAnimationFrame(() => {
+      // Keep a target or field the student focused before this frame ran.
+      if (document.activeElement !== focusBeforeConnection && document.activeElement !== document.body) return;
       const nodes = canvasWrapRef.current?.querySelectorAll('[data-graph-id]') || [];
-      [...nodes].find(node => node.getAttribute('data-graph-id') === source.id)?.focus();
+      [...nodes].find(node => node.getAttribute('data-graph-id') === source.id)?.focus({ preventScroll: true });
     });
   };
   const connectBlank = (position) => {
