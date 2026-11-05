@@ -1,29 +1,32 @@
 # Systems Mapping — QA and visual-fidelity report
 
-Updated: 2026-10-28
+Updated: 2026-11-04
 
 ## Current acceptance contract
 
-The October 28 request in `MICRO_MESO_WORKFLOW_2026-10-28.md` governs current work. Micro displays nodes; Meso reuses those nodes and adds forward, reverse, or two-way relationships in the same map space. Exo and Macro retain distinct contextual regions. Existing scoped Meso records remain available in List and private exports.
+The latest November 4 [Memo workspace](MEMO_WORKSPACE_2026-11-04.md), [two-memo contract](TWO_MEMO_WORKFLOW_2026-11-04.md) and [classification regression gates](CLASSIFICATION_EVIDENCE_2026-11-04.md) govern account acceptance. This section is a required checklist, not a completed release receipt.
 
-Current source checks must cover:
+- Open new and existing projects on the canvas. Memo · Notebook · Tools share the resizable sidebar; Hide retains those controls. Current graph, camera, analytical step and drafts survive navigation.
+- Keep Part 1 and Part 2 independent through upload, edit, failure, reload and export. Part 2 never displays Part 1 as its source. Validate full PDF extraction and retain original citations and page order.
+- Continue waits only for successful current-part memo processing, including an empty response. Notes and relationships do not gate it. Continue and unchanged saves do not trigger paid calls.
+- Initial node-only output is bounded to six nodes and zero relationships; Part 2 adds at most three Exo and three Macro nodes. No suggestion queue or generation-only prose appears in Notebook.
+- Incremental edits compare each source's last-successful baseline. Test unchanged, whitespace-only, bibliography-only, one-word, deletion-only and broad edits. Preserve student wording, classification, evidence, colors, placements, notes, relationships and removals. Match original identities after renaming; reject unknown/duplicate IDs and unsupported evidence before any mutation.
+- Apply graph and analysis changes in one saved Undo transaction. Exercise success, empty success, failure, cancellation, stale completion, lost response, reload and optimistic conflicts. Private JSON retains history/baselines; every non-private export removes them.
+- Prove the classification distinction with identical institution names under direct, indirect, ambiguous, negated and mixed participation evidence. Distinguish Macro rules from administering offices. Use the bounded live Dev cases as well as deterministic tests; record failures and retries. A finite suite is not a universal classification guarantee.
+- Check three nested content-sized regions with generous Micro space, compact cards, fully visible labels and lighter differentiated routes. Auto-fit separates shared segments and bridges unavoidable crossings. Unpinned outer cards use available space around retained content; manual pins remain exact with auto-fit on or off.
+- Reopen the eight-node shallow retained-layout fixture with pinned Micro cards and unpinned Exo/Macro cards at 1280×720 and a 304px sidebar: retain at least 12px node text, nested contours and unobscured captions. Also test a tall retained map, unchanged retired records and no saved-coordinate mutation on opening or resizing. An active outer-node move from a valid position must stop at the preceding sphere along its path; legal moves remain exact, imported pins stay untouched, and auto-fit off removes this constraint.
+- Double-click or keyboard Shift+Enter starts a connection. Existing targets open a relationship draft; blank-canvas click or keyboard N can create a connected node. Explicitly naming the relationship is required before atomic save. Escape/cancel/source deletion leaves no partial node or edge. A local edge created from Micro stores Meso scale without changing the current step.
+- Node colors Automatic/Blue/Teal/Purple/Amber/Rose/Slate remain independent of classification, persist with saved Undo/reload and match PNG/PDF output. System labels and line patterns remain available without color.
+- Check the exact information description and two how-to sentences, 12-second expiry, hover/focus pause, Escape/outside close, reopening and no focus steal.
+- Review the integrated build independently after component work: schema compatibility, auth/isolation, persistence, output bounds, API behavior and visual regressions. Run 806×758, desktop, 320, 390 and 430px checks, keyboard/touch and unchanged axe rules. Source-built screenshots must show complete labels and top actions without relevant console errors.
 
-- Stable IDs, positions, evidence, annotations, review decisions, and Field Notes during migration and navigation.
-- Manual mouse and keyboard connections, cancellation, self-connection rejection, direction edits, reload, and export at desktop and phone sizes.
-- Complete memo text, inline citations, reference lists, and page order through PDF extraction, model transport, and storage.
-- Provider reading copies omit confidently recognized reference lists across memo review, connection suggestions, and Map Check, preserve inline citations and later narrative, and retain uncertain content. Full original memo storage/export and raw-input ceilings remain intact; a large bibliography cannot consume the provider narrative allowance.
-- Bibliography-only authors and titles excluded from scene nodes; bibliography entries excluded as standalone scene evidence; separately participating cited people remain eligible.
-- One ordinary corrective attempt, then at most one evidence-focused repair for repeated completed grounding failure, all sharing the existing 25-second ordinary or 85-second verified durable-job generation budget. Timeout, quota, transport, cancellation, and repeated generic schema errors do not trigger that repair.
-- Meso strength, channel, connecting work, zero and positive family counts, and missing pairs survive private round-trip; unsupported model details and percentage-to-count conversion fail validation. Exo funding paths may connect named outside offices.
-- Runtime attempt counts round-trip, and unsuccessful repairs store no partial review. Memo and graph remain editable.
-- Exact narrative passages from across a long memo support repair; original source and citations remain intact.
-- Live current/alternate model comparison via the opt-in harness in `cloudflare/guidance-live.test.jsx`, using the owning Gateway acceptance helper and synthetic citation cases. These tests are separate from deterministic browser checks and named classroom acceptance.
+Release the authorized changes to Dev, inspect signed-in behavior and provide ten screenshots, then promote the checked source to production and read back its version, traffic and assets. Record actual approved PDF/Gateway acceptance separately from synthetic browser checks, CI and deployment health. Exact tested source and any dirty-tree diff belong with each receipt.
 
-See `CITATION_GUIDANCE_RECOVERY_2026-10-28.md` for the current source and recovery contract and focused verification commands. Record final test totals against the exact source snapshot in the delivery report. Historical counts below do not establish current or deployed behavior.
+Citation and bounded repair rules remain documented in [citation recovery](CITATION_GUIDANCE_RECOVERY_2026-10-28.md), scoped to the current node-only/incremental payload. Source text and map work remain intact after any failed repair. No old test total establishes the latest integrated behavior.
 
 ## Historical report from August 24, 2026
 
-The remaining sections preserve the earlier report as provenance. Every reference below to “current,” “required,” or “governs” describes that archived August version; the current contract above and October 28 source ledger supersede it. Deployment receipts below concern earlier releases.
+The remaining sections preserve the earlier report as provenance. Every reference below to “current,” “required,” or “governs” describes that archived August version; the current contract above and November 4 source ledger supersede it. Deployment receipts below concern earlier releases.
 
 ### Candidate status
 

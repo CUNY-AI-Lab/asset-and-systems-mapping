@@ -1,0 +1,15 @@
+.about-systems-mapping { display:inline-flex; align-items:center; flex:0 0 auto; }
+.app-shell .notebook-toolbar-actions .about-systems-mapping__trigger { display:inline-flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0; margin:0; border:1px solid var(--line-strong); border-radius:var(--control-radius,6px); background:transparent; color:var(--blue); cursor:pointer; }
+.about-systems-mapping__trigger svg { display:block; width:18px; height:18px; flex:none; pointer-events:none; }
+.app-shell .notebook-toolbar-actions .about-systems-mapping__trigger:hover,
+.app-shell .notebook-toolbar-actions .about-systems-mapping__trigger[aria-expanded=true] { background:var(--surface-hover); border-color:var(--blue); }
+.about-systems-mapping__flag { position:fixed; z-index:1200; top:calc(var(--header,54px) + var(--safe-top,0px) + 8px); right:max(12px,var(--safe-right,0px)); width:min(360px,calc(100vw - 24px)); max-height:calc(100dvh - var(--header,54px) - var(--safe-top,0px) - 24px); overflow:auto; overscroll-behavior:contain; padding:14px 16px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); box-shadow:0 6px 20px #0002; font:400 14px/1.5 var(--body); animation:about-flag-appear 120ms ease-out; }
+.about-systems-mapping__flag h2 { margin:0 0 8px; color:var(--muted); font:600 13px/1.35 var(--body); letter-spacing:0; }
+.about-systems-mapping__flag p { margin:0; font:inherit; }
+.about-systems-mapping__flag p + p { margin-top:10px; }
+.about-systems-mapping__flag:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+@keyframes about-flag-appear { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce) { .about-systems-mapping__flag { animation:none; } }
+@media (forced-colors:active) { .about-systems-mapping__flag { border-color:CanvasText; } }
+@media print { .about-systems-mapping { display:none; } }
+.map-fullscreen-open .about-systems-mapping { display:none; }

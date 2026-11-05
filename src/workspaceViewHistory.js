@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
 const VIEW_LIMIT = 40;
-const KINDS = new Set(['notebook', 'tools', 'item', 'map', 'node-form', 'relationship-form']);
+const KINDS = new Set(['memo', 'notebook', 'tools', 'item', 'map', 'node-form', 'relationship-form', 'connected-node']);
 
 // Navigation records contain only view identities, never an earlier graph,
 // memo, annotation or model result. Back cannot undo a student's work.
@@ -39,7 +39,7 @@ export function useWorkspaceViewHistory({ scopeKey, view, enabled = true }) {
       return;
     }
     if (keyOf(record.current) === viewKey) return;
-    const next = record.current.scale !== current.scale
+    const next = record.current.scale !== current.scale && !['memo', 'tools'].includes(current.kind)
       ? { ...current, kind: 'notebook', selection: null } : current;
     record.past = [...record.past, record.current].slice(-VIEW_LIMIT);
     record.current = next;

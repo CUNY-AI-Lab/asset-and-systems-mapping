@@ -64,3 +64,14 @@ html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__ac
   .access-main.account-landing{padding-top:max(16px,calc(18dvh - 110px))}
   .account-landing__noll{min-height:160px;margin-top:96px}
 }
+
+.project-create { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto; gap:16px; align-items:end; margin:0 0 28px; padding:20px; border:1px solid var(--line); border-top:3px solid var(--accent,#1b5393); border-radius:8px; background:var(--surface-subtle); }
+.project-create .field { gap:6px; margin:0; font-size:14px; font-weight:600; }
+.project-create input { width:100%; min-height:44px; font-size:16px; }
+.project-create .button { min-height:44px; padding:8px 18px; white-space:nowrap; }
+.account-workspace .project-title { min-height:44px; font-size:18px; font-weight:650; text-align:left; }
+.account-workspace .project-list-controls { grid-template-columns:minmax(0,1fr); }
+.project-identity-fields { display:grid; gap:14px; }
+.project-identity-fields .field { margin:0; }
+.project-identity-fields > .button { justify-self:end; }
+@media(max-width:600px) { .project-create {grid-template-columns:minmax(0,1fr);padding:16px;gap:12px;} .project-create .button {justify-self:stretch;} }

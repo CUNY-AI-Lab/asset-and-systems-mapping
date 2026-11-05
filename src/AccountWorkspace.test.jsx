@@ -45,7 +45,7 @@ beforeEach(() => {
   fetchMock = vi.fn(async (path, options) => {
     let payload;
     if (path === '/api/cloud/account') payload = { account: workspaceAccount };
-    else if (path === '/api/cloud/projects') payload = { projects: projects.map(project => ({ id:project.id, title:project.title, updatedAt:project.updatedAt, progress:projectProgress(project) })) };
+    else if (path === '/api/cloud/projects') payload = { projects: projects.map(project => ({ id:project.id, title:project.title, participantName:project.participantName, updatedAt:project.updatedAt, progress:projectProgress(project) })) };
     else if (path === '/api/cloud/quota') payload = { quota: { remaining_percent: 90 } };
     else if (path === '/api/cloud/courses') payload = { courses: workspaceCourses };
     else if (path === '/api/cloud/course-prompt') payload = { prompt: { amendment: 'Course instructions', revision: 1, changeNote: 'Initial', updatedAt: null } };
@@ -76,14 +76,17 @@ afterEach(() => {
 });
 
 describe('Account dashboard controls', () => {
-  it('starts a new project with the verified preferred name and preserves existing titles', async () => {
+  it('shows two creation fields, saves title and creator separately and preserves existing projects', async () => {
     workspaceAccount.preferredName = 'Sam Student';
     render(<AccountWorkspace />);
-    fireEvent.click(await screen.findByRole('button', { name: 'New project' }));
+    expect(await screen.findByRole('textbox',{name:'Creator name'})).toHaveValue('Sam Student');
+    expect(within(screen.getByRole('form',{name:'New project'})).getAllByRole('textbox')).toHaveLength(2);
+    fireEvent.change(screen.getByRole('textbox',{name:'Project title'}),{target:{value:'Neighborhood services'}});
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
     await screen.findByRole('heading', { name: 'Project workspace' });
     await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(true));
     const [, options] = fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT');
-    expect(JSON.parse(JSON.parse(options.body).project).title).toBe('Sam Student');
+    expect(JSON.parse(JSON.parse(options.body).project)).toMatchObject({title:'Neighborhood services',participantName:'Sam Student'});
     fireEvent.click(screen.getByRole('button', { name: 'Back to Projects' }));
     const row = await screen.findByRole('article', { name: 'First saved map' });
     fireEvent.click(within(row).getByRole('button', { name: 'Open project' }));
@@ -390,17 +393,15 @@ it('shows unavailable usage rather than fabricating a quota and keeps courses ac
   expect(within(screen.getByRole('region',{name:'Classes and materials'})).getByText('No classes available.')).toBeVisible();
 });
 
-it('filters and sorts actual project names without editing them',async()=>{
-  projects[0].title='Zebra project';projects[1].title='Apartment project';
-  projects[1].activeScale='meso';projects[1].releasedScales=['micro','meso'];
+it('finds projects by title or creator without progress clutter or editing them',async()=>{
+  projects[0].title='Zebra project';projects[0].participantName='Maria';projects[1].title='Apartment project';
   render(<AccountWorkspace />);await screen.findByRole('heading',{name:'Projects'});
-  fireEvent.change(screen.getByRole('combobox',{name:'Project order'}),{target:{value:'name'}});
-  expect(screen.getAllByRole('article').map(item=>item.getAttribute('aria-label'))).toEqual(['Apartment project','Zebra project']);
+  expect(screen.queryByRole('combobox',{name:'Project order'})).toBeNull();
+  expect(screen.queryByRole('combobox',{name:'Project level'})).toBeNull();
   fireEvent.change(screen.getByRole('searchbox',{name:'Find projects'}),{target:{value:'zebra'}});
   expect(screen.getAllByRole('article')).toHaveLength(1);
-  fireEvent.change(screen.getByRole('searchbox',{name:'Find projects'}),{target:{value:''}});
-  fireEvent.change(screen.getByRole('combobox',{name:'Project level'}),{target:{value:'meso'}});
-  expect(screen.getAllByRole('article').map(item=>item.getAttribute('aria-label'))).toEqual(['Apartment project']);
+  fireEvent.change(screen.getByRole('searchbox',{name:'Find projects'}),{target:{value:'maria'}});
+  expect(screen.getAllByRole('article').map(item=>item.getAttribute('aria-label'))).toEqual(['Zebra project']);
   expect(projects.map(project=>project.title)).toEqual(['Zebra project','Apartment project']);
 });
 

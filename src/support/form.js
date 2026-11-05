@@ -6,15 +6,15 @@ export function mountBugReport(container, { path = () => location.pathname, endp
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 2 2 2m4 0 2-2M9 7V6a3 3 0 0 1 6 0v1M6 10H2m4 4H2m4 4H2m16-8h4m-4 4h4m-4 4h4"/><rect x="6" y="7" width="12" height="14" rx="6"/><path d="M12 11v10"/></svg>
       <span>Report a problem</span><span class="bug-report__badge" aria-hidden="true" hidden>Draft</span>
     </button>
-    <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a problem" tabindex="-1" hidden>
+    <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a bug or request a feature" tabindex="-1" hidden>
       <header class="bug-report__heading">
-        <div><p class="bug-report__eyebrow">CUNY AI Lab · Support</p><h2>Report a problem</h2></div>
+        <div><p class="bug-report__eyebrow">CUNY AI Lab · Support</p><h2>Report a bug or request a feature</h2></div>
         <button class="bug-report__close" type="button" aria-label="Close bug report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
-      <form class="bug-report__form" aria-label="Report a problem">
+      <form class="bug-report__form" aria-label="Report a bug or request a feature">
         <p class="bug-report__context" role="group" aria-label="Report page context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>This page</span><strong></strong></p>
         <div class="bug-report__field">
-          <div class="bug-report__label"><label>What went wrong?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="What did you try, and what went wrong?" aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
+          <div class="bug-report__label"><label>What went wrong? What could be better?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="Describe the problem or the change you would like." aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
         </div>
         <p id="bug-report-privacy" class="bug-report__help">No sign-in needed. Please leave out private information.</p>
         <p class="bug-report__status" role="status" aria-live="polite" aria-atomic="true"></p>

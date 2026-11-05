@@ -2,7 +2,7 @@
 
 Status: implementation-ready protocol
 Instrument: `systems-mapping.student-workflow-evaluation.v1`
-Updated: 2026-08-28
+Updated: 2026-11-04 (task wording; instrument IDs and category allowlists unchanged)
 
 ## Purpose
 
@@ -26,16 +26,16 @@ Use a generic, fabricated case with enough evidence to support all four levels. 
 
 | Task code | Student task | Completion evidence |
 | --- | --- | --- |
-| `frame_inquiry` | Establish focal person or group, focus question, time period, and map boundary. | Student can state what the map includes and excludes. |
+| `frame_inquiry` | State the focal person/group and map boundary from the supplied memo. | Student can explain what the map includes and excludes without additional required project-detail fields. |
 | `classify_micro` | Place a directly participated person, group, setting, activity, object, institution, or service at Micro-level. | Student explains placement through participation rather than entity type. |
-| `build_meso_interrelation` | Form a mesosystem from two or more existing Micro-level settings. | Student identifies an interrelation without inventing a directional Meso connection. |
-| `trace_exo_pathway` | Connect a named outside decision setting to a carried Micro-level setting. | Student traces a supported pathway from an outside decision into immediate experience. |
+| `build_meso_interrelation` | Draw and name a supported directional relationship between existing local nodes. | Student explains the relationship and direction while retaining the existing Micro node identities. |
+| `trace_exo_pathway` | Identify an outside setting in which focal people do not directly participate, and connect its effect to a local relationship. | Student traces an evidenced indirect pathway rather than classifying by an organization name alone. |
 | `scope_macro_condition` | Apply a broader cultural, legal, political, historical, or economic condition to mapped elements. | Student distinguishes a condition from a named institution and explains its scope. |
 | `revise_map` | Reconsider one placement, relationship, evidence claim, or limitation. | Revision changes the model's reasoning, evidence, scope, or classification when warranted. |
 | `recover_from_error` | Recover from a provided save, import, stale-link, or invalid-map error. | Student preserves work and reaches a usable state using the offered recovery path. |
 | `export_map` | Review and export the cumulative map. | Student produces an export and can identify one limitation or missing perspective. |
 
-Do not require model generation. If a student independently uses model guidance, observe the same tasks and rubric. Do not record whether the student accepted or rejected a suggestion.
+Use a prepared project with successful memo processing when testing manual tasks without a live provider. If observing memo submission/update, record that as the workflow action rather than treating model agreement or node count as success. Continue requires the current part’s successful submission, not relationships or optional notes. Do not record whether the student accepted or rejected a suggestion. The stable task codes remain unchanged for aggregate compatibility.
 
 ## Observation rubric
 
@@ -82,7 +82,7 @@ Record every field for every observed task. Use `not_applicable` or `not_observe
 
 ## Recording procedure
 
-1. Start a student session with class access.
+1. Start an authorized account/course session, or a separate legacy class session when evaluating that entrypoint. Name the tested interface in the study record.
 2. Present one task at a time without demonstrating the correct classification.
 3. Ask the student to explain the decision aloud. Do not transcribe the explanation into the application.
 4. After the task, select one category for each rubric dimension.

@@ -14,10 +14,10 @@ import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
 import { apiRateLimitKey } from './request-load.js';
 import { boundedGuidanceRequest, GUIDANCE_DEADLINE_MS, isGuidanceRequest } from './guidance-deadline.js';
-import { GuidanceJobs } from './guidance-jobs.js';
+import { GuidanceJobs, guidanceJobFailure, guidanceJobScope } from './guidance-jobs.js';
 import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
-import { RedmineReports, contactReporting, reportDelivery, reportsEnabled } from './redmine-reports';
+import { RedmineReports, contactReporting, reportDelivery, reportFallback, reportsEnabled } from './redmine-reports';
 import { handleBugReport, type BugReportService } from './bug-reports';
 
 const HEADERS = {
@@ -163,7 +163,7 @@ export class MappingCourse extends DurableObject<Bindings> {
         stageId: body.kind === 'memo' ? input.stageId || 'review-suggestions' : body.kind === 'map-check' ? (input.intent === 'synthesis' ? 'revise-and-export' : 'build-map') : 'choose-what-to-map' });
       const config = await this.request(new Request(url.origin + '/api/config/public?' + params), principal, correlation);
       if (!config.ok) return config;
-      const scope = JSON.stringify({ config: await config.json(), model: this.env.GATEWAY_MODEL });
+      const scope = guidanceJobScope(await config.json(), this.env.GATEWAY_MODEL);
       const run = async (kind: string, savedInput: unknown) => {
         if (principal.expiresAt <= Date.now()) return failure('Sign in again to continue generation.', 401);
         const target = kind === 'memo' ? '/api/preflight/evaluations' : kind === 'map-check' ? '/api/map/check' : '/api/map/connections';
@@ -179,7 +179,10 @@ export class MappingCourse extends DurableObject<Bindings> {
         result = creating ? this.jobs.create(owner, body.kind, input, scope, body.retryToken, run, body.requestToken)
           : match![2] ? this.jobs.resume(owner, match![1], scope, run)
           : body.scope === scope ? this.jobs.read(owner, match![1]) : { conflict: true };
-      } catch { return failure('This generation request exceeds the workspace limit or has invalid input.', 400); }
+      } catch (error) {
+        const safe = guidanceJobFailure(error);
+        return Response.json({ error: safe.message, details: safe.details }, { status: safe.status });
+      }
       if (!result) return failure('Generation request expired. Your saved map remains available.', 404);
       if ('expired' in result) return failure('Generation request expired. Choose Generate again to start a new request.', 410);
       if ('conflict' in result) return failure('Course guidance changed. Start generation again with the current settings.', 409);
@@ -245,6 +248,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       // SQL projects it from the already-validated saved JSON without parsing
       // and validating up to 200 complete projects on every list refresh.
       const rows = this.db.prepare(`SELECT id,title,revision,updated_at AS updatedAt,
+        coalesce(json_extract(project,'$.participantName'),'') AS participantName,
         json_extract(project,'$.activeScale') AS activeScale,
         json_extract(project,'$.stage') AS stage,
         json_array_length(project,'$.completedScales') AS completedLevels,
@@ -357,7 +361,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
         const contact = contactReporting(env);
         response = Response.json({ enabled: reportsEnabled(env),
-          ...(contact ? { mode: 'contact', delivery: reportDelivery(env), fallback: reportDelivery(env) === 'redmine' && Boolean(env.BUG_REPORTS) ? 'email' : null } : {}) });
+          ...(contact ? { mode: 'contact', delivery: reportDelivery(env), fallback: reportFallback(env) } : {}) });
       }
       else if (contactReporting(env) && !reportsEnabled(env) && url.pathname.startsWith('/api/bug-reports')) {
         response = failure('Reporting is unavailable.', 503);

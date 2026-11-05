@@ -63,7 +63,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   const stored=async()=>JSON.parse((await(await request(`/api/cloud/projects/${project.id}`)).json()).project);
   const first='Residents meet in the community room.';
-  const second='City Housing Authority allocates repair staff. Capital repair funding policy delays elevator repairs.';
+  const second='Residents do not participate in City Housing Authority staffing meetings. City Housing Authority allocates repair staff, affecting repair visits to residents at home. Capital repair funding policy delays elevator repairs.';
   try {
     await page.goto(ORIGIN);await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
     await page.getByLabel('Upload Part 1 memo',{exact:true}).setInputFiles({name:'first.txt',mimeType:'text/plain',buffer:Buffer.from(first)});
@@ -100,7 +100,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await browserExpect(page.locator('.inspector-evidence strong')).toHaveText('Residents');
     const hierarchy=await page.locator('#map-inspector').evaluate(panel=>{
       const size=selector=>parseFloat(getComputedStyle(panel.querySelector(selector)).fontSize);
-      return {label:size('.field__label'),value:size('select'),caption:size('.item-editor-title h2'),title:size('.item-editor-title p'),
+      return {label:size('.field__label'),value:size('select'),caption:size('.inspector-item-state'),title:size('.inspector-item-heading h2'),
         actionWidth:panel.querySelector('.notebook-next').getBoundingClientRect().width,panelWidth:panel.getBoundingClientRect().width};
     });
     expect(hierarchy.label).toBeLessThan(hierarchy.value);
@@ -120,13 +120,18 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     await browserExpect(page.getByRole('button',{name:'Resume relationship',exact:true})).toHaveCount(0);
     await page.getByRole('button',{name:'Connect from Residents',exact:true}).click();
-    await page.locator('.graph-node').filter({hasText:'Community room'}).press('Enter');
+    const relationshipTarget = page.locator('.graph-node').filter({hasText:'Community room'});
+    await relationshipTarget.focus();
+    // A deferred source-focus callback must not steal the target's next key.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await browserExpect(relationshipTarget).toBeFocused();
+    await page.keyboard.press('Enter');
     await page.getByRole('textbox',{name:'Relationship',exact:true}).fill('meet in');
     await page.getByRole('button',{name:'Add relationship',exact:true}).click();
     await browserExpect(page.locator('.graph-edge')).toHaveCount(1);
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await browserExpect(page.getByRole('textbox',{name:'Second memo',exact:true})).toHaveValue('');
-    await browserExpect(page.locator('.workflow-memos')).not.toContainText('first.txt');
+    await browserExpect(page.locator('.memo-workspace')).not.toContainText('first.txt');
     await page.getByLabel('Upload Part 2 memo',{exact:true}).setInputFiles({name:'second.txt',mimeType:'text/plain',buffer:Buffer.from(second)});
     await page.getByRole('button',{name:'Submit memo and add nodes',exact:true}).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(4);await browserExpect(page.locator('.graph-edge')).toHaveCount(1);
@@ -185,17 +190,13 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome reop
       await browserExpect(page.getByRole('button',{name:'Submit memo and add nodes',exact:true})).toHaveCount(0);
       await browserExpect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
     }
-    // Edit changes the course-guidance stage and starts two fixture reads.
-    // Wait for their completion before unrouteAll changes interception; waiting
-    // only for the textarea leaves the slower builder response in flight.
-    const editResponses=Promise.all(['preflight','builder'].map(kind=>page.waitForResponse(response=>{
-      const url=new URL(response.url());
-      return url.pathname==='/api/config/public' && url.searchParams.get('configKind')===kind
-        && url.searchParams.get('stageId')==='review-suggestions';
-    })));
-    await page.getByRole('button',{name:'Edit',exact:true}).click();
+    // Opening Memo is a view change and must not request another model read.
+    const renderedBefore=await page.locator('.graph-node').count();
+    const callsBefore=(await(await services.fetch('https://fixtures.test/control')).json()).calls;
+    await page.getByRole('button',{name:'Memo',exact:true}).click();
     await browserExpect(page.getByRole('textbox',{name:'First memo',exact:true})).toHaveValue(project.submission.text);
-    for(const response of await editResponses) { expect(response.ok()).toBe(true); expect(await response.finished()).toBeNull(); }
+    expect((await(await services.fetch('https://fixtures.test/control')).json()).calls).toBe(callsBefore);
+    await browserExpect(page.locator('.graph-node')).toHaveCount(renderedBefore);
   } finally {await context.unrouteAll({behavior:'wait'});await browser.close();}
 },30000);
 
@@ -541,7 +542,9 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await context.clearCookies();
     await context.addCookies([{ name: '__Host-systems-mapping-session', value: sessions.bob, url: ORIGIN, secure: true, httpOnly: true, sameSite: 'Lax' }]);
     await page.goto(ORIGIN);
-    await browserExpect(page.getByRole('heading', { name: 'Start your first map' })).toBeVisible();
+    await browserExpect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+    await browserExpect(page.getByRole('form', { name: 'New project', exact: true })).toBeVisible();
+    await browserExpect(page.getByRole('article')).toHaveCount(0);
     await page.getByRole('button', { name: 'Account', exact: true }).click();
     await browserExpect(page.getByText('Approximately 90% remaining', { exact: false })).toBeVisible();
     expect(await page.getByText('East Harlem disability resources').count()).toBe(0);

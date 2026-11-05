@@ -1,6 +1,6 @@
-# Prospective course workspaces
+# Course workspace access contract
 
-This local implementation adds course workspaces and instructor prompt appendices to the Cloudflare application. It has not been deployed or activated against live course records. The existing general workspace and the separately deployed Node application retain their current behavior.
+This document defines course workspaces and instructor prompt appendices for the Cloudflare application. Source/configuration capability is separate from live course activation and signed-in acceptance; use dated release receipts for those claims. General and course storage remain separate, and the Node/Railway application retains its own data. The latest Memo workspace changes do not grant enrollment or alter this authority contract.
 
 ## Activation boundary
 
@@ -10,7 +10,7 @@ The browser selects a course through `?course=<class-id>` and sends that selecti
 
 This implementation calls Admission as `app: "systems-mapping"` with the opaque member namespace `systems-mapping-member-v1-<64 lowercase hexadecimal characters>`. The adapter deliberately rejects Stem member IDs and never calls Admission under Stem's app identity. The shared `cail-knowledge-base` (Admission Control note, October 2026) records the guest-instructor V2 receipts for the demo course and that Doorway exposes the demo destination only when fresh Stem and Systems Mapping receipts agree; it records no separate acceptance of the Systems Mapping namespace for the Fall 2026 course ID above. Treat live access for that course as unverified until a signed-in instructor and student session is recorded.
 
-Maria's collaborator attribution is known, but her canonical CUNY subject, current course ID, owner relationship and enrolled roster have not been confirmed. This implementation creates no enrollment, owner grant or default Maria course. Live activation, permission changes, shared-backend changes and deployment remain outside the local implementation.
+Maria's collaborator attribution is known, but her canonical CUNY subject, current course ID, owner relationship and enrolled roster have not been confirmed. This implementation creates no enrollment, owner grant or default Maria course. This source contract creates no live enrollment or owner grant. Permission/shared-backend changes require their own authorized evidence, separately from the authorized application release.
 
 ## Identity and current authority
 
@@ -43,7 +43,7 @@ The current value and new history record are written in one Durable Object trans
 
 `shared/course-prompt.js` appends the saved text after the application's composed instructions. It explicitly subordinates course guidance to the fixed level definitions, student agency, privacy rules and output schema. Editing the appendix replaces the current appendix while preserving prior revisions; it does not replace the fixed application instructions.
 
-Both memo guidance and connection suggestions receive only the selected course's appendix. The effective prompt fingerprint and configuration metadata incorporate its revision and content hash. Model dispatch refuses an appendix revision that changed after the request captured its settings. Student metadata includes fingerprints and revision identifiers, not the appendix text, history or instructor identity. Prompt changes leave other courses and the general workspace unchanged.
+Account memo submissions/updates receive only the selected course's appendix and remain node-only; the appendix cannot enable automatic relationships, require Field Notes or override current-part memo gating. Retained legacy guidance and connection APIs also use only the selected course appendix. The effective prompt fingerprint and configuration metadata incorporate its revision and content hash. Model dispatch refuses an appendix revision that changed after the request captured its settings. Student metadata includes fingerprints and revision identifiers, not the appendix text, history or instructor identity. Prompt changes leave other courses and the general workspace unchanged.
 
 ## Errors and verification
 

@@ -1,6 +1,6 @@
 # Field Notes recovery proposal
 
-Field Notes use the existing `reflection` and `levelProgress[scale].reflection` storage fields so older projects and exports retain their writing. Opening Map does not clear them. The existing account-scoped memo draft journal caches these fields on editing, before the debounced full-project save, and recovers compatible unsaved drafts. Notes from other scales are available in a collapsed reading section.
+Field Notes use the existing `reflection` and `levelProgress[scale].reflection` storage fields so older projects and exports retain their writing. Switching Memo, Notebook or Tools, or hiding the sidebar, does not clear them. Field Notes are optional in the current account workflow; they never gate Continue. The existing account-scoped memo draft journal caches these fields on editing, before the debounced full-project save, and recovers compatible unsaved drafts. Notes from other scales are available in a collapsed reading section.
 
 ## Proposed additional protection
 

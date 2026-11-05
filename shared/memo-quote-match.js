@@ -49,8 +49,8 @@ export function strictQuoteText(value) {
   return String(value).normalize('NFC').replace(/\s+/g, ' ').trim();
 }
 
-export function canonicalQuoteText(value) {
-  return tableReadingText(value)
+function canonicalRawQuoteText(value) {
+  return String(value)
     .normalize('NFKC')
     .replace(SINGLE_QUOTES, "'")
     .replace(DOUBLE_QUOTES, '"')
@@ -64,6 +64,10 @@ export function canonicalQuoteText(value) {
     .toLocaleLowerCase('en-US');
 }
 
+export function canonicalQuoteText(value) {
+  return canonicalRawQuoteText(tableReadingText(value));
+}
+
 /**
  * Grade how an excerpt quotes the memo.
  * @returns {'exact'|'normalized'|'elided'|null} null when the memo does not support the excerpt
@@ -72,6 +76,11 @@ export function classifyExcerptMatch(memo, excerpt) {
   const strictExcerpt = strictQuoteText(excerpt);
   if (!strictExcerpt) return null;
   if (strictQuoteText(memo).includes(strictExcerpt)) return 'exact';
+  // A partial row may retain real column separators without its table header.
+  // Normalize literal text first, so typography-only changes still match before
+  // the full source's structural separators are removed for prose-style quotes.
+  const rawExcerpt = canonicalRawQuoteText(excerpt).replace(EDGE_MARKS, '');
+  if (rawExcerpt.length >= MIN_FRAGMENT_CHARACTERS && canonicalRawQuoteText(memo).includes(rawExcerpt)) return 'normalized';
   const source = canonicalQuoteText(memo);
   const canonicalExcerpt = canonicalQuoteText(excerpt).replace(EDGE_MARKS, '');
   // A literal ellipsis in the memo is punctuation, not necessarily an omission.

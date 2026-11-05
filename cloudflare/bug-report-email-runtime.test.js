@@ -97,7 +97,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('account rep
     await page.goto(ORIGIN);
     await page.getByRole('button', { name: 'Report a bug', exact: true }).click();
     await browserExpect(page.getByText('Reporting as Sam Student')).toBeVisible();
-    await page.getByRole('textbox', { name: 'What went wrong?' }).fill('Synthetic browser report through the email receiver.');
+    await page.getByRole('textbox', { name: 'What went wrong? What could be better?' }).fill('Synthetic browser report through the email receiver.');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await browserExpect(page.locator('.bug-report__status')).toContainText('Accepted for email delivery.');
     const state = await stats();

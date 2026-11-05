@@ -18,10 +18,10 @@ export default function MapSearch({ nodes, onSelect }) {
   }} onKeyDown={(event) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
   }}>
-    <summary>Find</summary>
+    <summary>Find a node</summary>
     <div className="map-search__panel" role="search" aria-label="Find map elements">
       <label htmlFor="map-search-input">Find map item</label>
-      <input id="map-search-input" ref={input} type="search" value={query} placeholder="Search across all levels" onChange={(event) => setQuery(event.target.value)} />
+      <input id="map-search-input" ref={input} type="search" value={query} placeholder="Enter part of a node name" onChange={(event) => setQuery(event.target.value)} />
       <p role="status">{query.trim() ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}${matches.length > 8 ? ' · Showing the first 8; refine your search.' : ''}` : 'Search by name. Results include every mapped level.'}</p>
       <ul>{matches.slice(0, 8).map((node) => <li key={node.id}><button type="button" onClick={() => {
         disclosure.current.open = false;

@@ -2,6 +2,36 @@ import { expect, test } from 'vitest';
 import { mapExportSvg, imagePdf } from './mapExport.js';
 import { createDefaultProject } from './domain.js';
 import { groupProject } from '../tests/fixtures/group-project.js';
+import { NODE_COLORS, nodeColorTokens } from '../shared/node-colors.js';
+
+test.each(NODE_COLORS)('preserves the selected %s node color in SVG used by PNG and PDF export', color => {
+  const project = createDefaultProject();
+  project.graph.nodes = [{ id:'chosen', label:'Student-selected setting', scale:'micro', color }];
+  const before = structuredClone(project);
+  const document = new DOMParser().parseFromString(mapExportSvg(project).svg,'image/svg+xml');
+  const node = document.querySelector('[data-export-node="chosen"]');
+  const tokens = nodeColorTokens(color);
+  expect(node.getAttribute('data-node-color')).toBe(color);
+  expect(node.querySelector('rect').getAttribute('fill')).toBe(tokens.fill);
+  expect(node.querySelector('rect').getAttribute('stroke')).toBe(tokens.stroke);
+  expect(node.querySelector('text').getAttribute('fill')).toBe(tokens.text);
+  expect(project).toEqual(before);
+});
+
+test('Automatic and invalid colors retain the scale default without emitting untrusted styles', () => {
+  const project = createDefaultProject();
+  project.graph.nodes = [
+    {id:'default',label:'Default node',scale:'micro'},
+    {id:'invalid',label:'Invalid color',scale:'micro',color:'url(https://example.com)'},
+  ];
+  const document = new DOMParser().parseFromString(mapExportSvg(project).svg,'image/svg+xml');
+  for(const id of ['default','invalid']) {
+    const node = document.querySelector(`[data-export-node="${id}"]`);
+    expect(node.getAttribute('data-node-color')).toBeNull();
+    expect(node.querySelector('rect').getAttribute('fill')).toBe('#dbeafe');
+  }
+  expect(document.documentElement.outerHTML).not.toContain('https://example.com');
+});
 
 test('exports three spheres and vectors to the exact selected local relationships', () => {
   const project = groupProject();

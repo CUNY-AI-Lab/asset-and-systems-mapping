@@ -58,7 +58,7 @@
 .map-tools-resizer:hover, .map-tools-resizer:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; background: var(--pale-blue); }
 @media (max-width: 600px) {
   .app-shell:has(> .workspace--studio) .app-header--student { padding-inline:8px; }
-  .app-shell:has(> .workspace--studio) .app-header--student .header-actions { display:flex;justify-content:flex-end;gap:4px;width:100%; }
+  .app-shell:has(> .workspace--studio) .app-header--student .header-actions { display:flex;justify-content:flex-end;gap:4px;width:auto; }
   .notebook-switch > button,.notebook-switch > .notebook-map-tools > summary { padding-inline:6px; }
   .app-header--student .account-nav-button { display:none; }
   .project-menu-account { display:block; }
@@ -105,7 +105,7 @@
 .app-shell .notebook-tools-body .map-search[open] > summary { border-color: var(--blue); }
 .app-shell .notebook-tools-body :is(.map-tools-zoom button, .map-tools-layout-actions button, .map-tools-commands > button, .map-search > summary):hover { background: var(--surface-hover); }
 .map-tools-removed { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 44px; }
-.map-stage--notebook.is-fullscreen .notebook-tools-body { max-height: calc(100dvh - 100px); }
+.map-stage--notebook.is-fullscreen .notebook-tools-panel .notebook-tools-body { max-height: calc(100dvh - 100px); }
 .map-fullscreen-open :is(.app-header, .app-footer) { visibility: hidden; }
 .notebook-section { display: block; padding: 8px 16px 0; }
 .notebook-section select { min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--muted); font: 400 14px/1.4 var(--body); }
@@ -155,18 +155,18 @@
   .workspace--studio .map-stage--notebook .map-layout.is-panel-inspector.has-inspector > :is(.canvas-wrap, .map-list-view) { visibility: visible; pointer-events: auto; }
   .workspace--studio .map-stage--notebook .map-layout.is-panel-inspector > .inspector.is-open { position: relative; inset: auto; height: 100%; max-height: 100%; grid-row: 2; border-top: 1px solid var(--line-strong); }
   .workspace--studio .map-layout.is-panel-inspector.has-inspector .notebook-tools-panel { top:auto; bottom:calc(100% + 4px); }
-  .workspace--studio .map-layout.is-panel-inspector.has-inspector .notebook-tools-body { max-height: max(44px, calc(min(var(--compact-map-height) * .58, var(--compact-map-height) - 180px) - 16px)); }
+  .workspace--studio .map-layout.is-panel-inspector.has-inspector .notebook-tools-panel .notebook-tools-body { max-height: max(44px, calc(min(var(--compact-map-height) * .58, var(--compact-map-height) - 180px) - 16px)); }
 }
 @media (max-width: 600px) {
   .notebook-project-title { display: none; }
   .workspace--studio .notebook-toolbar > div:first-child { justify-content: flex-start; }
   .map-stage--notebook .notebook-candidate-nav button { max-width: 38%; }
-  .app-shell:has(> .workspace--studio) .app-header--student .brand { display: none; }
-  .app-shell:has(> .workspace--studio) .app-header--student .header-actions { display:flex;width:100%;gap:4px; }
+  .app-shell:has(> .workspace--studio) .app-header--student .brand { display:flex; min-width:78px; }
+  .app-shell:has(> .workspace--studio) .app-header--student .header-actions { display:flex;width:auto;gap:4px; }
   .workspace-map-controls, .workspace-map-controls > .notebook-toolbar-actions { display: contents; }
   .app-shell:has(> .workspace--studio) .project-menu { justify-self: start; }
   .map-stage--notebook.is-fullscreen .notebook-tools-panel { top:calc(100% + 4px); bottom:auto; }
-  .map-stage--notebook.is-fullscreen .notebook-tools-body { max-height:calc(100dvh - 64px - var(--safe-top) - var(--safe-bottom)); }
+  .map-stage--notebook.is-fullscreen .notebook-tools-panel .notebook-tools-body { max-height:calc(100dvh - 64px - var(--safe-top) - var(--safe-bottom)); }
   .app-shell:has(> .workspace--studio) .project-menu > div { right: auto; left: 0; }
   .app-shell:has(> .workspace--studio) .project-menu-brand { display: flex; padding: 8px; }
   .notebook-footer nav { gap: 8px; }
@@ -273,7 +273,7 @@
 .map-stage--notebook #map-inspector .inspector__head--edit { padding:12px; gap:12px; }
 .map-stage--notebook #map-inspector .item-editor-title h2 { min-height:0; margin-bottom:4px; color:var(--muted); font:600 13px/1.35 var(--body); }
 .map-stage--notebook #map-inspector .item-editor-title p { margin:0; font:600 18px/1.3 var(--body); }
-.map-stage--notebook #map-inspector .inspector-evidence { margin:0 12px 12px; padding:10px 12px; font:400 16px/1.5 var(--body); }
+.map-stage--notebook #map-inspector .inspector-evidence { margin:0 12px 12px; padding:10px 12px; font:400 14px/1.5 var(--body); }
 .map-stage--notebook #map-inspector :is(.inspector__body,.add-form) { padding:0 12px 16px; gap:14px; }
 .map-stage--notebook #map-inspector :is(.field,.annotation-field) { gap:6px; }
 .map-stage--notebook #map-inspector .field__label { color:var(--ink); font:600 13px/1.35 var(--body); }
@@ -309,7 +309,7 @@
   .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,55%) minmax(180px,45%); }
   .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout > .inspector.is-open { grid-column:1; grid-row:2; border-left:0; border-top:1px solid var(--line); }
   .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector .notebook-tools-panel { top:auto; bottom:calc(100% + 4px); }
-  .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector .notebook-tools-body { max-height:max(44px,calc((100dvh - var(--header) - var(--project-footer-height,0px) - 8px) * .55 - 20px)); }
+  .workspace--studio .map-stage--notebook:not(.is-fullscreen) .map-layout.has-inspector .notebook-tools-panel .notebook-tools-body { max-height:max(44px,calc((100dvh - var(--header) - var(--project-footer-height,0px) - 8px) * .55 - 20px)); }
   .map-stage--notebook .map-reading-guide { font-size:12px; max-width:calc(100% - 16px); padding:4px; }
   .map-stage--notebook #map-inspector :is(input:not([type=checkbox]),textarea,select) { font-size:16px; }
 }

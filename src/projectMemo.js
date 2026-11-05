@@ -13,6 +13,7 @@ export function beginPart2(project) {
     author: '', date: '', sourceType: '', location: '', rights: '', evidenceOwnership: '',
     sensitive: false, consent: false, revision: 1,
   };
+  delete project.part2Submission.analysis;
   delete project.part2Submission.fingerprint;
   delete project.part2Submission.fileName;
   delete project.part2Submission.fileSize;

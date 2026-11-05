@@ -2,7 +2,15 @@
 
 Updated: 2026-08-24
 
-## Scope and claim boundary
+## November 4 account change review requirements
+
+The ledger below is an August security review, preserved as dated evidence. Its “current” and “verified” claims refer to that source and Node/Railway environment, not acceptance of the latest account release. Current identity, Admission, Gateway and deployment boundaries are in [cloudflare deployment](cloudflare-deployment.md).
+
+The Memo workspace changes require a focused regression audit: preserve account isolation and optimistic revisions; bound and validate independent memo analysis/update objects; retain only supplied-current-source evidence; reject unknown or duplicate identities before graph mutation; commit connected nodes/edges and analysis/graph updates atomically; preserve manually edited and removed records; and strip analysis/history from all non-private exports. Node colors use an allowlisted enum, not arbitrary CSS. Information copy renders as text with no HTML-injection path. No new service, credentials, role grants, email action or provider call is implied by opening controls or Continue.
+
+Audit these requirements in the integrated source and actual Dev build before production promotion. Automated containment does not prove correct model interpretation; use the separate classification and real-memo acceptance cases. No August receipt closes these new checks.
+
+## Historical August scope and claim boundary
 
 This review covers the current React application, Node/Hono server, SQLite and PostgreSQL adapters, student class access, teacher authentication, authoritative evaluation, instructor review, import/export, prototype telemetry, and optional Ollama Cloud adapter.
 

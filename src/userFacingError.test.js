@@ -66,6 +66,11 @@ describe('safe error display', () => {
   });
 
   it.each([
+    ['guidance_workspace_busy', /Wait for one to finish/],
+    ['guidance_request_limit', /Try again later; your map remains editable/],
+    ['guidance_retry_limit', /retry limit/],
+    ['guidance_request_invalid', /Reopen the map and try again/],
+    ['guidance_storage_unavailable', /could not be saved/],
     ['course_access_disabled', /Ask your instructor when the course will open/],
     ['course_not_allowed', /correct course link/],
     ['course_invalid', /new link/],

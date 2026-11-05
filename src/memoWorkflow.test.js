@@ -7,7 +7,7 @@ import { submittedReviewIssue, nodeSubmissionSchema, nodeSubmissionInstruction, 
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
 const local = { label:'Residents', type:'group', scale:'micro', evidence:'Residents meet in the community room.' };
 const outer = [
-  { label:'City Housing Authority', type:'agency', scale:'exosphere', basis:'memo', evidence:'City Housing Authority allocates repair staff.' },
+  { label:'City Housing Authority', type:'agency', scale:'exosphere', basis:'memo', evidence:'Residents do not participate in City Housing Authority allocation decisions, which delay repairs in their buildings.' },
   { label:'Capital repair funding policy', type:'policy', scale:'macrosphere', basis:'memo', evidence:'Capital repair funding policy delays elevator repairs.' },
 ];
 function blank() {
@@ -126,11 +126,11 @@ it('keeps local roles eligible for Micro and asks Part 2 to omit them without ge
 });
 
 it.each([
-  ['District Counseling Office', 'institution', 'District Counseling Office allocates counseling staff across the district.'],
-  ['Community Counselor Referral Service', 'service', 'Community Counselor Referral Service coordinates referral rules for district clinics.'],
-  ['School Counselor Association', 'organization', 'School Counselor Association sets professional training requirements.'],
-  ['School counselor training fund', 'resource', 'The School counselor training fund pays for district training.'],
-  ['City Housing Authority', 'agency', 'City Housing Authority allocates repair staff.'],
+  ['District Counseling Office', 'institution', 'Students do not participate in District Counseling Office staffing decisions, which limit counseling in their schools.'],
+  ['Community Counselor Referral Service', 'service', 'Families do not participate in Community Counselor Referral Service decisions, which delay care in local clinics.'],
+  ['School Counselor Association', 'organization', 'Students do not participate in School Counselor Association training decisions, which change counseling in their schools.'],
+  ['School counselor training fund', 'resource', 'Students do not participate in School counselor training fund decisions, which reduce training for counselors in their schools.'],
+  ['City Housing Authority', 'agency', 'Residents do not participate in City Housing Authority allocation decisions, which delay repairs in their buildings.'],
 ])('preserves the specifically identified outside setting or resource %s', (label, type, evidence) => {
   expect(submittedReviewIssue(review([{ label, type, evidence, scale: 'exosphere', basis: 'memo' }]), 'exosphere', evidence)).toBeNull();
 });
@@ -177,7 +177,7 @@ it('keeps the institution itself out of Macro even when submitted with policy ty
 });
 
 it('retains a specifically identified outside resource', () => {
-  const node = { ...outer[0], label: 'City repair reserve fund', type: 'resource', evidence: 'The City repair reserve fund pays for emergency elevator repairs.' };
+  const node = { ...outer[0], label: 'City repair reserve fund', type: 'resource', evidence: 'Residents do not participate in City repair reserve fund allocation decisions, which delay emergency repairs in their buildings.' };
   expect(submittedReviewIssue(review([node]), 'exosphere', node.evidence)).toBeNull();
 });
 

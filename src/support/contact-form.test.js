@@ -32,6 +32,15 @@ test('recognizes SSO automatically and sends only the server comparison marker',
   expect(posts[0].data).not.toHaveProperty('preferredName');
   await vi.waitFor(() => expect(host.textContent).toContain('Saved to CAIL Ticketing.'));
 });
+test('names bugs and feature requests and explains direct private ticketing', async () => {
+  const { host } = setup(true);
+  await vi.waitFor(() => expect(host.textContent).toContain('Reporting as Sam Student'));
+  expect(host.querySelector('h2').textContent).toBe('Report a bug or request a feature');
+  expect(host.querySelector('[role="dialog"]').getAttribute('aria-label')).toBe('Report a bug or request a feature');
+  expect(host.querySelector('textarea').labels[0].textContent).toBe('What went wrong? What could be better?');
+  expect(host.querySelector('.bug-report__delivery-help').textContent).toBe('Your report is sent directly to CAIL Ticketing as a private ticket.');
+  expect(host.querySelector('.bug-report__delivery-help').textContent).not.toMatch(/email|fallback/);
+});
 test('guest details appear above the description and reject non-edu email before sending', async () => {
   const { host, posts } = setup();
   await vi.waitFor(() => expect(host.querySelector('form').getAttribute('aria-busy')).toBe('false'));

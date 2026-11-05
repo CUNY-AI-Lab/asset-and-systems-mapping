@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { mapNodeGeometry } from './App.jsx';
-import { studentMapPositions, studentMapBoundaries, attachedConnectionLayout, relationshipAttachment, contentEllipse, REGION_CAPTION } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, attachedConnectionLayout, relationshipAttachment, contentEllipse, REGION_CAPTION } from './studentMapLayout.js';
 
 const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
 const area=(p,g)=>({left:p.x-g.cardWidth/2,right:p.x+g.cardWidth/2,top:p.y-g.cardHeight/2,bottom:p.y+g.cardHeight/2});
@@ -126,4 +126,122 @@ it('encloses continuous inner contours and complete captions for uneven three-sp
     }
   }
   expect(nodes).toEqual(before);
+});
+
+// Synthetic card sizes and coordinate proportions from the retained-layout
+// failure. No memo text, names or source evidence are included in this fixture.
+function retainedReadingFixture(tall=false) {
+  const coordinates=[[544,656],[571,544],[1052,544],[840,656],[783,544]];
+  const nodes=coordinates.map(([x,y],i)=>({id:`local-${i}`,label:`Local item ${i+1}`,scale:'micro',
+    x:tall?800+y-600:x,y:tall?600+x-800:y}));
+  nodes.push({id:'office',label:'Outside resource office',scale:'exosphere',x:238,y:335},
+    {id:'policy-a',label:'Resource distribution rule',scale:'macrosphere',x:420,y:140},
+    {id:'policy-b',label:'Coordination requirement',scale:'macrosphere',x:602,y:335});
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:n.id==='local-1'?104:224,
+    cardHeight:['local-1','local-2'].includes(n.id)?42:64}]));
+  const layout={aspectRatio:1.5288461538461537,readingAspect:1.5288461538461537,
+    manualNodeIds:[...coordinates.map((_,i)=>`local-${i}`),'removed-local']};
+  return {nodes,geometry,layout};
+}
+
+it('keeps a retained shallow Micro map readable when outer levels are added beside the notebook',()=>{
+  const {nodes,geometry,layout}=retainedReadingFixture(),before=structuredClone(nodes);
+  const positions=studentMapPositions(nodes,[],geometry,layout);
+  const displayed=nodes.map(n=>({...n,...positions.get(n.id)}));
+  const regions=studentMapBoundaries(displayed,geometry),outer=regions.macrosphere;
+  // 1280×720 workspace, 304px notebook, 955×625 measured canvas. Match the
+  // map's existing fit padding and SVG scale, rather than asserting a side.
+  const canvasWidth=955,canvasHeight=625,viewWidth=800;
+  const zoom=Math.min(760/(outer.rx*2+40),(viewWidth/canvasWidth*canvasHeight-96)/(outer.ry*2+40));
+  expect(22*zoom*canvasWidth/viewWidth).toBeGreaterThanOrEqual(12);
+  expect(outer.rx/outer.ry).toBeLessThan(2.3);
+  for(const node of nodes.filter(n=>n.scale==='micro'))expect(positions.get(node.id)).toEqual({x:node.x,y:node.y});
+  const cards=displayed.map(n=>area(n,geometry.get(n.id)));
+  expect(cards.some((card,i)=>cards.slice(i+1).some(other=>intersects(card,other)))).toBe(false);
+  for(const node of displayed.filter(n=>n.scale!=='micro')) {
+    const inner=regions[node.scale==='exosphere'?'micro':'exosphere'],card=area(node,geometry.get(node.id));
+    const dx=Math.max(card.left-inner.cx,inner.cx-card.right,0),dy=Math.max(card.top-inner.cy,inner.cy-card.bottom,0);
+    expect((dx/inner.rx)**2+(dy/inner.ry)**2).toBeGreaterThan(1);
+  }
+  for(const [innerKey,outerKey]of [['micro','exosphere'],['exosphere','macrosphere']]) {
+    const inner=regions[innerKey],boundary=regions[outerKey];
+    for(let i=0;i<256;i++) {
+      const angle=2*Math.PI*i/256,x=inner.cx+inner.rx*Math.cos(angle),y=inner.cy+inner.ry*Math.sin(angle);
+      expect(((x-boundary.cx)/boundary.rx)**2+((y-boundary.cy)/boundary.ry)**2).toBeLessThan(1);
+    }
+  }
+  for(const boundary of Object.values(regions)) {
+    const caption={left:boundary.cx-REGION_CAPTION.width/2,right:boundary.cx+REGION_CAPTION.width/2,
+      top:boundary.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2,bottom:boundary.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2};
+    expect(cards.some(card=>intersects(card,caption))).toBe(false);
+  }
+  expect(nodes).toEqual(before);
+  expect(studentMapPositions(nodes,[],geometry,layout)).toEqual(positions);
+});
+
+it('uses available width for tall retained Micro content instead of always stacking outer levels',()=>{
+  const {nodes,geometry,layout}=retainedReadingFixture(true);
+  const positions=studentMapPositions(nodes,[],geometry,layout),regions=studentMapBoundaries(nodes.map(n=>({...n,...positions.get(n.id)})),geometry);
+  expect(regions.macrosphere.rx/regions.macrosphere.ry).toBeGreaterThan(.95);
+  expect(regions.macrosphere.ry/regions.micro.ry).toBeLessThan(1.45);
+  for(const node of nodes.filter(n=>n.scale==='micro'))expect(positions.get(node.id)).toEqual({x:node.x,y:node.y});
+});
+
+it('never moves a pinned outer card and leaves the entire saved layout exact with auto-fit off',()=>{
+  const {nodes,geometry,layout}=retainedReadingFixture();
+  const office=nodes.find(n=>n.id==='office');Object.assign(office,{x:850,y:590});
+  layout.manualNodeIds.push(office.id);
+  const before=structuredClone(nodes),positions=studentMapPositions(nodes,[],geometry,layout);
+  expect(positions.get(office.id)).toEqual({x:850,y:590});
+  const fixed=studentMapPositions(nodes,[],geometry,{...layout,autoFit:false});
+  for(const node of nodes)expect(fixed.get(node.id)).toEqual({x:node.x,y:node.y});
+  expect(nodes).toEqual(before);
+});
+
+it.each(['exosphere','macrosphere'])('keeps legal %s moves exact and stops an inward move at the preceding sphere',scale=>{
+  const {nodes,geometry,layout}=retainedReadingFixture();
+  const positions=studentMapPositions(nodes,[],geometry,layout);
+  const displayed=nodes.map(n=>({...n,...positions.get(n.id)}));
+  const moving=displayed.find(n=>n.scale===scale),before=structuredClone(displayed);
+  const inner=studentMapBoundaries(displayed,geometry)[scale==='exosphere'?'micro':'exosphere'];
+  const legal={x:moving.x+8,y:moving.y+24};
+  expect(constrainStudentNodeMove(moving,legal,displayed,geometry)).toEqual(legal);
+  const inward={x:inner.cx,y:inner.cy};
+  const stopped=constrainStudentNodeMove(moving,inward,displayed,geometry);
+  expect(stopped).not.toEqual(inward);
+  expect(Math.hypot(stopped.x-inward.x,stopped.y-inward.y)).toBeLessThan(Math.hypot(moving.x-inward.x,moving.y-inward.y));
+  const bounds=area(stopped,geometry.get(moving.id));
+  const dx=Math.max(bounds.left-inner.cx,inner.cx-bounds.right,0),dy=Math.max(bounds.top-inner.cy,inner.cy-bounds.bottom,0);
+  expect((dx/inner.rx)**2+(dy/inner.ry)**2).toBeGreaterThanOrEqual(1);
+  expect(constrainStudentNodeMove(moving,inward,displayed,geometry,{autoFit:false})).toEqual(inward);
+  expect(displayed).toEqual(before);
+});
+
+it('adds an unpinned Exo card without enclosing retained Macro cards in the Exo sphere',()=>{
+  // World card dimensions measured from the fictional ten-node Dev case.
+  // The smaller bottom placement previously engulfed both pinned Macro cards.
+  const measured=[
+    ['micro',841,656,174.1529998779297,42],['micro',1075,544,224,64],
+    ['micro',1087,656,174.89425659179688,42],['micro',617,656,224,64],
+    ['micro',840,544,150.6991424560547,42],['micro',605,544,224,64],
+    ['exosphere',840,804,224,64],['macrosphere',704,941,224,90],
+    ['macrosphere',976,941,224,64],['exosphere',420,270,217.16812133789062,42],
+  ];
+  const nodes=measured.map(([scale,x,y],i)=>({id:`item-${i}`,label:`Item ${i}`,scale,x,y}));
+  const geometry=new Map(measured.map(([,x,y,cardWidth,cardHeight],i)=>[`item-${i}`,{cardWidth,cardHeight}]));
+  const before=structuredClone(nodes),layout={manualNodeIds:nodes.slice(0,9).map(n=>n.id),readingAspect:1.5288461538461537,aspectRatio:1.5288461538461537};
+  const positions=studentMapPositions(nodes,[],geometry,layout),displayed=nodes.map(n=>({...n,...positions.get(n.id)}));
+  const regions=studentMapBoundaries(displayed,geometry);
+  for(const node of nodes.slice(0,9))expect(positions.get(node.id)).toEqual({x:node.x,y:node.y});
+  for(const node of displayed.filter(n=>n.scale!=='micro')) {
+    const inner=regions[node.scale==='exosphere'?'micro':'exosphere'],card=area(node,geometry.get(node.id));
+    const dx=Math.max(card.left-inner.cx,inner.cx-card.right,0),dy=Math.max(card.top-inner.cy,inner.cy-card.bottom,0);
+    expect((dx/inner.rx)**2+(dy/inner.ry)**2).toBeGreaterThanOrEqual(1);
+  }
+  const cards=displayed.map(n=>area(n,geometry.get(n.id)));
+  expect(cards.some((card,i)=>cards.slice(i+1).some(other=>intersects(card,other)))).toBe(false);
+  const outer=regions.macrosphere,zoom=Math.min(760/(outer.rx*2+40),(800/955*625-96)/(outer.ry*2+40));
+  expect(22*zoom*955/800).toBeGreaterThanOrEqual(12);
+  expect(nodes).toEqual(before);
+  expect(studentMapPositions(nodes,[],geometry,layout)).toEqual(positions);
 });

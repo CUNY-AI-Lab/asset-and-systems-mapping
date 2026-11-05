@@ -1,6 +1,8 @@
 # Maria Zoom reversioning decisions — 2026-08-21
 
-> **Superseded in part on 2026-08-24.** This file preserves the implementation interpretation made from the supplied Zoom summary. The later direct decision recorded in `docs/MICRO_MESO_CORRECTION_2026-08-24.md` replaces every node-only Micro rule and every rule that assigns generic relationship edges or verbs to Meso. Under the current contract, Micro includes direct relationships and their verbs; Meso contains noun-labeled linkages among at least two carried Micro settings. The four level names, their order, ecological filters, and the other compatible decisions below remain in force.
+> **Historical record.** Claims of “current,” “implemented,” or “verified” below refer to this document’s dated source and environment. The November 4 [Memo workspace](MEMO_WORKSPACE_2026-11-04.md), [two-memo workflow](TWO_MEMO_WORKFLOW_2026-11-04.md) and [classification evidence](CLASSIFICATION_EVIDENCE_2026-11-04.md) govern the account application. Older screen, model-output and sphere rules do not override them; the receipts below are preserved, not rerun acceptance.
+
+> **Intervening August 24 revision.** The August correction temporarily assigned direct relationships to Micro and scoped linkage nodes to Meso. October 28 and then November 4 superseded that interpretation. The historical decisions below retain provenance; use the current documents above for relationship ownership and geometry.
 
 ## Source and authority
 

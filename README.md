@@ -2,92 +2,77 @@
 
 > **Active beta.** Systems Mapping is under active classroom development.
 
-Systems Mapping helps students turn a place-based inquiry into an evidence-informed account of people, settings, institutions, and broader conditions. Students build one cumulative map across two spheres, Microsystem and Macrosystem, using four analytical steps and two linked memos. The map, supporting evidence, and revision notes form a record of their reasoning.
+Systems Mapping helps students visualize their memos as one cumulative network of people, settings, institutions and broader conditions. The account workspace uses two independent memos, four analytical steps and three nested regions: Microsystem inside Exosystem inside Macrosystem. The model identifies a small supported node set; students create every relationship.
 
-The prototype combines a guided student workspace with a Instructor Console for course guidance and materials. A new empty map begins with Generate guidance in Memo review. After a valid response, students review its suggestions and can add supported items themselves, edit labels and relationships, and remove suggestions. Existing saved maps remain available for manual revision. Projects save in the current browser; a classroom server manages access, course settings, and bounded evaluation records.
+The [Cloudflare account application](docs/cloudflare-deployment.md) uses CUNY Login, private account maps, browser recovery copies and CAIL Gateway model requests. The separate Node/Railway application retains its older review interface and independent storage. Neither its data nor its deployment is migrated by account-interface changes.
 
-A separate [Cloudflare version](./docs/cloudflare-deployment.md) adds CUNY Login,
-private account maps, browser recovery copies, and CAIL Gateway model requests.
-It shares the existing map and teaching workflows, with independent storage.
-The Node/Railway version and its saved data remain in place. Source checks and
-release acceptance are recorded [separately](./docs/CLOUDFLARE_ACCEPTANCE_2026-09-23.md).
+The current account design is specified in the [Memo workspace wireframe](docs/MEMO_WORKSPACE_2026-11-04.md) and [two-memo workflow](docs/TWO_MEMO_WORKFLOW_2026-11-04.md). These describe the implementation contract; a source change or passing test does not establish that a feature is live. Dev inspection, screenshots and production readback are separate release steps.
 
 ## Learning model
 
-The course develops one inquiry through two Parts. Each level adds a distinct form of analysis while retaining earlier work by stable reference.
-
-| Part | Level | Analytical focus | Map representation |
+| Part | Step | Analytical focus | Map representation |
 | --- | --- | --- | --- |
-| 1 | Micro | People, roles, activities, objects, and immediate settings relevant to the focal person or group. | Discrete nodes with evidence. Non-setting elements can identify the immediate settings in which they appear. |
-| 1 | Meso | How the people, groups, resources, and settings on the Micro map interact. | One-way or two-way relationship arrows between the existing Micro nodes, which retain their positions and IDs. |
-| 2 | Exo | Larger-scale institutions, policies, resources and conditions identified in a second memo that builds on the first. | Additional heading nodes in the Macrosystem, retaining the local graph. |
-| 2 | Macro | How larger-scale headings interact and affect particular local relationships. | Connections among headings and shaded groups of selected Meso relationships under a heading. |
+| 1 | Micro | People, roles, activities, objects and immediate settings relevant to the focal person or group. | Evidence-supported nodes in the Microsystem. |
+| 1 | Meso | Relationships among those local elements and settings. | Student-created, named directional arrows between the same Micro nodes. |
+| 2 | Exo | Outside settings whose decisions affect the focal participants without their direct participation in that setting. | Exo nodes and student-created connections to local relationships. |
+| 2 | Macro | Policies, values, historical patterns and structural conditions shaping the mapped settings and relationships. | Macro nodes and student-created links or groups identifying what they affect. |
 
-The interface labels the later levels **Exo-level** and **Macro-level**; project records use `exosphere` and `macrosphere`. Micro and Meso share the Microsystem sphere. Exo and Macro share the Macrosystem sphere. The model proposes supported nodes and relationship groups; students can add, edit or remove them manually. See the [two-memo workflow](./docs/TWO_MEMO_WORKFLOW_2026-11-04.md) for storage, compatibility and verification details.
+Classification depends on the focal participants and the pathway of influence, not the presence of a proper noun or the size of an organization. A named institution can be an immediate Micro setting or an outside Exo setting. A person or institution alone is not a Macro condition. Meso uses the Micro map space; it is not a fourth region. Stable internal level IDs remain `micro`, `meso`, `exosphere` and `macrosphere`.
 
-Evidence remains distinct from interpretation. Students can record a source passage, their claim and reasoning, uncertainty, counterevidence, and missing perspectives. Meso and Exo relationships can also describe frequency, duration, direction, conditions, and change over time. The application checks references and required structure; students remain responsible for the strength of the explanation.
+Evidence remains distinct from interpretation. Students can record a source passage, reasoning, uncertainty, counterevidence and missing perspectives. Connections can record direction, frequency, duration, conditions and change over time. Structural validation does not certify the interpretation.
 
-### Community assets and wider systems
-
-Asset mapping gives this inquiry a practical starting point: residents' skills, local knowledge, associations, gathering places, and organizational resources. Students can examine how these capacities connect, who can access them, and what residents want to change. The Exo and Macro levels extend that inquiry to outside decisions and structural conditions. This framing draws on [“What is Asset Mapping?” (Social Design Notes, 2004)](https://backspace.com/notes/2004/06/what-is-asset-mapping.php), supplied as a copy reference. The prototype's ecological levels continue to govern how those observations enter the map.
+Asset mapping starts from residents' skills, local knowledge, associations, gathering places and resources. Exo and Macro extend the inquiry to outside decisions and structural conditions. The supplied [“What is Asset Mapping?” reference](https://backspace.com/notes/2004/06/what-is-asset-mapping.php) informs that framing; the ecological classification contract determines placement.
 
 ## Student experience
 
-The Cloudflare sign-in page shows the title, the four levels and **CUNY Login** a third of the way down, with a generative drawing after A. Michael Noll's *Gaussian Quadratic* (Bell Labs, 1965) filling the space below (`src/NollSketch.jsx`). The drawing is transparent against the page, takes the current ink colour in light and dark mode, and redraws every ten seconds or on click.
+Projects begins with a two-field creation form: **Project title** and **Creator name**. The creator can be a person or group and may be prefilled from the account profile; it never replaces the project title. A blank title becomes **Untitled systems map**. Saved rows show the existing title and creator, and search matches either. Opening a saved project preserves both. **Project → Project details** edits those same two fields for an existing map.
 
-The workspace has two views: **Map** and **Notebook**. The five stage records (`add-source`, `review-suggestions`, `choose-what-to-map`, `build-map`, `revise-and-export`) remain per level for instructor aggregates, submitted revisions and exports. Switching views preserves map position and writing and makes no model request. Opening Notebook after building the map opens Field Notes directly.
+Opening a project shows the canvas immediately. A new project emphasizes **Memo** at the top right without stealing focus. An existing project retains its map, camera, step and drafts. The three sidebar controls are **Memo · Notebook · Tools**, with the active view marked by an underline; switching them makes no model request. **Hide** collapses the resizable sidebar while keeping those controls available.
 
-| Surface | What it does |
+| Surface | Purpose |
 | --- | --- |
-| **Memo** | Set the inquiry and paste or upload the memo. |
-| **Work level** | One selector for Micro, Meso, Exo and Macro, with completed and locked states. |
-| **Map** | Canvas and direct selection. **Tools** opens search, layers, list, zoom, arrange, key and full screen. |
-| **Notebook** | One current task: memo and suggestions, or Field Notes. A compact selector changes the writing task. Selecting a map item opens that item’s details and interpretation; the memo appears only with suggestions. |
-| **Field Notes** | One required response per scale about gaps in the current map, further observation, and the next scale. The Instructor Console publishes editable questions under Micro, Meso, Exo, and Macro. Existing answers remain intact; notes from other scales are collapsed for reference. |
-| **Project** | Projects, progress, export/share and preferences. Automatic suggestion addition is a preference here. |
+| **Memo** | Select Part 1 or Part 2, upload or edit its independent source, then submit or **Update map** from the top action. |
+| **Notebook** | Move through Micro → Meso → Exo → Macro, edit nodes and relationships, and write optional Field Notes. |
+| **Tools** | Search, layers, list, map key, zoom, fit, arrange and full screen in the same sidebar. |
+| **Project** | Return to Projects, edit Project title and Creator name, and export/share. |
 
-The notebook contains the current next action. **Map / Notebook / Tools / work level** share its top edge. When Notebook is closed, these controls float over the canvas so they remain available without reserving a separate toolbar strip. The report button stays in the main project header, including memo entry and the final summary. Before the first memo read, only the reading action is shown; the continuation appears after a valid response. The first memo reading is explicit; completing a level starts the next level's reading when its memo is available. Entering Part 2 opens a separate memo upload before guidance. The existing automatic-add preference determines whether validated suggestions enter the map immediately or await individual decisions.
+**Continue** stays at the top. Its only required checkpoint is a successful memo-to-nodes submission for the current part, including a valid empty result. Notes, relationships and review screens are not prerequisites. Continue never generates relationships or silently starts another paid model request. The second memo begins empty; the retained graph supplies context without becoming the second editor's content. The redundant private-information checkbox is removed; existing sensitive memos without consent retain their permission control. Edited sources show “Memo changed | click Update map to submit”.
 
-The compact footer reads: “Built through the Critical AI Literacy Institute. A continuing project with the CUNY AI Lab.” Only **CUNY AI Lab** links to the lab website. The credit appears across sign-in, account and project screens, wraps on phones and gives way to the canvas in full screen.
+Submitting a memo places supported nodes on the map. The first response is limited to six nodes; Part 2 allows at most three Exo and three Macro nodes. Subsequent meaningful edits use the last successful baseline for that same memo and request a small update. Unchanged, whitespace-only and bibliography-only edits do not require paid regeneration. Updates preserve student labels, classifications, colors, evidence edits, notes, positions, relationships and removals. A failed, stale or cancelled response leaves the map and draft intact.
 
-Field Notes are required to complete a scale; students can return to Map at any time. They use the existing immediate draft journal and per-scale project saves. A separate historical recovery cache is [proposed](docs/field-notes-recovery-proposal.md), not implemented.
+A previously successful Part 1 baseline satisfies the initial Part 2 prerequisite even if Part 1 later has an unsubmitted edit. The active part’s pending edit still requires Update map before its own Continue, but it cannot lock an independently completed Part 2. Returning between memos preserves both drafts and never regenerates them automatically.
 
-Instructors customize the question from **Instructor Console → Course settings → Edit prompts**. Choose a scale, connect the prompt to the lesson's case or reading, optionally open Student preview, then Publish changes. Draft creation and saving are handled within that flow; version history and model settings remain collapsed. See [instructor settings](docs/instructor-settings.md).
+**Back** revisits workspace views without reverting edits. **Undo/Redo** restores saved content changes independently and remains available after reload. Field Notes are optional and preserve earlier writing. The separate [historical recovery-cache proposal](docs/field-notes-recovery-proposal.md) is not an implemented recovery mechanism.
 
-### Feedback and interpretation
+Instructors publish the optional Field Notes questions through **Instructor Console → Course settings → Edit prompts**. Prompt publication does not replace student answers or change progression requirements; see [instructor settings](docs/instructor-settings.md).
 
-Students review memo guidance, decide which supported items belong on the map, and record their interpretation and Field Notes. Selecting a map item opens its evidence and interpretation editor. The former **Check map**, **Check this item** and **Check this connection** controls have been removed from the student workspace.
+An **Information** icon immediately left of the bug-report control opens a light, nonmodal introduction with two how-to sentences. It closes after 12 seconds, pauses while hovered or focused, dismisses on Escape or outside interaction and can always be reopened. It never steals focus. The footer links the Critical AI Literacy Institute and CUNY AI Lab.
+
+The report dialog accepts bugs and feature requests. Dev and production configuration select direct private Redmine tickets, with no email fallback for new reports; a missing key fails closed. See [report delivery](docs/bug-reports.md) for guest identity, retries and receipt recovery. Configuration is separate from verified live ticket acceptance.
 
 ## Working with the map
 
-The canvas uses concentric ecological regions and restrained level colors. **All layers** shows cumulative work; the layer selector isolates one level without deleting hidden records. **List** provides an alternative way to inspect map items.
+Three content-fitted, nested ecological regions accommodate uneven geometry while reserving the most space for local work. Auto-fit places unpinned Exo and Macro cards around the retained Micro map according to the available canvas, including space above and below. Saved manual positions remain exact; opening or resizing a map does not rewrite them. Labels and line patterns supplement colors. Relationship wording stays attached to its own route; auto-fit separates cards, labels and shared route segments, with visible separation at unavoidable crossings. Filtering hides records without deleting them.
 
-Selecting an element opens its inspector. On desktop the whole layer stays on the canvas: the selection and its one-hop neighbourhood stay bright, every incident relationship shows its label, and everything else dims until **Show full map**. Phones keep the compact detail view that shows one relationship at a time. **Connections across map** expands into recorded direct relationships, immediate-setting memberships, mesosystems, and broader conditions. Students can follow these connections in either direction. Following a connection into a hidden level reveals the full map; **Back** returns to the previous item and layer view. **Find** searches live elements across every level, including hidden layers.
+With auto-fit on, an active Exo or Macro move from a valid position stops before entering its preceding sphere, along the requested path. Valid moves keep their chosen position. Existing imported placements are preserved; **System** changes classification. Turning auto-fit off uses saved coordinates and removes this movement constraint.
 
-The map fills the available browser height. On wide screens, the Notebook is a narrow resizable dock (260–360px). Drag its left edge or use the focused divider's arrow keys; Home restores the default width. Text and controls wrap as it changes. At 1100px and below, Notebook occupies the workspace while the mounted map is hidden. **Map** restores the canvas and its view.
-
-The **Tools** panel opens below its control at the upper right. Drag its left edge to resize the whole panel, or focus the divider and use Left to widen it and Right to narrow it; Shift makes larger changes. Home or a double-click restores 280px, and End uses the available maximum, up to 480px. The browser remembers this preference separately from Notebook width. Phones keep the compact panel without a resize handle; resizing does not move the map.
-
-Select an item to edit **Label** in the Notebook, or select a connection to edit **Relationship**. Choose **Save** to apply the wording or **Cancel** to restore the saved text. Enter saves; Escape cancels. Moving focus or selecting another item does not save a draft. Candidate Details use the same draft controls.
-
-Labels follow the item’s existing level. Meso relationships accept a verb or phrase; Exo relationships use the available decision-path choices. Invalid drafts leave the saved wording intact and show what needs revision. Saved wording updates any matching suggestion, and renaming an item updates its name in connected relationships. Saving preserves node positions and the current view; the text’s card may resize. Use **Arrange map** to recalculate the arrangement or **Fit map** to refit the view.
-
-The selected name appears in italics beneath **Edit**, followed by the complete evidence passage in a spaced quotation block. The interpretation question sits below **Interpretation** and above its text field. Node editing ends with **Position on map**, then **Delete**; connection editing also keeps Delete last. Connected items and other editing details remain in Notebook. Existing map notes remain editable under **Saved map note** in Field Notes; their draft recovery and persistence remain intact. **Done** returns focus to the selected canvas item or list control.
+The sidebar keeps map context visible. Controls retain 44px targets with compact 13–14px labels, readable 14px body text and distinct primary and secondary actions. Tools puts Add item and Map key first, followed by adjacent zoom controls and Fit map; the sidebar supplies its only scrollbar. The Systems Mapping header stays visible at narrow widths. Narrow screens retain canvas context above the scrolling panel and 44-pixel touch targets. Selecting a node opens its label, evidence, classification, color and interpretation. The **On map** status is distinct from the stateful **Remove** action; Add to map and Remove never appear together for a node. Evidence is labeled **Quote from memo**, with the relevant item name bolded inside unchanged quoted text. A single compact item header places the smaller status below its name, followed by equal-width Remove/Add to map and Done buttons. No visible Edit heading repeats the purpose of the fields. The account List uses single-line records in its own horizontal scroller, contained within the map area.
 
 | Task | Control |
 | --- | --- |
-| Move around the map | Drag empty canvas, use a middle-button drag, or focus the canvas and hold Space while dragging. Arrow keys pan a focused canvas. |
-| Zoom | Scroll at the pointer, pinch on a touch screen, or use the zoom buttons. `+` and `−` zoom a focused canvas. |
-| Move an element | Drag the element. |
-| Connect nodes at Meso | Select the starting node, choose **Connect from [node name]** in its details, then select the ending node; describe the relationship and choose its direction. |
-| Restore an overview | Choose **Fit map** or press `0` with focus in the canvas. |
+| Move around the map | Drag empty canvas, use a middle-button drag, or hold Space while dragging. Arrow keys pan a focused canvas. |
+| Zoom | Scroll at the pointer, pinch, use zoom controls, or press `+` / `−` with canvas focus. |
+| Move a node | Drag the node or use arrow keys while it is focused. Auto-fit keeps an outer node outside its preceding sphere; saved manual positions persist. |
+| Connect existing nodes | Double-click a source (keyboard Shift+Enter), or choose **Connect from [node name]**, then choose the target and name the relationship. |
+| Create a connected node | Start from a source, click empty canvas (keyboard N), name the new node and relationship, then save both together. Cancel or Escape creates neither. |
+| Correct classification | Change System and Type; save while preserving identity, evidence and connections. Incompatible dependencies require explicit repair. |
+| Change node color | Choose Automatic, Blue, Teal, Purple, Amber, Rose or Slate. Color changes appearance only, never classification. |
+| Restore the overview | Choose **Fit map** or press `0` with canvas focus. |
 | Reorganize the layout | Choose **Arrange map**. |
-| Undo or redo a layout change | Use `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` with focus in the canvas. |
-| Expand the workspace | Choose **Full screen map**; press `Escape` to exit. |
+| Reverse an edit | Use saved **Undo/Redo** controls; Back changes the view rather than content. |
+| Expand the workspace | Choose **Full screen map**; Escape exits. |
 
-Layout history covers element moves and automatic arrangements during the current map visit. Undo restores positions and the recorded view while preserving evidence, labels, and notes edited afterward. It is not a general project-history rollback. Layout, viewport, and annotations save with the project; the undo stack is temporary.
-
-An item’s level is fixed once it is mapped. To correct the level, remove the item and add it at the appropriate level. The application blocks removal, or changing a Micro setting to a non-setting type, while active relationships, memberships, or scopes depend on it. It identifies the dependent work so students can resolve those references explicitly.
+Node and relationship wording uses explicit Save/Cancel. Blur and selection changes never commit a draft. Text changes do not request a new layout; full labels wrap rather than being clipped. Removing the current connection source cancels connection mode. New connections are committed only after the student supplies their wording; the model does not supply them.
 
 ## Saving and sharing
 
@@ -109,11 +94,11 @@ alone does not replace the account and course authorization check.
 The **Project → Export & share** dialog shows its controls directly, grouped as **Download or share** (PNG, PDF, project link) and **Other formats** (JSON, CSV, Markdown), followed by **Import JSON**:
 
 - **PNG / PDF** show the cumulative map and its connections; they omit the memo and Field Notes.
-- **JSON — Full project** preserves a reopenable project with both memos, relationship group memberships, Field Notes, stable IDs and layout. Keep this complete copy private. Import validates the file before replacing the open project.
+- **JSON — Full project** preserves a reopenable project with both memos, their last-successful analysis baselines, relationship group memberships, Field Notes, stable IDs, node colors, layout and saved edit history. Keep this complete copy private. Import validates the file before replacing the open project.
 - **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.
 - **Markdown** provides a readable account for review and discussion.
 
-Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. Project links retain their existing access, expiry and revocation rules. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v10 supports migration of v1–v9 projects.
+Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. Non-private exports also remove analysis baselines and edit history; visual exports retain permitted node colors. Project links retain their existing access, expiry and revocation rules. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v10 supports migration of v1–v9 projects.
 
 ## Run locally
 
@@ -149,7 +134,7 @@ Teachers manage guidance and course material by **Part** and **stage**. Micro an
 
 Course settings are versioned. A teacher creates a draft from an existing version, saves changes with a note, previews the saved guidance and material, and publishes it. One published version governs new model requests. Publishing preserves earlier versions, and cloning a previous version provides a rollback path. **Preview level** supplies analytical context for a preview; it does not create a separate saved configuration.
 
-Evidence, privacy, output validation, and student-confirmation rules remain controlled by the application. The preview exposes instructor-authored guidance and materials without exposing internal prompts or configuration fingerprints.
+Evidence, privacy, output validation and graph-write rules remain controlled by the application. Instructor text cannot enable automatic relationships, require Field Notes for account progression or override the account node-only contract. The preview exposes instructor-authored guidance and materials without exposing internal prompts or configuration fingerprints.
 
 The Console opens on **Review submissions**. The current student interface does not create submissions for this queue; it supports retained records and the compatibility review API. Review actions provide asynchronous feedback without editing the student's map or controlling access to stages.
 
@@ -161,7 +146,9 @@ node server/create-password-reset.js <teacher-account-id>
 
 Resetting a passphrase revokes that account's existing sessions. Passphrases use scrypt derivation; teacher sessions use random `HttpOnly`, `SameSite=Strict` cookies.
 
-## Optional model assistance
+## Legacy Node/Railway model assistance
+
+This section describes the separate local/classroom entrypoint. The account application uses the node-only [submission contract](docs/NODE_SUBMISSION_WORKFLOW_2026-11-04.md), including incremental memo updates, through CAIL Gateway. Account requests never propose relationships.
 
 With no provider enabled, the server performs a reproducible built-in text review and sends nothing to an external model. This mode is suitable for checking the workflow but does not establish model performance. Additional relationship suggestions require a live provider.
 
@@ -235,4 +222,4 @@ Local tests establish behavior for the tested source and environment. They do no
 - [Release evidence ledger](./TODO.md) — release work and historical receipts.
 - [August 13 reconciliation](./docs/RECONCILIATION_2026-08-13.md) — earlier reconciliation decisions.
 
-The source ledger governs provenance. The [October 28, 2026 workflow](./docs/MICRO_MESO_WORKFLOW_2026-10-28.md) governs Micro nodes and Meso relationships; the August 24 correction is retained as historical context. The fuller Drive specification governs compatible general behavior, the supplied HTML/DOCX informs interaction, and CALI materials provide context. Zach's August 5 notes remain unconfirmed minutes; STEM Splitter is an architecture precedent.
+The source ledger governs provenance. The [November 4 Memo workspace](docs/MEMO_WORKSPACE_2026-11-04.md) and [two-memo workflow](docs/TWO_MEMO_WORKFLOW_2026-11-04.md) govern the current account application. The October 28 and August 24 designs remain historical context for compatible storage and the separate Node application. The fuller Drive specification governs compatible general behavior, the supplied HTML/DOCX informs interaction, and CALI materials provide context. Zach's August 5 notes remain unconfirmed minutes; STEM Splitter is an architecture precedent.

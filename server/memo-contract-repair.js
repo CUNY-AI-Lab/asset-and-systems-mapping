@@ -1,4 +1,5 @@
 import { MEMO_REVIEW_GUIDANCE_LIMIT, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
+import { SUBMISSION_SUBJECT_ISSUE } from '../shared/node-submission.js';
 
 export const MEMO_CONTRACT_REPAIR_BYTES = 2 * 1024;
 const size = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -80,7 +81,9 @@ export function createMemoContractRepair(review, message, activeScale) {
     repair.valueOmitted = true;
     return isMemoContractRepair(repair, activeScale) ? repair : null;
   }
-  const label = /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|names a person or role, not an outside setting or resource|names a person or institution, not a Macro condition|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
+  const subject = /^nodes\[(\d{1,2})\]\.label /u.exec(message);
+  const label = subject && message === `nodes[${subject[1]}].label ${SUBMISSION_SUBJECT_ISSUE}` ? subject
+    : /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|names a person or role, not an outside setting or resource|names a person or institution, not a Macro condition|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
   if (label && Array.isArray(review.nodes)) {
     const repair = { path: `nodes[${label[1]}].label`, value: review.nodes[Number(label[1])]?.label };
     return isMemoContractRepair(repair, activeScale) ? repair : null;

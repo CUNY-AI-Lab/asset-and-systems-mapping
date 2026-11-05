@@ -214,3 +214,20 @@
     grid-column: auto;
   }
 }
+
+/* Account list: compact, single-line records in a contained horizontal scroller. */
+.map-list-view--compact { min-width:0; max-width:100%; overflow:auto; overscroll-behavior:contain; }
+.map-list-view--compact .map-list-view__header { gap:12px; padding:10px 12px; }
+.map-list-view--compact .map-list-view__header h2 { font-size:16px; }
+.map-list-view--compact .map-list-view__count { font-size:12px; padding:0; white-space:nowrap; }
+.map-list-view--compact .map-list-view__group { width:max-content; min-width:100%; }
+.map-list-view--compact .map-list-view__group h3 { font-size:13px; padding:7px 12px; }
+.map-list-view--compact .map-list-record__button { grid-template-columns:minmax(180px,1fr) max-content; gap:16px; min-height:44px; padding:7px 12px; }
+.map-list-view--compact .map-list-record__identity { font-size:13px; line-height:1.35; white-space:nowrap; overflow-wrap:normal; }
+.map-list-view--compact .map-list-record__proposition { flex-wrap:nowrap; }
+.map-list-view--compact .map-list-record__details { display:flex; gap:14px; white-space:nowrap; }
+.map-list-view--compact .map-list-record__details > div { display:flex; align-items:baseline; gap:4px; }
+.map-list-view--compact .map-list-record__details dt { font-size:11px; font-weight:500; margin:0; }
+.map-list-view--compact .map-list-record__details dd { font-size:12px; overflow-wrap:normal; }
+.map-list-view--compact .map-list-record__details .map-list-record__scope { display:none; }
+.map-list-view--compact .map-list-view__empty { padding:12px; }

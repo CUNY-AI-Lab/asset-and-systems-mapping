@@ -20,7 +20,7 @@ export default {
     const who = /(?:^|;\s*)bug-fixture-session=(alice|bob)(?:;|$)/.exec(request.headers.get('cookie') ?? '')?.[1];
     const signedIn = Boolean(who) && !denied;
     if (signedIn && url.pathname === '/api/cloud/account') return Response.json({ account: { cacheKey: `bug-report-browser-${who}`, role: 'student' } });
-    if (signedIn && url.pathname === '/api/cloud/projects') return Response.json({ projects: project ? [{ id: project.id, title: project.title, revision: 1, updatedAt: project.updatedAt }] : [] });
+    if (signedIn && url.pathname === '/api/cloud/projects') return Response.json({ projects: project ? [{ id: project.id, title: project.title, participantName: project.participantName, revision: 1, updatedAt: project.updatedAt }] : [] });
     if (signedIn && project && url.pathname === `/api/cloud/projects/${project.id}` && request.method === 'GET') return Response.json({ project: JSON.stringify(project), revision: 1 });
     if (signedIn && url.pathname === '/api/cloud/courses') return Response.json({ courses: [] });
     if (signedIn && url.pathname.startsWith('/api/cloud/projects/') && request.method === 'PUT') return Response.json({ revision: 1 });

@@ -1,6 +1,24 @@
 # Accessibility QA
 
-The automated accessibility harness opens a fresh local build of Systems Mapping in Chromium at desktop and phone viewports. It never connects to the hosted application, PostgreSQL, Ollama, or OpenRouter. Each run creates a temporary SQLite database under the operating system temporary directory and removes it after the browser run.
+## Current account-workspace gate — November 4
+
+The [Memo workspace](MEMO_WORKSPACE_2026-11-04.md) and [two-memo contract](TWO_MEMO_WORKFLOW_2026-11-04.md) govern the account interface. The Node harness and older geometry checks below remain separately scoped; their four-level layout, separate Tools panel and Map/Notebook behavior do not override the account design. No check listed here is a claim that the latest build has passed.
+
+- At 806×758 and 390×844, Projects keeps its two creation fields and New project action visible, with 44px targets and no horizontal page overflow. Verify creator-or-title search, preserved saved names and a new project storing its separate title and creator.
+- The canvas opens immediately. Memo, Notebook and Tools remain reachable with the sidebar shown or hidden. Resize the same sidebar by pointer and keyboard; preserve map context and complete labels at 806×758, desktop and 320/390/430px. Test 200% zoom, dark mode and forced colors.
+- At a 260px sidebar, Back remains one line and the action row stays compact. Tools has adjacent −/+ then Fit map, prominent Add item/Map key, and only the outer sidebar scroller. List records stay within the map region, use contained horizontal scrolling and remain at most 64px high. The selected-item header has a 14px title, 12px status beneath it and equal-width 44px actions. Memo, Notebook and Tools use an active underline rather than a filled button. Systems Mapping remains visible in the header.
+- Continue and stateful item actions stay above scrolling content and are not obscured by sticky rows. A keyboard-focused field must be fully within the usable scroller, not clipped by a fractional pixel. Helpers, labels and values have distinct typography; buttons and disclosures have visible boundaries.
+- Continue explains only a missing current-part memo submission. Empty successful processing allows it. Optional notes and zero relationships cannot create an inaccessible or unexplained dead end.
+- The three nested system captions fit uneven geometry and look distinct from nodes. Complete node names and route verbs remain visible; label/color/pattern cues work without hue perception. The Micro hint concerns editing nodes and does not announce nonexistent connections as a required task.
+- Double-click has the keyboard equivalent Shift+Enter on a node and the visible Connect from action. During selection, a node activates the existing-target draft; N on the canvas matches the blank-canvas target. Draft labels, relationship wording, Save and Cancel have useful names and focus. Escape/cancel/source removal creates no partial graph record.
+- Color choices use a labeled radio group with Automatic plus six named colors; keyboard selection, visible focus and the selected state work without color alone. Chosen light/dark fill, text and border remain readable and do not erase system dash patterns.
+- The information control has a complete accessible name and matches the bug control's target. Its nonmodal flag has exact copy, no focus steal, a pausable 12-second timer, Escape/outside dismissal and on-demand reopening. Hover or focus inside stops expiry while reading. Reduced motion removes emphasis animation.
+- Back navigates views while Undo/Redo restores saved edits; their names, disabled states and announcements distinguish those purposes. Save/reload preserves history and manual colors. No visible Edit caption or X beside Hide competes with the controls.
+- Inspect screenshots and run keyboard/VoiceOver checks as well as axe. Do not equate an automated pass with full accessibility conformance.
+
+## Legacy Node harness and compatible map controls
+
+The Node automated accessibility harness opens a fresh local build of Systems Mapping in Chromium at desktop and phone viewports. It never connects to the hosted application, PostgreSQL, Ollama, or OpenRouter. Each run creates a temporary SQLite database under the operating system temporary directory and removes it after the browser run.
 
 The cumulative-map fixture is fabricated. It contains no information about a real person or organization. Browser contexts are fresh for every test, and the fixture enters the application through the same durable browser-storage format used by the student interface. No test-only production route or runtime bypass is present.
 
@@ -106,7 +124,7 @@ Check selected-item and candidate wording editors with keyboard and pointer inpu
 - Arrange and node movement remain usable after saving a long valid label.
 - Save/Cancel controls retain 44-pixel targets and fit at 320, 390, and 430 CSS pixels.
 
-## Map tools resizing QA
+## Legacy standalone Map tools resizing QA
 
 - The left-edge handle resizes the entire panel while its right edge stays anchored and the canvas bounds remain unchanged.
 - The **Resize map tools** separator exposes its current width and bounds. Left widens and Right narrows by 16px; Shift changes it by 48px. Home or double-click restores 280px; End selects the available maximum, capped at 480px.
