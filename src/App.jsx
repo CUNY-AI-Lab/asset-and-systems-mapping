@@ -4908,7 +4908,7 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     setAnnouncement('Name the new node and its relationship. Nothing is added until you save.');
   };
   const selectItem = useCallback((kind, id, openInspector = true, tap = null) => {
-    if (openInspector && tap?.pointerType === 'touch') consumedCanvasTapRef.current = tap;
+    if (openInspector && tap?.pointerType === 'touch') consumedCanvasTapRef.current = { ...tap, id, completedConnection: connecting };
     if (connecting) {
       // Pointer-down and arrow-key movement keep the chosen source. Only a
       // completed tap or explicit keyboard activation chooses its target.
@@ -5673,10 +5673,18 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     onKeyDownCapture={() => { consumedCanvasTapRef.current = null; }}
     onClickCapture={(event) => {
       const tap = consumedCanvasTapRef.current;
-      consumedCanvasTapRef.current = null;
       // Opening the inspector at pointer-up can put a new control under the
       // finger. Consume that tap's compatibility click, not a new activation.
       if (tap && event.detail > 0 && event.timeStamp >= tap.timeStamp && event.timeStamp - tap.timeStamp < 1000) {
+        event.preventDefault(); event.stopPropagation();
+      }
+    }} onDoubleClickCapture={(event) => {
+      const tap = consumedCanvasTapRef.current;
+      // Chromium may emit dblclick even after its compatibility click was
+      // consumed. A completed connection, or a card moved under the finger,
+      // must not start another connection or discard the new draft.
+      if (tap && event.timeStamp >= tap.timeStamp && event.timeStamp - tap.timeStamp < 1000
+        && (tap.completedConnection || event.target.closest?.('[data-graph-id]')?.dataset.graphId !== tap.id)) {
         event.preventDefault(); event.stopPropagation();
       }
     }} onKeyDown={(event) => {

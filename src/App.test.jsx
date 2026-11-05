@@ -7194,7 +7194,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(screen.getByRole('combobox', { name: 'To', exact: true })).toHaveValue(target.id);
       expect(storedProject().graph.edges).toHaveLength(0);
     });
-    it('keeps the Notebook available after a target touch without submitting the trailing click', async () => {
+    it.each(['source', 'target'])('keeps the relationship draft after a target touch and a compatibility double-click on the %s', async (compatibilityTarget) => {
       installPhoneLayout();
       const project = await openMapProject(meetingProject());
       const [source, target] = project.graph.nodes;
@@ -7203,7 +7203,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       const node = document.querySelector(`[data-graph-id="${target.id}"]`);
       fireEvent.pointerDown(node, { pointerId: 81, pointerType: 'touch', clientX: 250, clientY: 433, button: 0 });
       fireEvent.pointerUp(node, { pointerId: 81, pointerType: 'touch', clientX: 250, clientY: 433, button: 0 });
-      fireEvent.click(node, { detail: 1, clientX: 250, clientY: 433 });
+      fireEvent.click(node, { detail: 2, clientX: 250, clientY: 433 });
+      const shiftedTarget = document.querySelector(`[data-graph-id="${compatibilityTarget === 'source' ? source.id : target.id}"]`);
+      fireEvent.doubleClick(shiftedTarget, { detail: 2, clientX: 250, clientY: 433 });
       expect(screen.getByLabelText('Notebook')).not.toHaveAttribute('aria-hidden');
       expect(screen.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-expanded', 'false');
       expect(storedProject().graph.edges).toHaveLength(0);
