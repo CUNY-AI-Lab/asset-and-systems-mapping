@@ -180,7 +180,7 @@ it('keeps a source-supported center in repair metadata without repeating source-
   const review = wrap([node('Access Board', 'organization', administration), supported]);
   const sourceText = `${administration} ${evidence}`;
   expect(submittedReviewIssue(wrap([supported]), 'exosphere', sourceText)).toBeNull();
-  expect(submittedReviewIssue(wrap([supported]), 'exosphere')).toBeTruthy();
+  expect(submittedReviewIssue(wrap([supported]), 'exosphere')).toBeNull();
   const repair = createNodeSubmissionRepair(review, submittedReviewIssue(review, 'exosphere', sourceText), 'exosphere', sourceText);
   expect(repair.supportedNodes).toEqual([supported]);
   expect(isMemoContractRepair(repair, 'exosphere')).toBe(true);
@@ -211,4 +211,15 @@ it('carries first-attempt supported policies into final context when the second 
   const altered = structuredClone(first); altered.supportedNodes[0].evidence = 'Invented source evidence.';
   const withoutInvented = createNodeSubmissionRepair(next, submittedReviewIssue(next, 'exosphere', source), 'exosphere', source, undefined, altered);
   expect(withoutInvented.supportedNodes).toBeUndefined();
+});
+
+it('evaluates retained Micro participants identically during discovery and repair', () => {
+  const evidence = 'Apprentices do not participate in Harbor Allocation Board decisions, which limit their workshop hours.';
+  const supported = node('Harbor Allocation Board', 'agency', evidence);
+  const review = wrap([node('Access Board', 'organization', administration), supported]);
+  const sourceText = administration + ' ' + evidence;
+  const carried = [{ id: 'apprentices', label: 'Apprentices', scale: 'micro', type: 'group' }];
+  const issue = submittedReviewIssue(review, 'exosphere', sourceText, undefined, carried);
+  const repair = createNodeSubmissionRepair(review, issue, 'exosphere', sourceText, undefined, undefined, carried);
+  expect(repair.supportedNodes).toEqual([supported]);
 });

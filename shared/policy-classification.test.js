@@ -101,3 +101,11 @@ it('carries the same corrected course convention into initial and incremental pr
     expect(prompt).toContain('Students decide and draw ALL relationships');
   }
 });
+
+it('requires the operation to be established in the quoted passage that describes it', () => {
+  const label = 'Picking permission rule';
+  const check = evidence => submittedReviewIssue(wrap([{ ...policy, label, evidence }]), 'exosphere', evidence);
+  expect(check('The orchard opens in June. We should require permission for picking.')).toBeTruthy();
+  expect(check('Does picking require permission? The orchard opens in June.')).toBeTruthy();
+  expect(check('Picking requires permission. We should change the hours.')).toBeNull();
+});

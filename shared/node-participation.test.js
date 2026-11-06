@@ -97,3 +97,22 @@ it('does not accept an invented functional office name from a generic mention', 
   const node = { ...labNode, evidence: 'An office decides access.' };
   expect(submittedReviewIssue(wrap([node]), 'exosphere', node.evidence)).toMatch(/not a named institution/);
 });
+
+it('distinguishes another office from a reference to the same outside setting', () => {
+  const node = { ...exo(''), label: 'Harbor Allocation Board', evidence: 'Students do not participate in Harbor Allocation Board decisions, which limit their workshop hours.' };
+  const check = continuation => submittedReviewIssue(wrap([node]), 'exosphere', node.evidence + ' ' + continuation);
+  expect(check('Students visit the housing office.')).toBeNull();
+  expect(check('Students attend this board.')).toMatch(/taking part/);
+  expect(check('A campus office convenes a different board. Students attend this board.')).toBeNull();
+});
+
+it.each(['Apprentices', '学徒', 'A.J.'])('uses the retained Micro participant %s as context for a second-memo quotation', label => {
+  const evidence = `${label} do not participate in Northside Housing Office decisions, which limit their workshop hours.`;
+  const carried = { id: 'participant', label, type: 'group', scale: 'micro' };
+  const check = (source, map, quote = source) => submittedReviewIssue(wrap([exo(quote)]), 'exosphere', source, undefined, [map]);
+  expect(check(evidence, carried)).toBeNull();
+  expect(check(evidence, { ...carried, type: 'object' })).toBeTruthy();
+  expect(check('Decisions are discussed.', carried, evidence)).toBeTruthy();
+  expect(check(`${label} visit Northside Housing Office.`, carried)).toBeTruthy();
+  expect(check(`${label} are mentioned alongside Northside Housing Office.`, carried)).toBeTruthy();
+});

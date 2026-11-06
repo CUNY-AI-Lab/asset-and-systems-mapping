@@ -210,3 +210,21 @@ it.each([false, true])('reads older generation journals while preserving only ge
   expect(undone).toBeTruthy(); expect(undone.submission.analysis).toBeUndefined();
   expect(memoUpdateState(undone).submitted).toBe(legacy);
 });
+
+it('keeps a local classification through a second memo that uses that group as its subject', () => {
+  const p = blank();
+  const group = { ...original, label: 'Apprentices', type: 'group', evidence: 'Apprentices work in the shop.' };
+  edit(p, group.evidence);
+  appendSubmittedNodes(p, review([group]));
+  const local = clone(p.graph.nodes[0]), first = clone(p.submission);
+  openMemoWorkflowScale(p, 'exosphere');
+  const evidence = 'Apprentices do not participate in Harbor Allocation Board decisions, which limit their workshop hours.';
+  edit(p, evidence, 'part2Submission');
+  const outside = { label: 'Harbor Allocation Board', type: 'agency', scale: 'exosphere', basis: 'memo', evidence };
+  expect(appendSubmittedNodes(p, review([outside]))).toBe(1);
+  const saved = parseProject(serializeProject(p));
+  expect(saved.submission).toEqual(first);
+  expect(saved.graph.nodes[0]).toEqual(local);
+  expect(saved.graph.nodes[1]).toMatchObject(outside);
+  expect(saved.graph.edges).toEqual([]);
+});

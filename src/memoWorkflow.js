@@ -1,3 +1,4 @@
+import { isLiveMapItem } from './mapInsights.js';
 import { SCALE_ORDER, stableId, withDefaultNodeLayout, validateProject } from './domain.js';
 import { activeSubmission, beginPart2 } from './projectMemo.js';
 import { memoAnalysisIssue, memoContentFingerprint, memoSourceFingerprint, memoChunks, changedMemoPassages, memoUpdateIssue } from '../shared/memo-update.js';
@@ -49,6 +50,10 @@ export function memoUpdatePayload(project) {
   return payload;
 }
 
+export function carriedSubmissionNodes(project) {
+  return project.graph.nodes.filter(isLiveMapItem).map(({ id, label, type, scale }) => ({ id, label, type, scale }));
+}
+
 function submittedPlan(project, review) {
   if (!['micro', 'exosphere'].includes(project.activeScale)) throw new Error('Relationships are created by students.');
   if (review.connections?.length) throw new Error('A node submission cannot contain relationships.');
@@ -56,7 +61,7 @@ function submittedPlan(project, review) {
   const baseline = previous && !memoAnalysisIssue(previous) ? previous.nodes : [];
   const originals = new Map(baseline.map(node => [node.id, structuredClone(node)]));
   const context = memoUpdatePayload(project);
-  const reviewIssue = submittedReviewIssue(review, project.activeScale, source.text, context);
+  const reviewIssue = submittedReviewIssue(review, project.activeScale, source.text, context, carriedSubmissionNodes(project));
   if (reviewIssue) throw new Error(`The memo update could not be applied: ${reviewIssue}`);
   const existing = new Set([...project.graph.nodes, ...project.candidates.nodes.filter(node => ['rejected', 'research lead'].includes(node.status))].map(node => `${node.scale}:${node.label.trim().toLocaleLowerCase()}`));
   for (const node of baseline) existing.add(`${node.scale}:${node.label.trim().toLocaleLowerCase()}`);

@@ -36,9 +36,9 @@ it.each(['government', 'institutions', 'community center'])('keeps generic outsi
   expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toMatch(/not a named institution/);
 });
 
-it('keeps source-only institution recognition out of old stored-review compatibility', () => {
+it('reads accepted institution names from the saved quotation when replaying a review', () => {
   const node = exo(names[0], indirect(names[0]));
-  expect(submittedReviewIssue(review([node]), 'exosphere')).toMatch(/not a named institution/);
+  expect(submittedReviewIssue(review([node]), 'exosphere')).toBeNull();
 });
 
 it('preserves an existing student identity during evidence updates', () => {

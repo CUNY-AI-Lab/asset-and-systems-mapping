@@ -35,7 +35,7 @@ import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-j
 import { prepareProviderMemo } from '../shared/provider-memo.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
-import { MEMO_WORKFLOW, appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState, memoUpdatePayload, memoUpdateSummary } from './memoWorkflow.js';
+import { MEMO_WORKFLOW, carriedSubmissionNodes, appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState, memoUpdatePayload, memoUpdateSummary } from './memoWorkflow.js';
 import { levelRailState, nextStep, stageForPanelMode } from './nextStep.js';
 import { LevelSelect, NotebookSection, ProjectMenu, PANEL_TABS, WorkPanelTabs } from './MapStudio.jsx';
 import { hasPendingGuidance } from './durableGuidance.js';
@@ -463,7 +463,7 @@ function carriedReviewConnections(project) {
 }
 
 export function preflightEvaluationPayload(project, memoFirstWorkflow = false) {
-  const carriedNodes = memoFirstWorkflow ? project.graph.nodes.filter(isLiveMapItem).map(({id,label,type,scale}) => ({id,label,type,scale})) : carriedReviewNodes(project);
+  const carriedNodes = memoFirstWorkflow ? carriedSubmissionNodes(project) : carriedReviewNodes(project);
   const carriedConnections = carriedReviewConnections(project);
   const fieldNotes = previousFieldNotes(project);
   return {
@@ -700,7 +700,7 @@ function normalizePreflightEvaluation(evaluation, project, memoFirstWorkflow = f
     throw new Error('The classroom server returned an incomplete memo review.');
   }
   if (memoFirstWorkflow) {
-    const issue = submittedReviewIssue(evaluation.review, project.activeScale, activeSubmission(project).text, memoUpdatePayload(project));
+    const issue = submittedReviewIssue(evaluation.review, project.activeScale, activeSubmission(project).text, memoUpdatePayload(project), carriedSubmissionNodes(project));
     if (issue) throw new Error('The memo could not be processed: ' + issue);
   } else assertAtomicMemoReview(evaluation.review, project);
   const preflight = {

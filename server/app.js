@@ -874,7 +874,7 @@ function boundedEvidenceText(value, maximum) {
 
 function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false, workflowMode, memoUpdate } = {}) {
   if (workflowMode === NODE_SUBMISSION) {
-    const issue = submittedReviewIssue(value, activeScale, sourceMaterial, memoUpdate);
+    const issue = submittedReviewIssue(value, activeScale, sourceMaterial, memoUpdate, carriedNodes);
     if (issue) throw new MemoReviewSemanticError(issue, { grounding: issue.includes('.evidence'), nodeSubmission: true });
     return structuredClone(value);
   }
@@ -3330,7 +3330,7 @@ export function createSystemsMappingApp(options = {}) {
               correctiveRetries = 1;
               const retryContext = memoContractRepairContext(readingContext,
                 input.workflowMode === NODE_SUBMISSION
-                  ? createNodeSubmissionRepair(generated.suggestion, error.message, input.activeScale, input.sourceMaterial, input.memoUpdate)
+                  ? createNodeSubmissionRepair(generated.suggestion, error.message, input.activeScale, input.sourceMaterial, input.memoUpdate, undefined, input.carriedNodes)
                   : createMemoContractRepair(generated.suggestion, error.message, input.activeScale), memoContextBytes);
               const endpointInstruction = input.workflowMode === NODE_SUBMISSION
                 ? 'NODE SUBMISSION REPAIR: Follow the original memo submission contract and supplied schema for this complete node-only replacement. Continue from the retained graph and supported proposals. Correct evidence or labels for the proposed subjects, and omit unsupported proposals. Do not restart discovery or fill removed slots with unrelated new subjects. Fewer nodes, including zero, can complete the response. Preserve every existingId identity and classification, and keep all relationships as student work.'
@@ -3393,7 +3393,7 @@ export function createSystemsMappingApp(options = {}) {
                 } else {
                   let repairContext = { ...readingContext, evidenceRepair: { passages } };
                   const rejectedExcerpt = input.workflowMode === NODE_SUBMISSION
-                    ? createNodeSubmissionRepair(generated.suggestion, repairError.message, input.activeScale, input.sourceMaterial, input.memoUpdate, retryContext?.contractRepair)
+                    ? createNodeSubmissionRepair(generated.suggestion, repairError.message, input.activeScale, input.sourceMaterial, input.memoUpdate, retryContext?.contractRepair, input.carriedNodes)
                     : createMemoContractRepair(generated.suggestion, repairError.message, input.activeScale);
                   // Prefer both the rejected field and source passages. Preserve at
                   // least one passage, falling back to source-only context if needed.

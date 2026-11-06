@@ -122,7 +122,7 @@ function nodeIssueRule(message) {
 }
 
 /** Supplement the primary failure with per-node checks; acceptance still validates the full review. */
-export function createNodeSubmissionRepair(review, message, activeScale, sourceText, memoUpdate, previousRepair) {
+export function createNodeSubmissionRepair(review, message, activeScale, sourceText, memoUpdate, previousRepair, carriedNodes = []) {
   const primary = createMemoContractRepair(review, message, activeScale);
   const failed = /^nodes\[([0-5])\]\.(label|evidence|type|scale|existingId)\b/u.exec(message);
   if (!failed || !['micro', 'exosphere'].includes(activeScale) || !plain(review)
@@ -139,14 +139,14 @@ export function createNodeSubmissionRepair(review, message, activeScale, sourceT
   let omittedSupportedCount = 0;
   const retainSupported = node => {
     if (supportedNodes.some(current => ['label', 'type', 'scale', 'existingId'].every(key => current[key] === node[key]))) return;
-    if (submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate)) return;
-    if (!submittedReviewIssue({ ...review, nodes: [...supportedNodes, node] }, activeScale, sourceText, memoUpdate)) {
+    if (submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate, carriedNodes)) return;
+    if (!submittedReviewIssue({ ...review, nodes: [...supportedNodes, node] }, activeScale, sourceText, memoUpdate, carriedNodes)) {
       supportedNodes.push(structuredClone(node));
     } else omittedSupportedCount += 1;
   };
   for (const node of previousRepair?.supportedNodes || []) retainSupported(node);
   for (const [index, node] of review.nodes.entries()) {
-    const issue = submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate);
+    const issue = submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate, carriedNodes);
     if (!issue) {
       // Avoid presenting a globally rejected duplicate or over-limit entry as
       // compatible support. This context never changes the rejected response.
