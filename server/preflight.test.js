@@ -477,7 +477,7 @@ describe('persistent preflight suggestion review queue', () => {
           nodeIssues: [
             { path: 'nodes[1].evidence', label: 'Student access rule', rule: 'policy_operation' },
             { path: 'nodes[2].label', label: role.label, rule: 'label_format' },
-          ], omittedCount: 0,
+          ], omittedCount: 0, supportedNodes: [policy], omittedSupportedCount: 0,
         });
         expect(input.systemPrompt).toContain('Every replacement is validated in full');
         expect(input.systemPrompt).toContain('For each NEW node with rule outside_participation, OMIT that exact named candidate');
@@ -541,6 +541,78 @@ describe('persistent preflight suggestion review queue', () => {
     expect(result.review.nodes[0].label).toBe('Course access approval rule');
     expect(typeof result.review.nodes[0].evidence).toBe('string');
     expect(sourceMaterial).toContain(result.review.nodes[0].evidence);
+    expect(result.review.connections).toEqual([]);
+  });
+
+  it.each([true, false])('retains supported Exo policies as correction context and validates identity again (authorized=%s)', async authorized => {
+    const administration = 'CUNY AI Lab administers course access.';
+    const access = 'Course access requires instructor approval.';
+    const retention = 'Provider data retention policy prohibits training on submitted content.';
+    const sourceMaterial = `${administration} ${access} ${retention}`;
+    const outer = (label, evidence) => ({ label, evidence, type: 'policy', scale: 'exosphere', basis: 'memo' });
+    const supported = [outer('Class-access approval policy', access), outer('Provider data retention policy', retention)];
+    const rejected = { guidance: [], nodes: [{ label: 'CUNY AI Lab', type: 'organization', scale: 'exosphere', basis: 'memo', evidence: administration }, ...supported], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const before = structuredClone(rejected);
+    const provider = vi.fn(async input => {
+      expect(input.sourceText).toBe(sourceMaterial);
+      if (!input.memoContext?.contractRepair) return { suggestion: rejected, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+      expect(input.memoContext.contractRepair).toEqual({
+        path: 'nodes[0].evidence', value: { label: 'CUNY AI Lab', evidence: administration },
+        supportedNodes: supported, omittedSupportedCount: 0,
+      });
+      expect(input.systemPrompt).toContain('Preserve their exact label, type, scale, basis and existingId values');
+      const replacement = structuredClone(supported);
+      if (!authorized) replacement[1].existingId = 'invented-id';
+      return { suggestion: { ...rejected, nodes: replacement }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, `supported-policy-repair-${authorized}.sqlite`), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const { studentAnnotation: _, ...body } = submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
+    expect(response.status).toBe(authorized ? 201 : 502);
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(rejected).toEqual(before);
+    const rows = system.db.prepare('SELECT source_material, suggestion_json FROM preflight_evaluations').all();
+    expect(rows).toHaveLength(authorized ? 1 : 0);
+    if (authorized) {
+      const result = await response.json();
+      expect(result.evaluation.review.nodes).toEqual(supported);
+      expect(result.evaluation.review.connections).toEqual([]);
+      expect(rows[0].source_material).toBe(sourceMaterial);
+      expect(rows[0].suggestion_json).not.toContain('supportedNodes');
+    }
+  });
+
+  it('retains both supported policies through the final indexed-evidence correction', async () => {
+    const administration = 'CUNY AI Lab administers course access.';
+    const access = 'Course access requires instructor approval.';
+    const retention = 'Provider data retention policy prohibits training on submitted content.';
+    const distractions = Array.from({ length: 8 }, (_, index) => `CUNY AI Lab course access planning record ${index + 1} describes CUNY AI Lab administration and course access allocations.`);
+    const sourceMaterial = [administration, ...distractions, access, retention].join('\n\n');
+    const outer = (label, evidence) => ({ label, evidence, type: 'policy', scale: 'exosphere', basis: 'memo' });
+    const supported = [outer('Class-access approval policy', access), outer('Provider data retention policy', retention)];
+    const rejected = { guidance: [], nodes: [{ label: 'CUNY AI Lab', type: 'organization', scale: 'exosphere', basis: 'memo', evidence: administration }, ...supported], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const provider = vi.fn(async (input, _config, options) => {
+      expect(input.sourceText).toBe(sourceMaterial);
+      if (input.memoContext?.contractRepair) expect(input.memoContext.contractRepair.supportedNodes).toEqual(supported);
+      if (options.kind === 'memo-evidence') {
+        expect(input.systemPrompt).toContain('In final indexed evidence repair, return the supplied integer passage index');
+        for (const proposal of supported) expect(input.memoContext.evidenceRepair.passages.some(passage => passage.text === proposal.evidence)).toBe(true);
+        return { suggestion: { ...rejected, nodes: supported.map(proposal => ({ ...proposal,
+          evidence: input.memoContext.evidenceRepair.passages.findIndex(passage => passage.text === proposal.evidence),
+        })) }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+      }
+      // The second answer loses the good proposals; final context must retain them.
+      return { suggestion: input.memoContext?.contractRepair ? { ...rejected, nodes: [rejected.nodes[0]] } : rejected, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'supported-policy-final-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial }));
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect(result.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(result.review.nodes).toEqual(supported);
     expect(result.review.connections).toEqual([]);
   });
 

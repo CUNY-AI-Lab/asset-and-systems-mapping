@@ -1,5 +1,6 @@
 import { MEMO_REVIEW_GUIDANCE_LIMIT, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { SUBMISSION_SUBJECT_ISSUE, SUBMISSION_MACRO_ISSUE, SUBMISSION_NODE_LIMIT, submittedReviewIssue } from '../shared/node-submission.js';
+import { isNodeTypeAllowedAtScale } from '../src/domain.js';
 
 export const MEMO_CONTRACT_REPAIR_BYTES = 2 * 1024;
 const size = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -11,6 +12,8 @@ const keysAre = (value, required, optional = []) => plain(value)
 const jsonType = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
 const maximum = (path, scale) => path === 'guidance' ? MEMO_REVIEW_GUIDANCE_LIMIT : MEMO_REVIEW_SCALE_LIMITS[scale]?.[path];
 const shortString = value => typeof value === 'string' && value.length <= 200;
+const boundedText = (value, maximum) => typeof value === 'string' && value.trim() && value.length <= maximum
+  && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
 const nodeRules = new Set(['outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition', 'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape']);
 
 function nodeIssuesValid(repair) {
@@ -28,6 +31,24 @@ function nodeIssuesValid(repair) {
     indexes.add(match[1]);
     return true;
   });
+}
+
+function supportedNodesValid(repair, scale) {
+  const present = Object.hasOwn(repair, 'supportedNodes') || Object.hasOwn(repair, 'omittedSupportedCount');
+  if (!present) return true;
+  if (!['micro', 'exosphere'].includes(scale)
+    || !/^nodes\[[0-5]\]\.(?:label|evidence|type|scale|existingId)$/u.test(repair.path)
+    || !Array.isArray(repair.supportedNodes) || repair.supportedNodes.length > SUBMISSION_NODE_LIMIT
+    || !Number.isSafeInteger(repair.omittedSupportedCount) || repair.omittedSupportedCount < 0
+    || repair.supportedNodes.length + repair.omittedSupportedCount > SUBMISSION_NODE_LIMIT * 2) return false;
+  const fields = scale === 'micro' ? ['label', 'type', 'scale', 'evidence'] : ['label', 'type', 'scale', 'evidence', 'basis'];
+  return repair.supportedNodes.every(node => keysAre(node, fields, ['existingId'])
+    && boundedText(node.label, 200) && boundedText(node.evidence, 500)
+    && isNodeTypeAllowedAtScale(node.type, node.scale)
+    && (scale === 'micro' || node.basis === 'memo')
+    && (Object.hasOwn(node, 'existingId')
+      ? boundedText(node.existingId, 200)
+      : scale === 'micro' ? node.scale === 'micro' : ['exosphere', 'macrosphere'].includes(node.scale)));
 }
 
 function jsonData(root) {
@@ -71,8 +92,8 @@ export function isMemoContractRepair(value, activeScale) {
       }
       return value.valueOmitted === true;
     }
-    if (!nodeIssuesValid(value)) return false;
-    const optional = ['nodeIssues', 'omittedCount'];
+    if (!nodeIssuesValid(value) || !supportedNodesValid(value, activeScale)) return false;
+    const optional = ['nodeIssues', 'omittedCount', 'supportedNodes', 'omittedSupportedCount'];
     if (/^nodes\[[0-5]\]\.(?:label|evidence|type|scale|existingId)$/u.test(value.path) && value.valueOmitted === true) {
       return keysAre(value, ['path', 'valueOmitted'], optional);
     }
@@ -101,7 +122,7 @@ function nodeIssueRule(message) {
 }
 
 /** Supplement the primary failure with per-node checks; acceptance still validates the full review. */
-export function createNodeSubmissionRepair(review, message, activeScale, sourceText, memoUpdate) {
+export function createNodeSubmissionRepair(review, message, activeScale, sourceText, memoUpdate, previousRepair) {
   const primary = createMemoContractRepair(review, message, activeScale);
   const failed = /^nodes\[([0-5])\]\.(label|evidence|type|scale|existingId)\b/u.exec(message);
   if (!failed || !['micro', 'exosphere'].includes(activeScale) || !plain(review)
@@ -113,19 +134,41 @@ export function createNodeSubmissionRepair(review, message, activeScale, sourceT
     ? { path: `nodes[${failed[1]}].label`, value: failedLabel }
     : { path: `nodes[${failed[1]}].${failed[2]}`, valueOmitted: true });
   const issues = [];
+  const supportedNodes = [];
   let omittedCount = 0;
+  let omittedSupportedCount = 0;
+  const retainSupported = node => {
+    if (supportedNodes.some(current => ['label', 'type', 'scale', 'existingId'].every(key => current[key] === node[key]))) return;
+    if (submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate)) return;
+    if (!submittedReviewIssue({ ...review, nodes: [...supportedNodes, node] }, activeScale, sourceText, memoUpdate)) {
+      supportedNodes.push(structuredClone(node));
+    } else omittedSupportedCount += 1;
+  };
+  for (const node of previousRepair?.supportedNodes || []) retainSupported(node);
   for (const [index, node] of review.nodes.entries()) {
     const issue = submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate);
-    if (!issue || !/^nodes\[0\]/u.test(issue)) continue;
+    if (!issue) {
+      // Avoid presenting a globally rejected duplicate or over-limit entry as
+      // compatible support. This context never changes the rejected response.
+      if (index === Number(failed[1])) continue;
+      retainSupported(node);
+      continue;
+    }
+    if (!/^nodes\[0\]/u.test(issue)) continue;
     if (primary && index === Number(failed[1])) continue;
     if (!shortString(node?.label) || !node.label.length) { omittedCount += 1; continue; }
     const path = /^nodes\[0\](?:\.(?:label|evidence|type|scale|existingId))?/u.exec(issue)[0].replace('nodes[0]', `nodes[${index}]`);
     issues.push({ path, label: node.label, rule: nodeIssueRule(issue) });
   }
-  if (!issues.length && !omittedCount) return base;
-  const repair = { ...base, nodeIssues: issues, omittedCount };
+  if (!issues.length && !omittedCount && !supportedNodes.length && !omittedSupportedCount) return base;
+  const repair = { ...base,
+    ...(issues.length || omittedCount ? { nodeIssues: issues, omittedCount } : {}),
+    ...(supportedNodes.length || omittedSupportedCount ? { supportedNodes, omittedSupportedCount } : {}) };
   while (size(repair) > MEMO_CONTRACT_REPAIR_BYTES && issues.length) {
     issues.pop(); repair.omittedCount += 1;
+  }
+  while (size(repair) > MEMO_CONTRACT_REPAIR_BYTES && supportedNodes.length) {
+    supportedNodes.pop(); repair.omittedSupportedCount += 1;
   }
   if (size(repair) > MEMO_CONTRACT_REPAIR_BYTES) {
     delete repair.value; repair.valueOmitted = true;
@@ -180,11 +223,16 @@ export function createMemoContractRepair(review, message, activeScale) {
 export function memoContractRepairContext(context, repair, byteLimit) {
   if (!repair) return context;
   const combined = { ...context, contractRepair: repair };
-  if (repair.nodeIssues) {
-    const fitted = { ...repair, nodeIssues: [...repair.nodeIssues] };
+  if (repair.nodeIssues || repair.supportedNodes) {
+    const fitted = { ...repair,
+      ...(repair.nodeIssues ? { nodeIssues: [...repair.nodeIssues] } : {}),
+      ...(repair.supportedNodes ? { supportedNodes: [...repair.supportedNodes] } : {}) };
     combined.contractRepair = fitted;
-    while (size(combined) > byteLimit && fitted.nodeIssues.length) {
+    while (size(combined) > byteLimit && fitted.nodeIssues?.length) {
       fitted.nodeIssues.pop(); fitted.omittedCount += 1;
+    }
+    while (size(combined) > byteLimit && fitted.supportedNodes?.length) {
+      fitted.supportedNodes.pop(); fitted.omittedSupportedCount += 1;
     }
     if (size(combined) > byteLimit) { delete fitted.value; fitted.valueOmitted = true; }
   }
