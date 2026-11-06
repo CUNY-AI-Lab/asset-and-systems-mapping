@@ -303,3 +303,18 @@ Runtime metadata records `correctiveRetries` and optional `evidenceRepairAttempt
 
 
 Existing relationship context sent to subsequent memo guidance, connection suggestions, and Map Check carries bounded process details, including reverse or two-way direction and explicitly missing status. Student-choice descriptions use the same direction-aware wording. Optional unknown model fields normalize to empty text or `unknown`, and explicit arrow synonyms normalize to the canonical directions; arbitrary values remain invalid. These transformations preserve complete source text and evidence passages.
+
+## Earlier work in Exo and Macro
+
+While a student works in Exo or Macro, every Micro node and Meso relationship already on the map must remain:
+
+- **visible** at full strength, with no veil, dimming or obscuring fill;
+- **selectable** on the canvas and in the list view;
+- **editable** in place (label, type, evidence, notes, removal);
+- **available as a connection target**, as a node endpoint or as a Meso relationship chosen for an Exo or Macro connection.
+
+Carrying the data forward is not enough; these four interactions are the requirement. `src/exoSecondMemo.test.js` pins the connection-target rule.
+
+## Outside offices at Exo
+
+An office, agency, board, funder or other organization that the focal participants are not described as taking part in is placed at Exo. It is withheld only when the memo describes the focal participants taking part in it, or says their participation in it is unknown. A withheld or rejected proposal is never silent: the student sees the reason and can add the node by hand.

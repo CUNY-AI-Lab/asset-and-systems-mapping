@@ -43,7 +43,7 @@ async function setup(rejected, scale = 'micro', { sourceText = passage, existing
 
 describe('ordinary memo contract correction', () => {
   it.each([true, false])('retains classification feedback in the final repair without relaxing source validation (corrected=%s)', async corrected => {
-    const administration = 'The Lab is jointly administered by Graduate Center Digital Initiatives and the Teaching and Learning Center.';
+    const administration = 'The Lab is jointly administered by Graduate Center Digital Initiatives and the Teaching and Learning Center; student participation in those units is unknown.';
     const access = 'Class access lasts for approved course dates.';
     const sourceText = `${administration}\n\n${access}`;
     const rejected = { guidance: [], nodes: [{ label: 'Graduate Center Digital Initiatives', type: 'organization', scale: 'exosphere', evidence: administration, basis: 'memo' }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };

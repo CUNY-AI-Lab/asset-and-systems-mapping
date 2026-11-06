@@ -109,7 +109,7 @@ export function isMemoContractRepair(value, activeScale) {
 }
 
 function nodeIssueRule(message) {
-  if (/nonparticipation|participants taking part|outside decision setting/u.test(message)) return 'outside_participation';
+  if (/nonparticipation|names this outside setting|participants taking part|outside decision setting/u.test(message)) return 'outside_participation';
   if (/specific established policy and its operation/u.test(message)) return 'policy_operation';
   if (/\.evidence must quote the supplied narrative within 500 characters/u.test(message)) return 'evidence_limit';
   if (/\.evidence .*quote/u.test(message)) return 'narrative_quote';

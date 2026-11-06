@@ -554,7 +554,7 @@ describe('persistent preflight suggestion review queue', () => {
   });
 
   it.each([true, false])('retains supported Exo policies as correction context and validates identity again (authorized=%s)', async authorized => {
-    const administration = 'CUNY AI Lab administers course access.';
+    const administration = 'CUNY AI Lab administers course access; student participation in it is unknown.';
     const access = 'Course access requires instructor approval.';
     const retention = 'Provider data retention policy prohibits training on submitted content.';
     const sourceMaterial = `${administration} ${access} ${retention}`;
@@ -594,7 +594,7 @@ describe('persistent preflight suggestion review queue', () => {
   });
 
   it('retains both supported policies through the final indexed-evidence correction', async () => {
-    const administration = 'CUNY AI Lab administers course access.';
+    const administration = 'CUNY AI Lab administers course access; student participation in it is unknown.';
     const access = 'Course access requires instructor approval.';
     const retention = 'Provider data retention policy prohibits training on submitted content.';
     const distractions = Array.from({ length: 8 }, (_, index) => `CUNY AI Lab course access planning record ${index + 1} describes CUNY AI Lab administration and course access allocations.`);

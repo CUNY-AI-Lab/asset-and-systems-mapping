@@ -116,7 +116,7 @@ it('retains a prompt-like rejected label only as bounded JSON data', () => {
 });
 
 it('retains two supported policies exactly when the primary Lab classification fails', () => {
-  const labEvidence = 'CUNY AI Lab administers course access.';
+  const labEvidence = 'CUNY AI Lab administers course access; student participation in it is unknown.';
   const dataEvidence = 'Provider data retention policy prohibits training on submitted content.';
   const policies = [node('Class-access approval policy', 'policy', operation), node('Provider data retention policy', 'policy', dataEvidence)];
   const review = wrap([node('CUNY AI Lab', 'organization', labEvidence), ...policies]);

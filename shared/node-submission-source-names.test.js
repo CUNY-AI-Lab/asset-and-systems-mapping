@@ -14,8 +14,8 @@ it.each(names)('recognizes the source-named institution %s and still requires it
   expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toBeNull();
 });
 
-it.each(names)('recognizes %s in the expanded memo but withholds classification where participation is unknown', label => {
-  expect(submittedReviewIssue(review([exo(label, administrators)]), 'exosphere', `${administrators} ${unknown}`)).toMatch(/\.evidence .*nonparticipation/);
+it.each(names)('places %s at Exo when the expanded memo describes no student participation in it', label => {
+  expect(submittedReviewIssue(review([exo(label, administrators)]), 'exosphere', `${administrators} ${unknown}`)).toBeNull();
 });
 
 it.each(names)('rejects direct participation in %s even when a separate excerpt describes indirect decisions', label => {
@@ -61,21 +61,21 @@ it('extracts separate Micro participants and a noun resource while rejecting the
 it.each(['micro', 'exosphere'])('asks for source-grounded noun extraction and explicit uncertainty at %s', scale => {
   const prompt = nodeSubmissionInstruction(scale);
   expect(prompt).toContain('supported noun labels include Students, Instructors, Course chat and Course configurations');
-  expect(prompt).toContain('If the source leaves participation in that institution unknown, omit the automatic Exo setting');
+  expect(prompt).toContain('Place that institution at Exo unless the source describes the focal participants taking part in it');
   expect(prompt).toContain('existingId entries must preserve its exact identity');
 });
 
-it('distinguishes unknown administrator participation from a separately established access rule in the second memo prompt', () => {
+it('distinguishes an administrator with no described participation from a separately established access rule in the second memo prompt', () => {
   const prompt = nodeSubmissionInstruction('exosphere');
   expect(prompt).toContain('omit Access Board as an automatic Exo node');
   expect(prompt).toContain('an Exo policy named Course access approval rule may use that exact passage');
   expect(nodeSubmissionInstruction('micro')).not.toContain('SECOND MEMO EVIDENCE EXAMPLE');
 });
 
-it('recognizes the narrative-named Eco Impact Estimator repository without inferring its participation chain', () => {
+it('places the narrative-named Eco Impact Estimator repository at Exo', () => {
   const label = 'Eco Impact Estimator repository';
   const evidence = "The organization's Eco Impact Estimator repository documents another administrative dependency behind the immediate interface.";
-  expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toMatch(/\.evidence .*nonparticipation/);
+  expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toBeNull();
 });
 
 it.each(['Eco Impact Estimator repository', 'Regional Model Registry'])('recognizes a specifically named source repository or registry with complete proof: %s', label => {

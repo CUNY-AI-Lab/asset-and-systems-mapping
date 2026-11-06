@@ -6715,7 +6715,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       };
       if (memoFirstWorkflow) {
         const event = createEvent('preflight.completed', 'Submitted memo nodes added to map', 'student', completionMetadata);
-        const feedback = { eventId: event.id, projectId: project.id, accessGeneration, activationGeneration, error: null, summary: null };
+        const feedback = { eventId: event.id, projectId: project.id, accessGeneration, activationGeneration, error: null, summary: null, withheld: result.evaluation.runtime.correctiveRetries > 0 };
         memoCommitFeedbackRef.current = feedback;
         let prepared;
         update(draft => Object.assign(draft, prepared), 'preflight.completed', event.detail, 'student', completionMetadata, {
@@ -6778,8 +6778,9 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     if (project.events.some(event => event.id === feedback.eventId)) {
       memoCommitFeedbackRef.current = null;
       const { added, updated } = feedback.summary;
+      const { withheld } = feedback;
       setNotebookOpen(true); setWorkflowPanelMode('review');
-      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.` : added ? `${added} nodes added to your map.` : 'Your map is ready. No new nodes were added.');
+      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.` : added ? `${added} nodes added to your map.` : withheld ? 'No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Use Tools to add nodes yourself.' : 'No new nodes were added: nothing new in this memo was identified for this step. Use Tools to add nodes yourself.');
     } else if (feedback.error) {
       memoCommitFeedbackRef.current = null;
       setReviewFailure({ message: feedback.error, retryable: true });
