@@ -128,3 +128,12 @@ test('preferred name comes from the verified app identity for a normal member', 
   grants.appJwt = await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject: TEST_SUBJECTS.alice, name: 'Sam Student' });
   expect(await authorize(request(), env)).toMatchObject({ preferredName: 'Sam Student', admin: false });
 });
+
+test('requests the linked profile only on signed-in reporting routes', async () => {
+  const {env, grants, identities} = await environment();
+  Object.assign(grants, {reporter: {name: 'Sample Student', email: 'student@example.edu'}});
+  const report = new Request(new URL('/api/bug-reports/session', request().url), request());
+  expect(await authorize(report, env)).toMatchObject({preferredName:'Sample Student', email:'student@example.edu'});
+  expect(identities).toHaveBeenCalledWith(sessionToken, 'private_report');
+  expect(await authorize(request(),env)).toMatchObject({preferredName:null,email:null});
+});

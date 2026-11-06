@@ -29,8 +29,10 @@ export async function authorize(request: Request, env: IdentityEnv): Promise<Pri
   if (!appConfig.ok || !gatewayConfig.ok || !env.IDENTITY || !env.ADMISSION_RESOLVER) return authFailure(503, 'identity_verification_misconfigured');
   const cookie = readCookie(request);
   if (!validSessionToken(cookie)) return authFailure(401, 'authentication_required');
+  const path = new URL(request.url).pathname;
+  const report = path === "/api/bug-reports" || path === "/api/bug-reports/session";
   let grants;
-  try { grants = await boundedRpc(env.IDENTITY.identities(cookie), request.signal); }
+  try { grants = await boundedRpc(report ? env.IDENTITY.identities(cookie, "private_report") : env.IDENTITY.identities(cookie), request.signal); }
   catch { return authFailure(503, 'identity_unavailable'); }
   if (!grants || typeof grants !== 'object') return authFailure(503, 'identity_unavailable');
   if (grants.ok !== true) return authFailure(grants.status === 403 ? 403 : grants.status === 401 ? 401 : 503,
@@ -53,10 +55,12 @@ export async function authorize(request: Request, env: IdentityEnv): Promise<Pri
     || typeof value.expiresAt !== 'string' || !Number.isFinite(Date.parse(value.expiresAt))) return authFailure(503, 'admission_unavailable');
   const expiresAt = Date.parse(value.expiresAt);
   if (expiresAt <= Date.now()) return authFailure(403, 'admission_required');
-  const preferredName = typeof appIdentity.name === 'string'
-    ? appIdentity.name.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 160) || null : null;
-  const email = typeof appIdentity.email === 'string' && appIdentity.email.length <= 254
-    && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(appIdentity.email)
-    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(appIdentity.email) ? appIdentity.email : null;
+  const nameClaim = appIdentity.name || (report ? grants.reporter?.name : null);
+  const emailClaim = (report ? grants.reporter?.email : null) || appIdentity.email;
+  const preferredName = typeof nameClaim === 'string'
+    ? nameClaim.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 160) || null : null;
+  const email = typeof emailClaim === 'string' && emailClaim.length <= 254
+    && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(emailClaim)
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClaim) ? emailClaim : null;
   return { subject: appIdentity.subject, preferredName, email, admin: value.accessRole === 'admin', expiresAt, gatewayJwt: grants.gatewayJwt };
 }
