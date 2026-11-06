@@ -231,7 +231,7 @@ export class RedmineReports {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cail_reporter: reporter, issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(id, owner), is_private: true,
             description: [...(contact ? [`Reporter (self-reported): ${contact.firstName} ${contact.lastName}`, `Contact email (unverified): ${contact.email}`]
-              : [`CAIL account reference: ${owner.slice(0,16)}`, ...(preferredName ? [`SSO preferred name: ${preferredName}`] : [])]), `Page: ${page}`, `System Mapping release: ${this.env.RELEASE}`,
+              : [`CAIL account reference: ${owner.slice(0,16)}`, ...(preferredName ? [`SSO preferred name: ${preferredName}`] : []), ...(loginEmail ? [`SSO email: ${loginEmail}`] : [])]), `Page: ${page}`, `System Mapping release: ${this.env.RELEASE}`,
               `Reported at: ${at}`, `Report reference: ${id}`, '', description].join('\n'),
           } }),
         });

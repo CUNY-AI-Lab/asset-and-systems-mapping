@@ -247,8 +247,11 @@ test('subscriber identity comes from the session and a typed fallback cannot red
   expect(posts).toHaveLength(0);
   expect(await (await submit({}, 'original@college.edu')).json()).toMatchObject({emailUpdates:'subscribed'});
   expect(posts[0].cail_reporter).toEqual({source:'cuny_login',email:'original@college.edu'});
+  expect(posts[0].issue.description).toContain('SSO preferred name: Student');
+  expect(posts[0].issue.description).toContain('SSO email: original@college.edu');
   const next = {reportId: crypto.randomUUID(), replyEmail: 'Contact@college.edu'};
   expect(await (await submit(next)).json()).toMatchObject({emailUpdates:'confirm'});
   expect(posts[1].cail_reporter).toEqual({source:'contact',email:'contact@college.edu'});
+  expect(posts[1].issue.description).not.toContain('SSO email:');
   expect((await submit({...next, replyEmail:'other@college.edu'})).status).toBe(409);
 });
