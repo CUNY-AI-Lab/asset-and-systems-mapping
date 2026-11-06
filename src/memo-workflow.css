@@ -156,6 +156,8 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .app-shell button.map-remove { color:var(--remove-ink); background:var(--remove-surface); border:1px solid var(--remove-line); }
 .app-shell button.map-remove:hover { background:var(--remove-hover); }
 .app-shell button.map-remove:focus-visible { outline:2px solid var(--remove-ink); outline-offset:2px; }
-.map-key-shortcuts { margin:0; }
+.map-legend__head { position:sticky; inset-block-start:0; z-index:1; background:var(--surface); }
+#map-key-shortcuts { scroll-margin-block-start:3.25rem; }
+.map-key-shortcuts { margin:0; font-size:.875rem; }
 .map-key-shortcuts > div { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.55rem; padding:.25rem 0; }
 .map-key-shortcuts dd { margin:0; }
