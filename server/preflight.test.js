@@ -434,7 +434,10 @@ describe('persistent preflight suggestion review queue', () => {
     const provider = vi.fn(async input => {
       const repairing = Boolean(input.memoContext?.contractRepair);
       expect(input.systemPrompt).toContain('copy a contiguous source passage or cell exactly');
-      if (repairing) expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[1].label', value: 'Principals/Assistant Principals' });
+      if (repairing) expect(input.memoContext.contractRepair).toEqual({
+        path: 'nodes[1].label', value: 'Principals/Assistant Principals',
+        nodeIssues: [{ path: 'nodes[0].evidence', label: 'Caregivers', rule: 'narrative_quote' }], omittedCount: 0,
+      });
       return { suggestion: { guidance: [], nodes: [
         { label: 'Caregivers', type: 'group', scale: 'micro', evidence: repairing ? 'Caregivers meet pupils at Birch Hall.' : 'Caregivers | meet pupils at Birch Hall.' },
         { label: repairing ? 'Principals' : 'Principals/Assistant Principals', type: 'role', scale: 'micro', evidence: 'Principals meet pupils at Birch Hall.' },
@@ -453,6 +456,92 @@ describe('persistent preflight suggestion review queue', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].suggestion_json).not.toContain('Principals/Assistant Principals');
     expect(rows[0].suggestion_json).not.toContain('Caregivers |');
+  });
+
+  it.each([true, false])('reports simultaneous node failures and revalidates the entire correction (allFixed=%s)', async allFixed => {
+    const administration = 'Access Board administers the program. Student participation is unknown.';
+    const vague = 'Students discuss access with a community counselor.';
+    const operation = 'Course access requires instructor approval.';
+    const sourceMaterial = `${administration} ${vague} ${operation}`;
+    const outer = (label, type, evidence) => ({ label, type, evidence, scale: 'exosphere', basis: 'memo' });
+    const role = outer('Community counselor', 'service', vague);
+    const policy = outer('Course access approval rule', 'policy', operation);
+    const carriedNodes = [{ id: 'student', label: 'Students', type: 'group', scale: 'micro' }];
+    const provider = vi.fn(async input => {
+      const repairing = Boolean(input.memoContext?.contractRepair);
+      expect(input.sourceText).toBe(sourceMaterial);
+      expect(input.carriedNodes).toEqual(carriedNodes);
+      if (repairing) {
+        expect(input.memoContext.contractRepair).toEqual({
+          path: 'nodes[0].evidence', value: { label: 'Access Board', evidence: administration },
+          nodeIssues: [
+            { path: 'nodes[1].evidence', label: 'Student access rule', rule: 'policy_operation' },
+            { path: 'nodes[2].label', label: role.label, rule: 'label_format' },
+          ], omittedCount: 0,
+        });
+        expect(input.systemPrompt).toContain('Every replacement is validated in full');
+        expect(input.systemPrompt).toContain('For each NEW node with rule outside_participation, OMIT that exact named candidate');
+        expect(input.systemPrompt).toContain('Apply the same omission to a new node named by a primary failure');
+        expect(input.systemPrompt).toContain('Do not propose it again as a service, resource, policy or renamed administrator');
+        expect(input.systemPrompt).toContain('retain the same policy only if a different exact source passage establishes its operative rule');
+        expect(input.systemPrompt).toContain('ExistingId evidence updates retain their exact authorized identity and classification');
+        expect(input.systemPrompt).not.toContain(administration);
+      }
+      const nodes = repairing ? [policy, ...(allFixed ? [] : [role])] : [
+        outer('Access Board', 'organization', administration), outer('Student access rule', 'policy', vague), role, policy,
+      ];
+      return { suggestion: { guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, `multi-node-repair-${allFixed}.sqlite`), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const { studentAnnotation: _, ...body } = submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial, carriedNodes });
+    const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(response.status).toBe(allFixed ? 201 : 502);
+    const rows = system.db.prepare('SELECT source_material, suggestion_json FROM preflight_evaluations').all();
+    expect(rows).toHaveLength(allFixed ? 1 : 0);
+    if (allFixed) {
+      expect(rows[0].source_material).toBe(sourceMaterial);
+      expect(JSON.parse(rows[0].suggestion_json).nodes).toEqual([policy]);
+      expect(rows[0].suggestion_json).not.toContain('contractRepair');
+    }
+  });
+
+  it('carries simultaneous node failures into final indexed evidence repair and validates the complete result', async () => {
+    const administration = 'Access Board administers the program. Student participation is unknown.';
+    const vague = 'Students discuss access with a community counselor.';
+    const operation = 'Course access requires instructor approval.';
+    const sourceMaterial = `${administration} ${vague} ${operation}`;
+    const outer = (label, type, evidence) => ({ label, type, evidence, scale: 'exosphere', basis: 'memo' });
+    const rejected = { guidance: [], nodes: [outer('Access Board', 'organization', administration), outer('Student access rule', 'policy', vague)], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } };
+    const provider = vi.fn(async (input, _config, options) => {
+      expect(input.sourceText).toBe(sourceMaterial);
+      if (input.memoContext?.contractRepair) {
+        expect(input.memoContext.contractRepair).toMatchObject({
+          path: 'nodes[0].evidence', value: { label: 'Access Board', evidence: administration },
+          nodeIssues: [{ path: 'nodes[1].evidence', label: 'Student access rule', rule: 'policy_operation' }], omittedCount: 0,
+        });
+      }
+      if (options.kind === 'memo-evidence') {
+        const index = input.memoContext.evidenceRepair.passages.findIndex(passage => passage.text.includes(operation));
+        expect(index).toBeGreaterThanOrEqual(0);
+        expect(input.systemPrompt).toContain('Every replacement is validated in full');
+        return { suggestion: { ...rejected, nodes: [outer('Course access approval rule', 'policy', index)] }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+      }
+      return { suggestion: rejected, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'multi-node-final-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial }));
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect(result.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    expect(result.review.nodes).toHaveLength(1);
+    expect(result.review.nodes[0].label).toBe('Course access approval rule');
+    expect(typeof result.review.nodes[0].evidence).toBe('string');
+    expect(sourceMaterial).toContain(result.review.nodes[0].evidence);
+    expect(result.review.connections).toEqual([]);
   });
 
   it('rejects model-created links in the node-only contract after its bounded corrective attempt', async () => {

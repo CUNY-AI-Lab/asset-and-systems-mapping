@@ -1,5 +1,5 @@
 import { MEMO_REVIEW_GUIDANCE_LIMIT, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
-import { SUBMISSION_SUBJECT_ISSUE, SUBMISSION_MACRO_ISSUE } from '../shared/node-submission.js';
+import { SUBMISSION_SUBJECT_ISSUE, SUBMISSION_MACRO_ISSUE, SUBMISSION_NODE_LIMIT, submittedReviewIssue } from '../shared/node-submission.js';
 
 export const MEMO_CONTRACT_REPAIR_BYTES = 2 * 1024;
 const size = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -11,6 +11,24 @@ const keysAre = (value, required, optional = []) => plain(value)
 const jsonType = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
 const maximum = (path, scale) => path === 'guidance' ? MEMO_REVIEW_GUIDANCE_LIMIT : MEMO_REVIEW_SCALE_LIMITS[scale]?.[path];
 const shortString = value => typeof value === 'string' && value.length <= 200;
+const nodeRules = new Set(['outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition', 'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape']);
+
+function nodeIssuesValid(repair) {
+  const present = Object.hasOwn(repair, 'nodeIssues') || Object.hasOwn(repair, 'omittedCount');
+  if (!present) return true;
+  if (!/^nodes\[[0-5]\]\.(?:label|evidence|type|scale|existingId)$/u.test(repair.path)
+    || !Array.isArray(repair.nodeIssues) || repair.nodeIssues.length > SUBMISSION_NODE_LIMIT
+    || !Number.isSafeInteger(repair.omittedCount) || repair.omittedCount < 0
+    || repair.nodeIssues.length + repair.omittedCount > SUBMISSION_NODE_LIMIT) return false;
+  const indexes = new Set();
+  return repair.nodeIssues.every(issue => {
+    if (!keysAre(issue, ['path', 'label', 'rule']) || !shortString(issue.label) || !issue.label.length || !nodeRules.has(issue.rule)) return false;
+    const match = /^nodes\[([0-5])\](?:\.(?:label|evidence|type|scale|existingId))?$/u.exec(issue.path);
+    if (!match || indexes.has(match[1])) return false;
+    indexes.add(match[1]);
+    return true;
+  });
+}
 
 function jsonData(root) {
   const stack = [{ value: root, depth: 0 }], seen = new Set();
@@ -53,7 +71,12 @@ export function isMemoContractRepair(value, activeScale) {
       }
       return value.valueOmitted === true;
     }
-    if (!keysAre(value, ['path', 'value'])) return false;
+    if (!nodeIssuesValid(value)) return false;
+    const optional = ['nodeIssues', 'omittedCount'];
+    if (/^nodes\[[0-5]\]\.(?:label|evidence|type|scale|existingId)$/u.test(value.path) && value.valueOmitted === true) {
+      return keysAre(value, ['path', 'valueOmitted'], optional);
+    }
+    if (!keysAre(value, ['path', 'value'], optional)) return false;
     if (/^nodes\[\d{1,2}\]\.label$/u.test(value.path)) return shortString(value.value);
     if (/^nodes\[\d{1,2}\]\.evidence$/u.test(value.path)) return keysAre(value.value, ['label', 'evidence'])
       && shortString(value.value.label) && typeof value.value.evidence === 'string' && value.value.evidence.length <= 500;
@@ -62,6 +85,52 @@ export function isMemoContractRepair(value, activeScale) {
       && shortString(value.value.source) && shortString(value.value.target);
     return false;
   } catch { return false; }
+}
+
+function nodeIssueRule(message) {
+  if (/nonparticipation|participants taking part|outside decision setting/u.test(message)) return 'outside_participation';
+  if (/specific established policy and its operation/u.test(message)) return 'policy_operation';
+  if (/\.evidence must quote the supplied narrative within 500 characters/u.test(message)) return 'evidence_limit';
+  if (/\.evidence .*quote/u.test(message)) return 'narrative_quote';
+  if (/established condition/u.test(message)) return 'established_condition';
+  if (/duplicates/u.test(message)) return 'identity_duplicate';
+  if (/existingId|preserve the existing node/u.test(message)) return 'existing_identity';
+  if (/\.label /u.test(message)) return 'label_format';
+  if (/\.scale|\.type/u.test(message)) return 'scale_type';
+  return 'node_shape';
+}
+
+/** Supplement the primary failure with per-node checks; acceptance still validates the full review. */
+export function createNodeSubmissionRepair(review, message, activeScale, sourceText, memoUpdate) {
+  const primary = createMemoContractRepair(review, message, activeScale);
+  const failed = /^nodes\[([0-5])\]\.(label|evidence|type|scale|existingId)\b/u.exec(message);
+  if (!failed || !['micro', 'exosphere'].includes(activeScale) || !plain(review)
+    || !Array.isArray(review.nodes) || review.nodes.length > SUBMISSION_NODE_LIMIT
+    || !Array.isArray(review.guidance) || review.guidance.length
+    || !Array.isArray(review.connections) || review.connections.length || review.example !== null) return primary;
+  const failedLabel = review.nodes[Number(failed[1])]?.label;
+  const base = primary || (failed[2] === 'label' && shortString(failedLabel)
+    ? { path: `nodes[${failed[1]}].label`, value: failedLabel }
+    : { path: `nodes[${failed[1]}].${failed[2]}`, valueOmitted: true });
+  const issues = [];
+  let omittedCount = 0;
+  for (const [index, node] of review.nodes.entries()) {
+    const issue = submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate);
+    if (!issue || !/^nodes\[0\]/u.test(issue)) continue;
+    if (primary && index === Number(failed[1])) continue;
+    if (!shortString(node?.label) || !node.label.length) { omittedCount += 1; continue; }
+    const path = /^nodes\[0\](?:\.(?:label|evidence|type|scale|existingId))?/u.exec(issue)[0].replace('nodes[0]', `nodes[${index}]`);
+    issues.push({ path, label: node.label, rule: nodeIssueRule(issue) });
+  }
+  if (!issues.length && !omittedCount) return base;
+  const repair = { ...base, nodeIssues: issues, omittedCount };
+  while (size(repair) > MEMO_CONTRACT_REPAIR_BYTES && issues.length) {
+    issues.pop(); repair.omittedCount += 1;
+  }
+  if (size(repair) > MEMO_CONTRACT_REPAIR_BYTES) {
+    delete repair.value; repair.valueOmitted = true;
+  }
+  return isMemoContractRepair(repair, activeScale) ? repair : base;
 }
 
 /** Select only the failed field, never replay or repair the complete model response. */
@@ -111,5 +180,13 @@ export function createMemoContractRepair(review, message, activeScale) {
 export function memoContractRepairContext(context, repair, byteLimit) {
   if (!repair) return context;
   const combined = { ...context, contractRepair: repair };
+  if (repair.nodeIssues) {
+    const fitted = { ...repair, nodeIssues: [...repair.nodeIssues] };
+    combined.contractRepair = fitted;
+    while (size(combined) > byteLimit && fitted.nodeIssues.length) {
+      fitted.nodeIssues.pop(); fitted.omittedCount += 1;
+    }
+    if (size(combined) > byteLimit) { delete fitted.value; fitted.valueOmitted = true; }
+  }
   return size(combined) <= byteLimit ? combined : context;
 }
