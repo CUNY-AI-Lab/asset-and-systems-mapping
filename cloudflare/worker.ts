@@ -140,7 +140,7 @@ export class MappingCourse extends DurableObject<Bindings> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
-    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName);
+    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName, undefined, principal.email);
     const expectedCache = request.headers.get('x-systems-account-cache');
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
