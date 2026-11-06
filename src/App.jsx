@@ -22,6 +22,7 @@ import { relationshipDescription, relationshipArrowheads, relationshipDirection,
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
 import { createPortal } from 'react-dom';
 import { useBugReportDock } from './support/BugReportDock.jsx';
+import { CUNY_ABOUT_MEMO, CUNY_ABOUT_URL } from './devAboutMemo.js';
 import React, { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Action, Disclosure, EmptyState, LevelTrail, PageHeading, ProjectRow } from './ui/StudioPrimitives.jsx';
 import { INSTITUTIONAL_RESUME_COOLDOWN_MS, readInstitutionalSession } from './studentSession.js';
@@ -1294,11 +1295,26 @@ function RelationshipGroupPicker({ project, value = [], onChange }) {
   </fieldset>;
 }
 
-function MemoFileUpload({ project, update, toast, captureImportScope }) {
+export function MemoFileUpload({ project, update, toast, captureImportScope }) {
   const [notice, setNotice] = useState('');
   const requestRef = useRef(0);
   const pendingRef = useRef(null);
   const submission = activeSubmission(project);
+  const showAboutPreload = typeof location !== 'undefined'
+    && ['systems-mapping-dev.ailab-452.workers.dev', 'localhost', '127.0.0.1'].includes(location.hostname);
+  const loadAbout = () => {
+    if (submission.text.trim() && !window.confirm('Replace this memo draft with CUNY AI Lab About?')) return;
+    requestRef.current += 1;
+    pendingRef.current = null;
+    setNotice('');
+    update(draft => {
+      invalidateSubmissionDerived(draft, 'text', CUNY_ABOUT_MEMO);
+      const source = activeSubmission(draft);
+      Object.assign(source, { title: 'CUNY AI Lab About', location: CUNY_ABOUT_URL, sourceType: 'web page' });
+      delete source.fileName;
+      delete source.fileSize;
+    }, 'memo.imported', 'CUNY AI Lab About');
+  };
   useLayoutEffect(() => () => { requestRef.current += 1; }, [project.id, project.activeScale, submission.id, submission.text]);
   useEffect(() => {
     const pending = pendingRef.current;
@@ -1339,6 +1355,7 @@ function MemoFileUpload({ project, update, toast, captureImportScope }) {
     }
   };
   return <div className="memo-file-upload">
+    {showAboutPreload && <button type="button" className="button button--secondary" onClick={loadAbout}>Load CUNY AI Lab About</button>}
     <label className="upload-zone">
       <input type="file" aria-label={`Upload ${isPart2(project.activeScale) ? 'Part 2' : 'Part 1'} memo`} accept=".docx,.txt,.md,.html,.htm,.json,.pdf" onChange={upload} />
       <Icon name="upload" size={20} /><strong>{submission.fileName || `Upload ${isPart2(project.activeScale) ? 'Part 2' : 'Part 1'} memo`}</strong>
