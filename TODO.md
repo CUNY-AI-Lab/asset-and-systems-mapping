@@ -1,11 +1,14 @@
 # Systems Mapping release record
 
-## Map downloads and overlaps — November 5
+## Map downloads and keyboard editing — November 5, 2026
 
-Wireframe: **Project title · Return to map** → map preview → **File format ▾ · Download**. In Projects, show **Saved copy ▾** only when both a device and account version exist. Keep sharing separate. One drawing must carry saved placement, card colors, verbs, arrows and relationship groups through PNG, PDF and SVG. Check proximity and overlap using the factual Lab map, then verify Dev before production.
+Dev and production serve application source `1a93a420b4c4302ec4b0592d03ac57d687029dc9`. PNG, single-page PDF and SVG use the canvas drawing, preserving saved node placement, custom colors, relation wording, direction and grouped branches. Select **File format → Download**. When there are two saved copies, Projects also offers **Saved copy**.
 
-
-Map editing: use a red Remove action for nodes and relationships. Delete/Backspace remove the selection; ⌘/Ctrl+Z and ⌘/Ctrl+Shift+Z use the saved history from the map or item details. Keep native text editing and document shortcuts in the Map key.
+- [x] Compare the saved factual CUNY AI Lab map: nine nodes, twelve connections and three grouped branches. No overlapping cards or captions, routes through unrelated cards or captions, or coincident line segments. Seven point crossings remain. The Dev PNG and the image embedded in the PDF are both 3030 × 2218. Automated browser checks compare the SVG with the canvas, including positions, colors, arrows, captions and group routes.
+- [x] Mark **Remove** in red, and enable **Delete / Backspace**, **⌘/Ctrl+Z**, **⌘/Ctrl+Shift+Z** and **Ctrl+Y** from the map and selected-item details. A single Undo restores attached lines and group memberships. Editing a memo, label or note keeps its native keyboard behavior. **?** on the canvas opens the shortcut list, **/** finds a node, and **0** fits the map.
+- [x] Verify on signed-in Dev: remove a line by selecting its verb; delete a connected node; save, reload and undo to restore two nodes and one relationship. Check dark/light Remove contrast, native label undo, find, keyboard help, and one-row download controls. The account map used for the visual downloads was read-only.
+- [x] Pass [full main CI](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42141547198): 2,017 unit/Worker/account and 114 browser/accessibility checks passed; 12 and 12 skipped. Verify the artifact digest, source tree, configuration, lockfile and 41 checksums. Both environments matched all 36 served files, with 100% traffic and unchanged bindings/runtime.
+- [x] Dev version `1fc843af-dcc0-46be-b30d-c838d91be88f` / deployment `cdf0fa28-e364-44ec-9b80-f683f683af3f`. Production version `8f7482a8-0a33-4459-bf56-2ea19fc7abd2` / deployment `329cea33-9b1b-411b-8e33-987220438a5b`. This release changes exports and editing controls; earlier GPT-OSS test outcomes and six-stage screenshot provenance remain below.
 
 ## Account interface and expanded CUNY memos — November 5, 2026
 
