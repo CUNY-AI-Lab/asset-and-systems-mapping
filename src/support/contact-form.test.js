@@ -109,7 +109,7 @@ test('an SSO session without a mailbox can confirm a .edu address with the origi
   fill(host, 'replyEmail', 'nope@example.com'); submit(host);
   expect(posts).toHaveLength(0);
   fill(host, 'replyEmail', 'Student@college.edu'); submit(host);
-  await vi.waitFor(() => expect(host.textContent).toContain('Check your email to confirm updates.'));
+  await vi.waitFor(() => expect(host.textContent).toContain('Keep this reference to confirm updates with your emailed code.'));
   expect(posts[0].data.replyEmail).toBe('student@college.edu');
   expect(host.textContent).toContain(posts[0].data.reportId);
 });

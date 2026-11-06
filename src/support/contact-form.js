@@ -196,7 +196,7 @@ export function mountBugReport(container, { delivery = 'redmine', loginUrl = '/a
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
         done = true; locked = true; submitButton.textContent = 'Report sent';
         const reference = acceptedEmail && /^[0-9a-f-]{36}$/.test(result.deliveryReference) ? result.deliveryReference : report.reportId;
-        const update = result.emailUpdates === 'confirm' ? ' Check your email to confirm updates.' : result.emailUpdates === 'subscribed' ? ' Email updates are on.' : '';
+        const update = result.emailUpdates === 'confirm' ? ' Keep this reference to confirm updates with your emailed code.' : result.emailUpdates === 'subscribed' ? ' Email updates are on.' : '';
         show(acceptedEmail ? `Accepted for email delivery. Reference: ${reference}.`
           : `Saved to CAIL Ticketing. Reference: ${reference}.${update}`, 'success');
       } else if (code === 'account_changed' || response.status === 401 || code === 'not_admitted' || code === 'admission_required') {
