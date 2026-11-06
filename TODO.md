@@ -1,5 +1,13 @@
 # Systems Mapping release record
 
+## Exo validator — November 6, 2026
+
+Dev and production serve `e43d9ae5c9582c338dfc04b5b2045229379f3529`. [CI run 42172516623](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42172516623) passed 2,110 unit/Worker/account and 114 browser/accessibility checks, with 12 skipped in each suite. All 36 served files matched in each environment. [Deployment receipt](docs/exo-validator-release-2026-11-06.json).
+
+The Exo validator uses the local participant names and classifications from the student's map when checking quotes in the second memo. It checks which office a visit refers to and whether a policy operation appears in a factual passage. Students retain control of relationships.
+
+Signed-in Dev verification with GPT-OSS 120B produced six local nodes and two Exo policies from the expanded CUNY AI Lab memos. Reopening the project preserved all eight nodes and the one student-authored relationship. The workshop case added only the outside allocation board at Exo. Its first Micro submission returned a model-response error and the unchanged retry passed. The original course PDF produced four Micro nodes.
+
 ## Memo classification repairs and Dev preload — November 5, 2026
 
 Application source **`db2f803007de8bf8beac2892f9108fcccdcf8174`**, contract v23, is verified on Dev and production. [Exact-main CI](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42157934509) passed **2,103 unit/Worker/account** and **114 browser/accessibility** checks, with 12 skipped in each suite. The checked artifact matched the source/tree, configuration, lockfile and all 41 checksums. Both clean deployments matched all 36 served assets at 100% traffic with stable runtime/bindings. Temporary diagnostic logging is absent from the promoted package. See the [verification record](docs/memo-repair-release-2026-11-05.json).

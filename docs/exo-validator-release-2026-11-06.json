@@ -1,0 +1,70 @@
+{
+  "source": "e43d9ae5c9582c338dfc04b5b2045229379f3529",
+  "contract": "memo-workspace-exo-evidence-v24",
+  "ci": "https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42172516623",
+  "unitPassed": 2110,
+  "unitSkipped": 12,
+  "browserPassed": 114,
+  "browserSkipped": 12,
+  "package": {
+    "source": "e43d9ae5c9582c338dfc04b5b2045229379f3529",
+    "tree": "6647ff83f8aa0293006651af506ebea2ba7816cf",
+    "filesVerified": 41,
+    "configurationAndLockfileMatch": true,
+    "devAssetsMatch": true
+  },
+  "dev": {
+    "source": "e43d9ae5c9582c338dfc04b5b2045229379f3529",
+    "environment": "dev",
+    "version": "dbe3e6df-7ee5-4f94-81fb-fe5698cad537",
+    "deployment": "6f9d7ca5-e620-4bff-85e5-d363df48f0d7",
+    "deployedAt": "2026-11-06T06:27:01.161783Z",
+    "trafficPercent": 100,
+    "entryAssetsMatched": 3,
+    "stableBindingsAndRuntimeUnchanged": true,
+    "authorizedReportMode": "redmine"
+  },
+  "production": {
+    "source": "e43d9ae5c9582c338dfc04b5b2045229379f3529",
+    "environment": "prod",
+    "version": "92487b6d-e0e0-4139-99a6-07f6453ca6aa",
+    "deployment": "602f7091-30e4-4f64-b838-06f64d0a6882",
+    "deployedAt": "2026-11-06T06:27:21.057604Z",
+    "trafficPercent": 100,
+    "entryAssetsMatched": 3,
+    "stableBindingsAndRuntimeUnchanged": true,
+    "authorizedReportMode": "redmine"
+  },
+  "devServedFiles": 36,
+  "productionServedFiles": 36,
+  "signedInDevVersion": "835668e1-b9a3-4d5a-9502-1442c4b4fd79",
+  "model": "gpt-oss-120b",
+  "devAcceptance": {
+    "expandedCuny": {
+      "microNodes": 6,
+      "manualConnections": 1,
+      "exoPolicies": [
+        "Class-access procedure",
+        "Data-handling rule: zero retention and no training on submitted data"
+      ],
+      "reopenedNodes": 8,
+      "reopenedConnections": 1
+    },
+    "workshop": {
+      "microNodes": 5,
+      "microManualRetries": 1,
+      "initialMicroError": "The app could not read the model response.",
+      "exoNodes": [
+        "Harbor Allocation Board"
+      ],
+      "generatedConnections": 0,
+      "unrelatedOfficeAdded": false,
+      "proposedRuleAdded": false
+    },
+    "originalEducationPdf": {
+      "microNodes": 4,
+      "generatedConnections": 0
+    }
+  },
+  "productionChecks": "Readiness, release, anonymous access controls, deployment traffic and all served-file hashes. No live production inference."
+}
