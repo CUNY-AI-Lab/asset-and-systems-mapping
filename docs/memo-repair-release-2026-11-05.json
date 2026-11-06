@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "applicationSource": "db2f803007de8bf8beac2892f9108fcccdcf8174",
+  "contract": "memo-workspace-focused-repair-v23",
+  "ci": {
+    "url": "https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42157934509",
+    "unitPassed": 2103,
+    "unitSkipped": 12,
+    "browserPassed": 114,
+    "browserSkipped": 12
+  },
+  "artifact": {
+    "source": "db2f803007de8bf8beac2892f9108fcccdcf8174",
+    "tree": "5852f7bed871baf755564ed0630b5b4935a288eb",
+    "filesVerified": 41,
+    "configurationAndLockfileMatch": true,
+    "devAssetsMatch": true
+  },
+  "deployments": {
+    "dev": {
+      "source": "db2f803007de8bf8beac2892f9108fcccdcf8174",
+      "environment": "dev",
+      "version": "4ed87f5d-b4f5-4fd3-830f-633e8d445e34",
+      "deployment": "03a1ac85-072d-4508-84bd-c486ab6b7a38",
+      "deployedAt": "2026-11-06T04:03:54.8083Z",
+      "trafficPercent": 100,
+      "entryAssetsMatched": 3,
+      "stableBindingsAndRuntimeUnchanged": true,
+      "authorizedReportMode": "redmine",
+      "allServedFilesMatched": 36
+    },
+    "prod": {
+      "source": "db2f803007de8bf8beac2892f9108fcccdcf8174",
+      "environment": "prod",
+      "version": "a7a86918-7f4d-4647-8709-0055109f9e00",
+      "deployment": "50467a30-f3e8-4a75-a060-5eaffadcb2bb",
+      "deployedAt": "2026-11-06T04:05:06.369739Z",
+      "trafficPercent": 100,
+      "entryAssetsMatched": 3,
+      "stableBindingsAndRuntimeUnchanged": true,
+      "authorizedReportMode": "redmine",
+      "allServedFilesMatched": 36
+    }
+  },
+  "temporaryDiagnosticLoggingInPromotedPackage": false,
+  "model": "gpt-oss-120b",
+  "signedInDevAcceptance": {
+    "diagnosticWorkerVersion": "19ff9c0d-3671-423c-905e-ee5d4eae078f",
+    "freshExpandedExoPasses": 3,
+    "freshExpandedExoGeneratedRelationships": 0,
+    "originalSuppliedMicrosystemPdf": {
+      "firstAttemptPass": true,
+      "nodes": 6,
+      "generatedRelationships": 0
+    },
+    "marginalPersistence": {
+      "source": "db2f803007de8bf8beac2892f9108fcccdcf8174",
+      "priorNodes": 10,
+      "currentNodes": 14,
+      "relationships": 5,
+      "existingNodeFieldsExact": true,
+      "relationshipsExact": true,
+      "microMemoExact": true,
+      "exoMemoExact": true,
+      "reloadExact": {
+        "graph": true,
+        "submission": true,
+        "part2Submission": true,
+        "editHistory": true
+      }
+    },
+    "marginalExoResult": "Valid empty response; no added or refreshed Exo coverage."
+  },
+  "comparison": {
+    "sourceCommit": "db2f803007de8bf8beac2892f9108fcccdcf8174",
+    "contract": "memo-workspace-focused-repair-v23",
+    "boundary": "local-full-product-preflight-to-real-gateway-app-credential; not browser SSO acceptance",
+    "credentialRevoked": true,
+    "totalPaidCalls": 11,
+    "models": [
+      {
+        "model": "gpt-oss-120b",
+        "stage": "expanded-cuny-micro",
+        "runs": 2,
+        "firstPass": 2,
+        "finalPass": 2,
+        "nonemptyFinalPass": 2,
+        "paidCalls": 2,
+        "latencySeconds": [
+          16.94,
+          13.648
+        ],
+        "medianSeconds": 15.294
+      },
+      {
+        "model": "gpt-oss-120b",
+        "stage": "expanded-cuny-exo",
+        "runs": 2,
+        "firstPass": 0,
+        "finalPass": 2,
+        "nonemptyFinalPass": 2,
+        "paidCalls": 5,
+        "latencySeconds": [
+          28.921,
+          19.199
+        ],
+        "medianSeconds": 24.06
+      },
+      {
+        "model": "gemma-4-26b-a4b-it",
+        "stage": "expanded-cuny-micro",
+        "runs": 2,
+        "firstPass": 2,
+        "finalPass": 2,
+        "nonemptyFinalPass": 2,
+        "paidCalls": 2,
+        "latencySeconds": [
+          59.224,
+          40.938
+        ],
+        "medianSeconds": 50.081
+      },
+      {
+        "model": "gemma-4-26b-a4b-it",
+        "stage": "expanded-cuny-exo",
+        "runs": 2,
+        "firstPass": 0,
+        "finalPass": 0,
+        "nonemptyFinalPass": 0,
+        "paidCalls": 2,
+        "latencySeconds": [
+          85.006,
+          85.005
+        ],
+        "medianSeconds": 85.005
+      }
+    ]
+  },
+  "readOnlyBrowserReadback": {
+    "productionProjectsLoaded": true,
+    "productionProjectFields": [
+      "Project title",
+      "Creator name"
+    ],
+    "productionConsoleWarningsOrErrors": 0,
+    "cleanDevAboutDraftCharacters": 3024,
+    "aboutLoadGeneratedNodes": 0,
+    "cleanDevRetainedNodes": 14,
+    "cleanDevRetainedRelationships": 5,
+    "cleanDevConsoleWarningsOrErrors": 0
+  },
+  "productionModelRequests": 0,
+  "productionMapMutations": 0,
+  "limits": [
+    "Historical expanded Micro label failure did not reproduce; its original rejected label was not retained.",
+    "Source and schema acceptance do not guarantee exhaustive or uniformly correct ecological classification.",
+    "Intermediate successful Exo runs were followed by failures; only final v23 acceptance supports this release.",
+    "Temporary older-checkout diagnostic Dev deployment was corrected before the next model submission.",
+    "Gemma Exo classification quality was not measured because both requests timed out."
+  ]
+}

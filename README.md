@@ -8,7 +8,7 @@ The [Cloudflare account application](docs/cloudflare-deployment.md) uses CUNY Lo
 
 The current account design is specified in the [Memo workspace wireframe](docs/MEMO_WORKSPACE_2026-11-04.md) and [two-memo workflow](docs/TWO_MEMO_WORKFLOW_2026-11-04.md). These describe the implementation contract; a source change or passing test does not establish that a feature is live. Dev inspection, screenshots and production readback are separate release steps.
 
-The [current release receipt](TODO.md#map-downloads-and-keyboard-editing--november-5-2026) separates source checks, deployed bytes, live model acceptance and screenshot provenance.
+The [current release receipt](TODO.md#memo-classification-repairs-and-dev-preload--november-5-2026) and [verification record](docs/memo-repair-release-2026-11-05.json) separate source checks, deployed bytes, live model acceptance and screenshot provenance.
 
 ## Learning model
 
@@ -41,6 +41,8 @@ Opening a project shows the canvas immediately. A new project emphasizes **Memo*
 **Continue** stays at the top. Its only required checkpoint is a successful memo-to-nodes submission for the current part, including a valid empty result. Notes, relationships and review screens are not prerequisites. Continue never generates relationships or silently starts another paid model request. The second memo begins empty; the retained graph supplies context without becoming the second editor's content. The redundant private-information checkbox is removed; existing sensitive memos without consent retain their permission control. Edited sources show “Memo changed | click Update map to submit”.
 
 Submitting a memo places supported nodes on the map. The first response is limited to six nodes; Part 2 allows at most three Exo and three Macro nodes. Subsequent meaningful edits use the last successful baseline for that same memo and request a small update. Unchanged, whitespace-only and bibliography-only edits do not require paid regeneration. Updates preserve student labels, classifications, colors, evidence edits, notes, positions, relationships and removals. A failed, stale or cancelled response leaves the map and draft intact.
+
+Corrective model requests retain bounded context for proposals that already passed source and identity checks. Each complete replacement is validated again before it reaches the map; this context never adds nodes automatically. The focused repair preserves the existing memo contract rather than restricting acceptable subjects to the test examples. On Dev, **Memo → Load CUNY AI Lab About** loads the public About text into the selected memo draft. Loading does not submit the memo or generate nodes; the control is hidden on production.
 
 A previously successful Part 1 baseline satisfies the initial Part 2 prerequisite even if Part 1 later has an unsubmitted edit. The active part’s pending edit still requires Update map before its own Continue, but it cannot lock an independently completed Part 2. Returning between memos preserves both drafts and never regenerates them automatically.
 
