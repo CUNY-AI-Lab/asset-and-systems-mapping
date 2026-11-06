@@ -46,6 +46,16 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => { await harness?.close(); });
 
+async function openFixturePage(context) {
+    await context.addCookies([{name:'__Host-systems-mapping-session',value:sessions.alice,url:ORIGIN,secure:true,httpOnly:true,sameSite:'Lax'}]);
+    await context.route('**/*',async route=>{
+      const source=route.request();if(new URL(source.url()).origin!==ORIGIN)return route.abort();
+      const response=await worker.fetch(source.url(),{method:source.method(),headers:await source.allHeaders(),body:source.postDataBuffer()??undefined,redirect:'manual'});
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+    });
+    return context.newPage();
+}
+
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('printed and scalable map downloads preserve the canvas drawing', async () => {
   const fixture = groupProject();
   fixture.id='drawing-browser'; fixture.title='Saved map drawing';
@@ -56,13 +66,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('printed and
   expect((await request('/api/cloud/projects/'+fixture.id,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(fixture),revision:0})})).status).toBe(200);
   const browser=await chromium.launch(),context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
   try {
-    await context.addCookies([{name:'__Host-systems-mapping-session',value:sessions.alice,url:ORIGIN,secure:true,httpOnly:true,sameSite:'Lax'}]);
-    await context.route('**/*',async route=>{
-      const source=route.request();if(new URL(source.url()).origin!==ORIGIN)return route.abort();
-      const response=await worker.fetch(source.url(),{method:source.method(),headers:await source.allHeaders(),body:source.postDataBuffer()??undefined,redirect:'manual'});
-      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
-    });
-    const page=await context.newPage();
+    const page=await openFixturePage(context);
     await page.goto(ORIGIN);
     await page.getByRole('article',{name:fixture.title}).getByRole('button',{name:'Open project'}).click();
     await openTools(page);
@@ -103,6 +107,58 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('printed and
     expect(pdf.subarray(0,8).toString()).toBe('%PDF-1.4');
     const image=pdf.toString('latin1').match(/\/Subtype \/Image \/Width (\d+) \/Height (\d+)/);
     expect([+image[1],+image[2]]).toEqual([png.readUInt32BE(16),png.readUInt32BE(20)]);
+  } finally {await browser.close();}
+},120000);
+
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('map keyboard edits restore grouped relationships after reopening and leave text editing alone', async () => {
+  const fixture=groupProject(); fixture.id='keyboard-map'; fixture.title='Keyboard map checks';
+  expect((await request('/api/cloud/projects/'+fixture.id,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(fixture),revision:0})})).status).toBe(200);
+  const browser=await chromium.launch();
+  try {
+    const page=await openFixturePage(await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'}));
+    const stored=async()=>JSON.parse((await(await request('/api/cloud/projects/'+fixture.id)).json()).project);
+    const read=async(kind,id)=>(await stored()).graph[kind].find(e=>e.id===id);
+    const open=async()=>{await page.goto(ORIGIN);await page.getByRole('article',{name:fixture.title}).getByRole('button',{name:'Open project'}).click();await openTools(page);await page.getByRole('combobox',{name:'Show map layer'}).selectOption('all');};
+    const g=fixture.graph.edges.at(-1),[a,b]=g.relationshipIds,node=fixture.graph.edges[0].target;
+    const item=id=>page.locator('.graph-canvas [data-graph-id="'+id+'"]');
+    const canvas=page.locator('svg.graph-canvas'),done=page.getByRole('button',{name:'Done',exact:true});
+    await open();
+    await item(a).press('Enter');
+    await browserExpect(done).toBeVisible();
+    const remove=page.getByRole('button',{name:'Remove',exact:true});
+    expect(await remove.evaluate(e=>getComputedStyle(e).color)).not.toBe(await done.evaluate(e=>getComputedStyle(e).color));
+    await done.press('Delete');
+    await browserExpect.poll(async()=>(await read('edges',a)).claimState).toBe('retired');
+    expect((await read('edges',g.id)).relationshipIds).toEqual([b]);
+    await canvas.press('Meta+z');
+    await browserExpect.poll(async()=>(await read('edges',g.id)).relationshipIds).toEqual([a,b]);
+    await canvas.press('Meta+Shift+z');
+    await browserExpect.poll(async()=>(await read('edges',a)).claimState).toBe('retired');
+    await open(); // account copy, including the saved undo journal
+    await canvas.press('Control+z');
+    await browserExpect.poll(async()=>(await read('edges',g.id)).relationshipIds).toEqual([a,b]);
+    await canvas.press('Control+y');
+    await browserExpect.poll(async()=>(await read('edges',a)).claimState).toBe('retired');
+    await canvas.press('Control+z');
+    await browserExpect.poll(async()=>(await read('edges',g.id)).relationshipIds).toEqual([a,b]);
+    await item(node).press('Enter');
+    const label=page.getByRole('textbox',{name:'Label',exact:true});
+    await label.press('End'); await label.press('Delete');
+    await browserExpect(item(node)).toBeVisible();
+    await done.press('Backspace');
+    await browserExpect.poll(async()=>(await read('nodes',node)).claimState).toBe('retired');
+    expect((await read('edges',g.id)).claimState).toBe('retired');
+    await canvas.press('Meta+z');
+    await browserExpect.poll(async()=>(await read('edges',g.id)).relationshipIds).toEqual([a,b]);
+    await browserExpect.poll(async()=>(await read('nodes',node)).claimState).not.toBe('retired');
+    expect((await read('edges',g.id)).claimState).not.toBe('retired');
+    await canvas.press('/');
+    await browserExpect(page.getByRole('searchbox',{name:'Find map item'})).toBeFocused();
+    await page.getByRole('searchbox',{name:'Find map item'}).press('Escape');
+    await canvas.press('?');
+    await browserExpect(page.getByRole('heading',{name:'Keyboard shortcuts'})).toBeFocused();
+    await page.keyboard.press('Escape');
+    await browserExpect(page.getByRole('dialog',{name:'Map key'})).toHaveCount(0);
   } finally {await browser.close();}
 },120000);
 

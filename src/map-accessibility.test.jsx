@@ -131,7 +131,7 @@ describe('map accessibility', () => {
     const connection = screen.getByRole('button', { name: /Rosa supports Peer support group, direction: source to target, Micro-level connection/i });
     expect(canvas).toHaveAttribute('tabindex', '0');
     expect(node).toHaveAttribute('aria-keyshortcuts', expect.stringContaining('ArrowRight'));
-    expect(connection).toHaveAttribute('aria-keyshortcuts', 'Enter Space');
+    expect(connection).toHaveAttribute('aria-keyshortcuts', 'Enter Space Delete Backspace');
 
     node.focus();
     fireEvent.keyDown(node, { key: 'Enter' });

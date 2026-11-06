@@ -95,6 +95,8 @@ or rejected access keeps the workspace paused; an unavailable check offers
 reload. Recognized identity
 alone does not replace the account and course authorization check.
 
+Select a node or relationship and press **Delete** or **Backspace** to remove it. Removing a node also removes its attached lines. Groups keep their remaining relationships. **⌘/Ctrl+Z** restores the entire edit; **⌘/Ctrl+Shift+Z** redoes it. Saved history survives reopening the project. Text fields keep their normal editing shortcuts. With the canvas focused, press **?** for the Map key, **/** to find a node, or **0** to fit the map.
+
 Choose **File format** and then **Download** in Project → Export & share, on the finished map, or under Private exports in Projects. When the account and device copies differ, **Saved copy** selects which version to download without changing either. **Project link** and **Import JSON** remain separate actions:
 
 - **PNG, PDF and SVG** show the cumulative map with the positions, colors, relationship wording, direction marks and groups used on the canvas. The whole drawing fits into the file; zoom, focus and the editing controls are omitted. SVG stays sharp when enlarged. PNG and PDF use the same image. The completion page previews the drawing before download.

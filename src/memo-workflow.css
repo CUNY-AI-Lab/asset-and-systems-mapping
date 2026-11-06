@@ -150,3 +150,12 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .map-reading-guide { flex-wrap:wrap; }
 .map-reading-guide > span { min-width:0; overflow-wrap:anywhere; }
 .map-reading-guide .selected-item-edit { flex:0 0 auto; min-height:44px; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font:600 13px/1.35 var(--body); text-decoration:none; white-space:nowrap; }
+
+:root { --remove-ink:#8d2331; --remove-surface:#fff3f3; --remove-line:#af5361; --remove-hover:#fbe0e3; }
+:root[data-theme="dark"] { --remove-ink:#ffb8bf; --remove-surface:#352126; --remove-line:#be7882; --remove-hover:#4a2b31; }
+.app-shell button.map-remove { color:var(--remove-ink); background:var(--remove-surface); border:1px solid var(--remove-line); }
+.app-shell button.map-remove:hover { background:var(--remove-hover); }
+.app-shell button.map-remove:focus-visible { outline:2px solid var(--remove-ink); outline-offset:2px; }
+.map-key-shortcuts { margin:0; }
+.map-key-shortcuts > div { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.55rem; padding:.25rem 0; }
+.map-key-shortcuts dd { margin:0; }

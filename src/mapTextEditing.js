@@ -31,7 +31,7 @@ export function correspondingNode(node, nodes) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function correspondingEdge(project, collection, edge) {
+export function correspondingEdge(project, collection, edge) {
   const endpointIdentity = (records, id) => {
     const node = records.nodes.find(item => item.id === id) || project.graph.nodes.find(item => item.id === id);
     if (!node) return null;
