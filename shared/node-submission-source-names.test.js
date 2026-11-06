@@ -71,3 +71,27 @@ it('distinguishes unknown administrator participation from a separately establis
   expect(prompt).toContain('an Exo policy named Course access approval rule may use that exact passage');
   expect(nodeSubmissionInstruction('micro')).not.toContain('SECOND MEMO EVIDENCE EXAMPLE');
 });
+
+it('recognizes the narrative-named Eco Impact Estimator repository without inferring its participation chain', () => {
+  const label = 'Eco Impact Estimator repository';
+  const evidence = "The organization's Eco Impact Estimator repository documents another administrative dependency behind the immediate interface.";
+  expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toMatch(/\.evidence .*nonparticipation/);
+});
+
+it.each(['Eco Impact Estimator repository', 'Regional Model Registry'])('recognizes a specifically named source repository or registry with complete proof: %s', label => {
+  const evidence = `Students do not participate in ${label} allocation decisions, which limit access to their course chat.`;
+  expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toBeNull();
+  expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', 'Students use a course chat.')).toMatch(/not a named institution/);
+});
+
+it.each(['repository', 'model registry', 'public model registry', 'shared code repository'])('rejects a generic repository or registry without a proper source qualifier: %s', label => {
+  const evidence = indirect(label);
+  expect(submittedReviewIssue(review([exo(label, evidence)]), 'exosphere', evidence)).toMatch(/not a named institution/);
+});
+
+it('prioritizes supported Exo nodes and allows a standalone operative policy', () => {
+  const prompt = nodeSubmissionInstruction('exosphere');
+  expect(prompt).toContain('choose only the strongest one to three supported new Exo nodes');
+  expect(prompt).toContain('A single evidenced operative policy can stand alone');
+  expect(prompt).toContain('Omit unsupported repositories, registries and administrators rather than changing their type');
+});
