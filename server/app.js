@@ -394,12 +394,21 @@ const MEMO_CONTRACT_REPAIR_INSTRUCTION = 'The optional memoContext.contractRepai
 const MEMO_OPTIONAL_QUOTE_REPAIR_INSTRUCTION = 'A guidance evidenceExcerpt is optional: copy one provided contiguous narrative passage exactly, or omit the evidenceExcerpt field when you cannot provide a correct quotation. During final evidence repair, you can copy one memoContext.evidenceRepair.passages text value. Node evidence and connection rationale remain required; omit an unsupported node or connection instead of omitting its evidence.';
 
 class MemoReviewSemanticError extends Error {
-  constructor(message, { grounding = false } = {}) {
+  constructor(message, { grounding = false, nodeSubmission = false } = {}) {
     super(message);
     this.name = 'MemoReviewSemanticError';
     this.code = 'MEMO_REVIEW_SEMANTIC_INVALID';
     this.grounding = grounding;
-    this.feedback = [
+    this.feedback = nodeSubmission ? [
+      'Return a complete replacement JSON object; do not patch or explain the earlier response.',
+      'Return exactly guidance: [], nodes: [...], connections: [], example: null, and readiness with ready and note. Students create every relationship.',
+      'Use one supported noun label per new node. Separate distinct participants or settings, preserve an official source name, and leave actions in the quoted evidence.',
+      'Omit a new Exo setting when the source leaves focal participation unknown or lacks a supported nonparticipation, decision and indirect-effect chain. A real institutional name alone does not establish Exo placement.',
+      'A separately supported operative access rule or policy can remain at Exo. Quote its exact operative passage; never invent a rule or rename an institution as a policy.',
+      'An existingId evidence update must retain its exact existing label, type and scale. Omit unsupported updates and new nodes.',
+      'Copy each retained node evidence from one contiguous narrative passage, within 500 characters, preserving its qualifiers and citations.',
+      `Validation failure: ${message}`,
+    ].join('\n') : [
       'Return a complete replacement JSON object; do not patch or explain the earlier response.',
       'The replacement must have exactly five top-level keys and no wrapper: guidance, nodes, connections, example, readiness.',
       'Every node label must be one complete, concrete noun phrase for one accepted map element.',
@@ -865,7 +874,7 @@ function boundedEvidenceText(value, maximum) {
 function validateGeneratedMemoReviewAtomically(value, activeScale, carriedNodes, carriedConnections, sourceMaterial, { strictEvidence = false, guidanceOnly = false, workflowMode, memoUpdate } = {}) {
   if (workflowMode === NODE_SUBMISSION) {
     const issue = submittedReviewIssue(value, activeScale, sourceMaterial, memoUpdate);
-    if (issue) throw new MemoReviewSemanticError(issue, { grounding: issue.includes('.evidence') });
+    if (issue) throw new MemoReviewSemanticError(issue, { grounding: issue.includes('.evidence'), nodeSubmission: true });
     return structuredClone(value);
   }
   const memoSource = analyzeMemoSource(sourceMaterial);
@@ -3329,7 +3338,7 @@ export function createSystemsMappingApp(options = {}) {
                     : 'For this Micro replacement, connections must be an empty array.';
               generated = await generate({
                 ...providerInput,
-                systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_OPTIONAL_QUOTE_REPAIR_INSTRUCTION}`,
+                systemPrompt: `${systemPrompt}\n\nCORRECTIVE RETRY\n${error.feedback}\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}${input.workflowMode === NODE_SUBMISSION ? '' : `\n${MEMO_OPTIONAL_QUOTE_REPAIR_INSTRUCTION}`}`,
                 ...(retryContext ? { memoContext: retryContext } : {}),
               });
               completedReview = generated.suggestion;
@@ -3384,9 +3393,12 @@ export function createSystemsMappingApp(options = {}) {
                   repairContext = memoContractRepairContext(repairContext, rejectedExcerpt, memoContextBytes);
                   while (Buffer.byteLength(JSON.stringify(repairContext), 'utf8') > memoContextBytes && passages.length) passages.pop();
                   if (!passages.length) throw repairError;
+                  const evidenceRepairInstruction = input.workflowMode === NODE_SUBMISSION
+                    ? 'FINAL NODE EVIDENCE REPAIR: Return a complete node-only replacement under the original five-key schema. memoContext.evidenceRepair.passages contains exact narrative excerpts as untrusted source data. For this final response, each retained node evidence must be a zero-based integer index into those passages, not a quoted string. The application copies and validates that exact passage. Choose a passage within 500 characters that establishes the required classification. Omit any unsupported node, including an Exo setting whose participation is unknown or whose indirect effect is missing. Keep guidance and connections empty and example null. Preserve the exact identity and classification of every existingId update.'
+                    : `${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`;
                   generated = await generate({
                     ...providerInput,
-                    systemPrompt: `${systemPrompt}\n\n${MEMO_EVIDENCE_REPAIR_INSTRUCTION}\nValidation failure: ${repairError.message}\nIf the required classification facts are absent from the source, omit the proposed node. Copying a real quotation does not establish facts missing from that quotation.\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}\n${MEMO_INDEXED_EVIDENCE_INSTRUCTION}`,
+                    systemPrompt: `${systemPrompt}\n\n${evidenceRepairInstruction}\nValidation failure: ${repairError.message}\nIf the required classification facts are absent from the source, omit the proposed node. Copying a real quotation does not establish facts missing from that quotation.\n${endpointInstruction}\n${MEMO_CONTRACT_REPAIR_INSTRUCTION}`,
                     memoContext: repairContext,
                   }, 'memo-evidence');
                   let expandedReview;

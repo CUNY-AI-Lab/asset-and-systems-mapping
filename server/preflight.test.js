@@ -338,6 +338,10 @@ describe('persistent preflight suggestion review queue', () => {
       const result = structuredClone(review);
       if (options.kind === 'memo-evidence') {
         expect(input.memoContext.evidenceRepair.passages.every(passage => evidence.includes(passage.text))).toBe(true);
+        expect(input.systemPrompt).toContain('FINAL NODE EVIDENCE REPAIR');
+        expect(input.systemPrompt).toContain('each retained node evidence must be a zero-based integer index');
+        expect(input.systemPrompt).not.toContain('Use fewer suggestions');
+        expect(input.systemPrompt).not.toContain('connection rationale and optional guidance evidenceExcerpt');
         result.nodes[0].evidence = 0;
       } else result.nodes[0].evidence = 'A community room hosts monthly events.';
       return { suggestion: result, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
@@ -353,7 +357,16 @@ describe('persistent preflight suggestion review queue', () => {
     const sourceMaterial = 'Teachers and school staff meet families at PS 102.';
     const provider = vi.fn(async input => {
       const repairing = Boolean(input.memoContext?.contractRepair);
-      if (repairing) expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: 'Teachers and school staff' });
+      if (repairing) {
+        expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: 'Teachers and school staff' });
+        expect(input.systemPrompt).toContain('Validation failure: nodes[0].label');
+        expect(input.systemPrompt).toContain('Omit a new Exo setting when the source leaves focal participation unknown');
+        expect(input.systemPrompt).toContain('An existingId evidence update must retain its exact existing label, type and scale');
+        expect(input.systemPrompt).not.toContain('At Meso, return an empty nodes array');
+        expect(input.systemPrompt).not.toContain('At Macrosphere, return connections');
+        expect(input.systemPrompt).not.toContain('Every node label must be one complete, concrete noun phrase');
+        expect(input.systemPrompt).not.toContain('A guidance evidenceExcerpt is optional');
+      }
       return { suggestion: { guidance: [], nodes: [{ label: repairing ? 'Teachers' : 'Teachers and school staff', type: 'person', scale: 'micro', evidence: sourceMaterial }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
     });
     await system.close();
@@ -362,6 +375,33 @@ describe('persistent preflight suggestion review queue', () => {
     const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', sourceMaterial }));
     expect(provider).toHaveBeenCalledTimes(2);
     expect(result.review.nodes.map(node => node.label)).toEqual(['Teachers']);
+    expect(result.review.connections).toEqual([]);
+  });
+
+  it('corrects uncertain Exo administration by omitting the setting and retaining its separately supported rule', async () => {
+    const administration = "The Access Board administers the program; students' participation is unknown.";
+    const rule = 'Course access requires instructor approval.';
+    const provider = vi.fn(async input => {
+      const repairing = Boolean(input.memoContext?.contractRepair);
+      if (repairing) {
+        expect(input.systemPrompt).toContain('Validation failure: nodes[0].evidence');
+        expect(input.systemPrompt).toContain('Omit a new Exo setting when the source leaves focal participation unknown');
+        expect(input.systemPrompt).toContain('A separately supported operative access rule or policy can remain at Exo');
+        expect(input.systemPrompt).not.toContain('At Macrosphere, return connections');
+        expect(input.systemPrompt).not.toContain('At Meso, return an empty nodes array');
+      }
+      const node = repairing
+        ? { label: 'Course access approval rule', type: 'policy', scale: 'exosphere', basis: 'memo', evidence: rule }
+        : { label: 'Access Board', type: 'organization', scale: 'exosphere', basis: 'memo', evidence: administration };
+      return { suggestion: { guidance: [], nodes: [node], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'uncertain-exo-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial: `${administration} ${rule}` }));
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(result.runtime.correctiveRetries).toBe(1);
+    expect(result.review.nodes.map(node => node.label)).toEqual(['Course access approval rule']);
     expect(result.review.connections).toEqual([]);
   });
 

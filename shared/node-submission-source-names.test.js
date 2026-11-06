@@ -64,3 +64,10 @@ it.each(['micro', 'exosphere'])('asks for source-grounded noun extraction and ex
   expect(prompt).toContain('If the source leaves participation in that institution unknown, omit the automatic Exo setting');
   expect(prompt).toContain('existingId entries must preserve its exact identity');
 });
+
+it('distinguishes unknown administrator participation from a separately established access rule in the second memo prompt', () => {
+  const prompt = nodeSubmissionInstruction('exosphere');
+  expect(prompt).toContain('omit Access Board as an automatic Exo node');
+  expect(prompt).toContain('an Exo policy named Course access approval rule may use that exact passage');
+  expect(nodeSubmissionInstruction('micro')).not.toContain('SECOND MEMO EVIDENCE EXAMPLE');
+});
