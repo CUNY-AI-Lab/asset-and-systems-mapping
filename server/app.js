@@ -3332,7 +3332,9 @@ export function createSystemsMappingApp(options = {}) {
                 input.workflowMode === NODE_SUBMISSION
                   ? createNodeSubmissionRepair(generated.suggestion, error.message, input.activeScale, input.sourceMaterial, input.memoUpdate)
                   : createMemoContractRepair(generated.suggestion, error.message, input.activeScale), memoContextBytes);
-              const endpointInstruction = input.workflowMode === NODE_SUBMISSION ? nodeSubmissionInstruction(input.activeScale, input.memoUpdate) : input.activeScale === 'meso'
+              const endpointInstruction = input.workflowMode === NODE_SUBMISSION
+                ? 'NODE SUBMISSION REPAIR: Follow the original memo submission contract and supplied schema for this complete node-only replacement. Continue from the retained graph and supported proposals. Correct evidence or labels for the proposed subjects, and omit unsupported proposals. Do not restart discovery or fill removed slots with unrelated new subjects. Fewer nodes, including zero, can complete the response. Preserve every existingId identity and classification, and keep all relationships as student work.'
+                : input.activeScale === 'meso'
                 ? 'For this Meso replacement, every connection source and target must be a different exact ID from carriedNodes at Micro. Labels cannot replace IDs. Return no new nodes; explain missing endpoints in guidance.'
                 : input.activeScale === 'exosphere'
                   ? 'For this Exosphere replacement, return larger-scale nodes and an empty connections array.'

@@ -339,6 +339,11 @@ describe('persistent preflight suggestion review queue', () => {
       if (options.kind === 'memo-evidence') {
         expect(input.memoContext.evidenceRepair.passages.every(passage => evidence.includes(passage.text))).toBe(true);
         expect(input.systemPrompt).toContain('FINAL NODE EVIDENCE REPAIR');
+        expect(input.systemPrompt.match(/MEMO SUBMISSION CONTRACT/gu)).toHaveLength(1);
+        expect(input.systemPrompt).toContain('Do not restart discovery or fill removed slots with unrelated new subjects');
+        expect(input.systemPrompt).toContain('Fewer nodes, including zero, can complete the response');
+        expect(input.systemPrompt).not.toContain('At Meso, return an empty nodes array');
+        expect(input.systemPrompt).not.toContain('At Macrosphere, return connections');
         expect(input.systemPrompt).toContain('each retained node evidence must be a zero-based integer index');
         expect(input.systemPrompt).not.toContain('Use fewer suggestions');
         expect(input.systemPrompt).not.toContain('connection rationale and optional guidance evidenceExcerpt');
@@ -359,6 +364,10 @@ describe('persistent preflight suggestion review queue', () => {
       const repairing = Boolean(input.memoContext?.contractRepair);
       if (repairing) {
         expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: 'Teachers and school staff' });
+        expect(input.systemPrompt.match(/MEMO SUBMISSION CONTRACT/gu)).toHaveLength(1);
+        expect(input.systemPrompt).toContain('Correct evidence or labels for the proposed subjects, and omit unsupported proposals');
+        expect(input.systemPrompt).toContain('Do not restart discovery or fill removed slots with unrelated new subjects');
+        expect(input.systemPrompt).toContain('Preserve every existingId identity and classification');
         expect(input.systemPrompt).toContain('Validation failure: nodes[0].label');
         expect(input.systemPrompt).toContain('Omit a new Exo setting when the source leaves focal participation unknown');
         expect(input.systemPrompt).toContain('An existingId evidence update must retain its exact existing label, type and scale');
