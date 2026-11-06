@@ -2,11 +2,11 @@ import { uniqueCookie, parseLoginTransaction, LOGIN_TTL_MS, validSessionToken } 
 import { boundedRpc } from './bounded.js';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
 import publicJwks from './jwks.json';
-export type Identities = { ok: true; appJwt: string; gatewayJwt: string } | { ok: false; status: number };
+export type Identities = { ok: true; reporter?: {email:string;name:string|null} | null; appJwt: string; gatewayJwt: string } | { ok: false; status: number };
 export interface IdentityClient {
   begin(challenge: string, state: string): Promise<{ url: string }>;
   redeem(code: string, verifier: string): Promise<{ ok: true; token: string; expiresAt: number } | { ok: false; status: number }>;
-  identities(token: string): Promise<Identities>;
+  identities(token: string, purpose?: "private_report"): Promise<Identities>;
   revoke(token: string): Promise<unknown>;
 }
 export interface LoginOptions { CAIL_IDENTITY_JWKS?: string }
