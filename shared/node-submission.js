@@ -125,6 +125,14 @@ function narrativeNamesPerson(label, narrative) {
 // reported cultural norms and actual rules containing normative words.
 function hasPolicyOperation(evidence) {
   if (/\b(?:requires?|mandates?|stipulates?|provides?|reserves?|directs?|specifies?|allocat\w*|restrict\w*|prohibit\w*|guarantee\w*|delay\w*|limit\w*|fund\w*|govern\w*|establish\w*|determines? (?:the authorization|whether)|permission|consent)\b/iu.test(evidence)) return true;
+  // Published access procedures can state an application review followed by
+  // approval activating access, without calling the procedure a policy.
+  const reviewedApplication = /\b(?:reviews?\s+(?:(?:course|class|access)\s+)?(?:applications?|requests?)|(?:applications?|requests?)\s+(?:are|is)\s+reviewed|(?:after|following|upon)\s+(?:(?:a|an|the)\s+)?(?:application|request)\s+review)\b/iu.test(evidence);
+  const approvalActivatesAccess = evidence.split(/(?<=[.!?])\s+/u).some(sentence =>
+    !/\?$/u.test(sentence)
+    && !/\b(?:should|could|would|may|might|wish|hope|recommend)\b/iu.test(sentence)
+    && /\bapproval\s+(?:enables?|activates?|unlocks?)\s+(?:(?:a|an|the)\s+)?(?:invitation links?|(?:course|class|account|program)\s+access)\b/iu.test(sentence));
+  if (reviewedApplication && approvalActivatesAccess) return true;
   // An eligibility or duration rule can be stated without the word policy or
   // a command verb. Accept the operative condition, not a mere mention of access.
   return /\baccess\s+(?:depends on\s+(?:an?\s+)?(?:application|approval|review)|(?:lasts|runs)\s+(?:for|until)\s+(?:the\s+)?approved\s+(?:course|class)\s+dates)\b/iu.test(evidence)

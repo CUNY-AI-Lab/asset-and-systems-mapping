@@ -5,6 +5,30 @@ import { createMemoContractRepair } from '../server/memo-contract-repair.js';
 const wrap = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
 const policy = { label: 'Referral consent protocol', type: 'policy', scale: 'exosphere', basis: 'memo', evidence: 'Referral consent protocol requires permission before advisers share learners’ records with a care service.' };
 
+it.each([
+  'Instructors apply for course access; the Lab reviews requests against capacity and the proposed teaching activity. Approval enables an invitation link, which students use with CUNY Login.',
+  'The coordinator reviews course applications. Approval activates account access for students.',
+  'After application review, approval unlocks class access.',
+  'Approval enables an invitation link following the request review.',
+  'Course applications are reviewed by the coordinator. Approval enables program access.',
+])('accepts the documented review-to-approval access operation: %s', evidence => {
+  const node = { ...policy, label: 'Class-access approval policy', evidence };
+  expect(submittedReviewIssue(wrap([node]), 'exosphere', evidence)).toBeNull();
+});
+
+it.each([
+  'Approval is discussed.',
+  'Approval enables class access.',
+  'The coordinator reviews applications. Chat enables learning.',
+  'The coordinator reviews applications. Approval enables better outcomes.',
+  'Applications are discussed. Approval enables an invitation link.',
+  'The coordinator reviews applications. Approval could enable account access.',
+  'The coordinator reviews applications. We hope approval enables account access.',
+])('withholds vague approval or unrelated enabling prose: %s', evidence => {
+  const node = { ...policy, label: 'Class-access approval policy', evidence };
+  expect(submittedReviewIssue(wrap([node]), 'exosphere', evidence)).toBeTruthy();
+});
+
 it('classifies the operative policy at Exo without inventing nonparticipation in a policy', () => {
   expect(submittedReviewIssue(wrap([policy]), 'exosphere', policy.evidence)).toBeNull();
 });
