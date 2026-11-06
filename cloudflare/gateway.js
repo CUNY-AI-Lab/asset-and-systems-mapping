@@ -86,7 +86,7 @@ function semanticValidationReason(error) {
 
 function groundingRule(error) {
   const message = String(error.message);
-  if (/must quote the focal participants/u.test(message)) return 'outside_participation';
+  if (/must quote the focal participants|names this outside setting/u.test(message)) return 'outside_participation';
   if (/taking part in the setting|not direct participation at Micro/u.test(message)) return 'participation_conflict';
   if (/specific established policy and its operation/u.test(message)) return 'policy_operation';
   if (/established condition, not only a wish/u.test(message)) return 'condition_established';

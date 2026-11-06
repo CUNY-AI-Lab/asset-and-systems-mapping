@@ -19,7 +19,9 @@ describe('safe error display', () => {
     const quoted = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'guidance[1].evidenceExcerpt' } });
     expect(userFacingError(quoted)).toBe('A quotation in the feedback could not be checked, so the review was not shown. Your existing work was not changed. Try again.');
     const otherField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[2].label' } });
-    expect(userFacingError(otherField)).toBe('The app could not use the model response. Your existing work was not changed. Try again.');
+    expect(userFacingError(otherField)).toBe('Nothing was added because a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition. Your existing work was not changed. Try again, or add the node yourself in Tools.');
+    const ruled = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[0]', validationRule: 'participation_conflict' } });
+    expect(userFacingError(ruled)).toContain('a setting they take part in belongs at Micro');
     const unsafeField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', validationField: 'guidance[0].evidenceExcerpt private memo text' } });
     expect(userFacingError(unsafeField)).toBe('The app could not use the model response. Your existing work was not changed. Try again.');
   });

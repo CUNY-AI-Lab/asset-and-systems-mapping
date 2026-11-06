@@ -18,9 +18,9 @@ function focalParticipantPattern(narrative, quote, carriedNodes) {
   return names.length ? `(?:${roles}|${[...new Set(names)].join('|')})` : roles;
 }
 
-// A conservative source gate for automatic Exo placement, not a universal
-// classifier. Place names cannot prove participation. The short quoted chain
-// must show an external decision and its influence on the immediate setting.
+// A source gate for automatic Exo placement, not a universal classifier. A
+// place name alone proves nothing. Course convention: an office outside the focal
+// participants' interaction is Exo. Only stated participation rules Exo out.
 export function exoParticipationIssue(node, narrative = node.evidence, carriedNodes = []) {
   const quote = normalized(node.evidence), full = normalized(narrative), name = escaped(normalized(node.label));
   const focal = `${focalParticipantPattern(narrative, quote, carriedNodes)}(?![\\p{L}\\p{N}])`;
@@ -56,13 +56,11 @@ export function exoParticipationIssue(node, narrative = node.evidence, carriedNo
     && ([forward, relative, excluding, staffOnly].some(pattern => pattern.test(sentence))
       || adjacentNegative.test(sentences[index + 1] || '')
         && !/\b(?:office|board|agency|committee|service)\b/iu.test(sentence.slice(sentence.indexOf(normalized(node.label)) + normalized(node.label).length))));
-  if (!proof) return 'must quote the focal participants’ nonparticipation in this named outside setting, not another setting';
-  const proofIndex = sentences.indexOf(proof), following = sentences[proofIndex + 1];
-  const sameSettingNext = new RegExp(`^(?:the\\s+)?${name}(?:\\b|$)`, 'iu');
-  const chain = proof + (following && (/^(?:its|these|those|this|that|the resulting)\b/iu.test(following) || sameSettingNext.test(following) || adjacentNegative.test(following)) ? ` ${following}` : '');
-  const decision = /\b(?:allocat\w*|budget\w*|decid\w*|decision\w*|assign\w*|fund\w*|set(?:s)?|establish\w*|mandat\w*|control\w*|coordinat\w*|approv\w*|determin\w*)\b/iu.test(chain);
-  const consequence = /\b(?:affect\w*|influenc\w*|delay\w*|reduc\w*|increas\w*|limit\w*|restrict\w*|result\w*|caus\w*|shape\w*|prevent\w*|determin\w*|decides? whether|chang\w*|so that|therefore|which means|leads? to|pays? for)\b/iu.test(chain);
-  const local = new RegExp(`(?<![\\p{L}\\p{N}])(?:${focal}|classrooms?|schools?|buildings?|homes?|repairs?|counseling|clinics?|care|local|immediate)(?![\\p{L}\\p{N}])`, 'iu').test(chain);
-  if (!decision || !consequence || !local) return 'must quote the focal participants’ nonparticipation in an outside decision and its indirect effect on their local setting';
+  if (proof) return null;
+  // Course convention: an office outside the focal participants' interaction
+  // is Exo. Stated participation was rejected above; the quote only has to
+  // name the office. The student confirms, moves or removes the node.
+  const label = normalized(node.label);
+  if (!quote.includes(label)) return 'must quote a passage that names this outside setting, not another setting';
   return null;
 }

@@ -20,8 +20,8 @@ it.each([
   'Northside Housing Office allocates repair staff.',
   'Residents do not participate in Northside Housing Office meetings.',
   'Northside Housing Office allocation decisions delay repairs in residents’ buildings.',
-])('withholds ambiguous or incomplete automatic Exo evidence: %s', evidence => {
-  expect(submittedReviewIssue(wrap([exo(evidence)]), 'exosphere', evidence)).toMatch(/nonparticipation/);
+])('places a named office with no described participation at Exo: %s', evidence => {
+  expect(submittedReviewIssue(wrap([exo(evidence)]), 'exosphere', evidence)).toBeNull();
 });
 
 it('does not confuse a staff-only meeting with focal participation', () => {
@@ -54,18 +54,18 @@ it('requests a source-grounded explanation through the bounded evidence field, n
   expect(submittedReviewIssue(wrap([]), 'exosphere', 'A housing office is mentioned.')).toBeNull();
 });
 
-it('keeps earlier stored node-only evaluations readable while applying new proof gates to live submissions', () => {
+it('reads stored node-only evaluations and live submissions of a named outside agency alike', () => {
   const node = { label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: 'City Housing Authority allocates repair staff.' };
   expect(submittedReviewIssue(wrap([node]), 'exosphere')).toBeNull();
-  expect(submittedReviewIssue(wrap([node]), 'exosphere', node.evidence)).toMatch(/nonparticipation/);
+  expect(submittedReviewIssue(wrap([node]), 'exosphere', node.evidence)).toBeNull();
 });
 
 it.each([
   'Residents do not participate in school board decisions. Northside Housing Office allocates funding, which delays repairs in their buildings.',
   'Residents do not participate in school board decisions; Northside Housing Office allocates funding, which delays repairs in their buildings.',
   'Residents do not participate in school board decisions, while Northside Housing Office allocates funding, which delays repairs in their buildings.',
-])('does not borrow nonparticipation from another named setting: %s', evidence => {
-  expect(submittedReviewIssue(wrap([exo(evidence)]), 'exosphere', evidence)).toMatch(/this named outside setting/);
+])('places a named office at Exo beside another setting’s nonparticipation: %s', evidence => {
+  expect(submittedReviewIssue(wrap([exo(evidence)]), 'exosphere', evidence)).toBeNull();
 });
 
 it.each(['These decisions delay repairs in their buildings.', 'Northside Housing Office allocates repair staff, affecting repair visits to residents at home.'])('allows the same named setting’s directly following consequence: %s', consequence => {
@@ -86,11 +86,16 @@ it('accepts a source-named functional office and an explicitly identified focal 
 it.each([
   labEvidence,
   `The focal participant is still Nia. A hypothetical Lab account administration office is mentioned. Nia does not work in or attend this office.`,
-  `The focal participant is still Nia. ${labEvidence} Nia also attends Lab account administration office meetings.`,
   `The focal participant is still Nia. A hypothetical Lab account administration office refers decisions to the school board. Nia does not attend this board.`,
-])('withholds named-person placement when focal identity, indirect effect or consistent participation is missing', source => {
+])('places a source-named office at Exo when no participation in it is described', source => {
   const evidence = source.replace(/^The focal participant is still Nia\.\s*/u, '');
-  expect(submittedReviewIssue(wrap([{ ...labNode, evidence }]), 'exosphere', source)).toBeTruthy();
+  expect(submittedReviewIssue(wrap([{ ...labNode, evidence }]), 'exosphere', source)).toBeNull();
+});
+
+it('withholds a source-named office when the named focal person takes part in it', () => {
+  const source = `The focal participant is still Nia. ${labEvidence} Nia also attends Lab account administration office meetings.`;
+  const evidence = source.replace(/^The focal participant is still Nia\.\s*/u, '');
+  expect(submittedReviewIssue(wrap([{ ...labNode, evidence }]), 'exosphere', source)).toMatch(/taking part/);
 });
 
 it('does not accept an invented functional office name from a generic mention', () => {
@@ -111,8 +116,8 @@ it.each(['Apprentices', '学徒', 'A.J.'])('uses the retained Micro participant 
   const carried = { id: 'participant', label, type: 'group', scale: 'micro' };
   const check = (source, map, quote = source) => submittedReviewIssue(wrap([exo(quote)]), 'exosphere', source, undefined, [map]);
   expect(check(evidence, carried)).toBeNull();
-  expect(check(evidence, { ...carried, type: 'object' })).toBeTruthy();
+  expect(check(evidence, { ...carried, type: 'object' })).toBeNull();
   expect(check('Decisions are discussed.', carried, evidence)).toBeTruthy();
   expect(check(`${label} visit Northside Housing Office.`, carried)).toBeTruthy();
-  expect(check(`${label} are mentioned alongside Northside Housing Office.`, carried)).toBeTruthy();
+  expect(check(`${label} are mentioned alongside Northside Housing Office.`, carried)).toBeNull();
 });

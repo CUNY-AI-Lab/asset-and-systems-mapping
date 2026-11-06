@@ -30,6 +30,16 @@ const messagesByCode = Object.freeze({
   guidance_cancelled: 'Guidance was cancelled. Try again when you are ready.',
 });
 
+const rejectionByRule = Object.freeze({
+  outside_participation: 'the passage quoted for an outside office did not name that office',
+  participation_conflict: 'the memo describes the focal people taking part in an office that was proposed as Exo; a setting they take part in belongs at Micro',
+  policy_operation: 'a proposed policy was not tied to a passage stating what the policy requires or does',
+  condition_established: 'a proposed condition was written as a wish, recommendation or question, not as something the memo says exists',
+  changed_passage: 'a proposed node was not supported by the passages you changed',
+  narrative_quote: 'a proposed node was not supported by an exact quotation from your memo',
+  source_contract: 'a proposed node was not supported by the text of your memo',
+});
+
 // Error bodies and transport messages may contain diagnostics. Only fixed copy
 // and bounded retry timing belong in the interface; callers retain the original
 // error, status, and payload for API handling and diagnostic correlation.
@@ -38,6 +48,15 @@ export function userFacingError(error, fallback = 'The request could not be comp
   // The server names only a fixed schema path, never memo or response text.
   if (details?.code === 'guidance_contract_invalid' && /^guidance\[\d{1,2}\]\.evidenceExcerpt$/.test(String(details.validationField ?? ''))) {
     return 'A quotation in the feedback could not be checked, so the review was not shown. Your existing work was not changed. Try again.';
+  }
+  // A rejected memo response always says why, using fixed copy chosen by the
+  // server's rule code or schema path. Nothing was added in these cases.
+  if (details?.code === 'guidance_contract_invalid') {
+    const rule = typeof details.validationRule === 'string' && Object.hasOwn(rejectionByRule, details.validationRule) ? rejectionByRule[details.validationRule] : null;
+    const field = /\.(label|type|scale)$/.exec(String(details.validationField ?? ''))?.[1];
+    const reason = rule || (field === 'label' ? 'a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition'
+      : field ? 'a proposed node was placed at a level or type that this step does not accept' : null);
+    if (reason) return `Nothing was added because ${reason}. Your existing work was not changed. Try again, or add the node yourself in Tools.`;
   }
   if (typeof details?.code === 'string' && Object.hasOwn(messagesByCode, details.code)) return messagesByCode[details.code];
   if (error?.name === 'TimeoutError' || error?.status === 408 || error?.status === 504) return 'The request took too long. Try again.';
