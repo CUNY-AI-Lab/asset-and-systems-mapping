@@ -21,9 +21,9 @@ export default function MapDownloadControls({onDownload, hasMap=true, copies=fal
     finally {onBusy?.(false);}
   };
   return <form className="map-download" onSubmit={submit}>
-    <div className="map-download__fields">
+    <div className={copies ? 'map-download__fields map-download__fields--copies' : 'map-download__fields'}>
       {copies && <label className="map-download__field">Saved copy<select value={copy} disabled={locked} onChange={e=>{setCopy(e.target.value);setState({busy:false});}}>
-        <option value="account">Account copy</option><option value="device">This device’s copy</option>
+        <option value="account">Account copy</option><option value="device">Device copy</option>
       </select></label>}
       <label className="map-download__field">File format<select value={format} disabled={locked} aria-describedby={['json','markdown'].includes(format)?id:undefined} onChange={e=>{setFormat(e.target.value);setState({busy:false});}}>
         {formats.filter(([key])=>hasMap || !['png','pdf','svg'].includes(key)).map(([key,label])=><option key={key} value={key}>{label}</option>)}
