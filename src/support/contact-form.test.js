@@ -4,11 +4,11 @@ import { mountBugReport } from './contact-form.js';
 import { parseGuestContact } from './contact.js';
 let dispose;
 afterEach(() => { dispose?.(); dispose = null; document.body.replaceChildren(); vi.unstubAllGlobals(); });
-function setup(signedIn = false, response = null, delivery = 'redmine') {
+function setup(signedIn = false, response = null, delivery = 'redmine', needsReplyEmail = false) {
   let actor = 'a'.repeat(64);
   const posts = [];
   vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
-    if (!options.method) return Response.json(signedIn ? { ok: true, expectedActor: actor, preferredName: 'Sam Student' } : { ok: false }, { status: signedIn ? 200 : 401 });
+    if (!options.method) return Response.json(signedIn ? { ok: true, expectedActor: actor, preferredName: 'Sam Student', needsReplyEmail } : { ok: false }, { status: signedIn ? 200 : 401 });
     const data = JSON.parse(options.body); posts.push({ url, data });
     return response ? response(data, posts.length) : Response.json({ ok: true, status: 'saved', delivery: 'redmine', reportId: data.reportId, createdAt: new Date().toISOString() });
   }));
@@ -99,4 +99,17 @@ test('an unknown successful channel remains unconfirmed', async () => {
   await vi.waitFor(() => expect(host.textContent).toContain('Reporting as Sam Student'));
   fill(host, 'description', 'Keep this report until its receipt is confirmed.'); submit(host);
   await vi.waitFor(() => expect(host.querySelector('[type="submit"]').textContent).toBe('Check status'));
+});
+
+test('an SSO session without a mailbox can confirm a .edu address with the original receipt', async () => {
+  const {host, posts} = setup(true, data => Response.json({ok:true, status:'saved', delivery:'redmine', emailUpdates:'confirm', reportId:data.reportId, createdAt:new Date().toISOString()}), 'redmine', true);
+  const email = host.querySelector('[name="replyEmail"]');
+  await vi.waitFor(() => expect(email.disabled).toBe(false));
+  fill(host, 'description', 'Please restore the missing map label.');
+  fill(host, 'replyEmail', 'nope@example.com'); submit(host);
+  expect(posts).toHaveLength(0);
+  fill(host, 'replyEmail', 'Student@college.edu'); submit(host);
+  await vi.waitFor(() => expect(host.textContent).toContain('Check your email to confirm updates.'));
+  expect(posts[0].data.replyEmail).toBe('student@college.edu');
+  expect(host.textContent).toContain(posts[0].data.reportId);
 });

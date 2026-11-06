@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { boundedText, withDeadline, withSignal } from './bounded.js';
 import { durableDatabase } from './database.js';
 import type { BugReportService } from './bug-reports';
-import { parseGuestContact, type GuestContact } from '../src/support/contact.js';
+import { parseGuestContact, reportEmail, type GuestContact } from '../src/support/contact.js';
 
 type ReportEnv = { REDMINE_API_KEY?: string; RELEASE: string; PUBLIC_ORIGIN?: string; BUG_REPORT_MODE?: string; BUG_REPORTS?: BugReportService };
 type Delivery = 'redmine' | 'email';
@@ -42,7 +42,9 @@ async function redmine(env: ReportEnv, resource: string, signal: AbortSignal, in
   const text = await boundedText(response, signal, 2 * 1024 * 1024);
   let data: any = null;
   try { data = JSON.parse(text); } catch { /* Treat unreadable success as uncertain delivery. */ }
-  return { status: response.status, ok: response.ok, data };
+  const updates = response.headers.get('X-CAIL-Report-Updates');
+  const emailUpdates: 'subscribed' | 'confirm' | undefined = updates === 'subscribed' || updates === 'confirm' ? updates : undefined;
+  return { status: response.status, ok: response.ok, data, emailUpdates };
 }
 
 async function findIssue(env: ReportEnv, id: string, owner: string, createdAt: string, signal: AbortSignal): Promise<number | null> {
@@ -90,15 +92,17 @@ export class RedmineReports {
     )`);
   }
 
-  async request(request: Request, accountOwner: string | null, preferredName?: string | null, rateKey?: string): Promise<Response> {
+  async request(request: Request, accountOwner: string | null, preferredName?: string | null, rateKey?: string, sessionEmail?: string | null): Promise<Response> {
     const url = new URL(request.url);
     const guest = url.pathname === '/api/bug-reports/guest';
     if (guest ? accountOwner !== null || !rateKey || !/^[0-9a-f]{64}$/.test(rateKey) : !accountOwner) return fail('forbidden', 403);
     const table = guest ? 'bug_report_guests' : 'bug_reports';
     if (url.search) return fail('invalid', 400);
     if (!reportsEnabled(this.env)) return fail('disabled', 503);
+    const loginEmail = reportEmail(sessionEmail, false);
     if (url.pathname === '/api/bug-reports/session') {
-      return request.method === 'GET' ? Response.json({ ok: true, expectedActor: accountOwner, preferredName: preferredName ?? null }) : fail('method_not_allowed', 405);
+      return request.method === 'GET' ? Response.json({ ok: true, expectedActor: accountOwner, preferredName: preferredName ?? null,
+        ...(!loginEmail && reportDelivery(this.env) === 'redmine' ? { needsReplyEmail: true } : {}) }) : fail('method_not_allowed', 405);
     }
     if (request.method !== 'POST') return fail('method_not_allowed', 405);
     let body;
@@ -107,12 +111,14 @@ export class RedmineReports {
       body = await withDeadline(async signal => JSON.parse(await boundedText(request, signal, 32768)), request.signal, 5000);
     } catch { return fail('invalid', 400); }
     if (!body || typeof body !== 'object' || Array.isArray(body)
-      || Object.keys(body).sort().join(',') !== (guest ? 'description,email,firstName,lastName,path,reportId' : 'description,expectedActor,path,reportId')
+      || Object.keys(body).filter(k => guest || k !== 'replyEmail').sort().join(',') !== (guest ? 'description,email,firstName,lastName,path,reportId' : 'description,expectedActor,path,reportId')
       || typeof body.reportId !== 'string' || !UUID.test(body.reportId)
       || (!guest && (typeof body.expectedActor !== 'string' || !/^[0-9a-f]{64}$/.test(body.expectedActor)))
       || !['/','/teacher.html','/account.html','/p/:shared-map'].includes(body.path)
       || typeof body.description !== 'string' || body.description.length > 4000) return fail('invalid', 400);
     if (!guest && body.expectedActor !== accountOwner) return fail('account_changed', 409);
+    const replyEmail = reportEmail(body.replyEmail);
+    if ('replyEmail' in body && (reportDelivery(this.env) !== 'redmine' || !replyEmail || loginEmail)) return fail('invalid', 400);
     let contact: GuestContact | null = null;
     if (guest) {
       const parsed = parseGuestContact(body);
@@ -123,7 +129,7 @@ export class RedmineReports {
     const description = body.description.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').trim();
     if (description.length < 10 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(description)) return fail('invalid', 400);
     const id = body.reportId as string;
-    const fingerprint = digest(`${id}\n${body.path}\n${description}${contact ? `\n${JSON.stringify(contact)}` : ''}`);
+    const fingerprint = digest(`${id}\n${body.path}\n${description}${contact ? `\n${JSON.stringify(contact)}` : ''}${replyEmail ? `\nreply:${replyEmail}` : ''}`);
     const lock = `${owner}:${id}`;
     if (this.active.has(lock)) return fail('pending', 202, 5);
     this.active.add(lock);
@@ -152,10 +158,10 @@ export class RedmineReports {
       if (existing && existing.fingerprint !== fingerprint) return fail('idempotency_conflict', 409);
       const at = existing?.created_at ?? createdAt;
       let delivery = existing?.delivery ?? reportDelivery(this.env);
-      const saved = () => Response.json({ ok: true, status: delivery === 'email' ? 'accepted' : 'saved', delivery, reportId: id, createdAt: at, ...(delivery === 'email' ? { deliveryReference: emailReportId(owner, id) } : {}) });
-      const saveReceipt = (issueId: number | null) => {
+      const saved = (emailUpdates?: 'subscribed' | 'confirm') => Response.json({ ok: true, status: delivery === 'email' ? 'accepted' : 'saved', delivery, reportId: id, createdAt: at, ...(emailUpdates ? { emailUpdates } : {}), ...(delivery === 'email' ? { deliveryReference: emailReportId(owner, id) } : {}) });
+      const saveReceipt = (issueId: number | null, emailUpdates?: 'subscribed' | 'confirm') => {
         this.db.prepare(`UPDATE ${table} SET state='saved',issue_id=? WHERE owner=? AND report_id=?`).run(issueId, owner, id);
-        return saved();
+        return saved(emailUpdates);
       };
       const sendEmail = async () => {
         if (!this.env.BUG_REPORTS || !this.env.PUBLIC_ORIGIN) return fail('unavailable', 503, 60);
@@ -219,9 +225,11 @@ export class RedmineReports {
         }
         const page = ({ '/': 'Workspace', '/teacher.html': 'Instructor', '/account.html': 'Account', '/p/:shared-map': 'Shared map' } as Record<string,string>)[body.path];
         await this.storage.sync();
+        const address = contact?.email || loginEmail || replyEmail;
+        const reporter = address ? { email: address, source: loginEmail && !contact ? 'cuny_login' : 'contact' } : undefined;
         const result = await redmine(this.env, 'issues.json', signal, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(id, owner), is_private: true,
+          body: JSON.stringify({ cail_reporter: reporter, issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(id, owner), is_private: true,
             description: [...(contact ? [`Reporter (self-reported): ${contact.firstName} ${contact.lastName}`, `Contact email (unverified): ${contact.email}`]
               : [`CAIL account reference: ${owner.slice(0,16)}`, ...(preferredName ? [`SSO preferred name: ${preferredName}`] : [])]), `Page: ${page}`, `System Mapping release: ${this.env.RELEASE}`,
               `Reported at: ${at}`, `Report reference: ${id}`, '', description].join('\n'),
@@ -229,7 +237,7 @@ export class RedmineReports {
         });
         if (result.ok) {
           const issueId = result.data?.issue?.id;
-          return Number.isSafeInteger(issueId) && issueId > 0 ? saveReceipt(issueId) : fail('pending', 503, 60);
+          return Number.isSafeInteger(issueId) && issueId > 0 ? saveReceipt(issueId, result.emailUpdates) : fail('pending', 503, 60);
         }
         if (result.status === 429) {
           this.db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).run(owner, id);

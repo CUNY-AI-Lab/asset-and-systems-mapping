@@ -36,9 +36,9 @@ and .edu email address. Guest details are self-reported contact information.
 Signed-in names come from the verified application identity.
 
 - `GET /api/bug-reports/session` verifies the account and returns `expectedActor`
-  and `preferredName`.
-- `POST /api/bug-reports` accepts exactly
-  `{reportId, expectedActor, description, path}` and rejects an account change.
+  and `preferredName`. For Redmine delivery it signals `needsReplyEmail` when the verified identity has no usable email.
+- `POST /api/bug-reports` accepts `{reportId, expectedActor, description, path}`
+  and the optional `replyEmail` on that missing-address path. It rejects an account change or an attempt to replace the signed address.
 - `POST /api/bug-reports/guest` accepts exactly
   `{reportId, firstName, lastName, email, description, path}`. Shared client and
   server validation checks names and .edu email syntax.
@@ -54,6 +54,8 @@ Redmine delivery creates a private issue in CAIL Ticketing project 15, Bug
 tracker 2. Its description includes the report, page category, release,
 reference, time, and verified account-name metadata or clearly labeled guest
 contact details. Private visibility follows Redmine's permissions.
+
+Public staff notes and status changes go to the original reporter once CAIL Ticketing acknowledges enrollment. A signed CUNY Login address needs no extra step. Guests and students who type an address confirm their `.edu` mailbox with an emailed code and the receipt shown after submitting. A saved receipt alone confirms ticket creation. Staff-only notes stay private.
 
 Context uses fixed page categories. Email supports `/` and `/p/:shared-map`;
 other admitted page categories become `/` for the shared receiver. Project

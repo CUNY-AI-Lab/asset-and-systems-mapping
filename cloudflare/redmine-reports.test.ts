@@ -12,7 +12,7 @@ function setup(env: Record<string, unknown> = {}) {
     expect(options.redirect).toBe('manual');
     expect(options.headers.get('X-Redmine-API-Key')).toBe('fixture-key');
     posts.push(JSON.parse(options.body));
-    return Response.json({ issue: { id: 123 } }, { status: 201 });
+    return Response.json({ issue: { id: 123 } }, { status: 201, headers: posts.at(-1)?.cail_reporter ? { 'X-CAIL-Report-Updates': posts.at(-1).cail_reporter.source === 'cuny_login' ? 'subscribed' : 'confirm' } : {} });
   });
   vi.stubGlobal('fetch', fetch);
   const storage = { transactionSync: (fn: () => unknown) => fn(), sync: async () => {} };
@@ -41,6 +41,7 @@ test('guest validation is enforced by the server and contacts are labeled unveri
   expect((await reports.request(request(guest, true), null, null, 'b'.repeat(64))).status).toBe(400);
   expect(posts).toHaveLength(0); guest.email = 'sample@college.edu';
   expect((await reports.request(request(guest, true), null, null, 'b'.repeat(64))).status).toBe(200);
+  expect(posts[0].cail_reporter).toEqual({source: 'contact', email: 'sample@college.edu'});
   expect(posts[0].issue.description).toContain('Contact email (unverified): sample@college.edu');
   expect(posts[0].issue.is_private).toBe(true);
 });
@@ -236,4 +237,18 @@ test('concurrent email requests share one in-flight submission', async () => {
   finish!();
   expect((await first).status).toBe(200);
   expect(service.submitPublic).toHaveBeenCalledTimes(1);
+});
+
+test('subscriber identity comes from the session and a typed fallback cannot redirect it', async () => {
+  const { reports, posts, request } = setup();
+  const submit = (extra: object, email?: string) => reports.request(request({...body, ...extra}), body.expectedActor, 'Student', undefined, email);
+  expect((await submit({cail_reporter: {source:'cuny_login',email:'forged@other.edu'}})).status).toBe(400);
+  expect((await submit({replyEmail:'forged@other.edu'}, 'original@college.edu')).status).toBe(400);
+  expect(posts).toHaveLength(0);
+  expect(await (await submit({}, 'original@college.edu')).json()).toMatchObject({emailUpdates:'subscribed'});
+  expect(posts[0].cail_reporter).toEqual({source:'cuny_login',email:'original@college.edu'});
+  const next = {reportId: crypto.randomUUID(), replyEmail: 'Contact@college.edu'};
+  expect(await (await submit(next)).json()).toMatchObject({emailUpdates:'confirm'});
+  expect(posts[1].cail_reporter).toEqual({source:'contact',email:'contact@college.edu'});
+  expect((await submit({...next, replyEmail:'other@college.edu'})).status).toBe(409);
 });
