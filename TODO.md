@@ -1,5 +1,23 @@
 # Systems Mapping release record
 
+## Account interface and expanded CUNY memos — November 5, 2026
+
+Application source **`763943c3c1b24aa583c30c08353b1cab8bc78f7f`** is verified on Dev and production. Account and Instructor Console now share the workspace's underlined navigation, compact type, and consistent outlined disclosure rows with a left chevron. Prompt actions appear above the fields. Desktop Scale and prompt fields share a row; phone fields stack. Native keyboard controls and existing draft/publication behavior remain intact.
+
+- [x] Remove conflicting border resets and generic rounded-button styling from tabs; standardize Account cards, heading spacing and disclosure targets. Keep 16px editable content and 44px minimum action targets.
+- [x] Verify desktop, phone, dark mode and disclosure keyboard behavior in signed-in Dev. The live course was neither edited nor published. Targeted regressions passed 72 unit checks and 10 browser/accessibility checks.
+- [x] Pass [exact-main CI](https://github.com/CUNY-AI-Lab/asset-and-systems-mapping/actions/runs/42131509855): **2,011 unit/Worker/account checks**, 12 skipped; **114 browser/accessibility checks**, 12 skipped. Match the artifact digest, source/tree, configuration, lockfile and all 41 checksums.
+- [x] Verify Dev `62dbbe0b-7962-49ca-8e6b-0c58f9139acd` / `c3e15ed1-514d-4565-8be8-5d9330bc1cd8` and production `4e64129c-0533-4665-a197-ea83794daf15` / `35ee25b0-2240-48a9-8e37-1c75a41eabff`: exact source, all 36 served files, full traffic and unchanged runtime/bindings. Direct Redmine mode remains configured.
+- [x] Deliver three expanded factual CUNY AI Lab memos based on the public website and GitHub teaching/software documentation, a readable HTML edition, sources, and a ZIP with the earlier six-image progression.
+- [x] Test marginal updates with GPT-OSS 120B on the preceding c40a172 runtime: separate Micro and Exo updates failed label validation; combined Exo/Macro succeeded after two corrective calls and refreshed four existing nodes. No new nodes or relationships. Transparency received specific added evidence; sustainability still cited the broad principles paragraph.
+- [x] Verify all six Micro nodes and all five manual relationships remained exact through the accepted update; reload preserved graph, both memo records and edit history. The new Micro draft remained saved but unaccepted. A later concurrent saved edit is a separate event: both copies were backed up privately and newer work was preserved.
+
+The earlier progression and prior model/PDF comparisons retain their original provenance and limits. This frontend release does not claim to resolve all model label or classification failures. No production model request, map mutation, live course publication or ticket was used. Downloadable files exclude private backups, raw model responses, restricted source content and credentials.
+
+Evidence: `work/account-style-standardization/`. Deliverable: `outputs/CUNY-AI-Lab-Memos.zip`. Sanitized local archive: `~/.local/share/cail-change-records/2026-11-05-systems-mapping-account-style/`.
+
+**Historical release below; superseded by the receipt above.**
+
 ## Connected Microsystem layout — November 5, 2026
 
 Application source **`c40a172349fd86c1be1b833a3051beb52c3e2d83`** is verified on Dev and production. The current six-image progression uses factual paraphrases of the [CUNY AI Lab website](https://ailab.gc.cuny.edu/); older invented examples remain explicitly labeled as historical tests.
@@ -613,10 +631,3 @@ The authority order remains in `docs/SOURCE_LEDGER.md`: the direct 2026-08-24 co
 
 ## Current cross-process model alignment
 The model owner completed a user-requested runtime switch to GPT-OSS 120B in Dev and production on 2026-11-02. Deployment configuration and generated Env type now preserve that setting; GLM-specific adapter tests and historical evaluations remain valid unchanged. The model evaluation completed before the coordinated UI rollout; the verified current release is recorded at the top of this ledger.
-
-## Account interface and expanded CUNY memos — November 5, 2026
-
-- [x] Expand factual Micro, Exo and Macro memos from the Lab website and public GitHub teaching/software documentation, with sources and a readable HTML edition.
-- [x] Test GPT-OSS 120B marginal updates: separate Micro and Exo submissions failed label validation; combined Exo/Macro succeeded after bounded repair and refreshed four existing nodes. Transparency received specific new evidence; Sustainability remained broad. No new relationships.
-- [x] Standardize Account/Console navigation and disclosure hierarchy; move prompt actions above content; preserve keyboard navigation and drafts.
-- [ ] Verify interface regressions and Dev screenshots before promoting the checked main package to production.
