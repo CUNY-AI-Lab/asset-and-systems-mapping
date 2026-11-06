@@ -33,3 +33,5 @@ Keep progression and item actions at the top, stateful Add to map/Remove, option
 Instructor prompt editing follows `docs/instructor-settings.md`: one scale selector and prompt field, optional student preview, and Publish changes that saves pending edits first. Routine editing generates draft metadata; preserve optimistic revision checks, failed-publication drafts, and the advanced version/history controls.
 Course rosters stay in a collapsed disclosure under Submissions and load on demand; they must not displace the console navigation or course-settings editor.
 
+
+Use the shared canvas drawing for completion previews and PNG, PDF and SVG. Preserve manual placement and route labels across scales. Do not introduce another export layout or a separate button for every format. Keep private backup and sharing permissions independent.

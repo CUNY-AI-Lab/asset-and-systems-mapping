@@ -72,14 +72,12 @@ test('adjacent actions align and export choices stay usable on desktop and phone
   await captureSourceRenderedScreenshot(page, testInfo, 'Nested project preferences');
   await projectMenu(page, 'Export & share');
   const dialog = page.getByRole('dialog', { name: 'Export & share', exact: true });
-  for (const group of ['Download or share', 'Other formats']) {
-    await expectAlignedControls(dialog.getByRole('group', { name: group, exact: true }).getByRole('button'));
-  }
-  await expect(dialog.getByRole('button', { name: 'PNG image', exact: true })).toBeEnabled();
+  await expectAlignedControls(dialog.locator('.map-download__fields select, .map-download__submit'), !testInfo.project.name.includes('phone'));
+  await expect(dialog.getByRole('combobox',{name:'File format'})).toBeEnabled();
   await expect(dialog.getByRole('combobox', { name: 'Export audience' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close Export & share', exact: true }).focus();
   await page.keyboard.press('Tab');
-  await expect(dialog.getByRole('button', { name: 'PNG image', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('combobox',{name:'File format'})).toBeFocused();
   assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, 'Aligned export choices'));
   await captureSourceRenderedScreenshot(page, testInfo, 'Aligned export choices');
 
@@ -90,9 +88,7 @@ test('adjacent actions align and export choices stay usable on desktop and phone
 
   if (testInfo.project.name.includes('phone')) {
     await page.setViewportSize({ width: 320, height: 568 });
-    for (const group of ['Download or share', 'Other formats']) {
-      await expectAlignedControls(dialog.getByRole('group', { name: group, exact: true }).getByRole('button'), false);
-    }
+    await expectAlignedControls(dialog.locator('.map-download__fields select, .map-download__submit'), false);
     await expect(dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).resolves.toBe(true);
     await captureSourceRenderedScreenshot(page, testInfo, 'Narrow export choices');
     await page.setViewportSize({ width: 390, height: 844 });

@@ -418,7 +418,7 @@ it('saves and privately exports Field Notes before any map generation without a 
   expect(await within(dialog).findByRole('status')).toHaveTextContent('Saved');
   expect(projects[0].reflection).toBe('A new observation before guidance or graph generation.');
   expect(projects[0].stage).toBe(0);expect(projects[0].graph.nodes).toEqual([]);
-  fireEvent.click(within(dialog).getByRole('button',{name:'Private backup'}));
+  fireEvent.change(within(dialog).getByRole('combobox',{name:'File format'}),{target:{value:'json'}}); fireEvent.click(within(dialog).getByRole('button',{name:'Download',exact:true}));
   await waitFor(()=>expect(downloadBlob).toHaveBeenCalledOnce());
   const blob=vi.mocked(downloadBlob).mock.calls[0][0];
   const contents=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsText(blob);});

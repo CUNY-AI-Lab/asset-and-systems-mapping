@@ -8,13 +8,15 @@ import { NODE_SUBMISSION, submittedReviewIssue } from '../shared/node-submission
 import { relationshipGroupIssue, groupedRelationships } from '../shared/relationship-groups.js';
 import { activeSubmission, beginPart2, isPart2, reviewMemoText, memoLabel } from './projectMemo.js';
 import ProjectCompletion from './ProjectCompletion.jsx';
+import MapDownloadControls from './MapDownloadControls.jsx';
+import { captureMapDrawing } from './mapDrawingExport.js';
 import { MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { isNodeReviewScale, isRelationshipReviewScale, nodeScaleFor, canConnectAtScale, cumulativeScales } from '../shared/mapping-grammar.js';
 import { useRelationshipDraft } from './relationshipDraft.js';
 import { useWorkspaceViewHistory } from './workspaceViewHistory.js';
 import { editHistoryState, recordEdit, restoreEdit } from './editHistory.js';
 import { readableNodePositions, straightConnectionLayout } from './readableGraphLayout.js';
-import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, attachedConnectionLayout, relationshipAttachment, REGION_CAPTION } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, readingConnectionLayout, relationshipAttachment, REGION_CAPTION } from './studentMapLayout.js';
 import { readMemoFile } from './documentImport.js';
 import { relationshipDescription, relationshipArrowheads, relationshipDirection, relationshipMapLabel, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
@@ -3407,12 +3409,21 @@ function AnnotationField({ annotationId, label, value, hint, placeholder, onDraf
   </div>;
 }
 
-function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onStartConnection, onConnectBlank, onViewportChange, onAnnounce }) {
+function readingLabelSizes(edges,visibleIds,phone) {
+  return new Map(edges.map(edge=>[edge.id,visibleIds.has(edge.id) ? {
+    ...mapEdgeLabelGeometry(relationshipMapLabel(edge),phone,''),
+    trailing:['not yet known','varies'].includes(relationshipDirection(edge)) ? 24 : 0,
+  } : {width:0,height:0}]));
+}
+
+function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, onDeleteNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onStartConnection, onConnectBlank, onViewportChange, onAnnounce }) {
   const sharedBands = ecologyBandGeometry || ecologyBands(phoneLayout, nodes.length, nodes);
   const interactionBands = ecologyInteractionBandGeometry || sharedBands;
   const retainedPlacement = useMemo(() => mapMode === 'ecology' && Boolean(retainedEcologyBoundaries(nodes, edges, phoneLayout, sharedBands)), [nodes, edges, phoneLayout, sharedBands, mapMode]);
   const svgRef = useRef(null);
   const regionMaskPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '-');
+  const markerId = exportDrawing ? `export-arrow-${regionMaskPrefix}` : 'arrowhead';
+  const markerUrl = `url(#${markerId})`;
   const interactionRef = useRef(null);
   const pointersRef = useRef(new Map());
   const frameRef = useRef(null);
@@ -3778,23 +3789,22 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   if (selectedGroup) { readingEdgeIds.add(selectedGroup.id); selectedGroup.relationshipIds.forEach(id => readingEdgeIds.add(id)); }
   const readingGeometry = new Map([...nodeVisuals].map(([id, visual]) => [id, visual.geometry]));
   const contentBoundaries = readingMode ? studentMapBoundaries(nodes.map(node=>({...node,...renderedPositions.get(node.id)})),readingGeometry) : null;
-  const betweenEndpointLayout = useMemo(() => readingMode ? attachedConnectionLayout(
-    edges.filter(edge => !edge.relationshipIds?.length), nodes, renderedPositions,
-    new Map([...nodeVisuals].map(([id, visual]) => [id, visual.geometry])),
-    new Map(edges.map(edge => [edge.id, readingEdgeIds.has(edge.id) ? mapEdgeLabelGeometry(relationshipMapLabel(edge),phoneLayout,'') : {width:0,height:0}])),
+  const betweenEndpointLayout = useMemo(() => readingMode ? readingConnectionLayout(
+    edges,nodes,renderedPositions,readingGeometry,readingLabelSizes(edges,readingEdgeIds,phoneLayout),
+    new Set(edges.filter(e=>e.relationshipIds?.length && (selectedGroup?.id===e.id || overviewLabels && !selection)).map(e=>e.id))
   ) : betweenEndpointCalloutLayout(
     [...edges.filter((edge) => edge.showLabel !== false), ...scopeTraces],
     nodes,
     renderedPositions,
     phoneLayout,
-  ), [edges, nodes, renderedPositions, phoneLayout, fontRevision, readingMode, selection?.id]);
+  ), [edges, nodes, renderedPositions, phoneLayout, fontRevision, readingMode, overviewLabels, selection?.id]);
   const edgeVisuals = edges.map((edge) => {
     const source = nodeVisuals.get(edge.source);
     const target = nodeVisuals.get(edge.target);
     if (!source?.position || !target?.position) return null;
     const labelGeometry = mapEdgeLabelGeometry(relationshipMapLabel(edge), phoneLayout, readingMode ? '' : edge.scale);
-    const calloutAnchor = edge.relationshipIds?.length ? null : betweenEndpointLayout.anchors.get(edge.id) || null;
-    const routedPoints = edge.relationshipIds?.length ? null : betweenEndpointLayout.paths.get(edge.id) || null;
+    const calloutAnchor = betweenEndpointLayout.anchors.get(edge.id) || null;
+    const routedPoints = betweenEndpointLayout.paths.get(edge.id) || null;
     const sourceToward = calloutAnchor || target.position;
     const targetToward = calloutAnchor || source.position;
     const sourcePoint = routedPoints?.source || cardConnectionPoint(source.position, sourceToward, source.geometry);
@@ -3803,25 +3813,16 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       return a && b ? [relationshipAttachment(betweenEndpointLayout,local.id) || { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }] : [];
     });
     const groupTarget = groupPoints.length ? { x: groupPoints.reduce((sum, point) => sum + point.x, 0) / groupPoints.length, y: groupPoints.reduce((sum, point) => sum + point.y, 0) / groupPoints.length } : null;
-    const targetPoint = groupTarget || routedPoints?.target || cardConnectionPoint(target.position, targetToward, target.geometry, phoneLayout ? 12 : 7);
-    let labelPoint = calloutAnchor || {
+    const targetPoint = routedPoints?.target || groupTarget || cardConnectionPoint(target.position, targetToward, target.geometry, phoneLayout ? 12 : 7);
+    const labelPoint = calloutAnchor || {
       x: (source.position.x + targetPoint.x) / 2,
       y: (source.position.y + targetPoint.y) / 2,
     };
-    let path = routedPoints?.points
+    const path = routedPoints?.points
       ? routedPoints.points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')
       : calloutAnchor
       ? `M ${sourcePoint.x} ${sourcePoint.y} L ${calloutAnchor.x} ${calloutAnchor.y} L ${targetPoint.x} ${targetPoint.y}`
       : `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
-    if (readingMode && (selectedGroup?.id === edge.id || overviewLabels && !selection) && edge.relationshipIds?.length && groupPoints.length) {
-      const anchor = groupPoints[0], targetId = `relationship-anchor:${edge.id}`;
-      const groupLayout = attachedConnectionLayout([{...edge,target:targetId}], [...nodes,{id:targetId}],
-        new Map([...renderedPositions,[targetId,anchor]]),
-        new Map([...readingGeometry,[targetId,{cardWidth:0,cardHeight:0}]]),
-        new Map([[edge.id,labelGeometry]]), [...betweenEndpointLayout.bounds].filter(([id])=>readingEdgeIds.has(id)).map(([,bounds])=>bounds));
-      const route=groupLayout.paths.get(edge.id);
-      if(route) {path=route.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');labelPoint=groupLayout.anchors.get(edge.id);}
-    }
     return {
       edge,
       x1: sourcePoint.x,
@@ -3876,20 +3877,19 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
     const members = groupedRelationships(edge, edges);
     const region = mapRegionGeometry([edge.source, ...members.flatMap(local => [local.source, local.target])], nodeVisuals, phoneLayout ? 14 : 10);
     const heading = nodeVisuals.get(edge.source)?.position;
+    const drawn = betweenEndpointLayout.groups?.get(edge.id);
     const vectors = members.flatMap(local => {
-      const a = nodeVisuals.get(local.source)?.position, b = nodeVisuals.get(local.target)?.position;
-      if (!heading || !a || !b) return [];
-      const anchor=relationshipAttachment(betweenEndpointLayout,local.id) || {x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-      if (!readingMode || selectedGroup?.id !== edge.id && !(overviewLabels && !selection)) return [{id:local.id,...anchor}];
-      const targetId=`group-member:${local.id}`;
-      const routed=attachedConnectionLayout([{id:edge.id,source:edge.source,target:targetId}], [...nodes,{id:targetId}],
-        new Map([...renderedPositions,[targetId,anchor]]),new Map([...readingGeometry,[targetId,{cardWidth:0,cardHeight:0}]]),new Map());
-      return [{id:local.id,...anchor,path:routed.paths.get(edge.id)?.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')}];
+      const branch=drawn?.find(member=>member.id===local.id);
+      if(branch?.route) return [{id:local.id,...branch.point,primary:branch===drawn[0],path:branch.route.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')}];
+      const a=nodeVisuals.get(local.source)?.position, b=nodeVisuals.get(local.target)?.position;
+      if(!heading || !a || !b)return [];
+      const point=relationshipAttachment(betweenEndpointLayout,local.id) || {x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+      return [{id:local.id,...point}];
     });
     return region && heading ? [{ ...region, edge, heading, vectors, maskId: `${regionMaskPrefix}-group-${edge.id}` }] : [];
   });
   const graphSummary = `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'}${nodeStage ? '' : ` and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`}`;
-  return <svg id="systems-map-canvas" ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. ${nodeStage ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
+  return <svg id={exportDrawing ? undefined : "systems-map-canvas"} ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. ${nodeStage ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
     if (event.key === 'Escape' && interactionRef.current) {
       event.preventDefault();
       const interaction = interactionRef.current;
@@ -3935,7 +3935,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
   }}>
     <title>Interactive systems map</title>
     <defs>
-      <marker id="arrowhead" markerUnits={readingMode ? 'userSpaceOnUse' : 'strokeWidth'} markerWidth={readingMode ? 9 : phoneLayout ? 6 : 8} markerHeight={readingMode ? 7 : phoneLayout ? 5 : 6} viewBox="0 0 8 6" refX={phoneLayout ? 8 : 7} refY="3" orient="auto-start-reverse"><path d={readingMode ? 'M0.5,0.5 L6.5,3 L0.5,5.5' : 'M0,0 L8,3 L0,6 z'} /></marker>
+      <marker className="map-arrowhead" id={markerId} markerUnits={readingMode ? 'userSpaceOnUse' : 'strokeWidth'} markerWidth={readingMode ? 9 : phoneLayout ? 6 : 8} markerHeight={readingMode ? 7 : phoneLayout ? 5 : 6} viewBox="0 0 8 6" refX={phoneLayout ? 8 : 7} refY="3" orient="auto-start-reverse"><path d={readingMode ? 'M0.5,0.5 L6.5,3 L0.5,5.5' : 'M0,0 L8,3 L0,6 z'} /></marker>
       {[...microSettingRegionVisuals, ...macroScopeRegionVisuals, ...relationshipGroupVisuals].map(({ maskId, bounds, exclusions }) => (
         <mask key={maskId} id={maskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x={bounds.left - 2} y={bounds.top - 2} width={bounds.right - bounds.left + 4} height={bounds.bottom - bounds.top + 4} style={{ maskType: 'luminance' }}>
           <rect x={bounds.left - 2} y={bounds.top - 2} width={bounds.right - bounds.left + 4} height={bounds.bottom - bounds.top + 4} fill="white" />
@@ -3962,7 +3962,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
       <g className="micro-setting-regions" aria-hidden="true">{microSettingRegionVisuals.map(({ setting, memberCount, path, selected, maskId }) => <path key={`micro-setting-${setting.id}`} data-setting-region={setting.id} data-member-count={memberCount} className={`micro-setting-region ${selected ? 'is-selected' : ''} ${setting.visualMuted ? 'is-muted' : ''}`} d={path} mask={`url(#${maskId})`} />)}</g>
       <g className="macrosystem-relationship-groups">{relationshipGroupVisuals.map(({ edge, path, maskId, heading, vectors }) => <g key={edge.id} data-relationship-group={edge.id} data-heading={edge.source} data-group-scale={edge.scale} className={readingMode && selectedGroup?.id !== edge.id && !(overviewLabels && !selection) ? 'is-inactive-group' : 'is-active-group'}>
         <path className={`relationship-group-band ${selection?.id === edge.id ? 'is-selected' : ''}`} d={path} mask={`url(#${maskId})`} aria-hidden="true" />
-        {vectors.map(point => <path key={point.id} data-group-member={point.id} d={point.path || `M ${heading.x} ${heading.y} L ${point.x} ${point.y}`} className="relationship-group-vector" vectorEffect="non-scaling-stroke" aria-hidden="true" />)}
+        {vectors.filter(point=>!point.primary).map(point => <path key={point.id} data-group-member={point.id} d={point.path || `M ${heading.x} ${heading.y} L ${point.x} ${point.y}`} className="relationship-group-vector" vectorEffect="non-scaling-stroke" aria-hidden="true" />)}
         {readingMode && vectors.map(point=><circle key={`join-${point.id}`} className="relationship-group-join" cx={point.x} cy={point.y} r="4" aria-hidden="true" />)}
       </g>)}</g>
       <g className="scope-fields" aria-hidden="true">{macroScopeRegionVisuals.map(({ node, path, selected, maskId }) => (
@@ -3994,7 +3994,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         const start = cardConnectionPoint(from, to, mapNodeGeometry(source.label, phoneLayout), 5);
         const end = cardConnectionPoint(to, from, mapNodeGeometry(target.label, phoneLayout), 5);
         const arrows = relationshipArrowheads({ relationshipProcess: { direction: previewConnection.direction } });
-        return <g className="relationship-draft-preview" pointerEvents="none" aria-label="Relationship draft, not added to map"><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="var(--ink)" strokeWidth="2" strokeDasharray="3 6" vectorEffect="non-scaling-stroke" markerStart={arrows.start ? 'url(#arrowhead)' : undefined} markerEnd={arrows.end ? 'url(#arrowhead)' : undefined} /></g>;
+        return <g className="relationship-draft-preview" pointerEvents="none" aria-label="Relationship draft, not added to map"><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="var(--ink)" strokeWidth="2" strokeDasharray="3 6" vectorEffect="non-scaling-stroke" markerStart={arrows.start ? markerUrl : undefined} markerEnd={arrows.end ? markerUrl : undefined} /></g>;
       })()}
       <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space" aria-pressed={selected} className={`graph-edge ${readingMode && readingEdgeIds.has(edge.id) ? 'is-reading-active' : ''} ${readingMode && edge.relationshipIds?.length && selectedGroup?.id !== edge.id && !(overviewLabels && !selection) ? 'is-inactive-group' : ''} graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onFocus={() => { if(readingMode && selection?.id !== edge.id) onSelect('edge',edge.id,false); }} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -4005,7 +4005,7 @@ function GraphCanvas({ nodes, edges, previewConnection = null, selection, onSele
         {selected && <path className="edge-selection-halo" d={path} x1={x1} y1={y1} x2={x2} y2={y2} />}
         <title>{`Direction: ${relationshipDirection(edge)}`}</title>
         {readingMode && <path className="edge-crossing-gap" d={path} aria-hidden="true" />}
-        <path className="edge-line" style={{ '--edge-count-width': relationshipLineWidth(edge) }} strokeDasharray={edge.relationshipProcess?.connectionStatus === 'missing' ? '7 5' : undefined} data-connection-status={edge.relationshipProcess?.connectionStatus || 'unknown'} vectorEffect={phoneLayout ? "non-scaling-stroke" : undefined} d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerStart={relationshipArrowheads(edge).start ? 'url(#arrowhead)' : undefined} markerEnd={relationshipArrowheads(edge).end ? 'url(#arrowhead)' : undefined} />
+        <path className={betweenEndpointLayout.groups?.has(edge.id) ? "edge-line relationship-group-vector" : "edge-line"} data-group-member={betweenEndpointLayout.groups?.get(edge.id)?.[0]?.id} style={{ '--edge-count-width': relationshipLineWidth(edge) }} strokeDasharray={edge.relationshipProcess?.connectionStatus === 'missing' ? '7 5' : undefined} data-connection-status={edge.relationshipProcess?.connectionStatus || 'unknown'} vectorEffect={phoneLayout ? "non-scaling-stroke" : undefined} d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerStart={relationshipArrowheads(edge).start ? markerUrl : undefined} markerEnd={relationshipArrowheads(edge).end ? markerUrl : undefined} />
       </g>)}</g>
       <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false && (!readingMode || readingEdgeIds.has(edge.id))).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
         return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} data-anchor-x={midX} data-anchor-y={midY} data-full-label={relationshipMapLabel(edge)} className={`graph-edge-label ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`}>
@@ -4074,6 +4074,60 @@ function sameGraphVisuals(previous, next) {
 }
 
 const MemoGraphCanvas = React.memo(GraphCanvas, sameGraphVisuals);
+
+// Export is a noninteractive rendering of the same GraphCanvas. Only the
+// fitting window changes. Account-library downloads can reconstruct the saved
+// layout even when the editor has never been mounted in the current tab.
+function mapPresentationKey(project) {
+  return JSON.stringify([project.id,project.layout,project.graph.nodes.map(n=>[n.id,n.x,n.y,n.scale,n.type,n.color,n.label,n.status,n.claimState]),project.graph.edges.map(e=>[e.id,e.source,e.target,e.verb,e.relationshipIds,e.status,e.claimState])]);
+}
+export function projectDrawing(project,presentation=null) {
+  const current=presentation?.key===mapPresentationKey(project) ? presentation : null;
+  const phone=current?.phone ?? (typeof window!=='undefined' && Boolean(window.matchMedia?.('(max-width:600px)').matches));
+  const nodes=project.graph.nodes.filter(n=>isLiveMapItem(n) && n.scale!=='meso');
+  const ids=new Set(nodes.map(n=>n.id));
+  const edges=project.graph.edges.filter(e=>isLiveMapItem(e) && ids.has(e.source) && ids.has(e.target));
+  const positions=studentReadingPositions(nodes,edges,{...project.layout,phone,aspectRatio:current?.aspectRatio || project.layout?.readingAspect || (phone ? .78 : 1.8)});
+  const placed=nodes.map(n=>({...n,...(current?.positions.get(n.id) || positions.get(n.id))}));
+  return <GraphCanvas exportDrawing nodes={placed} edges={edges} viewport={{panX:0,panY:0,zoom:1}}
+    readingMode overviewLabels phoneLayout={phone} mapMode={nodes.some(n=>n.scale!=='micro')?'ecology':'network'} mapLabel={project.title} />;
+}
+
+function mapDrawingDescription(project) {
+  const nodes=project.graph.nodes.filter(isLiveMapItem), byId=new Map(nodes.map(n=>[n.id,n.label]));
+  const edges=project.graph.edges.filter(e=>isLiveMapItem(e) && byId.has(e.source) && byId.has(e.target));
+  const describe=e=>relationshipDescription(e,byId.get(e.source),byId.get(e.target));
+  return [project.title,...edges.map(e=>[describe(e),relationshipProcessSummary(e.relationshipProcess),
+    ...(e.relationshipIds?.length ? groupedRelationships(e,edges).map(describe) : [])].filter(Boolean).join('; ')),
+    ...nodes.filter(n=>n.scale==='meso').map(n=>'Preserved Meso record: '+n.label),
+    ...nodes.flatMap(n=>(n.scopeNodeIds || []).filter(id=>byId.has(id)).map(id=>[n.label,n.deontic || 'includes',byId.get(id)].join(' '))),
+    ...nodes.flatMap(n=>(n.settingNodeIds || []).filter(id=>byId.has(id)).map(id=>[n.label,'setting membership',byId.get(id)].join(' — ')))].join('\n');
+}
+export function projectMapImage(project,presentation) {
+  return captureMapDrawing(()=>projectDrawing(project,presentation),project.title,mapDrawingDescription(project));
+}
+export async function downloadProjectFile(project,format,presentation) {
+  const portable=createPortableProject(project,'private');
+  if(format==='json')return downloadBlob(new Blob([serializePortableProject(project,'private')],{type:'application/json'}),exportFileName(project,'json'));
+  if(format==='csv')return downloadBlob(new Blob([graphCsv(portable)],{type:'text/csv'}),exportFileName(project,'csv'));
+  if(format==='markdown')return downloadBlob(new Blob([projectMarkdown(portable)],{type:'text/markdown'}),exportFileName(project,'md'));
+  const image=await projectMapImage(portable,presentation);
+  return downloadBlob(await exportMapImage(image,format),exportFileName(project,format));
+}
+function MapDrawingPreview({project,presentation}) {
+  const [image,setImage]=useState(null);
+  const [failed,setFailed]=useState(false);
+  useEffect(()=>{
+    let cancelled=false,url;
+    projectMapImage(project,presentation).then(({svg})=>{
+      if(cancelled)return;
+      url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));setImage(url);setFailed(false);
+    }).catch(()=>{if(!cancelled)setFailed(true);});
+    return ()=>{cancelled=true;if(url)URL.revokeObjectURL(url);};
+  },[project.graph,project.layout,project.title,presentation]);
+  return <figure className="completion-preview">{image ? <img src={image} alt={`Map preview: ${project.title || 'Systems map'}`} />
+    : <figcaption>{failed?'Preview unavailable. You can still choose a download format.':'Preparing map preview…'}</figcaption>}</figure>;
+}
 
 function MapLegend() {
   return <div className="legend-grid">
@@ -4210,7 +4264,7 @@ function blankManualNode(scale, threeSpheres = false) {
   };
 }
 
-function MapStage({ project, update, toast, captureImportScope, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart, onReview, panel = null, onPanelMode, toolbarStart = null, toolbarHost = null, notebook = null, highlight = null, onHighlight }) {
+function MapStage({ project, presentationRef, update, toast, captureImportScope, logPrototype, saveState, stageAnnotationDraft, commitAnnotationDrafts, flushSave, onRequestRestart, onReview, panel = null, onPanelMode, toolbarStart = null, toolbarHost = null, notebook = null, highlight = null, onHighlight }) {
   // Every work panel can collapse without changing the current stage or map selection.
   const panelMode = panel?.mode ?? 'inspector';
   const panelContent = Boolean(panel) && panelMode !== 'inspector';
@@ -4527,6 +4581,10 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
     ...(readablePositions?.get(node.id) || {}),
     visualDimmed: !notebook && (highlightActive ? !highlightNodeIds.has(node.id) : !phoneLayout && focusActive && !focusedNodeIds.has(node.id)),
   })), [readablePositions, innerMap, automaticPositions, focusedEcologyPositions, highlightActive, highlightNodeIds, phoneLayout, focusActive, focusedNodeIds, phoneEcologyPositions, phoneOverviewPositions, phoneRelationshipPositions, visibleNodes]);
+  useLayoutEffect(()=>{
+    if(!presentationRef || presentation!=='canvas')return;
+    presentationRef.current={key:mapPresentationKey(project),phone:phoneLayout,aspectRatio:canvasAspect,positions:new Map(displayedNodes.map(n=>[n.id,{x:n.x,y:n.y}]))};
+  },[presentationRef,project.graph,project.layout,project.id,presentation,phoneLayout,canvasAspect,displayedNodes]);
   const visibleEdges = useMemo(() => {
     const shown = phoneLayout && focusActive ? scaleEdges.filter((edge) => focusedEdgeIds.has(edge.id)) : scaleEdges;
     const overview = !focusActive && visibleScale === 'all';
@@ -4556,20 +4614,14 @@ function MapStage({ project, update, toast, captureImportScope, logPrototype, sa
       const geometry = new Map(displayedNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)]));
       const bounds = Object.values(studentMapBoundaries(displayedNodes,geometry)).filter(Boolean).map(b=>({...b,top:b.top-12}));
       const group = visibleEdges.find(edge=>edge.relationshipIds?.length && (selection?.kind==='edge' ? edge.id===selection.id : edge.source===selection?.id));
-      const ids = new Set(selection?.kind==='edge' ? [selection.id] : visibleEdges.filter(edge=>edge.source===selection?.id||edge.target===selection?.id).map(edge=>edge.id));
-      group?.relationshipIds.forEach(id=>ids.add(id));
-      if(ids.size) {
-        const routes = attachedConnectionLayout(visibleEdges.filter(edge=>!edge.relationshipIds?.length),displayedNodes,positions,geometry,new Map(visibleEdges.map(edge=>[edge.id,ids.has(edge.id)?mapEdgeLabelGeometry(relationshipMapLabel(edge),phoneLayout,''):{width:0,height:0}])));
-        for(const [id,rect] of routes.bounds)if(ids.has(id))bounds.push(rect);
-        const anchor = group && relationshipAttachment(routes,group.relationshipIds[0]);
-        if(anchor) {
-          const targetId=`relationship-anchor:${group.id}`;
-          const groupRoute=attachedConnectionLayout([{...group,target:targetId}],[...displayedNodes,{id:targetId}],
-            new Map([...positions,[targetId,anchor]]),new Map([...geometry,[targetId,{cardWidth:0,cardHeight:0}]]),
-            new Map([[group.id,mapEdgeLabelGeometry(relationshipMapLabel(group),phoneLayout,'')]]),
-            [...routes.bounds].filter(([id])=>ids.has(id)).map(([,rect])=>rect));
-          bounds.push(...groupRoute.bounds.values());
-        }
+      const overview=notebook.simple && !selection;
+      const ids = new Set(overview ? visibleEdges.map(e=>e.id) : selection?.kind==='edge' ? [selection.id] : visibleEdges.filter(e=>e.source===selection?.id || e.target===selection?.id).map(e=>e.id));
+      if(group){ids.add(group.id);group.relationshipIds.forEach(id=>ids.add(id));}
+      const routes=readingConnectionLayout(visibleEdges,displayedNodes,positions,geometry,readingLabelSizes(visibleEdges,ids,phoneLayout),
+        new Set(visibleEdges.filter(e=>e.relationshipIds?.length && (overview || group?.id===e.id)).map(e=>e.id)));
+      for(const [id,rect] of routes.bounds)if(ids.has(id))bounds.push(rect);
+      for(const route of [...routes.paths.values(),...Array.from(routes.groups.values()).flat().map(branch=>branch.route).filter(Boolean)]) {
+        for(const {x,y} of route.points)bounds.push({left:x-5,top:y-5,right:x+5,bottom:y+5});
       }
       return bounds;
     }
@@ -5905,7 +5957,7 @@ function SavedMapNote({ project, children }) {
   return <details className="saved-map-note"><summary>{hasNote ? 'Saved map note' : 'Map note'}</summary>{children}</details>;
 }
 
-function ReviewPanel({ onSaveNote, saveState, savedMapNote = null, exportOnly = false, onProjectLink, project, update, replaceProject, toast, logPrototype, onValidationError, onReviewLevel, onSubmitRevision, revisionSubmitting = false, submitDisabled = false }) {
+function ReviewPanel({ presentationRef, onSaveNote, saveState, savedMapNote = null, exportOnly = false, onProjectLink, project, update, replaceProject, toast, logPrototype, onValidationError, onReviewLevel, onSubmitRevision, revisionSubmitting = false, submitDisabled = false }) {
   const [importError, setImportError] = useState('');
   const onImport = async (event) => {
     const [file] = event.target.files;
@@ -5925,15 +5977,12 @@ function ReviewPanel({ onSaveNote, saveState, savedMapNote = null, exportOnly = 
   };
   const exportProject = async (format) => {
     try {
-      const portable = createPortableProject(project, 'private');
-      if (['png', 'pdf'].includes(format)) downloadBlob(await exportMapImage(portable, format), exportFileName(project, format));
-      if (format === 'json') download(exportFileName(project, 'json'), serializePortableProject(project, 'private'));
-      if (format === 'csv') download(exportFileName(project, 'csv'), graphCsv(portable), 'text/csv');
-      if (format === 'markdown') download(exportFileName(project, 'md'), projectMarkdown(portable), 'text/markdown');
-      logPrototype('project_exported', { nodeCount: portable.graph.nodes.length, relationshipCount: portable.graph.edges.length });
-      toast('Download started.');
+      await downloadProjectFile(project,format,presentationRef?.current);
+      logPrototype('project_exported', { nodeCount: project.graph.nodes.length, relationshipCount: project.graph.edges.length });
     } catch (error) {
-      onValidationError(error, 'The export was not created because one map item needs attention.');
+      const message='The export was not created because one map item needs attention.';
+      onValidationError(error,message);
+      throw new Error(userFacingError(error,message));
     }
   };
   return <div className="review-panel">
@@ -5944,12 +5993,9 @@ function ReviewPanel({ onSaveNote, saveState, savedMapNote = null, exportOnly = 
     </>}
     {exportOnly && <>
     <section className="export-strip export-strip--compact" aria-label="Export and share">
-      <div className="export-dropdown">
-        <div className="export-dropdown__options">
-          <fieldset><legend>Download or share</legend><button type="button" onClick={() => exportProject('png')}>PNG image</button><button type="button" onClick={() => exportProject('pdf')}>PDF</button><button type="button" onClick={onProjectLink}>Project link</button></fieldset>
-          <fieldset><legend>Other formats</legend><button type="button" onClick={() => exportProject('json')}>JSON <small>Full project</small></button><button type="button" onClick={() => exportProject('csv')}>CSV <small>Map data</small></button><button type="button" onClick={() => exportProject('markdown')}>Markdown <small>Readable text</small></button></fieldset>
-          <label className="export-dropdown__import"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label>
-        </div>
+      <MapDownloadControls onDownload={exportProject} />
+      <div className="map-download-actions"><button type="button" className="button button--secondary" onClick={onProjectLink}>Project link</button>
+        <label className="export-dropdown__import"><Icon name="upload" />Import JSON<input type="file" accept=".json,application/json" onChange={onImport} /></label>
       </div>
       {importError && <p className="error-text" role="alert">{importError}</p>}
     </section></>}
@@ -5982,6 +6028,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const [mapToolbarHost, setMapToolbarHost] = useState(null);
   const [theme, setTheme] = useState(storedTheme);
   const [notebookOpen, setNotebookOpen] = useState(memoFirstWorkflow);
+  const lastCanvasPresentation=useRef(null);
   const [completionDismissed, setCompletionDismissed] = useState(false);
   const [initialLoad] = useState(() => { const loaded = loadProject(); if (memoFirstWorkflow && isPart2(loaded.project.activeScale)) beginPart2(loaded.project); return loaded; });
   const [workflowPanelMode, setWorkflowPanelMode] = useState(() => memoFirstWorkflow && (initialLoad.project.stage < 2 || !activeSubmission(initialLoad.project).text.trim()) ? 'memo' : 'review');
@@ -7930,7 +7977,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     {view === 'memo' && <div className="memo-action-row"><button className="button" type="button" disabled={workflowBusy || reviewRetryAt > Date.now() || !memoPrerequisiteReady || !activeSubmission(project).text.trim() || workflowMemoState.submitted || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>{workflowBusy ? 'Updating map…' : workflowMemoState.hasBaseline ? 'Update map' : 'Submit memo and add nodes'}</button><span role={workflowBusy ? 'status' : undefined}>{workflowBusy ? reviewProgress || 'Reading your memo…' : workflowMemoState.submitted ? 'Map is up to date' : !memoPrerequisiteReady ? 'Add Part 1 to the map first.' : 'Add this memo to the map to continue.'}</span></div>}
     {view !== 'memo' && !workflowMemoState.submitted ? <button type="button" className="text-button memo-needed-action" onClick={() => editWorkflowMemo()}>Open Memo to continue</button> : project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}
   </>;
-  const studio = <MapStage captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, memoReady: workflowMemoState.submitted && memoPrerequisiteReady, memoPending: !workflowMemoState.submitted, onMemo: () => editWorkflowMemo(), edits: editControls, open: notebookOpen, onRestoreView: restoreWorkflowView, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
+  const studio = <MapStage presentationRef={lastCanvasPresentation} captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, memoReady: workflowMemoState.submitted && memoPrerequisiteReady, memoPending: !workflowMemoState.submitted, onMemo: () => editWorkflowMemo(), edits: editControls, open: notebookOpen, onRestoreView: restoreWorkflowView, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
   const intakeOpen = !memoFirstWorkflow && project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
   const stageScreens = [<IntakeStage project={project} update={update} toast={toast} action={memoFirstWorkflow ? <button className="button" type="button" disabled={Boolean(reviewBusy) || !activeSubmission(project).text.trim() || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>Submit memo and add nodes</button> : null} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {
@@ -7942,11 +7989,10 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const exportCompletion = async (format) => {
     const snapshot = commitPendingAnnotations().project;
     if (!flushPersistence()) throw new Error('The project could not be saved. Resolve the save warning, then try exporting again.');
-    if (format === 'json') download(exportFileName(snapshot, 'json'), serializePortableProject(snapshot, 'private'));
-    else downloadBlob(await exportMapImage(createPortableProject(snapshot, 'private'), format), exportFileName(snapshot, format));
+    await downloadProjectFile(snapshot,format,lastCanvasPresentation.current);
     logPrototype('project_exported', { nodeCount: snapshot.graph.nodes.length, relationshipCount: snapshot.graph.edges.length });
   };
-  const screen = completionOpen ? <ProjectCompletion key={project.id} project={project} onReturn={() => { setCompletionDismissed(true); setNotebookOpen(false); }} onExport={exportCompletion} onMoreExports={() => setModal('exports')} /> : stageScreens[displayedStage];
+  const screen = completionOpen ? <ProjectCompletion key={project.id} project={project} onReturn={() => { setCompletionDismissed(true); setNotebookOpen(false); }} onExport={exportCompletion} preview={<MapDrawingPreview project={project} presentation={lastCanvasPresentation.current} />} /> : stageScreens[displayedStage];
   useEffect(() => {
     if (!completionOpen) return;
     const frame = window.requestAnimationFrame(() => {
@@ -8225,7 +8271,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       {screen}
     </main>
     {memoFirstWorkflow && intakeOpen ? null : completionOpen ? null : intakeOpen ? <footer className="app-footer">{mapPreviewOpen ? <><div className="footer-context"><strong>Map preview</strong><span>Current stage · {STAGES[project.stage].short}</span></div><div className="footer-actions"><button className="button" type="button" onClick={returnFromMapPreview}><Icon name="back" />Back to {STAGES[project.stage].short}</button></div></> : <><div className="footer-context"><strong>{STAGES[project.stage].label}</strong><span className="next-step-detail">{step.detail}</span></div><div className="footer-actions"><button className="button button--ghost" type="button" disabled={backDisabled} onClick={() => setStage(project.stage - 1)}><Icon name="back" />Back</button><button className="button" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{step.label}{project.stage !== 1 && <Icon name="arrow" />}</button></div></>}</footer> : null}
-    <Modal open={modal === 'exports'} title="Export & share" onClose={() => setModal(null)}><ReviewPanel exportOnly onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} /></Modal>
+    <Modal open={modal === 'exports'} title="Export & share" onClose={() => setModal(null)}><ReviewPanel exportOnly presentationRef={lastCanvasPresentation} onProjectLink={() => setModal('project-link')} project={project} update={update} replaceProject={replaceProject} toast={toast} logPrototype={logPrototype} onValidationError={reportProjectValidationFailure} /></Modal>
     <Modal open={modal === 'stages'} title="Progress" onClose={() => setModal(null)}>
       <p className="modal-context">{SCALES[project.activeScale].label} · {STAGES[project.stage].short}</p>
       <section className="level-progress-summary" aria-labelledby="level-progress-title">

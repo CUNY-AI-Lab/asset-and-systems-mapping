@@ -46,6 +46,66 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => { await harness?.close(); });
 
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('printed and scalable map downloads preserve the canvas drawing', async () => {
+  const fixture = groupProject();
+  fixture.id='drawing-browser'; fixture.title='Saved map drawing';
+  fixture.layout={...fixture.layout,autoFit:true,manualNodeIds:fixture.graph.nodes.map(n=>n.id),readingAspect:1.8};
+  const visible=fixture.graph.nodes.filter(n=>n.status!=='rejected' && n.claimState!=='retired' && n.scale!=='meso');
+  const ids=new Set(visible.map(n=>n.id));
+  const liveEdges=fixture.graph.edges.filter(e=>ids.has(e.source)&&ids.has(e.target)&&e.status!=='rejected'&&e.claimState!=='retired');
+  expect((await request('/api/cloud/projects/'+fixture.id,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(fixture),revision:0})})).status).toBe(200);
+  const browser=await chromium.launch(),context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
+  try {
+    await context.addCookies([{name:'__Host-systems-mapping-session',value:sessions.alice,url:ORIGIN,secure:true,httpOnly:true,sameSite:'Lax'}]);
+    await context.route('**/*',async route=>{
+      const source=route.request();if(new URL(source.url()).origin!==ORIGIN)return route.abort();
+      const response=await worker.fetch(source.url(),{method:source.method(),headers:await source.allHeaders(),body:source.postDataBuffer()??undefined,redirect:'manual'});
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+    });
+    const page=await context.newPage();
+    await page.goto(ORIGIN);
+    await page.getByRole('article',{name:fixture.title}).getByRole('button',{name:'Open project'}).click();
+    await openTools(page);
+    await page.getByRole('combobox',{name:'Show map layer'}).selectOption('all');
+    await browserExpect(page.locator('.graph-node')).toHaveCount(visible.length);
+    await browserExpect(page.locator('.graph-edge-label')).toHaveCount(liveEdges.length);
+    await page.evaluate(()=>document.fonts.ready);
+    // Read the live browser's actual drawing and the independently downloaded SVG.
+    const geometry=source=>{
+      const root=source ? new DOMParser().parseFromString(source,'image/svg+xml').documentElement : document.querySelector('svg.graph-canvas');
+      const all=selector=>[...root.querySelectorAll(selector)];
+      const ink=(el,name)=>source?el.getAttribute(name):getComputedStyle(el).getPropertyValue(name);
+      return {
+        cards:all('[data-graph-id][data-full-label]').map(n=>{const r=n.querySelector('rect');return [n.dataset.graphId,n.getAttribute('transform'),r.getAttribute('width'),r.getAttribute('height'),ink(r,'fill'),ink(r,'stroke'),n.querySelector('text').textContent];}).sort(),
+        lines:all('[data-graph-id]:not([data-full-label])').map(g=>{const p=g.querySelector('path:last-of-type');return [g.dataset.graphId,p.getAttribute('d'),p.hasAttribute('marker-start'),p.hasAttribute('marker-end'),ink(p,'stroke')];}).sort(),
+        labels:all('[data-edge-id]').map(g=>{const r=g.querySelector(':scope > rect');return [g.dataset.edgeId,g.dataset.fullLabel,r?.getAttribute('x'),r?.getAttribute('y'),r?.getAttribute('width')];}).sort(),
+        branches:all('path[data-group-member]').map(p=>[p.dataset.groupMember,p.getAttribute('d')]).sort(),
+        rings:all('[data-ecology-layer] ellipse').map(r=>['cx','cy','rx','ry'].map(k=>r.getAttribute(k))),
+      };
+    };
+    const before=await page.evaluate(geometry,null);
+    await projectMenu(page,'Export & share');
+    const dialog=page.getByRole('dialog',{name:'Export & share'});
+    const file=async format=>{
+      await dialog.getByRole('combobox',{name:'File format'}).selectOption(format);
+      const pending=page.waitForEvent('download');
+      await dialog.getByRole('button',{name:'Download',exact:true}).click();
+      return readFile(await (await pending).path());
+    };
+    const svg=(await file('svg')).toString();
+    expect(await page.evaluate(geometry,svg)).toEqual(before);
+    expect(before.cards.length).toBe(visible.length);
+    expect(before.branches.length).toBeGreaterThan(1);
+    expect(svg).not.toContain(fixture.submission.text);
+    expect(svg).toContain('data:font/woff2;base64,');
+    const png=await file('png'),pdf=await file('pdf');
+    expect(png.subarray(0,8).toString('hex')).toBe('89504e470d0a1a0a');
+    expect(pdf.subarray(0,8).toString()).toBe('%PDF-1.4');
+    const image=pdf.toString('latin1').match(/\/Subtype \/Image \/Width (\d+) \/Height (\d+)/);
+    expect([+image[1],+image[2]]).toEqual([png.readUInt32BE(16),png.readUInt32BE(20)]);
+  } finally {await browser.close();}
+},120000);
+
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-memo workflow keeps separate uploads, student relationships and three nested spheres', async () => {
   await control({mode:'nodes'});
   const project=newProject();project.id='browser-node-workflow';project.title='Two separate memos';
@@ -530,7 +590,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     await page.screenshot({ path: '/tmp/cail-systems-cloudflare-desktop.png' });
     await projectMenu(page, 'Export & share');
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: /^JSON/ }).click();
+    await page.getByRole('combobox',{name:'File format'}).selectOption('json');
+    await page.getByRole('button',{name:'Download',exact:true}).click();
     const exported = JSON.parse(await readFile(await (await download).path(), 'utf8'));
     expect(exported.mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
     expect(exported.graph.nodes.map(node => node.id)).toEqual(stored.graph.nodes.map(node => node.id));

@@ -96,7 +96,7 @@ test('map and notebook fit every breakpoint with a resizable wide-screen dock an
     await showMap(page);
     await projectMenu(page, 'Export & share');
     const dialog = page.getByRole('dialog', {name: 'Export & share'});
-    await expect(dialog.getByRole('button', {name: 'JSON Full project', exact: true})).toBeVisible();
+    await expect(dialog.getByRole('combobox',{name:'File format'})).toBeVisible();
     assertNoAccessibilityViolations(await scanAccessibility(page, makeAxeBuilder, testInfo, `Exports at ${width}px`));
     await dialog.getByRole('button', {name: 'Close Export & share'}).click();
   }

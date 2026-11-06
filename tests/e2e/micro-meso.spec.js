@@ -150,7 +150,7 @@ test('Micro keeps its arrangement while Meso connects the same nodes and saves a
   expect((await readProject(page)).graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(savedPositions);
   await projectMenu(page, 'Export & share');
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: /^JSON/ }).click();
+  await page.getByRole('combobox',{name:'File format'}).selectOption('json'); await page.getByRole('button',{name:'Download',exact:true}).click();
   const download = await downloadPromise;
   const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
   expect(exported.graph.edges.find(edge => edge.id === added.id).relationshipProcess.direction).toBe('both directions');

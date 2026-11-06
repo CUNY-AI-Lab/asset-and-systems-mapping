@@ -1115,7 +1115,7 @@ label.button:focus-within {
 .graph-edge--retired .edge-line { stroke-dasharray: 2 6; }
 .graph-edge.is-selected .edge-line { stroke: var(--teal) !important; stroke-width: max(4, var(--edge-count-width, 2)) !important; }
 .graph-edge-label.is-selected .edge-label-bg { stroke: var(--teal); stroke-width: 2; }
-#arrowhead path { fill: var(--muted); }
+:is(#arrowhead,.map-arrowhead) path { fill: var(--muted); }
 /* Preserve readable direction cues when the phone map is fitted down. */
 @media (max-width: 600px) {
   .graph-canvas .edge-line { stroke-width: var(--edge-count-width, 2) !important; }
@@ -1862,11 +1862,6 @@ html[data-theme="dark"] .ecology-layer--macrosphere > ellipse { fill: color-mix(
 .completion-levels p { margin: 0; }
 .completion-levels blockquote { margin: 10px 0 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .completion-exports { margin-bottom: 24px; }
-.completion-exports .field { max-width: 240px; margin-bottom: 12px; }
-.completion-format-actions, .completion-return { display: grid; width: min(100%, 600px); grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
-.completion-format-actions .button, .completion-return .button { width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 10px 12px; }
-.completion-return { margin-top: 12px; }
-.completion-return .button { grid-column: 1; }
-@media (max-width: 600px) { .project-completion { padding: 20px 16px 40px; } .completion-levels { grid-template-columns: 1fr; gap: 18px; } .completion-format-actions, .completion-return { width: min(100%, 320px); grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 600px) { .project-completion { padding:20px 16px 40px; } .completion-levels { grid-template-columns:1fr; gap:18px; } }
 
 .annotation-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.annotation-save--saved{color:var(--muted)}

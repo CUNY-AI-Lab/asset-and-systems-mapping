@@ -95,12 +95,12 @@ or rejected access keeps the workspace paused; an unavailable check offers
 reload. Recognized identity
 alone does not replace the account and course authorization check.
 
-The **Project → Export & share** dialog shows its controls directly, grouped as **Download or share** (PNG, PDF, project link) and **Other formats** (JSON, CSV, Markdown), followed by **Import JSON**:
+Choose **File format** and then **Download** in Project → Export & share, on the finished map, or under Private exports in Projects. When the account and device copies differ, **Saved copy** selects which version to download without changing either. **Project link** and **Import JSON** remain separate actions:
 
-- **PNG / PDF** show the cumulative map and its connections; they omit the memo and Field Notes.
+- **PNG, PDF and SVG** show the cumulative map with the positions, colors, relationship wording, direction marks and groups used on the canvas. The whole drawing fits into the file; zoom, focus and the editing controls are omitted. SVG stays sharp when enlarged. PNG and PDF use the same image. The completion page previews the drawing before download.
 - **JSON — Full project** preserves a reopenable project with both memos, their last-successful analysis baselines, relationship group memberships, Field Notes, stable IDs, node colors, layout and saved edit history. Keep this complete copy private. Import validates the file before replacing the open project.
 - **CSV** supports spreadsheet analysis of graph records and neutralizes cells that could be interpreted as formulas.
-- **Markdown** provides a readable account for review and discussion.
+- **Markdown** includes the source memos and notes for review and discussion.
 
 Exports include the cumulative graph across levels. Portable copies remove evaluation and review bearer capabilities and include redaction metadata. Non-private exports also remove analysis baselines and edit history; visual exports retain permitted node colors. Project links retain their existing access, expiry and revocation rules. If browser storage fails, the current in-memory project remains available with a recovery export. Project schema v10 supports migration of v1–v9 projects.
 

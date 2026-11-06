@@ -1,104 +1,65 @@
-import { expect, test } from 'vitest';
-import { mapExportSvg, imagePdf } from './mapExport.js';
-import { createDefaultProject } from './domain.js';
-import { groupProject } from '../tests/fixtures/group-project.js';
-import { NODE_COLORS, nodeColorTokens } from '../shared/node-colors.js';
+import {beforeAll, afterAll, expect, test, vi} from 'vitest';
+import {imagePdf} from './mapExport.js';
+import {projectMapImage} from './App.jsx';
+import {createDefaultProject} from './domain.js';
+import {groupProject} from '../tests/fixtures/group-project.js';
+import {NODE_COLORS} from '../shared/node-colors.js';
 
-test.each(NODE_COLORS)('preserves the selected %s node color in SVG used by PNG and PDF export', color => {
-  const project = createDefaultProject();
-  project.graph.nodes = [{ id:'chosen', label:'Student-selected setting', scale:'micro', color }];
-  const before = structuredClone(project);
-  const document = new DOMParser().parseFromString(mapExportSvg(project).svg,'image/svg+xml');
-  const node = document.querySelector('[data-export-node="chosen"]');
-  const tokens = nodeColorTokens(color);
-  expect(node.getAttribute('data-node-color')).toBe(color);
-  expect(node.querySelector('rect').getAttribute('fill')).toBe(tokens.fill);
-  expect(node.querySelector('rect').getAttribute('stroke')).toBe(tokens.stroke);
-  expect(node.querySelector('text').getAttribute('fill')).toBe(tokens.text);
-  expect(project).toEqual(before);
+// DOM-only tests cover the drawing contract. The browser regression compares
+// actual bounds, paint and connector paths, with the real fonts loaded.
+beforeAll(()=>{vi.stubGlobal('requestAnimationFrame',cb=>setTimeout(cb,0));Object.defineProperty(SVGElement.prototype,'getBBox',{configurable:true,value:()=>({x:-120,y:-36,width:1810,height:630})});});
+afterAll(()=>{delete SVGElement.prototype.getBBox;vi.unstubAllGlobals();});
+const parsed=async p=>new DOMParser().parseFromString((await projectMapImage(p)).svg,'image/svg+xml');
+function pair(direction='source to target') {
+ const p=createDefaultProject();p.title='Test <map>';p.layout={autoFit:false};
+ p.graph.nodes=[{id:'a',x:1400,y:280,scale:'micro',label:'Resident'},{id:'b',x:190,y:510,scale:'micro',label:'Teacher'}];
+ p.graph.edges=[{id:'e',source:'a',target:'b',scale:'meso',verb:'talks with',relationshipProcess:{direction}}];
+ return p;
+}
+test.each(NODE_COLORS)('keeps the chosen %s color, manual geometry and label in the actual canvas drawing',async color=>{
+ const p=pair();p.graph.nodes[0].color=color;const before=structuredClone(p);
+ const doc=await parsed(p);
+ const a=doc.querySelector('[data-graph-id="a"]');expect(a.getAttribute('transform')).toBe('translate(1400 280)');
+ expect(a.getAttribute('data-node-color')).toBe(color);
+ expect(doc.querySelector('[data-graph-id="b"]').getAttribute('transform')).toBe('translate(190 510)');
+ expect(doc.querySelector('[data-edge-id="e"]').textContent).toContain('talks with');expect(p).toEqual(before);
 });
-
-test('Automatic and invalid colors retain the scale default without emitting untrusted styles', () => {
-  const project = createDefaultProject();
-  project.graph.nodes = [
-    {id:'default',label:'Default node',scale:'micro'},
-    {id:'invalid',label:'Invalid color',scale:'micro',color:'url(https://example.com)'},
-  ];
-  const document = new DOMParser().parseFromString(mapExportSvg(project).svg,'image/svg+xml');
-  for(const id of ['default','invalid']) {
-    const node = document.querySelector(`[data-export-node="${id}"]`);
-    expect(node.getAttribute('data-node-color')).toBeNull();
-    expect(node.querySelector('rect').getAttribute('fill')).toBe('#dbeafe');
-  }
-  expect(document.documentElement.outerHTML).not.toContain('https://example.com');
+test.each([['source to target',false,true],['target to source',true,false],['both directions',true,true],['not yet known',false,false],['varies',false,false]])('preserves %s direction, including unknown and varying direction symbols',async(direction,start,end)=>{
+ const doc=await parsed(pair(direction)), line=doc.querySelector('[data-graph-id="e"] path:last-child');
+ expect(line.hasAttribute('marker-start')).toBe(start);expect(line.hasAttribute('marker-end')).toBe(end);
+ expect(doc.querySelector('marker').getAttribute('orient')).toBe('auto-start-reverse');
+ if(!start&&!end)expect(doc.querySelector('[data-edge-id="e"] title')?.textContent).toContain(direction);
 });
-
-test('exports three spheres and vectors to the exact selected local relationships', () => {
-  const project = groupProject();
-  const group = project.graph.edges.at(-1);
-  const { svg, width, height } = mapExportSvg(project);
-  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
-  expect(doc.querySelector('parsererror')).toBeNull();
-  expect(doc.querySelectorAll('ellipse')).toHaveLength(3);
-  const vectors = [...doc.querySelectorAll(`[data-export-group="${group.id}"]`)];
-  expect(vectors.map(item => item.getAttribute('data-relationship-id')).sort()).toEqual([...group.relationshipIds].sort());
-  expect(svg).toContain('Microsystem'); expect(svg).toContain('Exosystem'); expect(svg).toContain('Macrosystem');
-  expect(doc.documentElement.textContent).toContain('selected relationships:');
-  const outer = doc.querySelector('[data-export-layer="macrosystem"] ellipse');
-  const transform = outer.parentElement.parentElement.getAttribute('transform').match(/translate\(([^ ]+) ([^)]+)\)/);
-  const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map(key => Number(outer.getAttribute(key)));
-  expect(cx - rx + Number(transform[1])).toBeGreaterThanOrEqual(0);
-  expect(cy - ry + Number(transform[2])).toBeGreaterThanOrEqual(0);
-  expect(cx + rx + Number(transform[1])).toBeLessThan(width);
-  expect(cy + ry + Number(transform[2])).toBeLessThan(height);
-  group.relationshipIds = group.relationshipIds.slice(1);
-  const revised = new DOMParser().parseFromString(mapExportSvg(project).svg, 'image/svg+xml');
-  expect(revised.querySelectorAll('[data-export-group]')).toHaveLength(1);
+test('frames exactly the drawing and shows only the system regions that exist',async()=>{
+ const p=pair();const doc=await parsed(p);
+ expect(doc.documentElement.getAttribute('viewBox')).toBe('-138 -54 1846 666');
+ expect(doc.querySelectorAll('[data-ecology-layer]')).toHaveLength(1);
+ p.graph.nodes.push({id:'office',label:'Access office',scale:'exosphere',x:1550,y:750});
+ const exo=await parsed(p);expect(exo.querySelectorAll('[data-ecology-layer]')).toHaveLength(2);
+ expect(exo.querySelector('[data-ecology-layer="macrosphere"]')).toBeNull();
 });
-test('escapes text, preserves earlier Meso records and scope links, and omits retired items and source memo', () => {
-  const p = createDefaultProject(); p.title='<script>& title'; p.submission.text='Private source text';
-  p.graph.nodes=[{id:'a',label:'Home <safe>',scale:'micro',settingNodeIds:['b']},{id:'b',label:'Coordination',scale:'meso',scopeNodeIds:['a']},{id:'c',label:'Retired secret',scale:'exosphere',claimState:'retired'}];
-  p.graph.nodes.push({id:'setting',label:'School setting',scale:'micro'});
-  p.graph.nodes[0].settingNodeIds = ['setting'];
-  p.graph.nodes.push({id:'d',label:'Rejected secret',scale:'micro',status:'rejected'});
-  p.graph.edges=[{source:'a',target:'b',verb:'hidden verb',status:'rejected'}];
-  const {svg}=mapExportSvg(p);
-  expect(svg).toContain('&lt;script&gt;&amp; title'); expect(svg).toContain('Home &lt;safe&gt;');expect(svg).toContain('stroke-dasharray'); expect(svg).toContain('setting membership');
-  expect(svg).not.toContain('Private source text'); expect(svg).not.toContain('Retired secret'); expect(svg).not.toContain('Rejected secret'); expect(svg).not.toContain('hidden verb');
-  expect(svg).toContain('Preserved Meso records from earlier maps');
-  expect(svg).not.toMatch(/>Meso<\/text>/);
+test('uses exactly the selected relationships as group branches, and labels each group once',async()=>{
+ const p=groupProject(), group=p.graph.edges.at(-1);const doc=await parsed(p);
+ expect(doc.querySelectorAll('ellipse')).toHaveLength(3);
+ expect([...doc.querySelectorAll('[data-group-member]')].map(n=>n.getAttribute('data-group-member')).sort()).toEqual([...group.relationshipIds].sort());
+ expect(doc.querySelectorAll(`[data-edge-id="${group.id}"]`)).toHaveLength(1);
+ expect(doc.querySelector(`[data-edge-id="${group.id}"]`).textContent).toContain(group.verb);
+ group.relationshipIds=group.relationshipIds.slice(1);expect((await parsed(p)).querySelectorAll('[data-group-member]')).toHaveLength(1);
 });
-test('exports Micro items and Meso links inside one shared circle with no separate Meso column', () => {
-  const project = createDefaultProject();
-  project.graph.nodes = Array.from({ length: 8 }, (_, index) => ({ id: `node-${index}`, label: `Mapped person ${index + 1}`, scale: 'micro' }));
-  project.graph.edges = project.graph.nodes.slice(1).map((node, index) => ({ source: 'node-0', target: node.id, scale: 'meso', verb: `connection ${index + 1}` }));
-  const { svg, width } = mapExportSvg(project);
-  const document = new DOMParser().parseFromString(svg, 'image/svg+xml');
-  const circle = document.querySelector('[data-export-layer="micro"] ellipse');
-  expect(document.querySelectorAll('ellipse')).toHaveLength(1);
-  expect(document.querySelectorAll('[data-export-layer="meso"]')).toHaveLength(0);
-  expect(svg).toContain('Map · 8 items · 7 connections');
-  expect(svg).toContain('Microsystem');
-  expect(width).toBe(900);
-  const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map(name => Number(circle.getAttribute(name)));
-  expect(cx - rx).toBeGreaterThan(0);
-  expect(cx + rx).toBeLessThan(width);
-  for (const card of document.querySelectorAll('rect[fill="#dbeafe"]')) {
-    const [x, y, cardWidth, cardHeight] = ['x', 'y', 'width', 'height'].map(name => Number(card.getAttribute(name)));
-    for (const [px, py] of [[x, y], [x + cardWidth, y], [x, y + cardHeight], [x + cardWidth, y + cardHeight]]) {
-      expect(((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2).toBeLessThan(1);
-    }
-  }
+test('keeps earlier Meso and scope descriptions while omitting private source, retired records and editor controls',async()=>{
+ const p=pair();p.submission.text='DO NOT INCLUDE MEMO';p.graph.nodes[0].evidence='PRIVATE PASSAGE';
+ p.graph.nodes.push({id:'legacy',label:'Coordination',scale:'meso',scopeNodeIds:['a']},{id:'removed',label:'Retired secret',scale:'micro',claimState:'retired'});
+ p.graph.nodes[0].settingNodeIds=['b'];p.graph.edges.push({...p.graph.edges[0],id:'removed-edge',verb:'secret verb',status:'rejected'});
+ const {svg}=await projectMapImage(p);
+ expect(svg).toContain('Test &lt;map&gt;');expect(svg).toContain('Preserved Meso record: Coordination');expect(svg).toContain('setting membership');
+ for(const privateText of ['DO NOT INCLUDE MEMO','PRIVATE PASSAGE','Retired secret','secret verb','aria-keyshortcuts','tabindex='])expect(svg).not.toContain(privateText);
+ expect(document.querySelector('[aria-hidden="true"].map-stage')).toBeNull();
 });
-test('the exported map does not show a saved audience setting', () => {
-  const project = createDefaultProject();
-  project.sharingTier = 'course';
-  project.graph.nodes = [{ id: 'a', label: 'Community center', scale: 'micro' }];
-  const { svg } = mapExportSvg(project);
-  expect(svg).toContain('Community center');
-  expect(svg).toContain('Map · 1 item · 0 connections');
-  expect(svg).toContain('>Connections</text>');
-  expect(svg).not.toContain('Export audience');
+test('retains missing, count and process details without drawing an invented arrow',async()=>{
+ const p=pair('both directions');Object.assign(p.graph.edges[0].relationshipProcess,{connectionStatus:'missing',familyCount:34,channel:'Paper form',strength:'contested'});
+ const d=await parsed(p);const line=d.querySelector('[data-graph-id="e"] path:last-child');
+ expect(line.hasAttribute('marker-start')).toBe(false);expect(line.hasAttribute('marker-end')).toBe(false);
+ expect(d.querySelector('desc').textContent).toMatch(/Families: 34/);expect(d.querySelector('desc').textContent).toMatch(/Channel: Paper form/);
 });
 test('PDF offsets resolve to each object and the embedded image stream has its exact byte length', async () => {
   const blob=imagePdf(new Uint8Array([255,216,255,217]),100,100);
@@ -109,51 +70,4 @@ test('PDF offsets resolve to each object and the embedded image stream has its e
   const xref=Number(/startxref\n(\d+)/.exec(text)[1]);expect(text.slice(xref, xref+4)).toBe('xref');
   const offsets=text.slice(xref).split('\n').slice(3,8).map(line=>Number(line.slice(0,10)));
   offsets.forEach((offset,i)=>expect(text.slice(offset,offset+7)).toBe(`${i+1} 0 obj`));
-});
-
-test('preserves the Macro action and names the condition before each affected item', () => {
-  const project = createDefaultProject();
-  project.graph.nodes = [
-    { id: 'a', label: 'School', scale: 'micro' },
-    { id: 'b', label: 'Clinic', scale: 'micro' },
-    { id: 'law', label: 'Privacy law', scale: 'macrosphere', deontic: 'prohibits', scopeNodeIds: ['a', 'b'] },
-  ];
-  const { svg } = mapExportSvg(project);
-  const text = [...new DOMParser().parseFromString(svg, 'image/svg+xml').querySelectorAll('tspan')].map(node => node.textContent).join(' ');
-  expect(text).toContain('Privacy law — prohibits — School');
-  expect(text).toContain('Privacy law — prohibits — Clinic');
-  expect(text).not.toContain('— scope —');
-});
-
-test.each([
-  ['source to target', false, true, 'Resident talks with Teacher'],
-  ['target to source', true, false, 'Teacher talks with Resident'],
-  ['both directions', true, true, 'Resident talks with Teacher, both directions'],
-  ['not yet known', false, false, 'Resident — talks with — Teacher, direction not yet known'],
-  ['varies', false, false, 'Resident — talks with — Teacher, direction varies'],
-])('exports %s with matching arrowheads and legend', (direction, start, end, description) => {
-  const p = createDefaultProject();
-  p.graph.nodes = [{ id: 'a', label: 'Resident', scale: 'micro' }, { id: 'b', label: 'Teacher', scale: 'micro' }];
-  p.graph.edges = [{ id: 'edge', source: 'a', target: 'b', verb: 'talks with', scale: 'meso', relationshipProcess: { direction } }];
-  const { svg } = mapExportSvg(p);
-  expect(svg.includes('marker-start="url(#arrow)"')).toBe(start);
-  expect(svg.includes('marker-end="url(#arrow)"')).toBe(end);
-  expect(svg).toContain(description);
-  expect(svg).not.toContain('←');
-  expect(svg).toContain('orient="auto-start-reverse"');
-});
-
-test('exports missing pairs without arrowheads, keeps connector details and explains count width', () => {
-  const p = createDefaultProject();
-  p.graph.nodes = [{ id: 'a', label: 'Assistant principal', scale: 'micro' }, { id: 'b', label: 'Parent', scale: 'micro' }];
-  p.graph.edges = [{ id: 'edge', source: 'a', target: 'b', verb: 'exchanges forms with', scale: 'meso', relationshipProcess: {
-    direction: 'both directions', connectionStatus: 'missing', strength: 'contested', familyCount: 34, channel: 'Paper form', connectingWork: 'Parent',
-  } }];
-  const { svg } = mapExportSvg(p);
-  expect(svg).toContain('Missing connection between Assistant principal and Parent');
-  expect(svg).toContain('stroke-dasharray="6 4"');
-  expect(svg).not.toContain('marker-start="url(#arrow)"');
-  expect(svg).not.toContain('marker-end="url(#arrow)"');
-  const visibleText = [...new DOMParser().parseFromString(svg, 'image/svg+xml').querySelectorAll('tspan')].map(node => node.textContent).join(' ');
-  for (const text of ['Strength: contested', 'Families: 34', 'Channel: Paper form', 'Connecting work: Parent', 'Wider lines represent more recorded families']) expect(visibleText).toContain(text);
 });

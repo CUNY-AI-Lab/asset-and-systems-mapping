@@ -105,7 +105,7 @@ for (const retainId of [false, true]) test(`unpublished course metadata saves, e
   await expect(page.locator('.workspace-save-notice')).toHaveCount(0);
   await projectMenu(page, 'Export & share');
   const pendingDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: /^JSON/ }).click();
+  await page.getByRole('combobox',{name:'File format'}).selectOption('json'); await page.getByRole('button',{name:'Download',exact:true}).click();
   const exported = JSON.parse(await readFile(await (await pendingDownload).path(), 'utf8'));
   expect(exported.submission.text).toBe(memo);
   expect(exported.graph).toEqual({ nodes: [], edges: [] });

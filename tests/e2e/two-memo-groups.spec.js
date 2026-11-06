@@ -150,7 +150,8 @@ test('two memos retain the local map, model groups can be edited, and downloads 
   const exports = page.getByRole('dialog', { name: 'Export & share' });
   for (const format of ['JSON', 'Markdown', 'PNG image', 'PDF']) {
     const pending = page.waitForEvent('download');
-    await exports.getByRole('button', { name: new RegExp(`^${format}`) }).click();
+    await exports.getByRole('combobox',{name:'File format'}).selectOption({'JSON':'json','Markdown':'markdown','PNG image':'png','PDF':'pdf'}[format]);
+    await exports.getByRole('button',{name:'Download',exact:true}).click();
     const file = await pending, data = await readFile(await file.path());
     if (format === 'JSON') {
       const restored = parseProject(data.toString('utf8'));

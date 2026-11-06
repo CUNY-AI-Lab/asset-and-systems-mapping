@@ -56,31 +56,21 @@ test('the four exercises keep earlier work visible and build larger and cross-sc
  }).toBe(true);
  await captureSourceRenderedScreenshot(page,testInfo,'Completion synthesizes saved work with cumulative exports');
  expect((await read(page)).graph).toEqual(complete.graph);
- const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Private backup',exact:true}).click();const backup=await pending;
+ const pending=page.waitForEvent('download');await page.getByRole('combobox',{name:'File format'}).selectOption('json'); await page.getByRole('button',{name:'Download',exact:true}).click();const backup=await pending;
  const exported=parseProject(await readFile(await backup.path(),'utf8'));
  expect(exported.graph).toEqual(complete.graph);
  for(const scale of p.releasedScales)expect(exported.levelProgress[scale].reflection).toBe(p.levelProgress[scale].reflection);
  const originalToBlob=await page.evaluate(()=>{window.__completionToBlob=HTMLCanvasElement.prototype.toBlob;return true;});expect(originalToBlob).toBe(true);
  await page.evaluate(()=>{HTMLCanvasElement.prototype.toBlob=function(callback){callback(null);};});
- await page.getByRole('button',{name:'Download PNG',exact:true}).click();await expect(page.getByRole('alert')).toBeVisible();expect((await read(page)).graph).toEqual(complete.graph);
+ await page.getByRole('combobox',{name:'File format'}).selectOption('png'); await page.getByRole('button',{name:'Download',exact:true}).click();await expect(page.getByRole('alert')).toBeVisible();expect((await read(page)).graph).toEqual(complete.graph);
  await page.evaluate(()=>{HTMLCanvasElement.prototype.toBlob=window.__completionToBlob;delete window.__completionToBlob;});
- for(const format of ['PNG','PDF']){const next=page.waitForEvent('download');await page.getByRole('button',{name:`Download ${format}`,exact:true}).click();const file=await next;expect((await readFile(await file.path())).length).toBeGreaterThan(1000);}
+ for(const format of ['PNG','PDF']){const next=page.waitForEvent('download');await page.getByRole('combobox',{name:'File format'}).selectOption(format.toLowerCase());await page.getByRole('button',{name:'Download',exact:true}).click();const file=await next;expect((await readFile(await file.path())).length).toBeGreaterThan(1000);}
  assertNoAccessibilityViolations(await scanAccessibility(page,makeAxeBuilder,testInfo,'Completion and exports'));
  await page.getByRole('button',{name:'Return to map',exact:true}).scrollIntoViewIfNeeded();
- const formatButtons=await page.locator('.completion-format-actions button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};}));
- expect(formatButtons).toHaveLength(4);
- for(const button of formatButtons){expect(button.height).toBeGreaterThanOrEqual(44);expect(button.width).toBeGreaterThanOrEqual(100);expect(Math.abs(button.height-formatButtons[0].height)).toBeLessThan(1);expect(Math.abs(button.width-formatButtons[0].width)).toBeLessThan(1);}
- const phone=testInfo.project.name==='chromium-phone';
- expect(Math.abs(formatButtons[0].y-formatButtons[1].y)).toBeLessThan(1);
- if(phone){expect(formatButtons[2].y).toBeGreaterThan(formatButtons[0].bottom);expect(Math.abs(formatButtons[2].x-formatButtons[0].x)).toBeLessThan(1);expect(Math.abs(formatButtons[3].x-formatButtons[1].x)).toBeLessThan(1);expect(Math.abs(formatButtons[2].y-formatButtons[3].y)).toBeLessThan(1);}
- else for(const button of formatButtons)expect(Math.abs(button.y-formatButtons[0].y)).toBeLessThan(1);
- const returnButton=await page.getByRole('button',{name:'Return to map',exact:true}).boundingBox();
- expect(returnButton.y).toBeGreaterThan(Math.max(...formatButtons.map(button=>button.bottom)));
- const formatGroup=await page.locator('.completion-format-actions').boundingBox();
- expect(formatGroup.width).toBeLessThanOrEqual(phone?320:600);
- expect(Math.abs(returnButton.x-formatButtons[0].x)).toBeLessThan(1);
- expect(Math.abs(returnButton.width-formatButtons[0].width)).toBeLessThan(1);
- expect(returnButton.height).toBeGreaterThanOrEqual(44);
+ const controls=await page.locator('.completion-exports select,.completion-exports button').evaluateAll(items=>items.map(item=>{const r=item.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,height:r.height};}));
+ expect(controls).toHaveLength(2);
+ for(const control of controls){expect(control.height).toBeGreaterThanOrEqual(44);expect(control.x).toBeGreaterThanOrEqual(0);expect(control.right).toBeLessThanOrEqual(page.viewportSize().width);}
+ await expect(page.getByRole('img',{name:/Map preview:/})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Project complete',exact:true})).toHaveCount(0);
  await captureSourceRenderedScreenshot(page,testInfo,'Completion export controls and return to map');
  await page.getByRole('button',{name:'Return to map',exact:true}).click();await expect(page.locator('.graph-node')).toHaveCount(8);

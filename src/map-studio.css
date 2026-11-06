@@ -102,7 +102,7 @@
 .is-reading-view .relationship-group-vector { fill: none; stroke: var(--exosphere); stroke-opacity: .65; stroke-width: .85; stroke-dasharray: 6 4; }
 .is-reading-view .relationship-group-join { fill: var(--surface); stroke: var(--exosphere); stroke-width: 1; }
 .is-reading-view .graph-edge .edge-line { stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)) !important; stroke-width: .95 !important; }
-.is-reading-view #arrowhead path { fill: none; stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)); stroke-width: 1; stroke-linejoin: round; }
+.is-reading-view :is(#arrowhead,.map-arrowhead) path { fill: none; stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)); stroke-width: 1; stroke-linejoin: round; }
 .is-reading-view .edge-selection-halo { display: none; }
 .is-reading-view .graph-node { --node-color:#2566a0; }
 .is-reading-view .graph-node:is([data-node-type="organization"],[data-node-type="institution"],[data-node-type="agency"],[data-node-type="service"],[data-node-type="place"],[data-node-type="setting"]) { --node-color:#18746b; }
@@ -131,6 +131,6 @@
 @media (forced-colors: active) {
   .is-reading-view .graph-edge .edge-line { stroke: CanvasText !important; }
   .is-reading-view .graph-edge.is-reading-active .edge-line { stroke: Highlight !important; }
-  .is-reading-view #arrowhead path { stroke: CanvasText; }
+  .is-reading-view :is(#arrowhead,.map-arrowhead) path { stroke: CanvasText; }
   .is-reading-view .graph-node .node-card { fill:Canvas !important; stroke:CanvasText !important; }
 }

@@ -71,7 +71,7 @@ function notebookOption(label) {
 }
 function openExports() {
   openProjectMenu('Export & share');
-  expect(screen.getByRole('button', { name: 'PNG image', exact: true })).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'File format' })).toBeVisible();
 }
 function candidateLabels() {
   const labels = [];
@@ -6215,9 +6215,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(stages).getByRole('button', { name: /review and export/i }));
     expect(await screen.findByRole('textbox', { name: 'Field notes (required)' })).toBeVisible();
     openExports();
-    fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
+    fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'json'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));
 
-    const dialog = screen.getByRole('dialog', { name: 'Save needs attention' });
+    const dialog = await screen.findByRole('dialog', { name: 'Save needs attention' });
     expect(within(dialog).getByText('The export was not created because one map item needs attention.')).toBeVisible();
     expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument();
     expect(dialog).not.toHaveTextContent('Invalid Systems Mapping project:');
@@ -6298,7 +6298,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(Object.keys(recovered.levelProgress)).toHaveLength(4);
       openExports();
       expect(screen.queryByRole('combobox', { name: 'Export audience' })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: /^JSON/ }));
+      fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'json'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));
       const downloaded = parseProject(blobs[1]);
       expect(downloaded.submission).toEqual(project.submission);
       expect(downloaded.reflection).toBe(project.reflection);
@@ -6681,7 +6681,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(screen.queryByText('source imported')).not.toBeInTheDocument();
       expect(screen.queryByText('research leads')).not.toBeInTheDocument();
       openExports();
-      fireEvent.click(screen.getByRole('button', { name: /^CSV/ }));
+      fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'csv'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));
       expect(blobs).toHaveLength(1);
       expect(blobs[0].type).toBe('text/csv');
       const csv = blobs[0].parts.join('');
@@ -6697,7 +6697,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(csv).not.toContain('claim_state');
       expect(csv).not.toContain('"confirmed"');
 
-      fireEvent.click(screen.getByRole('button', { name: /^Markdown/ }));
+      fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'markdown'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));
       expect(blobs).toHaveLength(2);
       const markdown = blobs[1].parts.join('');
       expect(markdown).toContain('## Part 1 memo · Microsystem');

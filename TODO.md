@@ -1,5 +1,10 @@
 # Systems Mapping release record
 
+## Map downloads and overlaps — November 5
+
+Wireframe: **Project title · Return to map** → map preview → **File format ▾ · Download**. In Projects, show **Saved copy ▾** only when both a device and account version exist. Keep sharing separate. One drawing must carry saved placement, card colors, verbs, arrows and relationship groups through PNG, PDF and SVG. Check proximity and overlap using the factual Lab map, then verify Dev before production.
+
+
 ## Account interface and expanded CUNY memos — November 5, 2026
 
 Application source **`763943c3c1b24aa583c30c08353b1cab8bc78f7f`** is verified on Dev and production. Account and Instructor Console now share the workspace's underlined navigation, compact type, and consistent outlined disclosure rows with a left chevron. Prompt actions appear above the fields. Desktop Scale and prompt fields share a row; phone fields stack. Native keyboard controls and existing draft/publication behavior remain intact.

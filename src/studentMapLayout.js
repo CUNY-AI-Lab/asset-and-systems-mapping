@@ -231,10 +231,10 @@ const routeConflict = (a,b,c,d) => {
 };
 // Wording is always on its own routed line. There are no detached callouts.
 const connectionCache = new Map();
-export function attachedConnectionLayout(edges,nodes,positions,geometries,labelGeometries,labelObstacles=[]) {
-  const key=JSON.stringify([edges.map(e=>[e.id,e.source,e.target]),nodes.map(n=>[n.id,positions.get(n.id),geometries.get(n.id)]),[...labelGeometries],labelObstacles]);
+export function attachedConnectionLayout(edges,nodes,positions,geometries,labelGeometries,labelObstacles=[],reservedSegments=[]) {
+  const key=JSON.stringify([edges.map(e=>[e.id,e.source,e.target]),nodes.map(n=>[n.id,positions.get(n.id),geometries.get(n.id)]),[...labelGeometries],labelObstacles,reservedSegments]);
   if(connectionCache.has(key))return connectionCache.get(key);
-  const anchors=new Map(),bounds=new Map(),paths=new Map(),routeKinds=new Map(),occupied=[...labelObstacles],segments=[];
+  const anchors=new Map(),bounds=new Map(),paths=new Map(),routeKinds=new Map(),occupied=[...labelObstacles],segments=[...reservedSegments];
   const cards=new Map(nodes.filter(n=>geometries.get(n.id).cardWidth>0).map(n=>[n.id,box(positions.get(n.id),geometries.get(n.id),4)]));
   const ports=(id,edgeId)=>{
     const p=positions.get(id),g=geometries.get(id),incident=edges.filter(e=>e.source===id||e.target===id).map(e=>e.id).sort();
@@ -262,13 +262,17 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
         for(const r of [...cards.values(),...occupied])if(segmentHits(points[i-1],points[i],r))hits++;
         for(const [c,d] of segments)conflicts+=routeConflict(points[i-1],points[i],c,d);
       }
+      const detour=Math.max(0,total-length(a,b)*1.65-80);
       const candidates=[];
       for(let i=1;i<points.length;i++)for(const f of [.5,.35,.65]){
         const start=points[i-1],end=points[i],anchor={x:start.x+(end.x-start.x)*f,y:start.y+(end.y-start.y)*f};
-        const area={left:anchor.x-label.width/2-6,right:anchor.x+label.width/2+6,top:anchor.y-label.height/2-5,bottom:anchor.y+label.height/2+5};
+        const area={left:anchor.x-label.width/2-6,right:anchor.x+label.width/2+6+(label.trailing || 0),top:anchor.y-label.height/2-5,bottom:anchor.y+label.height/2+5};
         const collisions=label.width?[...cards.values(),...occupied].filter(r=>overlaps(area,r)).length+segments.filter(([c,d])=>segmentHits(c,d,area)).length:0;
         const enough=length(start,end)>Math.max(label.width*(Math.abs(end.x-start.x)/Math.max(1,length(start,end))),label.height)+20;
-        const score=hits*1e10+collisions*1e12+conflicts+(enough?0:10000)+total+points.length*24+Math.abs(f-.5)*100;
+        // A single clear crossing is easier to follow than a detour around
+        // the entire map. Cards, other captions and coincident lines still
+        // carry much larger penalties than either choice.
+        const score=hits*1e10+collisions*1e12+conflicts+detour*500+(enough?0:10000)+total+points.length*24+Math.abs(f-.5)*100;
         candidates.push({points,anchor,area,score});
       }
       for(const candidate of candidates)if(!best||candidate.score<best.score)best=candidate;
@@ -278,6 +282,16 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
     if(label.width || !best || best.score>=50000)for(const start of starts)for(const end of ends) {
       for(const y of ys)examine([start,{x:start.x,y},{x:end.x,y},end]);
       for(const x of xs)examine([start,{x,y:start.y},{x,y:end.y},end]);
+    }
+    // Try a single bend beside a nearby obstacle before sending a crowded
+    // connection to an outside lane. This also makes room for long verbs.
+    if(best && best.score>=50000) {
+      const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+      const turns=[...cards.values(),...occupied].flatMap(r=>[
+        {x:r.left-16,y:r.top-16},{x:r.right+16,y:r.top-16},
+        {x:r.left-16,y:r.bottom+16},{x:r.right+16,y:r.bottom+16},
+      ]).sort((p,q)=>length(p,mid)-length(q,mid)).slice(0,24);
+      for(const start of starts)for(const end of ends)for(const turn of turns)examine([start,turn,end]);
     }
     if(best?.score>=1e8)for(const start of starts)for(const end of ends)for(const x of xs)for(const y of ys) {
       examine([start,{x:start.x,y},{x,y},{x,y:end.y},end]);
@@ -294,13 +308,50 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
   return result;
 }
 
-export function relationshipAttachment(layout,id) {
+export function relationshipAttachment(layout,id,avoid=[]) {
   const route=layout.paths.get(id),label=layout.bounds.get(id);
   if(!route)return layout.anchors.get(id);
   const segments=route.points.slice(1).map((end,i)=>({start:route.points[i],end})).sort((a,b)=>length(b.start,b.end)-length(a.start,a.end));
-  for(const {start,end} of segments)for(const f of [.2,.8,.35,.65,.5]) {
+  for(const {start,end} of segments)for(const f of [.2,.8,.35,.65,.5,.12,.88]) {
     const point={x:start.x+(end.x-start.x)*f,y:start.y+(end.y-start.y)*f};
-    if(!label || !overlaps({left:point.x-12,right:point.x+12,top:point.y-12,bottom:point.y+12},label))return point;
+    const joinBox={left:point.x-8,right:point.x+8,top:point.y-8,bottom:point.y+8};
+    if((!label || !overlaps(joinBox,label)) && !avoid.some(r=>overlaps(joinBox,r)))return point;
   }
   return route.source;
+}
+
+// Route headings after the local links they attach to. All branches share
+// the same occupied corridors and captions; each group gets one visible verb.
+export function readingConnectionLayout(edges,nodes,positions,geometry,labels,activeGroups) {
+  const direct=attachedConnectionLayout(edges.filter(e=>!e.relationshipIds?.length),nodes,positions,geometry,labels);
+  const groups=new Map(), branches=[], extraNodes=[], targetPositions=new Map(positions), sizes=new Map(geometry), words=new Map();
+  const avoid=[...direct.bounds].filter(([id])=>labels.get(id)?.width).map(([,b])=>b);
+  const joins=[];
+  for(const edge of edges) {
+    if(!edge.relationshipIds?.length || !activeGroups.has(edge.id))continue;
+    const members=[];
+    for(const id of edge.relationshipIds) {
+      if(!direct.paths.has(id))continue;
+      const point=relationshipAttachment(direct,id,[...avoid,...joins]);
+      const target='@join:'+JSON.stringify([edge.id,id]);
+      const key=target+':branch';
+      extraNodes.push({id:target});targetPositions.set(target,point);sizes.set(target,{cardWidth:0,cardHeight:0});
+      branches.push({id:key,source:edge.source,target});
+      if(!members.length)words.set(key,labels.get(edge.id));
+      members.push({id,point,key});
+      joins.push({left:point.x-8,right:point.x+8,top:point.y-8,bottom:point.y+8});
+    }
+    if(members.length)groups.set(edge.id,members);
+  }
+  if(!branches.length)return {...direct,groups};
+  const segments=[...direct.paths.values()].flatMap(({points})=>points.slice(1).map((p,i)=>[points[i],p]));
+  const routes=attachedConnectionLayout(branches,[...nodes,...extraNodes],targetPositions,sizes,words,avoid,segments);
+  const paths=new Map(direct.paths),anchors=new Map(direct.anchors),bounds=new Map(direct.bounds);
+  for(const [id,members] of groups) {
+    for(const member of members)member.route=routes.paths.get(member.key);
+    const first=members[0];
+    if(!first.route)continue;
+    paths.set(id,first.route);anchors.set(id,routes.anchors.get(first.key));bounds.set(id,routes.bounds.get(first.key));
+  }
+  return {...direct,paths,anchors,bounds,groups};
 }

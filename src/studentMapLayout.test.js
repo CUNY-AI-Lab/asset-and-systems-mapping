@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { mapNodeGeometry } from './App.jsx';
-import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, attachedConnectionLayout, relationshipAttachment, contentEllipse, REGION_CAPTION } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, attachedConnectionLayout, readingConnectionLayout, relationshipAttachment, contentEllipse, REGION_CAPTION } from './studentMapLayout.js';
 
 const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
 const area=(p,g)=>({left:p.x-g.cardWidth/2,right:p.x+g.cardWidth/2,top:p.y-g.cardHeight/2,bottom:p.y+g.cardHeight/2});
@@ -325,4 +325,22 @@ it('reveals cumulative spheres as their nodes arrive without an empty Macro ring
   expect(Object.keys(studentMapBoundaries([micro,exo],geometry))).toEqual(['micro','exosphere']);
   expect(Object.keys(studentMapBoundaries([micro,exo,macro],geometry))).toEqual(['micro','exosphere','macrosphere']);
   expect(Object.keys(studentMapBoundaries([micro,macro],geometry))).toEqual(['micro','exosphere','macrosphere']);
+});
+
+it('keeps two heading groups clear of a dense set of saved cards and local verb captions',()=>{
+  const cards=[[366,389,163,42],[358,311,185,42],[523,11,137,42],[670,177,105,42],[680,398,104,42],[365,131,216,42],[519,603,224,90],[36,546,193,42],[970,561,224,64]], sizes=[[88,32,0],[215,32,0],[214,32,0],[229,32,0],[88,32,0],[88,32,22],[137,32,22],[102,32,22],[91,32,22],[91,32,22],[202,32,22],[135,32,0]];
+  const nodes=cards.map((_,i)=>({id:'card'+i}));
+  const positions=new Map(nodes.map(({id},i)=>[id,{x:cards[i][0],y:cards[i][1]}]));
+  const geometry=new Map(nodes.map(({id},i)=>[id,{cardWidth:cards[i][2],cardHeight:cards[i][3]}]));
+  const edges=[[0,3],[0,4],[1,5],[6,0,[0]],[7,0,[0,2]],[4,3],[4,5],[1,4],[2,0],[2,1],[6,1],[4,8]]
+    .map(([a,b,children],i)=>({id:'line'+i,source:nodes[a].id,target:nodes[b].id,relationshipIds:children?.map(j=>'line'+j)}));
+  const labels=new Map(edges.map(({id},i)=>[id,{width:sizes[i][0],height:sizes[i][1],trailing:sizes[i][2]}]));
+  const layout=readingConnectionLayout(edges,nodes,positions,geometry,labels,new Set(['line3','line4']));
+  expect(layout.groups.get('line4').map(m=>m.id)).toEqual(['line0','line2']);
+  expect(layout.bounds.size).toBe(12);
+  const captions=[...layout.bounds.values()];
+  captions.forEach((r,i)=>{
+    for(const n of nodes)expect(intersects(r,area(positions.get(n.id),geometry.get(n.id)))).toBe(false);
+    for(const other of captions.slice(i+1))expect(intersects(r,other)).toBe(false);
+  });
 });

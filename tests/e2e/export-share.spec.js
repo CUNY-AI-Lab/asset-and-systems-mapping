@@ -18,9 +18,9 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   await projectMenu(page, 'Export & share');
   const exportsDialog = page.getByRole('dialog', { name: 'Export & share' });
   const closeExports = exportsDialog.getByRole('button', { name: 'Close Export & share' });
-  const png = exportsDialog.getByRole('button', { name: 'PNG image', exact: true });
+  const png = exportsDialog.getByRole('combobox', { name: 'File format' });
   await expect(png).toBeVisible();
-  await expect(exportsDialog.getByRole('button', { name: /^JSON/ })).toBeVisible();
+  await expect(exportsDialog.getByRole('button', { name:'Download',exact:true })).toBeVisible();
   await expect(closeExports).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(png).toBeFocused();
@@ -32,7 +32,7 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   await projectMenu(page, 'Export & share');
   await expect(exportsDialog.getByRole('combobox',{name:'Export audience'})).toHaveCount(0);
   const jsonPending=page.waitForEvent('download');
-  await page.getByRole('button',{name:/^JSON/}).click();
+  await page.getByRole('combobox',{name:'File format'}).selectOption('json'); await page.getByRole('button',{name:'Download',exact:true}).click();
   const json=await jsonPending;
   const jsonPath=testInfo.outputPath('cumulative-map.json');
   await json.saveAs(jsonPath);
@@ -41,7 +41,7 @@ test('downloads map images and PDFs, and copies a saved link while preserving it
   expect(project.graph.nodes.map(node=>node.label)).toEqual(fixture.graph.nodes.map(node=>node.label));
   expect(project.sharingTier).toBe('private');
   for (const [label,ext] of [['PNG image','png'],['PDF','pdf']]) {
-    const pending=page.waitForEvent('download');await page.getByRole('button',{name:label,exact:true}).click();
+    const pending=page.waitForEvent('download');await png.selectOption(ext); await exportsDialog.getByRole('button',{name:'Download',exact:true}).click();
     const download=await pending;const path=testInfo.outputPath(`cumulative-map.${ext}`);await download.saveAs(path);
     const data=await readFile(path);
     expect(data.length).toBeGreaterThan(1000);

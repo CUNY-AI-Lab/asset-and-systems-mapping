@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, projectMarkdown } from './App.jsx';
+import { Modal, downloadProjectFile } from './App.jsx';
+import MapDownloadControls from './MapDownloadControls.jsx';
 import { Action } from './ui/StudioPrimitives.jsx';
-import { createPortableProject, exportFileName, PROJECT_LIMITS, SCALE_ORDER, SCALES, serializePortableProject } from './domain.js';
+import { PROJECT_LIMITS, SCALE_ORDER, SCALES } from './domain.js';
 import { fieldNotesQuestions } from '../shared/field-notes.js';
-import { downloadBlob, exportMapImage } from './mapExport.js';
 import { progressLabel } from './projectProgress.js';
 import { userFacingError } from './userFacingError.js';
 
@@ -35,12 +35,6 @@ export default function ProjectLibraryDialog({ selection, onClose, onSave, onDel
     try { await action(); }
     catch (cause) { setError(userFacingError(cause, 'This action could not be completed. Your work is still available. Download a private backup before leaving.')); }
     finally { setBusy(false); }
-  };
-  const exportFile = async (format, snapshot = project) => {
-    if (format === 'json') downloadBlob(new Blob([serializePortableProject(snapshot, 'private')], {type:'application/json'}), exportFileName(snapshot, 'json'));
-    else if (format === 'markdown') downloadBlob(new Blob([projectMarkdown(createPortableProject(snapshot, 'private'))], {type:'text/markdown'}), exportFileName(snapshot, 'md'));
-    else downloadBlob(await exportMapImage(createPortableProject(snapshot, 'private'), format), exportFileName(snapshot, format));
-    setStatus('Downloaded.');
   };
   const note = level === project.activeScale ? project.reflection : project.levelProgress?.[level]?.reflection || '';
   const writeNote = value => {
@@ -74,8 +68,9 @@ export default function ProjectLibraryDialog({ selection, onClose, onSave, onDel
           <Action disabled={busy || !dirty || selection.conflict} onClick={save}>Save note</Action>
         </section>
         <section aria-label="Private project exports"><h2>Private exports</h2>
-          <div className="library-format-actions"><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('json'))}>Private backup</Action><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('markdown'))}>Notes (Markdown)</Action>{project.graph.nodes.length > 0 && <><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('png'))}>PNG</Action><Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('pdf'))}>PDF</Action></>}</div>
-          {selection.conflict && selection.remote && <Action variant="secondary" disabled={busy} onClick={() => run(() => exportFile('json', selection.remote))}>Account backup</Action>}
+          <MapDownloadControls hasMap={Boolean(project.graph.nodes.length || selection.remote?.graph.nodes.length)}
+            copies={Boolean(selection.conflict && selection.remote)} disabled={busy} onBusy={setBusy}
+            onDownload={(format,copy)=>downloadProjectFile(copy==='account' && selection.conflict ? selection.remote : project,format)} />
         </section>
         <div className="library-return"><Action disabled={busy || dirty} onClick={() => onOpen(selection.record)}>Open project</Action></div>
       </>}

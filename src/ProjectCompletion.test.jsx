@@ -17,8 +17,8 @@ it('summarizes actual saved work and notes without inventing learning outcomes',
 it('keeps exports explicit, reports failure and allows a retry without losing synthesis', async () => {
  const p=buildEastHarlemDisabilityProject();const output=vi.fn().mockRejectedValueOnce(new Error('Synthetic export unavailable.')).mockResolvedValueOnce(undefined);
  render(<ProjectCompletion project={p} onReturn={vi.fn()} onExport={output} />);
- fireEvent.click(screen.getByRole('button',{name:'Private backup'}));expect(await screen.findByRole('alert')).toHaveTextContent('Synthetic export unavailable.');
- expect(screen.getByRole('heading',{name:p.title})).toBeVisible();fireEvent.click(screen.getByRole('button',{name:'Private backup'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'json'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));expect(await screen.findByRole('alert')).toHaveTextContent('Synthetic export unavailable.');
+ expect(screen.getByRole('heading',{name:p.title})).toBeVisible();fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'json'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));
  await waitFor(()=>expect(screen.getByRole('status')).toHaveTextContent('Private backup downloaded.'));expect(output).toHaveBeenCalledTimes(2);
 });
 it('downloads a map without an audience choice and disables extra requests while preparing', async () => {
@@ -26,13 +26,13 @@ it('downloads a map without an audience choice and disables extra requests while
  render(<ProjectCompletion project={p} onReturn={vi.fn()} onExport={output}/>);
  expect(screen.queryByLabelText(/audience/i)).not.toBeInTheDocument();
  expect(screen.getByRole('heading',{name:'Download your map'})).toBeVisible();
- fireEvent.click(screen.getByRole('button',{name:'Download PNG',exact:true}));expect(output).toHaveBeenCalledWith('png');expect(screen.getByRole('button',{name:'Download PDF',exact:true})).toBeDisabled();
- finish();await waitFor(()=>expect(screen.getByRole('button',{name:'Download PDF',exact:true})).toBeEnabled());
+ fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'png'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));expect(output).toHaveBeenCalledWith('png');expect(screen.getByRole('combobox',{name:'File format'})).toBeDisabled();
+ finish();await waitFor(()=>expect(screen.getByRole('combobox',{name:'File format'})).toBeEnabled());
 });
-it.each([['Private backup','json'],['Download PNG','png'],['Download PDF','pdf']])('downloads %s directly', async (label, format) => {
+it.each(['json','png','pdf','svg','csv','markdown'])('downloads the selected %s format', async (format) => {
  const p=buildEastHarlemDisabilityProject();p.sharingTier='course';const output=vi.fn().mockResolvedValue(undefined);
  render(<ProjectCompletion project={p} onReturn={vi.fn()} onExport={output}/>);
- fireEvent.click(screen.getByRole('button',{name:label,exact:true}));
+ fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:format}}); fireEvent.click(screen.getByRole('button',{name:'Download'}));
  await waitFor(()=>expect(output).toHaveBeenCalledWith(format));
  expect(screen.queryByLabelText(/audience/i)).not.toBeInTheDocument();
 });
