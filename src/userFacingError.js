@@ -31,7 +31,7 @@ const messagesByCode = Object.freeze({
 });
 
 const rejectionByRule = Object.freeze({
-  outside_participation: 'the passage quoted for an outside office did not name that office',
+  outside_participation: 'your memo says it is unknown whether the focal people take part in a proposed outside office, or the passage quoted for it did not name that office',
   participation_conflict: 'the memo describes the focal people taking part in an office that was proposed as Exo; a setting they take part in belongs at Micro',
   policy_operation: 'a proposed policy was not tied to a passage stating what the policy requires or does',
   condition_established: 'a proposed condition was written as a wish, recommendation or question, not as something the memo says exists',

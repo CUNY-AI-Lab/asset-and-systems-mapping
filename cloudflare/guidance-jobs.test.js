@@ -31,7 +31,7 @@ test('duplicate starts and later recovery reuse the saved outcome with account a
 });
 test('a new classification contract starts fresh instead of reusing an older successful result', async () => {
   const { jobs, pending } = setup();
-  const sourceMaterial = 'City Housing Authority allocates repair staff.';
+  const sourceMaterial = 'City Housing Authority allocates repair staff. Resident participation in its decisions is unknown.';
   const memo = { ...input, activeScale: 'exosphere', workflowMode: 'student-nodes-v1', sourceMaterial };
   const config = { fingerprint: 'unchanged-course-guidance' }, model = 'same-model';
   const oldScope = JSON.stringify({ config, model });

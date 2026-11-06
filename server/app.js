@@ -404,7 +404,7 @@ class MemoReviewSemanticError extends Error {
       'Return a complete replacement JSON object; do not patch or explain the earlier response.',
       'Return exactly guidance: [], nodes: [...], connections: [], example: null, and readiness with ready and note. Students create every relationship.',
       'Use one supported noun label per new node. Separate distinct participants or settings, preserve an official source name, and leave actions in the quoted evidence.',
-      'Omit a new Exo setting only when the source describes the focal participants taking part in it. Otherwise keep it at Exo and quote a passage that names it.',
+      'Omit a new Exo setting when the source leaves focal participation unknown by saying so, or describes the focal participants taking part in it. Otherwise keep it at Exo and quote a passage that names it.',
       'A separately supported operative access rule or policy can remain at Exo. Quote its exact operative passage; never invent a rule or rename an institution as a policy.',
       'An existingId evidence update must retain its exact existing label, type and scale. Omit unsupported updates and new nodes.',
       'Copy each retained node evidence from one contiguous narrative passage, within 500 characters, preserving its qualifiers and citations.',

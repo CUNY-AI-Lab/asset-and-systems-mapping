@@ -6780,7 +6780,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       const { added, updated } = feedback.summary;
       const { withheld } = feedback;
       setNotebookOpen(true); setWorkflowPanelMode('review');
-      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.` : added ? `${added} nodes added to your map.` : withheld ? 'No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Add a node yourself in Tools.' : 'No new nodes were added: nothing new in this memo was identified for this step. Add a node yourself in Tools.');
+      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.` : added ? `${added} nodes added to your map.` : withheld ? 'No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Use Tools to add nodes yourself.' : 'No new nodes were added: nothing new in this memo was identified for this step. Use Tools to add nodes yourself.');
     } else if (feedback.error) {
       memoCommitFeedbackRef.current = null;
       setReviewFailure({ message: feedback.error, retryable: true });

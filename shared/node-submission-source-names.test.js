@@ -67,7 +67,7 @@ it.each(['micro', 'exosphere'])('asks for source-grounded noun extraction and ex
 
 it('distinguishes an administrator with no described participation from a separately established access rule in the second memo prompt', () => {
   const prompt = nodeSubmissionInstruction('exosphere');
-  expect(prompt).toContain('return Access Board as an Exo node quoting that passage');
+  expect(prompt).toContain('omit Access Board as an automatic Exo node');
   expect(prompt).toContain('an Exo policy named Course access approval rule may use that exact passage');
   expect(nodeSubmissionInstruction('micro')).not.toContain('SECOND MEMO EVIDENCE EXAMPLE');
 });

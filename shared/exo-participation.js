@@ -20,7 +20,8 @@ function focalParticipantPattern(narrative, quote, carriedNodes) {
 
 // A source gate for automatic Exo placement, not a universal classifier. A
 // place name alone proves nothing. Course convention: an office outside the focal
-// participants' interaction is Exo. Only stated participation rules Exo out.
+// participants' interaction is Exo. Stated participation rules Exo out, and so does a memo
+// that says participation in the office is unknown.
 export function exoParticipationIssue(node, narrative = node.evidence, carriedNodes = []) {
   const quote = normalized(node.evidence), full = normalized(narrative), name = escaped(normalized(node.label));
   const focal = `${focalParticipantPattern(narrative, quote, carriedNodes)}(?![\\p{L}\\p{N}])`;
@@ -61,6 +62,10 @@ export function exoParticipationIssue(node, narrative = node.evidence, carriedNo
   // is Exo. Stated participation was rejected above; the quote only has to
   // name the office. The student confirms, moves or removes the node.
   const label = normalized(node.label);
+  // The one remaining withholding: the memo itself says participation in this
+  // office is unknown. The student is told why and places it by hand.
+  const unknown = /\b(?:participation|involvement)\b[^.;]{0,40}\b(?:is|are|remains?|was|were) (?:unknown|unclear|not (?:known|stated|described))\b/iu;
+  if (sentencesInSource.some((sentence, index) => unknown.test(sentence) && (sentence.includes(label) || (sentencesInSource[index - 1] || '').includes(label)))) return 'must quote the focal participants’ nonparticipation in this named outside setting, not another setting';
   if (!quote.includes(label)) return 'must quote a passage that names this outside setting, not another setting';
   return null;
 }
