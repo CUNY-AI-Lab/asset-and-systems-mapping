@@ -16,7 +16,7 @@ import { useRelationshipDraft } from './relationshipDraft.js';
 import { useWorkspaceViewHistory } from './workspaceViewHistory.js';
 import { editHistoryState, recordEdit, restoreEdit } from './editHistory.js';
 import { readableNodePositions, straightConnectionLayout } from './readableGraphLayout.js';
-import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, readingConnectionLayout, relationshipAttachment, REGION_CAPTION } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, readingConnectionLayout, relationshipAttachment, captionObstacles, REGION_CAPTION } from './studentMapLayout.js';
 import { readMemoFile } from './documentImport.js';
 import { relationshipDescription, relationshipArrowheads, relationshipDirection, relationshipMapLabel, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
@@ -3825,7 +3825,8 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
   };
   const betweenEndpointLayout = useMemo(() => readingMode ? readingConnectionLayout(
     edges,nodes,renderedPositions,readingGeometry,readingLabelSizes(edges,readingEdgeIds,phoneLayout),
-    new Set(edges.filter(e=>e.relationshipIds?.length && (selectedGroup?.id===e.id || overviewLabels)).map(e=>e.id))
+    new Set(edges.filter(e=>e.relationshipIds?.length && (selectedGroup?.id===e.id || overviewLabels)).map(e=>e.id)),
+    captionObstacles(contentBoundaries)
   ) : betweenEndpointCalloutLayout(
     [...edges.filter((edge) => edge.showLabel !== false), ...scopeTraces],
     nodes,
@@ -4684,7 +4685,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       const ids = new Set(overview ? visibleEdges.map(e=>e.id) : selection?.kind==='edge' ? [selection.id] : visibleEdges.filter(e=>e.source===selection?.id || e.target===selection?.id).map(e=>e.id));
       if(group){ids.add(group.id);group.relationshipIds.forEach(id=>ids.add(id));}
       const routes=readingConnectionLayout(visibleEdges,displayedNodes,positions,geometry,readingLabelSizes(visibleEdges,ids,phoneLayout),
-        new Set(visibleEdges.filter(e=>e.relationshipIds?.length && (overview || group?.id===e.id)).map(e=>e.id)));
+        new Set(visibleEdges.filter(e=>e.relationshipIds?.length && (overview || group?.id===e.id)).map(e=>e.id)),
+        captionObstacles(studentMapBoundaries(displayedNodes,geometry)));
       for(const [id,rect] of routes.bounds)if(ids.has(id))bounds.push(rect);
       for(const route of [...routes.paths.values(),...Array.from(routes.groups.values()).flat().map(branch=>branch.route).filter(Boolean)]) {
         for(const {x,y} of route.points)bounds.push({left:x-5,top:y-5,right:x+5,bottom:y+5});

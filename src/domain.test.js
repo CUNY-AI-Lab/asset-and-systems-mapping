@@ -230,6 +230,16 @@ describe('mapping domain', () => {
       expect(isStatementMapElementLabel(label), label).toBe(false);
     }
   });
+  it('accepts a belief named by what is believed as one Macro condition', () => {
+    // A Dev memo on 7 November 2026 was rejected until the model renamed the
+    // faculty belief; “that” here is a complementizer, not a reference.
+    for (const label of ['Belief that AI threatens student writing and thinking', 'Faculty belief that AI tools threaten student writing', 'Widespread assumption that families prefer in-person meetings', 'Stigma that mental health care is a weakness']) {
+      expect(isStatementMapElementLabel(label), label).toBe(false);
+      expect(normalizeMapElementLabel(label), label).toBe(label);
+    }
+    expect(normalizeMapElementLabel('that belief')).toBeNull();
+    expect(normalizeMapElementLabel('Belief that')).toBeNull();
+  });
   it('uses normalized student-facing level titles without changing internal IDs', () => {
     expect(SCALE_ORDER).toEqual(['micro', 'meso', 'exosphere', 'macrosphere']);
     expect(Object.fromEntries(SCALE_ORDER.map((scale) => [scale, SCALES[scale].label]))).toEqual({
