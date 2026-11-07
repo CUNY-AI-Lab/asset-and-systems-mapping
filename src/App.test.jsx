@@ -7602,6 +7602,24 @@ Overall, the posting history documents a working student repeatedly turning to R
       await waitFor(() => expect(storedProject().graph.edges.find(edge => edge.source === condition.id && edge.verb === 'limits')?.relationshipIds).toEqual([meso.id]));
     });
 
+    it('reaches the local relationships through a branch already attached to their line', async () => {
+      // On production (7 Nov) a second outside node could not target a line
+      // once one branch was attached: the branch's hit path covered the line.
+      const project = await openGroupProject();
+      const group = project.graph.edges.find(edge => edge.relationshipIds?.length);
+      expect(group).toBeTruthy();
+      const source = project.graph.nodes.find(node => ['exosphere', 'macrosphere'].includes(node.scale) && node.id !== group.source);
+      fireEvent.doubleClick(document.querySelector(`[data-graph-id="${source.id}"]`));
+      fireEvent.keyDown(document.querySelector(`.graph-edge[data-graph-id="${group.id}"]`), { key: 'Enter' });
+      expect(await screen.findByRole('heading', { name: 'New relationship' })).toBeVisible();
+      const picker = screen.getByRole('group', { name: 'Local relationships', exact: true });
+      const chosen = within(picker).getAllByRole('checkbox').filter(box => box.checked);
+      expect(chosen).toHaveLength(group.relationshipIds.length);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Relationship', exact: true }), { target: { value: 'shapes' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add relationship', exact: true }));
+      await waitFor(() => expect(storedProject().graph.edges.find(edge => edge.source === source.id && edge.verb === 'shapes')?.relationshipIds).toEqual(group.relationshipIds));
+    });
+
     it('adds a node where the student double-clicks empty canvas, with the level chosen from a row of swatches', async () => {
       const project = await openGroupProject();
       fireEvent.doubleClick(document.querySelector('.graph-canvas'), { clientX: 12, clientY: 12 });
