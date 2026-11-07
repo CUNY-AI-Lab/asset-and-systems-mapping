@@ -254,7 +254,11 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
     await browserExpect(page.locator('.ecology-layers [data-ecology-layer]')).toHaveCount(3);
     await page.locator('.graph-node').filter({hasText:'City Housing Authority'}).press('Enter');
     await page.getByRole('button',{name:'Connect from City Housing Authority',exact:true}).click();
-    await page.getByRole('group',{name:'Local relationships',exact:true}).getByRole('checkbox').check();
+    // One gesture at every level: the outside item reaches the local relationship line itself.
+    await browserExpect(page.getByRole('status').filter({hasText:'City Housing Authority'})).toContainText('local relationship line');
+    await page.locator('.graph-edge').first().focus();
+    await page.keyboard.press('Enter');
+    await browserExpect(page.getByRole('group',{name:'Local relationships',exact:true}).getByRole('checkbox')).toBeChecked();
     await page.getByRole('textbox',{name:'Relationship',exact:true}).fill('allocates staff for');
     await page.getByRole('textbox',{name:'Evidence or question',exact:true}).fill('A student interpretation of the second memo.');
     await page.getByRole('button',{name:'Add relationship',exact:true}).click();
