@@ -4377,7 +4377,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
   const [connectionSource, setConnectionSource] = useState(null);
   const [pendingNodePosition, setPendingNodePosition] = useState(null);
   const connectionScale = notebook?.simple && project.activeScale === 'micro' ? 'meso' : project.activeScale;
-  // Drawing never waits on a memo. Once the map has a node, students can
+  // Drawing does not wait on a memo. Once the map has a node (or an accepted
+  // memo added none), students can
   // connect, add and remove at every step, including while a memo edit is
   // still unsubmitted; only Continue waits for the submission.
   const drawingReady = notebook?.simple ? Boolean(notebook.memoReady || project.graph.nodes.some(isLiveMapItem)) : project.activeScale !== 'micro';

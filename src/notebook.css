@@ -252,8 +252,6 @@
 .field-notes-archive h3 { margin: 0 0 8px; font-size: 14px; }
 .field-notes-archive p { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.map-connect-action { min-height: 44px; padding: .5rem .8rem; border: 1px solid currentColor; border-radius: 6px; background: var(--surface, white); color: inherit; font: inherit; cursor: pointer; }
-.map-connect-action[aria-pressed="true"] { background: #e4f3ec; color: #174c37; }
 .map-connect-status { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem 1rem; border-bottom: 1px solid currentColor; background: #e4f3ec; color: #174c37; }
 .map-connect-status button { flex: 0 0 auto; min-height: 44px; padding: .4rem .8rem; font: inherit; white-space: nowrap; }
 /* In the account workspace the connecting status floats over the canvas where

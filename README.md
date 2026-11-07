@@ -69,8 +69,9 @@ The sidebar keeps map context visible. Controls retain 44px targets with compact
 | Move around the map | Drag empty canvas, use a middle-button drag, or hold Space while dragging. Arrow keys pan a focused canvas. |
 | Zoom | Scroll at the pointer, pinch, use zoom controls, or press `+` / `−` with canvas focus. |
 | Move a node | Drag the node or use arrow keys while it is focused. Auto-fit keeps an outer node outside its preceding sphere; saved manual positions persist. |
-| Connect existing nodes | Double-click a source (keyboard Shift+Enter), or choose **Connect from [node name]**, then choose the target and name the relationship. |
+| Connect existing nodes | Double-click a source (keyboard Shift+Enter), or choose **Connect from [node name]**, then choose the target and name the relationship. From an Exo or Macro node the target can also be a local relationship line. |
 | Create a connected node | Start from a source, click empty canvas (keyboard N), name the new node and relationship, then save both together. Cancel or Escape creates neither. |
+| Add a node in a level | Double-click empty canvas inside that level's region; the form opens with the level preset and the node keeps that spot. |
 | Correct classification | Change System and Type; save while preserving identity, evidence and connections. Incompatible dependencies require explicit repair. |
 | Change node color | Choose Automatic, Blue, Teal, Purple, Amber, Rose or Slate. Color changes appearance only, never classification. |
 | Restore the overview | Choose **Fit map** or press `0` with canvas focus. |

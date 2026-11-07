@@ -175,7 +175,7 @@ export function submittedReviewIssue(review, scale, sourceText, memoUpdate, carr
     // The six-node response limit is the only count rule. A memo naming four
     // outside offices and one condition is a legitimate map; an earlier
     // three-per-level cap rejected the whole response for it.
-    if (source &&(bibliographyOnlyLabel(node.label, source) || bibliographyOnlyEvidence(node.evidence, source) || !classifyExcerptMatch(source.narrativeText, node.evidence))) return `${field}.evidence must quote the supplied narrative, not a bibliography or an invented explanation.`;
+    if (source && (bibliographyOnlyLabel(node.label, source) || bibliographyOnlyEvidence(node.evidence, source) || !classifyExcerptMatch(source.narrativeText, node.evidence))) return `${field}.evidence must quote the supplied narrative, not a bibliography or an invented explanation.`;
     if ((node.scale === 'macrosphere' || node.scale === 'exosphere' && ['policy', 'law'].includes(node.type)) && !establishedSentences(node).length) return `${field}.evidence must describe an established condition, not only a wish, recommendation or research question.`;
   }
   return null;
