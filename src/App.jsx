@@ -5055,10 +5055,16 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       const source = project.graph.nodes.find(item => item.id === connectionSource && canConnectAtScale(connectionScale, item) && isLiveMapItem(item));
       if (kind === 'edge') {
         // An Exo or Macro node attaches to the local relationship line itself.
-        const edge = project.graph.edges.find(item => item.id === id);
+        // A branch already attached to that line lies over it, so clicking the
+        // branch reaches the same local relationships it attaches to.
+        const clicked = project.graph.edges.find(item => item.id === id);
+        const members = clicked?.relationshipIds?.length
+          ? clicked.relationshipIds.map(memberId => project.graph.edges.find(item => item.id === memberId)).filter(member => member && member.scale === 'meso' && !member.relationshipIds?.length && isLiveMapItem(member))
+          : clicked ? [clicked] : [];
+        const edge = members[0];
         if (!source || !notebook?.simple || !['exosphere', 'macrosphere'].includes(source.scale) || !isPart2(project.activeScale)
           || !edge || edge.scale !== 'meso' || edge.relationshipIds?.length || !isLiveMapItem(edge)) { setAnnouncement('Choose a node, or a local relationship line, to connect to.'); return; }
-        setNewEdge({ ...newEdge, source: connectionSource, target: edge.source, relationshipIds: [edge.id] });
+        setNewEdge({ ...newEdge, source: connectionSource, target: edge.source, relationshipIds: members.map(member => member.id) });
         setConnecting(false); setFocus(null); setSelection(null);
         setAddMode('edge'); setInspectorTab('relationships'); setDrawerOpen(true);
         onPanelMode?.('inspector', { preserveNotebook: true }); notebook.onChange(true); focusInspector();
