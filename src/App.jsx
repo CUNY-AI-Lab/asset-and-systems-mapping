@@ -4195,7 +4195,7 @@ function MapLegend({savedHistory=false,canConnect=false}) {
       <div><dt>Find a node</dt><dd>⌘/Ctrl + F or /</dd></div>
       <div><dt>Fit map · Zoom</dt><dd>0 · + / −</dd></div>
       <div><dt>Pan canvas · Move focused node</dt><dd>Arrow keys (Shift moves farther)</dd></div>
-      {canConnect && <><div><dt>Connect from focused node</dt><dd>Shift + Enter, or double-click it</dd></div><div><dt>Choose a target · Start a new target</dt><dd>Enter on a node or line · N on the canvas while connecting</dd></div><div><dt>Add a node in a level</dt><dd>Double-click empty space inside that region</dd></div></>}
+      {canConnect && <><div><dt>Connect from focused node</dt><dd>Shift + Enter, or double-click it</dd></div><div><dt>Choose a target · Start a new target</dt><dd>Enter on a node or line · N on the canvas while connecting</dd></div><div><dt>Place a node in a level</dt><dd>Double-click empty space inside that region</dd></div></>}
       <div><dt>Cancel · Show shortcuts</dt><dd>Esc · ?</dd></div>
     </dl></section>
   </div>;
