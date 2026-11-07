@@ -91,7 +91,9 @@ it.each(['repository', 'model registry', 'public model registry', 'shared code r
 
 it('prioritizes supported Exo nodes and allows a standalone operative policy', () => {
   const prompt = nodeSubmissionInstruction('exosphere');
-  expect(prompt).toContain('choose only the strongest one to three supported new Exo nodes');
+  expect(prompt).toContain('choose the strongest supported new Exo nodes');
+  expect(prompt).not.toMatch(/one to three|at most 3 at each level/);
   expect(prompt).toContain('A single evidenced operative policy can stand alone');
-  expect(prompt).toContain('Omit unsupported repositories, registries and administrators rather than changing their type');
+  expect(prompt).toContain('omit unsupported repositories and registries rather than changing their type');
+  expect(prompt).toContain('A named office that decides something affecting the local setting is Exo');
 });

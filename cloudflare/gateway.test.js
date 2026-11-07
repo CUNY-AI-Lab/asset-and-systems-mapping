@@ -5,7 +5,7 @@ import { CailError } from '@cuny-ai-lab/cail-client';
 import { unstable_readConfig } from 'wrangler';
 import { OpenRouterError } from '../server/openrouter.js';
 import { memoSourceFingerprint } from '../shared/memo-update.js';
-import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvelope } from './gateway.js';
+import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvelope, validationErrorType } from './gateway.js';
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
 afterEach(() => vi.useRealTimers());
@@ -297,6 +297,13 @@ test.each([
   ['connections[0] repeats a relationship.', 'relationship_duplicate'],
   ['nodes[0] changed during semantic normalization.', 'normalization'],
   ['readiness must contain exactly a boolean ready value and a complete note.', 'readiness_invalid'],
+  ['nodes exceeds the six-node limit.', 'item_limit'],
+  ['nodes[3].scale or type does not match its level.', 'scale_type'],
+  ['nodes[1].type must identify an outside organization, setting or resource; classify broader conditions at macrosphere.', 'scale_type'],
+  ['nodes[1].label names a person or role, not an outside setting or resource.', 'label_format'],
+  ['nodes[1].label names a person or institution, not a Macro condition.', 'label_format'],
+  ['nodes[4].label duplicates another node.', 'label_duplicate'],
+  ['nodes[0].existingId is unknown or removed.', 'identity_shape'],
   ['private student or provider text', 'contract_other'],
 ])('returns only a fixed validation reason for %s', (message, reason) => {
   const error = Object.assign(new Error(message), { name: 'MemoReviewSemanticError', code: 'MEMO_REVIEW_SEMANTIC_INVALID' });
@@ -326,6 +333,20 @@ test.each([
   const safe = safeGatewayFailure(error, correlation.request_id);
   expect(safe.details).toMatchObject({validationReason:'source_evidence',validationRule:rule});
   expect(JSON.stringify(safe)).not.toContain(message);
+});
+
+test.each([
+  ['nodes[3].scale or type does not match its level.', false, 'scale_type.nodes.scale'],
+  ['nodes exceeds the six-node limit.', false, 'item_limit.nodes'],
+  ['nodes[0].evidence must quote the focal participants’ nonparticipation in this named outside setting, not another setting.', true, 'source_evidence.outside_participation.nodes.evidence'],
+  ['guidance[0].evidenceExcerpt PRIVATE_QUOTATION', true, 'source_evidence.source_contract.guidance.evidenceexcerpt'],
+  ['PRIVATE_SOURCE_OR_RESPONSE', false, 'contract_other'],
+])('derives a log-safe rejection slug for %s', (message, grounding, slug) => {
+  const errorType = validationErrorType(message, grounding);
+  expect(errorType).toBe(slug);
+  // The cail-log error_type field accepts only this slug alphabet.
+  expect(errorType).toMatch(/^[a-z0-9][a-z0-9_.-]{0,63}$/);
+  expect(errorType).not.toContain('PRIVATE');
 });
 
 test('transport and unreadable-output errors do not invent a semantic validation reason', () => {

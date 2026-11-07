@@ -78,7 +78,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   4,096-token completion ceiling bounds legacy review output; the account
   node-submission contract uses 8,192 tokens to include reasoning while still
   allowing only six nodes and no relationships. Truncated results fail
-  validation. The account path has no relationship, guidance, scope or example output; Part 2 adds at most three Exo and three Macro nodes. The retained legacy review path may request up to four connections under its separate level rules. No returned items are silently filtered or relabeled.
+  validation. The account path has no relationship, guidance, scope or example output; Part 2 adds any mix of Exo and Macro nodes within those six. The retained legacy review path may request up to four connections under its separate level rules. No returned items are silently filtered or relabeled.
 - An explicit model action normally makes one attempt. The requested backup,
   `gpt-oss-20b`, gets a separately admitted Gateway call only after
   a known availability refusal with affirmative Gateway retry advice. This

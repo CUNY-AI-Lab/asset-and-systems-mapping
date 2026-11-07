@@ -40,8 +40,8 @@ an Exo node for lacking a proper name or a Macro condition for lacking a scope.
 Existing relationships are preserved; this change prevents new model-created
 relationships rather than deleting students' saved work.
 
-The shared `student-nodes-v1` contract bounds output to six nodes (at most three
-Exo and three Macro nodes from the second memo), requires narrative evidence,
+The shared `student-nodes-v1` contract bounds output to six nodes (any mix of Exo
+and Macro nodes from the second memo), requires narrative evidence,
 and rejects guidance, relationships and scopes. Server, Gateway and client use
 that contract. Account-interface components are isolated from legacy review
 components; storage and draft journals remain shared.
@@ -85,7 +85,7 @@ This is a conservative textual evidence gate, not a universal semantic proof. It
 
 The provider receives changed passages and bounded graph identity context. If a broad rewrite or deletion-only change produces no suitable bounded passages, the explicit fallback is the complete current active memo. The other memo is not substituted. Evidence must quote supplied current-source narrative; repair attempts retain the same update/identity context and cannot use passages withheld from that request.
 
-Output retains the existing five-key envelope with empty guidance, connections and example and no scopes. At most six node entries are allowed, including updates. New Part 2 nodes are capped at three Exo and three Macro nodes. Optional node `existingId` must identify a live known record and echo its current label, type and scale. It refreshes evidence only if the current evidence still matches the previous generated baseline. Unknown IDs, duplicate identities and unsupported evidence reject the result before mutation. The model never deletes or reconnects student work.
+Output retains the existing five-key envelope with empty guidance, connections and example and no scopes. At most six node entries are allowed, including updates. New Part 2 nodes may be any mix of Exo and Macro within the six. Optional node `existingId` must identify a live known record and echo its current label, type and scale. It refreshes evidence only if the current evidence still matches the previous generated baseline. Unknown IDs, duplicate identities and unsupported evidence reject the result before mutation. The model never deletes or reconnects student work.
 
 Each memo independently saves optional `analysis` (`version`, `sourceFingerprint`, `contentFingerprint`, block fingerprints, and original generated node identity/evidence). This records the last successful submission, never the draft. A meaningful narrative edit marks the memo pending. Whitespace-only and bibliography-only edits save without requiring paid regeneration. A successful empty response completes the checkpoint. Older projects without a baseline use conservative exact-fingerprint success evidence; opening them never rewrites their map.
 

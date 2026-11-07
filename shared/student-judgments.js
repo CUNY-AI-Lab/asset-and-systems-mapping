@@ -4,7 +4,7 @@ import { relationshipDescription } from './relationship-process.js';
 export const STUDENT_JUDGMENT_LIMIT = 24;
 // Browser reuse and durable generation must advance together when the
 // code-owned classification or response contract changes.
-export const GUIDANCE_CONTRACT_VERSION = 'memo-workspace-exo-evidence-v25';
+export const GUIDANCE_CONTRACT_VERSION = 'memo-workspace-exo-evidence-v26';
 
 export function studentJudgments(project) {
   const live = new Map([...project.graph.nodes, ...project.graph.edges].map((item) => [item.id, item]));
