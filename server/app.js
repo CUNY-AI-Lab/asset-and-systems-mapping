@@ -15,7 +15,7 @@ import { applyMemoQuoteSelection, expandMemoEvidenceIndices, guidanceWithoutExce
 import { relationshipProcessIssue, normalizeGeneratedRelationshipProcess } from '../shared/relationship-process.js';
 import { mesoSourceDetails, explicitMissingMesoPairs, mesoPairEvidence, mesoTableCoverage, missingMesoTableRolesReview } from '../shared/meso-source-details.js';
 import { prepareProviderMemo } from '../shared/provider-memo.js';
-import { createMemoContractRepair, createNodeSubmissionRepair, memoContractRepairContext } from './memo-contract-repair.js';
+import { createMemoContractRepair, createNodeSubmissionRepair, memoContractRepairContext, withheldSubmissionNodes } from './memo-contract-repair.js';
 import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
 import { fieldNotesQuestions } from '../shared/field-notes.js';
 import { FIELD_NOTES_CONTEXT_INSTRUCTION, validateFieldNotesContext } from '../shared/field-notes-context.js';
@@ -3320,11 +3320,15 @@ export function createSystemsMappingApp(options = {}) {
           let completedReview = generated.suggestion;
           let strictFallbackEvidence = false;
           let feedbackOnly = false;
+          // Rejected node submissions are kept only to name, after acceptance,
+          // which proposals the final response left out and why.
+          const rejectedAttempts = [];
           try {
             try {
               review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
             } catch (error) {
               if (!(error instanceof MemoReviewSemanticError)) throw error;
+              rejectedAttempts.push({ review: generated.suggestion, message: error.message });
               options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message, grounding: error.grounding === true }, context);
               generationSignal.throwIfAborted();
               correctiveRetries = 1;
@@ -3354,7 +3358,10 @@ export function createSystemsMappingApp(options = {}) {
                 // supply bounded narrative passages and require quoted evidence.
                 // Transport errors, quota denials and generic schema failures never
                 // enter this path; each provider call receives normal admission.
-                if (repairError instanceof MemoReviewSemanticError) options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message, grounding: repairError.grounding === true }, context);
+                if (repairError instanceof MemoReviewSemanticError) {
+                  rejectedAttempts.push({ review: generated.suggestion, message: repairError.message });
+                  options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message, grounding: repairError.grounding === true }, context);
+                }
                 if (!(repairError instanceof MemoReviewSemanticError) || !repairError.grounding) throw repairError;
                 // Meso has no proposed nodes to rank paragraphs by. Preserve
                 // evidence for mapped pairs across the whole table, including
@@ -3439,6 +3446,10 @@ export function createSystemsMappingApp(options = {}) {
           if (correctiveRetries) runtimeMetadata.correctiveRetries = correctiveRetries;
           if (evidenceRepairAttempts) runtimeMetadata.evidenceRepairAttempts = evidenceRepairAttempts;
           if (feedbackOnly) runtimeMetadata.feedbackOnly = true;
+          if (input.workflowMode === NODE_SUBMISSION && rejectedAttempts.length && !feedbackOnly) {
+            const withheldNodes = withheldSubmissionNodes(rejectedAttempts, review, input.activeScale, input.sourceMaterial, input.memoUpdate, input.carriedNodes);
+            if (withheldNodes.length) runtimeMetadata.withheldNodes = withheldNodes;
+          }
           options.guidanceAccepted?.({ correctiveRetries, evidenceRepairAttempts, feedbackOnly }, context);
         } catch (error) {
           if (options.suggestionFailure) {

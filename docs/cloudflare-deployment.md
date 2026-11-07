@@ -88,7 +88,7 @@ subsequent saves. Shared review retention follows the existing product rules.
   automatic corrective call. A completed memo review that fails semantic
   validation gets one ordinary corrective call. If that completed correction
   still fails source grounding, one final evidence repair supplies bounded
-  exact narrative passages and requires quoted evidence. It retains the failed classification rule and a bounded rejected node label/evidence pair where available; unsupported items must be omitted by the model, and the replacement is still validated atomically. Failure responses expose only a fixed grounding-rule enum, never raw rejected source text. Each call receives
+  exact narrative passages and requires quoted evidence. It retains the failed classification rule and a bounded rejected node label/evidence pair where available; unsupported items must be omitted by the model, and the replacement is still validated atomically. Failure responses expose only a fixed grounding-rule enum, never raw rejected source text. An accepted node submission that needed a correction lists the proposals it left out as `runtime.withheldNodes` (at most six `{label, reason}` pairs, reason from the same fixed rule enum plus `unsupported`), which the app names in its result message and Notebook. Each call receives
   separate Gateway admission and shares the original generation deadline.
   Malformed JSON/parser failures, repeated generic schema errors, connection
   suggestions and Map Check do not receive this evidence repair. Successful

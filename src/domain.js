@@ -1498,6 +1498,13 @@ const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
   'totalDurationNs', 'loadDurationNs', 'promptEvalCount', 'promptEvalDurationNs',
   'evalCount', 'evalDurationNs', 'correctiveRetries', 'evidenceRepairAttempts',
 ];
+// Fixed reasons a proposed node was left out of an accepted memo submission.
+// The server names the rule that excluded it; no rejected text travels with it.
+export const WITHHELD_NODE_REASONS = Object.freeze([
+  'outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition',
+  'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape', 'unsupported',
+]);
+const WITHHELD_NODE_LIMIT = 6;
 const FORBIDDEN_PROJECT_KEYS = new Set([
   'password', 'passwordhash', 'passwordsalt', 'passphrase', 'apikey', 'secret', 'secrettoken',
   'accesstoken', 'refreshtoken', 'authorization', 'cookie', 'sessiontoken', 'accessgrant',
@@ -1926,9 +1933,21 @@ function validatePreflightEvaluation(evaluation, path) {
   if (Date.parse(evaluation.expiresAt) <= Date.parse(evaluation.createdAt)) invalidProject(`${path}.expiresAt`, 'must be later than createdAt');
   assertObject(evaluation.runtime, `${path}.runtime`);
   assertKnownKeys(evaluation.runtime, [
-    'provider', 'model', 'createdAt', 'maxSourceBytes', 'requestedModel', 'doneReason', 'feedbackOnly',
+    'provider', 'model', 'createdAt', 'maxSourceBytes', 'requestedModel', 'doneReason', 'feedbackOnly', 'withheldNodes',
     ...PREFLIGHT_RUNTIME_INTEGER_FIELDS,
   ], `${path}.runtime`);
+  if (evaluation.runtime.withheldNodes !== undefined) {
+    const withheldPath = `${path}.runtime.withheldNodes`;
+    if (!Array.isArray(evaluation.runtime.withheldNodes) || evaluation.runtime.withheldNodes.length > WITHHELD_NODE_LIMIT) {
+      invalidProject(withheldPath, `must be an array of no more than ${WITHHELD_NODE_LIMIT} items`);
+    }
+    evaluation.runtime.withheldNodes.forEach((item, index) => {
+      assertObject(item, `${withheldPath}[${index}]`);
+      assertKnownKeys(item, ['label', 'reason'], `${withheldPath}[${index}]`);
+      assertString(item.label, `${withheldPath}[${index}].label`, false, 200);
+      assertEnum(item.reason, WITHHELD_NODE_REASONS, `${withheldPath}[${index}].reason`);
+    });
+  }
   assertEnum(evaluation.runtime.provider, PREFLIGHT_RUNTIME_PROVIDERS, `${path}.runtime.provider`);
   assertString(evaluation.runtime.model, `${path}.runtime.model`, false, 200);
   assertTimestamp(evaluation.runtime.createdAt, `${path}.runtime.createdAt`);
@@ -3108,6 +3127,10 @@ function scrubDerivedFreeText(portable, redactions, reason, labels) {
     if (portable.preflight.evaluation?.runtime?.feedbackOnly !== undefined) {
       delete portable.preflight.evaluation.runtime.feedbackOnly;
       addRedaction(redactions, 'preflight.evaluation.runtime.feedbackOnly', reason);
+    }
+    if (portable.preflight.evaluation?.runtime?.withheldNodes !== undefined) {
+      delete portable.preflight.evaluation.runtime.withheldNodes;
+      addRedaction(redactions, 'preflight.evaluation.runtime.withheldNodes', reason);
     }
   }
   portable.events.forEach((event, index) => {

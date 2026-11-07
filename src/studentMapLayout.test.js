@@ -118,6 +118,22 @@ it('keeps wording on its routed connection and reserves earlier labels',()=>{
   const join=relationshipAttachment(result,'ab');expect(join).toBeTruthy();expect(join).not.toEqual(anchor);
 });
 
+it('keeps the starting cluster when the first relationship is drawn and only brings its pair together',()=>{
+  const nodes=Array.from({length:5},(_,i)=>({id:`n${i}`,label:'Local participant',scale:'micro',x:0,y:0}));
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:140,cardHeight:50}]));
+  const before=studentMapPositions(nodes,[],geometry,{aspectRatio:1.8});
+  const after=studentMapPositions(nodes,[{id:'e0',source:'n0',target:'n4',verb:'supports'}],geometry,{aspectRatio:1.8});
+  const slots=positions=>[...positions.values()].map(({x,y})=>`${x},${y}`).sort();
+  expect(slots(after)).toEqual(slots(before));
+  expect(new Set([...after.values()].map(p=>p.x)).size).toBeGreaterThan(1);
+  const a=after.get('n0'),b=after.get('n4');
+  expect(Math.hypot(a.x-b.x,a.y-b.y)).toBeLessThan(240);
+  // A second relationship may start the network arrangement, but a pair is
+  // never stacked into one column.
+  const network=studentMapPositions(nodes,[{id:'e0',source:'n0',target:'n4'},{id:'e1',source:'n0',target:'n4',verb:'funds'}],geometry,{aspectRatio:1.8});
+  expect(network.get('n0').y).toBe(network.get('n4').y);
+});
+
 it('keeps connected local pairs nearby without moving saved manual placements',()=>{
   const nodes=Array.from({length:12},(_,i)=>({id:`n${i}`,label:'Local participant',scale:'micro',x:i*160,y:200}));
   const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:140,cardHeight:50}]));

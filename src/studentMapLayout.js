@@ -103,7 +103,12 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
   const manual=new Set(manualNodeIds);
   const preserveLegacy=readingAspect === undefined && phoneOverview === 'preserve';
   const canArrangeLocal=local.length && !preserveLegacy && (!compatibleView || !local.every(n=>manual.has(n.id)));
-  const connected=canArrangeLocal?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone,labelGeometries}):null;
+  // The first relationship keeps the starting cluster and only brings its pair
+  // together inside it. The hub arrangement waits until relationships form a
+  // network, so one line never turns the cluster into a column.
+  const localIds=new Set(local.map(n=>n.id));
+  const localLinks=edges.filter(e=>localIds.has(e.source)&&localIds.has(e.target)&&e.source!==e.target&&!e.relationshipIds?.length);
+  const connected=canArrangeLocal&&localLinks.length>=2?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone,labelGeometries}):null;
   if(connected)for(const [id,position]of connected)positions.set(id,position);
   if(canArrangeLocal && !connected) {
     const columns=Math.min(phone?3:5,Math.max(2,Math.ceil(Math.sqrt(local.length*aspectRatio*(phone ? .42 : .75)))));

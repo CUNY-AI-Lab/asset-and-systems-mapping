@@ -412,6 +412,8 @@ describe('persistent preflight suggestion review queue', () => {
     expect(result.runtime.correctiveRetries).toBe(1);
     expect(result.review.nodes.map(node => node.label)).toEqual(['Course access approval rule']);
     expect(result.review.connections).toEqual([]);
+    // The accepted result names the omitted setting with the rule that excluded it.
+    expect(result.runtime.withheldNodes).toEqual([{ label: 'Access Board', reason: 'outside_participation' }]);
   });
 
   it('requires the provider to replace a composite subject with an evidenced individual subject before saving', async () => {
@@ -460,6 +462,8 @@ describe('persistent preflight suggestion review queue', () => {
     expect(result.runtime.correctiveRetries).toBe(1);
     expect(result.runtime.evidenceRepairAttempts).toBeUndefined();
     expect(result.review.nodes.map(node => node.label)).toEqual(['Caregivers', 'Principals']);
+    // Caregivers was repaired and kept; only the replaced compound subject is reported.
+    expect(result.runtime.withheldNodes).toEqual([{ label: 'Principals/Assistant Principals', reason: 'label_format' }]);
     expect(result.review.connections).toEqual([]);
     const rows = system.db.prepare('SELECT suggestion_json FROM preflight_evaluations').all();
     expect(rows).toHaveLength(1);

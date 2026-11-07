@@ -35,7 +35,7 @@ import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-j
 import { prepareProviderMemo } from '../shared/provider-memo.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
-import { MEMO_WORKFLOW, carriedSubmissionNodes, appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState, memoUpdatePayload, memoUpdateSummary } from './memoWorkflow.js';
+import { MEMO_WORKFLOW, carriedSubmissionNodes, appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState, memoUpdatePayload, memoUpdateSummary, withheldNodeReason } from './memoWorkflow.js';
 import { levelRailState, nextStep, stageForPanelMode } from './nextStep.js';
 import { LevelSelect, NotebookSection, ProjectMenu, PANEL_TABS, WorkPanelTabs } from './MapStudio.jsx';
 import { hasPendingGuidance } from './durableGuidance.js';
@@ -6814,7 +6814,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       };
       if (memoFirstWorkflow) {
         const event = createEvent('preflight.completed', 'Submitted memo nodes added to map', 'student', completionMetadata);
-        const feedback = { eventId: event.id, projectId: project.id, accessGeneration, activationGeneration, error: null, summary: null, withheld: result.evaluation.runtime.correctiveRetries > 0 };
+        const feedback = { eventId: event.id, projectId: project.id, accessGeneration, activationGeneration, error: null, summary: null, withheld: result.evaluation.runtime.correctiveRetries > 0, leftOut: result.evaluation.runtime.withheldNodes || [] };
         memoCommitFeedbackRef.current = feedback;
         let prepared;
         update(draft => Object.assign(draft, prepared), 'preflight.completed', event.detail, 'student', completionMetadata, {
@@ -6877,9 +6877,15 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     if (project.events.some(event => event.id === feedback.eventId)) {
       memoCommitFeedbackRef.current = null;
       const { added, updated } = feedback.summary;
-      const { withheld } = feedback;
+      const { withheld, leftOut } = feedback;
       setNotebookOpen(true); setWorkflowPanelMode('review');
-      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.` : added ? `${added} nodes added to your map.` : withheld ? 'No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Use Tools to add nodes yourself.' : 'No new nodes were added: nothing new in this memo was identified for this step. Use Tools to add nodes yourself.');
+      // Each left-out proposal is named with its reason; the Notebook keeps the same list.
+      const leftOutNote = leftOut.length ? ` Left out: ${leftOut.map(item => `${item.label} (${withheldNodeReason(item.reason)})`).join('; ')}.` : '';
+      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.${leftOutNote}`
+        : added ? `${added} nodes added to your map.${leftOutNote}`
+          : leftOut.length ? `No new nodes were added.${leftOutNote} Use Tools to add nodes yourself.`
+            : withheld ? 'No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Use Tools to add nodes yourself.'
+              : 'No new nodes were added: nothing new in this memo was identified for this step. Use Tools to add nodes yourself.');
     } else if (feedback.error) {
       memoCommitFeedbackRef.current = null;
       setReviewFailure({ message: feedback.error, retryable: true });
