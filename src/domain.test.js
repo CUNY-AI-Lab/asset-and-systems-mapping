@@ -239,6 +239,8 @@ describe('mapping domain', () => {
     }
     expect(normalizeMapElementLabel('that belief')).toBeNull();
     expect(normalizeMapElementLabel('Belief that')).toBeNull();
+    expect(normalizeMapElementLabel('Belief that the')).toBeNull();
+    expect(normalizeMapElementLabel('Assumption that families prefer in-person meetings and')).toBeNull();
   });
   it('uses normalized student-facing level titles without changing internal IDs', () => {
     expect(SCALE_ORDER).toEqual(['micro', 'meso', 'exosphere', 'macrosphere']);

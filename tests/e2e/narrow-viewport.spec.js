@@ -7,6 +7,8 @@ import { STORAGE_KEY } from '../../src/projectLibrary.js';
 // Students mostly open the map on a phone. Nothing may be cut off, no control
 // may leave the viewport, and the selection guide stays one line.
 test.use({ viewport: { width: 320, height: 700 }, hasTouch: true, isMobile: true });
+// The overrides make both Playwright projects identical here; run it once.
+test.beforeEach(async ({}, testInfo) => { test.skip(testInfo.project.name !== 'chromium-phone', 'phone project only'); });
 
 async function openProject(page) {
   await page.addInitScript(({ key, value }) => {

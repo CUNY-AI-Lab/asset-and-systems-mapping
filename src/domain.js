@@ -483,13 +483,16 @@ export function normalizeMapElementLabel(value, { micro = false } = {}) {
   // cleanup is deterministic and happens before label de-duplication.
   if (/\s+both$/i.test(label)) label = label.replace(/\s+both$/i, '').trim();
   if (!label || MAP_ELEMENT_STANDALONE_REFERENCE.test(label)) return null;
-  if (MAP_ELEMENT_BELIEF_COMPLEMENT.test(label)) return label.length <= 200 ? label : null;
-  if (MAP_ELEMENT_REFERENCE_TOKEN.test(label) && !isNamedInstitutionLabel(label)) return null;
+  // A belief named by its content keeps its complementizer, so only the
+  // reference-word and verb-start checks are waived; a dangling or truncated
+  // belief label is still rejected below.
+  const belief = MAP_ELEMENT_BELIEF_COMPLEMENT.test(label);
+  if (!belief && MAP_ELEMENT_REFERENCE_TOKEN.test(label) && !isNamedInstitutionLabel(label)) return null;
   if (MAP_ELEMENT_DANGLING_ARTIFACT.test(label) || MAP_ELEMENT_LEADING_QUANTIFIER.test(label)) return null;
   if (isTemporalOnlyMapElementLabel(label, micro)) return null;
   // A verb-shaped first token joined into a compound can be a noun modifier
   // (for example, a work–school mesosystem label), not a finite predicate.
-  if (MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)
+  if (!belief && MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)
     && !(micro && MICRO_REQUEST_FORM_LABEL.test(label))) return null;
   return label;
 }

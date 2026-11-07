@@ -4687,14 +4687,15 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     const positions = new Map(displayedNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     if (notebook) {
       const geometry = new Map(displayedNodes.map(node=>[node.id,mapNodeGeometry(node.label,phoneLayout)]));
-      const bounds = Object.values(studentMapBoundaries(displayedNodes,geometry)).filter(Boolean).map(b=>({...b,top:b.top-12}));
+      const boundaries = studentMapBoundaries(displayedNodes,geometry);
+      const bounds = Object.values(boundaries).filter(Boolean).map(b=>({...b,top:b.top-12}));
       const group = visibleEdges.find(edge=>edge.relationshipIds?.length && (selection?.kind==='edge' ? edge.id===selection.id : edge.source===selection?.id));
       const overview=notebook.simple && !selection;
       const ids = new Set(overview ? visibleEdges.map(e=>e.id) : selection?.kind==='edge' ? [selection.id] : visibleEdges.filter(e=>e.source===selection?.id || e.target===selection?.id).map(e=>e.id));
       if(group){ids.add(group.id);group.relationshipIds.forEach(id=>ids.add(id));}
       const routes=readingConnectionLayout(visibleEdges,displayedNodes,positions,geometry,readingLabelSizes(visibleEdges,ids,phoneLayout),
         new Set(visibleEdges.filter(e=>e.relationshipIds?.length && (overview || group?.id===e.id)).map(e=>e.id)),
-        captionObstacles(studentMapBoundaries(displayedNodes,geometry)));
+        captionObstacles(boundaries));
       for(const [id,rect] of routes.bounds)if(ids.has(id))bounds.push(rect);
       for(const route of [...routes.paths.values(),...Array.from(routes.groups.values()).flat().map(branch=>branch.route).filter(Boolean)]) {
         for(const {x,y} of route.points)bounds.push({left:x-5,top:y-5,right:x+5,bottom:y+5});

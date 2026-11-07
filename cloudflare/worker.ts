@@ -101,7 +101,9 @@ export class MappingCourse extends DurableObject<Bindings> {
           // A request that ends without an accepted answer is otherwise invisible:
           // each model call still logged `gateway.completed ok`.
           const details: any = safe.details;
-          requestLog(env.RELEASE, requestId).guidanceFailed([details.code, details.validationReason, details.validationRule].filter(Boolean).join('.'), attempts?.correctiveRetries);
+          // A cancellation is the student's choice, not a failed answer. The
+          // slug is bounded to the 64 characters cail-log accepts, or the event is dropped.
+          if (details.code !== 'guidance_cancelled') requestLog(env.RELEASE, requestId).guidanceFailed([details.code, details.validationReason, details.validationRule].filter(Boolean).join('.').slice(0, 64), attempts?.correctiveRetries);
           return safe;
         },
         guidanceValidationFailure: (failure: { attempt: number, validation: string, grounding?: boolean }, context: any) =>
