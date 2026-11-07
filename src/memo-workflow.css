@@ -146,9 +146,23 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 }
 @media (prefers-reduced-motion:reduce) { .app-shell .notebook-switch > .memo-tab-needs-input { animation:none; } }
 
-/* Selection actions belong with the selected label, separate from workspace tabs. */
-.map-reading-guide { flex-wrap:wrap; }
-.map-reading-guide > span { min-width:0; overflow-wrap:anywhere; }
+/* Selection actions belong with the selected label, separate from workspace tabs.
+   The guide is one line at every width: a long name is cut with an ellipsis
+   (the full name is in the editor) rather than growing into a box over the map. */
+.map-reading-guide { flex-wrap:nowrap; }
+.map-reading-guide > span { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.map-stage--notebook .map-reading-guide > button { flex:0 0 auto; min-height:36px; padding:4px 10px; border:1px solid var(--line); border-radius:999px; background:var(--surface); color:var(--ink); font:600 13px/1.3 var(--body); text-decoration:none; white-space:nowrap; }
+.map-stage--notebook .map-reading-guide > button:hover { background:var(--surface-hover); }
+/* Workflow controls keep their size and text; at phone widths the primary
+   action moves to its own row instead of being cut off. */
+@media (max-width:379px) {
+  .map-stage--notebook .workflow-actions { flex-wrap:wrap; }
+  .map-stage--notebook .workflow-actions .notebook-next { flex:1 1 100%; margin:0; }
+  .workflow-next-label { text-align:left; overflow-wrap:anywhere; }
+}
+/* Paired fields stack as soon as two columns would clip the text of a select. */
+@container inspector (max-width:400px) { .field-pair { grid-template-columns:minmax(0,1fr); } }
+.map-stage--notebook #map-inspector select { min-width:0; text-overflow:ellipsis; }
 .map-reading-guide .selected-item-edit { flex:0 0 auto; min-height:44px; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font:600 13px/1.35 var(--body); text-decoration:none; white-space:nowrap; }
 
 :root { --remove-ink:#8d2331; --remove-surface:#fff3f3; --remove-line:#af5361; --remove-hover:#fbe0e3; }

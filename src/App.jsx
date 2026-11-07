@@ -872,6 +872,14 @@ function Modal({ open, title, onClose, children, wide = false }) {
   );
 }
 
+// The source passage behind a selected item. Shown under the item heading in
+// the legacy editor and directly after the Label field in the account workspace.
+function InspectorEvidence({ project, item, label }) {
+  if (!item.evidence) return <p className="inspector-evidence inspector-evidence--empty">No source evidence recorded.</p>;
+  const quoted = classifyExcerptMatch(project.submission.text, item.evidence) || classifyExcerptMatch(project.part2Submission?.text || '', item.evidence);
+  return <blockquote className="inspector-evidence"><span className="evidence-label">{quoted ? 'Quote from memo' : 'Evidence or question'}</span><p><MemoEvidence passage={item.evidence} label={label} /></p></blockquote>;
+}
+
 function Field({ label, hint, children, className = '' }) {
   return <label className={`field ${className}`}><span className="field__label">{label}</span>{children}{hint && <span className="field__hint">{hint}</span>}</label>;
 }
@@ -5929,9 +5937,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
             <button className="inspector-done" type="button" onClick={closeInspector}>Done</button>
           </div>
         </div>}
-        {inspectedItem && (inspectedItem.evidence
-          ? <blockquote className="inspector-evidence"><span className="evidence-label">{classifyExcerptMatch(project.submission.text, inspectedItem.evidence) || classifyExcerptMatch(project.part2Submission?.text || '', inspectedItem.evidence) ? 'Quote from memo' : 'Evidence or question'}</span><p><MemoEvidence passage={inspectedItem.evidence} label={selectedNode?.label} /></p></blockquote>
-          : <p className="inspector-evidence inspector-evidence--empty">No source evidence recorded.</p>)}
+        {inspectedItem && !(notebook?.simple && selectedNode && !addMode) && <InspectorEvidence project={project} item={inspectedItem} label={selectedNode?.label} />}
         {previousTraceLabel && <button type="button" className="map-trace-back" onClick={returnToPreviousItem}>Back to {previousTraceLabel}</button>}
         {!notebook && <div className="inspector-tabs" role="tablist" aria-label="Annotation target">{inspectorTabs.map((tab) => <button key={tab} id={`map-inspector-tab-${tab}`} type="button" role="tab" aria-selected={inspectorTab === tab} aria-controls={`map-inspector-panel-${tab}`} tabIndex={inspectorTab === tab ? 0 : -1} data-composite-value={tab} onClick={() => setTab(tab)} onKeyDown={(event) => handleCompositeKey(event, inspectorTabs, inspectorTab, setTab)}>{tab === 'relationships' ? 'Connections' : tab === 'node' ? 'Item' : 'Map'}</button>)}</div>}
         {['node', 'connected-node'].includes(addMode) && <div className="add-form">
@@ -5979,6 +5985,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           <MapConnections compact={Boolean(notebook)} nodeId={selectedNode.id} index={connectionIndex} onFollow={followMapItem} onScopeFollow={followScope} selectedScope={selectedScope}
             onConnect={drawingReady && canConnectAtScale(connectionScale, selectedNode) && isLiveMapItem(selectedNode) && project.instructor.allowResearchLeads && (notebook?.simple || connectionIndex.nodes.filter(node => canConnectAtScale(connectionScale, node)).length > 1) ? startConnection : undefined} />
           <MapTextEditor key={`node:${selectedNode.id}`} label="Label" maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={(value) => nodeLabelIssue(value, selectedNode, project.graph.nodes)} onSave={(value) => editNode('label', value)} />
+          {/* In the account workspace the quote follows the label it supports, so the label sits directly under the item heading. */}
+          {notebook?.simple && inspectedItem && <InspectorEvidence project={project} item={inspectedItem} label={selectedNode.label} />}
           {notebook?.simple && <NodeColorControl color={selectedNode.color} onChange={color => update(draft => {
             const records = [...draft.graph.nodes, ...draft.candidates.nodes].filter(node => node.id === selectedNode.id);
             records.forEach(node => { if (color === undefined) delete node.color; else node.color = color; });
