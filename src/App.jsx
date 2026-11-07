@@ -5030,7 +5030,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     setConnectionSource(null); setSelection(null); setFocus(null); setToolsOpen(false);
     setAddMode('node'); setInspectorTab('node');
     changePanel('inspector');
-    setAnnouncement(`New ${SCALES[nodeScaleFor(level)]?.label || level} node. Name it, then choose Add to map.`);
+    // Announce the level the form is preset to; a Macro node is not an Exo node.
+    setAnnouncement(`New ${SCALES[level]?.label || level} node. Name it, then choose Add to map.`);
   };
   const connectBlank = (position) => {
     const source = project.graph.nodes.find(node => node.id === connectionSource && isLiveMapItem(node));

@@ -261,7 +261,10 @@
 .map-stage--notebook .canvas-wrap > .map-connect-status[data-scale="exosphere"] { --connect-level: var(--exosphere); }
 .map-stage--notebook .canvas-wrap > .map-connect-status[data-scale="macrosphere"] { --connect-level: #805491; }
 .map-stage--notebook .canvas-wrap > .map-connect-status strong { color: var(--connect-level); font-weight: 650; }
-.map-stage--notebook .canvas-wrap > .map-connect-status button { min-height: 36px; padding: 4px 12px; border: 0; border-radius: 999px; background: var(--surface-subtle); color: var(--ink); font-size: 13px; }
+/* The chip is a status, not a control: clicks pass through its text to the
+   map beneath (a relationship line can sit there on a phone); only Cancel catches them. */
+.map-stage--notebook .canvas-wrap > .map-connect-status { pointer-events: none; }
+.map-stage--notebook .canvas-wrap > .map-connect-status button { pointer-events: auto; min-height: 36px; padding: 4px 12px; border: 0; border-radius: 999px; background: var(--surface-subtle); color: var(--ink); font-size: 13px; }
 .map-stage--notebook .canvas-wrap > .map-connect-status button:hover { background: var(--surface-hover); }
 .map-stage--notebook .map-layout:not(.has-inspector) .canvas-wrap > .map-connect-status { top: 56px; }
 @media (max-width: 640px) {
