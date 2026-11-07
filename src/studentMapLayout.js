@@ -103,7 +103,12 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
   const manual=new Set(manualNodeIds);
   const preserveLegacy=readingAspect === undefined && phoneOverview === 'preserve';
   const canArrangeLocal=local.length && !preserveLegacy && (!compatibleView || !local.every(n=>manual.has(n.id)));
-  const connected=canArrangeLocal?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone,labelGeometries}):null;
+  // The first relationship keeps the starting cluster and only brings its pair
+  // together inside it. The hub arrangement waits until relationships form a
+  // network, so one line never turns the cluster into a column.
+  const localIds=new Set(local.map(n=>n.id));
+  const localLinks=edges.filter(e=>localIds.has(e.source)&&localIds.has(e.target)&&e.source!==e.target&&!e.relationshipIds?.length);
+  const connected=canArrangeLocal&&localLinks.length>=2?connectedMicroPositions(local,edges,geometries,{manual,aspectRatio,phone,labelGeometries}):null;
   if(connected)for(const [id,position]of connected)positions.set(id,position);
   if(canArrangeLocal && !connected) {
     const columns=Math.min(phone?3:5,Math.max(2,Math.ceil(Math.sqrt(local.length*aspectRatio*(phone ? .42 : .75)))));
@@ -117,9 +122,9 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
     const slots=counts.flatMap((count,row)=>Array.from({length:count},(_,column)=>({row,column,count,index:offset++})));
     // Keep linked local items near each other. Swap items between stable slots
     // to shorten connections; this never changes deliberately saved placement.
-    const localIds=new Set(local.map(n=>n.id));
-    const links=edges.filter(e=>localIds.has(e.source)&&localIds.has(e.target)&&!e.relationshipIds?.length);
-    if(links.length)local.sort((a,b)=>a.id.localeCompare(b.id));
+    // Start from the on-screen order, so a new link moves only the cards it
+    // swaps closer and never reshuffles the whole cluster.
+    const links=localLinks;
     const slotPoints=slots.map(s=>({x:(s.column-(s.count-1)/2)*240,y:s.row*130}));
     const cost=()=>{
       const index=new Map(local.map((n,i)=>[n.id,i]));

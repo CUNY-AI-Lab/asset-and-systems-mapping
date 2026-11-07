@@ -52,6 +52,11 @@
 .map-stage--notebook .inspector details[open] > summary::after { content:'−'; }
 .map-stage--notebook .inspector details > :not(summary) { margin-top:10px; }
 .workflow-notes > summary span { font-weight:400; color:var(--muted); }
+.workflow-left-out { margin:0 0 .75rem; padding:.55rem .75rem; border-left:3px solid var(--muted); }
+.workflow-left-out h3 { margin:0 0 .3rem; font-size:.95rem; }
+.workflow-left-out ul { margin:0 0 .35rem; padding-left:1.1rem; }
+.workflow-left-out li, .workflow-left-out p { margin:0 0 .25rem; font-size:.9rem; overflow-wrap:anywhere; }
+.workflow-left-out p { color:var(--muted); }
 .evidence-label { display:block; margin-bottom:6px; color:var(--muted); font:600 12px/1.35 var(--body); }
 .map-stage--notebook #map-inspector .inspector-evidence { white-space:normal; }
 .node-classification { display:grid; gap:8px; }

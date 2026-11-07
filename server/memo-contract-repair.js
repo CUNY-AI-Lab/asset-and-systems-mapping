@@ -1,6 +1,6 @@
 import { MEMO_REVIEW_GUIDANCE_LIMIT, MEMO_REVIEW_SCALE_LIMITS } from '../shared/memo-review-limits.js';
 import { SUBMISSION_SUBJECT_ISSUE, SUBMISSION_MACRO_ISSUE, SUBMISSION_NODE_LIMIT, submittedReviewIssue } from '../shared/node-submission.js';
-import { isNodeTypeAllowedAtScale } from '../src/domain.js';
+import { isNodeTypeAllowedAtScale, WITHHELD_NODE_REASONS } from '../src/domain.js';
 
 export const MEMO_CONTRACT_REPAIR_BYTES = 2 * 1024;
 const size = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -14,7 +14,7 @@ const maximum = (path, scale) => path === 'guidance' ? MEMO_REVIEW_GUIDANCE_LIMI
 const shortString = value => typeof value === 'string' && value.length <= 200;
 const boundedText = (value, maximum) => typeof value === 'string' && value.trim() && value.length <= maximum
   && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
-const nodeRules = new Set(['outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition', 'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape']);
+const nodeRules = new Set(WITHHELD_NODE_REASONS.filter(rule => rule !== 'unsupported'));
 
 function nodeIssuesValid(repair) {
   const present = Object.hasOwn(repair, 'nodeIssues') || Object.hasOwn(repair, 'omittedCount');
@@ -106,6 +106,36 @@ export function isMemoContractRepair(value, activeScale) {
       && shortString(value.value.source) && shortString(value.value.target);
     return false;
   } catch { return false; }
+}
+
+/**
+ * Name the proposals from rejected attempts that the accepted response left
+ * out, each with the fixed rule that excluded it. A proposal the model dropped
+ * on repair without a rule of its own was unsupported by the source.
+ */
+export function withheldSubmissionNodes(rejectedAttempts, accepted, activeScale, sourceText, memoUpdate, carriedNodes = []) {
+  const identity = node => node?.existingId !== undefined ? `id:${node.existingId}`
+    : `label:${String(node?.label ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase()}`;
+  const kept = new Set((accepted?.nodes || []).map(identity));
+  const withheld = [];
+  const seen = new Set();
+  for (const { review, message } of rejectedAttempts) {
+    if (!plain(review) || !Array.isArray(review.nodes)) continue;
+    const failed = /^nodes\[(\d{1,2})\]/u.exec(String(message ?? ''));
+    for (const [index, node] of review.nodes.entries()) {
+      if (!plain(node) || node.existingId !== undefined) continue;
+      const key = identity(node);
+      if (kept.has(key) || seen.has(key) || !boundedText(node.label, 200)) continue;
+      seen.add(key);
+      const own = submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate, carriedNodes);
+      const reason = own && /^nodes\[0\]/u.test(own) ? nodeIssueRule(own)
+        : failed && Number(failed[1]) === index ? nodeIssueRule(message)
+          : 'unsupported';
+      withheld.push({ label: node.label, reason });
+      if (withheld.length >= SUBMISSION_NODE_LIMIT) return withheld;
+    }
+  }
+  return withheld;
 }
 
 function nodeIssueRule(message) {

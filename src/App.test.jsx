@@ -1297,6 +1297,28 @@ describe('Systems Mapping workflow', () => {
     expect(fetchMock.mock.calls.filter(([path]) => String(path) === '/api/preflight/evaluations')).toHaveLength(1);
   });
 
+  it('names each proposal left out of an accepted submission with its reason', async () => {
+    const project = createBlankProject();
+    project.submission.text = 'Residents meet in the community room. The Access Board administers the program; residents\' participation is unknown.';
+    project.submission.fingerprint = stableId('src', project.submission.text);
+    seedProject(project);
+    preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, {
+      review: { guidance: [], nodes: [{ label: 'Residents', type: 'group', scale: 'micro', evidence: 'Residents meet in the community room.' }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } },
+      runtime: { provider: 'cail-gateway', model: 'synthetic-test', createdAt: '2027-01-15T08:00:00.000Z', correctiveRetries: 1,
+        withheldNodes: [{ label: 'Access Board', reason: 'outside_participation' }, { label: 'Residents want better repairs', reason: 'label_format' }] },
+    }) }, 201);
+    render(<App memoFirstWorkflow startInWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
+    await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
+    expect(await screen.findByText(/1 nodes added to your map\. Left out: Access Board \(the memo describes people taking part there, or leaves their participation unknown\); Residents want better repairs \(its label was a sentence or statement, not a name\)\./)).toBeVisible();
+    const leftOut = screen.getByRole('region', { name: 'Left out of this step' });
+    expect(within(leftOut).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+      'Access Board: the memo describes people taking part there, or leaves their participation unknown.',
+      'Residents want better repairs: its label was a sentence or statement, not a name.',
+    ]);
+    expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(2);
+  });
+
   it('retains preflight-only legacy readiness after modern baseline Undo and event pruning', () => {
     const before = createBlankProject();
     before.submission.text = 'Residents meet in the community room.';
@@ -1587,7 +1609,8 @@ describe('Systems Mapping workflow', () => {
     expect(storedProject().activeScale).toBe('micro');
     expect(storedProject().graph.edges[0]).toMatchObject({ source: project.graph.nodes[0].id, target: project.graph.nodes[1].id, verb: 'meet in', scale: 'meso', origin: 'student entry' });
     expect(document.querySelectorAll('.graph-edge')).toHaveLength(1);
-    await waitFor(()=>expect(project.graph.nodes.map(node=>renderedNodePosition(node.id))).not.toEqual(before));
+    // The first relationship never rearranges the cluster the student was looking at.
+    expect(project.graph.nodes.map(node=>renderedNodePosition(node.id))).toEqual(before);
   });
 
   it('adds a connected node from blank canvas space in one saved edit and reverses both with Undo', async () => {

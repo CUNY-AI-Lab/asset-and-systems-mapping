@@ -1066,6 +1066,18 @@ describe('mapping domain', () => {
     feedbackOnly.preflight.evaluation.runtime.feedbackOnly = 'true';
     expect(() => validateProject(feedbackOnly)).toThrow(/feedbackOnly must be a boolean/);
 
+    const withheld = structuredClone(project);
+    withheld.preflight.evaluation.runtime.withheldNodes = [{ label: 'Access Board', reason: 'outside_participation' }];
+    expect(parseProject(serializeProject(withheld)).preflight.evaluation.runtime.withheldNodes).toEqual([{ label: 'Access Board', reason: 'outside_participation' }]);
+    const sensitiveWithheld = structuredClone(withheld);
+    sensitiveWithheld.submission.sensitive = true;
+    sensitiveWithheld.instructor.maxSharingTier = 'public';
+    expect(parseProject(JSON.stringify(createPortableProject(sensitiveWithheld, 'public'))).preflight.evaluation.runtime.withheldNodes).toBeUndefined();
+    withheld.preflight.evaluation.runtime.withheldNodes = [{ label: 'Access Board', reason: 'The memo says participation is unknown.' }];
+    expect(() => validateProject(withheld)).toThrow(/withheldNodes\[0\]\.reason must be one of/);
+    withheld.preflight.evaluation.runtime.withheldNodes = Array.from({ length: 7 }, (_, index) => ({ label: `Office ${index}`, reason: 'unsupported' }));
+    expect(() => validateProject(withheld)).toThrow(/withheldNodes must be an array of no more than 6 items/);
+
     const internalField = structuredClone(project);
     internalField.preflight.evaluation.studentSessionRef = 'must-not-persist';
     expect(() => validateProject(internalField)).toThrow(/studentSessionRef is not an allowed schema field/);
