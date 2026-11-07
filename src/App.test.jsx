@@ -27,6 +27,7 @@ import { memoDraftKey } from './memoDraft.js';
 import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 import { appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState } from './memoWorkflow.js';
 import { recordEdit, restoreEdit } from './editHistory.js';
+import { groupProject } from '../tests/fixtures/group-project.js';
 
 function expectAttachedRelationship(edge) {
   const group = document.querySelector(`.graph-edge[data-graph-id="${edge.id}"]`);
@@ -7544,6 +7545,79 @@ Overall, the posting history documents a working student repeatedly turning to R
         expect(document.querySelector('.map-connect-status')).toBeNull();
         expect(storedProject().graph).toEqual(before);
       }
+    });
+  });
+
+
+  // November 7: one connection gesture at every level, nothing veiled by a
+  // selection, and nodes placed by double-clicking the level they belong in.
+  describe('account workspace canvas', () => {
+    async function openGroupProject(prepare = project => project) {
+      const project = prepare(groupProject());
+      seedProject(project);
+      render(<App memoFirstWorkflow startInWorkspace />);
+      // Meso relationships occupy Micro space; a legacy Meso-scale node is not drawn as a card.
+      const live = project.graph.nodes.filter(node => node.scale !== 'meso' && node.status !== 'rejected' && node.claimState !== 'retired').length;
+      await waitFor(() => expect(document.querySelectorAll('.graph-node')).toHaveLength(live));
+      return { ...project, liveNodeCount: live };
+    }
+
+    it('keeps every relationship label on the canvas while an item is selected, emphasizing its own', async () => {
+      const project = await openGroupProject();
+      const before = document.querySelectorAll('.graph-edge-label').length;
+      expect(before).toBeGreaterThan(1);
+      const meso = project.graph.edges.find(edge => edge.scale === 'meso');
+      fireEvent.keyDown(document.querySelector(`[data-graph-id="${meso.source}"]`), { key: 'Enter' });
+      expect(await screen.findByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+      expect(document.querySelectorAll('.graph-edge-label')).toHaveLength(before);
+      expect(document.querySelector(`.graph-edge[data-graph-id="${meso.id}"]`)).toHaveClass('is-reading-active');
+      expect(document.querySelector(`.graph-edge-label[data-edge-id="${meso.id}"]`)).toHaveClass('is-reading-active');
+      const other = project.graph.edges.find(edge => edge.scale === 'meso' && edge.source !== meso.source && edge.target !== meso.source);
+      expect(document.querySelector(`.graph-edge-label[data-edge-id="${other.id}"]`)).not.toBeNull();
+      expect(document.querySelector(`.graph-edge[data-graph-id="${other.id}"]`)).not.toHaveClass('is-reading-active');
+    });
+
+    it('connects a Macro condition to a local relationship by clicking its line, while a memo edit is still pending', async () => {
+      const project = await openGroupProject();
+      expect(memoUpdateState(project).submitted).toBe(false);
+      expect(screen.getByRole('button', { name: 'Finish map', exact: true })).toBeDisabled();
+      const condition = project.graph.nodes.find(node => node.scale === 'macrosphere');
+      const meso = project.graph.edges.find(edge => edge.scale === 'meso');
+      fireEvent.doubleClick(document.querySelector(`[data-graph-id="${condition.id}"]`));
+      const status = document.querySelector('.canvas-wrap > .map-connect-status');
+      expect(status).toHaveAttribute('data-scale', 'macrosphere');
+      expect(status).toHaveTextContent(`${condition.label} selected. Click a local relationship line`);
+      expect(document.querySelector('.map-stage > .map-connect-status')).toBeNull();
+      expect(document.querySelectorAll('.graph-edge-label')).not.toHaveLength(0);
+      fireEvent.keyDown(document.querySelector(`.graph-edge[data-graph-id="${meso.id}"]`), { key: 'Enter' });
+      expect(await screen.findByRole('heading', { name: 'New relationship' })).toBeVisible();
+      expect(document.querySelector('.map-connect-status')).toBeNull();
+      expect(screen.getByRole('checkbox', { name: 'Connect to local relationships', exact: true })).toBeChecked();
+      const picker = screen.getByRole('group', { name: 'Local relationships', exact: true });
+      const chosen = within(picker).getAllByRole('checkbox').filter(box => box.checked);
+      expect(chosen).toHaveLength(1);
+      expect(screen.getByRole('combobox', { name: 'Direction', exact: true })).not.toHaveTextContent(/to\s*$/);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Relationship', exact: true }), { target: { value: 'limits' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add relationship', exact: true }));
+      await waitFor(() => expect(storedProject().graph.edges.find(edge => edge.source === condition.id && edge.verb === 'limits')?.relationshipIds).toEqual([meso.id]));
+    });
+
+    it('adds a node where the student double-clicks empty canvas, with the level chosen from a row of swatches', async () => {
+      const project = await openGroupProject();
+      fireEvent.doubleClick(document.querySelector('.graph-canvas'), { clientX: 12, clientY: 12 });
+      expect(await screen.findByRole('heading', { name: 'New node' })).toBeVisible();
+      expect(screen.getByText('It will sit where you double-clicked.')).toBeVisible();
+      const levels = screen.getByRole('radiogroup', { name: 'Level' });
+      expect(within(levels).getAllByRole('radio').map(radio => radio.getAttribute('data-level'))).toEqual(['micro', 'exosphere', 'macrosphere']);
+      fireEvent.click(within(levels).getByRole('radio', { name: /Macro/ }));
+      expect(within(levels).getByRole('radio', { name: /Macro/ })).toHaveAttribute('aria-checked', 'true');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Label', exact: true }), { target: { value: 'Ableism in care funding' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Evidence or question', exact: true }), { target: { value: 'Does reimbursement policy assume care is a family duty?' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));
+      await waitFor(() => expect(storedProject().graph.nodes.find(node => node.label === 'Ableism in care funding')).toMatchObject({ scale: 'macrosphere', origin: 'student entry' }));
+      const added = storedProject().graph.nodes.find(node => node.label === 'Ableism in care funding');
+      expect(storedProject().layout.manualNodeIds).toContain(added.id);
+      expect(document.querySelectorAll('.graph-node')).toHaveLength(project.liveNodeCount + 1);
     });
   });
 

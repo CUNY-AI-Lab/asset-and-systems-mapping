@@ -6,9 +6,9 @@ import { submittedReviewIssue } from '../shared/node-submission.js';
 
 export const MEMO_WORKFLOW = Object.freeze({
   micro: { title: 'Micro · local nodes', instruction: 'Submit your first memo to add people, places and resources to the map.', next: 'Next: Meso · draw relationships' },
-  meso: { title: 'Meso · local relationships', instruction: 'Select a node on the map, choose Connect from, then select the other node.', next: 'Next: Exo · add second memo' },
-  exosphere: { title: 'Exo · policies and offices', instruction: 'Submit your second memo to add Exo policies and offices, plus Macro conditions. Then select an Exo node and connect it to the local relationships it affects.', next: 'Next: Macro · broader conditions' },
-  macrosphere: { title: 'Macro · broader conditions', instruction: 'Connect cultural beliefs, economic structures and broader conditions to the settings or local relationships they affect. Choose a node, then Connect from.', next: 'Finish map' },
+  meso: { title: 'Meso · local relationships', instruction: 'Double-click a node, or select it and choose Connect from, then click the node it connects to. Double-click empty space to add a missing node.', next: 'Next: Exo · add second memo' },
+  exosphere: { title: 'Exo · policies and offices', instruction: 'Submit your second memo to add Exo policies and offices, plus Macro conditions. Then double-click an Exo node and click the local relationship line or node it affects.', next: 'Next: Macro · broader conditions' },
+  macrosphere: { title: 'Macro · broader conditions', instruction: 'Double-click a condition and click the relationship line or setting it shapes. Add a missing condition by double-clicking outside the Exo region. You can still edit or remove anything on the map.', next: 'Finish map' },
 });
 
 // A submitted memo may append nodes. It can never create, retire or rewrite

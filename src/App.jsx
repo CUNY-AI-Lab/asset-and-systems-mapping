@@ -3435,7 +3435,7 @@ function readingLabelSizes(edges,visibleIds,phone) {
   } : {width:0,height:0}]));
 }
 
-function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onStartConnection, onConnectBlank, onViewportChange, onAnnounce }) {
+function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onStartConnection, onConnectBlank, onAddBlank, onViewportChange, onAnnounce }) {
   const sharedBands = ecologyBandGeometry || ecologyBands(phoneLayout, nodes.length, nodes);
   const interactionBands = ecologyInteractionBandGeometry || sharedBands;
   const retainedPlacement = useMemo(() => mapMode === 'ecology' && Boolean(retainedEcologyBoundaries(nodes, edges, phoneLayout, sharedBands)), [nodes, edges, phoneLayout, sharedBands, mapMode]);
@@ -3798,14 +3798,34 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
   }])), [nodes, renderedPositions, phoneLayout, fontRevision]);
   const scopeTraces = storedScopeTraces(nodes);
   const selectedGroup = edges.find(edge => edge.relationshipIds?.length && (selection?.kind === 'edge' ? edge.id === selection.id : edge.source === selection?.id));
-  const readingEdgeIds = new Set(overviewLabels && !selection ? edges.map(edge=>edge.id) : selection?.kind === 'edge' ? [selection.id, ...(selectedGroup?.relationshipIds || [])]
-    : edges.filter(edge => edge.source === selection?.id || edge.target === selection?.id).filter(edge => !edge.relationshipIds?.length).map(edge => edge.id));
-  if (selectedGroup) { readingEdgeIds.add(selectedGroup.id); selectedGroup.relationshipIds.forEach(id => readingEdgeIds.add(id)); }
+  // Selection emphasizes the relationships attached to the selected item. In
+  // the account workspace every relationship label stays on the canvas while
+  // one is emphasized; earlier work is never hidden by choosing something.
+  const emphasisEdgeIds = new Set(!selection ? [] : selection.kind === 'edge' ? [selection.id, ...(selectedGroup?.relationshipIds || [])]
+    : edges.filter(edge => edge.source === selection.id || edge.target === selection.id).filter(edge => !edge.relationshipIds?.length).map(edge => edge.id));
+  if (selectedGroup) { emphasisEdgeIds.add(selectedGroup.id); selectedGroup.relationshipIds.forEach(id => emphasisEdgeIds.add(id)); }
+  const readingEdgeIds = overviewLabels ? new Set(edges.map(edge => edge.id)) : emphasisEdgeIds;
   const readingGeometry = new Map([...nodeVisuals].map(([id, visual]) => [id, visual.geometry]));
   const contentBoundaries = readingMode ? studentMapBoundaries(nodes.map(node=>({...node,...renderedPositions.get(node.id)})),readingGeometry) : null;
+  // Which level a point on the canvas falls in, reading the same nested
+  // regions the canvas draws. Outside the outermost drawn region is the next
+  // level out, so a student can start the Macro region by double-clicking
+  // beyond Exo. A plain network view has no regions and no answer.
+  const levelAtPoint = (point) => {
+    const inside = (cx, cy, rx, ry) => rx > 0 && ry > 0 && ((point.x - cx) / rx) ** 2 + ((point.y - cy) / ry) ** 2 <= 1;
+    let drawn = [];
+    if (contentBoundaries) {
+      drawn = SPATIAL_SCALES.filter(scale => contentBoundaries[scale]);
+      for (const scale of drawn) { const b = contentBoundaries[scale]; if (inside(b.cx, b.cy, b.rx, b.ry)) return scale; }
+    } else if (mapMode === 'ecology') {
+      drawn = SPATIAL_SCALES.filter(scale => ecologyLayers.includes(scale) && sharedBands[scale]);
+      for (const scale of drawn) { const band = sharedBands[scale]; if (inside(ECOLOGY_CENTER.x, ECOLOGY_CENTER.y, band.outerRx * activeRingExpansion, band.outerRy * activeRingExpansion)) return scale; }
+    } else return null;
+    return SPATIAL_SCALES[Math.min(SPATIAL_SCALES.indexOf(drawn.at(-1) || 'micro') + 1, SPATIAL_SCALES.length - 1)];
+  };
   const betweenEndpointLayout = useMemo(() => readingMode ? readingConnectionLayout(
     edges,nodes,renderedPositions,readingGeometry,readingLabelSizes(edges,readingEdgeIds,phoneLayout),
-    new Set(edges.filter(e=>e.relationshipIds?.length && (selectedGroup?.id===e.id || overviewLabels && !selection)).map(e=>e.id))
+    new Set(edges.filter(e=>e.relationshipIds?.length && (selectedGroup?.id===e.id || overviewLabels)).map(e=>e.id))
   ) : betweenEndpointCalloutLayout(
     [...edges.filter((edge) => edge.showLabel !== false), ...scopeTraces],
     nodes,
@@ -3903,7 +3923,16 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
     return region && heading ? [{ ...region, edge, heading, vectors, maskId: `${regionMaskPrefix}-group-${edge.id}` }] : [];
   });
   const graphSummary = `${nodes.length} ${nodes.length === 1 ? 'node' : 'nodes'}${nodeStage ? '' : ` and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'}`}`;
-  return <svg id={exportDrawing ? undefined : "systems-map-canvas"} ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. ${nodeStage ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onKeyDown={(event) => {
+  return <svg id={exportDrawing ? undefined : "systems-map-canvas"} ref={svgRef} tabIndex="0" className={`graph-canvas graph-canvas--${mapMode} ${readingMode ? 'is-reading-view' : ''} ${selection ? 'has-reading-selection' : ''} ${detailMode ? 'is-detail-view' : ''} ${pointerGesture ? 'is-panning' : ''} ${spacePanning ? 'is-space-panning' : ''}`} data-map-mode={mapMode} data-ring-expansion={activeRingExpansion.toFixed(4)} role="group" aria-label={`${mapLabel}. ${graphSummary}. ${nodeStage ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}`} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" viewBox={graphViewBox} onPointerDownCapture={beginPointerTracking} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={(event) => finishPointer(event, true)} onLostPointerCapture={(event) => { if (event.target === event.currentTarget) finishPointer(event, true); }} onDoubleClick={(event) => {
+    // Double-clicking empty canvas adds a node at that spot, in the level
+    // whose ring is under the pointer. Nodes and lines handle their own.
+    if (!onAddBlank || connectionMode || detailMode || event.target.closest?.('[data-graph-id]')) return;
+    event.preventDefault();
+    const current = activeViewport();
+    const svgPoint = clientPoint(event.clientX, event.clientY);
+    const point = { x: (svgPoint.x - current.panX) / current.zoom, y: (svgPoint.y - current.panY) / current.zoom };
+    onAddBlank({ ...point, scale: levelAtPoint(point) });
+  }} onKeyDown={(event) => {
     if (event.key === 'Escape' && interactionRef.current) {
       event.preventDefault();
       const interaction = interactionRef.current;
@@ -4009,7 +4038,7 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
         const arrows = relationshipArrowheads({ relationshipProcess: { direction: previewConnection.direction } });
         return <g className="relationship-draft-preview" pointerEvents="none" aria-label="Relationship draft, not added to map"><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="var(--ink)" strokeWidth="2" strokeDasharray="3 6" vectorEffect="non-scaling-stroke" markerStart={arrows.start ? markerUrl : undefined} markerEnd={arrows.end ? markerUrl : undefined} /></g>;
       })()}
-      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space Delete Backspace" aria-pressed={selected} className={`graph-edge ${readingMode && readingEdgeIds.has(edge.id) ? 'is-reading-active' : ''} ${readingMode && edge.relationshipIds?.length && selectedGroup?.id !== edge.id && !(overviewLabels && !selection) ? 'is-inactive-group' : ''} graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onFocus={() => { if(readingMode && selection?.id !== edge.id) onSelect('edge',edge.id,false); }} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
+      <g className="edges">{edgeVisuals.map(({ edge, x1, y1, x2, y2, path, edgeRoute, selected }) => <g key={edge.id} data-graph-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} role="button" tabIndex={edge.visualMuted ? -1 : 0} aria-label={`${relationshipDescription(edge)}, direction: ${relationshipDirection(edge)}, ${SCALES[edge.scale]?.label || edge.scale} connection`} aria-keyshortcuts="Enter Space Delete Backspace" aria-pressed={selected} className={`graph-edge ${readingMode && (selection ? emphasisEdgeIds : readingEdgeIds).has(edge.id) ? 'is-reading-active' : ''} ${readingMode && edge.relationshipIds?.length && selectedGroup?.id !== edge.id && !overviewLabels ? 'is-inactive-group' : ''} graph-edge--${stateClass(edge.claimState)} ${edge.visualMuted ? 'is-muted' : ''} ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`} onFocus={() => { if(readingMode && selection?.id !== edge.id) onSelect('edge',edge.id,false); }} onPointerDown={(event) => beginEdge(event, edge)} onLostPointerCapture={(event) => { if (interactionRef.current?.kind !== 'pinch') finishPointer(event, true); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onSelect('edge', edge.id, true);
@@ -4021,7 +4050,7 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
         <path className={betweenEndpointLayout.groups?.has(edge.id) ? "edge-line relationship-group-vector" : "edge-line"} data-group-member={betweenEndpointLayout.groups?.get(edge.id)?.[0]?.id} style={{ '--edge-count-width': relationshipLineWidth(edge) }} strokeDasharray={edge.relationshipProcess?.connectionStatus === 'missing' ? '7 5' : undefined} data-connection-status={edge.relationshipProcess?.connectionStatus || 'unknown'} vectorEffect={phoneLayout ? "non-scaling-stroke" : undefined} d={path} x1={x1} y1={y1} x2={x2} y2={y2} markerStart={relationshipArrowheads(edge).start ? markerUrl : undefined} markerEnd={relationshipArrowheads(edge).end ? markerUrl : undefined} />
       </g>)}</g>
       <g className="edge-labels" aria-hidden="true">{edgeVisuals.filter(({ edge }) => edge.showLabel !== false && (!readingMode || readingEdgeIds.has(edge.id))).map(({ edge, midX, midY, labelGeometry: geometry, edgeRoute, selected }) => {
-        return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} data-anchor-x={midX} data-anchor-y={midY} data-full-label={relationshipMapLabel(edge)} className={`graph-edge-label ${edge.visualDimmed ? 'is-dimmed' : ''} ${selected ? 'is-selected' : ''}`}>
+        return <g key={edge.id} data-edge-id={edge.id} data-edge-scale={edge.scale} data-edge-route={edgeRoute} data-anchor-x={midX} data-anchor-y={midY} data-full-label={relationshipMapLabel(edge)} className={`graph-edge-label ${edge.visualDimmed ? 'is-dimmed' : ''} ${readingMode && selection && emphasisEdgeIds.has(edge.id) ? 'is-reading-active' : ''} ${selected ? 'is-selected' : ''}`}>
           {!['source to target', 'target to source', 'both directions'].includes(relationshipDirection(edge)) && <g className="edge-direction-symbol" transform={`translate(${edge.verb.trim() ? midX + geometry.width / 2 + 13 : midX} ${midY})`}>
             <title>{`Direction: ${relationshipDirection(edge)}`}</title>
             {relationshipDirection(edge) === 'varies' ? <path d="M0,-7 L7,0 L0,7 L-7,0 Z" fill="var(--surface)" stroke="var(--ink)" strokeWidth="1.5" /> : <><circle r="8" fill="var(--surface)" stroke="var(--ink)" /><text textAnchor="middle" dominantBaseline="central" fontSize="12" fill="var(--ink)">?</text></>}
@@ -4054,7 +4083,7 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
 }
 
 function sameGraphVisuals(previous, next) {
-  if (previous.onCancelConnection !== next.onCancelConnection || previous.onStartConnection !== next.onStartConnection || previous.onConnectBlank !== next.onConnectBlank || previous.readingMode !== next.readingMode || previous.overviewLabels !== next.overviewLabels || previous.nodeStage !== next.nodeStage) return false;
+  if (previous.onCancelConnection !== next.onCancelConnection || previous.onStartConnection !== next.onStartConnection || previous.onConnectBlank !== next.onConnectBlank || previous.onAddBlank !== next.onAddBlank || previous.readingMode !== next.readingMode || previous.overviewLabels !== next.overviewLabels || previous.nodeStage !== next.nodeStage) return false;
   if (previous.phoneLayout !== next.phoneLayout) return false;
   if (previous.phoneViewBox?.height !== next.phoneViewBox?.height) return false;
   if (previous.mapLabel !== next.mapLabel) return false;
@@ -4154,7 +4183,7 @@ function MapLegend({savedHistory=false,canConnect=false}) {
       <li><strong>Micro</strong><span>People, resources, and immediate settings</span></li>
       <li><strong>Exo</strong><span>Policies and outside offices; teal dotted connections link to local relationships.</span></li>
       <li><strong>Macro</strong><span>Cultural, historical and economic conditions; purple dashed connections.</span></li>
-      <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording.</span></li>
+      <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording. Selecting an item highlights its relationships; the others stay in view.</span></li>
       <li><strong>Auto-fit</strong><span>Busy nodes sit near the center. Unconnected items are grouped by color away from the connection routes. Use Arrange map to reorganize a saved layout.</span></li>
       <li><strong>Draft</strong><span>A dotted line previews an unfinished relationship.</span></li>
       <li><strong>Stored scope</strong><span>A dash-dot line with hollow endpoints marks a recorded scope membership, not a directional relationship.</span></li>
@@ -4166,7 +4195,7 @@ function MapLegend({savedHistory=false,canConnect=false}) {
       <div><dt>Find a node</dt><dd>⌘/Ctrl + F or /</dd></div>
       <div><dt>Fit map · Zoom</dt><dd>0 · + / −</dd></div>
       <div><dt>Pan canvas · Move focused node</dt><dd>Arrow keys (Shift moves farther)</dd></div>
-      {canConnect && <><div><dt>Connect from focused node</dt><dd>Shift + Enter</dd></div><div><dt>Choose a target · Start a new target</dt><dd>Enter on a node · N on the canvas while connecting</dd></div></>}
+      {canConnect && <><div><dt>Connect from focused node</dt><dd>Shift + Enter, or double-click it</dd></div><div><dt>Choose a target · Start a new target</dt><dd>Enter on a node or line · N on the canvas while connecting</dd></div><div><dt>Add a node in a level</dt><dd>Double-click empty space inside that region</dd></div></>}
       <div><dt>Cancel · Show shortcuts</dt><dd>Esc · ?</dd></div>
     </dl></section>
   </div>;
@@ -4273,6 +4302,14 @@ function mapContentCenter(nodes, phoneLayout = false) {
 const INSPECTOR_TABS = ['node', 'relationships', 'map'];
 const FOCUSED_RELATIONSHIPS_PER_PAGE = 1;
 
+// What a student can reach after Connect from, in the words the status strip
+// and the screen reader share.
+function connectTargetHint(source) {
+  return ['exosphere', 'macrosphere'].includes(source.scale)
+    ? 'Click a local relationship line or a node it affects, or empty space for a new node.'
+    : 'Click another node, or empty space for a new node.';
+}
+
 function blankManualNode(scale, threeSpheres = false) {
   // Meso adds relationships in the existing Micro space. A missing person or
   // setting therefore joins Micro even when the student is working at Meso.
@@ -4331,6 +4368,10 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
   const [connectionSource, setConnectionSource] = useState(null);
   const [pendingNodePosition, setPendingNodePosition] = useState(null);
   const connectionScale = notebook?.simple && project.activeScale === 'micro' ? 'meso' : project.activeScale;
+  // Drawing never waits on a memo. Once the map has a node, students can
+  // connect, add and remove at every step, including while a memo edit is
+  // still unsubmitted; only Continue waits for the submission.
+  const drawingReady = notebook?.simple ? Boolean(notebook.memoReady || project.graph.nodes.some(isLiveMapItem)) : project.activeScale !== 'micro';
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [phoneOverviewCommittedScope, setPhoneOverviewCommittedScope] = useState('');
   const [phoneEcologyCommittedScope, setPhoneEcologyCommittedScope] = useState('');
@@ -4944,7 +4985,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     setAnnouncement('Connection cancelled because its starting item was removed.');
   }, [connecting, connectionSource, pendingNodePosition, addMode, project.graph.nodes, relationshipDraft.draft?.source, relationshipDraft.discard, setAnnouncement]);
   const startConnection = (sourceId, direct = false) => {
-    if ((!notebook?.simple && project.activeScale === 'micro') || notebook?.simple && !notebook.memoReady || !project.instructor.allowResearchLeads) return;
+    if (!drawingReady || !project.instructor.allowResearchLeads) return;
     const available = project.graph.nodes.filter(node => canConnectAtScale(connectionScale, node) && isLiveMapItem(node));
     const source = available.find(node => node.id === sourceId);
     if (!source || !notebook?.simple && available.length < 2) return;
@@ -4952,17 +4993,14 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     const started = relationshipDraft.start(source.id);
     if (direct) { const { relationshipIds, ...plain } = started; setNewEdge({ ...plain, source: source.id, target: '', verb: '', evidence: '' }); }
     setPendingNodePosition(null);
-    if (!direct && notebook?.simple && source.scale === 'exosphere' && project.activeScale === 'exosphere') {
-      setNewEdge(current => ({ ...current, source: source.id, target: '', relationshipIds: [] }));
-      setConnecting(false); setConnectionSource(null); setSelection(null); setFocus(null);
-      setAddMode('edge'); setInspectorTab('relationships'); changePanel('inspector');
-      return;
-    }
+    // One gesture at every step: after Connect from, click the item the
+    // relationship reaches. An Exo or Macro node can reach a node or a local
+    // relationship line; empty canvas starts a new connected node.
     setVisibleScale(notebook?.simple ? 'all' : project.activeScale); setPresentation('canvas'); setConnecting(true);
     setConnectionSource(source.id); setSelection({ kind: 'node', id: source.id }); setFocus(null); setAddMode(null);
     setDrawerOpen(Boolean(notebook?.simple)); notebook?.onChange(Boolean(notebook?.simple)); setToolsOpen(false);
     if (notebook?.simple) { setInspectorTab('node'); onPanelMode?.('inspector', { preserveNotebook: true }); }
-    setAnnouncement(`${source.label} selected. ${notebook?.simple ? 'Choose another node or empty space.' : 'Choose the ending item.'}`);
+    setAnnouncement(`${source.label} selected. ${notebook?.simple ? connectTargetHint(source) : 'Choose the ending item.'}`);
     const focusBeforeConnection = document.activeElement;
     window.requestAnimationFrame(() => {
       // Keep a target or field the student focused before this frame ran.
@@ -4971,9 +5009,20 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       [...nodes].find(node => node.getAttribute('data-graph-id') === source.id)?.focus({ preventScroll: true });
     });
   };
+  const addBlank = (position) => {
+    if (!notebook?.simple || !drawingReady || connecting || !project.instructor.allowResearchLeads || !Number.isFinite(position?.x) || !Number.isFinite(position?.y)) return;
+    const level = position.scale && project.releasedScales.includes(position.scale) && (isNodeReviewScale(position.scale) || position.scale === 'macrosphere') ? position.scale : project.activeScale;
+    setNewNode(blankManualNode(level, true));
+    setPendingNodePosition({ x: clamp(Math.round(position.x), PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax),
+      y: clamp(Math.round(position.y), PROJECT_LIMITS.coordinateMin, PROJECT_LIMITS.coordinateMax) });
+    setConnectionSource(null); setSelection(null); setFocus(null); setToolsOpen(false);
+    setAddMode('node'); setInspectorTab('node');
+    changePanel('inspector');
+    setAnnouncement(`New ${SCALES[nodeScaleFor(level)]?.label || level} node. Name it, then choose Add to map.`);
+  };
   const connectBlank = (position) => {
     const source = project.graph.nodes.find(node => node.id === connectionSource && isLiveMapItem(node));
-    if (!notebook?.simple || !notebook.memoReady || !connecting || !source || !Number.isFinite(position?.x) || !Number.isFinite(position?.y)) return;
+    if (!notebook?.simple || !drawingReady || !connecting || !source || !Number.isFinite(position?.x) || !Number.isFinite(position?.y)) return;
     const { relationshipIds, ...plain } = newEdge;
     setNewEdge({ ...plain, source: source.id, target: '' });
     setNewNode(blankManualNode(source.scale, true));
@@ -4989,8 +5038,20 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     if (connecting) {
       // Pointer-down and arrow-key movement keep the chosen source. Only a
       // completed tap or explicit keyboard activation chooses its target.
-      if (!openInspector || kind !== 'node' || !notebook?.simple && project.activeScale === 'micro') return;
+      if (!openInspector || !notebook?.simple && project.activeScale === 'micro') return;
       const source = project.graph.nodes.find(item => item.id === connectionSource && canConnectAtScale(connectionScale, item) && isLiveMapItem(item));
+      if (kind === 'edge') {
+        // An Exo or Macro node attaches to the local relationship line itself.
+        const edge = project.graph.edges.find(item => item.id === id);
+        if (!source || !notebook?.simple || !['exosphere', 'macrosphere'].includes(source.scale) || !isPart2(project.activeScale)
+          || !edge || edge.scale !== 'meso' || edge.relationshipIds?.length || !isLiveMapItem(edge)) { setAnnouncement('Choose a node, or a local relationship line, to connect to.'); return; }
+        setNewEdge({ ...newEdge, source: connectionSource, target: edge.source, relationshipIds: [edge.id] });
+        setConnecting(false); setFocus(null); setSelection(null);
+        setAddMode('edge'); setInspectorTab('relationships'); setDrawerOpen(true);
+        onPanelMode?.('inspector', { preserveNotebook: true }); notebook.onChange(true); focusInspector();
+        return;
+      }
+      if (kind !== 'node') return;
       const node = project.graph.nodes.find((item) => item.id === id);
       if (!source || !node || !canConnectAtScale(connectionScale, node) || !isLiveMapItem(node)) return;
       if (id === connectionSource) { setAnnouncement('Choose a different ending item.'); return; }
@@ -5547,6 +5608,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     if (newNode.scale === 'micro' && !isDiscreteMicroNodeLabel(newNode.label)) return toast('Name one specific person, role, group, activity, object, or immediate setting.', 'error');
     if (project.instructor.evidenceRequired && !newNode.evidence.trim()) return toast('Add evidence or a question before adding the node.', 'error');
     const connected = addMode === 'connected-node';
+    // A node placed by double-clicking the canvas keeps the chosen spot.
+    const placed = Boolean(!connected && notebook?.simple && pendingNodePosition);
     if (connected && (!pendingNodePosition || !relationshipSource || !isLiveMapItem(relationshipSource))) return toast('Choose the starting node again.', 'error');
     if (connected && !newEdge.verb.trim()) return toast('Name the relationship before adding it.', 'error');
     if (connected && !canConnectAtScale(connectionScale, newNode)) return toast('Choose a node system available at this step.', 'error');
@@ -5571,10 +5634,15 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           : relationshipSafeNodePosition(added, pendingNodePosition.x, pendingNodePosition.y, displayedNodes, visibleEdges, phoneLayout, 'network', interactionEcologyBands, true));
         draft.layout = { ...draft.layout, readingAspect: canvasAspect, manualNodeIds: [...new Set([...(draft.layout?.manualNodeIds || []), ...visibleIds, id])] };
         draft.graph.edges.push(manualEdge(relationshipSource, added));
+      } else if (placed) {
+        const visibleIds = new Set(displayedNodes.map(node => node.id));
+        draft.graph.nodes.forEach(node => { const position = readablePositions?.get(node.id); if (visibleIds.has(node.id) && position) Object.assign(node, position); });
+        Object.assign(added, pendingNodePosition);
+        draft.layout = { ...draft.layout, readingAspect: canvasAspect, manualNodeIds: [...new Set([...(draft.layout?.manualNodeIds || []), ...visibleIds, id])] };
       } else placeNewMapNodes([...draft.graph.nodes, added], new Set([id]));
       draft.graph.nodes.push(added);
     }, connected ? 'node.connected' : 'node.added', newNode.label.trim());
-    if (connected) { preserveCamera(); setAutomaticPositions(null); setPendingNodePosition(null); setConnectionSource(null); setConnecting(false); }
+    if (connected || placed) { preserveCamera(); setAutomaticPositions(null); setPendingNodePosition(null); setConnectionSource(null); setConnecting(false); }
     setFocus(null);
     setVisibleScale(notebook?.simple ? 'all' : project.activeScale);
     setSelection({ kind: 'node', id });
@@ -5815,7 +5883,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     runShortcut(event);
   }}>
     {notebook ? <h1 className="sr-only">Systems map</h1> : <div className="map-toolbar"><div><h1>Systems map</h1>{toolbarStart}{onReview && <Action className="map-review-action" variant="ghost" onClick={onReview}>Review choices</Action>}</div><div className="map-toolbar__controls"><button type="button" className="sidebar-toggle" aria-controls="map-inspector" aria-expanded={sheetOpen} onClick={() => sheetOpen ? closeInspector() : changePanel(panelMode)}>{sheetOpen ? 'Hide sidebar' : 'Show sidebar'}</button>{panel && <WorkPanelTabs mode={panelMode} onChange={changePanel} disabled={panel.disabled || []} onKeyDown={(event) => handleCompositeKey(event, PANEL_TABS.map((tab) => tab.id), panelMode, changePanel)} />}<MapSearch nodes={connectionIndex.nodes} onSelect={followMapItem} /><div className="map-presentation-toggle" role="group" aria-label="Map presentation"><button type="button" aria-pressed={presentation === 'canvas'} onClick={() => changePresentation('canvas')}>Canvas</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => changePresentation('list')}>List</button></div><label className="map-layer-control"><span>Show layer</span><select aria-label="Show map layer" value={visibleScale} onChange={(event) => changeVisibleScale(event.target.value)}>{project.releasedScales.map((scale) => <option key={scale} value={scale}>{SCALES[scale].label}</option>)}<option value="all">All layers</option></select></label>{hasRemovedItems && <label className="map-removed-toggle"><input type="checkbox" checked={showRemoved} onChange={(event) => setShowRemoved(event.target.checked)} /><span>Show removed items</span></label>}</div></div>}
-    {connecting && <div className="map-connect-status" role="status"><span>{connectionSource ? `${project.graph.nodes.find((node) => node.id === connectionSource)?.label} selected. ${notebook?.simple ? 'Choose another node or empty space.' : 'Choose the ending item.'}` : 'Choose the starting item, then choose the ending item.'}</span><button type="button" onClick={cancelConnection}>Cancel</button></div>}
+    {connecting && !notebook?.simple && <div className="map-connect-status" role="status"><span>{connectionSource ? `${project.graph.nodes.find((node) => node.id === connectionSource)?.label} selected. Choose the ending item.` : 'Choose the starting item, then choose the ending item.'}</span><button type="button" onClick={cancelConnection}>Cancel</button></div>}
     {focusActive && !notebook?.open ? <div className="map-focus-bar" role="status"><div className="map-focus-bar__summary"><span>{focusSummary}</span>{focusHasRelationshipPages && <small aria-live="polite">Relationship {activeFocusPage + 1} of {focusIncidentEdges.length}</small>}</div><div className="map-focus-bar__actions">{focusHasRelationshipPages && focusPageCount > 1 ? <><button type="button" aria-label="Previous relationship" disabled={activeFocusPage === 0} onClick={() => changeFocusPage(activeFocusPage - 1)}>Previous</button><button type="button" aria-label="Next relationship" disabled={activeFocusPage === focusPageCount - 1} onClick={() => changeFocusPage(activeFocusPage + 1)}>Next</button></> : null}<button type="button" onClick={showFullMap}>Show full map</button></div></div> : <p className="map-overview-hint">{mapOverviewHint}</p>}
 
 
@@ -5825,13 +5893,14 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       {notebook && <>{createPortal(notebookNavigation, workspaceNavigationRoot)}<div ref={floatingControlsRef} className="notebook-floating-controls" /></>}
       {presentation === 'canvas' ? <section ref={canvasWrapRef} className={`canvas-wrap ${phoneLayout && sheetOpen ? 'is-inspector-open' : ''} is-panel-${panelMode} ${fullscreen ? 'is-fullscreen' : ''}`} aria-label="Map canvas and controls">
         <div className="map-context-actions">{relationshipDraft.draft && addMode !== 'edge' && <button type="button" className="button relationship-resume" onClick={() => { setConnecting(false); setAddMode('edge'); changePanel('inspector'); }}>Resume relationship</button>}</div>
+        {connecting && notebook?.simple && (() => { const source = project.graph.nodes.find((node) => node.id === connectionSource); return <div className="map-connect-status" role="status" data-scale={source?.scale || project.activeScale}><span><strong>{source?.label || 'Starting item'}</strong> selected. {source ? connectTargetHint(source) : 'Choose the starting item.'}</span><button type="button" onClick={cancelConnection}>Cancel</button></div>; })()}
         {notebook && !connecting && <div className="map-reading-guide" role={selection ? 'group' : undefined} aria-label={selection ? 'Selected map item' : undefined}><span>{selection ? (selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Selected item')) : addMode === 'edge' ? 'New relationship' : project.activeScale === 'micro' ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}</span>{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>{notebook.simple ? 'Cancel' : 'Clear highlight'}</button>}</div>}
-        <MemoGraphCanvas onCancelConnection={() => { if (!connecting && !relationshipDraft.draft) return; if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); } cancelConnection(); setSelection(null); setFocus(null); }} readingMode={Boolean(notebook)} overviewLabels={Boolean(notebook?.simple)} nodeStage={project.activeScale === 'micro' && !visibleEdges.length} onStartConnection={notebook?.simple && notebook.memoReady ? id => startConnection(id, true) : undefined} onConnectBlank={notebook?.simple ? connectBlank : undefined} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
+        <MemoGraphCanvas onCancelConnection={() => { if (!connecting && !relationshipDraft.draft) return; if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); } cancelConnection(); setSelection(null); setFocus(null); }} readingMode={Boolean(notebook)} overviewLabels={Boolean(notebook?.simple)} nodeStage={project.activeScale === 'micro' && !visibleEdges.length} onStartConnection={notebook?.simple && drawingReady ? id => startConnection(id, true) : undefined} onConnectBlank={notebook?.simple ? connectBlank : undefined} onAddBlank={notebook?.simple && drawingReady ? addBlank : undefined} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         {!notebook && <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
           <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-key-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
           <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); onPanelMode?.('inspector'); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
         </div>}
-        {legendOpen && <aside id="map-key-panel" className="map-legend" role="dialog" aria-labelledby="map-key-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-key-title">Map key</strong><button type="button" onClick={closeLegend} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend savedHistory={Boolean(notebook?.edits)} canConnect={Boolean(notebook?.simple && notebook.memoReady)} /></aside>}
+        {legendOpen && <aside id="map-key-panel" className="map-legend" role="dialog" aria-labelledby="map-key-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-key-title">Map key</strong><button type="button" onClick={closeLegend} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend savedHistory={Boolean(notebook?.edits)} canConnect={Boolean(notebook?.simple && drawingReady)} /></aside>}
       </section> : <MapListView compact={Boolean(notebook?.simple)} nodes={project.graph.nodes} edges={project.graph.edges} visibleScale={visibleScale} showRemoved={showRemoved} onSelect={(kind,id) => {
         selectItem(kind,id);
         // The list action explicitly says Open details. Ordinary canvas
@@ -5871,13 +5940,22 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           <Field label="Label"><textarea className="map-label-input" rows="1" maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{(notebook?.simple ? nodeClassificationTypes(newNode.scale) : NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale))).map((type) => <option key={type}>{type}</option>)}</select></Field>
-            <Field label="Level"><select value={newNode.scale} onChange={(event) => setNewNode((current) => {
-              const scale = event.target.value;
-              const allowed = notebook?.simple ? nodeClassificationTypes(scale).includes(current.type) : isNodeTypeAllowedAtScale(current.type, scale);
-              const type = allowed ? current.type : (scale === 'macrosphere' ? (notebook?.simple ? 'belief' : 'policy') : scale === 'exosphere' ? 'institution' : 'person');
-              return { ...blankManualNode(scale, notebook?.simple), label: current.label, evidence: current.evidence, type };
-            })}>{project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere').map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>
+            {(() => {
+              const levels = project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere');
+              const chooseLevel = (scale) => setNewNode((current) => {
+                const allowed = notebook?.simple ? nodeClassificationTypes(scale).includes(current.type) : isNodeTypeAllowedAtScale(current.type, scale);
+                const type = allowed ? current.type : (scale === 'macrosphere' ? (notebook?.simple ? 'belief' : 'policy') : scale === 'exosphere' ? 'institution' : 'person');
+                return { ...blankManualNode(scale, notebook?.simple), label: current.label, evidence: current.evidence, type };
+              });
+              // The account workspace shows the levels as the map draws them:
+              // one row of swatches, so placing a node in Exo or Macro is one
+              // click rather than a hidden menu.
+              return notebook?.simple && addMode !== 'connected-node'
+                ? <div className="field level-choice"><span className="field__label" id="level-choice-label">Level</span><div className="level-choice__options" role="radiogroup" aria-labelledby="level-choice-label">{levels.map((scale) => <button key={scale} type="button" role="radio" aria-checked={newNode.scale === scale} data-level={scale} onClick={() => chooseLevel(scale)}><i aria-hidden="true" /><span>{SCALES[scale]?.label || scale}</span></button>)}</div></div>
+                : <Field label="Level"><select value={newNode.scale} onChange={(event) => chooseLevel(event.target.value)}>{levels.map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>;
+            })()}
           </div>
+          {notebook?.simple && addMode === 'node' && pendingNodePosition && <p className="field__hint">It will sit where you double-clicked.</p>}
           {newNode.scale === 'micro' && <MicroParticipationEditor
             item={newNode}
             settingOptions={mapMicroSettingOptions}
@@ -5891,13 +5969,13 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           </>}
           <>{!notebook?.simple && <><button className="button" type="button" onClick={addNode}>Add node</button><button type="button" onClick={() => { setAddMode(null); closeInspector(); }}>Cancel</button></>}</>
         </div>}
-        {addMode === 'edge' && (notebook?.simple || project.activeScale !== 'micro') && <div className="add-form"><h3>New relationship</h3>{isPart2(project.activeScale) && <label className="check-row"><input type="checkbox" checked={Boolean(newEdge.relationshipIds)} onChange={event => setNewEdge(current => {
+        {addMode === 'edge' && (notebook?.simple || project.activeScale !== 'micro') && <div className="add-form"><h3>New relationship</h3>{isPart2(project.activeScale) && <div className="relationship-target-mode"><label className="check-row"><input type="checkbox" aria-describedby="relationship-target-mode-hint" checked={Boolean(newEdge.relationshipIds)} onChange={event => setNewEdge(current => {
           const { relationshipIds, ...rest } = current;
           return event.target.checked ? { ...rest, source: project.graph.nodes.find(node => node.id === rest.source && ['exosphere', 'macrosphere'].includes(node.scale))?.id || '', target: '', relationshipIds: [] } : rest;
-        })} /><span>Connect to local relationships</span></label>}<Field label="From"><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}><option value="">Choose a node</option>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge(current => ({ ...current, verb: event.target.value }))} /></Field>{newEdge.relationshipIds ? <RelationshipGroupPicker project={project} value={newEdge.relationshipIds} onChange={ids => setNewEdge(current => ({ ...current, relationshipIds: ids, target: project.graph.edges.find(edge => edge.id === ids[0])?.source || '' }))} /> : <Field label="To"><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}><option value="">Choose a node</option>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>}<Field label="Direction"><select value={newEdge.relationshipProcess?.direction || 'source to target'} onChange={(event) => setNewEdge((current) => ({ ...current, relationshipProcess: createRelationshipProcess({ ...current.relationshipProcess, direction: event.target.value }) }))}><option value="source to target">One way: {relationshipSource?.label} to {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label}</option><option value="target to source">One way: {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label} to {relationshipSource?.label}</option><option value="both directions">Both directions</option><option value="varies">Direction varies</option><option value="not yet known">Not yet known</option></select></Field>{isPart2(project.activeScale) && <Field label="Evidence or question"><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={newEdge.evidence} onChange={event => setNewEdge(current => ({ ...current, evidence: event.target.value }))} /></Field>}{!notebook?.simple && <><button className="button" type="button" onClick={addEdge}>Add relationship</button><button type="button" onClick={() => { setAddMode(null); closeInspector(); }}>Close</button><button type="button" onClick={() => { if (relationshipDraft.discard()) { setAddMode(null); setConnecting(false); setConnectionSource(null); closeInspector(); } }}>Discard relationship</button></>}</div>}
+        })} /><span>Connect to local relationships</span></label><small id="relationship-target-mode-hint">Attach this outside item to one or more Meso relationships instead of a single node.</small></div>}<Field label="From"><select value={relationshipSource?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, source: event.target.value }))}><option value="">Choose a node</option>{relationshipSourceNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field><Field label="Relationship"><input maxLength={RELATIONSHIP_VERB_LIMIT} value={newEdge.verb} onChange={(event) => setNewEdge(current => ({ ...current, verb: event.target.value }))} /></Field>{newEdge.relationshipIds ? <RelationshipGroupPicker project={project} value={newEdge.relationshipIds} onChange={ids => setNewEdge(current => ({ ...current, relationshipIds: ids, target: project.graph.edges.find(edge => edge.id === ids[0])?.source || '' }))} /> : <Field label="To"><select value={relationshipTarget?.id || ''} onChange={(event) => setNewEdge((current) => ({ ...current, target: event.target.value }))}><option value="">Choose a node</option>{relationshipTargetNodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></Field>}<Field label="Direction"><select value={newEdge.relationshipProcess?.direction || 'source to target'} onChange={(event) => setNewEdge((current) => ({ ...current, relationshipProcess: createRelationshipProcess({ ...current.relationshipProcess, direction: event.target.value }) }))}><option value="source to target">One way: {relationshipSource?.label || 'the starting item'} to {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label || 'the other item'}</option><option value="target to source">One way: {newEdge.relationshipIds ? 'selected local relationships' : relationshipTarget?.label || 'the other item'} to {relationshipSource?.label || 'the starting item'}</option><option value="both directions">Both directions</option><option value="varies">Direction varies</option><option value="not yet known">Not yet known</option></select></Field>{isPart2(project.activeScale) && <Field label="Evidence or question"><textarea rows="3" maxLength={PROJECT_LIMITS.noteText} value={newEdge.evidence} onChange={event => setNewEdge(current => ({ ...current, evidence: event.target.value }))} /></Field>}{!notebook?.simple && <><button className="button" type="button" onClick={addEdge}>Add relationship</button><button type="button" onClick={() => { setAddMode(null); closeInspector(); }}>Close</button><button type="button" onClick={() => { if (relationshipDraft.discard()) { setAddMode(null); setConnecting(false); setConnectionSource(null); closeInspector(); } }}>Discard relationship</button></>}</div>}
         {!addMode && inspectorTab === 'node' && <div id="map-inspector-panel-node" className="inspector__body" role={notebook ? "region" : "tabpanel"} aria-label={notebook ? "Item details" : undefined} aria-labelledby={notebook ? undefined : "map-inspector-tab-node"}>{selectedNode ? <>
           <MapConnections compact={Boolean(notebook)} nodeId={selectedNode.id} index={connectionIndex} onFollow={followMapItem} onScopeFollow={followScope} selectedScope={selectedScope}
-            onConnect={(notebook?.simple ? notebook.memoReady : project.activeScale !== 'micro') && canConnectAtScale(connectionScale, selectedNode) && isLiveMapItem(selectedNode) && project.instructor.allowResearchLeads && (notebook?.simple || connectionIndex.nodes.filter(node => canConnectAtScale(connectionScale, node)).length > 1) ? startConnection : undefined} />
+            onConnect={drawingReady && canConnectAtScale(connectionScale, selectedNode) && isLiveMapItem(selectedNode) && project.instructor.allowResearchLeads && (notebook?.simple || connectionIndex.nodes.filter(node => canConnectAtScale(connectionScale, node)).length > 1) ? startConnection : undefined} />
           <MapTextEditor key={`node:${selectedNode.id}`} label="Label" maxLength={NODE_LABEL_LIMIT} value={selectedNode.label} validate={(value) => nodeLabelIssue(value, selectedNode, project.graph.nodes)} onSave={(value) => editNode('label', value)} />
           {notebook?.simple && <NodeColorControl color={selectedNode.color} onChange={color => update(draft => {
             const records = [...draft.graph.nodes, ...draft.candidates.nodes].filter(node => node.id === selectedNode.id);
