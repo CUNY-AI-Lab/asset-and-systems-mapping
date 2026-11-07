@@ -8,7 +8,7 @@ import { requestLog } from './log.js';
 import { boundedText, boundedRpc, withDeadline, withSignal } from './bounded.js';
 import { createSystemsMappingApp } from '../server/app.js';
 import { initializeDurableDatabase } from '../server/database.js';
-import { gatewaySuggestion, gatewayClient, safeGatewayFailure, canonicalModel, REQUEST_ID } from './gateway.js';
+import { gatewaySuggestion, gatewayClient, safeGatewayFailure, canonicalModel, validationErrorType, REQUEST_ID } from './gateway.js';
 import { login, signInFailure } from './login';
 import { parseProject } from '../src/domain.js';
 import { durableDatabase } from './database.js';
@@ -94,9 +94,22 @@ export class MappingCourse extends DurableObject<Bindings> {
       this.system = createSystemsMappingApp({ db: this.db, publicOrigin: env.PUBLIC_ORIGIN, hostedMode: true, classCode: 'cail-only-no-class-code-827361',
         preflightEvaluationConcurrency: Number(env.GUIDANCE_CONCURRENCY),
         ollamaConfig: { apiKey: 'private-service-binding', model: env.GATEWAY_MODEL }, suggestionProvider: 'cail-gateway',
-        suggestionFailure: (error: unknown, context: any) => error instanceof CourseAccessError
-          ? { status: error.status, message: error.status === 409 ? 'Course guidance changed. Refresh the course settings and request guidance again.' : 'Course access could not be verified. Reload your course and try again.', details: { code: error.code, shouldRetry: false } }
-          : safeGatewayFailure(error, context.env.verifiedAccount.correlation.request_id),
+        suggestionFailure: (error: unknown, context: any, attempts?: { correctiveRetries?: number }) => {
+          const requestId = context.env.verifiedAccount.correlation.request_id;
+          if (error instanceof CourseAccessError) return { status: error.status, message: error.status === 409 ? 'Course guidance changed. Refresh the course settings and request guidance again.' : 'Course access could not be verified. Reload your course and try again.', details: { code: error.code, shouldRetry: false } };
+          const safe = safeGatewayFailure(error, requestId);
+          // A request that ends without an accepted answer is otherwise invisible:
+          // each model call still logged `gateway.completed ok`.
+          const details: any = safe.details;
+          // A cancellation is the student's choice, not a failed answer. The
+          // slug is bounded to the 64 characters cail-log accepts, or the event is dropped.
+          if (details.code !== 'guidance_cancelled') requestLog(env.RELEASE, requestId).guidanceFailed([details.code, details.validationReason, details.validationRule].filter(Boolean).join('.').slice(0, 64), attempts?.correctiveRetries);
+          return safe;
+        },
+        guidanceValidationFailure: (failure: { attempt: number, validation: string, grounding?: boolean }, context: any) =>
+          requestLog(env.RELEASE, context.env.verifiedAccount.correlation.request_id).guidanceRejected(failure.attempt, validationErrorType(failure.validation, failure.grounding === true)),
+        guidanceAccepted: (result: { correctiveRetries: number }, context: any) =>
+          requestLog(env.RELEASE, context.env.verifiedAccount.correlation.request_id).guidanceAccepted(result.correctiveRetries),
         onInternalError: (context: any) => requestLog(env.RELEASE, context.env.verifiedAccount.correlation.request_id).failure(),
         ollamaRequest: async (input: any, config: any, options: any) => {
           const { gatewayJwt, correlation, course, subject, coursePrompt, guidanceTimeoutMs } = options.context;

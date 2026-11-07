@@ -231,8 +231,15 @@ const routeConflict = (a,b,c,d) => {
 };
 // Wording is always on its own routed line. There are no detached callouts.
 const connectionCache = new Map();
-export function attachedConnectionLayout(edges,nodes,positions,geometries,labelGeometries,labelObstacles=[],reservedSegments=[]) {
-  const key=JSON.stringify([edges.map(e=>[e.id,e.source,e.target]),nodes.map(n=>[n.id,positions.get(n.id),geometries.get(n.id)]),[...labelGeometries],labelObstacles,reservedSegments]);
+// Routing weights. Local links between neighbouring cards never cross a card
+// (cardHit is effectively infinite). A heading branch from an outside item to
+// a local link may pass beneath a card: one plain line reads better than a
+// corridor around the whole map, so its card hits cost about as much as a
+// crossing, long detours cost more, and it never takes a four-bend loop.
+export const LOCAL_ROUTING = Object.freeze({ cardHit: 1e10, detour: 500, loops: true });
+export const BRANCH_ROUTING = Object.freeze({ cardHit: 600, detour: 3000, loops: false });
+export function attachedConnectionLayout(edges,nodes,positions,geometries,labelGeometries,labelObstacles=[],reservedSegments=[],routing=LOCAL_ROUTING) {
+  const key=JSON.stringify([edges.map(e=>[e.id,e.source,e.target]),nodes.map(n=>[n.id,positions.get(n.id),geometries.get(n.id)]),[...labelGeometries],labelObstacles,reservedSegments,routing]);
   if(connectionCache.has(key))return connectionCache.get(key);
   const anchors=new Map(),bounds=new Map(),paths=new Map(),routeKinds=new Map(),occupied=[...labelObstacles],segments=[...reservedSegments];
   const cards=new Map(nodes.filter(n=>geometries.get(n.id).cardWidth>0).map(n=>[n.id,box(positions.get(n.id),geometries.get(n.id),4)]));
@@ -272,7 +279,7 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
         // A single clear crossing is easier to follow than a detour around
         // the entire map. Cards, other captions and coincident lines still
         // carry much larger penalties than either choice.
-        const score=hits*1e10+collisions*1e12+conflicts+detour*500+(enough?0:10000)+total+points.length*24+Math.abs(f-.5)*100;
+        const score=hits*routing.cardHit+collisions*1e12+conflicts+detour*routing.detour+(enough?0:10000)+total+points.length*24+Math.abs(f-.5)*100;
         candidates.push({points,anchor,area,score});
       }
       for(const candidate of candidates)if(!best||candidate.score<best.score)best=candidate;
@@ -293,7 +300,7 @@ export function attachedConnectionLayout(edges,nodes,positions,geometries,labelG
       ]).sort((p,q)=>length(p,mid)-length(q,mid)).slice(0,24);
       for(const start of starts)for(const end of ends)for(const turn of turns)examine([start,turn,end]);
     }
-    if(best?.score>=1e8)for(const start of starts)for(const end of ends)for(const x of xs)for(const y of ys) {
+    if(routing.loops && best?.score>=1e8)for(const start of starts)for(const end of ends)for(const x of xs)for(const y of ys) {
       examine([start,{x:start.x,y},{x,y},{x,y:end.y},end]);
       examine([start,{x,y:start.y},{x,y},{x:end.x,y},end]);
     }
@@ -322,10 +329,18 @@ export function relationshipAttachment(layout,id,avoid=[]) {
 
 // Route headings after the local links they attach to. All branches share
 // the same occupied corridors and captions; each group gets one visible verb.
-export function readingConnectionLayout(edges,nodes,positions,geometry,labels,activeGroups) {
-  const direct=attachedConnectionLayout(edges.filter(e=>!e.relationshipIds?.length),nodes,positions,geometry,labels);
+// The sphere captions (Microsystem, Exosystem, Macrosystem) are obstacles for
+// every verb, so wording never sits on a caption.
+export function captionObstacles(boundaries) {
+  return Object.values(boundaries || {}).filter(Boolean).map(b=>({
+    left:b.cx-REGION_CAPTION.width/2-6, right:b.cx+REGION_CAPTION.width/2+6,
+    top:b.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-4, bottom:b.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2+4,
+  }));
+}
+export function readingConnectionLayout(edges,nodes,positions,geometry,labels,activeGroups,captions=[]) {
+  const direct=attachedConnectionLayout(edges.filter(e=>!e.relationshipIds?.length),nodes,positions,geometry,labels,captions);
   const groups=new Map(), branches=[], extraNodes=[], targetPositions=new Map(positions), sizes=new Map(geometry), words=new Map();
-  const avoid=[...direct.bounds].filter(([id])=>labels.get(id)?.width).map(([,b])=>b);
+  const avoid=[...captions,...[...direct.bounds].filter(([id])=>labels.get(id)?.width).map(([,b])=>b)];
   const joins=[];
   for(const edge of edges) {
     if(!edge.relationshipIds?.length || !activeGroups.has(edge.id))continue;
@@ -345,7 +360,7 @@ export function readingConnectionLayout(edges,nodes,positions,geometry,labels,ac
   }
   if(!branches.length)return {...direct,groups};
   const segments=[...direct.paths.values()].flatMap(({points})=>points.slice(1).map((p,i)=>[points[i],p]));
-  const routes=attachedConnectionLayout(branches,[...nodes,...extraNodes],targetPositions,sizes,words,avoid,segments);
+  const routes=attachedConnectionLayout(branches,[...nodes,...extraNodes],targetPositions,sizes,words,avoid,segments,BRANCH_ROUTING);
   const paths=new Map(direct.paths),anchors=new Map(direct.anchors),bounds=new Map(direct.bounds);
   for(const [id,members] of groups) {
     for(const member of members)member.route=routes.paths.get(member.key);

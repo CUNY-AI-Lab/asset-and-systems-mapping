@@ -40,7 +40,7 @@ Opening a project shows the canvas immediately. A new project emphasizes **Memo*
 
 **Continue** stays at the top. Its only required checkpoint is a successful memo-to-nodes submission for the current part, including a valid empty result. Notes, relationships and review screens are not prerequisites. Continue never generates relationships or silently starts another paid model request. The second memo begins empty; the retained graph supplies context without becoming the second editor's content. The redundant private-information checkbox is removed; existing sensitive memos without consent retain their permission control. Edited sources show “Memo changed | click Update map to submit”.
 
-Submitting a memo places supported nodes on the map. The first response is limited to six nodes; Part 2 allows at most three Exo and three Macro nodes. Subsequent meaningful edits use the last successful baseline for that same memo and request a small update. Unchanged, whitespace-only and bibliography-only edits do not require paid regeneration. Updates preserve student labels, classifications, colors, evidence edits, notes, positions, relationships and removals. A failed, stale or cancelled response leaves the map and draft intact.
+Submitting a memo places supported nodes on the map. Each response is limited to six nodes; Part 2 returns any mix of Exo and Macro nodes within that limit. Subsequent meaningful edits use the last successful baseline for that same memo and request a small update. Unchanged, whitespace-only and bibliography-only edits do not require paid regeneration. Updates preserve student labels, classifications, colors, evidence edits, notes, positions, relationships and removals. A failed, stale or cancelled response leaves the map and draft intact.
 
 Corrective model requests retain bounded context for proposals that already passed source and identity checks. Each complete replacement is validated again before it reaches the map; this context never adds nodes automatically. The focused repair preserves the existing memo contract rather than restricting acceptable subjects to the test examples. On Dev, **Memo → Load CUNY AI Lab About** loads the public About text into the selected memo draft. Loading does not submit the memo or generate nodes; the control is hidden on production.
 
@@ -69,8 +69,9 @@ The sidebar keeps map context visible. Controls retain 44px targets with compact
 | Move around the map | Drag empty canvas, use a middle-button drag, or hold Space while dragging. Arrow keys pan a focused canvas. |
 | Zoom | Scroll at the pointer, pinch, use zoom controls, or press `+` / `−` with canvas focus. |
 | Move a node | Drag the node or use arrow keys while it is focused. Auto-fit keeps an outer node outside its preceding sphere; saved manual positions persist. |
-| Connect existing nodes | Double-click a source (keyboard Shift+Enter), or choose **Connect from [node name]**, then choose the target and name the relationship. |
+| Connect existing nodes | Double-click a source (keyboard Shift+Enter), or choose **Connect from [node name]**, then choose the target and name the relationship. From an Exo or Macro node the target can also be a local relationship line. |
 | Create a connected node | Start from a source, click empty canvas (keyboard N), name the new node and relationship, then save both together. Cancel or Escape creates neither. |
+| Add a node in a level | Double-click empty canvas inside that level's region; the form opens with the level preset and the node keeps that spot. |
 | Correct classification | Change System and Type; save while preserving identity, evidence and connections. Incompatible dependencies require explicit repair. |
 | Change node color | Choose Automatic, Blue, Teal, Purple, Amber, Rose or Slate. Color changes appearance only, never classification. |
 | Restore the overview | Choose **Fit map** or press `0` with canvas focus. |

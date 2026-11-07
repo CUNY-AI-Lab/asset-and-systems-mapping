@@ -95,10 +95,11 @@
 .memo-file-upload { margin-block: .75rem; }
 .memo-file-upload .upload-zone { min-height: 84px; padding: .8rem; }
 
-/* The overview establishes the places and people. Selection reveals wording
-   on the connecting line, and only one cross-system group at a time. */
+/* The overview establishes the places and people. Selection emphasizes the
+   relationships attached to the chosen item; every other relationship and
+   its wording stays readable and selectable. */
 .is-reading-view .relationship-group-band { display: none; }
-.is-reading-view .is-inactive-group { opacity: 0; pointer-events: none; }
+.is-reading-view .is-inactive-group { opacity: .45; }
 .is-reading-view .relationship-group-vector { fill: none; stroke: var(--exosphere); stroke-opacity: .65; stroke-width: .85; stroke-dasharray: 6 4; }
 .is-reading-view .relationship-group-join { fill: var(--surface); stroke: var(--exosphere); stroke-width: 1; }
 .is-reading-view .graph-edge .edge-line { stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)) !important; stroke-width: .95 !important; }
@@ -115,8 +116,11 @@
 .node-color-key [data-node-color="resources"] { --node-color:#94651f; }
 .node-color-key [data-node-color="macro"] { --node-color:#805491; }
 .node-color-key li::before { content:""; width:14px; height:14px; flex:none; border:1px solid var(--node-color); background:color-mix(in srgb,var(--node-color) 12%,var(--surface)); border-radius:3px; }
-.is-reading-view.has-reading-selection .graph-edge:not(.is-reading-active) { opacity: .18; }
+.is-reading-view.has-reading-selection .graph-edge:not(.is-reading-active) { opacity: .5; }
+.is-reading-view.has-reading-selection .graph-edge-label:not(.is-reading-active):not(.is-selected) { opacity: .6; }
 .is-reading-view .graph-edge.is-reading-active .edge-line { stroke: var(--micro) !important; stroke-width: 1.4 !important; }
+.is-reading-view .graph-edge-label.is-reading-active .edge-label { font-weight: 650 !important; }
+.is-reading-view .graph-edge-label.is-reading-active .edge-label-bg { stroke: var(--micro) !important; stroke-width: 1; }
 .is-reading-view .graph-edge[data-edge-scale="macrosphere"] .edge-line { stroke: var(--exosphere) !important; stroke-dasharray: 7 4; stroke-width: 1.15 !important; }
 .is-reading-view .edge-label-bg { stroke: none !important; fill: var(--surface); }
 .is-reading-view .edge-label { font-weight: 500 !important; fill: var(--ink); }

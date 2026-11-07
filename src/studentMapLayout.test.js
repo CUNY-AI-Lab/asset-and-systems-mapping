@@ -344,3 +344,20 @@ it('keeps two heading groups clear of a dense set of saved cards and local verb 
     for(const other of captions.slice(i+1))expect(intersects(r,other)).toBe(false);
   });
 });
+
+it('routes a heading branch as one plain line beneath cards instead of a corridor around the map, clear of sphere captions',()=>{
+  // Two local cards joined by a link; the heading sits far below, so a straight
+  // branch crosses the local column. The caption sits above the local pair.
+  const nodes=[{id:'a'},{id:'b'},{id:'c'},{id:'heading'}];
+  const positions=new Map([['a',{x:400,y:120}],['b',{x:400,y:260}],['c',{x:400,y:400}],['heading',{x:400,y:700}]]);
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:180,cardHeight:42}]));
+  const edges=[{id:'ab',source:'a',target:'b'},{id:'bc',source:'b',target:'c'},{id:'group',source:'heading',target:'a',relationshipIds:['ab']}];
+  const labels=new Map([['ab',{width:120,height:32}],['bc',{width:90,height:32}],['group',{width:140,height:32}]]);
+  const caption={left:400-REGION_CAPTION.width/2-6,right:400+REGION_CAPTION.width/2+6,top:60,bottom:104};
+  const layout=readingConnectionLayout(edges,nodes,positions,geometry,labels,new Set(['group']),[caption]);
+  const branch=layout.groups.get('group')[0].route;
+  expect(branch.points.length).toBeLessThanOrEqual(4);
+  const span=Math.max(...branch.points.map(p=>p.x))-Math.min(...branch.points.map(p=>p.x));
+  expect(span).toBeLessThan(300);
+  for(const rect of layout.bounds.values())expect(intersects(rect,caption)).toBe(false);
+});

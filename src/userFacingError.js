@@ -54,7 +54,11 @@ export function userFacingError(error, fallback = 'The request could not be comp
   if (details?.code === 'guidance_contract_invalid') {
     const rule = typeof details.validationRule === 'string' && Object.hasOwn(rejectionByRule, details.validationRule) ? rejectionByRule[details.validationRule] : null;
     const field = /\.(label|type|scale)$/.exec(String(details.validationField ?? ''))?.[1];
-    const reason = rule || (field === 'label' ? 'a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition'
+    // The reason category decides before the field does: a duplicate label is
+    // still a `.label` path, but it is not a malformed name.
+    const reason = rule || (details.validationReason === 'item_limit' ? 'the model proposed more nodes than one memo submission can add'
+      : details.validationReason === 'label_duplicate' ? 'the model proposed the same node twice'
+      : field === 'label' ? 'a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition'
       : field ? 'a proposed node was placed at a level or type that this step does not accept' : null);
     if (reason) return `Nothing was added because ${reason}. Your existing work was not changed. Try again, or add the node yourself in Tools.`;
   }

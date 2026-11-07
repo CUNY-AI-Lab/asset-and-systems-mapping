@@ -462,9 +462,16 @@ function isTemporalOnlyMapElementLabel(label, rejectScheduleHead = false) {
 // into an invented actor or silently drops individual model suggestions.
 const MAP_ELEMENT_CLAUSE = /(?:\b(?:who|which|that)\s+(?:is|are|was|were|has|have|can|will|brings|carries|needs|does)\b|\s+(?:is|are|was|were|has|have|had|can|could|must|should|will|would|does|did)\s+|\s+(?:brings?|brought|carries|carried|needs?|needed|requires?|required|books?|booked|pads?|padded|reminds?|reminded|cooks?|cooked|watches|watched|handles?|handled|commutes?|commuted|sleeps?|slept|sits|cut|cuts|lost|pays?|paid|drives?|drove|presumes?|presumed|decides?|decided|limits?|limited|plans?|planned|sends?|sent|keeps?|kept|waits?|waited|appeals?|appealed)\s+\S+)/iu;
 
+// A belief, norm or expectation is named by what is believed: “belief that
+// AI threatens student writing”. The complementizer is part of the name, not
+// a pronoun reference or a statement, so these labels bypass those checks.
+const MAP_ELEMENT_BELIEF_COMPLEMENT = /^(?:(?:a|an|the|faculty|staff|public|widespread|shared|common|popular|cultural|institutional|administrative|local|community|societal|prevailing)\s+)*(?:beliefs?|assumptions?|ideas?|expectations?|norms?|views?|fears?|notions?|convictions?|perceptions?|sense|worry|worries|concerns?|ideolog(?:y|ies)|consensus|stigma)\s+that\s+\S/iu;
+
 export function isStatementMapElementLabel(value) {
-  return typeof value === 'string' && (MAP_ELEMENT_CLAUSE.test(value)
-    || /^(?:when|because|although|while|if|unless)\s+/iu.test(value));
+  if (typeof value !== 'string') return false;
+  if (MAP_ELEMENT_BELIEF_COMPLEMENT.test(value)) return false;
+  return MAP_ELEMENT_CLAUSE.test(value)
+    || /^(?:when|because|although|while|if|unless)\s+/iu.test(value);
 }
 
 export function normalizeMapElementLabel(value, { micro = false } = {}) {
@@ -476,12 +483,16 @@ export function normalizeMapElementLabel(value, { micro = false } = {}) {
   // cleanup is deterministic and happens before label de-duplication.
   if (/\s+both$/i.test(label)) label = label.replace(/\s+both$/i, '').trim();
   if (!label || MAP_ELEMENT_STANDALONE_REFERENCE.test(label)) return null;
-  if (MAP_ELEMENT_REFERENCE_TOKEN.test(label) && !isNamedInstitutionLabel(label)) return null;
+  // A belief named by its content keeps its complementizer, so only the
+  // reference-word and verb-start checks are waived; a dangling or truncated
+  // belief label is still rejected below.
+  const belief = MAP_ELEMENT_BELIEF_COMPLEMENT.test(label);
+  if (!belief && MAP_ELEMENT_REFERENCE_TOKEN.test(label) && !isNamedInstitutionLabel(label)) return null;
   if (MAP_ELEMENT_DANGLING_ARTIFACT.test(label) || MAP_ELEMENT_LEADING_QUANTIFIER.test(label)) return null;
   if (isTemporalOnlyMapElementLabel(label, micro)) return null;
   // A verb-shaped first token joined into a compound can be a noun modifier
   // (for example, a work–school mesosystem label), not a finite predicate.
-  if (MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)
+  if (!belief && MAP_ELEMENT_ACTION_START.test(label) && !MAP_ELEMENT_ENTITY_HEAD.test(label) && !/^[^\s]+[–—-]/u.test(label)
     && !(micro && MICRO_REQUEST_FORM_LABEL.test(label))) return null;
   return label;
 }

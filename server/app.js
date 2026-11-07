@@ -3325,7 +3325,7 @@ export function createSystemsMappingApp(options = {}) {
               review = validateGeneratedMemoReviewAtomically(generated.suggestion, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { workflowMode: input.workflowMode, memoUpdate: input.memoUpdate });
             } catch (error) {
               if (!(error instanceof MemoReviewSemanticError)) throw error;
-              options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message });
+              options.guidanceValidationFailure?.({ attempt: 1, code: error.code, validation: error.message, grounding: error.grounding === true }, context);
               generationSignal.throwIfAborted();
               correctiveRetries = 1;
               const retryContext = memoContractRepairContext(readingContext,
@@ -3354,7 +3354,7 @@ export function createSystemsMappingApp(options = {}) {
                 // supply bounded narrative passages and require quoted evidence.
                 // Transport errors, quota denials and generic schema failures never
                 // enter this path; each provider call receives normal admission.
-                if (repairError instanceof MemoReviewSemanticError) options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message });
+                if (repairError instanceof MemoReviewSemanticError) options.guidanceValidationFailure?.({ attempt: 2, code: repairError.code, validation: repairError.message, grounding: repairError.grounding === true }, context);
                 if (!(repairError instanceof MemoReviewSemanticError) || !repairError.grounding) throw repairError;
                 // Meso has no proposed nodes to rank paragraphs by. Preserve
                 // evidence for mapped pairs across the whole table, including
@@ -3439,9 +3439,10 @@ export function createSystemsMappingApp(options = {}) {
           if (correctiveRetries) runtimeMetadata.correctiveRetries = correctiveRetries;
           if (evidenceRepairAttempts) runtimeMetadata.evidenceRepairAttempts = evidenceRepairAttempts;
           if (feedbackOnly) runtimeMetadata.feedbackOnly = true;
+          options.guidanceAccepted?.({ correctiveRetries, evidenceRepairAttempts, feedbackOnly }, context);
         } catch (error) {
           if (options.suggestionFailure) {
-            const safe = options.suggestionFailure(error, context);
+            const safe = options.suggestionFailure(error, context, { correctiveRetries, evidenceRepairAttempts });
             throw new HttpError(safe.status, safe.message, {
               ...safe.details, ...(correctiveRetries ? { correctiveRetries } : {}), ...(evidenceRepairAttempts ? { evidenceRepairAttempts } : {}),
             }, safe.headers);

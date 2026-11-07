@@ -252,10 +252,35 @@
 .field-notes-archive h3 { margin: 0 0 8px; font-size: 14px; }
 .field-notes-archive p { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.map-connect-action { min-height: 44px; padding: .5rem .8rem; border: 1px solid currentColor; border-radius: 6px; background: var(--surface, white); color: inherit; font: inherit; cursor: pointer; }
-.map-connect-action[aria-pressed="true"] { background: #e4f3ec; color: #174c37; }
 .map-connect-status { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem 1rem; border-bottom: 1px solid currentColor; background: #e4f3ec; color: #174c37; }
 .map-connect-status button { flex: 0 0 auto; min-height: 44px; padding: .4rem .8rem; font: inherit; white-space: nowrap; }
+/* In the account workspace the connecting status floats over the canvas where
+   the reading guide normally sits, so the map never shifts under the pointer.
+   It takes the colour of the level the student is connecting from. */
+.map-stage--notebook .canvas-wrap > .map-connect-status { --connect-level: var(--micro); position: absolute; top: 8px; left: 8px; z-index: 6; max-width: calc(100% - 16px); padding: 6px 6px 6px 14px; border: 1px solid var(--connect-level); border-bottom-width: 1px; border-radius: 999px; background: color-mix(in srgb, var(--connect-level) 9%, var(--surface)); color: var(--ink); font-size: 13px; line-height: 1.35; box-shadow: 0 1px 0 color-mix(in srgb, var(--connect-level) 25%, transparent); }
+.map-stage--notebook .canvas-wrap > .map-connect-status[data-scale="exosphere"] { --connect-level: var(--exosphere); }
+.map-stage--notebook .canvas-wrap > .map-connect-status[data-scale="macrosphere"] { --connect-level: #805491; }
+.map-stage--notebook .canvas-wrap > .map-connect-status strong { color: var(--connect-level); font-weight: 650; }
+.map-stage--notebook .canvas-wrap > .map-connect-status button { min-height: 36px; padding: 4px 12px; border: 0; border-radius: 999px; background: var(--surface-subtle); color: var(--ink); font-size: 13px; }
+.map-stage--notebook .canvas-wrap > .map-connect-status button:hover { background: var(--surface-hover); }
+.map-stage--notebook .map-layout:not(.has-inspector) .canvas-wrap > .map-connect-status { top: 56px; }
+@media (max-width: 640px) {
+  .map-stage--notebook .canvas-wrap > .map-connect-status { font-size: 12px; border-radius: 14px; }
+}
+/* Level picker in the add-node form: the same swatches the Map key uses. */
+.level-choice { display: grid; gap: 6px; }
+.level-choice__options { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.level-choice__options button { --level: var(--micro); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 600 13px/1.2 var(--body); cursor: pointer; }
+.level-choice__options button[data-level="exosphere"] { --level: var(--exosphere); }
+.level-choice__options button[data-level="macrosphere"] { --level: #805491; }
+.level-choice__options button i { width: 16px; height: 10px; flex: none; border: 2px solid var(--level); border-radius: 3px; background: var(--surface); }
+.level-choice__options button[aria-checked="true"] { background: color-mix(in srgb, var(--level) 12%, var(--surface)); color: var(--ink); box-shadow: inset 0 0 0 1px var(--level); }
+.level-choice__options button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.relationship-target-mode { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.relationship-target-mode .check-row { align-items: center; }
+.relationship-target-mode .check-row span { font-weight: 600; font-size: 14px; }
+.relationship-target-mode small { color: var(--muted); font-size: 12px; line-height: 1.4; padding-left: 30px; }
+.relationship-target-mode:has(input:checked) { border-color: var(--exosphere); background: color-mix(in srgb, var(--exosphere) 7%, var(--surface)); }
 .reflection-entry > .field { display: grid; gap: 14px; }
 .reflection-entry .reflection-prompt { display: block; }
 

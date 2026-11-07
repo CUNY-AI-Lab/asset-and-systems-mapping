@@ -69,12 +69,13 @@ function semanticValidationReason(error) {
   // including arbitrary provider fields, never become diagnostic text.
   const categories = [
     ['response_shape', /^(?:The response is not a JSON object\.|The response does not contain exactly guidance, nodes, connections, example, and readiness\.)$/],
-    ['item_limit', /^(?:guidance must contain no more than \d+ items\.|(?:nodes|connections) exceeds the (?:micro|meso|exosphere|macrosphere) limit\.|(?:micro|macrosphere) review must return an empty connections array\.)$/],
+    ['item_limit', /^(?:guidance must contain no more than \d+ items\.|(?:nodes|connections) exceeds the (?:micro|meso|exosphere|macrosphere) limit\.|nodes exceeds the six-node limit\.|(?:micro|macrosphere) review must return an empty connections array\.)$/],
     ['field_shape', /^(?:guidance\[\d{1,2}\] does not use the exact guidance fields\.|nodes\[\d{1,2}\] does not use the exact (?:micro|meso|exosphere|macrosphere) node fields\.|connections\[\d{1,2}\] does not use the exact relationship fields\.)$/],
     ['text_format', /^(?:guidance\[\d{1,2}\] is not complete text within the response limits\.|nodes\[\d{1,2}\] is not a complete node object\.|connections\[\d{1,2}\] must contain a complete verb and rationale\.|(?:micro|meso) example must be null\.|example must be null or complete text within the response limit\.)$/],
-    ['label_duplicate', /^nodes\[\d{1,2}\]\.label duplicates an existing or proposed element\.$/],
-    ['label_format', /^nodes\[\d{1,2}\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|does not name a broader condition|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/],
-    ['scale_type', /^nodes\[\d{1,2}\](?:\.scale does not match the active scale|\.type does not belong at (?:micro|meso|exosphere|macrosphere)| is not a scoped mesosystem|\.basis must be exactly memo or inference|\.deontic must use the exact Macrosphere register)\.$/],
+    ['label_duplicate', /^nodes\[\d{1,2}\](?:\.label duplicates an existing or proposed element|\.label duplicates another node| duplicates an existing identity already updated in this response)\.$/],
+    ['label_format', /^nodes\[\d{1,2}\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|does not name a broader condition|names a person or role, not an outside setting or resource|names a person or institution, not a Macro condition|names a policy or law; place the concrete policy at Exo and reserve Macro for an independently evidenced cultural, ideological, historical or economic condition|must name one supported subject, not multiple named providers or distinct roles bundled with commas or slashes\. Choose one actual supported subject or return separately evidenced nodes within the six-node limit; never invent an umbrella name or rename an existing node|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/],
+    ['scale_type', /^nodes\[\d{1,2}\](?:\.scale does not match the active scale|\.scale or type does not match its level|\.type does not belong at (?:micro|meso|exosphere|macrosphere)|\.type must identify an outside organization, setting or resource; classify broader conditions at macrosphere| is not a scoped mesosystem|\.basis must be exactly memo or inference|\.basis must be memo(?:; do not invent conditions)?|\.deontic must use the exact Macrosphere register)\.$/],
+    ['identity_shape', /^nodes\[\d{1,2}\](?: has incorrect fields; do not return scopes or relationship verbs|\.existingId must identify one unique existing node|\.existingId is unknown or removed| must preserve the existing node label, type and scale)\.$/],
     ['endpoint_reference', /^(?:nodes\[\d{1,2}\]\.scope (?:must contain at least two supplied node IDs|must use unique supplied node IDs|must contain only Micro settings|cannot contain another Macrosphere item)|connections\[\d{1,2}\] (?:does not use two different accepted-node endpoints|does not stay within Micro|must use exact carried Micro node IDs|must connect an outside decision setting to a supplied Micro setting or another outside decision setting)|nodes\[\d{1,2}\] must have a supported pathway to a supplied Micro setting or another outside decision setting)\.$/],
     ['relationship_process', /^connections\[\d{1,2}\]\.(?:relationshipProcess\.|verb must use the exact Exosphere register\.$)/],
     ['relationship_duplicate', /^connections\[\d{1,2}\] repeats a relationship\.$/],
@@ -95,18 +96,38 @@ function groundingRule(error) {
   return 'source_contract';
 }
 
+const VALIDATION_FIELD = /^(guidance|nodes|connections)(?:\[\d{1,2}\])?(?:\.(?:label|type|scale|scope|basis|deontic|verb|evidenceExcerpt|evidence|existingId))?/;
+
+/**
+ * Fixed classification of one rejected model response: a reason category,
+ * the grounding rule when the failure is evidence-based, and the schema path.
+ * None of these carry response or memo text, so they may cross the response
+ * boundary and land in Worker logs.
+ */
+export function validationSummary(message, grounding = false) {
+  const text = String(message);
+  const field = VALIDATION_FIELD.exec(text)?.[0];
+  const error = { message: text, grounding };
+  return { validationReason: semanticValidationReason(error), ...(grounding ? { validationRule: groundingRule(error) } : {}), ...(field ? { validationField: field } : {}) };
+}
+
+/** Log-safe slug for a rejection, e.g. `scale_type.nodes.scale` or `source_evidence.outside_participation.nodes.evidence`. */
+export function validationErrorType(message, grounding = false) {
+  const summary = validationSummary(message, grounding);
+  const field = summary.validationField ? summary.validationField.replace(/\[\d{1,2}\]/, '').replace(/[^a-z]+/giu, '.').toLowerCase() : '';
+  return [summary.validationReason, summary.validationRule, field].filter(Boolean).join('.').slice(0, 64);
+}
+
 export function safeGatewayFailure(error, fallbackRequestId, now = Date.now()) {
   // Completed output failures are distinct from transport failures. Only fixed
   // classifications and schema paths cross this boundary, never response text.
   const semantic = error?.name === 'MemoReviewSemanticError' && error?.code === 'MEMO_REVIEW_SEMANTIC_INVALID';
   const outputFailure = error instanceof OpenRouterError || error instanceof SyntaxError || semantic;
   if (outputFailure) {
-    const field = semantic ? /^(guidance|nodes|connections)(?:\[\d{1,2}\])?(?:\.(?:label|type|scale|scope|basis|deontic|verb|evidenceExcerpt))?/.exec(String(error.message))?.[0] : undefined;
     return { status: 502, message: 'The model returned a response the map could not use. Your existing work was not changed.',
       details: { code: error?.code === 'response_too_large' ? 'guidance_output_truncated' : semantic ? 'guidance_contract_invalid' : 'guidance_output_invalid',
         shouldRetry: false, requestId: fallbackRequestId,
-        ...(semantic ? { validationReason: semanticValidationReason(error), ...(error.grounding === true ? { validationRule: groundingRule(error) } : {}) } : {}),
-        ...(field ? { validationField: field } : {}) } };
+        ...(semantic ? validationSummary(error.message, error.grounding === true) : {}) } };
   }
 
   if (error?.name === 'TimeoutError') return {

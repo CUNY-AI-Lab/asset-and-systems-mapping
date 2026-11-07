@@ -22,6 +22,10 @@ describe('safe error display', () => {
     expect(userFacingError(otherField)).toBe('Nothing was added because a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition. Your existing work was not changed. Try again, or add the node yourself in Tools.');
     const ruled = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[0]', validationRule: 'participation_conflict' } });
     expect(userFacingError(ruled)).toContain('a setting they take part in belongs at Micro');
+    const tooMany = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationReason: 'item_limit', validationField: 'nodes' } });
+    expect(userFacingError(tooMany)).toBe('Nothing was added because the model proposed more nodes than one memo submission can add. Your existing work was not changed. Try again, or add the node yourself in Tools.');
+    const duplicate = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationReason: 'label_duplicate', validationField: 'nodes[2].label' } });
+    expect(userFacingError(duplicate)).toContain('the model proposed the same node twice');
     const unsafeField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', validationField: 'guidance[0].evidenceExcerpt private memo text' } });
     expect(userFacingError(unsafeField)).toBe('The app could not use the model response. Your existing work was not changed. Try again.');
   });
