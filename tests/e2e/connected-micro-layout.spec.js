@@ -3,6 +3,8 @@ import { connectedMicroProject } from './fixtures/connected-micro-project.js';
 import { STORAGE_KEY } from '../../src/projectLibrary.js';
 import { showMap, mapCommand } from './support/notebook.js';
 
+// Relationships never reorder the cluster on their own; the hub layout is an
+// explicit Arrange, after which manual placement is kept across reload.
 test('busy Micro map centers its participant and separates unconnected items, with saved manual placement',async({page},testInfo)=>{
   const project=connectedMicroProject();
   await page.addInitScript(({key,project})=>{if(!localStorage.getItem('micro-layout-seeded')){localStorage.setItem(key,JSON.stringify(project));localStorage.setItem('micro-layout-seeded','1');}},{key:STORAGE_KEY,project});
@@ -15,7 +17,7 @@ test('busy Micro map centers its participant and separates unconnected items, wi
   const positions=()=>page.locator('.graph-node').evaluateAll(elements=>Object.fromEntries(elements.map(el=>[el.dataset.graphId,el.getAttribute('transform')])));
   const initial=await positions();
   await mapCommand(page,'Arrange map');
-  expect(await positions()).toEqual(initial);
+  await expect.poll(positions).not.toEqual(initial);
   const boxes=await page.locator('.graph-node .node-card').evaluateAll(elements=>elements.map(el=>{const b=el.getBoundingClientRect();return {id:el.closest('.graph-node').dataset.graphId,left:b.left,right:b.right,top:b.top,bottom:b.bottom};}));
   expect(boxes.some((a,i)=>boxes.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top))).toBe(false);
   const core=boxes.filter(b=>Number(b.id.split('-')[1])<8),isolated=boxes.filter(b=>Number(b.id.split('-')[1])>=8);
