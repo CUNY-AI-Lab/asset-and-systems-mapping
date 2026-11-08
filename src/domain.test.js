@@ -661,6 +661,8 @@ describe('mapping domain', () => {
     expect(isNamedInstitutionLabel('CUNY')).toBe(true);
     expect(isNamedInstitutionLabel('r/CUNY')).toBe(false);
     expect(isNamedInstitutionLabel('C.U.N.Y.')).toBe(true);
+    expect(isNamedInstitutionLabel('Google.org')).toBe(true);
+    expect(isNamedInstitutionLabel('Lab is funded.org')).toBe(false);
     expect(isNamedInstitutionLabel('Hunter College')).toBe(true);
     expect(isNamedInstitutionLabel('BMCC')).toBe(true);
     expect(isNamedInstitutionLabel('Access-A-Ride')).toBe(true);

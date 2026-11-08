@@ -40,20 +40,27 @@ Notebook under "Left out of this step".
 | Reason | Text | Status |
 | --- | --- | --- |
 | heading | Left out of this step | pending |
-| footer | Add any of these yourself in Tools if your memo supports it. | pending |
-| `outside_participation` | the memo describes people taking part there, or leaves their participation unknown | pending |
-| `policy_operation` | no established rule and its local effect was quoted | pending |
-| `narrative_quote` | its evidence was not a quote from the memo | pending |
-| `evidence_limit` | its quote was longer than 500 characters | pending |
-| `established_condition` | its evidence was a wish, recommendation or question, not an established condition | pending |
-| `label_format` | its label was a sentence or statement, not a name | pending |
+| footer | If your memo supports one of these, add it yourself in Tools. | revised 2026-11-08, pending |
+| `outside_participation` | the memo shows local people taking part there, or does not say whether they do | revised 2026-11-08, pending |
+| `policy_operation` | the memo does not quote the rule or what it changes locally | revised 2026-11-08, pending |
+| `narrative_quote` | its evidence is not quoted from the memo | revised 2026-11-08, pending |
+| `evidence_limit` | its quote runs past 500 characters | revised 2026-11-08, pending |
+| `established_condition` | its evidence is a wish, a recommendation or a question | revised 2026-11-08, pending |
+| `label_format` | its label is a whole sentence; a node needs a name | revised 2026-11-08, pending |
 | `identity_duplicate` | it repeats a node already on the map | pending |
-| `existing_identity` | it changed an existing node instead of adding evidence | pending |
+| `existing_identity` | it would change a node already on the map | revised 2026-11-08, pending |
 | `scale_type` | its type does not belong at this level | pending |
-| `node_shape` | its entry was incomplete | pending |
-| `unsupported` | no supporting passage was found on a second reading | pending |
+| `node_shape` | its entry is incomplete | revised 2026-11-08, pending |
+| `unsupported` | a second reading found no passage that supports it | revised 2026-11-08, pending |
 | fallback | it did not pass the evidence checks | pending |
 | toast | No new nodes were added. Left out: … Use Tools to add nodes yourself. | pending |
+
+## Behaviour change behind the list (2026-11-08)
+
+A node that still fails its rule after the two corrections no longer sinks the
+whole memo. The supported nodes are added and the failing ones appear in this
+list with their reasons. Identity failures (an unknown, removed, renamed or
+duplicated existing node) still fail the submission as a whole.
 
 ## Removed from the Notebook sidebar (2026-11-07)
 

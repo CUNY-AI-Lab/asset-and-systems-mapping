@@ -5981,9 +5981,9 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{(notebook?.simple ? nodeClassificationTypes(newNode.scale) : NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale))).map((type) => <option key={type}>{type}</option>)}</select></Field>
             {(() => {
-              // Part 1 adds Micro items; Part 2 places a node in Exo or Macro,
-              // and the two are always offered side by side.
-              const levels = notebook?.simple ? (isPart2(project.activeScale) ? ['exosphere', 'macrosphere'] : ['micro']) : project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere');
+              // Part 1 adds Micro items only. Part 2 offers every level, with Exo
+              // and Macro side by side, preset from the region that was double-clicked.
+              const levels = notebook?.simple ? (isPart2(project.activeScale) ? ['micro', 'exosphere', 'macrosphere'] : ['micro']) : project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere');
               const chooseLevel = (scale) => setNewNode((current) => {
                 const allowed = notebook?.simple ? nodeClassificationTypes(scale).includes(current.type) : isNodeTypeAllowedAtScale(current.type, scale);
                 const type = allowed ? current.type : (scale === 'macrosphere' ? (notebook?.simple ? 'belief' : 'policy') : scale === 'exosphere' ? 'institution' : 'person');
@@ -6903,13 +6903,13 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       const { withheld, leftOut } = feedback;
       setNotebookOpen(true); setWorkflowPanelMode('review');
       logPrototype('memo_submitted', { addedCount: added, withheldCount: leftOut.length, nodeCount: project.graph.nodes.length, edgeCount: project.graph.edges.length });
-      // Each left-out proposal is named with its reason; the Notebook keeps the same list.
-      const leftOutNote = leftOut.length ? ` Left out: ${leftOut.map(item => `${item.label} (${withheldNodeReason(item.reason)})`).join('; ')}.` : '';
-      toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.${leftOutNote}`
-        : added ? `${added} nodes added to your map.${leftOutNote}`
-          : leftOut.length ? `No new nodes were added.${leftOutNote} Use Tools to add nodes yourself.`
-            : withheld ? 'No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Use Tools to add nodes yourself.'
-              : 'No new nodes were added: nothing new in this memo was identified for this step. Use Tools to add nodes yourself.');
+      // The Notebook lists each left-out proposal with its reason; the message only counts them.
+      const leftOutTail = leftOut.length ? ` ${leftOut.length} left out; the Notebook lists them.` : '';
+      toast(updated ? `${added} nodes added and ${updated} quotes updated.${leftOutTail}`
+        : added ? `${added} ${added === 1 ? 'node' : 'nodes'} added.${leftOutTail}`
+          : leftOut.length ? `No new nodes were added. The Notebook lists the ${leftOut.length} left out.`
+            : withheld ? 'No proposed nodes passed the evidence checks. Add nodes in Tools.'
+              : 'This memo has no new nodes for this step. Add nodes in Tools.');
     } else if (feedback.error) {
       memoCommitFeedbackRef.current = null;
       setReviewFailure({ message: feedback.error, retryable: true });

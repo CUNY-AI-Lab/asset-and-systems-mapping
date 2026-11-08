@@ -187,6 +187,8 @@ export function isNamedInstitutionLabel(value) {
   if (isTemporalOnlyMapElementLabel(label, true) || GENERIC_INSTITUTION_HEAD.test(label)) return false;
   if (GENERIC_INSTITUTION_LABEL.test(label)) return false;
   if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return true;
+  // A funder or platform named by its domain (Google.org, Archive.org) is an organization.
+  if (/^[A-Z][\p{L}\p{N}&'’-]*(?:\s+[A-Z][\p{L}\p{N}&'’-]*)*\.(?:org|com|edu|gov|net)$/u.test(label)) return true;
   if (OFFICIAL_INSTITUTION_ACRONYM.test(label) || OFFICIAL_PUBLIC_BENEFIT_PROGRAM.test(label)) return true;
   if (HYPHENATED_SERVICE_BRAND.test(label) && SERVICE_BRAND_SIGNAL.test(label)) return true;
   if (MIXED_CASE_ORGANIZATION_BRAND.test(label)) return true;

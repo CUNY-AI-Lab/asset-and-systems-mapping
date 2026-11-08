@@ -17,17 +17,17 @@ describe('safe error display', () => {
 
   it('names an unsupported memo quotation from the fixed schema path only', () => {
     const quoted = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'guidance[1].evidenceExcerpt' } });
-    expect(userFacingError(quoted)).toBe('A quotation in the feedback could not be checked, so the review was not shown. Your existing work was not changed. Try again.');
+    expect(userFacingError(quoted)).toBe('A quote in the feedback could not be checked. Try again.');
     const otherField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[2].label' } });
-    expect(userFacingError(otherField)).toBe('Nothing was added because a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition. Your existing work was not changed. Try again, or add the node yourself in Tools.');
+    expect(userFacingError(otherField)).toBe('Nothing was added because a proposed node name covered more than one thing. Try again, or add the node in Tools.');
     const ruled = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationField: 'nodes[0]', validationRule: 'participation_conflict' } });
-    expect(userFacingError(ruled)).toContain('a setting they take part in belongs at Micro');
+    expect(userFacingError(ruled)).toContain('so it belongs at Micro');
     const tooMany = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationReason: 'item_limit', validationField: 'nodes' } });
-    expect(userFacingError(tooMany)).toBe('Nothing was added because the model proposed more nodes than one memo submission can add. Your existing work was not changed. Try again, or add the node yourself in Tools.');
+    expect(userFacingError(tooMany)).toBe('Nothing was added because the model proposed more nodes than one memo submission can add. Try again, or add the node in Tools.');
     const duplicate = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', shouldRetry: false, validationReason: 'label_duplicate', validationField: 'nodes[2].label' } });
     expect(userFacingError(duplicate)).toContain('the model proposed the same node twice');
     const unsafeField = new ApiError('guidance_contract_invalid', 502, { error: 'guidance_contract_invalid', details: { code: 'guidance_contract_invalid', validationField: 'guidance[0].evidenceExcerpt private memo text' } });
-    expect(userFacingError(unsafeField)).toBe('The app could not use the model response. Your existing work was not changed. Try again.');
+    expect(userFacingError(unsafeField)).toBe('The app could not use the model response. Try again.');
   });
 
   it('preserves stable API identifiers and payloads while displaying useful quota copy', () => {
@@ -42,7 +42,7 @@ describe('safe error display', () => {
   it.each(['guidance_output_truncated', 'guidance_output_invalid', 'guidance_contract_invalid'])('does not promise a save or blame the memo for %s', code => {
     const error = new ApiError(code, 502, { details: { code } });
     const message = userFacingError(error);
-    expect(message).toContain('Your existing work was not changed.');
+    expect(message).not.toContain('memo');
     expect(message).toContain('Try again.');
     expect(message).not.toMatch(/your work is saved|revise (?:your|the) memo/i);
   });
@@ -73,7 +73,7 @@ describe('safe error display', () => {
 
   it.each([
     ['guidance_workspace_busy', /Wait for one to finish/],
-    ['guidance_request_limit', /Try again later; your map remains editable/],
+    ['guidance_request_limit', /Try again later/],
     ['guidance_retry_limit', /retry limit/],
     ['guidance_request_invalid', /Reopen the map and try again/],
     ['guidance_storage_unavailable', /could not be saved/],

@@ -124,19 +124,19 @@ export function memoUpdateSummary(project, review) { return submittedPlan(projec
 
 // Student-facing wording for the server's fixed left-out reasons.
 const WITHHELD_REASON_TEXT = Object.freeze({
-  outside_participation: 'the memo shows local people taking part there, or does not say whether they do',
-  policy_operation: 'the memo does not quote the rule or what it changes locally',
-  narrative_quote: 'its evidence is not quoted from the memo',
-  evidence_limit: 'its quote runs past 500 characters',
-  established_condition: 'its evidence is a wish, a recommendation or a question',
-  label_format: 'its label is a whole sentence; a node needs a name',
-  identity_duplicate: 'it repeats a node already on the map',
-  existing_identity: 'it would change a node already on the map',
-  scale_type: 'its type does not belong at this level',
-  node_shape: 'its entry is incomplete',
-  unsupported: 'a second reading found no passage that supports it',
+  outside_participation: 'People in the memo take part here, so it belongs at Micro',
+  policy_operation: 'The memo does not quote the rule',
+  narrative_quote: 'Not quoted from the memo',
+  evidence_limit: 'Quote longer than 500 characters',
+  established_condition: 'Stated as a wish or a question',
+  label_format: 'Name is a sentence or covers more than one thing',
+  identity_duplicate: 'Already on the map',
+  existing_identity: 'Would change a node already on the map',
+  scale_type: 'Type does not fit this level',
+  node_shape: 'Incomplete entry',
+  unsupported: 'No passage in the memo supports it',
 });
-export function withheldNodeReason(reason) { return WITHHELD_REASON_TEXT[reason] || 'it did not pass the evidence checks'; }
+export function withheldNodeReason(reason) { return WITHHELD_REASON_TEXT[reason] || 'Did not pass the evidence checks'; }
 export function withheldNodes(project) {
   const items = project?.preflight?.evaluation?.runtime?.withheldNodes;
   return Array.isArray(items) ? items : [];

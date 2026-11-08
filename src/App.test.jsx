@@ -1310,11 +1310,11 @@ describe('Systems Mapping workflow', () => {
     render(<App memoFirstWorkflow startInWorkspace />);
     fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
-    expect(await screen.findByText(/1 nodes added to your map\. Left out: Access Board \(the memo shows local people taking part there, or does not say whether they do\); Residents want better repairs \(its label is a whole sentence; a node needs a name\)\./)).toBeVisible();
-    const leftOut = screen.getByRole('region', { name: 'Left out of this step' });
+    expect(await screen.findByText('1 node added. 2 left out; the Notebook lists them.')).toBeVisible();
+    const leftOut = screen.getByRole('region', { name: 'Left out' });
     expect(within(leftOut).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-      'Access Board: the memo shows local people taking part there, or does not say whether they do.',
-      'Residents want better repairs: its label is a whole sentence; a node needs a name.',
+      'Access BoardPeople in the memo take part here, so it belongs at Micro',
+      'Residents want better repairsName is a sentence or covers more than one thing',
     ]);
     expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(2);
   });
@@ -7649,7 +7649,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       expect(await screen.findByRole('heading', { name: 'New node' })).toBeVisible();
       expect(document.querySelector('.graph-node.is-pending')).not.toBeNull();
       const levels = screen.getByRole('radiogroup', { name: 'Level' });
-      expect(within(levels).getAllByRole('radio').map(radio => radio.getAttribute('data-level'))).toEqual(['exosphere', 'macrosphere']);
+      expect(within(levels).getAllByRole('radio').map(radio => radio.getAttribute('data-level'))).toEqual(['micro', 'exosphere', 'macrosphere']);
       fireEvent.click(within(levels).getByRole('radio', { name: /Macro/ }));
       expect(within(levels).getByRole('radio', { name: /Macro/ })).toHaveAttribute('aria-checked', 'true');
       fireEvent.change(screen.getByRole('textbox', { name: 'Label', exact: true }), { target: { value: 'Ableism in care funding' } });
