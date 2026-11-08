@@ -7,7 +7,7 @@ import { analyzeMemoSource, bibliographyOnlyLabel, bibliographyOnlyEvidence } fr
 // One contract for the account app's two memo submissions. The older Railway
 // review workflow remains a separate consumer of the legacy review contract.
 export const NODE_SUBMISSION = 'student-nodes-v1';
-export const SUBMISSION_NODE_LIMIT = 6;
+export const SUBMISSION_NODE_LIMIT = 10;
 export const EXO_SETTING_TYPES = Object.freeze(['organization', 'institution', 'agency', 'service', 'resource']);
 export const EXO_NODE_TYPES = Object.freeze([...EXO_SETTING_TYPES, 'policy', 'law']);
 // Course convention: concrete policies and offices are Exo; Macro names the
@@ -119,7 +119,7 @@ export function submittedReviewIssue(review, scale, sourceText, memoUpdate, carr
   if (!exact(review, ['guidance', 'nodes', 'connections', 'example', 'readiness'])) return 'The response must contain exactly guidance, nodes, connections, example and readiness.';
   if (!Array.isArray(review.guidance) || review.guidance.length || !Array.isArray(review.connections) || review.connections.length || review.example !== null) return 'Return no guidance, relationships, scopes or examples.';
   if (!exact(review.readiness, ['ready', 'note']) || typeof review.readiness.ready !== 'boolean' || !text(review.readiness.note, 500)) return 'readiness must contain a boolean ready and a short note.';
-  if (!Array.isArray(review.nodes) || review.nodes.length > SUBMISSION_NODE_LIMIT) return 'nodes exceeds the six-node limit.';
+  if (!Array.isArray(review.nodes) || review.nodes.length > SUBMISSION_NODE_LIMIT) return 'nodes exceeds the ten-node limit.';
   // Surface invalid new subjects across the response before an earlier quote
   // failure consumes the bounded correction on evidence alone. Saved reviews
   // and exact existingId echoes retain their separate compatibility checks.

@@ -47,7 +47,7 @@ it('adds outside offices from an ordinary second memo to the map at Exo', () => 
 // Reproduction of the production failure of 6 November 2026 (release b81f91a):
 // a second memo naming five outside items was rejected twice with
 // `nodes[3].scale`, then `nodes[4].scale`, because of a three-per-level cap.
-it('accepts more than three Exo nodes from one second memo, up to the six-node response', () => {
+it('accepts more than three Exo nodes from one second memo, up to the ten-node response', () => {
   const memo = `${second} The Office of Academic Affairs decides whether the program is funded. The Central Technology Office runs the sign-in system every account depends on. Public universities have faced decades of declining state funding.`;
   const five = [
     ...offices,
@@ -62,7 +62,7 @@ it('accepts more than three Exo nodes from one second memo, up to the six-node r
   delete project.part2Submission.analysis;
   expect(appendSubmittedNodes(project, review(five))).toBe(5);
   validateProject(project);
-  expect(submittedReviewIssue(review([...five, ...five.slice(0, 2).map(node => ({ ...node, label: `${node.label} annex` }))]), 'exosphere', memo)).toMatch(/six-node limit/);
+  expect(submittedReviewIssue(review([...five, ...five, five[0]]), 'exosphere', memo)).toMatch(/ten-node limit/);
 });
 
 it('still withholds an office the focal participants take part in, with a reason', () => {

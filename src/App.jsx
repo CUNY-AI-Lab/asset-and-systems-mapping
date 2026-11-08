@@ -35,7 +35,7 @@ import { GUIDANCE_CONTRACT_VERSION, studentJudgments } from '../shared/student-j
 import { prepareProviderMemo } from '../shared/provider-memo.js';
 import { readGuidanceCache, removeGuidanceCacheEntry, writeGuidanceCache } from './guidanceCache.js';
 import { requiresInitialModel, requiresLevelModel } from './mappingCycle.js';
-import { MEMO_WORKFLOW, carriedSubmissionNodes, appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState, memoUpdatePayload, memoUpdateSummary, withheldNodeReason } from './memoWorkflow.js';
+import { MEMO_WORKFLOW, carriedSubmissionNodes, appendSubmittedNodes, openMemoWorkflowScale, memoUpdateState, memoUpdatePayload, memoUpdateSummary, withheldNodeReason, reachableWorkflowScales, workflowStepReady, workflowGuide } from './memoWorkflow.js';
 import { levelRailState, nextStep, stageForPanelMode } from './nextStep.js';
 import { LevelSelect, NotebookSection, ProjectMenu, PANEL_TABS, WorkPanelTabs } from './MapStudio.jsx';
 import { hasPendingGuidance } from './durableGuidance.js';
@@ -907,25 +907,25 @@ function MicroParticipationEditor({ item, settingOptions, onParticipationChange,
     ? item.focalParticipation
     : 'unclear';
   return <div className="micro-context-editor" aria-label={`Micro context for ${itemLabel}`}>
-    <Field label="Person’s involvement">
-      <select aria-label={`Person’s involvement with ${itemLabel}`} value={participation} onChange={(event) => onParticipationChange(event.target.value)}>
+    <Field label="Involvement">
+      <select aria-label={`Involvement of ${itemLabel}`} value={participation} onChange={(event) => onParticipationChange(event.target.value)}>
         {FOCAL_PARTICIPATION_STATES.map((value) => <option key={value} value={value}>{FOCAL_PARTICIPATION_LABELS[value]}</option>)}
       </select>
     </Field>
     {!itemIsSetting && <div className="micro-membership-editor">
-      <span className="field__label">Where this belongs</span>
+      <span className="field__label">Setting</span>
       <div className="scope-editor__members">
         {selectedIds.map((settingId) => {
           const setting = settingById.get(settingId);
           const label = setting?.label || settingId;
           return <button key={settingId} type="button" className="scope-chip" onClick={() => onSettingNodeIdsChange(selectedIds.filter((id) => id !== settingId))} aria-label={`Remove ${itemLabel} from ${label}`}>{label}<span aria-hidden="true"> ×</span></button>;
         })}
-        {availableSettings.length ? <select className="scope-editor__add" aria-label={`Choose where ${itemLabel} belongs`} value="" onChange={(event) => {
+        {availableSettings.length ? <select className="scope-editor__add" aria-label={`Setting for ${itemLabel}`} value="" onChange={(event) => {
           const settingId = event.target.value;
           if (!settingId || selectedIds.includes(settingId) || selectedIds.length >= PROJECT_LIMITS.scopeMembers) return;
           onSettingNodeIdsChange([...selectedIds, settingId]);
         }}>
-          <option value="">Choose where this belongs…</option>
+          <option value="">Choose…</option>
           {availableSettings.map((setting) => <option key={setting.id} value={setting.id}>{setting.label}{setting.status === 'rejected' || setting.claimState === 'retired' ? ' — removed' : ''}</option>)}
         </select> : null}
         {!selectedIds.length && !availableSettings.length ? <span className="scope-editor__empty">Nothing available yet</span> : null}
@@ -3443,7 +3443,7 @@ function readingLabelSizes(edges,visibleIds,phone) {
   } : {width:0,height:0}]));
 }
 
-function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = null, selection, onSelect, onMoveNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onStartConnection, onConnectBlank, onAddBlank, onViewportChange, onAnnounce }) {
+function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = null, pendingNode = null, selection, onSelect, onMoveNode, selectedScope, onScopeSelect, viewport, phoneLayout, phoneViewBox = PHONE_GRAPH_VIEWBOX, mapLabel, mapMode = 'network', ecologyLayers = [], ecologyBandGeometry = null, ecologyInteractionBandGeometry = null, microBoundary = null, fontRevision = 0, visibleLayer = 'all', detailMode = false, connectionMode = false, ringExpansion = 1, minimumZoom = VIEWPORT_LIMITS.minZoom, readingMode = false, overviewLabels = false, nodeStage = false, onCancelConnection, onStartConnection, onConnectBlank, onAddBlank, onViewportChange, onAnnounce }) {
   const sharedBands = ecologyBandGeometry || ecologyBands(phoneLayout, nodes.length, nodes);
   const interactionBands = ecologyInteractionBandGeometry || sharedBands;
   const retainedPlacement = useMemo(() => mapMode === 'ecology' && Boolean(retainedEcologyBoundaries(nodes, edges, phoneLayout, sharedBands)), [nodes, edges, phoneLayout, sharedBands, mapMode]);
@@ -3710,6 +3710,8 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
     if (!cancelled && !interaction.moved && interaction.kind === 'node') select('node', interaction.nodeId);
     if (!cancelled && !interaction.moved && interaction.kind === 'node-detail') select('node', interaction.selectionId);
     if (!cancelled && !interaction.moved && interaction.kind === 'edge') select('edge', interaction.selectionId);
+    // A plain click on empty canvas while a node is being added cancels it.
+    if (!cancelled && !interaction.moved && interaction.kind === 'pan' && !interaction.connectBlank && pendingNode) onCancelConnection?.();
     if (!cancelled && !interaction.moved && interaction.connectBlank) {
       const current = activeViewport();
       onConnectBlank?.({ x: (interaction.startSvgX - current.panX) / current.zoom,
@@ -4037,6 +4039,15 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
         </g>;
       })}</g>
       <g className="meso-linkages" aria-hidden="true">{mesoBridgeVisuals.map((bridge) => <line key={bridge.id} data-linkage-of={bridge.linkageId} className={`meso-link-line ${bridge.muted ? 'is-muted' : ''}`} x1={bridge.x1} y1={bridge.y1} x2={bridge.x2} y2={bridge.y2} />)}</g>
+      {pendingNode && !exportDrawing && (() => {
+        // The node being added is drawn in outline where it will sit, so the
+        // form and the map agree before anything is saved.
+        const geometry = mapNodeGeometry(pendingNode.label?.trim() || 'New node', phoneLayout);
+        return <g className={`graph-node graph-node--${pendingNode.scale} is-pending`} aria-hidden="true" transform={`translate(${pendingNode.x} ${pendingNode.y})`}>
+          <rect className="node-card" x={geometry.cardX} y={geometry.cardY} width={geometry.cardWidth} height={geometry.cardHeight} rx={geometry.cardRadius} />
+          <text className="node-label" style={{ fontSize: geometry.fontSize, fontFamily: '"Source Sans 3 Variable", "Source Sans 3", sans-serif' }}>{geometry.lines.map((line, lineIndex) => <tspan key={`pending-line-${lineIndex}`} x="0" y={geometry.labelStartY + lineIndex * geometry.lineHeight}>{line}</tspan>)}</text>
+        </g>;
+      })()}
       {previewConnection && (() => {
         const source = nodes.find(node => node.id === previewConnection.source);
         const target = nodes.find(node => node.id === previewConnection.target);
@@ -4094,6 +4105,7 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
 function sameGraphVisuals(previous, next) {
   if (previous.onCancelConnection !== next.onCancelConnection || previous.onStartConnection !== next.onStartConnection || previous.onConnectBlank !== next.onConnectBlank || previous.onAddBlank !== next.onAddBlank || previous.readingMode !== next.readingMode || previous.overviewLabels !== next.overviewLabels || previous.nodeStage !== next.nodeStage) return false;
   if (previous.phoneLayout !== next.phoneLayout) return false;
+  if (previous.pendingNode?.x !== next.pendingNode?.x || previous.pendingNode?.y !== next.pendingNode?.y || previous.pendingNode?.label !== next.pendingNode?.label || previous.pendingNode?.scale !== next.pendingNode?.scale) return false;
   if (previous.phoneViewBox?.height !== next.phoneViewBox?.height) return false;
   if (previous.mapLabel !== next.mapLabel) return false;
   if (previous.mapMode !== next.mapMode || previous.visibleLayer !== next.visibleLayer) return false;
@@ -5400,12 +5412,19 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     changeViewport(nextViewport);
     setAnnouncement('Map fitted to view.');
   };
+  // Auto-fit keeps the map arranged as it grows. Turning it off fixes every
+  // card where it sits now, so later work never moves what a student placed.
+  const toggleAutoFit = (enabled) => {
+    update(draft => { draft.layout = { ...draft.layout, autoFit: enabled }; if (!enabled) for (const node of draft.graph.nodes) { const p = readablePositions?.get(node.id); if (p) Object.assign(node, p); } }, 'layout.auto-fit', enabled ? 'Auto-fit on' : 'Auto-fit off');
+    logPrototype('autofit_toggled', { enabled });
+    if (enabled) fitMap();
+  };
   const arrangeMap = () => {
     preserveCamera();
     rememberLayout();
     const liveNodes = project.graph.nodes.filter((node) => node.scale !== 'meso' && (showRemoved || node.claimState !== 'retired'));
     const nodes = visibleScale === 'all' ? liveNodes : visibleNodes.length ? visibleNodes : liveNodes;
-    const positions = notebook ? studentReadingPositions(nodes, project.graph.edges, {phone:phoneLayout,aspectRatio:canvasAspect}) : mapMode === 'ecology'
+    const positions = notebook ? studentReadingPositions(nodes, project.graph.edges, {phone:phoneLayout,aspectRatio:canvasAspect,arrange:true}) : mapMode === 'ecology'
       ? phoneLayout && visibleScale === 'micro' ? arrangedPhoneMicroPositions(nodes) : arrangedEcologyPositions(nodes, phoneLayout, interactionEcologyBands)
       : phoneLayout
         ? arrangedPhoneOverviewPositions(nodes)
@@ -5669,6 +5688,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     setNewNode(blankManualNode(project.activeScale, notebook?.simple));
     setAddMode(null);
     toast(connected ? 'Node and relationship added.' : project.activeScale === 'meso' ? 'Item added to Micro. Connect it here in Meso.' : 'Node added.');
+    logPrototype('node_added', { nodeCount: project.graph.nodes.length + 1, placed, connected });
   };
   const addConnectedNode = addNode;
   const addEdge = () => {
@@ -5692,6 +5712,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     if (notebook?.simple) { setConnecting(false); setAnnouncement('Relationship added.'); }
     setAddMode(null);
     toast('Relationship added.');
+    logPrototype('relationship_added', { edgeCount: project.graph.edges.length + 1, nodeCount: project.graph.nodes.length });
   };
   const requestedViewport = legacyPhoneDrawer && phoneViewport ? phoneViewport : mapViewport || project.viewport;
   const canvasViewport = {
@@ -5809,7 +5830,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           nodes={connectionIndex.nodes} onSelect={followMapItem} onZoom={zoomBy}
           canZoomOut={canvasViewport.zoom > minimumInteractiveZoom} canZoomIn={canvasViewport.zoom < VIEWPORT_LIMITS.maxZoom}
           onAdd={project.instructor.allowResearchLeads && SCALE_ORDER.includes(project.activeScale) ? () => { setConnecting(false); setConnectionSource(null); changePanel('inspector'); setNewNode(blankManualNode(project.activeScale, notebook?.simple)); setAddMode('node'); } : null}
-          autoFit={project.layout?.autoFit !== false} onAutoFit={notebook ? enabled => { update(draft => { draft.layout = { ...draft.layout, autoFit: enabled }; if (!enabled) for (const node of draft.graph.nodes) { const p = readablePositions?.get(node.id); if (p) Object.assign(node, p); } }, 'layout.auto-fit', enabled ? 'Auto-fit on' : 'Auto-fit off'); if (enabled) fitMap(); } : undefined} onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
+          autoFit={project.layout?.autoFit !== false} onAutoFit={notebook ? toggleAutoFit : undefined} onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
           editHistory={Boolean(notebook?.edits)} onUndo={notebook?.edits?.onUndo || (notebook ? ()=>restoreLayout('undo') : undefined)} onRedo={notebook?.edits?.onRedo || (()=>restoreLayout('redo'))} canUndo={notebook?.edits ? notebook.edits.canUndo : Boolean(layoutHistory.past.length)} canRedo={notebook?.edits ? notebook.edits.canRedo : Boolean(layoutHistory.future.length)}
           onLegend={toggleLegend} onFullscreen={toggleFullscreen} fullscreen={fullscreen}
           hasRemoved={hasRemovedItems} showRemoved={showRemoved} onShowRemoved={setShowRemoved} />;
@@ -5915,8 +5936,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
             saved draft can be resumed once the student cancels or finishes. */}
         <div className="map-context-actions">{relationshipDraft.draft && addMode !== 'edge' && !connecting && <button type="button" className="button relationship-resume" onClick={() => { setConnecting(false); setAddMode('edge'); changePanel('inspector'); }}>Resume relationship</button>}</div>
         {connecting && notebook?.simple && (() => { const source = project.graph.nodes.find((node) => node.id === connectionSource); return <div className="map-connect-status" role="status" data-scale={source?.scale || project.activeScale}><span><strong>{source?.label || 'Starting item'}</strong> selected. {source ? connectTargetHint(source) : 'Choose the starting item.'}</span><button type="button" onClick={cancelConnection}>Cancel</button></div>; })()}
-        {notebook && !connecting && <div className="map-reading-guide" role={selection ? 'group' : undefined} aria-label={selection ? 'Selected map item' : undefined}><span>{selection ? (selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Selected item')) : addMode === 'edge' ? 'New relationship' : project.activeScale === 'micro' ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}</span>{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>{notebook.simple ? 'Cancel' : 'Clear highlight'}</button>}</div>}
-        <MemoGraphCanvas onCancelConnection={() => { if (!connecting && !relationshipDraft.draft) return; if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); } cancelConnection(); setSelection(null); setFocus(null); }} readingMode={Boolean(notebook)} overviewLabels={Boolean(notebook?.simple)} nodeStage={project.activeScale === 'micro' && !visibleEdges.length} onStartConnection={notebook?.simple && drawingReady ? id => startConnection(id, true) : undefined} onConnectBlank={notebook?.simple ? connectBlank : undefined} onAddBlank={notebook?.simple && drawingReady ? addBlank : undefined} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
+        {notebook && !connecting && <div className="map-reading-guide" role={selection ? 'group' : undefined} aria-label={selection ? 'Selected map item' : undefined}><span>{selection ? (selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Selected item')) : notebook.simple ? workflowGuide(project, { addMode, pendingNode: Boolean(pendingNodePosition) }) : addMode === 'edge' ? 'New relationship' : project.activeScale === 'micro' ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}</span>{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>{notebook.simple ? 'Cancel' : 'Clear highlight'}</button>}</div>}
+        <MemoGraphCanvas onCancelConnection={() => { if (notebook?.simple && addMode === 'node' && pendingNodePosition && !connecting) { setPendingNodePosition(null); setAddMode(null); setNewNode(blankManualNode(project.activeScale, true)); closeInspector(); setAnnouncement('New node cancelled.'); return; } if (!connecting && !relationshipDraft.draft) return; if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); } cancelConnection(); setSelection(null); setFocus(null); }} readingMode={Boolean(notebook)} overviewLabels={Boolean(notebook?.simple)} nodeStage={project.activeScale === 'micro' && !visibleEdges.length} onStartConnection={notebook?.simple && drawingReady ? id => startConnection(id, true) : undefined} onConnectBlank={notebook?.simple ? connectBlank : undefined} onAddBlank={notebook?.simple && drawingReady ? addBlank : undefined} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} pendingNode={notebook?.simple && addMode === 'node' && pendingNodePosition ? { x: pendingNodePosition.x, y: pendingNodePosition.y, label: newNode.label, scale: newNode.scale } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         {!notebook && <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
           <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-key-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
           <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); onPanelMode?.('inspector'); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
@@ -5931,7 +5952,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       <aside id="map-inspector" ref={inspectorRef} data-item-scale={selectedNode?.scale || selectedEdge?.scale || project.activeScale} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={notebook ? 'Notebook' : panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
         {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}
         {notebook && <div ref={setNotebookNavigationHost} className="notebook-controls-host" />}
-        {notebook?.simple && notebook.action && <div className="notebook-task-end notebook-task-top" aria-label="Next step">{typeof notebook.action === 'function' ? notebook.action({ canGoBack: viewHistory.canGoBack, onBack: goBackView, view: toolsOpen ? 'tools' : panelMode }) : notebook.action}</div>}
+        {notebook?.simple && notebook.action && <div className="notebook-task-end notebook-task-top" aria-label="Next step">{typeof notebook.action === 'function' ? notebook.action({ canGoBack: viewHistory.canGoBack, onBack: goBackView, view: toolsOpen ? 'tools' : panelMode, autoFit: project.layout?.autoFit !== false, onAutoFit: toggleAutoFit }) : notebook.action}</div>}
         {notebook?.simple && !panelContent && !toolsOpen && !addMode && (selectedNode || selectedEdge) && <div className="inspector-item-header" aria-label="Selected item actions"><div className="inspector-item-heading"><h2>{selectedNode?.label || relationshipDescription(selectedEdge)}</h2><span className="inspector-item-state">{selectedItemRemoved ? 'Not on map' : 'On map'}</span></div><div className="inspector-item-header-actions"><button className={selectedItemRemoved?"button button--secondary":"button button--secondary map-remove"} type="button" title={selectedItemRemoved?undefined:"Remove from map (Delete or Backspace)"} aria-keyshortcuts={selectedItemRemoved?undefined:"Delete Backspace"} onClick={() => setSelectedRemoved(!selectedItemRemoved)}>{selectedItemRemoved ? 'Add to map' : 'Remove'}</button><button className="button button--secondary inspector-done" type="button" onClick={closeInspector}>Done</button></div></div>}
         {notebook?.simple && !toolsOpen && !panelContent && addMode && <div className="inspector-item-actions" aria-label="New item actions"><button type="button" className="button" onClick={addMode === 'connected-node' ? addConnectedNode : addMode === 'node' ? addNode : addEdge}>{addMode === 'connected-node' ? 'Add node and relationship' : addMode === 'node' ? 'Add to map' : 'Add relationship'}</button><button type="button" className="button button--secondary" onClick={() => { if (['edge', 'connected-node'].includes(addMode)) cancelConnection(); else { setAddMode(null); setConnecting(false); setConnectionSource(null); } closeInspector(); }}>Cancel</button></div>}
         <div className="inspector__scroll">
@@ -5960,7 +5981,9 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{(notebook?.simple ? nodeClassificationTypes(newNode.scale) : NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale))).map((type) => <option key={type}>{type}</option>)}</select></Field>
             {(() => {
-              const levels = project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere');
+              // Part 1 adds Micro items; Part 2 places a node in Exo or Macro,
+              // and the two are always offered side by side.
+              const levels = notebook?.simple ? (isPart2(project.activeScale) ? ['exosphere', 'macrosphere'] : ['micro']) : project.releasedScales.filter((scale) => isNodeReviewScale(scale) || notebook?.simple && scale === 'macrosphere');
               const chooseLevel = (scale) => setNewNode((current) => {
                 const allowed = notebook?.simple ? nodeClassificationTypes(scale).includes(current.type) : isNodeTypeAllowedAtScale(current.type, scale);
                 const type = allowed ? current.type : (scale === 'macrosphere' ? (notebook?.simple ? 'belief' : 'policy') : scale === 'exosphere' ? 'institution' : 'person');
@@ -5969,12 +5992,12 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
               // The account workspace shows the levels as the map draws them:
               // one row of swatches, so placing a node in Exo or Macro is one
               // click rather than a hidden menu.
+              if (notebook?.simple && levels.length < 2) return null;
               return notebook?.simple && addMode !== 'connected-node'
                 ? <div className="field level-choice"><span className="field__label" id="level-choice-label">Level</span><div className="level-choice__options" role="radiogroup" aria-labelledby="level-choice-label">{levels.map((scale) => <button key={scale} type="button" role="radio" aria-checked={newNode.scale === scale} data-level={scale} onClick={() => chooseLevel(scale)}><i aria-hidden="true" /><span>{SCALES[scale]?.label || scale}</span></button>)}</div></div>
                 : <Field label="Level"><select value={newNode.scale} onChange={(event) => chooseLevel(event.target.value)}>{levels.map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>;
             })()}
           </div>
-          {notebook?.simple && addMode === 'node' && pendingNodePosition && <p className="field__hint">It will sit where you double-clicked.</p>}
           {newNode.scale === 'micro' && <MicroParticipationEditor
             item={newNode}
             settingOptions={mapMicroSettingOptions}
@@ -6879,6 +6902,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       const { added, updated } = feedback.summary;
       const { withheld, leftOut } = feedback;
       setNotebookOpen(true); setWorkflowPanelMode('review');
+      logPrototype('memo_submitted', { addedCount: added, withheldCount: leftOut.length, nodeCount: project.graph.nodes.length, edgeCount: project.graph.edges.length });
       // Each left-out proposal is named with its reason; the Notebook keeps the same list.
       const leftOutNote = leftOut.length ? ` Left out: ${leftOut.map(item => `${item.label} (${withheldNodeReason(item.reason)})`).join('; ')}.` : '';
       toast(updated ? `${added} nodes added; ${updated} evidence passages updated. Your connections and manual edits are preserved.${leftOutNote}`
@@ -7611,7 +7635,10 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       const firstMemo = memoUpdateState({ ...next, activeScale: 'micro' });
       const secondMemo = memoUpdateState({ ...next, activeScale: 'exosphere' });
       const firstMemoReady = firstMemo.submitted || firstMemo.hasBaseline || secondMemo.submitted || secondMemo.hasBaseline;
-      const destination = scale !== 'micro' && !firstMemoReady ? 'micro' : scale;
+      // A step opens only after the one before it. Asking for a later step
+      // lands on the furthest step that is open.
+      const reachable = reachableWorkflowScales(next);
+      const destination = scale !== 'micro' && !firstMemoReady ? 'micro' : reachable.includes(scale) ? scale : reachable[reachable.length - 1];
       openMemoWorkflowScale(next, destination);
       if (destination === 'macrosphere' && !memoUpdateState(next).submitted) openMemoWorkflowScale(next, 'exosphere');
       update(draft => openMemoWorkflowScale(draft, next.activeScale), 'scale.selected', `${SCALES[next.activeScale].label} opened`);
@@ -8126,7 +8153,9 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     : project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
     : project.stage === 3 && !mapPreviewOpen ? { mode: 'inspector', disabled: panelDisabled }
     : { mode: 'suggestions', content: suggestionsPanel, disabled: panelDisabled };
-  const workflowLevels = levelRailState(project).map(level => memoFirstWorkflow && level.state === 'locked' ? { ...level, state: 'available' } : level);
+  const reachableLevels = memoFirstWorkflow ? reachableWorkflowScales(project) : null;
+  const workflowLevels = levelRailState(project).map(level => memoFirstWorkflow ? { ...level, state: level.current ? 'current' : level.complete ? 'complete' : reachableLevels.includes(level.scale) ? 'available' : 'locked' } : level);
+  const workflowReady = memoFirstWorkflow && workflowStepReady(project);
   const restoreWorkflowView = (view) => {
     if (reviewInFlightRef.current || pendingLevelRead || !SCALE_ORDER.includes(view.scale)) return;
     if (projectRef.current.activeScale !== view.scale || projectRef.current.stage !== view.stage) {
@@ -8142,10 +8171,10 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   };
   const savedEdits = editHistoryState(project);
   const editControls = memoFirstWorkflow ? { ...savedEdits, canUndo: !workflowBusy && savedEdits.canUndo, canRedo: !workflowBusy && savedEdits.canRedo, onUndo: () => restoreSavedEdit('undo'), onRedo: () => restoreSavedEdit('redo') } : null;
-  const workflowAction = ({ canGoBack, onBack, view }) => <>
-    <div className="workflow-actions"><button type="button" className="button button--secondary" disabled={workflowBusy || !canGoBack} onClick={onBack}>Back</button><div className="map-edit-history" role="group" aria-label="Edit history"><button type="button" aria-label="Undo" aria-keyshortcuts="Meta+Z Control+Z" title={savedEdits.undoLabel ? `Undo: ${savedEdits.undoLabel}` : 'Undo'} disabled={!editControls.canUndo} onClick={editControls.onUndo}><Icon name="undo" /></button><button type="button" aria-label="Redo" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y" title={savedEdits.redoLabel ? `Redo: ${savedEdits.redoLabel}` : 'Redo'} disabled={!editControls.canRedo} onClick={editControls.onRedo}><Icon name="redo" /></button></div><button className="button notebook-next" type="button" disabled={workflowBusy || !workflowMemoState.submitted || !memoPrerequisiteReady} onClick={runNextStep}>{project.activeScale === 'macrosphere' ? 'Finish map' : 'Continue'}</button></div>
+  const workflowAction = ({ canGoBack, onBack, view, autoFit = true, onAutoFit }) => <>
+    <div className="workflow-actions"><button type="button" className="button button--secondary" disabled={workflowBusy || !canGoBack} onClick={onBack}>Back</button><div className="map-edit-history" role="group" aria-label="Edit history"><button type="button" aria-label="Undo" aria-keyshortcuts="Meta+Z Control+Z" title={savedEdits.undoLabel ? `Undo: ${savedEdits.undoLabel}` : 'Undo'} disabled={!editControls.canUndo} onClick={editControls.onUndo}><Icon name="undo" /></button><button type="button" aria-label="Redo" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y" title={savedEdits.redoLabel ? `Redo: ${savedEdits.redoLabel}` : 'Redo'} disabled={!editControls.canRedo} onClick={editControls.onRedo}><Icon name="redo" /></button>{onAutoFit && <button type="button" className="workflow-fit" aria-pressed={autoFit} aria-label="Auto-fit layout" title={autoFit ? 'Auto-fit on' : 'Auto-fit off'} onClick={() => onAutoFit(!autoFit)}>Fit</button>}</div><button className={`button notebook-next${workflowReady ? ' notebook-next--ready' : ''}`} type="button" disabled={workflowBusy || !workflowMemoState.submitted || !memoPrerequisiteReady} onClick={runNextStep}>{project.activeScale === 'macrosphere' ? 'Finish map' : 'Continue'}</button></div>
     {view === 'memo' && <div className="memo-action-row"><button className="button" type="button" disabled={workflowBusy || reviewRetryAt > Date.now() || !memoPrerequisiteReady || !activeSubmission(project).text.trim() || workflowMemoState.submitted || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>{workflowBusy ? 'Updating map…' : workflowMemoState.hasBaseline ? 'Update map' : 'Submit memo and add nodes'}</button><span role={workflowBusy ? 'status' : undefined}>{workflowBusy ? reviewProgress || 'Reading your memo…' : workflowMemoState.submitted ? 'Map is up to date' : !memoPrerequisiteReady ? 'Add Part 1 to the map first.' : 'Add this memo to the map to continue.'}</span></div>}
-    {view !== 'memo' && !workflowMemoState.submitted ? <button type="button" className="text-button memo-needed-action" onClick={() => editWorkflowMemo()}>Open Memo to continue</button> : project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}
+    {view !== 'memo' && !workflowMemoState.submitted ? <button type="button" className="text-button memo-needed-action" onClick={() => editWorkflowMemo()}>Open Memo to continue</button> : workflowMemoState.submitted && project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}
   </>;
   const studio = <MapStage presentationRef={lastCanvasPresentation} captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, memoReady: workflowMemoState.submitted && memoPrerequisiteReady, memoPending: !workflowMemoState.submitted, onMemo: () => editWorkflowMemo(), edits: editControls, open: notebookOpen, onRestoreView: restoreWorkflowView, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
   const intakeOpen = !memoFirstWorkflow && project.stage === 0 && !mapPreviewOpen;

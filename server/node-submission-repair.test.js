@@ -85,7 +85,7 @@ it.each([
   repair => { repair.nodeIssues[0] = Object.assign(Object.create({ injected: true }), repair.nodeIssues[0]); },
   repair => { repair.nodeIssues.push({ ...repair.nodeIssues[0] }); },
   repair => { repair.omittedCount = -1; },
-  repair => { repair.omittedCount = 6; },
+  repair => { repair.omittedCount = 10; },
   repair => { delete repair.omittedCount; },
   repair => { repair.nodeIssues[0].label = '文'.repeat(201); },
   repair => { repair.nodeIssues[0].label = ''; },
@@ -96,9 +96,9 @@ it.each([
   repair => { repair.supportedNodes[0].type = 'unknown-type'; },
   repair => { repair.supportedNodes[0].existingId = 10; },
   repair => { repair.omittedSupportedCount = -1; },
-  repair => { repair.omittedSupportedCount = 12; },
+  repair => { repair.omittedSupportedCount = 20; },
   repair => { delete repair.omittedSupportedCount; },
-  repair => { repair.supportedNodes = Array(7).fill(repair.supportedNodes[0]); },
+  repair => { repair.supportedNodes = Array(11).fill(repair.supportedNodes[0]); },
 ])('fails closed for malformed supplemental correction data %s', mutate => {
   const repair = repairFor(bad()); mutate(repair);
   expect(isMemoContractRepair(repair, 'exosphere')).toBe(false);

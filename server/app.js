@@ -294,6 +294,10 @@ const PROTOTYPE_EVENTS = new Set([
   'project_exported',
   'project_imported',
   'recovery_exported',
+  'node_added',
+  'relationship_added',
+  'memo_submitted',
+  'autofit_toggled',
   STUDENT_WORKFLOW_EVALUATION_EVENT,
 ]);
 const PROTOTYPE_STAGES = new Map(SYSTEMS_MAPPING_STAGES.map(({ label }, index) => [label, index]));
@@ -327,6 +331,11 @@ const PROTOTYPE_METADATA_RULES = Object.freeze({
   keyboard: { type: 'boolean' },
   pointer: { type: 'boolean' },
   success: { type: 'boolean' },
+  placed: { type: 'boolean' },
+  connected: { type: 'boolean' },
+  enabled: { type: 'boolean' },
+  addedCount: { type: 'integer', min: 0, max: 100 },
+  withheldCount: { type: 'integer', min: 0, max: 100 },
 });
 const MODULE_ORDER_SQL = `CASE module_key
   WHEN 'purpose' THEN 1

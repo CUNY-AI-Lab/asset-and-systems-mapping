@@ -142,6 +142,55 @@ export function withheldNodes(project) {
   return Array.isArray(items) ? items : [];
 }
 
+// Steps open one at a time. A student can return to any step already opened
+// and move on to the next one, but never skip past the work in between.
+export function reachableWorkflowScales(project) {
+  const first = memoUpdateState({ ...project, activeScale: 'micro' });
+  const second = memoUpdateState({ ...project, activeScale: 'exosphere' });
+  const firstMemoReady = first.submitted || first.hasBaseline || second.submitted || second.hasBaseline;
+  if (!firstMemoReady) return ['micro'];
+  const index = scale => SCALE_ORDER.indexOf(scale);
+  const furthestOpened = Math.max(0, ...(project.releasedScales || []).map(index), index(project.activeScale));
+  const furthestCompleted = Math.max(-1, ...(project.completedScales || []).map(index));
+  const reach = Math.max(1, furthestOpened, furthestCompleted + 1);
+  return SCALE_ORDER.filter((_, position) => position <= reach);
+}
+
+// Whether the current step shows the work it asks for, so the next step can
+// be offered without pushing a student who has not started yet.
+export function workflowStepReady(project) {
+  const live = project.graph.nodes.filter(isLiveMapItem);
+  const liveIds = new Set(live.map(node => node.id));
+  const liveEdges = project.graph.edges.filter(edge => liveIds.has(edge.source) && liveIds.has(edge.target));
+  const atScale = scale => live.some(node => node.scale === scale);
+  const state = memoUpdateState(project);
+  switch (project.activeScale) {
+    case 'micro': return state.submitted && atScale('micro');
+    case 'meso': return liveEdges.some(edge => !edge.relationshipIds?.length && live.find(node => node.id === edge.source)?.scale === 'micro');
+    case 'exosphere': return state.submitted && (atScale('exosphere') || atScale('macrosphere'));
+    case 'macrosphere': return atScale('macrosphere') || atScale('exosphere');
+    default: return false;
+  }
+}
+
+// One line in the corner of the map says what to do next at this step. It
+// changes with the map, so a student is never told to do work already done.
+export const WORKFLOW_GUIDE = Object.freeze({
+  memo: 'Open Memo and add its nodes to the map to continue.',
+  micro: 'Select a node to edit it. Double-click the canvas to add a node.',
+  meso: 'Double-click a node to connect it. Double-click the canvas to add a node.',
+  exosphere: 'Double-click an Exo node, then click the local relationship it affects.',
+  macrosphere: 'Double-click a condition, then click the relationship or setting it shapes.',
+  newNode: 'New node. Click the map to cancel.',
+  newRelationship: 'New relationship',
+});
+export function workflowGuide(project, { addMode = null, pendingNode = false } = {}) {
+  if (addMode === 'edge') return WORKFLOW_GUIDE.newRelationship;
+  if (addMode === 'node' && pendingNode) return WORKFLOW_GUIDE.newNode;
+  if (['micro', 'exosphere'].includes(project.activeScale) && !memoUpdateState(project).submitted) return WORKFLOW_GUIDE.memo;
+  return WORKFLOW_GUIDE[project.activeScale] || WORKFLOW_GUIDE.micro;
+}
+
 export function appendSubmittedNodes(project, review) {
   const { next, summary } = submittedPlan(project, review);
   Object.assign(project, next);

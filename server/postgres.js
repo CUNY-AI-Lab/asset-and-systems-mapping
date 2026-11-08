@@ -189,6 +189,7 @@ const POSTGRES_SCHEMA_SQL = `
       'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
       'annotation_saved',
       'project_exported', 'project_imported', 'recovery_exported',
+      'node_added', 'relationship_added', 'memo_submitted', 'autofit_toggled',
       'workflow_observed'
     )),
     stage INTEGER CHECK(stage IS NULL OR (stage >= 0 AND stage <= 6)),
@@ -603,6 +604,29 @@ async function migratePrototypeEventVocabulary(client) {
   `);
 }
 
+async function migrateInteractionPrototypeEventVocabulary(client) {
+  const applied = await client.query('SELECT version FROM schema_migrations WHERE version = 13');
+  if (applied.rows.length) return;
+  await client.query(`
+    ALTER TABLE prototype_events
+      DROP CONSTRAINT IF EXISTS prototype_events_event_name_check;
+    ALTER TABLE prototype_events
+      ADD CONSTRAINT prototype_events_event_name_check CHECK(event_name IN (
+        'class_access_succeeded', 'class_access_failed',
+        'project_started', 'project_resumed', 'stage_viewed', 'stage_completed',
+        'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
+        'annotation_saved',
+        'project_exported', 'project_imported', 'recovery_exported',
+        'node_added', 'relationship_added', 'memo_submitted', 'autofit_toggled',
+        'workflow_observed'
+      ));
+  `);
+  await client.query(`
+    INSERT INTO schema_migrations (version) VALUES (13)
+    ON CONFLICT (version) DO NOTHING
+  `);
+}
+
 async function migrateMapViewPrototypeEventVocabulary(client) {
   const applied = await client.query('SELECT version FROM schema_migrations WHERE version = 12');
   if (applied.rows.length) return;
@@ -891,6 +915,7 @@ async function initializePostgres(database) {
     await client.query(POSTGRES_SCHEMA_SQL);
     await migratePrototypeEventVocabulary(client);
     await migrateMapViewPrototypeEventVocabulary(client);
+    await migrateInteractionPrototypeEventVocabulary(client);
     await migrateSavedProjectMetadata(client);
     await migrateEcologicalScaleIds(client);
     await seedPostgres(client);

@@ -19,7 +19,8 @@ function mappedProject() {
 
 it('keeps a saved map in Notebook without a duplicate memo editor or review requirement',()=>{
   render(<MemoWorkflowNotebook {...props} project={mappedProject()} />);
-  expect(screen.getByText('Select a node to edit it. Double-click a node to start a connection.')).toBeVisible();
+  expect(screen.getByRole('heading',{name:'Micro · local nodes'})).toBeVisible();
+  expect(screen.queryByText(/Double-click/)).toBeNull();
   expect(screen.queryByRole('textbox',{name:'First memo'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Submit memo and add nodes'})).toBeNull();
   expect(screen.queryByText('Update suggestions')).toBeNull();
@@ -63,7 +64,7 @@ it('moves a successfully submitted second memo to Exo connection work',()=>{
   project.part2Submission.text='Residents do not participate in Regional Housing Office staffing meetings. Regional Housing Office allocates repair staff, affecting repair visits to residents at home.';
   appendSubmittedNodes(project,{guidance:[],example:null,readiness:{ready:true,note:'Nodes identified.'},nodes:[{label:'Regional Housing Office',type:'agency',scale:'exosphere',basis:'memo',evidence:project.part2Submission.text}],connections:[]});
   render(<MemoWorkflowNotebook {...props} project={parseProject(serializeProject(project))} />);
-  expect(screen.getByText('Select an Exo node and connect it to the local relationships it affects.')).toBeVisible();
+  expect(screen.getByRole('heading',{name:'Exo · policies and offices'})).toBeVisible();
   expect(screen.queryByText(/Submit your second memo/)).toBeNull();
   expect(screen.queryByRole('button',{name:'Open Memo'})).toBeNull();
 });

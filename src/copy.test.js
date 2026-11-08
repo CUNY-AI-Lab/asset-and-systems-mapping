@@ -28,7 +28,7 @@ describe('student-facing copy', () => {
   it('uses action labels without repeated candidate explanations', () => {
     const source = readFileSync(fileURLToPath(new URL(studentCopySources[0], import.meta.url)), 'utf8');
     expect(source).toContain('Choose what belongs on the map');
-    expect(source).toContain('Where this belongs');
+    expect(source).toContain('Setting');
     expect(source).not.toContain('Add puts a suggestion on the map');
     expect(source).not.toContain('Only what you add joins the map');
     expect(source).not.toContain('Runs on the class server. Your memo goes to no outside model');

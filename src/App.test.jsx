@@ -3974,7 +3974,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
     const committeeRow = screen.getByDisplayValue('Committee').closest('article');
     fireEvent.click(within(committeeRow).getByText('Details', { selector: 'summary' }));
-    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Person’s involvement with Committee' }), { target: { value: 'indirect' } });
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Involvement of Committee' }), { target: { value: 'indirect' } });
     fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Choose where Committee belongs' }), { target: { value: schoolCandidate.id } });
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id)).toMatchObject({
       focalParticipation: 'indirect',
@@ -5121,9 +5121,9 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     fireEvent.click(within(document.getElementById('inspector-add-actions')).getByRole('button', { name: 'Node' }));
     const addForm = screen.getByRole('heading', { name: 'New node' }).parentElement;
-    expect(within(addForm).getByRole('combobox', { name: 'Person’s involvement with this item' })).toHaveValue('direct');
+    expect(within(addForm).getByRole('combobox', { name: 'Involvement of this item' })).toHaveValue('direct');
     fireEvent.change(within(addForm).getByLabelText('Label'), { target: { value: 'Peer navigator' } });
-    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Person’s involvement with Peer navigator' }), { target: { value: 'indirect' } });
+    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Involvement of Peer navigator' }), { target: { value: 'indirect' } });
     fireEvent.change(within(addForm).getByRole('combobox', { name: 'Choose where Peer navigator belongs' }), { target: { value: setting.id } });
     fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies the peer navigator in this setting.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add node' }));
@@ -5134,7 +5134,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       origin: 'student entry',
     }));
     const added = storedProject().graph.nodes.find((node) => node.label === 'Peer navigator');
-    expect(within(inspector).queryByRole('combobox', { name: 'Person’s involvement with Peer navigator' })).toBeNull();
+    expect(within(inspector).queryByRole('combobox', { name: 'Involvement of Peer navigator' })).toBeNull();
     expect(storedProject().graph.nodes.find(node => node.id === added.id)).toMatchObject({ focalParticipation: 'indirect', settingNodeIds: [setting.id] });
     const settingRegion = document.querySelector(`[data-setting-region="${setting.id}"]`);
     expect(settingRegion).toHaveAttribute('data-member-count', '1');
@@ -7647,9 +7647,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       const project = await openGroupProject();
       fireEvent.doubleClick(document.querySelector('.graph-canvas'), { clientX: 12, clientY: 12 });
       expect(await screen.findByRole('heading', { name: 'New node' })).toBeVisible();
-      expect(screen.getByText('It will sit where you double-clicked.')).toBeVisible();
+      expect(document.querySelector('.graph-node.is-pending')).not.toBeNull();
       const levels = screen.getByRole('radiogroup', { name: 'Level' });
-      expect(within(levels).getAllByRole('radio').map(radio => radio.getAttribute('data-level'))).toEqual(['micro', 'exosphere', 'macrosphere']);
+      expect(within(levels).getAllByRole('radio').map(radio => radio.getAttribute('data-level'))).toEqual(['exosphere', 'macrosphere']);
       fireEvent.click(within(levels).getByRole('radio', { name: /Macro/ }));
       expect(within(levels).getByRole('radio', { name: /Macro/ })).toHaveAttribute('aria-checked', 'true');
       fireEvent.change(screen.getByRole('textbox', { name: 'Label', exact: true }), { target: { value: 'Ableism in care funding' } });

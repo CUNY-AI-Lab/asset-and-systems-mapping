@@ -33,6 +33,10 @@ const REQUIRED_PROTOTYPE_EVENT_NAMES = Object.freeze([
   'map_arranged',
   'map_previewed',
   'map_preview_closed',
+  'node_added',
+  'relationship_added',
+  'memo_submitted',
+  'autofit_toggled',
 ]);
 
 function migratePromptModuleId(value) {
@@ -330,6 +334,7 @@ function migrate(db) {
         'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
         'annotation_saved',
         'project_exported', 'project_imported', 'recovery_exported',
+        'node_added', 'relationship_added', 'memo_submitted', 'autofit_toggled',
         'workflow_observed'
       )),
       stage INTEGER CHECK(stage IS NULL OR (stage >= 0 AND stage <= 6)),
@@ -582,6 +587,7 @@ function migratePrototypeEventVocabulary(db) {
         'node_moved', 'viewport_changed', 'map_arranged', 'map_previewed', 'map_preview_closed',
         'annotation_saved',
         'project_exported', 'project_imported', 'recovery_exported',
+        'node_added', 'relationship_added', 'memo_submitted', 'autofit_toggled',
         'workflow_observed'
       )),
       stage INTEGER CHECK(stage IS NULL OR (stage >= 0 AND stage <= 6)),

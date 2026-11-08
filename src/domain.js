@@ -1504,7 +1504,7 @@ export const WITHHELD_NODE_REASONS = Object.freeze([
   'outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition',
   'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape', 'unsupported',
 ]);
-const WITHHELD_NODE_LIMIT = 6;
+const WITHHELD_NODE_LIMIT = 10;
 const FORBIDDEN_PROJECT_KEYS = new Set([
   'password', 'passwordhash', 'passwordsalt', 'passphrase', 'apikey', 'secret', 'secrettoken',
   'accesstoken', 'refreshtoken', 'authorization', 'cookie', 'sessiontoken', 'accessgrant',

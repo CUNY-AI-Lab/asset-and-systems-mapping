@@ -87,9 +87,9 @@ describe('hardened Systems Mapping server', () => {
       teacherAttemptLimit: 3,
       teacherAttemptWindowMs: 10_000,
       teacherBootstrapToken: BOOTSTRAP_TOKEN,
-      prototypeEventLimit: 12,
+      prototypeEventLimit: 40,
       prototypeEventWindowMs: 10_000,
-      prototypeMaxRows: 12,
+      prototypeMaxRows: 40,
       prototypeRetentionMs: 60_000,
       healthCheckTimeoutMs: 25,
     });
