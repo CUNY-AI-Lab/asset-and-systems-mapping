@@ -1258,7 +1258,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
   };
   return (
     <div className="wide stage-enter intake-stage">
-      <PageHeading title="Memo" description={`${memoLabel(project)} — ${isPart2(project.activeScale) ? 'build on your first memo and the existing map' : 'set the focus for your map'}`} />
+      <PageHeading title="Memo" description={`${memoLabel(project)}. ${isPart2(project.activeScale) ? 'Build on your first memo and the existing map.' : 'Set the focus for your map.'}`} />
       {action && <div className="memo-submit-top">{action}</div>}
       <LevelTrail active={project.activeScale} completed={project.completedScales} />
       <details className="project-details"><summary>Project details</summary><div className="project-context-fields">
@@ -1382,7 +1382,7 @@ function MemoDrawer({ project, update, hint, onRequestRestart, drawerRef, defaul
       <span className="memo-drawer__title"><strong>Your memo</strong></span>
       <span className="memo-drawer__mark" aria-hidden="true" />
     </summary>
-    <p className="privacy-note">{memoLabel(project)}{isPart2(project.activeScale) ? ' — both memos and your existing graph inform guidance' : ''}</p>
+    <p className="privacy-note">{memoLabel(project)}{isPart2(project.activeScale) ? '. Both memos and your existing map inform guidance.' : ''}</p>
     {isPart2(project.activeScale) && !project.part2Submission && <button type="button" className="button" onClick={() => update(draft => { beginPart2(draft); draft.preflight = null; })}>Add Part 2 memo</button>}
     <MemoFileUpload project={project} update={update} toast={toast} captureImportScope={captureImportScope} />
     {project.part2Submission && isPart2(project.activeScale) && <details className="previous-memo"><summary>Part 1 memo · Microsystem</summary><p className="memo-source-text">{project.submission.text || 'Not yet written'}</p></details>}
@@ -7466,7 +7466,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
         applySelections(proposed);
         validateProject(proposed);
       } catch {
-        toast('Suggestions could not be added — generate guidance again', 'error');
+        toast('Suggestions could not be added. Generate guidance again.', 'error');
         return false;
       }
     }
@@ -7580,7 +7580,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
         recordStageTransition(4, nextScale ? (project.levelProgress?.[nextScale]?.stage ?? 1) : 4, { completed: true });
         toast(nextScale
           ? `${SCALES[currentScale].label} complete. Continue with ${SCALES[nextScale].label}.`
-          : `${SCALES[currentScale].label} complete. Your cumulative project is ready to review or export.`);
+          : `${SCALES[currentScale].label} complete. Your project is ready to review or export.`);
         if (nextScale) queueLevelRead(nextScale);
         break;
         }
@@ -8494,7 +8494,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
       <div className="confirm-panel"><p>This creates a new project at Micro with the same memo and framing. Your current project stays saved in Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => setModal(null)}>Cancel</button><button type="button" className="button" onClick={restartFromCurrentMemo}>Start new map</button></div></div>
     </Modal>
     <Modal open={modal === 'meso-review'} title="Review Micro and Meso" onClose={() => setModal(null)}>
-      <div className="confirm-panel"><p>Pause here to check the Micro settings and the interactions connecting them at Meso. Your cumulative map is saved and ready to review or export.</p><div className="button-row"><button type="button" className="button" onClick={() => { setModal(null); setStage(3); }}>Review the map</button><button type="button" className="button button--ghost" onClick={() => { setModal(null); void primary({ mesoReviewed: true }); }}>Continue to Exo-level</button></div></div>
+      <div className="confirm-panel"><p>Pause here to check the Micro settings and the interactions connecting them at Meso. Your map is saved and ready to review or export.</p><div className="button-row"><button type="button" className="button" onClick={() => { setModal(null); setStage(3); }}>Review the map</button><button type="button" className="button button--ghost" onClick={() => { setModal(null); void primary({ mesoReviewed: true }); }}>Continue to Exo-level</button></div></div>
     </Modal>
     <Modal open={modal === 'new-project'} title="Start new project?" onClose={() => { setPendingNewProject(false); setModal(null); }}>
       <div className="confirm-panel"><p>Your current project will stay saved on this device. You can return to it from Projects.</p><div className="button-row"><button type="button" className="button button--ghost" onClick={() => { setPendingNewProject(false); setModal(null); }}>Cancel</button><button type="button" className="button" onClick={startBlankProject}>Start new project</button></div></div>
@@ -8550,7 +8550,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
           {institutionalMode ? <>
             <p>Your complete memo, framing, map, notes, and revision history are stored for 90 days</p>
             <p>{projectStorage().courseSelection?.kind === 'course' ? 'Opening this link requires CUNY Login and access to this course' : 'Opening this link requires CUNY Login and CUNY AI Lab membership'}</p>
-          </> : <p>Create a unique link to use this project on another device. The complete project—including its memo and evidence notes—will be stored on the class server for 90 days. Opening it also requires the current class code.</p>}
+          </> : <p>Create a unique link to use this project on another device. The complete project, including its memo and evidence notes, is stored on the class server for 90 days. Opening it also requires the current class code.</p>}
           {link && <p className="project-link-status">Your earlier link stays usable for the project it was created on.</p>}
           {linkStatus === 'error' && linkMessage && <p className="error-text">{linkMessage}</p>}
           <div className="button-row">

@@ -2478,7 +2478,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(createDefaultProject());
 
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
-    expect(screen.getByText(/set the focus for your map/)).toBeVisible();
+    expect(screen.getByText(/Set the focus for your map/)).toBeVisible();
     expect(storedProject()).toMatchObject({ activeScale: 'micro', releasedScales: ['micro'], completedScales: [] });
   });
 
@@ -3018,7 +3018,7 @@ describe('Systems Mapping workflow', () => {
 
     await resumeSavedProject(project);
     let dialog = openProjectLink();
-    expect(within(dialog).getByText(/complete project—including its memo and evidence notes—will be stored on the class server for 90 days/i)).toBeVisible();
+    expect(within(dialog).getByText(/complete project, including its memo and evidence notes, is stored on the class server for 90 days/i)).toBeVisible();
     expect(within(dialog).getByText(/opening it also requires the current class code/i)).toBeVisible();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create project link' }));
 
