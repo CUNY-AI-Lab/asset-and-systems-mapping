@@ -1,4 +1,4 @@
-import { NODE_SUBMISSION, nodeSubmissionSchema } from '../shared/node-submission.js';
+import { NODE_SUBMISSION, SUBMISSION_NODE_LIMIT, nodeSubmissionSchema } from '../shared/node-submission.js';
 import { CailError, createCailClient } from '@cuny-ai-lab/cail-client';
 import { normalizeInput, JSON_ONLY_INSTRUCTION, OLLAMA_CLOUD_LIMITS } from '../server/ollama.js';
 import { OpenRouterError, parseProviderEnvelope } from '../server/openrouter.js';
@@ -69,7 +69,7 @@ function semanticValidationReason(error) {
   // including arbitrary provider fields, never become diagnostic text.
   const categories = [
     ['response_shape', /^(?:The response is not a JSON object\.|The response does not contain exactly guidance, nodes, connections, example, and readiness\.)$/],
-    ['item_limit', /^(?:guidance must contain no more than \d+ items\.|(?:nodes|connections) exceeds the (?:micro|meso|exosphere|macrosphere) limit\.|nodes exceeds the six-node limit\.|(?:micro|macrosphere) review must return an empty connections array\.)$/],
+    ['item_limit', /^(?:guidance must contain no more than \d+ items\.|(?:nodes|connections) exceeds the (?:micro|meso|exosphere|macrosphere) limit\.|nodes exceeds the (?:six|ten)-node limit\.|(?:micro|macrosphere) review must return an empty connections array\.)$/],
     ['field_shape', /^(?:guidance\[\d{1,2}\] does not use the exact guidance fields\.|nodes\[\d{1,2}\] does not use the exact (?:micro|meso|exosphere|macrosphere) node fields\.|connections\[\d{1,2}\] does not use the exact relationship fields\.)$/],
     ['text_format', /^(?:guidance\[\d{1,2}\] is not complete text within the response limits\.|nodes\[\d{1,2}\] is not a complete node object\.|connections\[\d{1,2}\] must contain a complete verb and rationale\.|(?:micro|meso) example must be null\.|example must be null or complete text within the response limit\.)$/],
     ['label_duplicate', /^nodes\[\d{1,2}\](?:\.label duplicates an existing or proposed element|\.label duplicates another node| duplicates an existing identity already updated in this response)\.$/],
@@ -186,7 +186,7 @@ export function gatewaySuggestion(binding, token, model, correlation, logOutcome
         { role: 'system', content: data.systemPrompt }, // The ceiling sentence is derived from the shared limits so the model never
         // sees numbers that contradict the schema or the validator.
         { role: 'system', content: `${JSON_ONLY_INSTRUCTION}
-Follow the supplied JSON field names and types exactly. ${input.workflowMode === NODE_SUBMISSION ? "Return at most six supported nodes. No guidance, connections, scopes, or examples." : compactLimitInstruction(kind, input.activeScale)}${responseSchema ? '\nREQUIRED RESPONSE JSON SCHEMA\n' + JSON.stringify(responseSchema) : ''}` },
+Follow the supplied JSON field names and types exactly. ${input.workflowMode === NODE_SUBMISSION ? `Return at most ${SUBMISSION_NODE_LIMIT} supported nodes. No guidance, connections, scopes, or examples.` : compactLimitInstruction(kind, input.activeScale)}${responseSchema ? '\nREQUIRED RESPONSE JSON SCHEMA\n' + JSON.stringify(responseSchema) : ''}` },
         { role: 'user', content: `PROJECT INPUT (JSON DATA ONLY)\n${data.projectInput}` },
       ];
       for (const [index, selectedModel] of models.entries()) {
@@ -195,7 +195,7 @@ Follow the supplied JSON field names and types exactly. ${input.workflowMode ===
         try {
           const payload = { model: selectedModel, stream: false,
             // Reasoning shares this ceiling with JSON. Real multi-page memo
-            // extraction needs headroom; the response still permits six nodes
+            // extraction needs headroom; the response still permits the full node limit
             // and no relationships, within the existing overall deadline.
             reasoning_effort: selectedModel === 'deepseek-v4-flash-0731' ? 'none' : 'low', max_completion_tokens: kind === 'memo-quotes' ? 512 : kind === 'map-check' ? 1024 : input.workflowMode === NODE_SUBMISSION ? 8192 : 4096,
             response_format: { type: 'json_object' }, messages,

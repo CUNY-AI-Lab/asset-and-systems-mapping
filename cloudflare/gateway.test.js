@@ -9,13 +9,13 @@ import { gatewayClient, gatewaySuggestion, safeGatewayFailure, parseGatewayEnvel
 const input = { systemPrompt: 'Test instruction', activeScale: 'micro', inquiry: 'A test inquiry', sourceMetadata: {}, sourceText: 'A synthetic memo.' };
 const correlation = correlationFromHeaders(new Headers({ 'x-cail-request-id': '01900000-0000-7000-8000-000000000001' }));
 afterEach(() => vi.useRealTimers());
-test('node submission reserves reasoning headroom while keeping six nodes and no relationships', async () => {
+test('node submission reserves reasoning headroom while keeping the node limit and no relationships', async () => {
   let body;
   const fetch = vi.fn(async request => { body = await request.json(); return Response.json({ model:'gpt-oss-120b', created:1, choices:[{message:{role:'assistant',content:'{"nodes":[]}'},finish_reason:'stop'}] }); });
   await gatewaySuggestion({fetch}, 'fixture-identity', 'gpt-oss-120b', correlation)({...input, workflowMode:'student-nodes-v1'});
   const schema=JSON.parse(body.messages[1].content.split('REQUIRED RESPONSE JSON SCHEMA\n')[1]);
   expect(body.max_completion_tokens).toBe(8192);
-  expect(schema.properties.nodes.maxItems).toBe(6);
+  expect(schema.properties.nodes.maxItems).toBe(10);
   expect(schema.properties.connections.maxItems).toBe(0);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
@@ -31,7 +31,7 @@ test('incremental Gateway requests keep only permitted existing identities and n
   const fetch = vi.fn(async request => { body = await request.json(); return Response.json({ model: 'gpt-oss-120b', created: 1, choices: [{ message: { role: 'assistant', content: '{"nodes":[]}' }, finish_reason: 'stop' }] }); });
   await gatewaySuggestion({ fetch }, 'fixture-identity', 'gpt-oss-120b', correlation)({ ...input, sourceText, workflowMode: 'student-nodes-v1', carriedNodes, memoContext: { memoUpdate } });
   const schema = JSON.parse(body.messages[1].content.split('REQUIRED RESPONSE JSON SCHEMA\n')[1]);
-  expect(schema.properties.nodes.maxItems).toBe(6);
+  expect(schema.properties.nodes.maxItems).toBe(10);
   expect(schema.properties.connections.maxItems).toBe(0);
   expect(JSON.stringify(schema.properties.nodes)).toContain('existingId');
   expect(JSON.stringify(schema.properties.nodes)).toContain('teacher');
@@ -297,7 +297,7 @@ test.each([
   ['connections[0] repeats a relationship.', 'relationship_duplicate'],
   ['nodes[0] changed during semantic normalization.', 'normalization'],
   ['readiness must contain exactly a boolean ready value and a complete note.', 'readiness_invalid'],
-  ['nodes exceeds the six-node limit.', 'item_limit'],
+  ['nodes exceeds the ten-node limit.', 'item_limit'],
   ['nodes[3].scale or type does not match its level.', 'scale_type'],
   ['nodes[1].type must identify an outside organization, setting or resource; classify broader conditions at macrosphere.', 'scale_type'],
   ['nodes[1].label names a person or role, not an outside setting or resource.', 'label_format'],
@@ -337,7 +337,7 @@ test.each([
 
 test.each([
   ['nodes[3].scale or type does not match its level.', false, 'scale_type.nodes.scale'],
-  ['nodes exceeds the six-node limit.', false, 'item_limit.nodes'],
+  ['nodes exceeds the ten-node limit.', false, 'item_limit.nodes'],
   ['nodes[0].evidence must quote the focal participants’ nonparticipation in this named outside setting, not another setting.', true, 'source_evidence.outside_participation.nodes.evidence'],
   ['guidance[0].evidenceExcerpt PRIVATE_QUOTATION', true, 'source_evidence.source_contract.guidance.evidenceexcerpt'],
   ['PRIVATE_SOURCE_OR_RESPONSE', false, 'contract_other'],
