@@ -4,6 +4,8 @@
 .account-project-view:not([hidden]){min-height:100dvh}
 .account-workspace [hidden],.account-shell-view[hidden],.account-project-view[hidden]{display:none!important}
 .account-nav-button{white-space:nowrap}
+/* Sign out sits beside Account in the account shell header; the form is only a POST wrapper. */
+.access-header__actions > .header-sign-out{display:contents}
 .account-dashboard .studio-heading{align-items:center;gap:16px;margin-bottom:12px}
 .account-dashboard .studio-heading h1{font-size:28px;line-height:1.25}
 .account-dashboard .studio-heading__actions{width:auto}
@@ -44,8 +46,8 @@
 .access-shell:has(.account-workspace) .theme-toggle--labeled{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:auto;min-width:44px;height:44px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-subtle);color:var(--ink);font-size:15px;font-weight:600;text-decoration:none;white-space:nowrap}
 .access-shell:has(.account-workspace) .access-header__teacher:hover,
 .access-shell:has(.account-workspace) .theme-toggle--labeled:hover{background:var(--surface-hover);color:var(--ink)}
-html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__actions > button{background:var(--surface)}
-html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__actions > button:hover{background:var(--surface-hover)}
+html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__actions > button,html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__actions > .header-sign-out > button{background:var(--surface)}
+html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__actions > button:hover,html[data-theme="dark"] .access-shell:has(.account-workspace) .access-header__actions > .header-sign-out > button:hover{background:var(--surface-hover)}
 @media(max-width:700px){
   .access-shell:has(.account-workspace) .access-header{grid-template-columns:auto minmax(0,1fr)}
   .access-shell:has(.account-workspace) .access-header__actions{grid-column:1/-1;justify-self:end;margin-left:0;flex-wrap:wrap}

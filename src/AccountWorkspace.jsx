@@ -288,7 +288,7 @@ export default function AccountWorkspace() {
   };
   return <>
     {active && <div hidden={accountView.open} className="account-project-view"><App key={active} memoFirstWorkflow startInWorkspace onAccountDashboard={dashboard} onOpenAccount={showAccount} configurationRevision={configurationRevision} cloudSaveStatus={status} cloudError={error} onSubmitRevision={account?.course && account.role === 'student' ? submitRevision : undefined} /></div>}
-    <div hidden={Boolean(active) && !accountView.open} className="account-shell-view"><AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} headerActions={account && !signedOut ? <Action variant="secondary" className="account-nav-button" aria-current={accountView.open ? 'page' : undefined} onClick={showAccount}>Account</Action> : null}>
+    <div hidden={Boolean(active) && !accountView.open} className="account-shell-view"><AccessFrame dark={dark} onToggleTheme={() => setDark(value => !value)} headerActions={account && !signedOut ? <><Action variant="secondary" className="account-nav-button" aria-current={accountView.open ? 'page' : undefined} onClick={showAccount}>Account</Action><form className="header-sign-out" method="post" action="/auth/logout"><Action variant="ghost" type="submit">Sign out</Action></form></> : null}>
     <main id="account-workspace" className={signedOut ? 'access-main account-workspace account-landing' : 'studio-dashboard account-workspace'}>
       {signedOut ? <>
         <div className="account-landing__hero">

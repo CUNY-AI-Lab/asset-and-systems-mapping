@@ -135,6 +135,11 @@ describe('Account dashboard controls', () => {
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'));
     expect(screen.getByRole('button', { name: 'Switch to light mode' })).toHaveAttribute('aria-pressed', 'true');
     expect(theme.textContent).toBe('');
+    // Sign out is reachable from the shell header, not only from the Account page.
+    const signOut = screen.getByRole('button', { name: 'Sign out', exact: true });
+    expect(signOut).toBeVisible();
+    expect(signOut.closest('form')).toHaveAttribute('action', '/auth/logout');
+    expect(signOut.closest('form')).toHaveAttribute('method', 'post');
     fireEvent.click(screen.getByRole('button',{name:'Account',exact:true}));
     expect(await screen.findByRole('heading',{name:'Account',exact:true})).toBeVisible();
     expect(screen.getByText('Approximately 90% remaining')).toBeVisible();
