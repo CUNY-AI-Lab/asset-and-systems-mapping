@@ -511,14 +511,21 @@ describe('persistent preflight suggestion review queue', () => {
     const { studentAnnotation: _, ...body } = submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial, carriedNodes });
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
     expect(provider).toHaveBeenCalledTimes(2);
-    expect(response.status).toBe(allFixed ? 201 : 502);
+    // A node that still fails after the correction is left out and named; the
+    // supported node is kept either way.
+    expect(response.status).toBe(201);
     const rows = system.db.prepare('SELECT source_material, suggestion_json FROM preflight_evaluations').all();
-    expect(rows).toHaveLength(allFixed ? 1 : 0);
-    if (allFixed) {
-      expect(rows[0].source_material).toBe(sourceMaterial);
-      expect(JSON.parse(rows[0].suggestion_json).nodes).toEqual([policy]);
-      expect(rows[0].suggestion_json).not.toContain('contractRepair');
-    }
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source_material).toBe(sourceMaterial);
+    expect(JSON.parse(rows[0].suggestion_json).nodes).toEqual([policy]);
+    expect(rows[0].suggestion_json).not.toContain('contractRepair');
+    const result = await response.json();
+    expect(result.evaluation.review.nodes).toEqual([policy]);
+    expect(result.evaluation.runtime.withheldNodes).toEqual(expect.arrayContaining([
+      { label: 'Access Board', reason: 'outside_participation' },
+      { label: 'Student access rule', reason: 'policy_operation' },
+      { label: role.label, reason: 'label_format' },
+    ]));
   });
 
   it('carries simultaneous node failures into final indexed evidence repair and validates the complete result', async () => {

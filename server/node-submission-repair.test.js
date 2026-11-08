@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createNodeSubmissionRepair, isMemoContractRepair, memoContractRepairContext, MEMO_CONTRACT_REPAIR_BYTES } from './memo-contract-repair.js';
+import { createNodeSubmissionRepair, isMemoContractRepair, memoContractRepairContext, salvageNodeSubmission, MEMO_CONTRACT_REPAIR_BYTES } from './memo-contract-repair.js';
 import { submittedReviewIssue } from '../shared/node-submission.js';
 import { normalizeInput } from './ollama.js';
 
@@ -222,4 +222,23 @@ it('evaluates retained Micro participants identically during discovery and repai
   const issue = submittedReviewIssue(review, 'exosphere', sourceText, undefined, carried);
   const repair = createNodeSubmissionRepair(review, issue, 'exosphere', sourceText, undefined, undefined, carried);
   expect(repair.supportedNodes).toEqual([supported]);
+});
+
+it('keeps the supported nodes of a final failing response and names each node left out with its rule', () => {
+  const review = bad(), before = structuredClone(review);
+  const salvaged = salvageNodeSubmission(review, 'exosphere', source);
+  expect(salvaged.review.nodes).toEqual([before.nodes[3]]);
+  expect(salvaged.dropped).toEqual([
+    { label: 'Access Board', reason: 'outside_participation' },
+    { label: 'Student access rule', reason: 'policy_operation' },
+    { label: 'Community counselor', reason: 'label_format' },
+  ]);
+  expect(submittedReviewIssue(salvaged.review, 'exosphere', source)).toBeNull();
+  expect(review).toEqual(before);
+});
+
+it('does not salvage a response whose shape fails as a whole', () => {
+  expect(salvageNodeSubmission({ nodes: bad().nodes }, 'exosphere', source)).toBeNull();
+  expect(salvageNodeSubmission(null, 'exosphere', source)).toBeNull();
+  expect(salvageNodeSubmission({ ...bad(), nodes: 'nodes' }, 'exosphere', source)).toBeNull();
 });

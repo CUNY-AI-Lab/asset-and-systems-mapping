@@ -15,7 +15,7 @@ import { applyMemoQuoteSelection, expandMemoEvidenceIndices, guidanceWithoutExce
 import { relationshipProcessIssue, normalizeGeneratedRelationshipProcess } from '../shared/relationship-process.js';
 import { mesoSourceDetails, explicitMissingMesoPairs, mesoPairEvidence, mesoTableCoverage, missingMesoTableRolesReview } from '../shared/meso-source-details.js';
 import { prepareProviderMemo } from '../shared/provider-memo.js';
-import { createMemoContractRepair, createNodeSubmissionRepair, memoContractRepairContext, withheldSubmissionNodes } from './memo-contract-repair.js';
+import { createMemoContractRepair, createNodeSubmissionRepair, memoContractRepairContext, salvageNodeSubmission, withheldSubmissionNodes } from './memo-contract-repair.js';
 import { GUIDANCE_MODEL_TIMEOUT_MS } from '../src/guidanceLimits.js';
 import { fieldNotesQuestions } from '../shared/field-notes.js';
 import { FIELD_NOTES_CONTEXT_INSTRUCTION, validateFieldNotesContext } from '../shared/field-notes-context.js';
@@ -3437,9 +3437,20 @@ export function createSystemsMappingApp(options = {}) {
             }
           } catch (error) {
             generationSignal.throwIfAborted();
-            review = input.workflowMode === NODE_SUBMISSION ? null : feedbackOnlyMemoReview(completedReview, error, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: strictFallbackEvidence });
-            if (!review) throw error;
-            feedbackOnly = true;
+            if (input.workflowMode === NODE_SUBMISSION) {
+              // After the retries, one proposed node that still fails its rule is
+              // left out and named, and the supported nodes are kept. A response
+              // that fails as a whole is still an error.
+              const salvaged = error instanceof MemoReviewSemanticError
+                ? salvageNodeSubmission(completedReview, input.activeScale, input.sourceMaterial, input.memoUpdate, input.carriedNodes) : null;
+              if (!salvaged) throw error;
+              rejectedAttempts.push({ review: completedReview, message: error.message });
+              review = structuredClone(salvaged.review);
+            } else {
+              review = feedbackOnlyMemoReview(completedReview, error, input.activeScale, input.carriedNodes, input.carriedConnections, input.sourceMaterial, { strictEvidence: strictFallbackEvidence });
+              if (!review) throw error;
+              feedbackOnly = true;
+            }
           }
           suggestion = {
             ...review,
