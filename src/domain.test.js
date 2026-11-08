@@ -661,6 +661,10 @@ describe('mapping domain', () => {
     expect(isNamedInstitutionLabel('CUNY')).toBe(true);
     expect(isNamedInstitutionLabel('r/CUNY')).toBe(false);
     expect(isNamedInstitutionLabel('C.U.N.Y.')).toBe(true);
+    expect(isNamedInstitutionLabel('Google.org')).toBe(true);
+    expect(isNamedInstitutionLabel('Journal of Interactive Technology and Pedagogy (JITP)')).toBe(true);
+    expect(isNamedInstitutionLabel('Students who need help (SOS)')).toBe(false);
+    expect(isNamedInstitutionLabel('Lab is funded.org')).toBe(false);
     expect(isNamedInstitutionLabel('Hunter College')).toBe(true);
     expect(isNamedInstitutionLabel('BMCC')).toBe(true);
     expect(isNamedInstitutionLabel('Access-A-Ride')).toBe(true);
@@ -1075,8 +1079,8 @@ describe('mapping domain', () => {
     expect(parseProject(JSON.stringify(createPortableProject(sensitiveWithheld, 'public'))).preflight.evaluation.runtime.withheldNodes).toBeUndefined();
     withheld.preflight.evaluation.runtime.withheldNodes = [{ label: 'Access Board', reason: 'The memo says participation is unknown.' }];
     expect(() => validateProject(withheld)).toThrow(/withheldNodes\[0\]\.reason must be one of/);
-    withheld.preflight.evaluation.runtime.withheldNodes = Array.from({ length: 7 }, (_, index) => ({ label: `Office ${index}`, reason: 'unsupported' }));
-    expect(() => validateProject(withheld)).toThrow(/withheldNodes must be an array of no more than 6 items/);
+    withheld.preflight.evaluation.runtime.withheldNodes = Array.from({ length: 11 }, (_, index) => ({ label: `Office ${index}`, reason: 'unsupported' }));
+    expect(() => validateProject(withheld)).toThrow(/withheldNodes must be an array of no more than 10 items/);
 
     const internalField = structuredClone(project);
     internalField.preflight.evaluation.studentSessionRef = 'must-not-persist';

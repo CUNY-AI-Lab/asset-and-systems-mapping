@@ -187,6 +187,11 @@ export function isNamedInstitutionLabel(value) {
   if (isTemporalOnlyMapElementLabel(label, true) || GENERIC_INSTITUTION_HEAD.test(label)) return false;
   if (GENERIC_INSTITUTION_LABEL.test(label)) return false;
   if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return true;
+  // A funder or platform named by its domain (Google.org, Archive.org) is an organization.
+  // So is a multi-word proper name that ends in its own acronym, such as
+  // "Journal of Interactive Technology and Pedagogy (JITP)".
+  if (/^[A-Z][\p{L}\p{N}'’&.-]*(?:\s+(?:[a-z]{1,3}|[A-Z][\p{L}\p{N}'’&.-]*|\/))+\s+\([A-Z][A-Za-z\/&]{1,11}\)$/u.test(label)) return true;
+  if (/^[A-Z][\p{L}\p{N}&'’-]*(?:\s+[A-Z][\p{L}\p{N}&'’-]*)*\.(?:org|com|edu|gov|net)$/u.test(label)) return true;
   if (OFFICIAL_INSTITUTION_ACRONYM.test(label) || OFFICIAL_PUBLIC_BENEFIT_PROGRAM.test(label)) return true;
   if (HYPHENATED_SERVICE_BRAND.test(label) && SERVICE_BRAND_SIGNAL.test(label)) return true;
   if (MIXED_CASE_ORGANIZATION_BRAND.test(label)) return true;
@@ -1504,7 +1509,7 @@ export const WITHHELD_NODE_REASONS = Object.freeze([
   'outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition',
   'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape', 'unsupported',
 ]);
-const WITHHELD_NODE_LIMIT = 6;
+const WITHHELD_NODE_LIMIT = 10;
 const FORBIDDEN_PROJECT_KEYS = new Set([
   'password', 'passwordhash', 'passwordsalt', 'passphrase', 'apikey', 'secret', 'secrettoken',
   'accesstoken', 'refreshtoken', 'authorization', 'cookie', 'sessiontoken', 'accessgrant',

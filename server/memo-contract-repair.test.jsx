@@ -53,7 +53,8 @@ describe('ordinary memo contract correction', () => {
         ? { label: 'Class access period', type: 'policy', scale: 'exosphere', basis: 'memo' }
         : rejected.nodes[0]), evidence: input.memoContext.evidenceRepair.passages.findIndex(item => item.text.includes(corrected ? access : administration)) }] }, metadata: {} }));
     const response = await evaluate();
-    expect(response.status).toBe(corrected ? 201 : 502);
+    // The final failing node is left out with its reason; the response is still accepted.
+    expect(response.status).toBe(201);
     expect(run).toHaveBeenCalledTimes(3);
     const final = run.mock.calls[2][0];
     expect(final.systemPrompt).toContain('Validation failure: nodes[0].evidence must quote the focal participants’ nonparticipation in this named outside setting');
@@ -69,7 +70,10 @@ describe('ordinary memo contract correction', () => {
       expect(body.evaluation.review.nodes[0]).toMatchObject({ label: 'Class access period', type: 'policy', scale: 'exosphere' });
       expect(body.evaluation.review.connections).toEqual([]);
       expect(body.evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
-    } else expect(body.details).toMatchObject({ validationRule: 'outside_participation', correctiveRetries: 2, evidenceRepairAttempts: 1 });
+    } else {
+      expect(body.evaluation.review.nodes).toEqual([]);
+      expect(body.evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1, withheldNodes: [{ label: 'Graduate Center Digital Initiatives', reason: 'outside_participation' }] });
+    }
     expect(failures).toHaveBeenCalledTimes(2);
   });
 

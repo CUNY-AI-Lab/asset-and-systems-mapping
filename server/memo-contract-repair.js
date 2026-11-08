@@ -113,6 +113,29 @@ export function isMemoContractRepair(value, activeScale) {
  * out, each with the fixed rule that excluded it. A proposal the model dropped
  * on repair without a rule of its own was unsupported by the source.
  */
+// When the last attempt still fails on one proposed node, the rest of the
+// response is kept and that node is left out with its reason, instead of the
+// whole submission failing. Only node-indexed issues are salvageable; a
+// malformed response is not. Returns null when nothing can be kept safely.
+export function salvageNodeSubmission(review, activeScale, sourceText, memoUpdate, carriedNodes = []) {
+  if (!plain(review) || !Array.isArray(review.nodes)) return null;
+  let kept = { ...review, nodes: [...review.nodes] };
+  const dropped = [];
+  for (let pass = 0; pass <= review.nodes.length; pass++) {
+    const issue = submittedReviewIssue(kept, activeScale, sourceText, memoUpdate, carriedNodes);
+    if (!issue) return { review: kept, dropped };
+    const failed = /^nodes\[(\d{1,2})\]/u.exec(issue);
+    if (!failed || Number(failed[1]) >= kept.nodes.length) return null;
+    // An identity problem (an unknown, removed, renamed or duplicated existing
+    // node) is a contract failure, never an evidence judgment: fail closed.
+    if (['identity_duplicate', 'existing_identity'].includes(nodeIssueRule(issue))) return null;
+    const [node] = kept.nodes.splice(Number(failed[1]), 1);
+    if (plain(node) && node.existingId === undefined && boundedText(node.label, 200)) dropped.push({ label: node.label, reason: nodeIssueRule(issue) });
+    kept = { ...kept, nodes: [...kept.nodes] };
+  }
+  return null;
+}
+
 export function withheldSubmissionNodes(rejectedAttempts, accepted, activeScale, sourceText, memoUpdate, carriedNodes = []) {
   const identity = node => node?.existingId !== undefined ? `id:${node.existingId}`
     : `label:${String(node?.label ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase()}`;

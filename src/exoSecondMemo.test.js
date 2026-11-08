@@ -47,7 +47,7 @@ it('adds outside offices from an ordinary second memo to the map at Exo', () => 
 // Reproduction of the production failure of 6 November 2026 (release b81f91a):
 // a second memo naming five outside items was rejected twice with
 // `nodes[3].scale`, then `nodes[4].scale`, because of a three-per-level cap.
-it('accepts more than three Exo nodes from one second memo, up to the six-node response', () => {
+it('accepts more than three Exo nodes from one second memo, up to the ten-node response', () => {
   const memo = `${second} The Office of Academic Affairs decides whether the program is funded. The Central Technology Office runs the sign-in system every account depends on. Public universities have faced decades of declining state funding.`;
   const five = [
     ...offices,
@@ -62,7 +62,7 @@ it('accepts more than three Exo nodes from one second memo, up to the six-node r
   delete project.part2Submission.analysis;
   expect(appendSubmittedNodes(project, review(five))).toBe(5);
   validateProject(project);
-  expect(submittedReviewIssue(review([...five, ...five.slice(0, 2).map(node => ({ ...node, label: `${node.label} annex` }))]), 'exosphere', memo)).toMatch(/six-node limit/);
+  expect(submittedReviewIssue(review([...five, ...five, five[0]]), 'exosphere', memo)).toMatch(/ten-node limit/);
 });
 
 it('still withholds an office the focal participants take part in, with a reason', () => {
@@ -83,4 +83,15 @@ it('keeps earlier Micro nodes and Meso relationships available as connection tar
   const nodes = [...project.graph.nodes, office, condition];
   expect(relationshipGroupIssue({ source: office.id, target: tenants.id, relationshipIds: [meso.id] }, nodes, [meso], 'exosphere')).toBeNull();
   expect(relationshipGroupIssue({ source: condition.id, target: manager.id, relationshipIds: [meso.id] }, nodes, [meso], 'macrosphere')).toBeNull();
+});
+
+it('accepts a policy whose quoted sentence obliges or forbids someone, whatever the domain', () => {
+  const guideline = 'Authors who use GenAI must disclose its role in the research and preparation of their submission, even where no generated content remains in the final work.';
+  const stance = 'JITP discourages authors from using GenAI to develop scholarly arguments or draft any part of a submission.';
+  const wish = 'Journals should think about disclosure.';
+  const memo = `${guideline} ${stance} ${wish}`;
+  const policy = (label, evidence) => review([{ label, type: 'policy', scale: 'exosphere', basis: 'memo', evidence }]);
+  expect(submittedReviewIssue(policy('JITP AI Use Disclosure requirement', guideline), 'exosphere', memo)).toBeNull();
+  expect(submittedReviewIssue(policy('JITP GenAI authorship guideline', stance), 'exosphere', memo)).toBeNull();
+  expect(submittedReviewIssue(policy('Disclosure policy', wish), 'exosphere', memo)).toMatch(/established policy and its operation/);
 });

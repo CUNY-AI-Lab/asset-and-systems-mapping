@@ -125,6 +125,10 @@ browserTest('account Micro map centers its connected network and keeps routes aw
     await signIn('alice');await page.goto(url.href);
     await page.getByRole('article',{name:project.title,exact:true}).getByRole('button',{name:'Open project',exact:true}).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(12);
+    // Opening a map never rearranges it; the network arrangement is the explicit Arrange map in Tools.
+    await page.getByRole('button',{name:'Tools',exact:true}).click();
+    await page.getByRole('button',{name:'Arrange map',exact:true}).click();
+    await page.waitForTimeout(400);
     const hide=page.getByRole('button',{name:'Hide sidebar',exact:true});
     if(await hide.isVisible())await hide.click();
     const quality=await page.locator('.graph-canvas').evaluate(svg=>{

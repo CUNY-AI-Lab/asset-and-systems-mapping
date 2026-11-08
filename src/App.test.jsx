@@ -1310,11 +1310,11 @@ describe('Systems Mapping workflow', () => {
     render(<App memoFirstWorkflow startInWorkspace />);
     fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
-    expect(await screen.findByText(/1 nodes added to your map\. Left out: Access Board \(the memo describes people taking part there, or leaves their participation unknown\); Residents want better repairs \(its label was a sentence or statement, not a name\)\./)).toBeVisible();
-    const leftOut = screen.getByRole('region', { name: 'Left out of this step' });
+    expect(await screen.findByText('1 node added. 2 left out; the Notebook lists them.')).toBeVisible();
+    const leftOut = screen.getByRole('region', { name: 'Left out' });
     expect(within(leftOut).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-      'Access Board: the memo describes people taking part there, or leaves their participation unknown.',
-      'Residents want better repairs: its label was a sentence or statement, not a name.',
+      'Access BoardPeople in the memo take part here, so it belongs at Micro',
+      'Residents want better repairsName is a sentence or covers more than one thing',
     ]);
     expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(2);
   });
@@ -3750,7 +3750,7 @@ describe('Systems Mapping workflow', () => {
     } }, 502);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was added because a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition. Your existing work was not changed. Try again, or add the node yourself in Tools.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was added because a proposed node name covered more than one thing. Try again, or add the node in Tools.');
     const details = screen.getByText('Support details').closest('details');
     expect(details).not.toHaveAttribute('open');
     const callsBeforeOpening = fetchMock.mock.calls.length;
@@ -3969,20 +3969,20 @@ describe('Systems Mapping workflow', () => {
     expect(committeeCandidate).toMatchObject({ focalParticipation: 'unclear', settingNodeIds: [] });
 
     const schoolRow = screen.getByDisplayValue('School').closest('article');
-    expect(within(schoolRow).queryByRole('combobox', { name: 'Choose where School belongs' })).not.toBeInTheDocument();
+    expect(within(schoolRow).queryByRole('combobox', { name: 'Setting for School' })).not.toBeInTheDocument();
     fireEvent.click(within(schoolRow).getByRole('button', { name: 'Add to map' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next suggestion' }));
     const committeeRow = screen.getByDisplayValue('Committee').closest('article');
     fireEvent.click(within(committeeRow).getByText('Details', { selector: 'summary' }));
-    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Person’s involvement with Committee' }), { target: { value: 'indirect' } });
-    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Choose where Committee belongs' }), { target: { value: schoolCandidate.id } });
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Involvement of Committee' }), { target: { value: 'indirect' } });
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Setting for Committee' }), { target: { value: schoolCandidate.id } });
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id)).toMatchObject({
       focalParticipation: 'indirect',
       settingNodeIds: [schoolCandidate.id],
     }));
     fireEvent.click(within(committeeRow).getByRole('button', { name: 'Remove Committee from School' }));
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id).settingNodeIds).toEqual([]));
-    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Choose where Committee belongs' }), { target: { value: schoolCandidate.id } });
+    fireEvent.change(within(committeeRow).getByRole('combobox', { name: 'Setting for Committee' }), { target: { value: schoolCandidate.id } });
     await waitFor(() => expect(storedProject().candidates.nodes.find((node) => node.id === committeeCandidate.id).settingNodeIds).toEqual([schoolCandidate.id]));
 
     fireEvent.click(within(committeeRow).getByRole('button', { name: 'Add to map' }));
@@ -5121,10 +5121,10 @@ Overall, the posting history documents a working student repeatedly turning to R
     fireEvent.click(within(inspector).getByRole('button', { name: 'Add' }));
     fireEvent.click(within(document.getElementById('inspector-add-actions')).getByRole('button', { name: 'Node' }));
     const addForm = screen.getByRole('heading', { name: 'New node' }).parentElement;
-    expect(within(addForm).getByRole('combobox', { name: 'Person’s involvement with this item' })).toHaveValue('direct');
+    expect(within(addForm).getByRole('combobox', { name: 'Involvement of this item' })).toHaveValue('direct');
     fireEvent.change(within(addForm).getByLabelText('Label'), { target: { value: 'Peer navigator' } });
-    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Person’s involvement with Peer navigator' }), { target: { value: 'indirect' } });
-    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Choose where Peer navigator belongs' }), { target: { value: setting.id } });
+    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Involvement of Peer navigator' }), { target: { value: 'indirect' } });
+    fireEvent.change(within(addForm).getByRole('combobox', { name: 'Setting for Peer navigator' }), { target: { value: setting.id } });
     fireEvent.change(within(addForm).getByLabelText('Evidence or question'), { target: { value: 'The memo identifies the peer navigator in this setting.' } });
     fireEvent.click(within(addForm).getByRole('button', { name: 'Add node' }));
 
@@ -5134,7 +5134,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       origin: 'student entry',
     }));
     const added = storedProject().graph.nodes.find((node) => node.label === 'Peer navigator');
-    expect(within(inspector).queryByRole('combobox', { name: 'Person’s involvement with Peer navigator' })).toBeNull();
+    expect(within(inspector).queryByRole('combobox', { name: 'Involvement of Peer navigator' })).toBeNull();
     expect(storedProject().graph.nodes.find(node => node.id === added.id)).toMatchObject({ focalParticipation: 'indirect', settingNodeIds: [setting.id] });
     const settingRegion = document.querySelector(`[data-setting-region="${setting.id}"]`);
     expect(settingRegion).toHaveAttribute('data-member-count', '1');
@@ -7647,7 +7647,7 @@ Overall, the posting history documents a working student repeatedly turning to R
       const project = await openGroupProject();
       fireEvent.doubleClick(document.querySelector('.graph-canvas'), { clientX: 12, clientY: 12 });
       expect(await screen.findByRole('heading', { name: 'New node' })).toBeVisible();
-      expect(screen.getByText('It will sit where you double-clicked.')).toBeVisible();
+      expect(document.querySelector('.graph-node.is-pending')).not.toBeNull();
       const levels = screen.getByRole('radiogroup', { name: 'Level' });
       expect(within(levels).getAllByRole('radio').map(radio => radio.getAttribute('data-level'))).toEqual(['micro', 'exosphere', 'macrosphere']);
       fireEvent.click(within(levels).getByRole('radio', { name: /Macro/ }));

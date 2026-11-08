@@ -103,7 +103,7 @@ describe('PostgreSQL persistence adapter', () => {
   it('does not rerun the map-view vocabulary migration after version 12 is recorded', async () => {
     const fake = fakePool({
       clientQuery(text) {
-        if (/SELECT version FROM schema_migrations WHERE version = (11|12)/.test(text)) {
+        if (/SELECT version FROM schema_migrations WHERE version = (11|12|13)/.test(text)) {
           return { rows: [{ version: Number(text.match(/version = (\d+)/)?.[1]) }], rowCount: 1 };
         }
         return null;

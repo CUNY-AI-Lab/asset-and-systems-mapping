@@ -52,9 +52,11 @@
 .map-stage--notebook .inspector details[open] > summary::after { content:'−'; }
 .map-stage--notebook .inspector details > :not(summary) { margin-top:10px; }
 .workflow-notes > summary span { font-weight:400; color:var(--muted); }
-.workflow-left-out { margin:0 0 .75rem; padding:.55rem .75rem; border-left:3px solid var(--muted); }
+.workflow-left-out { margin:0 0 12px; padding:8px 12px; border-left:3px solid var(--muted); }
 .workflow-left-out h3 { margin:0 0 .3rem; font-size:.95rem; }
-.workflow-left-out ul { margin:0 0 .35rem; padding-left:1.1rem; }
+.workflow-left-out ul { margin:0 0 8px; padding:0; list-style:none; display:grid; gap:8px; }
+.workflow-left-out li { display:grid; gap:2px; }
+.workflow-left-out li span { color:var(--muted); }
 .workflow-left-out li, .workflow-left-out p { margin:0 0 .25rem; font-size:.9rem; overflow-wrap:anywhere; }
 .workflow-left-out p { color:var(--muted); }
 .evidence-label { display:block; margin-bottom:6px; color:var(--muted); font:600 12px/1.35 var(--body); }
@@ -85,9 +87,9 @@ html[data-theme=dark] .is-reading-view { --exo-accent:#75c6b9; --macro-accent:#c
 .notebook-floating-controls:has(.notebook-nav-row--simple) { width:auto; min-width:120px; }
 .map-layout:not(.has-inspector):has(.notebook-nav-row--simple) .map-reading-guide { max-width:calc(100% - 160px); }
 
-.map-stage--notebook .notebook-task-top { border-top:0; border-bottom:1px solid var(--line); padding:6px 8px; gap:4px; }
+.map-stage--notebook .notebook-task-top { border-top:0; border-bottom:1px solid var(--line); padding:8px 12px; gap:8px; container-type:inline-size; }
 .workflow-next-label { font:400 13px/1.35 var(--body); color:var(--muted); text-align:right; }
-.inspector-item-actions { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; border-bottom:1px solid var(--line); font:500 13px/1.4 var(--body); }
+.inspector-item-actions { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:12px; padding:12px; border-bottom:1px solid var(--line); font:500 13px/1.4 var(--body); }
 .inspector-item-actions > span { color:var(--muted); }
 .inspector-item-state { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:4px; background:var(--surface-hover); font:600 12px/1.35 var(--body); }
 .inspector-item-state::before { content:''; width:5px; height:5px; flex:none; border-radius:50%; background:currentColor; }
@@ -136,7 +138,7 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .memo-start-cue,.memo-change-notice { margin:0; padding:8px 10px; border-left:2px solid var(--blue); background:var(--pale-blue); font-size:13px; }
 .memo-change-notice strong { display:block; margin-bottom:3px; font-weight:600; }
 .memo-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding-top:6px; }
-.memo-action-row > span { flex:1 1 100px; color:var(--muted); font:400 12px/1.35 var(--body); }
+.memo-action-row > span { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--muted); font:400 12px/1.35 var(--body); }
 .map-stage--notebook .memo-needed-action { width:auto; justify-content:flex-start; padding:4px 0; min-height:44px; font-size:13px; }
 .map-layout:not(.has-inspector):has(.notebook-nav-row--simple) .map-reading-guide { max-width:calc(100% - 265px); }
 @container workspace-controls (max-width:300px) {
@@ -161,6 +163,8 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .map-stage--notebook .map-reading-guide > button:hover { background:var(--surface-hover); }
 /* Workflow controls keep their size and text. One row fits a 320px phone;
    narrower panes move the primary action to its own row instead of cutting it off. */
+/* On a phone the action row has no room for Fit; Auto-fit stays in Tools there. */
+@container (max-width:299px) { .map-stage--notebook .map-edit-history .workflow-fit { display:none; } }
 @media (max-width:299px) {
   .map-stage--notebook .workflow-actions { flex-wrap:wrap; }
   .map-stage--notebook .workflow-actions .notebook-next { flex:1 1 100%; margin:0; }
@@ -181,3 +185,29 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .map-key-shortcuts { margin:0; font-size:.875rem; }
 .map-key-shortcuts > div { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.55rem; padding:.25rem 0; }
 .map-key-shortcuts dd { margin:0; }
+
+/* The corner guide is the one place that says what to do at this step. It
+   shares the chrome of the other map controls and one 8px inset all round. */
+.map-stage--notebook .map-reading-guide { top:8px; left:8px; padding:8px; gap:8px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font:400 13px/1.35 var(--body); box-shadow:0 1px 2px rgba(0,0,0,.04); }
+.map-stage--notebook .map-reading-guide > span { padding:0; }
+/* Buttons carry their own touch-target height; the box stays one line around them. */
+.map-stage--notebook .map-reading-guide:has(> button) { padding:4px 8px; }
+/* A node being added is drawn where it will sit, in outline, until it is saved or the map is clicked. */
+.graph-node.is-pending { pointer-events:none; }
+.graph-node.is-pending .node-card { stroke-dasharray:5 4; fill-opacity:.55; }
+.graph-node.is-pending .node-label { fill:var(--muted); }
+/* Steps not yet reached stay listed but closed. */
+.map-stage--notebook .inspector .workflow-steps button:disabled { color:var(--muted); background:var(--surface-subtle); border-color:var(--line); cursor:default; }
+/* The step's work is on the map: the way forward is marked once, without new text. */
+.map-stage--notebook .workflow-actions .notebook-next--ready { box-shadow:inset 0 -2px var(--blue); animation:memo-entry-emphasis 1.2s ease-out 1; }
+@media (prefers-reduced-motion:reduce) { .map-stage--notebook .workflow-actions .notebook-next--ready { animation:none; } }
+/* The left-out list keeps one type scale and never widens a phone drawer. */
+.workflow-left-out { max-width:100%; }
+.workflow-left-out strong { font-weight:600; }
+@media (max-width:700px) {
+  .workflow-left-out { padding:8px 12px; }
+  .workflow-left-out li, .workflow-left-out p { font-size:13px; line-height:1.4; }
+}
+/* Fit is the one-word Auto-fit switch, in the same chrome as Undo and Redo. */
+.map-stage--notebook .map-edit-history .workflow-fit { width:auto; padding-inline:8px; font:600 13px/1.35 var(--body); }
+.map-stage--notebook .map-edit-history .workflow-fit[aria-pressed="true"] { color:var(--blue); border-color:var(--blue); background:var(--pale-blue); }

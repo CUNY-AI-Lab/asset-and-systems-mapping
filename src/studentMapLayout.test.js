@@ -10,7 +10,7 @@ it('reserves measured verb width so a simple hub does not need sweeping detours'
   const edges=nodes.slice(1).map((node,i)=>({id:`link-${i}`,source:nodes[0].id,target:node.id,verb:'participates in'}));
   const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:180,cardHeight:48}]));
   const labels=new Map(edges.map(e=>[e.id,{width:180,height:32}]));
-  const positions=studentMapPositions(nodes,edges,geometry,{labelGeometries:labels});
+  const positions=studentMapPositions(nodes,edges,geometry,{labelGeometries:labels,arrange:true});
   const routes=attachedConnectionLayout(edges,nodes,positions,geometry,labels);
   for(const edge of edges) {
     const points=routes.paths.get(edge.id).points;
@@ -32,7 +32,7 @@ function hubFixture() {
 
 it.each([1.8,.7])('centers a busy participant and groups isolated cards outside its routes at aspect %s',aspectRatio=>{
   const {nodes,edges,geometry}=hubFixture(),before=structuredClone(nodes);
-  const positions=studentMapPositions(nodes,edges,geometry,{aspectRatio,phone:aspectRatio<1});
+  const positions=studentMapPositions(nodes,edges,geometry,{aspectRatio,phone:aspectRatio<1,arrange:true});
   const core=nodes.slice(0,8).map(n=>area(positions.get(n.id),geometry.get(n.id)));
   const b={left:Math.min(...core.map(b=>b.left)),right:Math.max(...core.map(b=>b.right)),top:Math.min(...core.map(b=>b.top)),bottom:Math.max(...core.map(b=>b.bottom))};
   const hub=positions.get('n0');
@@ -54,14 +54,14 @@ it.each([1.8,.7])('centers a busy participant and groups isolated cards outside 
     }
   }
   expect(nodes).toEqual(before);
-  expect(studentMapPositions(nodes,edges,geometry,{aspectRatio,phone:aspectRatio<1})).toEqual(positions);
+  expect(studentMapPositions(nodes,edges,geometry,{aspectRatio,phone:aspectRatio<1,arrange:true})).toEqual(positions);
 });
 
 it('expands routing room for a denser connected microsystem without changing card sizes',()=>{
   const {nodes:all,geometry}=hubFixture(),nodes=all.slice(0,6);
   const chain=nodes.slice(1).map((n,i)=>({id:`e${i}`,source:nodes[i].id,target:n.id}));
   const dense=[...chain,...nodes.slice(2).map((n,i)=>({id:`h${i}`,source:'n0',target:n.id}))];
-  const region=edges=>{const p=studentMapPositions(nodes,edges,geometry,{aspectRatio:1.8});return studentMapBoundaries(nodes.map(n=>({...n,...p.get(n.id)})),geometry).micro;};
+  const region=edges=>{const p=studentMapPositions(nodes,edges,geometry,{aspectRatio:1.8,arrange:true});return studentMapBoundaries(nodes.map(n=>({...n,...p.get(n.id)})),geometry).micro;};
   const sparse=region(chain),busy=region(dense);
   expect(busy.rx*busy.ry).toBeGreaterThan(sparse.rx*sparse.ry*1.2);
 });
@@ -128,9 +128,9 @@ it('keeps the starting cluster when the first relationship is drawn and only bri
   expect(new Set([...after.values()].map(p=>p.x)).size).toBeGreaterThan(1);
   const a=after.get('n0'),b=after.get('n4');
   expect(Math.hypot(a.x-b.x,a.y-b.y)).toBeLessThan(240);
-  // A second relationship may start the network arrangement, but a pair is
-  // never stacked into one column.
-  const network=studentMapPositions(nodes,[{id:'e0',source:'n0',target:'n4'},{id:'e1',source:'n0',target:'n4',verb:'funds'}],geometry,{aspectRatio:1.8});
+  // Arrange map is the explicit way to the network arrangement; a pair is
+  // never stacked into one column there either.
+  const network=studentMapPositions(nodes,[{id:'e0',source:'n0',target:'n4'},{id:'e1',source:'n0',target:'n4',verb:'funds'}],geometry,{aspectRatio:1.8,arrange:true});
   expect(network.get('n0').y).toBe(network.get('n4').y);
 });
 

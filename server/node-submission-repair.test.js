@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createNodeSubmissionRepair, isMemoContractRepair, memoContractRepairContext, MEMO_CONTRACT_REPAIR_BYTES } from './memo-contract-repair.js';
+import { createNodeSubmissionRepair, isMemoContractRepair, memoContractRepairContext, salvageNodeSubmission, MEMO_CONTRACT_REPAIR_BYTES } from './memo-contract-repair.js';
 import { submittedReviewIssue } from '../shared/node-submission.js';
 import { normalizeInput } from './ollama.js';
 
@@ -85,7 +85,7 @@ it.each([
   repair => { repair.nodeIssues[0] = Object.assign(Object.create({ injected: true }), repair.nodeIssues[0]); },
   repair => { repair.nodeIssues.push({ ...repair.nodeIssues[0] }); },
   repair => { repair.omittedCount = -1; },
-  repair => { repair.omittedCount = 6; },
+  repair => { repair.omittedCount = 10; },
   repair => { delete repair.omittedCount; },
   repair => { repair.nodeIssues[0].label = '文'.repeat(201); },
   repair => { repair.nodeIssues[0].label = ''; },
@@ -96,9 +96,9 @@ it.each([
   repair => { repair.supportedNodes[0].type = 'unknown-type'; },
   repair => { repair.supportedNodes[0].existingId = 10; },
   repair => { repair.omittedSupportedCount = -1; },
-  repair => { repair.omittedSupportedCount = 12; },
+  repair => { repair.omittedSupportedCount = 20; },
   repair => { delete repair.omittedSupportedCount; },
-  repair => { repair.supportedNodes = Array(7).fill(repair.supportedNodes[0]); },
+  repair => { repair.supportedNodes = Array(11).fill(repair.supportedNodes[0]); },
 ])('fails closed for malformed supplemental correction data %s', mutate => {
   const repair = repairFor(bad()); mutate(repair);
   expect(isMemoContractRepair(repair, 'exosphere')).toBe(false);
@@ -222,4 +222,23 @@ it('evaluates retained Micro participants identically during discovery and repai
   const issue = submittedReviewIssue(review, 'exosphere', sourceText, undefined, carried);
   const repair = createNodeSubmissionRepair(review, issue, 'exosphere', sourceText, undefined, undefined, carried);
   expect(repair.supportedNodes).toEqual([supported]);
+});
+
+it('keeps the supported nodes of a final failing response and names each node left out with its rule', () => {
+  const review = bad(), before = structuredClone(review);
+  const salvaged = salvageNodeSubmission(review, 'exosphere', source);
+  expect(salvaged.review.nodes).toEqual([before.nodes[3]]);
+  expect(salvaged.dropped).toEqual([
+    { label: 'Access Board', reason: 'outside_participation' },
+    { label: 'Student access rule', reason: 'policy_operation' },
+    { label: 'Community counselor', reason: 'label_format' },
+  ]);
+  expect(submittedReviewIssue(salvaged.review, 'exosphere', source)).toBeNull();
+  expect(review).toEqual(before);
+});
+
+it('does not salvage a response whose shape fails as a whole', () => {
+  expect(salvageNodeSubmission({ nodes: bad().nodes }, 'exosphere', source)).toBeNull();
+  expect(salvageNodeSubmission(null, 'exosphere', source)).toBeNull();
+  expect(salvageNodeSubmission({ ...bad(), nodes: 'nodes' }, 'exosphere', source)).toBeNull();
 });

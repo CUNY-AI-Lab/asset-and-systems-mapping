@@ -82,7 +82,7 @@ it.each([
   expect(submittedReviewIssue(review([node]),'exosphere',outer.map(n=>n.evidence).join(' '))).toBeTruthy();
 });
 it('caps the initial set instead of filling the map with suggestions',()=>{
-  expect(submittedReviewIssue(review(Array.from({length:7},(_,i)=>({...local,label:`Residents ${i}`}))),'micro',local.evidence)).toMatch(/limit/);
+  expect(submittedReviewIssue(review(Array.from({length:11},(_,i)=>({...local,label:`Residents ${i}`}))),'micro',local.evidence)).toMatch(/limit/);
   expect(submittedReviewIssue({...review([]),guidance:[{point:'Try adding more nodes'}]},'micro',local.evidence)).toMatch(/no guidance/);
 });
 
