@@ -5975,8 +5975,8 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
         {['node', 'connected-node'].includes(addMode) && <div className="add-form">
           <h3>{addMode === 'connected-node' ? 'New connected node' : project.activeScale === 'meso' ? 'Add a missing Micro item' : 'New node'}</h3>
           {addMode === 'connected-node' && <p className="field__hint">From {relationshipSource?.label}</p>}
-          {project.activeScale === 'meso' && <p>Add a person, group, resource, or setting. It joins your Micro map and can be connected here in Meso.</p>}
-          {isPart2(project.activeScale) && <p>{newNode.scale === 'macrosphere' ? 'Name a cultural belief, historical pattern or economic condition. Policies and offices belong in Exo.' : 'Name a policy, outside office, resource or decision setting that affects the local situation.'}</p>}
+          {project.activeScale === 'meso' && <p>Add a person, group, resource or setting to Micro, then connect it here.</p>}
+          {isPart2(project.activeScale) && <p>{newNode.scale === 'micro' ? 'Add a person, group, resource or setting to Micro.' : newNode.scale === 'macrosphere' ? 'Name a cultural belief, historical pattern or economic condition. Policies and offices belong in Exo.' : 'Name a policy, outside office, resource or decision setting that affects the local situation.'}</p>}
           <Field label="Label"><textarea className="map-label-input" rows="1" maxLength={NODE_LABEL_LIMIT} value={newNode.label} onChange={(event) => setNewNode((current) => ({ ...current, label: event.target.value }))} /></Field>
           <div className="field-pair">
             <Field label="Type"><select value={newNode.type} onChange={(event) => setNewNode((current) => ({ ...current, type: event.target.value, ...(MICRO_SETTING_NODE_TYPE_SET.has(event.target.value) ? { settingNodeIds: [] } : {}) }))}>{(notebook?.simple ? nodeClassificationTypes(newNode.scale) : NODE_TYPES.filter((type) => isNodeTypeAllowedAtScale(type, newNode.scale))).map((type) => <option key={type}>{type}</option>)}</select></Field>
@@ -5994,7 +5994,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
               // click rather than a hidden menu.
               if (notebook?.simple && levels.length < 2) return null;
               return notebook?.simple && addMode !== 'connected-node'
-                ? <div className="field level-choice"><span className="field__label" id="level-choice-label">Level</span><div className="level-choice__options" role="radiogroup" aria-labelledby="level-choice-label">{levels.map((scale) => <button key={scale} type="button" role="radio" aria-checked={newNode.scale === scale} data-level={scale} onClick={() => chooseLevel(scale)}><i aria-hidden="true" /><span>{SCALES[scale]?.label || scale}</span></button>)}</div></div>
+                ? <div className="field level-choice"><span className="field__label" id="level-choice-label">Level</span><div className="level-choice__options" role="radiogroup" aria-labelledby="level-choice-label">{levels.map((scale) => <button key={scale} type="button" role="radio" aria-checked={newNode.scale === scale} data-level={scale} onClick={() => chooseLevel(scale)} aria-label={SCALES[scale]?.label || scale}><i aria-hidden="true" /><span>{{ micro: 'Micro', exosphere: 'Exo', macrosphere: 'Macro' }[scale] || scale}</span></button>)}</div></div>
                 : <Field label="Level"><select value={newNode.scale} onChange={(event) => chooseLevel(event.target.value)}>{levels.map((scale) => <option key={scale} value={scale}>{SCALES[scale]?.label || scale}</option>)}</select></Field>;
             })()}
           </div>

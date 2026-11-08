@@ -32,28 +32,44 @@ One line in the upper-left of the canvas; changes with the step and the map.
 | Hint under Level | It will sit where you double-clicked. | removed | dictated 2026-11-07 |
 | Announcement on click-away | — | New node cancelled. | pending (screen reader only) |
 
-## Left-out reasons (`src/memoWorkflow.js`, `WITHHELD_REASON_TEXT`), shipped in `c635b9f`
+## Left-out list (`src/memoWorkflow.js`, `WITHHELD_REASON_TEXT`; `src/MemoWorkflowNotebook.jsx`)
 
-Shown after a memo submission as "Left out: *label* (reason)" and in the
-Notebook under "Left out of this step".
+Shown in the Notebook after a memo submission. Each entry is the proposed name
+on one line and a short reason under it. The message after a submission only
+counts them ("8 nodes added. 3 left out; the Notebook lists them.").
 
 | Reason | Text | Status |
 | --- | --- | --- |
-| heading | Left out of this step | pending |
-| footer | If your memo supports one of these, add it yourself in Tools. | revised 2026-11-08, pending |
-| `outside_participation` | the memo shows local people taking part there, or does not say whether they do | revised 2026-11-08, pending |
-| `policy_operation` | the memo does not quote the rule or what it changes locally | revised 2026-11-08, pending |
-| `narrative_quote` | its evidence is not quoted from the memo | revised 2026-11-08, pending |
-| `evidence_limit` | its quote runs past 500 characters | revised 2026-11-08, pending |
-| `established_condition` | its evidence is a wish, a recommendation or a question | revised 2026-11-08, pending |
-| `label_format` | its label is a whole sentence; a node needs a name | revised 2026-11-08, pending |
-| `identity_duplicate` | it repeats a node already on the map | pending |
-| `existing_identity` | it would change a node already on the map | revised 2026-11-08, pending |
-| `scale_type` | its type does not belong at this level | pending |
-| `node_shape` | its entry is incomplete | revised 2026-11-08, pending |
-| `unsupported` | a second reading found no passage that supports it | revised 2026-11-08, pending |
-| fallback | it did not pass the evidence checks | pending |
-| toast | No new nodes were added. Left out: … Use Tools to add nodes yourself. | pending |
+| heading | Left out | revised 2026-11-08, pending |
+| footer | Add any of these in Tools if the memo supports it. | revised 2026-11-08, pending |
+| `outside_participation` | People in the memo take part here, so it belongs at Micro | revised 2026-11-08, pending |
+| `policy_operation` | The memo does not quote the rule | revised 2026-11-08, pending |
+| `narrative_quote` | Not quoted from the memo | revised 2026-11-08, pending |
+| `evidence_limit` | Quote longer than 500 characters | revised 2026-11-08, pending |
+| `established_condition` | Stated as a wish or a question | revised 2026-11-08, pending |
+| `label_format` | Name is a sentence or covers more than one thing | revised 2026-11-08, pending |
+| `identity_duplicate` | Already on the map | revised 2026-11-08, pending |
+| `existing_identity` | Would change a node already on the map | revised 2026-11-08, pending |
+| `scale_type` | Type does not fit this level | revised 2026-11-08, pending |
+| `node_shape` | Incomplete entry | revised 2026-11-08, pending |
+| `unsupported` | No passage in the memo supports it | revised 2026-11-08, pending |
+| fallback | Did not pass the evidence checks | revised 2026-11-08, pending |
+
+## Submission messages (`src/App.jsx`)
+
+| Before | After | Status |
+| --- | --- | --- |
+| N nodes added; M evidence passages updated. Your connections and manual edits are preserved. Left out: … | N nodes added and M quotes updated. K left out; the Notebook lists them. | pending |
+| N nodes added to your map. Left out: … | N node(s) added. K left out; the Notebook lists them. | pending |
+| No new nodes were added. Left out: … Use Tools to add nodes yourself. | No new nodes were added. The Notebook lists the K left out. | pending |
+| No new nodes were added. Proposed nodes that did not pass the evidence checks were left out. Use Tools to add nodes yourself. | No proposed nodes passed the evidence checks. Add nodes in Tools. | pending |
+| No new nodes were added: nothing new in this memo was identified for this step. Use Tools to add nodes yourself. | This memo has no new nodes for this step. Add nodes in Tools. | pending |
+
+## Error messages (`src/userFacingError.js`)
+
+Reassurance tails ("Your existing work was not changed.", "your map remains editable", "your map is unchanged") removed from nine messages; the rejection sentence is now "Nothing was added because {reason}. Try again, or add the node in Tools." Reason phrases shortened: outside office quote does not name it or say who takes part there; local people take part in an office proposed for Exo, so it belongs at Micro; a proposed condition was a wish, recommendation or question; a proposed node name covered more than one thing. The quotation case reads "A quote in the feedback could not be checked. Try again." All pending.
+
+The audit of 2026-11-08 lists 40 findings in all; the rows above cover the toasts, the add-node form and the error text. The remaining rows (field hints, status lines, Tools labels, the duplicate Auto-fit checkbox) are in the change record and wait for a decision.
 
 ## Behaviour change behind the list (2026-11-08)
 
