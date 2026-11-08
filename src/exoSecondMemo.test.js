@@ -84,3 +84,14 @@ it('keeps earlier Micro nodes and Meso relationships available as connection tar
   expect(relationshipGroupIssue({ source: office.id, target: tenants.id, relationshipIds: [meso.id] }, nodes, [meso], 'exosphere')).toBeNull();
   expect(relationshipGroupIssue({ source: condition.id, target: manager.id, relationshipIds: [meso.id] }, nodes, [meso], 'macrosphere')).toBeNull();
 });
+
+it('accepts a policy whose quoted sentence obliges or forbids someone, whatever the domain', () => {
+  const guideline = 'Authors who use GenAI must disclose its role in the research and preparation of their submission, even where no generated content remains in the final work.';
+  const stance = 'JITP discourages authors from using GenAI to develop scholarly arguments or draft any part of a submission.';
+  const wish = 'Journals should think about disclosure.';
+  const memo = `${guideline} ${stance} ${wish}`;
+  const policy = (label, evidence) => review([{ label, type: 'policy', scale: 'exosphere', basis: 'memo', evidence }]);
+  expect(submittedReviewIssue(policy('JITP AI Use Disclosure requirement', guideline), 'exosphere', memo)).toBeNull();
+  expect(submittedReviewIssue(policy('JITP GenAI authorship guideline', stance), 'exosphere', memo)).toBeNull();
+  expect(submittedReviewIssue(policy('Disclosure policy', wish), 'exosphere', memo)).toMatch(/established policy and its operation/);
+});

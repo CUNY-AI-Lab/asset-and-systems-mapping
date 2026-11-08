@@ -83,7 +83,14 @@ function narrativeNamesPerson(label, narrative) {
 // This is a narrow evidence guard, not a semantic classifier. It excludes
 // recommendations/questions offered as established conditions while preserving
 // reported cultural norms and actual rules containing normative words.
+// A policy is operative when a stated sentence obliges, permits or forbids
+// someone to do something. The test is the grammar of the rule, not a list of
+// known rules, so a journal's authorship guideline counts as much as a course
+// access procedure.
+const DEONTIC_RULE = /\b(?:must(?:\s+not)?|shall(?:\s+not)?|may\s+not|can\s*not|will\s+not|do(?:es)?\s+not\s+(?:allow|permit|accept|use|require)|(?:is|are)\s+(?:not\s+)?(?:required|permitted|allowed|prohibited|responsible|eligible|entitled|expected)|requires?|required|prohibits?|permits?|allows?|bans?|forbids?|limits?|grants?|entitles?|obliges?|reserves?\s+the\s+right|applies\s+to|discourages?|encourages?|asks?\s+(?:\w+\s+)?to)\b/iu;
 function hasPolicyOperation(evidence) {
+  if (evidence.split(/(?<=[.!?])\s+/u).some(sentence => !/\?$/u.test(sentence)
+    && !/\b(?:should|could|would|might|wish|hope|recommend)\b/iu.test(sentence) && DEONTIC_RULE.test(sentence))) return true;
   if (/\b(?:requires?|mandates?|stipulates?|provides?|reserves?|directs?|specifies?|allocat\w*|restrict\w*|prohibit\w*|guarantee\w*|delay\w*|limit\w*|fund\w*|govern\w*|establish\w*|determines? (?:the authorization|whether)|permission|consent)\b/iu.test(evidence)) return true;
   // Published access procedures can state an application review followed by
   // approval activating access, without calling the procedure a policy.

@@ -163,7 +163,7 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .map-stage--notebook .map-reading-guide > button:hover { background:var(--surface-hover); }
 /* Workflow controls keep their size and text. One row fits a 320px phone;
    narrower panes move the primary action to its own row instead of cutting it off. */
-@media (max-width:299px) {
+@media (max-width:359px) {
   .map-stage--notebook .workflow-actions { flex-wrap:wrap; }
   .map-stage--notebook .workflow-actions .notebook-next { flex:1 1 100%; margin:0; }
   .workflow-next-label { text-align:left; overflow-wrap:anywhere; }

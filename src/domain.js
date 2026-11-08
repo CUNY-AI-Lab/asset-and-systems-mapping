@@ -188,6 +188,9 @@ export function isNamedInstitutionLabel(value) {
   if (GENERIC_INSTITUTION_LABEL.test(label)) return false;
   if (UNAMBIGUOUS_INSTITUTION_LABEL.test(label)) return true;
   // A funder or platform named by its domain (Google.org, Archive.org) is an organization.
+  // So is a multi-word proper name that ends in its own acronym, such as
+  // "Journal of Interactive Technology and Pedagogy (JITP)".
+  if (/^[A-Z][\p{L}\p{N}'’&.-]*(?:\s+(?:[a-z]{1,3}|[A-Z][\p{L}\p{N}'’&.-]*|\/))+\s+\([A-Z][A-Za-z\/&]{1,11}\)$/u.test(label)) return true;
   if (/^[A-Z][\p{L}\p{N}&'’-]*(?:\s+[A-Z][\p{L}\p{N}&'’-]*)*\.(?:org|com|edu|gov|net)$/u.test(label)) return true;
   if (OFFICIAL_INSTITUTION_ACRONYM.test(label) || OFFICIAL_PUBLIC_BENEFIT_PROGRAM.test(label)) return true;
   if (HYPHENATED_SERVICE_BRAND.test(label) && SERVICE_BRAND_SIGNAL.test(label)) return true;
