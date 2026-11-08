@@ -124,17 +124,17 @@ export function memoUpdateSummary(project, review) { return submittedPlan(projec
 
 // Student-facing wording for the server's fixed left-out reasons.
 const WITHHELD_REASON_TEXT = Object.freeze({
-  outside_participation: 'the memo describes people taking part there, or leaves their participation unknown',
-  policy_operation: 'no established rule and its local effect was quoted',
-  narrative_quote: 'its evidence was not a quote from the memo',
-  evidence_limit: 'its quote was longer than 500 characters',
-  established_condition: 'its evidence was a wish, recommendation or question, not an established condition',
-  label_format: 'its label was a sentence or statement, not a name',
+  outside_participation: 'the memo shows local people taking part there, or does not say whether they do',
+  policy_operation: 'the memo does not quote the rule or what it changes locally',
+  narrative_quote: 'its evidence is not quoted from the memo',
+  evidence_limit: 'its quote runs past 500 characters',
+  established_condition: 'its evidence is a wish, a recommendation or a question',
+  label_format: 'its label is a whole sentence; a node needs a name',
   identity_duplicate: 'it repeats a node already on the map',
-  existing_identity: 'it changed an existing node instead of adding evidence',
+  existing_identity: 'it would change a node already on the map',
   scale_type: 'its type does not belong at this level',
-  node_shape: 'its entry was incomplete',
-  unsupported: 'no supporting passage was found on a second reading',
+  node_shape: 'its entry is incomplete',
+  unsupported: 'a second reading found no passage that supports it',
 });
 export function withheldNodeReason(reason) { return WITHHELD_REASON_TEXT[reason] || 'it did not pass the evidence checks'; }
 export function withheldNodes(project) {

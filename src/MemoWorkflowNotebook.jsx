@@ -25,7 +25,7 @@ export default function MemoWorkflowNotebook({ project, update, onEditMemo, onSe
     {leftOut.length > 0 && <section className="workflow-left-out" aria-labelledby="workflow-left-out-heading">
       <h3 id="workflow-left-out-heading">Left out of this step</h3>
       <ul>{leftOut.map((item, index) => <li key={`${item.label}:${index}`}><strong>{item.label}</strong>: {withheldNodeReason(item.reason)}.</li>)}</ul>
-      <p>Add any of these yourself in Tools if your memo supports it.</p>
+      <p>If your memo supports one of these, add it yourself in Tools.</p>
     </section>}
     <details className="workflow-notes"><summary>Field notes <span>(optional)</span></summary><ReflectionEntry project={project} update={update} onSave={onSaveNote} saveState={saveState} required={false} />{project.mapAnnotation.text.trim() && savedMapNote}</details>
   </section>;

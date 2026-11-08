@@ -1310,11 +1310,11 @@ describe('Systems Mapping workflow', () => {
     render(<App memoFirstWorkflow startInWorkspace />);
     fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
-    expect(await screen.findByText(/1 nodes added to your map\. Left out: Access Board \(the memo describes people taking part there, or leaves their participation unknown\); Residents want better repairs \(its label was a sentence or statement, not a name\)\./)).toBeVisible();
+    expect(await screen.findByText(/1 nodes added to your map\. Left out: Access Board \(the memo shows local people taking part there, or does not say whether they do\); Residents want better repairs \(its label is a whole sentence; a node needs a name\)\./)).toBeVisible();
     const leftOut = screen.getByRole('region', { name: 'Left out of this step' });
     expect(within(leftOut).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-      'Access Board: the memo describes people taking part there, or leaves their participation unknown.',
-      'Residents want better repairs: its label was a sentence or statement, not a name.',
+      'Access Board: the memo shows local people taking part there, or does not say whether they do.',
+      'Residents want better repairs: its label is a whole sentence; a node needs a name.',
     ]);
     expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(2);
   });
