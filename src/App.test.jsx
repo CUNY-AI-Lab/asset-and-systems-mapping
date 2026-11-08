@@ -3750,7 +3750,7 @@ describe('Systems Mapping workflow', () => {
     } }, 502);
     await resumeSavedProject(project);
     fireEvent.click(screen.getByRole('button', { name: 'Generate guidance' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was added because a proposed node name was a phrase or a bundle of several subjects, not one person, place, office or condition. Your existing work was not changed. Try again, or add the node yourself in Tools.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was added because a proposed node name covered more than one thing. Try again, or add the node in Tools.');
     const details = screen.getByText('Support details').closest('details');
     expect(details).not.toHaveAttribute('open');
     const callsBeforeOpening = fetchMock.mock.calls.length;

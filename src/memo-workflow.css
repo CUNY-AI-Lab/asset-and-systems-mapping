@@ -87,7 +87,7 @@ html[data-theme=dark] .is-reading-view { --exo-accent:#75c6b9; --macro-accent:#c
 .notebook-floating-controls:has(.notebook-nav-row--simple) { width:auto; min-width:120px; }
 .map-layout:not(.has-inspector):has(.notebook-nav-row--simple) .map-reading-guide { max-width:calc(100% - 160px); }
 
-.map-stage--notebook .notebook-task-top { border-top:0; border-bottom:1px solid var(--line); padding:8px 12px; gap:8px; }
+.map-stage--notebook .notebook-task-top { border-top:0; border-bottom:1px solid var(--line); padding:8px 12px; gap:8px; container-type:inline-size; }
 .workflow-next-label { font:400 13px/1.35 var(--body); color:var(--muted); text-align:right; }
 .inspector-item-actions { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:12px; padding:12px; border-bottom:1px solid var(--line); font:500 13px/1.4 var(--body); }
 .inspector-item-actions > span { color:var(--muted); }
@@ -163,7 +163,9 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .map-stage--notebook .map-reading-guide > button:hover { background:var(--surface-hover); }
 /* Workflow controls keep their size and text. One row fits a 320px phone;
    narrower panes move the primary action to its own row instead of cutting it off. */
-@media (max-width:359px) {
+/* On a phone the action row has no room for Fit; Auto-fit stays in Tools there. */
+@container (max-width:299px) { .map-stage--notebook .map-edit-history .workflow-fit { display:none; } }
+@media (max-width:299px) {
   .map-stage--notebook .workflow-actions { flex-wrap:wrap; }
   .map-stage--notebook .workflow-actions .notebook-next { flex:1 1 100%; margin:0; }
   .workflow-next-label { text-align:left; overflow-wrap:anywhere; }
@@ -205,5 +207,5 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
   .workflow-left-out li, .workflow-left-out p { font-size:13px; line-height:1.4; }
 }
 /* Fit is the one-word Auto-fit switch, in the same chrome as Undo and Redo. */
-.map-stage--notebook .map-edit-history .workflow-fit { width:auto; padding-inline:10px; font:600 13px/1.35 var(--body); }
+.map-stage--notebook .map-edit-history .workflow-fit { width:auto; padding-inline:8px; font:600 13px/1.35 var(--body); }
 .map-stage--notebook .map-edit-history .workflow-fit[aria-pressed="true"] { color:var(--blue); border-color:var(--blue); background:var(--pale-blue); }
