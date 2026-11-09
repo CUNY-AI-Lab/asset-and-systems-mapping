@@ -2478,7 +2478,7 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(createDefaultProject());
 
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
-    expect(screen.getByText(/set the focus for your map/)).toBeVisible();
+    expect(screen.getByText(/Set the focus for your map/)).toBeVisible();
     expect(storedProject()).toMatchObject({ activeScale: 'micro', releasedScales: ['micro'], completedScales: [] });
   });
 
@@ -3018,7 +3018,7 @@ describe('Systems Mapping workflow', () => {
 
     await resumeSavedProject(project);
     let dialog = openProjectLink();
-    expect(within(dialog).getByText(/complete project—including its memo and evidence notes—will be stored on the class server for 90 days/i)).toBeVisible();
+    expect(within(dialog).getByText(/complete project, including its memo and evidence notes, is stored on the class server for 90 days/i)).toBeVisible();
     expect(within(dialog).getByText(/opening it also requires the current class code/i)).toBeVisible();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create project link' }));
 
@@ -5139,6 +5139,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     const settingRegion = document.querySelector(`[data-setting-region="${setting.id}"]`);
     expect(settingRegion).toHaveAttribute('data-member-count', '1');
     expect(settingRegion.getAttribute('d')).toMatch(/^M /);
+    // The Setting choice is drawn as a line from the new node to its setting.
+    const settingLine = document.querySelector(`[data-setting-line="${added.id}:${setting.id}"]`);
+    expect(settingLine).toHaveAttribute('data-setting-of', added.id);
+    expect(Number(settingLine.getAttribute('x1'))).not.toBeNaN();
+    expect(document.querySelectorAll('[data-setting-line]')).toHaveLength(1);
   });
 
   it('offers Micro node creation and Meso relationship creation', async () => {

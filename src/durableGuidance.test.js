@@ -27,6 +27,6 @@ test('a lost create response retries with the same fixed request identity', asyn
 });
 test('an unspecified generation failure does not claim that work was saved', async () => {
   const request = vi.fn().mockResolvedValue({ job: { id: 'job-a', state: 'failed' }, resultStatus: 502, result: {} });
-  await expect(durableGuidance(request, makeError, 'memo', {}, options)).rejects.toThrow('Generation needs another attempt. Your existing work was not changed.');
+  await expect(durableGuidance(request, makeError, 'memo', {}, options)).rejects.toThrow('Generation did not finish. Try again.');
   expect(hasPendingGuidance(localStorage, 'map', 'input-one')).toBe(false);
 });

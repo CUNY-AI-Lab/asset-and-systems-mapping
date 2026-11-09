@@ -63,7 +63,7 @@ export async function durableGuidance(request, makeError, kind, input, { signal,
       continue;
     }
     if (page.job.state === 'succeeded') { clear(); return page.result; }
-    if (page.job.state === 'failed') { clear(); throw makeError(page.result?.error || 'Generation needs another attempt. Your existing work was not changed.', page.resultStatus || 503, page.result); }
+    if (page.job.state === 'failed') { clear(); throw makeError(page.result?.error || 'Generation did not finish. Try again.', page.resultStatus || 503, page.result); }
     onProgress(page.job.state === 'retry_wait' ? `Temporary model interruption. Retrying after the requested delay (attempt ${page.job.attempts + 1} of 3)…` : `${kind === 'map-check' ? 'Checking your map' : 'Reading memo'} (attempt ${page.job.attempts} of 3)…`);
     await pause(page.job.state === 'retry_wait' ? 2000 : 250, signal);
   }

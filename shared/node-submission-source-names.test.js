@@ -60,16 +60,24 @@ it('extracts separate Micro participants and a noun resource while rejecting the
 
 it.each(['micro', 'exosphere'])('asks for source-grounded noun extraction and explicit uncertainty at %s', scale => {
   const prompt = nodeSubmissionInstruction(scale);
-  expect(prompt).toContain('supported noun labels include Students, Instructors, Course chat and Course configurations');
+  expect(prompt).toContain('each supported noun phrase is its own label');
   expect(prompt).toContain('Place that institution at Exo unless the source describes the focal participants taking part in it');
   expect(prompt).toContain('existingId entries must preserve its exact identity');
 });
 
 it('distinguishes an administrator with no described participation from a separately established access rule in the second memo prompt', () => {
   const prompt = nodeSubmissionInstruction('exosphere');
-  expect(prompt).toContain('omit Access Board as an automatic Exo node');
-  expect(prompt).toContain('an Exo policy named Course access approval rule may use that exact passage');
-  expect(nodeSubmissionInstruction('micro')).not.toContain('SECOND MEMO EVIDENCE EXAMPLE');
+  expect(prompt).toContain('participation in an office is unknown, omit that office as an automatic Exo node');
+  expect(prompt).toContain('an Exo policy node may quote that exact passage');
+  expect(nodeSubmissionInstruction('micro')).not.toContain('SECOND MEMO EVIDENCE');
+});
+
+it('states its rules without worked examples, so no one field or memo shapes the answer', () => {
+  for (const scale of ['micro', 'exosphere']) {
+    // `example: null` is a field of the answer format, not a worked example.
+    const prompt = nodeSubmissionInstruction(scale);
+    expect(prompt).not.toMatch(/\bsuch as\b|\bfor example\b|\bexamples?:(?! null)|\bcounterexamples?:|\be\.g\.|if a memo says/i);
+  }
 });
 
 it('places the narrative-named Eco Impact Estimator repository at Exo', () => {
@@ -94,6 +102,6 @@ it('prioritizes supported Exo nodes and allows a standalone operative policy', (
   expect(prompt).toContain('choose the strongest supported new Exo nodes');
   expect(prompt).not.toMatch(/one to three|at most 3 at each level/);
   expect(prompt).toContain('A single evidenced operative policy can stand alone');
-  expect(prompt).toContain('omit unsupported repositories and registries rather than changing their type');
+  expect(prompt).toContain('omit such an item when the memo describes no decision or effect, rather than changing its type');
   expect(prompt).toContain('A named office that decides something affecting the local setting is Exo');
 });

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { createDefaultProject, parseProject, serializeProject, validateProject } from './domain.js';
 import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
 import { activeSubmission } from './projectMemo.js';
-import { submittedReviewIssue, nodeSubmissionSchema, nodeSubmissionInstruction, EXO_SETTING_TYPES } from '../shared/node-submission.js';
+import { submittedReviewIssue, nodeSubmissionSchema, nodeSubmissionInstruction, EXO_SETTING_TYPES, EXO_NODE_TYPES, MACRO_CONDITION_TYPES } from '../shared/node-submission.js';
 
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
 const local = { label:'Residents', type:'group', scale:'micro', evidence:'Residents meet in the community room.' };
@@ -123,6 +123,21 @@ it('keeps local roles eligible for Micro and asks Part 2 to omit them without ge
   expect(instruction).toContain('Omit these local participants from this second-memo output');
   expect(instruction).toContain('return NO links, scopes, memberships or recommendations');
   expect(nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf.map(node => node.properties.scale.enum)).toEqual([['exosphere'], ['macrosphere']]);
+});
+
+it('asks a second memo for both levels across every kind of node, with at least one Macro node', () => {
+  const instruction = nodeSubmissionInstruction('exosphere');
+  expect(instruction).toContain('return BOTH');
+  expect(instruction).toContain('MUST include at least one Macro node');
+  expect(instruction).not.toContain('in any mix of levels');
+  // The kinds come from the level type lists, not from any one memo.
+  expect(instruction).toContain(`Exo covers every kind of outside setting, resource or rule the memo evidences: ${EXO_NODE_TYPES.join(', ')}.`);
+  expect(instruction).toContain(`Macro covers every kind of broader condition the memo evidences: ${MACRO_CONDITION_TYPES.join(', ')}.`);
+  // Every Macro kind is accepted when the memo states the condition.
+  const stated = 'Families describe a lasting stigma around asking for help, which shapes who uses the centre.';
+  MACRO_CONDITION_TYPES.forEach((type) => {
+    expect(submittedReviewIssue(review([{ label: 'Stigma around asking for help', type, scale: 'macrosphere', evidence: stated, basis: 'memo' }]), 'exosphere', stated)).toBeNull();
+  });
 });
 
 it.each([
