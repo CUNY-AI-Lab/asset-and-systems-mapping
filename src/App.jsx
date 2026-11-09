@@ -3896,6 +3896,21 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
         return { id: `${node.id}:${memberId}`, linkageId: node.id, x1: linkagePoint.x, y1: linkagePoint.y, x2: memberPoint.x, y2: memberPoint.y, muted: node.visualMuted };
       }).filter(Boolean);
     });
+  // A Setting chosen for a Micro node is drawn as a line to that setting, so
+  // the choice is visible on the map and not only in the node's panel.
+  const microSettingLineVisuals = nodes
+    .filter((node) => node.scale === 'micro' && node.settingNodeIds?.length)
+    .flatMap((node) => {
+      const member = nodeVisuals.get(node.id);
+      if (!member?.position) return [];
+      return [...new Set(node.settingNodeIds)].map((settingId) => {
+        const setting = nodeVisuals.get(settingId);
+        if (!setting?.position) return null;
+        const memberPoint = cardConnectionPoint(member.position, setting.position, member.geometry);
+        const settingPoint = cardConnectionPoint(setting.position, member.position, setting.geometry);
+        return { id: `${node.id}:${settingId}`, memberId: node.id, settingId, x1: memberPoint.x, y1: memberPoint.y, x2: settingPoint.x, y2: settingPoint.y, muted: node.visualMuted, selected: selection?.kind === 'node' && (selection.id === node.id || selection.id === settingId) };
+      }).filter(Boolean);
+    });
   const microSettingRegionVisuals = nodes
     .filter((node) => node.scale === 'micro' && MICRO_SETTING_NODE_TYPE_SET.has(node.type))
     .map((setting) => {
@@ -4038,6 +4053,7 @@ function GraphCanvas({ exportDrawing = false, nodes, edges, previewConnection = 
           <rect x={anchor.x - 24} y={anchor.y - 10} width="48" height="20" rx="3" className="scope-influence-label-bg" /><text x={anchor.x} y={anchor.y} textAnchor="middle" dominantBaseline="central" className="scope-influence-label">Scope</text>
         </g>;
       })}</g>
+      <g className="micro-setting-lines" aria-hidden="true">{microSettingLineVisuals.map((line) => <line key={line.id} data-setting-line={line.id} data-setting-of={line.memberId} className={`micro-setting-line ${line.selected ? 'is-selected' : ''} ${line.muted ? 'is-muted' : ''}`} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />)}</g>
       <g className="meso-linkages" aria-hidden="true">{mesoBridgeVisuals.map((bridge) => <line key={bridge.id} data-linkage-of={bridge.linkageId} className={`meso-link-line ${bridge.muted ? 'is-muted' : ''}`} x1={bridge.x1} y1={bridge.y1} x2={bridge.x2} y2={bridge.y2} />)}</g>
       {pendingNode && !exportDrawing && (() => {
         // The node being added is drawn in outline where it will sit, so the

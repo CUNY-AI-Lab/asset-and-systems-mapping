@@ -5139,6 +5139,11 @@ Overall, the posting history documents a working student repeatedly turning to R
     const settingRegion = document.querySelector(`[data-setting-region="${setting.id}"]`);
     expect(settingRegion).toHaveAttribute('data-member-count', '1');
     expect(settingRegion.getAttribute('d')).toMatch(/^M /);
+    // The Setting choice is drawn as a line from the new node to its setting.
+    const settingLine = document.querySelector(`[data-setting-line="${added.id}:${setting.id}"]`);
+    expect(settingLine).toHaveAttribute('data-setting-of', added.id);
+    expect(Number(settingLine.getAttribute('x1'))).not.toBeNaN();
+    expect(document.querySelectorAll('[data-setting-line]')).toHaveLength(1);
   });
 
   it('offers Micro node creation and Meso relationship creation', async () => {
