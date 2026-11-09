@@ -527,7 +527,8 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome nati
           await page.getByRole('tab', { name: 'Overview', exact: true }).click();
         }
         const signedOut = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/logout' && response.request().method() === 'POST');
-        await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+        // The Account page body keeps its own Sign out; this exercises the one in the shell header.
+        await page.getByRole('banner').getByRole('button', { name: 'Sign out', exact: true }).click();
         const response = await signedOut;
         expect(await response.request().headerValue('origin')).toBe(ORIGIN);
         expect(response.status()).toBe(303);
