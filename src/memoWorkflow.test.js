@@ -125,6 +125,23 @@ it('keeps local roles eligible for Micro and asks Part 2 to omit them without ge
   expect(nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf.map(node => node.properties.scale.enum)).toEqual([['exosphere'], ['macrosphere']]);
 });
 
+it('asks a second memo for both Exo and Macro and accepts stated guiding principles as Macro beliefs', () => {
+  const instruction = nodeSubmissionInstruction('exosphere');
+  expect(instruction).toContain('return BOTH when the memo supports both');
+  expect(instruction).toContain('keep at least 3 of them for Macro');
+  expect(instruction).not.toContain('in any mix of levels');
+  // A memo that names more outside offices than the cap holds and also states its guiding principles.
+  const principles = 'Our work is guided by privacy, sustainability, transparency, and critical AI literacy.';
+  const tradition = 'These initiatives reflect the Graduate Center’s longstanding commitment to creating accessible, scalable digital infrastructure.';
+  const memo = `${principles} ${tradition} CAIL is supported by the CUNY Office of Academic Affairs.`;
+  const macro = [
+    { label: 'Privacy', type: 'belief', scale: 'macrosphere', evidence: principles, basis: 'memo' },
+    { label: 'Critical AI literacy', type: 'belief', scale: 'macrosphere', evidence: principles, basis: 'memo' },
+    { label: 'Commitment to accessible digital infrastructure', type: 'history', scale: 'macrosphere', evidence: tradition, basis: 'memo' },
+  ];
+  expect(submittedReviewIssue(review(macro), 'exosphere', memo)).toBeNull();
+});
+
 it.each([
   ['District Counseling Office', 'institution', 'Students do not participate in District Counseling Office staffing decisions, which limit counseling in their schools.'],
   ['Community Counselor Referral Service', 'service', 'Families do not participate in Community Counselor Referral Service decisions, which delay care in local clinics.'],
