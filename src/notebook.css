@@ -272,11 +272,14 @@
 }
 /* Level picker in the add-node form: the same swatches the Map key uses. */
 .level-choice { display: grid; gap: 6px; }
-.level-choice__options { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
-.level-choice__options button { --level: var(--micro); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 600 13px/1.2 var(--body); cursor: pointer; }
+/* Equal buttons on one row; when the panel is too narrow for that, a button moves to the next row. */
+.level-choice__options { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.level-choice__options button { --level: var(--micro); flex: 1 1 0; min-width: max-content; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 40px; padding: 4px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 600 13px/1.2 var(--body); cursor: pointer; }
 .level-choice__options button[data-level="exosphere"] { --level: var(--exosphere); }
 .level-choice__options button[data-level="macrosphere"] { --level: #805491; }
-.level-choice__options button i { width: 16px; height: 10px; flex: none; border: 2px solid var(--level); border-radius: 3px; background: var(--surface); }
+/* A level name never breaks inside the word, however narrow the panel. */
+.level-choice__options button span { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.level-choice__options button i { width: 12px; height: 10px; flex: none; border: 2px solid var(--level); border-radius: 3px; background: var(--surface); }
 .level-choice__options button[aria-checked="true"] { background: color-mix(in srgb, var(--level) 12%, var(--surface)); color: var(--ink); box-shadow: inset 0 0 0 1px var(--level); }
 .level-choice__options button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .relationship-target-mode { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
