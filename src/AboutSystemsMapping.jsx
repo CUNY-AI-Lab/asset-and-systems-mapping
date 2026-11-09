@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import './about-systems-mapping.css';
 
 export const ABOUT_SYSTEMS_MAPPING = [
-  'Systems Mapping turns a memo into a network map of the people, places, policies and broader conditions it describes, arranged from local settings outward. The method draws on asset mapping and ecological systems theory.',
+  'Systems mapping helps students visualize memos as network graphs scaffolded across local and global scales, using ecological systems theory to connect nodes across people and places, laws and policies, along with broader historical and sociological influences.',
   'Upload your first memo to place people, places, and resources on the map, then use Notebook to create and label their relationships.',
   'Add your second memo to extend the map to institutions and broader conditions; edit either memo in Memo and choose Update map to incorporate your changes.',
 ];

@@ -73,11 +73,12 @@ The audit of 2026-11-08 lists 40 findings in all; the rows above cover the toast
 
 ## AI-tell sweep before the sign-out release (2026-11-08)
 
-Zach: "check for ai slop copy that is student-facing. None of that." A read of every student-facing string over 45 characters (617 lines, excluding instructor files and model prompts) found no vocabulary tells; the fixes below remove em-dash hinges, "cumulative" and one leftover reassurance tail, and replace the About panel's first sentence. Approved by the same instruction; listed so the wording can still be changed.
+Zach: "check for ai slop copy that is student-facing. None of that." A read of every student-facing string over 45 characters (617 lines, excluding instructor files and model prompts) found no vocabulary tells; the fixes below remove em-dash hinges, "cumulative" and one leftover reassurance tail. Listed so the wording can still be changed.
+
+Reverted 2026-11-09: the sweep also replaced the About panel's first sentence, which Zach wrote (commit `ac7ebe8`). His sentence is restored with one change he dictated the same day: "asset and systems mapping theory" becomes "ecological systems theory". Copy he authored is not in scope for a sweep like this; check `git log -S` for the author before touching a string.
 
 | Where | Before | After |
 |---|---|---|
-| About panel, first paragraph | Systems mapping helps students visualize memos as network graphs scaffolded across local and global scales, using asset and systems mapping theory to connect nodes across people and places, laws and policies, along with broader historical and sociological influences. | Systems Mapping turns a memo into a network map of the people, places, policies and broader conditions it describes, arranged from local settings outward. The method draws on asset mapping and ecological systems theory. |
 | Memo heading | {Part} — set the focus for your map / build on your first memo and the existing map | {Part}. Set the focus for your map. / Build on your first memo and the existing map. |
 | Memo privacy note (Part 2) | {Part} — both memos and your existing graph inform guidance | {Part}. Both memos and your existing map inform guidance. |
 | Guidance toast | Suggestions could not be added — generate guidance again | Suggestions could not be added. Generate guidance again. |
