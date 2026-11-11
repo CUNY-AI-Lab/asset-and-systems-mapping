@@ -10,3 +10,9 @@ minimumReleaseAgeExclude:
   - miniflare@5.20260908.0-alpha
   - workerd@1.20260908.1
   - wrangler@4.130.0
+# Patched releases for packages that wrangler's miniflare and the CAIL packages
+# pin exactly. Each selector stops matching once its parent pins a fixed version.
+overrides:
+  'miniflare>sharp@<0.35.5': 0.35.5
+  'miniflare>undici@<7.30.1': 7.30.1
+  'zod@<4.6.6': 4.6.6
