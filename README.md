@@ -232,3 +232,13 @@ Local tests establish behavior for the tested source and environment. They do no
 - [August 13 reconciliation](./docs/RECONCILIATION_2026-08-13.md) — earlier reconciliation decisions.
 
 The source ledger governs provenance. The [November 4 Memo workspace](docs/MEMO_WORKSPACE_2026-11-04.md) and [two-memo workflow](docs/TWO_MEMO_WORKFLOW_2026-11-04.md) govern the current account application. The October 28 and August 24 designs remain historical context for compatible storage and the separate Node application. The fuller Drive specification governs compatible general behavior, the supplied HTML/DOCX informs interaction, and CALI materials provide context. Zach's August 5 notes remain unconfirmed minutes; STEM Splitter is an architecture precedent.
+
+## License
+
+Copyright © 2026 CUNY AI Lab, The Graduate Center, City University of New York.
+
+This software is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later). You may use, study, change, and share it, including for commercial purposes. If you distribute a modified version, or run one as a network service that other people use, you must make its complete source code available to them under the same license.
+
+This license applies to every version of this repository, including earlier commits.
+
+Questions about licensing: [ailab@gc.cuny.edu](mailto:ailab@gc.cuny.edu). See CAIL's [licensing page](https://ailab.gc.cuny.edu/license/).
