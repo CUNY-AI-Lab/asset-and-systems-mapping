@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import { createDefaultProject, parseProject, serializeProject, validateProject } from './domain.js';
-import { appendSubmittedNodes, openMemoWorkflowScale } from './memoWorkflow.js';
+import { WITHHELD_NODE_REASONS, createDefaultProject, parseProject, serializeProject, validateProject } from './domain.js';
+import { appendSubmittedNodes, openMemoWorkflowScale, withheldNodeReason } from './memoWorkflow.js';
 import { activeSubmission } from './projectMemo.js';
 import { submittedReviewIssue, nodeSubmissionSchema, nodeSubmissionInstruction, EXO_SETTING_TYPES, EXO_NODE_TYPES, MACRO_CONDITION_TYPES } from '../shared/node-submission.js';
 
@@ -210,4 +210,13 @@ it('explains how to repair bundled Micro roles without inventing or dropping evi
   const issue=submittedReviewIssue(review([{...local,label:'Teachers and school staff'}]),'micro','Teachers and school staff work with residents.');
   expect(issue).toContain('Do not bundle different roles');
   expect(issue).toContain('choose one supported role or return separate nodes');
+});
+
+it('gives every left-out reason, including those only saved maps carry, its own text', () => {
+  const fallback = withheldNodeReason('not-a-reason');
+  const texts = WITHHELD_NODE_REASONS.map(withheldNodeReason);
+  expect(texts.every(text => text && text !== fallback)).toBe(true);
+  expect(new Set(texts).size).toBe(texts.length);
+  expect(withheldNodeReason('outside_setting')).toMatch(/Exo$/u);
+  expect(withheldNodeReason('participation_conflict')).toMatch(/Micro$/u);
 });

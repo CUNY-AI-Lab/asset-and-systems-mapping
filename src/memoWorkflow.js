@@ -2,7 +2,7 @@ import { isLiveMapItem } from './mapInsights.js';
 import { SCALE_ORDER, stableId, withDefaultNodeLayout, validateProject } from './domain.js';
 import { activeSubmission, beginPart2 } from './projectMemo.js';
 import { memoAnalysisIssue, memoContentFingerprint, memoSourceFingerprint, memoChunks, changedMemoPassages, memoUpdateIssue } from '../shared/memo-update.js';
-import { submittedReviewIssue } from '../shared/node-submission.js';
+import { SUBMISSION_NODE_LIMIT, submittedReviewIssue } from '../shared/node-submission.js';
 
 export const MEMO_WORKFLOW = Object.freeze({
   micro: { title: 'Micro · local nodes', instruction: 'Submit your first memo to add people, places and resources to the map.', next: 'Next: Meso · draw relationships' },
@@ -123,18 +123,25 @@ function submittedPlan(project, review) {
 export function memoUpdateSummary(project, review) { return submittedPlan(project, review).summary; }
 
 // Student-facing wording for the server's fixed left-out reasons.
+// Student copy, pending approval in docs/student-copy.md.
 const WITHHELD_REASON_TEXT = Object.freeze({
-  outside_participation: 'People in the memo take part here, so it belongs at Micro',
-  policy_operation: 'The memo does not quote the rule',
-  narrative_quote: 'Not quoted from the memo',
-  evidence_limit: 'Quote longer than 500 characters',
-  established_condition: 'Stated as a wish or a question',
-  label_format: 'Name is a sentence or covers more than one thing',
+  outside_setting: 'An outside office, so it belongs at Exo',
+  participation_conflict: 'People in the memo take part in it, so it belongs at Micro',
+  participation_unknown: 'The memo says it is unclear whether people take part in it',
+  setting_unnamed: 'The quote does not name it',
+  policy_operation: 'The quote does not show how the rule works here',
+  narrative_quote: 'The quote is not word for word from the memo',
+  evidence_limit: 'The quote runs over 500 characters',
+  established_condition: 'The memo puts it as a wish or a question, not as fact',
+  label_format: 'The name is a sentence or lumps several things together',
   identity_duplicate: 'Already on the map',
-  existing_identity: 'Would change a node already on the map',
-  scale_type: 'Type does not fit this level',
-  node_shape: 'Incomplete entry',
-  unsupported: 'No passage in the memo supports it',
+  existing_identity: 'It would change a node already on the map',
+  scale_type: 'Its type does not fit this level',
+  node_shape: 'The entry came back incomplete',
+  node_limit: `The submission was already full at ${SUBMISSION_NODE_LIMIT} nodes`,
+  // No longer assigned; kept for maps saved before the reasons were split.
+  outside_participation: 'The memo does not make clear which level it belongs at',
+  unsupported: 'Dropped when the memo was read a second time',
 });
 export function withheldNodeReason(reason) { return WITHHELD_REASON_TEXT[reason] || 'Did not pass the evidence checks'; }
 export function withheldNodes(project) {

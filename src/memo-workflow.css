@@ -55,7 +55,9 @@
 .workflow-left-out { margin:0 0 12px; padding:8px 12px; border-left:3px solid var(--muted); }
 .workflow-left-out h3 { margin:0 0 .3rem; font-size:.95rem; }
 .workflow-left-out ul { margin:0 0 8px; padding:0; list-style:none; display:grid; gap:8px; }
-.workflow-left-out li { display:grid; gap:2px; }
+.workflow-left-out li { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:10px; row-gap:2px; align-items:center; }
+.workflow-left-out li > :is(strong,span) { grid-column:1; }
+.workflow-left-out li > button { grid-column:2; grid-row:1 / span 2; min-height:36px; padding:4px 12px; }
 .workflow-left-out li span { color:var(--muted); }
 .workflow-left-out li, .workflow-left-out p { margin:0 0 .25rem; font-size:.9rem; overflow-wrap:anywhere; }
 .workflow-left-out p { color:var(--muted); }
@@ -135,6 +137,8 @@ html[data-theme=dark] .map-stage--notebook #map-inspector[data-item-scale=macros
 .memo-workspace textarea { min-height:160px; }
 .map-stage--notebook:has(.notebook-nav-row--simple) #map-inspector textarea::placeholder { font:400 14px/1.45 var(--body); }
 .memo-workspace .memo-file-upload { margin:0; }
+/* The upload zone's focus ring reaches 6px outside it; keep the import status clear of the ring. */
+.memo-workspace .memo-file-upload > .privacy-note { margin-top:10px; }
 .memo-start-cue,.memo-change-notice { margin:0; padding:8px 10px; border-left:2px solid var(--blue); background:var(--pale-blue); font-size:13px; }
 .memo-change-notice strong { display:block; margin-bottom:3px; font-weight:600; }
 .memo-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding-top:6px; }

@@ -85,8 +85,8 @@ browserTest('Projects keeps the two-field creation form prominent and existing n
       const form = page.getByRole('form', { name: 'New project', exact: true });
       await browserExpect(form).toBeInViewport({ ratio: 1 });
       await browserExpect(form.getByRole('textbox')).toHaveCount(2);
-      const title = form.getByRole('textbox', { name: 'Project title', exact: true });
-      const creator = form.getByRole('textbox', { name: 'Creator name', exact: true });
+      const title = form.getByRole('textbox', { name: 'Project', exact: true });
+      const creator = form.getByRole('textbox', { name: 'Name', exact: true });
       await browserExpect(title).toHaveValue('');
       for (const control of [title, creator, form.getByRole('button', { name: 'New project', exact: true })]) {
         await browserExpect(control).toBeInViewport({ ratio: 1 });

@@ -79,9 +79,9 @@ describe('Account dashboard controls', () => {
   it('shows two creation fields, saves title and creator separately and preserves existing projects', async () => {
     workspaceAccount.preferredName = 'Sam Student';
     render(<AccountWorkspace />);
-    expect(await screen.findByRole('textbox',{name:'Creator name'})).toHaveValue('Sam Student');
+    expect(await screen.findByRole('textbox',{name:'Name'})).toHaveValue('Sam Student');
     expect(within(screen.getByRole('form',{name:'New project'})).getAllByRole('textbox')).toHaveLength(2);
-    fireEvent.change(screen.getByRole('textbox',{name:'Project title'}),{target:{value:'Neighborhood services'}});
+    fireEvent.change(screen.getByRole('textbox',{name:'Project'}),{target:{value:'Neighborhood services'}});
     fireEvent.click(screen.getByRole('button', { name: 'New project' }));
     await screen.findByRole('heading', { name: 'Project workspace' });
     await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(true));

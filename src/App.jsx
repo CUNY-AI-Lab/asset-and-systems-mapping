@@ -1262,7 +1262,7 @@ function IntakeStage({ project, update, toast, onRequestRestart, captureImportSc
       {action && <div className="memo-submit-top">{action}</div>}
       <LevelTrail active={project.activeScale} completed={project.completedScales} />
       <details className="project-details"><summary>Project details</summary><div className="project-context-fields">
-        <Field label="Project title"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
+        <Field label="Project"><input maxLength={CONFIG_TEXT_LIMIT} value={project.title} onChange={(event) => setProjectField('title', event.target.value)} /></Field>
         <Field label="Name or Group Name"><input autoComplete="name" maxLength={CONFIG_TEXT_LIMIT} value={project.participantName || ''} onChange={(event) => setProjectField('participantName', event.target.value)} /></Field>
       </div>
       </details><div className="intake-grid">
@@ -4468,6 +4468,19 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     setCreateMenuOpen(false);
     setNewNode(blankManualNode(project.activeScale, notebook?.simple));
   }, [project.activeScale]);
+  // Adding a left-out name opens the new-node form with that name; the student
+  // still chooses its type and supplies the evidence.
+  const handledAddRequest = useRef(notebook?.addRequest?.request || 0);
+  useEffect(() => {
+    const request = notebook?.addRequest;
+    if (!request || request.request === handledAddRequest.current) return;
+    handledAddRequest.current = request.request;
+    if (!project.instructor.allowResearchLeads || !SCALE_ORDER.includes(project.activeScale)) return;
+    setConnecting(false); setConnectionSource(null); setPendingNodePosition(null); setSelection(null); setFocus(null); setToolsOpen(false);
+    setNewNode({ ...blankManualNode(project.activeScale, notebook?.simple), label: String(request.label).slice(0, NODE_LABEL_LIMIT) });
+    setAddMode('node'); setInspectorTab('node');
+    changePanel('inspector');
+  }, [notebook?.addRequest]);
   useEffect(() => {
     const destination = viewHistory.pendingView;
     if (!destination || !notebook?.simple) return;
@@ -6230,6 +6243,8 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const [mapToolbarHost, setMapToolbarHost] = useState(null);
   const [theme, setTheme] = useState(storedTheme);
   const [notebookOpen, setNotebookOpen] = useState(memoFirstWorkflow);
+  // A left-out name the student chose to add; MapStage opens its new-node form with it.
+  const [leftOutAdd, setLeftOutAdd] = useState(null);
   const lastCanvasPresentation=useRef(null);
   const [completionDismissed, setCompletionDismissed] = useState(false);
   const [initialLoad] = useState(() => { const loaded = loadProject(); if (memoFirstWorkflow && isPart2(loaded.project.activeScale)) beginPart2(loaded.project); return loaded; });
@@ -8163,7 +8178,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
   const workflowMemoState = memoUpdateState(project);
   const firstMemoState = memoUpdateState({ ...project, activeScale: 'micro' });
   const memoPrerequisiteReady = !isPart2(project.activeScale) || firstMemoState.submitted || firstMemoState.hasBaseline || workflowMemoState.submitted || workflowMemoState.hasBaseline;
-  const workflowNotebook = <MemoWorkflowNotebook key={`${project.id}:${project.activeScale}`} project={project} update={update} onSelectStep={selectWorkScale} onEditMemo={editWorkflowMemo} busy={workflowBusy} saveState={saveState} onSaveNote={flushPersistence} />;
+  const workflowNotebook = <MemoWorkflowNotebook key={`${project.id}:${project.activeScale}`} project={project} update={update} onSelectStep={selectWorkScale} onEditMemo={editWorkflowMemo} busy={workflowBusy} saveState={saveState} onSaveNote={flushPersistence} onAddLeftOut={project.instructor.allowResearchLeads ? item => setLeftOutAdd(current => ({ label: item.label, request: (current?.request || 0) + 1 })) : undefined} />;
   const workflowMemo = <MemoWorkspace project={project} update={update} uploadControl={<MemoFileUpload project={project} update={update} toast={toast} captureImportScope={captureMemoImportScope} />} onTextChange={text => update(draft => invalidateSubmissionDerived(draft, 'text', text))} onSelectPart={editWorkflowMemo} busy={workflowBusy} failure={reviewFailure} />;
   const panel = memoFirstWorkflow ? { mode: workflowPanelMode, ...(workflowPanelMode !== 'inspector' ? { content: workflowPanelMode === 'memo' ? workflowMemo : workflowNotebook } : {}), disabled: [] }
     : project.stage >= 4 ? { mode: 'review', content: reviewPanel, disabled: panelDisabled }
@@ -8192,7 +8207,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     {view === 'memo' && <div className="memo-action-row"><button className="button" type="button" disabled={workflowBusy || reviewRetryAt > Date.now() || !memoPrerequisiteReady || !activeSubmission(project).text.trim() || workflowMemoState.submitted || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>{workflowBusy ? 'Updating map…' : workflowMemoState.hasBaseline ? 'Update map' : 'Submit memo and add nodes'}</button><span role={workflowBusy ? 'status' : undefined}>{workflowBusy ? reviewProgress || 'Reading your memo…' : workflowMemoState.submitted ? 'Map is up to date' : !memoPrerequisiteReady ? 'Add Part 1 to the map first.' : 'Add this memo to the map to continue.'}</span></div>}
     {view !== 'memo' && !workflowMemoState.submitted ? <button type="button" className="text-button memo-needed-action" onClick={() => editWorkflowMemo()}>Open Memo to continue</button> : workflowMemoState.submitted && project.activeScale !== 'macrosphere' && <span className="workflow-next-label">{MEMO_WORKFLOW[project.activeScale].next}</span>}
   </>;
-  const studio = <MapStage presentationRef={lastCanvasPresentation} captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, memoReady: workflowMemoState.submitted && memoPrerequisiteReady, memoPending: !workflowMemoState.submitted, onMemo: () => editWorkflowMemo(), edits: editControls, open: notebookOpen, onRestoreView: restoreWorkflowView, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
+  const studio = <MapStage presentationRef={lastCanvasPresentation} captureImportScope={captureMemoImportScope} key={`${project.id}:${projectActivationGenerationRef.current}`} project={project} update={update} toast={toast} logPrototype={logPrototype} saveState={saveState} stageAnnotationDraft={stageAnnotationDraft} commitAnnotationDrafts={commitPendingAnnotations} flushSave={flushPersistence} onRequestRestart={() => setModal('restart-map')} panel={panel} onPanelMode={changePanelMode} notebook={{ simple: memoFirstWorkflow, addRequest: leftOutAdd, memoReady: workflowMemoState.submitted && memoPrerequisiteReady, memoPending: !workflowMemoState.submitted, onMemo: () => editWorkflowMemo(), edits: editControls, open: notebookOpen, onRestoreView: restoreWorkflowView, detail: !memoFirstWorkflow && step.blocking ? step.detail : null, onChange: setNotebookOpen, onOpen: () => { if (memoFirstWorkflow || project.stage === 3) changePanelMode('review'); setNotebookOpen(true); }, action: memoFirstWorkflow ? workflowAction : project.stage === 1 && !project.preflight?.memoReview && requiresLevelModel(project) ? null : <button className="button notebook-next" type="button" data-next-action={step.id} disabled={step.blocking} onClick={runNextStep}>{project.stage === 2 ? 'Finish review' : project.stage === 3 ? 'Field Notes' : step.label}</button> }} toolbarHost={mapToolbarHost} toolbarStart={<LevelSelect levels={workflowLevels} onSelect={(scale) => selectWorkScale(scale)} />} highlight={studioHighlight} onHighlight={setStudioHighlight} />;
   const intakeOpen = !memoFirstWorkflow && project.stage === 0 && !mapPreviewOpen;
   const displayedStage = intakeOpen ? 0 : 3;
   const stageScreens = [<IntakeStage project={project} update={update} toast={toast} action={memoFirstWorkflow ? <button className="button" type="button" disabled={Boolean(reviewBusy) || !activeSubmission(project).text.trim() || activeSubmission(project).sensitive && !activeSubmission(project).consent} onClick={submitWorkflowMemo}>Submit memo and add nodes</button> : null} onRequestRestart={() => setModal('restart-map')} captureImportScope={() => {
@@ -8501,8 +8516,8 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     </Modal>
     <Modal open={modal === 'project-details'} title="Project details" onClose={() => setModal(null)}>
       <div className="project-identity-fields">
-        <Field label="Project title"><input maxLength={160} value={project.title} onChange={event=>update(draft=>{draft.title=event.target.value;},'project.title.changed','Changed project title')} /></Field>
-        <Field label="Creator name"><input autoComplete="name" maxLength={160} value={project.participantName || ''} onChange={event=>update(draft=>{draft.participantName=event.target.value;},'project.creator.changed','Changed creator name')} /></Field>
+        <Field label="Project"><input maxLength={160} value={project.title} onChange={event=>update(draft=>{draft.title=event.target.value;},'project.title.changed','Changed project title')} /></Field>
+        <Field label="Name"><input autoComplete="name" maxLength={160} value={project.participantName || ''} onChange={event=>update(draft=>{draft.participantName=event.target.value;},'project.creator.changed','Changed creator name')} /></Field>
         <button type="button" className="button" onClick={()=>setModal(null)}>Done</button>
       </div>
     </Modal>

@@ -55,7 +55,7 @@ describe('ordinary memo contract correction', () => {
     const response = await evaluate();
     // The final failing node is left out with its reason; the response is still accepted.
     expect(response.status).toBe(201);
-    expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenCalledTimes(4); // the fourth call is the Macro pass, which finds none here
     const final = run.mock.calls[2][0];
     expect(final.systemPrompt).toContain('Validation failure: nodes[0].evidence must quote the focal participants’ nonparticipation in this named outside setting');
     expect(final.systemPrompt).toContain('omit the proposed node');
@@ -72,7 +72,7 @@ describe('ordinary memo contract correction', () => {
       expect(body.evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
     } else {
       expect(body.evaluation.review.nodes).toEqual([]);
-      expect(body.evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1, withheldNodes: [{ label: 'Graduate Center Digital Initiatives', reason: 'outside_participation' }] });
+      expect(body.evaluation.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1, withheldNodes: [{ label: 'Graduate Center Digital Initiatives', reason: 'participation_unknown' }] });
     }
     expect(failures).toHaveBeenCalledTimes(2);
   });

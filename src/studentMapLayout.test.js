@@ -303,6 +303,28 @@ it.each(['exosphere','macrosphere'])('keeps legal %s moves exact and stops an in
   expect(displayed).toEqual(before);
 });
 
+it('stops a Micro move before the Microsystem boundary covers an outer card',()=>{
+  const {nodes,geometry,layout}=retainedReadingFixture();
+  const positions=studentMapPositions(nodes,[],geometry,layout);
+  const displayed=nodes.map(n=>({...n,...positions.get(n.id)}));
+  const moving=displayed.find(n=>n.scale==='micro'),target=displayed.find(n=>n.scale==='exosphere'),before=structuredClone(displayed);
+  const outer=displayed.filter(n=>n.scale!=='micro');
+  const covered=micro=>outer.some(n=>{
+    const bounds=area(n,geometry.get(n.id));
+    const dx=Math.max(bounds.left-micro.cx,micro.cx-bounds.right,0),dy=Math.max(bounds.top-micro.cy,micro.cy-bounds.bottom,0);
+    return (dx/micro.rx)**2+(dy/micro.ry)**2<1;
+  });
+  const legal={x:moving.x+4,y:moving.y+4};
+  expect(constrainStudentNodeMove(moving,legal,displayed,geometry)).toEqual(legal);
+  const onto={x:target.x,y:target.y};
+  const stopped=constrainStudentNodeMove(moving,onto,displayed,geometry);
+  expect(stopped).not.toEqual(onto);
+  const regrown=studentMapBoundaries(displayed.map(n=>n.id===moving.id?{...n,...stopped}:n),geometry).micro;
+  expect(covered(regrown)).toBe(false);
+  expect(constrainStudentNodeMove(moving,onto,displayed,geometry,{autoFit:false})).toEqual(onto);
+  expect(displayed).toEqual(before);
+});
+
 it('adds an unpinned Exo card without enclosing retained Macro cards in the Exo sphere',()=>{
   // World card dimensions measured from the fictional ten-node Dev case.
   // The smaller bottom placement previously engulfed both pinned Macro cards.

@@ -67,7 +67,7 @@ it('prioritizes a new marginal subject even when the retained map already exceed
   expect(context.passages.some(passage => passage.text.includes(evidence))).toBe(true);
   expect(instruction).toContain('Review the changed passages first');
   expect(instruction).toContain('saved nodes supplied as context do not count against it');
-  expect(instruction).toContain('A map with six or more nodes can still receive supported new nodes');
+  expect(instruction).toContain('A map that already holds many nodes can still receive supported new nodes');
   const response = review([{ label: 'Resident advocate', type: 'role', scale: 'micro', evidence }]);
   expect(submittedReviewIssue(response, 'micro', p.submission.text, context)).toBeNull();
   expect(appendSubmittedNodes(p, response)).toBe(1);

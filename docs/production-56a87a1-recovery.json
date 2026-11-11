@@ -1,0 +1,227 @@
+{
+  "observed_release": "56a87a1f4f88342ccd872147a7ffdc6a740fb515",
+  "worker": {
+    "bytes": 1333590,
+    "sha256": "0892d8cbf90fd06c499b5fd06387824bce38b4b0b06b24a6904d5687b7eeefe6",
+    "matches_reconstructed_build": true
+  },
+  "assets": [
+    {
+      "path": "assets/TeacherDashboard-DjTyM7uj.css",
+      "bytes": 16269,
+      "sha256": "c55213c3b3a009e138e267033d067f26cc56e92fec720e7bf2143b46e3321062",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/TeacherDashboard-KxMWm9JJ.js",
+      "bytes": 46397,
+      "sha256": "9a7231e20dded264ae4e95347dbbd3516091a2d73ea2598c0ac2acdd4d61e69c",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/contact-form-DnN6LE1H.css",
+      "bytes": 9486,
+      "sha256": "524136c96320beff5b913a798af9ad40e036eba85627afb93b3407f6b8116388",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/cuny-ai-lab-logo-QbFuh_-8.png",
+      "bytes": 12846,
+      "sha256": "ef1d15e26ff2c337a4b827c5ff0b2ed3e4401b107fd6fbdb0d12093196d3cf85",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/index-CTogPi2G.css",
+      "bytes": 235648,
+      "sha256": "75f3331c585d2304698700ef8db29e4b9c80687bc0ce826375e987274c5b73c0",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/index-CXO2R9rH.js",
+      "bytes": 838845,
+      "sha256": "6b8862cb340d1b7eb8365d5abda075b2da1b3d69f4b3b53d4e97901659406618",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/lib-CGzYxVu0.js",
+      "bytes": 498428,
+      "sha256": "54c4e67995337726d2ffb0ca25fcd1a8148123de663e4ad6e1290bb2f0816bec",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/pdf-D9z2jOk-.js",
+      "bytes": 430944,
+      "sha256": "5f5a5ebee61e4177a3b00f0cd7a66be9d8b44a43e78ddfc2d9cf1e7cf76dd152",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/pdf.worker.min-Dswkl-cV.mjs",
+      "bytes": 1265413,
+      "sha256": "8ab0e5e30031b4a06ecfddd5ae9562f0227f830ee7ec9ed1a968b134243d2386",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/pdf.worker.min-zC6nfbxG.js",
+      "bytes": 65,
+      "sha256": "6daffb35c9375447020d21ab4eae82a54a32b40c5e601e0b494e421d4b69b0cd",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/pdfMemo-ZEFpI3HW.js",
+      "bytes": 4184,
+      "sha256": "c64d01662f4da882480f2fed45c9feca6abcbf0f3903745ec4086f2de0258323",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/rolldown-runtime-C0FnF6B9.js",
+      "bytes": 1291,
+      "sha256": "e0a79ad36c6ca1ffbc796c80aa5661803a9d1bc684e29d1587f48b4ba9a82714",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-cyrillic-ext-wght-italic-Bmy0yRBR.woff2",
+      "bytes": 10976,
+      "sha256": "e31d1fc39f2fa419e06bebc48b3bd1c6876b349e2effa4a629e0b947a7fd241b",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-cyrillic-ext-wght-normal-DzyfIafT.woff2",
+      "bytes": 10676,
+      "sha256": "6aba01e1a800f890b4d91094c4cf5e1769aaf77085371a3ad96065d586186796",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-cyrillic-wght-italic-BqzjwPnH.woff2",
+      "bytes": 18724,
+      "sha256": "747ba5266ef049efc6d67eaa99058a81efa134ec00483c246ed388ef288186d2",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-cyrillic-wght-normal-BMDVbyM7.woff2",
+      "bytes": 18496,
+      "sha256": "b6b721e08d0324b9e743858e8260463085d4c5e1e684f036f9d4a8ca6c62996f",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-greek-ext-wght-italic-CsGuNfVR.woff2",
+      "bytes": 9880,
+      "sha256": "4c9e2fb8dbc56263b83752747ad6ad08dbb171d1d9dadd55a2181a5c200c9363",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-greek-ext-wght-normal-BWSLJLk6.woff2",
+      "bytes": 9784,
+      "sha256": "3576fb9237b1a58cb5b38369bd63074a6f884dbeb9f88069690b6bc67ee5d3ff",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-greek-wght-italic-BfAgiArQ.woff2",
+      "bytes": 14936,
+      "sha256": "34177ef48786984f32c045dd5b4a717a69cd6f14b6da5adbaf7b7a2e62470bc7",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-greek-wght-normal-C9H9m1vD.woff2",
+      "bytes": 14600,
+      "sha256": "5360981f035cd4307cd65e4cf46a27693a2409702d3234403c534d9e656d7844",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-latin-ext-wght-italic-B1mMy0tD.woff2",
+      "bytes": 59496,
+      "sha256": "6fe10a66ec416f77a26309b645471d032ad8175063bb605b886e9b7e57efaaa8",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-latin-ext-wght-normal-C8iNium2.woff2",
+      "bytes": 60088,
+      "sha256": "a85a7459bdb3cdc1136751e151a506bae653fc29ada3ca86237477df6f1b59e6",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-latin-wght-italic-Bg-PIjcQ.woff2",
+      "bytes": 28532,
+      "sha256": "9a15dafc2c2b2414aaa9d6c30830d9aab4361329d8495b1574633603b994b411",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-latin-wght-normal-BqRLTx4X.woff2",
+      "bytes": 28740,
+      "sha256": "7a19a7027e125257d310c6dbd78ae3a30b5ea1e3794d60b12bb28227a003bfda",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-vietnamese-wght-italic-DnchwVcj.woff2",
+      "bytes": 10724,
+      "sha256": "a9dedfb0c65bcd734e9a4b2dcefb382f1d9cdc784e1238c5431708d7dcd45ae8",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-sans-3-vietnamese-wght-normal-C1uRvKPU.woff2",
+      "bytes": 10324,
+      "sha256": "ff34bf5a131a3f9d194f47b4ff7de95aceef5dad72b74709a5d5bf2c069e1f86",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-serif-4-cyrillic-ext-wght-normal-cHuGMAiY.woff2",
+      "bytes": 18064,
+      "sha256": "f423aab1098e5b0dae59d200aadbb9433e687f505425c7e73d1f65ae2b59016e",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-serif-4-cyrillic-wght-normal-DwHjdM4S.woff2",
+      "bytes": 36468,
+      "sha256": "25e85aef8acff54f91ea7e85c9c2c260caf97101fdef194ed6b8b58bc34ce3eb",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-serif-4-greek-wght-normal-ece1310W.woff2",
+      "bytes": 20228,
+      "sha256": "d84b0c5fda036126b6bb9205b144500fe08fec6d54d8bdd60645bc3e6577490b",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-serif-4-latin-ext-wght-normal-CxNHBx-q.woff2",
+      "bytes": 42040,
+      "sha256": "41529a5b38008d9ea01e28ec18693a714a3216669ee477d83a5b9db999369625",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-serif-4-latin-wght-normal-D9elroTD.woff2",
+      "bytes": 50824,
+      "sha256": "c1df4596be5029233ed2afbb8b2f6ea20784b3fb1aa5d6b5c6519ccd85eb3dfb",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "assets/source-serif-4-vietnamese-wght-normal-D-yuW59g.woff2",
+      "bytes": 13448,
+      "sha256": "63b54e70d3bfb018162640bfb0015be46a2ec96f3c00d4170c8a02d0ff9d5abd",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "favicon.png",
+      "bytes": 1899,
+      "sha256": "8e09a7f224c67795b2ddaeda4653715df7b0788c02583a4000e7dda1949911c2",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "favicon.svg",
+      "bytes": 360,
+      "sha256": "e6698a1f1ae885e28b66137df29eefbef8c102a9e7d2bbb59f583fa3124d73e3",
+      "matches_reconstructed_build": true
+    },
+    {
+      "path": "index.html",
+      "bytes": 897,
+      "sha256": "697e10fb4c4e3d1d0b534278d8507c2d9928f8ad987457218937ce990fd3d5b9",
+      "matches_reconstructed_build": true,
+      "served_path": "/"
+    },
+    {
+      "path": "theme.js",
+      "bytes": 442,
+      "sha256": "dcdcb395f9c0ee059fc493691f5093c871229cc894619e0b1801516115fdf8ef",
+      "matches_reconstructed_build": true
+    }
+  ]
+}

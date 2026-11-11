@@ -183,6 +183,14 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome two-
   try {
     await page.goto(ORIGIN);await page.getByRole('article',{name:project.title}).getByRole('button',{name:'Open project'}).click();
     await page.getByLabel('Upload Part 1 memo',{exact:true}).setInputFiles({name:'first.txt',mimeType:'text/plain',buffer:Buffer.from(first)});
+    // The import status sits clear of the upload zone's focus ring; both edges are read in one pass.
+    await browserExpect(page.locator('.memo-file-upload > [role=status]')).toBeVisible();
+    await page.getByLabel('Upload Part 1 memo',{exact:true}).focus();
+    expect(await page.locator('.memo-file-upload > [role=status]').evaluate(note => {
+      const zone = note.parentElement.querySelector('.upload-zone');
+      const style = getComputedStyle(zone);
+      return note.getBoundingClientRect().top - zone.getBoundingClientRect().bottom - parseFloat(style.outlineWidth) - parseFloat(style.outlineOffset);
+    })).toBeGreaterThanOrEqual(0);
     await page.getByRole('button',{name:'Submit memo and add nodes',exact:true}).click();
     await browserExpect(page.locator('.graph-node')).toHaveCount(2);await browserExpect(page.locator('.graph-edge')).toHaveCount(0);
     await browserExpect(page.getByText('Set aside',{exact:true})).toHaveCount(0);
