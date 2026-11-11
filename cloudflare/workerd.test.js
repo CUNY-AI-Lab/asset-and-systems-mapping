@@ -830,3 +830,66 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome SSO 
     await browser.close();
   }
 }, 45000);
+
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('growing inner systems push outer pins clear on the canvas and after account reload', async () => {
+  const browser=await chromium.launch();
+  try {
+    for(const width of [1440,390]) {
+      const fixture=groupProject();fixture.id=`growing-systems-${width}`;fixture.title=`Growing systems ${width}`;
+      const locals=fixture.graph.nodes.filter(n=>n.scale==='micro').slice(0,2);
+      const office=fixture.graph.nodes.find(n=>n.scale==='exosphere');
+      const condition=fixture.graph.nodes.find(n=>n.scale==='macrosphere');
+      fixture.graph.nodes=[...locals,office,condition].map((node,i)=>({...node,
+        label:['Local participant','Local setting','Outside office','Privacy by design'][i],
+        x:[500,950,1200,1600][i],y:[500,700,600,620][i]}));
+      fixture.graph.edges=[];
+      fixture.graph.nodes.forEach(node=>{delete node.scopeNodeIds;delete node.settingNodeIds;});
+      fixture.layout={autoFit:true,manualNodeIds:fixture.graph.nodes.map(n=>n.id),readingAspect:1.8};
+      expect((await request('/api/cloud/projects/'+fixture.id,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(fixture),revision:0})})).status).toBe(200);
+      const context=await browser.newContext({viewport:{width,height:1000},reducedMotion:'reduce'});
+      const page=await openFixturePage(context);
+      const stored=async()=>JSON.parse((await(await request('/api/cloud/projects/'+fixture.id)).json()).project);
+      const open=async()=>{
+        await page.goto(ORIGIN);
+        await page.getByRole('article',{name:fixture.title}).getByRole('button',{name:'Open project'}).click();
+        await openTools(page);await page.getByRole('combobox',{name:'Show map layer'}).selectOption('all');
+        await browserExpect(page.locator('svg.graph-canvas .graph-node')).toHaveCount(4);
+        await page.evaluate(()=>document.fonts.ready);
+      };
+      const drawing=()=>page.evaluate(()=>{
+        const root=document.querySelector('svg.graph-canvas');
+        const rings=Object.fromEntries([...root.querySelectorAll('[data-ecology-layer]')].map(g=>[g.dataset.ecologyLayer,
+          Object.fromEntries(['cx','cy','rx','ry'].map(key=>[key,+g.querySelector('ellipse').getAttribute(key)]))]));
+        const cards=[...root.querySelectorAll('.graph-node')].map(g=>{
+          const [x,y]=g.getAttribute('transform').match(/-?[\d.]+/g).map(Number),r=g.querySelector('.node-card');
+          const left=x+(+r.getAttribute('x')),top=y+(+r.getAttribute('y'));
+          return {id:g.dataset.graphId,x,y,scale:['micro','exosphere','macrosphere'].find(s=>g.classList.contains('graph-node--'+s)),
+            left,top,right:left+(+r.getAttribute('width')),bottom:top+(+r.getAttribute('height'))};
+        });
+        return {rings,cards};
+      });
+      const assertClear=state=>{
+        for(const card of state.cards.filter(c=>c.scale!=='micro')) {
+          const inner=state.rings[card.scale==='exosphere'?'micro':'exosphere'];
+          const dx=Math.max(card.left-inner.cx,inner.cx-card.right,0),dy=Math.max(card.top-inner.cy,inner.cy-card.bottom,0);
+          expect((dx/inner.rx)**2+(dy/inner.ry)**2,card.id).toBeGreaterThan(1);
+        }
+      };
+      await open();const before=await drawing();assertClear(before);
+      if(process.env.MAPPING_LAYOUT_SCREENSHOTS)await page.screenshot({path:`${process.env.MAPPING_LAYOUT_SCREENSHOTS}/${width}-before.png`});
+      const moving=page.locator(`svg.graph-canvas [data-graph-id="${locals[1].id}"]`);
+      for(let i=0;i<30;i++)await moving.press('Shift+ArrowRight');
+      const after=await drawing();assertClear(after);
+      expect(after.rings.micro.rx).toBeGreaterThan(before.rings.micro.rx);
+      for(const node of [office,condition])expect(after.cards.find(c=>c.id===node.id).x).toBeGreaterThan(before.cards.find(c=>c.id===node.id).x);
+      await browserExpect.poll(async()=>(await stored()).graph.nodes.find(n=>n.id===locals[1].id).x).toBe(after.cards.find(n=>n.id===locals[1].id).x);
+      await page.getByRole('button',{name:'Fit map',exact:true}).click();
+      if(process.env.MAPPING_LAYOUT_SCREENSHOTS)await page.screenshot({path:`${process.env.MAPPING_LAYOUT_SCREENSHOTS}/${width}-expanded.png`});
+      await open();const reopened=await drawing();assertClear(reopened);
+      expect(reopened.cards.map(({id,x,y})=>({id,x,y}))).toEqual(after.cards.map(({id,x,y})=>({id,x,y})));
+      const saved=await stored();expect(saved.graph.nodes.map(n=>n.id)).toEqual(fixture.graph.nodes.map(n=>n.id));
+      expect(saved.graph.edges).toEqual([]);
+      await context.close();
+    }
+  } finally {await browser.close();}
+},120000);

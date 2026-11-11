@@ -273,12 +273,15 @@ it('uses available width for tall retained Micro content instead of always stack
   for(const node of nodes.filter(n=>n.scale==='micro'))expect(positions.get(node.id)).toEqual({x:node.x,y:node.y});
 });
 
-it('never moves a pinned outer card and leaves the entire saved layout exact with auto-fit off',()=>{
+it('clears a covered outer pin and leaves the entire saved layout exact with auto-fit off',()=>{
   const {nodes,geometry,layout}=retainedReadingFixture();
   const office=nodes.find(n=>n.id==='office');Object.assign(office,{x:850,y:590});
   layout.manualNodeIds.push(office.id);
   const before=structuredClone(nodes),positions=studentMapPositions(nodes,[],geometry,layout);
-  expect(positions.get(office.id)).toEqual({x:850,y:590});
+  const inner=studentMapBoundaries(nodes.map(n=>({...n,...positions.get(n.id)})),geometry).micro;
+  const card=area(positions.get(office.id),geometry.get(office.id));
+  const dx=Math.max(card.left-inner.cx,inner.cx-card.right,0),dy=Math.max(card.top-inner.cy,inner.cy-card.bottom,0);
+  expect((dx/inner.rx)**2+(dy/inner.ry)**2).toBeGreaterThan(1);
   const fixed=studentMapPositions(nodes,[],geometry,{...layout,autoFit:false});
   for(const node of nodes)expect(fixed.get(node.id)).toEqual({x:node.x,y:node.y});
   expect(nodes).toEqual(before);
@@ -376,4 +379,73 @@ it('routes a heading branch as one plain line beneath cards instead of a corrido
   const span=Math.max(...branch.points.map(p=>p.x))-Math.min(...branch.points.map(p=>p.x));
   expect(span).toBeLessThan(300);
   for(const rect of layout.bounds.values())expect(intersects(rect,caption)).toBe(false);
+});
+
+function expectOuterCardsClear(nodes,geometry,positions) {
+  const displayed=nodes.map(node=>({...node,...positions.get(node.id)}));
+  const regions=studentMapBoundaries(displayed,geometry);
+  for(const node of displayed.filter(n=>n.scale!=='micro')) {
+    const inner=regions[node.scale==='exosphere'?'micro':'exosphere'];
+    if(!inner)continue;
+    const card=area(node,geometry.get(node.id));
+    const dx=Math.max(card.left-inner.cx,inner.cx-card.right,0),dy=Math.max(card.top-inner.cy,inner.cy-card.bottom,0);
+    expect((dx/inner.rx)**2+(dy/inner.ry)**2).toBeGreaterThan(1);
+  }
+  const cards=displayed.map(node=>area(node,geometry.get(node.id)));
+  expect(cards.some((card,i)=>cards.slice(i+1).some(other=>intersects(card,other)))).toBe(false);
+  return regions;
+}
+
+it.each([false,true])('pushes covered pins outward through both systems after an inner expansion (phone=%s)',phone=>{
+  const nodes=[
+    {id:'local-a',label:'Local participant',scale:'micro',x:500,y:500},
+    {id:'local-b',label:'Expanded local setting',scale:'micro',x:1400,y:700},
+    {id:'office',label:'Outside office',scale:'exosphere',x:1200,y:600},
+    {id:'condition',label:'Privacy by design',scale:'macrosphere',x:1600,y:620},
+    {id:'valid',label:'Uncovered condition',scale:'macrosphere',x:500,y:2400},
+  ];
+  const geometry=new Map(nodes.map(n=>[n.id,mapNodeGeometry(n.label,phone)]));
+  const options={manualNodeIds:nodes.map(n=>n.id),readingAspect:1.8,aspectRatio:phone?.6:1.8,phone};
+  const before=structuredClone(nodes),positions=studentMapPositions(nodes,[],geometry,options);
+  const regions=expectOuterCardsClear(nodes,geometry,positions);
+  for(const id of ['office','condition']) {
+    const node=nodes.find(n=>n.id===id),p=positions.get(id),inner=regions[id==='office'?'micro':'exosphere'];
+    expect(p).not.toEqual({x:node.x,y:node.y});
+    expect((p.x-inner.cx)*(node.y-inner.cy)-(p.y-inner.cy)*(node.x-inner.cx)).toBeCloseTo(0,6);
+    expect(Math.hypot(p.x-inner.cx,p.y-inner.cy)).toBeGreaterThan(Math.hypot(node.x-inner.cx,node.y-inner.cy));
+  }
+  for(const node of nodes.filter(n=>n.scale==='micro'||n.id==='valid'))expect(positions.get(node.id)).toEqual({x:node.x,y:node.y});
+  // Reapplying the displayed positions (as after a save/reload) is stable.
+  expect(studentMapPositions(nodes.map(n=>({...n,...positions.get(n.id)})),[],geometry,options)).toEqual(positions);
+  expect(studentMapPositions(nodes,[],geometry,options)).toEqual(positions);
+  expect(nodes).toEqual(before);
+  expect([...studentMapPositions(nodes,[],geometry,{...options,autoFit:false}).values()]).toEqual(nodes.map(({x,y})=>({x,y})));
+});
+
+it('clears the whole card even when only its edge is covered and avoids a neighbour on the outward ray',()=>{
+  const nodes=[{id:'local',label:'Local',scale:'micro',x:500,y:500}];
+  const geometry=new Map([['local',{cardWidth:160,cardHeight:50}]]);
+  const inner=studentMapBoundaries(nodes,geometry).micro;
+  nodes.push({id:'covered',label:'Covered',scale:'exosphere',x:inner.right+25,y:inner.cy});
+  nodes.push({id:'neighbour',label:'Neighbour',scale:'exosphere',x:inner.right+170,y:inner.cy});
+  geometry.set('covered',{cardWidth:120,cardHeight:50});geometry.set('neighbour',{cardWidth:120,cardHeight:50});
+  const options={manualNodeIds:nodes.map(n=>n.id),readingAspect:1.8};
+  const positions=studentMapPositions(nodes,[],geometry,options);
+  expectOuterCardsClear(nodes,geometry,positions);
+  expect(positions.get('covered').x).toBeGreaterThan(nodes[2].x+120);
+  expect(positions.get('covered').y).toBe(inner.cy);
+  expect(positions.get('neighbour')).toEqual({x:nodes[2].x,y:nodes[2].y});
+});
+
+it('repairs centred and coincident pins deterministically without a Micro system',()=>{
+  const nodes=[
+    {id:'office',label:'Office',scale:'exosphere',x:500,y:500},
+    {id:'condition-a',label:'Condition A',scale:'macrosphere',x:500,y:500},
+    {id:'condition-b',label:'Condition B',scale:'macrosphere',x:500,y:500},
+  ];
+  const geometry=new Map(nodes.map(n=>[n.id,{cardWidth:160,cardHeight:60}]));
+  const positions=studentMapPositions(nodes,[],geometry,{manualNodeIds:nodes.map(n=>n.id)});
+  expectOuterCardsClear(nodes,geometry,positions);
+  for(const p of positions.values()){expect(Number.isFinite(p.x)).toBe(true);expect(Number.isFinite(p.y)).toBe(true);}
+  expect(positions.get('office')).toEqual({x:500,y:500});
 });

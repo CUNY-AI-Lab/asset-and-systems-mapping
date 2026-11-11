@@ -67,6 +67,43 @@ export function studentMapBoundaries(nodes, geometries) {
   return boundaries;
 }
 
+// When an inner system grows, keep a pin's direction but move the whole card
+// beyond that system. This is a reading position, not a saved-record mutation.
+function clearCoveredPin(position, geometry, inner, obstacles) {
+  const clears = p => {
+    const b=box(p,geometry,12);
+    const dx=Math.max(b.left-inner.cx,inner.cx-b.right,0),dy=Math.max(b.top-inner.cy,inner.cy-b.bottom,0);
+    return (dx/inner.rx)**2+(dy/inner.ry)**2>=1;
+  };
+  if(clears(position))return position;
+  const dx=position.x-inner.cx,dy=position.y-inner.cy,distance=Math.hypot(dx,dy);
+  // A pin exactly at the centre has no direction; use a stable downward ray.
+  const ux=distance?dx/distance:0,uy=distance?dy/distance:1;
+  const at=r=>({x:inner.cx+ux*r,y:inner.cy+uy*r});
+  let low=distance,high=Math.max(distance,inner.rx,inner.ry,geometry.cardWidth,geometry.cardHeight,1);
+  while(!clears(at(high)))high*=2;
+  for(let step=0;step<32;step++) {
+    const middle=(low+high)/2;
+    if(clears(at(middle)))high=middle;else low=middle;
+  }
+  // Intersect this ray with expanded card/caption rectangles. Skip each blocked
+  // interval in order so the outward adjustment cannot land on a neighbour.
+  const intervals=obstacles.flatMap(obstacle=>{
+    let enter=-Infinity,exit=Infinity;
+    for(const [origin,direction,min,max] of [
+      [inner.cx,ux,obstacle.left-geometry.cardWidth/2-12,obstacle.right+geometry.cardWidth/2+12],
+      [inner.cy,uy,obstacle.top-geometry.cardHeight/2-12,obstacle.bottom+geometry.cardHeight/2+12],
+    ]) {
+      if(Math.abs(direction)<1e-12) {if(origin<min||origin>max)return [];}
+      else {const a=(min-origin)/direction,b=(max-origin)/direction;enter=Math.max(enter,Math.min(a,b));exit=Math.min(exit,Math.max(a,b));}
+    }
+    return enter<=exit?[[enter,exit]]:[];
+  }).sort((a,b)=>a[0]-b[0]);
+  let radius=high+1;
+  for(const [enter,exit] of intervals)if(radius>=enter&&radius<=exit)radius=exit+1;
+  return at(radius);
+}
+
 // Keep an active move in its system without rewriting saved or imported pins.
 // Clamping along the gesture stops at the near boundary instead of jumping the
 // card to an unrelated free slot on the other side of the map.
@@ -83,8 +120,8 @@ export function constrainStudentNodeMove(node, requested, nodes, geometries, {au
     const dx=Math.max(bounds.left-inner.cx,inner.cx-bounds.right,0),dy=Math.max(bounds.top-inner.cy,inner.cy-bounds.bottom,0);
     return (dx/inner.rx)**2+(dy/inner.ry)**2>=1&&!overlaps(bounds,caption);
   };
-  // A previously saved card inside a sphere remains editable; auto-fit never
-  // retroactively moves it. Only a move from a valid position is constrained.
+  // Only a move from a valid position is constrained here. The reading layout
+  // separately repairs pins covered by a growing inner sphere.
   if(clearsInner(requested)||!clearsInner(node))return requested;
   let low=0,high=1;
   for(let step=0;step<20;step++) {
@@ -158,11 +195,10 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
     });
   }
   const micro=studentMapBoundaries(local.map(n=>({...n,...positions.get(n.id)})),geometries).micro;
-  if(!micro)return positions;
   // A wide viewport does not imply free space beside a wide retained Micro
   // map. Compare complete nested layouts in all four directions, using the
   // final sphere bounds rather than a card-only rectangle. At most 16 layouts
-  // are considered; saved manual positions are fixed in every candidate.
+  // are considered; valid manual positions stay fixed in every candidate.
   let layouts=[{positions,inner:micro,boundaries:{micro}}];
   for(const scale of ['exosphere','macrosphere']) {
     const outer=nodes.filter(n=>n.scale===scale).sort((a,b)=>a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
@@ -170,6 +206,19 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
     const directions=movable.length?['bottom','right','top','left']:['bottom'];
     layouts=layouts.flatMap(layout=>directions.map(direction=>{
       const next=new Map(layout.positions),inner=layout.inner;
+      if(!inner) {
+        const boundary=outerBoundary(null,outer.map(n=>({...n,...next.get(n.id)})),geometries,scale);
+        return {positions:next,inner:boundary,boundaries:{...layout.boundaries,[scale]:boundary}};
+      }
+      const caption={left:inner.cx-REGION_CAPTION.width/2-12,right:inner.cx+REGION_CAPTION.width/2+12,
+        top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2+12};
+      // Resolve from the inside out: moved Exo cards define the boundary used
+      // for Macro, so an expanding system cannot swallow the next system's pins.
+      for(const node of outer.filter(n=>manual.has(n.id)).sort((a,b)=>a.id.localeCompare(b.id))) {
+        const obstacles=nodes.filter(n=>n.id!==node.id&&(manual.has(n.id)||n.scale==='micro'||scale==='macrosphere'&&n.scale==='exosphere'))
+          .map(n=>box(next.get(n.id),geometries.get(n.id),12));
+        next.set(node.id,clearCoveredPin(next.get(node.id),geometries.get(node.id),inner,[caption,...obstacles]));
+      }
       const horizontal=direction==='left'||direction==='right',sign=direction==='left'||direction==='top'?-1:1;
       const width=Math.max(0,...movable.map(n=>geometries.get(n.id).cardWidth));
       const height=Math.max(0,...movable.map(n=>geometries.get(n.id).cardHeight));
@@ -177,8 +226,7 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
       const perRow=Math.max(1,Math.floor((horizontal?inner.ry:inner.rx)*1.9/pitch));
       const occupied=nodes.filter(n=>n.scale==='micro'||manual.has(n.id)||scale==='macrosphere'&&n.scale==='exosphere')
         .map(n=>box(next.get(n.id),geometries.get(n.id),12));
-      occupied.push({left:inner.cx-REGION_CAPTION.width/2-12,right:inner.cx+REGION_CAPTION.width/2+12,
-        top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2+12});
+      occupied.push(caption);
       movable.forEach((n,i)=>{
         const row=Math.floor(i/perRow),count=Math.min(perRow,movable.length-row*perRow),g=geometries.get(n.id);
         const along=(i%perRow-(count-1)/2)*pitch;
@@ -197,8 +245,8 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
     }));
   }
   // A compact new Exo placement must not expand its sphere over retained Macro
-  // cards. Preserve every pin and prefer a candidate with correct membership
-  // before optimizing fit; an existing invalid pin is never moved implicitly.
+  // cards. Prefer correct membership, then the least displacement of pins,
+  // before optimizing fit. An inner expansion is the only reason to move a pin.
   const membershipConflicts=layout=>nodes.reduce((count,node)=>{
     const inner=layout.boundaries[node.scale==='exosphere'?'micro':node.scale==='macrosphere'?'exosphere':''];
     if(!inner)return count;
@@ -206,12 +254,15 @@ export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],
     const dx=Math.max(bounds.left-inner.cx,inner.cx-bounds.right,0),dy=Math.max(bounds.top-inner.cy,inner.cy-bounds.bottom,0);
     return count+Number((dx/inner.rx)**2+(dy/inner.ry)**2<1);
   },0);
-  const fitCost=layout=>Math.max((layout.inner.rx*2+40)/Math.max(.2,aspectRatio),layout.inner.ry*2+52);
+  const fitCost=layout=>layout.inner?Math.max((layout.inner.rx*2+40)/Math.max(.2,aspectRatio),layout.inner.ry*2+52):0;
+  const pinDisplacement=layout=>nodes.filter(n=>manual.has(n.id)).reduce((total,node)=>{
+    const p=layout.positions.get(node.id);return total+Math.hypot(p.x-node.x,p.y-node.y);
+  },0);
   const connectionLength=layout=>edges.reduce((total,edge)=>{
     const a=layout.positions.get(edge.source),b=layout.positions.get(edge.target);
     return total+(a&&b?Math.hypot(a.x-b.x,a.y-b.y):0);
   },0);
-  layouts.sort((a,b)=>membershipConflicts(a)-membershipConflicts(b)||fitCost(a)-fitCost(b)||connectionLength(a)-connectionLength(b));
+  layouts.sort((a,b)=>membershipConflicts(a)-membershipConflicts(b)||pinDisplacement(a)-pinDisplacement(b)||fitCost(a)-fitCost(b)||connectionLength(a)-connectionLength(b));
   return layouts[0].positions;
 }
 
