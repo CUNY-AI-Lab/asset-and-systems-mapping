@@ -41,8 +41,11 @@ test('the import status stays clear of the upload zone focus ring', async ({ pag
   const clearance = await status.evaluate(note => {
     const zone = note.parentElement.querySelector('.upload-zone');
     const style = getComputedStyle(zone);
-    const ring = zone.getBoundingClientRect().bottom + parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
-    return note.getBoundingClientRect().top - ring;
+    const zoneBounds = zone.getBoundingClientRect(), noteBounds = note.getBoundingClientRect();
+    const ring = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    // The Node form places status above the upload box; the account workspace
+    // places it below. Either order is clear when the rectangles do not meet.
+    return Math.max(noteBounds.top - zoneBounds.bottom - ring, zoneBounds.top - ring - noteBounds.bottom);
   });
   expect(clearance).toBeGreaterThanOrEqual(0);
 });
