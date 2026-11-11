@@ -251,6 +251,53 @@ describe('persistent preflight suggestion review queue', () => {
     expect(stored.generationContract).toBe('student-nodes-v1');expect(stored.nodes).toEqual(nodes);
   });
 
+  describe('Macro pass for a second memo that ends without a Macro node', () => {
+    const exo = { label: 'City Housing Authority', type: 'agency', scale: 'exosphere', basis: 'memo', evidence: 'Residents do not participate in City Housing Authority allocation decisions, which delay repairs in their buildings.' };
+    const macro = { label: 'Unequal housing investment', type: 'structure', scale: 'macrosphere', basis: 'memo', evidence: 'Unequal housing investment delays elevator repairs.' };
+    const sourceMaterial = `${exo.evidence} ${macro.evidence}`;
+    const carriedNodes = [{ id: 'resident', label: 'Residents', type: 'group', scale: 'micro' }];
+    const answer = nodes => ({ suggestion: { guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } });
+    const run = async (name, provider, extra = {}) => {
+      await system.close();
+      system = createSystemsMappingApp({ dbPath: join(tempDirectory, `${name}.sqlite`), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+      return evaluate(await grantStudent(), submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial, carriedNodes, ...extra }));
+    };
+
+    it('reads the memo once more for Macro alone and adds the supported condition', async () => {
+      const provider = vi.fn(async input => answer(input.systemPrompt.includes('MACRO PASS') ? [macro] : [exo]));
+      const result = await run('macro-pass-adds', provider);
+      expect(provider).toHaveBeenCalledTimes(2);
+      expect(provider.mock.calls[0][0].systemPrompt).not.toContain('MACRO PASS');
+      expect(provider.mock.calls[1][0].systemPrompt).toContain('MACRO PASS');
+      expect(result.review.nodes).toEqual([exo, macro]);
+      expect(result.runtime.withheldNodes).toBeUndefined();
+    });
+
+    it('keeps only Macro nodes that pass the submission rules, and changes nothing when none does', async () => {
+      const invented = { ...macro, label: 'Austerity', evidence: 'Budgets were cut across the state.' };
+      const anotherOffice = { ...exo, label: 'State Housing Office' };
+      const provider = vi.fn(async input => answer(input.systemPrompt.includes('MACRO PASS') ? [invented, anotherOffice] : [exo]));
+      const result = await run('macro-pass-rejects', provider);
+      expect(provider).toHaveBeenCalledTimes(2);
+      expect(result.review.nodes).toEqual([exo]);
+    });
+
+    it('keeps the accepted nodes when the extra pass fails', async () => {
+      const provider = vi.fn(async input => { if (input.systemPrompt.includes('MACRO PASS')) throw new Error('provider unavailable'); return answer([exo]); });
+      const result = await run('macro-pass-fails', provider);
+      expect(result.review.nodes).toEqual([exo]);
+    });
+
+    it('makes no extra call when the response or the map already holds a Macro node', async () => {
+      const both = vi.fn(async () => answer([exo, macro]));
+      expect((await run('macro-pass-not-needed', both)).review.nodes).toEqual([exo, macro]);
+      expect(both).toHaveBeenCalledTimes(1);
+      const mapped = vi.fn(async () => answer([exo]));
+      await run('macro-pass-map-has-one', mapped, { carriedNodes: [...carriedNodes, { id: 'condition', label: 'Housing scarcity', type: 'structure', scale: 'macrosphere' }] });
+      expect(mapped).toHaveBeenCalledTimes(1);
+    });
+  });
+
   function incrementalFixture() {
     const before = 'Teachers meet families weekly.';
     const evidence = 'Teachers meet families daily.';
@@ -341,7 +388,8 @@ describe('persistent preflight suggestion review queue', () => {
         expect(input.systemPrompt).toContain('FINAL NODE EVIDENCE REPAIR');
         expect(input.systemPrompt.match(/MEMO SUBMISSION CONTRACT/gu)).toHaveLength(1);
         expect(input.systemPrompt).toContain('Do not restart discovery or fill removed slots with unrelated new subjects');
-        expect(input.systemPrompt).toContain('Fewer nodes, including zero, can complete the response');
+        expect(input.systemPrompt).toContain('keep every proposal the rules allow; omit only a proposal that a rule excludes');
+        expect(input.systemPrompt).not.toContain('Fewer nodes, including zero');
         expect(input.systemPrompt).not.toContain('At Meso, return an empty nodes array');
         expect(input.systemPrompt).not.toContain('At Macrosphere, return connections');
         expect(input.systemPrompt).toContain('each retained node evidence must be a zero-based integer index');
@@ -365,7 +413,7 @@ describe('persistent preflight suggestion review queue', () => {
       if (repairing) {
         expect(input.memoContext.contractRepair).toEqual({ path: 'nodes[0].label', value: 'Teachers and school staff' });
         expect(input.systemPrompt.match(/MEMO SUBMISSION CONTRACT/gu)).toHaveLength(1);
-        expect(input.systemPrompt).toContain('Correct evidence or labels for the proposed subjects, and omit unsupported proposals');
+        expect(input.systemPrompt).toContain('Correct evidence or labels for the proposed subjects and keep every proposal the rules allow');
         expect(input.systemPrompt).toContain('Do not restart discovery or fill removed slots with unrelated new subjects');
         expect(input.systemPrompt).toContain('Preserve every existingId identity and classification');
         expect(input.systemPrompt).toContain('Validation failure: nodes[0].label');
@@ -408,12 +456,32 @@ describe('persistent preflight suggestion review queue', () => {
     system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'uncertain-exo-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
     const cookie = await grantStudent();
     const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial: `${administration} ${rule}` }));
-    expect(provider).toHaveBeenCalledTimes(2);
+    expect(provider).toHaveBeenCalledTimes(3); // the last call is the Macro pass, which finds none here
     expect(result.runtime.correctiveRetries).toBe(1);
     expect(result.review.nodes.map(node => node.label)).toEqual(['Course access approval rule']);
     expect(result.review.connections).toEqual([]);
     // The accepted result names the omitted setting with the rule that excluded it.
-    expect(result.runtime.withheldNodes).toEqual([{ label: 'Access Board', reason: 'outside_participation' }]);
+    expect(result.runtime.withheldNodes).toEqual([{ label: 'Access Board', reason: 'participation_unknown' }]);
+  });
+
+  it('puts back a supported node that the corrective attempt dropped', async () => {
+    const administration = "The Access Board administers the program; students' participation is unknown.";
+    const board = 'Students do not participate in Harbor Allocation Board decisions, which limit their course hours.';
+    const rule = 'Course access requires instructor approval.';
+    const outer = (label, type, evidence) => ({ label, type, scale: 'exosphere', basis: 'memo', evidence });
+    const policy = outer('Course access approval rule', 'policy', rule);
+    const harbor = outer('Harbor Allocation Board', 'agency', board);
+    const provider = vi.fn(async input => {
+      const nodes = input.memoContext?.contractRepair ? [policy] : [outer('Access Board', 'organization', administration), harbor, policy];
+      return { suggestion: { guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } }, metadata: { provider: 'ollama-cloud', model: 'server-model' } };
+    });
+    await system.close();
+    system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'restored-node.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
+    const cookie = await grantStudent();
+    const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial: `${administration} ${board} ${rule}` }));
+    expect(provider).toHaveBeenCalledTimes(3); // the last call is the Macro pass, which finds none here
+    expect(result.review.nodes).toEqual([policy, harbor]);
+    expect(result.runtime.withheldNodes).toEqual([{ label: 'Access Board', reason: 'participation_unknown' }]);
   });
 
   it('requires the provider to replace a composite subject with an evidenced individual subject before saving', async () => {
@@ -493,7 +561,8 @@ describe('persistent preflight suggestion review queue', () => {
           ], omittedCount: 0, supportedNodes: [policy], omittedSupportedCount: 0,
         });
         expect(input.systemPrompt).toContain('Every replacement is validated in full');
-        expect(input.systemPrompt).toContain('For each NEW node with rule outside_participation, OMIT that exact named candidate');
+        expect(input.systemPrompt).toContain('For each NEW node with rule outside_setting, participation_conflict or participation_unknown, OMIT that exact named candidate');
+        expect(input.systemPrompt).toContain('For setting_unnamed, keep the node and quote a source passage that names it');
         expect(input.systemPrompt).toContain('Apply the same omission to a new node named by a primary failure');
         expect(input.systemPrompt).toContain('Do not propose it again as a service, resource, policy or renamed administrator');
         expect(input.systemPrompt).toContain('retain the same policy only if a different exact source passage establishes its operative rule');
@@ -510,7 +579,7 @@ describe('persistent preflight suggestion review queue', () => {
     const cookie = await grantStudent();
     const { studentAnnotation: _, ...body } = submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial, carriedNodes });
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
-    expect(provider).toHaveBeenCalledTimes(2);
+    expect(provider).toHaveBeenCalledTimes(3); // the last call is the Macro pass, which finds none here
     // A node that still fails after the correction is left out and named; the
     // supported node is kept either way.
     expect(response.status).toBe(201);
@@ -522,7 +591,7 @@ describe('persistent preflight suggestion review queue', () => {
     const result = await response.json();
     expect(result.evaluation.review.nodes).toEqual([policy]);
     expect(result.evaluation.runtime.withheldNodes).toEqual(expect.arrayContaining([
-      { label: 'Access Board', reason: 'outside_participation' },
+      { label: 'Access Board', reason: 'participation_unknown' },
       { label: 'Student access rule', reason: 'policy_operation' },
       { label: role.label, reason: 'label_format' },
     ]));
@@ -555,7 +624,7 @@ describe('persistent preflight suggestion review queue', () => {
     system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'multi-node-final-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
     const cookie = await grantStudent();
     const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial }));
-    expect(provider).toHaveBeenCalledTimes(3);
+    expect(provider).toHaveBeenCalledTimes(4); // the last call is the Macro pass, which finds none here
     expect(result.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
     expect(result.review.nodes).toHaveLength(1);
     expect(result.review.nodes[0].label).toBe('Course access approval rule');
@@ -591,7 +660,8 @@ describe('persistent preflight suggestion review queue', () => {
     const { studentAnnotation: _, ...body } = submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial });
     const response = await postJson(system.app, '/api/preflight/evaluations', body, { cookie });
     expect(response.status).toBe(authorized ? 201 : 502);
-    expect(provider).toHaveBeenCalledTimes(2);
+    // An accepted response is followed by the Macro pass, which finds none here; a refused one is not.
+    expect(provider).toHaveBeenCalledTimes(authorized ? 3 : 2);
     expect(rejected).toEqual(before);
     const rows = system.db.prepare('SELECT source_material, suggestion_json FROM preflight_evaluations').all();
     expect(rows).toHaveLength(authorized ? 1 : 0);
@@ -630,7 +700,7 @@ describe('persistent preflight suggestion review queue', () => {
     system = createSystemsMappingApp({ dbPath: join(tempDirectory, 'supported-policy-final-repair.sqlite'), now: () => currentTime, teacherBootstrapToken: BOOTSTRAP_TOKEN, ollamaConfig: { apiKey: 'test-only-key', model: 'server-model' }, ollamaRequest: provider });
     const cookie = await grantStudent();
     const result = await evaluate(cookie, submissionBody({ workflowMode: 'student-nodes-v1', activeScale: 'exosphere', sourceMaterial }));
-    expect(provider).toHaveBeenCalledTimes(3);
+    expect(provider).toHaveBeenCalledTimes(4); // the last call is the Macro pass, which finds none here
     expect(result.runtime).toMatchObject({ correctiveRetries: 2, evidenceRepairAttempts: 1 });
     expect(result.review.nodes).toEqual(supported);
     expect(result.review.connections).toEqual([]);

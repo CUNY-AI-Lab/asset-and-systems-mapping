@@ -301,8 +301,8 @@ export default function AccountWorkspace() {
         <div hidden={accountView.open}>
         <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : undefined} />
         <form className="project-create" aria-label="New project" onSubmit={event => {event.preventDefault(); void open(null);}}>
-          <label className="field"><span>Project title</span><input aria-label="Project title" value={newTitle} onChange={event=>setNewTitle(event.target.value)} maxLength={160} placeholder="Name your map" /></label>
-          <label className="field"><span>Creator name</span><input aria-label="Creator name" value={creatorName} onChange={event=>setCreatorName(event.target.value)} maxLength={160} autoComplete="name" placeholder="Name or group" /></label>
+          <label className="field"><span>Project</span><input aria-label="Project" value={newTitle} onChange={event=>setNewTitle(event.target.value)} maxLength={160} placeholder="Name your map" /></label>
+          <label className="field"><span>Name</span><input aria-label="Name" value={creatorName} onChange={event=>setCreatorName(event.target.value)} maxLength={160} autoComplete="name" placeholder="Name or group" /></label>
           <Action type="submit" disabled={busy}>New project</Action>
         </form>
         {records.length > 0 && <SavedProjects simple records={records} busy={busy} onOpen={open} onInspect={inspect} onDelete={record=>inspect(record,'delete')} />}

@@ -1505,9 +1505,13 @@ const PREFLIGHT_RUNTIME_INTEGER_FIELDS = [
 ];
 // Fixed reasons a proposed node was left out of an accepted memo submission.
 // The server names the rule that excluded it; no rejected text travels with it.
+// outside_participation and unsupported are no longer assigned; saved projects
+// from 2026-11-08 and 2026-11-09 still carry them.
 export const WITHHELD_NODE_REASONS = Object.freeze([
-  'outside_participation', 'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition',
-  'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape', 'unsupported',
+  'outside_setting', 'participation_conflict', 'participation_unknown', 'setting_unnamed',
+  'policy_operation', 'narrative_quote', 'evidence_limit', 'established_condition',
+  'label_format', 'identity_duplicate', 'existing_identity', 'scale_type', 'node_shape', 'node_limit',
+  'outside_participation', 'unsupported',
 ]);
 const WITHHELD_NODE_LIMIT = 10;
 const FORBIDDEN_PROJECT_KEYS = new Set([

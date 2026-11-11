@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { nodeSubmissionInstruction, submittedReviewIssue } from './node-submission.js';
+import { MACRO_CONDITION_TYPES, MACRO_PASS_INSTRUCTION, nodeSubmissionInstruction, submittedReviewIssue } from './node-submission.js';
 
 const review = nodes => ({ guidance: [], nodes, connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } });
 const exo = (label, evidence) => ({ label, evidence, type: 'organization', scale: 'exosphere', basis: 'memo' });
@@ -78,6 +78,9 @@ it('states its rules without worked examples, so no one field or memo shapes the
     const prompt = nodeSubmissionInstruction(scale);
     expect(prompt).not.toMatch(/\bsuch as\b|\bfor example\b|\bexamples?:(?! null)|\bcounterexamples?:|\be\.g\.|if a memo says/i);
   }
+  // The Macro pass is held to the same rule and takes its kinds from the type constant.
+  expect(MACRO_PASS_INSTRUCTION).not.toMatch(/\bsuch as\b|\bfor example\b|\bexamples?:|\bcounterexamples?:|\be\.g\.|if a memo says/i);
+  expect(MACRO_PASS_INSTRUCTION).toContain(MACRO_CONDITION_TYPES.join(', '));
 });
 
 it('places the narrative-named Eco Impact Estimator repository at Exo', () => {
@@ -99,7 +102,7 @@ it.each(['repository', 'model registry', 'public model registry', 'shared code r
 
 it('prioritizes supported Exo nodes and allows a standalone operative policy', () => {
   const prompt = nodeSubmissionInstruction('exosphere');
-  expect(prompt).toContain('choose the strongest supported new Exo nodes');
+  expect(prompt).toContain('include every supported new Exo node');
   expect(prompt).not.toMatch(/one to three|at most 3 at each level/);
   expect(prompt).toContain('A single evidenced operative policy can stand alone');
   expect(prompt).toContain('omit such an item when the memo describes no decision or effect, rather than changing its type');

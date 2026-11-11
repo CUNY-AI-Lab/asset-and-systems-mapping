@@ -38,22 +38,32 @@ Shown in the Notebook after a memo submission. Each entry is the proposed name
 on one line and a short reason under it. The message after a submission only
 counts them ("8 nodes added. 3 left out; the Notebook lists them.").
 
-| Reason | Text | Status |
-| --- | --- | --- |
-| heading | Left out | revised 2026-11-08, pending |
-| footer | Add any of these in Tools if the memo supports it. | revised 2026-11-08, pending |
-| `outside_participation` | People in the memo take part here, so it belongs at Micro | revised 2026-11-08, pending |
-| `policy_operation` | The memo does not quote the rule | revised 2026-11-08, pending |
-| `narrative_quote` | Not quoted from the memo | revised 2026-11-08, pending |
-| `evidence_limit` | Quote longer than 500 characters | revised 2026-11-08, pending |
-| `established_condition` | Stated as a wish or a question | revised 2026-11-08, pending |
-| `label_format` | Name is a sentence or covers more than one thing | revised 2026-11-08, pending |
-| `identity_duplicate` | Already on the map | revised 2026-11-08, pending |
-| `existing_identity` | Would change a node already on the map | revised 2026-11-08, pending |
-| `scale_type` | Type does not fit this level | revised 2026-11-08, pending |
-| `node_shape` | Incomplete entry | revised 2026-11-08, pending |
-| `unsupported` | No passage in the memo supports it | revised 2026-11-08, pending |
-| fallback | Did not pass the evidence checks | revised 2026-11-08, pending |
+Rewritten 2026-11-10 at Zach's request for more idiomatic wording. A node
+that a retry dropped but that passes every rule is now put back on the map, so
+only nodes that fail a rule are listed. The participation reason is split into
+the four cases it covered, so a Micro office no longer reads "belongs at Micro".
+
+| Reason | Before | After | Status |
+| --- | --- | --- | --- |
+| heading | Left out | Left out | unchanged, pending |
+| footer | Add any of these in Tools if the memo supports it. | Add any of these that the memo supports. | pending |
+| `outside_setting` (Micro) | People in the memo take part here, so it belongs at Micro | An outside office, so it belongs at Exo | pending |
+| `participation_conflict` (Exo) | People in the memo take part here, so it belongs at Micro | People in the memo take part in it, so it belongs at Micro | pending |
+| `participation_unknown` (Exo) | People in the memo take part here, so it belongs at Micro | The memo says it is unclear whether people take part in it | pending |
+| `setting_unnamed` (Exo) | People in the memo take part here, so it belongs at Micro | The quote does not name it | pending |
+| `policy_operation` | The memo does not quote the rule | The quote does not show how the rule works here | pending |
+| `narrative_quote` | Not quoted from the memo | The quote is not word for word from the memo | pending |
+| `evidence_limit` | Quote longer than 500 characters | The quote runs over 500 characters | pending |
+| `established_condition` | Stated as a wish or a question | The memo puts it as a wish or a question, not as fact | pending |
+| `label_format` | Name is a sentence or covers more than one thing | The name is a sentence or lumps several things together | pending |
+| `identity_duplicate` | Already on the map | Already on the map | unchanged, pending |
+| `existing_identity` | Would change a node already on the map | It would change a node already on the map | pending |
+| `scale_type` | Type does not fit this level | Its type does not fit this level | pending |
+| `node_shape` | Incomplete entry | The entry came back incomplete | pending |
+| `node_limit` (new) | — | The submission was already full at 10 nodes | pending |
+| `outside_participation` (saved maps only) | People in the memo take part here, so it belongs at Micro | The memo does not make clear which level it belongs at | pending |
+| `unsupported` (saved maps only) | No passage in the memo supports it | Dropped when the memo was read a second time | pending |
+| fallback | Did not pass the evidence checks | Did not pass the evidence checks | unchanged, pending |
 
 ## Submission messages (`src/App.jsx`)
 

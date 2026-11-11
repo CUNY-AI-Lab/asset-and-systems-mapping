@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createNodeSubmissionRepair, isMemoContractRepair, memoContractRepairContext, salvageNodeSubmission, MEMO_CONTRACT_REPAIR_BYTES } from './memo-contract-repair.js';
+import { createNodeSubmissionRepair, isMemoContractRepair, memoContractRepairContext, restoreSubmissionNodes, salvageNodeSubmission, MEMO_CONTRACT_REPAIR_BYTES } from './memo-contract-repair.js';
 import { submittedReviewIssue } from '../shared/node-submission.js';
 import { normalizeInput } from './ollama.js';
 
@@ -229,7 +229,7 @@ it('keeps the supported nodes of a final failing response and names each node le
   const salvaged = salvageNodeSubmission(review, 'exosphere', source);
   expect(salvaged.review.nodes).toEqual([before.nodes[3]]);
   expect(salvaged.dropped).toEqual([
-    { label: 'Access Board', reason: 'outside_participation' },
+    { label: 'Access Board', reason: 'participation_unknown' },
     { label: 'Student access rule', reason: 'policy_operation' },
     { label: 'Community counselor', reason: 'label_format' },
   ]);
@@ -241,4 +241,39 @@ it('does not salvage a response whose shape fails as a whole', () => {
   expect(salvageNodeSubmission({ nodes: bad().nodes }, 'exosphere', source)).toBeNull();
   expect(salvageNodeSubmission(null, 'exosphere', source)).toBeNull();
   expect(salvageNodeSubmission({ ...bad(), nodes: 'nodes' }, 'exosphere', source)).toBeNull();
+});
+
+const unvisited = 'Students do not participate in Harbor Allocation Board decisions, which limit their course hours.';
+
+it('puts back a node a retry dropped when it passes with the accepted nodes, and names only nodes that fail a rule', () => {
+  const sourceText = `${source} ${unvisited}`;
+  const policy = node('Course access approval rule', 'policy', operation);
+  const board = node('Harbor Allocation Board', 'agency', unvisited);
+  const first = wrap([node('Access Board', 'organization', administration), board, policy]);
+  const accepted = wrap([policy]);
+  const { review, withheld } = restoreSubmissionNodes([{ review: first, message: submittedReviewIssue(first, 'exosphere', sourceText) }], accepted, 'exosphere', sourceText);
+  expect(review.nodes).toEqual([policy, board]);
+  expect(withheld).toEqual([{ label: 'Access Board', reason: 'participation_unknown' }]);
+  expect(submittedReviewIssue(review, 'exosphere', sourceText)).toBeNull();
+  expect(accepted.nodes).toEqual([policy]);
+});
+
+it('names a passing node that did not fit because the submission was full', () => {
+  const sourceText = `${source} ${unvisited}`;
+  const policy = node('Course access approval rule', 'policy', operation);
+  const accepted = wrap(Array.from({ length: 10 }, () => structuredClone(policy)));
+  const { review, withheld } = restoreSubmissionNodes([{ review: wrap([node('Harbor Allocation Board', 'agency', unvisited)]) }], accepted, 'exosphere', sourceText);
+  expect(review.nodes).toHaveLength(10);
+  expect(withheld).toEqual([{ label: 'Harbor Allocation Board', reason: 'node_limit' }]);
+});
+
+it.each([
+  ['an outside office proposed at Micro', 'micro', { label: 'Harbor Allocation Board', type: 'organization', scale: 'micro', evidence: unvisited }, unvisited, 'outside_setting'],
+  ['an office the focal people visit, proposed at Exo', 'exosphere', node('Harbor Allocation Board', 'agency', 'Students meet with the Harbor Allocation Board each week.'), 'Students meet with the Harbor Allocation Board each week.', 'participation_conflict'],
+  ['an office whose participation the memo calls unknown', 'exosphere', node('Access Board', 'organization', administration), source, 'participation_unknown'],
+  ['an office whose quote does not name it', 'exosphere', node('Harbor Allocation Board', 'agency', operation), `${unvisited} ${operation}`, 'setting_unnamed'],
+])('names %s with the reason for that case', (_, scale, proposed, sourceText, reason) => {
+  const { review, withheld } = restoreSubmissionNodes([{ review: wrap([proposed]) }], wrap([]), scale, sourceText);
+  expect(review.nodes).toEqual([]);
+  expect(withheld).toEqual([{ label: proposed.label, reason }]);
 });

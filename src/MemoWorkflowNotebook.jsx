@@ -4,12 +4,15 @@ import { MEMO_WORKFLOW, WORKFLOW_GUIDE, memoUpdateState, withheldNodes, withheld
 import ReflectionEntry from './ReflectionEntry.jsx';
 
 // Sources live in Memo; Notebook describes work on the same canvas.
-export default function MemoWorkflowNotebook({ project, update, onEditMemo, onSelectStep, busy, saveState, onSaveNote, savedMapNote }) {
+export default function MemoWorkflowNotebook({ project, update, onEditMemo, onSelectStep, busy, saveState, onSaveNote, savedMapNote, onAddLeftOut }) {
   const info = MEMO_WORKFLOW[project.activeScale];
   const state = memoUpdateState(project);
   const nodeStep = ['micro', 'exosphere'].includes(project.activeScale);
   const hasNodes = project.graph.nodes.some(node => node.scale === project.activeScale && node.status !== 'rejected' && node.claimState !== 'retired');
-  const leftOut = state.submitted && nodeStep ? withheldNodes(project) : [];
+  // A left-out name the student has since added to the map leaves the list.
+  const nameKey = label => String(label ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+  const onMap = new Set(project.graph.nodes.filter(node => node.status !== 'rejected' && node.claimState !== 'retired').map(node => nameKey(node.label)));
+  const leftOut = state.submitted && nodeStep ? withheldNodes(project).filter(item => !onMap.has(nameKey(item.label))) : [];
   const reachable = new Set(reachableWorkflowScales(project));
   const ready = workflowStepReady(project);
   // What to do at this step is said once, in the corner of the map. The
@@ -24,8 +27,8 @@ export default function MemoWorkflowNotebook({ project, update, onEditMemo, onSe
     {!state.submitted && <button className="button button--secondary" type="button" disabled={busy} onClick={() => onEditMemo()}>Open Memo</button>}
     {leftOut.length > 0 && <section className="workflow-left-out" aria-labelledby="workflow-left-out-heading">
       <h3 id="workflow-left-out-heading">Left out</h3>
-      <ul>{leftOut.map((item, index) => <li key={`${item.label}:${index}`}><strong>{item.label}</strong><span>{withheldNodeReason(item.reason)}</span></li>)}</ul>
-      <p>Add any of these in Tools if the memo supports it.</p>
+      <ul>{leftOut.map((item, index) => <li key={`${item.label}:${index}`}><strong>{item.label}</strong><span>{withheldNodeReason(item.reason)}</span>{onAddLeftOut && <button type="button" className="button button--secondary" disabled={busy} aria-label={`Add ${item.label}`} onClick={() => onAddLeftOut(item)}>Add</button>}</li>)}</ul>
+      <p>Add any of these that the memo supports.</p>
     </section>}
     <details className="workflow-notes"><summary>Field notes <span>(optional)</span></summary><ReflectionEntry project={project} update={update} onSave={onSaveNote} saveState={saveState} required={false} />{project.mapAnnotation.text.trim() && savedMapNote}</details>
   </section>;

@@ -108,11 +108,6 @@ export function isMemoContractRepair(value, activeScale) {
   } catch { return false; }
 }
 
-/**
- * Name the proposals from rejected attempts that the accepted response left
- * out, each with the fixed rule that excluded it. A proposal the model dropped
- * on repair without a rule of its own was unsupported by the source.
- */
 // When the last attempt still fails on one proposed node, the rest of the
 // response is kept and that node is left out with its reason, instead of the
 // whole submission failing. Only node-indexed issues are salvageable; a
@@ -136,33 +131,44 @@ export function salvageNodeSubmission(review, activeScale, sourceText, memoUpdat
   return null;
 }
 
-export function withheldSubmissionNodes(rejectedAttempts, accepted, activeScale, sourceText, memoUpdate, carriedNodes = []) {
+/**
+ * A retry can drop a valid proposal along with the one that failed. Every new
+ * node from a rejected attempt that the accepted response left out is checked
+ * again, with the accepted nodes, under the same rules that accepted them: one
+ * that passes goes back on the map, and one that fails is named with the rule
+ * it failed. Returns the review with the restored nodes, and the withheld list.
+ */
+export function restoreSubmissionNodes(rejectedAttempts, accepted, activeScale, sourceText, memoUpdate, carriedNodes = []) {
   const identity = node => node?.existingId !== undefined ? `id:${node.existingId}`
     : `label:${String(node?.label ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase()}`;
-  const kept = new Set((accepted?.nodes || []).map(identity));
+  const nodes = [...accepted.nodes];
+  const seen = new Set(nodes.map(identity));
   const withheld = [];
-  const seen = new Set();
-  for (const { review, message } of rejectedAttempts) {
+  for (const { review } of rejectedAttempts) {
     if (!plain(review) || !Array.isArray(review.nodes)) continue;
-    const failed = /^nodes\[(\d{1,2})\]/u.exec(String(message ?? ''));
-    for (const [index, node] of review.nodes.entries()) {
-      if (!plain(node) || node.existingId !== undefined) continue;
+    for (const node of review.nodes) {
+      if (!plain(node) || node.existingId !== undefined || !boundedText(node.label, 200)) continue;
       const key = identity(node);
-      if (kept.has(key) || seen.has(key) || !boundedText(node.label, 200)) continue;
+      if (seen.has(key)) continue;
       seen.add(key);
-      const own = submittedReviewIssue({ ...review, nodes: [node] }, activeScale, sourceText, memoUpdate, carriedNodes);
-      const reason = own && /^nodes\[0\]/u.test(own) ? nodeIssueRule(own)
-        : failed && Number(failed[1]) === index ? nodeIssueRule(message)
-          : 'unsupported';
-      withheld.push({ label: node.label, reason });
-      if (withheld.length >= SUBMISSION_NODE_LIMIT) return withheld;
+      const issue = submittedReviewIssue({ ...accepted, nodes: [node] }, activeScale, sourceText, memoUpdate, carriedNodes)
+        || submittedReviewIssue({ ...accepted, nodes: [...nodes, node] }, activeScale, sourceText, memoUpdate, carriedNodes);
+      if (!issue) nodes.push(structuredClone(node));
+      else if (withheld.length < SUBMISSION_NODE_LIMIT) {
+        withheld.push({ label: node.label, reason: /^nodes exceeds/u.test(issue) ? 'node_limit' : nodeIssueRule(issue) });
+      }
     }
   }
-  return withheld;
+  return { review: { ...accepted, nodes }, withheld };
 }
 
 function nodeIssueRule(message) {
-  if (/nonparticipation|names this outside setting|participants taking part|outside decision setting/u.test(message)) return 'outside_participation';
+  // Each participation check has its own reason: the same office can fail at
+  // Micro for being outside and at Exo for being visited.
+  if (/not direct participation at Micro/u.test(message)) return 'outside_setting';
+  if (/participants taking part in the setting/u.test(message)) return 'participation_conflict';
+  if (/nonparticipation/u.test(message)) return 'participation_unknown';
+  if (/names this outside setting/u.test(message)) return 'setting_unnamed';
   if (/specific established policy and its operation/u.test(message)) return 'policy_operation';
   if (/\.evidence must quote the supplied narrative within 500 characters/u.test(message)) return 'evidence_limit';
   if (/\.evidence .*quote/u.test(message)) return 'narrative_quote';
@@ -248,7 +254,7 @@ export function createMemoContractRepair(review, message, activeScale) {
   }
   const subject = /^nodes\[(\d{1,2})\]\.label /u.exec(message);
   const label = subject && [SUBMISSION_SUBJECT_ISSUE, SUBMISSION_MACRO_ISSUE].some(issue => message === `nodes[${subject[1]}].label ${issue}`) ? subject
-    : /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|names a person or role, not an outside setting or resource|names a person or institution, not a Macro condition|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the six-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
+    : /^nodes\[(\d{1,2})\]\.label (?:must name a complete map element rather than a statement|is a reference, action, clause, fragment, or non-entity Micro label|is not a named institution or service system|names a person or role, not an outside setting or resource|names a person or institution, not a Macro condition|does not name a broader condition|duplicates an existing or proposed element|must name one local participant, group, setting or resource\. Do not bundle different roles, named people or settings with and; choose one supported role or return separate nodes within the (?:six|ten)-node limit\. Do not use a sentence or an action as the label)\.$/u.exec(message);
   if (label && Array.isArray(review.nodes)) {
     const repair = { path: `nodes[${label[1]}].label`, value: review.nodes[Number(label[1])]?.label };
     return isMemoContractRepair(repair, activeScale) ? repair : null;

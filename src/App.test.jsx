@@ -1305,18 +1305,30 @@ describe('Systems Mapping workflow', () => {
     preflightEvaluationResponder = body => jsonResponse({ evaluation: evaluationRecord(body, {
       review: { guidance: [], nodes: [{ label: 'Residents', type: 'group', scale: 'micro', evidence: 'Residents meet in the community room.' }], connections: [], example: null, readiness: { ready: true, note: 'Nodes identified.' } },
       runtime: { provider: 'cail-gateway', model: 'synthetic-test', createdAt: '2027-01-15T08:00:00.000Z', correctiveRetries: 1,
-        withheldNodes: [{ label: 'Access Board', reason: 'outside_participation' }, { label: 'Residents want better repairs', reason: 'label_format' }] },
+        withheldNodes: [{ label: 'Access Board', reason: 'participation_unknown' }, { label: 'Residents want better repairs', reason: 'label_format' }, { label: 'Building superintendent', reason: 'node_limit' }] },
     }) }, 201);
     render(<App memoFirstWorkflow startInWorkspace />);
     fireEvent.click(await screen.findByRole('button', { name: 'Submit memo and add nodes', exact: true }));
     await waitFor(() => expect(storedProject().graph.nodes).toHaveLength(1));
-    expect(await screen.findByText('1 node added. 2 left out; the Notebook lists them.')).toBeVisible();
+    expect(await screen.findByText('1 node added. 3 left out; the Notebook lists them.')).toBeVisible();
     const leftOut = screen.getByRole('region', { name: 'Left out' });
     expect(within(leftOut).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-      'Access BoardPeople in the memo take part here, so it belongs at Micro',
-      'Residents want better repairsName is a sentence or covers more than one thing',
+      'Access BoardThe memo says it is unclear whether people take part in itAdd',
+      'Residents want better repairsThe name is a sentence or lumps several things togetherAdd',
+      'Building superintendentThe submission was already full at 10 nodesAdd',
     ]);
-    expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(2);
+    expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(3);
+    // A left-out name can be added: the new-node form opens with the name filled in.
+    fireEvent.click(within(leftOut).getByRole('button', { name: 'Add Building superintendent', exact: true }));
+    expect(await screen.findByRole('textbox', { name: 'Label', exact: true })).toHaveValue('Building superintendent');
+    fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));
+    // The form still asks for the student's own evidence; nothing is added without it.
+    expect(storedProject().graph.nodes).toHaveLength(1);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Evidence or question', exact: true }), { target: { value: 'Residents meet in the community room.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));
+    await waitFor(() => expect(storedProject().graph.nodes.map(node => node.label)).toContain('Building superintendent'));
+    // The record of what the review left out is kept; the list shows only what is still off the map.
+    expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(3);
   });
 
   it('retains preflight-only legacy readiness after modern baseline Undo and event pruning', () => {
@@ -2236,7 +2248,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('heading', { name: 'Memo' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Start new project' }));
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Untitled systems map');
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue('Untitled systems map');
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Untitled systems map', stage: 0 }));
   });
 
@@ -2257,7 +2269,7 @@ describe('Systems Mapping workflow', () => {
     expect(screen.queryByRole('dialog', { name: 'Start new project?' })).not.toBeInTheDocument();
 
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Untitled systems map');
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue('Untitled systems map');
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue('');
 
     openProjectMenu('Projects');
@@ -2275,7 +2287,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(within(savedEarlierProject).getByRole('button', { name: 'Open project' }));
 
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue(earlierProject.title);
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue(earlierProject.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(earlierProject.submission.text);
   });
 
@@ -2293,7 +2305,7 @@ describe('Systems Mapping workflow', () => {
     const legacyProjectCard = screen.getByRole('article', { name: legacy.title });
     fireEvent.click(within(legacyProjectCard).getByRole('button', { name: 'Open project' }));
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue(legacy.title);
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue(legacy.title);
     expect(screen.getByRole('textbox', { name: /^Memo/ })).toHaveValue(legacy.submission.text);
     await waitFor(() => expect(storedProject()).toMatchObject({ schemaVersion: 10, title: legacy.title, participantName: '' }));
   });
@@ -2345,14 +2357,14 @@ describe('Systems Mapping workflow', () => {
     await resumeSavedProject(project);
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
     expect(screen.getByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('NYC systems and assets map');
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue('NYC systems and assets map');
     expect(screen.getByRole('textbox', { name: 'Name or Group Name' })).toHaveValue('');
     expect(screen.queryByRole('textbox', { name: /^Person or group/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /^Question/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /^Time period/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /^What to include/ })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Family service access map' } });
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Family service access map');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Project' }), { target: { value: 'Family service access map' } });
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue('Family service access map');
     expect(screen.queryByRole('textbox', { name: 'Guiding inquiry' })).not.toBeInTheDocument();
     const memo = screen.getByRole('textbox', { name: /^Memo/ });
     expect(memo).toBeVisible();
@@ -2484,11 +2496,11 @@ describe('Systems Mapping workflow', () => {
 
   it('keeps the memo intake limited to fields students need', async () => {
     await resumeSavedProject(createDefaultProject());
-    expect(screen.getByRole('textbox', { name: 'Project title' })).not.toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Project' })).not.toBeVisible();
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
 
     expect(screen.queryByRole('combobox', { name: 'Level' })).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Project' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Name or Group Name' })).toBeVisible();
     expect(screen.queryByRole('textbox', { name: /^Person or group/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /^Question/ })).not.toBeInTheDocument();
@@ -7090,7 +7102,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await resumeSavedProject(project);
     fireEvent.click(screen.getByText('Project details', { selector: 'summary' }));
     expect(document.querySelectorAll('.project-context-fields input')).toHaveLength(2);
-    fireEvent.change(screen.getByRole('textbox', { name: 'Project title' }), { target: { value: 'Community access map' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Project' }), { target: { value: 'Community access map' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Name or Group Name' }), { target: { value: 'Study group' } });
     await waitFor(() => expect(storedProject()).toMatchObject({ title: 'Community access map', participantName: 'Study group', inquiry: project.inquiry }));
 
@@ -7099,7 +7111,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     await showResumeScreen();
     openProjectFromList('Community access map');
     expect(await screen.findByRole('heading', { name: 'Memo' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project title' })).toHaveValue('Community access map');
+    expect(screen.getByRole('textbox', { name: 'Project' })).toHaveValue('Community access map');
     expect(screen.getByRole('textbox', { name: 'Name or Group Name' })).toHaveValue('Study group');
     expect(storedProject().inquiry).toBe(project.inquiry);
   });

@@ -30,6 +30,23 @@ test('a multi-page PDF preserves inline citations and references through review 
   await expect.poll(async () => (await readProject(page)).submission.text).toBe(imported);
 });
 
+test('the import status stays clear of the upload zone focus ring', async ({ page }) => {
+  await startProject(page);
+  const input = page.locator('.upload-zone input[type=file]');
+  await input.setInputFiles(here + 'multi-page-citations.pdf');
+  const status = page.locator('p.privacy-note[role=status]');
+  await expect(status).toContainText('PDF text imported');
+  await input.focus();
+  // Both edges are read in one pass so scrolling cannot separate them.
+  const clearance = await status.evaluate(note => {
+    const zone = note.parentElement.querySelector('.upload-zone');
+    const style = getComputedStyle(zone);
+    const ring = zone.getBoundingClientRect().bottom + parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    return note.getBoundingClientRect().top - ring;
+  });
+  expect(clearance).toBeGreaterThanOrEqual(0);
+});
+
 test('a PDF with an empty text layer on one page explains the missing passage', async ({ page }) => {
   await startProject(page);
   await page.locator('.upload-zone input[type=file]').setInputFiles(here + 'mixed-text-pages.pdf');
