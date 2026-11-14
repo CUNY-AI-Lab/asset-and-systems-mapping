@@ -107,27 +107,37 @@ function clearCoveredPin(position, geometry, inner, obstacles) {
 // Keep an active move in its system without rewriting saved or imported pins.
 // Clamping along the gesture stops at the near boundary instead of jumping the
 // card to an unrelated free slot on the other side of the map.
+const clearsRegion=(bounds,region)=>{
+  const caption={left:region.cx-REGION_CAPTION.width/2,right:region.cx+REGION_CAPTION.width/2,
+    top:region.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2,bottom:region.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2};
+  const dx=Math.max(bounds.left-region.cx,region.cx-bounds.right,0),dy=Math.max(bounds.top-region.cy,region.cy-bounds.bottom,0);
+  return (dx/region.rx)**2+(dy/region.ry)**2>=1&&!overlaps(bounds,caption);
+};
+const SPHERES=['micro','exosphere','macrosphere'];
+// Every card of an outer system that sits inside an inner system's boundary.
+// A moved card can cross a boundary itself or carry its own boundary over
+// another system's cards, so both are read from the regrown boundaries.
+function crossings(nodes, geometries) {
+  const regions=studentMapBoundaries(nodes,geometries),found=new Set();
+  for(const scale of ['micro','exosphere']) {
+    const region=regions[scale];
+    if(!region)continue;
+    for(const n of nodes)if(SPHERES.indexOf(n.scale)>SPHERES.indexOf(scale)&&!clearsRegion(box(n,geometries.get(n.id),2),region))found.add(`${scale}:${n.id}`);
+  }
+  return found;
+}
 export function constrainStudentNodeMove(node, requested, nodes, geometries, {autoFit=true}={}) {
-  if(!autoFit||!['exosphere','macrosphere'].includes(node.scale))return requested;
-  const regions=studentMapBoundaries(nodes,geometries);
-  const inner=regions[node.scale==='exosphere'?'micro':'exosphere'];
-  if(!inner)return requested;
-  const geometry=geometries.get(node.id);
-  const caption={left:inner.cx-REGION_CAPTION.width/2,right:inner.cx+REGION_CAPTION.width/2,
-    top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2};
-  const clearsInner=position=>{
-    const bounds=box(position,geometry,2);
-    const dx=Math.max(bounds.left-inner.cx,inner.cx-bounds.right,0),dy=Math.max(bounds.top-inner.cy,inner.cy-bounds.bottom,0);
-    return (dx/inner.rx)**2+(dy/inner.ry)**2>=1&&!overlaps(bounds,caption);
-  };
-  // Only a move from a valid position is constrained here. The reading layout
-  // separately repairs pins covered by a growing inner sphere.
-  if(clearsInner(requested)||!clearsInner(node))return requested;
+  if(!autoFit||!SPHERES.includes(node.scale)||!nodes.some(n=>n.scale!==node.scale))return requested;
+  // A previously saved card inside a sphere remains editable; auto-fit never
+  // retroactively moves it. A move may only avoid adding a new crossing.
+  const existing=crossings(nodes,geometries);
+  const allowed=position=>[...crossings(nodes.map(n=>n.id===node.id?{...n,...position}:n),geometries)].every(key=>existing.has(key));
+  if(allowed(requested))return requested;
   let low=0,high=1;
   for(let step=0;step<20;step++) {
     const fraction=(low+high)/2;
     const candidate={x:node.x+(requested.x-node.x)*fraction,y:node.y+(requested.y-node.y)*fraction};
-    if(clearsInner(candidate))low=fraction;else high=fraction;
+    if(allowed(candidate))low=fraction;else high=fraction;
   }
   return {x:Math.round(node.x+(requested.x-node.x)*low),y:Math.round(node.y+(requested.y-node.y)*low)};
 }
