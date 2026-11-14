@@ -1,4 +1,5 @@
 import { courseWorkspacePath, initialApiCourseSelection, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
+import { appMount, appPathname } from './appPath.js';
 
 let accountStorage = null;
 
@@ -7,10 +8,13 @@ export function projectStorage() {
 }
 
 export function institutionalLoginUrl(selection = accountStorage?.courseSelection || initialApiCourseSelection()) {
-  const path = window.location.pathname;
+  const path = appPathname();
   const returnTo = path === '/' && parseWorkspaceView(window.location.search) === 'instructor'
     ? instructorWorkspacePath(selection)
     : courseWorkspacePath(/^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(path) ? path : '/', selection);
+  // Doorway signs in before serving this exact mounted page, preserving its
+  // course, instructor view and shared-project path through the callback.
+  if (appMount()) return returnTo;
   return returnTo === '/' ? '/auth/start' : `/auth/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
 

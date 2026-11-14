@@ -15,10 +15,11 @@ import { userFacingError } from './userFacingError.js';
 import AccountDashboard from './AccountDashboard.jsx';
 import NollSketch from './NollSketch.jsx';
 import './account-workspace.css';
+import { appPathname } from './appPath.js';
 
 export default function AccountWorkspace() {
   const [courseSelection] = useState(() => parseCourseSelection(window.location.search));
-  const [instructorRequested] = useState(() => window.location.pathname === '/' && parseWorkspaceView(window.location.search) === 'instructor');
+  const [instructorRequested] = useState(() => appPathname() === '/' && parseWorkspaceView(window.location.search) === 'instructor');
   const [dark, setDark] = useState(() => {
     try { return window.localStorage.getItem('systems-mapping.theme') === 'dark'; }
     catch { return document.documentElement.dataset.theme === 'dark'; }
@@ -92,7 +93,7 @@ export default function AccountWorkspace() {
         try { const data = await request('/api/cloud/quota'); if (!cancelled) setQuota(data.quota); } catch { /* Informational only; map editing stays available. */ }
         if (cancelled) return;
         setStatus('');
-        const token = /^\/p\/([A-Za-z0-9_-]{20,64})\/?$/.exec(window.location.pathname)?.[1];
+        const token = /^\/p\/([A-Za-z0-9_-]{20,64})\/?$/.exec(appPathname())?.[1];
         if (token) {
           const linked = await request(`/api/projects/${token}`);
           if (cancelled) return;

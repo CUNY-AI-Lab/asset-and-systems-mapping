@@ -5,6 +5,8 @@ import ProjectFooter from '../ProjectFooter.jsx';
 import './form.css';
 import './mapping.css';
 import { mountBugReport as mountContactReport } from './contact-form.js';
+import { appPath, appPathname } from '../appPath.js';
+import { institutionalLoginUrl } from '../accountStorage.js';
 
 export default function BugReport() {
   const footer = useRef(null);
@@ -16,7 +18,7 @@ export default function BugReport() {
   useEffect(() => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    fetch('/api/bug-reports/availability', { cache: 'no-store', signal: controller.signal })
+    fetch(appPath('/api/bug-reports/availability'), { cache: 'no-store', signal: controller.signal })
       .then(response => response.ok ? response.json() : null)
       .then(async value => {
         if (value?.mode === 'contact') await import('./contact-form.css');
@@ -62,8 +64,10 @@ export default function BugReport() {
   useEffect(() => {
     if (!enabled) return;
     const mount = mode === 'contact' ? mountContactReport : mountBugReport;
-    const report = mount(host, { delivery, loginUrl: '/auth/start', loginClassName: 'button studio-action button--primary account-login', path: () => {
-      const path = window.location.pathname;
+    const report = mount(host, { delivery, loginUrl: institutionalLoginUrl(),
+      endpoint: appPath('/api/bug-reports'), sessionEndpoint: appPath('/api/bug-reports/session'), guestEndpoint: appPath('/api/bug-reports/guest'),
+      loginClassName: 'button studio-action button--primary account-login', path: () => {
+      const path = appPathname();
       if (/^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(path)) return '/p/:shared-map';
       return '/';
     } });

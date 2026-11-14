@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { configDefaults } from 'vitest/config';
 
 export default defineConfig({
+  // Relative imports work on both hosts; the Worker gives HTML assets explicit
+  // application paths so shared-project documents resolve the same bundles.
+  base: process.env.VITE_ACCOUNT_WORKSPACE === 'true' ? './' : '/',
   plugins: [react()],
   server: {
     proxy: {

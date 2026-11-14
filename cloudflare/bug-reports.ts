@@ -7,7 +7,7 @@ export type BugReportService = {
   submitPublic(report: { reportId: string; description: string; origin: string; path: string; release: string; rateKey: string; rateDay: string }): Promise<BugReportResult>;
 };
 type Options = {
-  origin: string; release?: string;
+  origin: string; release?: string; toolsMounted?: boolean;
   service?: BugReportService; limiter?: { limit(input: { key: string }): Promise<{ success: boolean }> };
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -91,7 +91,8 @@ export async function handleBugReport(request: Request, options: Options): Promi
   if (request.signal.aborted) return failure('unavailable', true);
   try {
     const result = await within(options.service.submitPublic({ reportId: report.reportId, rateKey, rateDay,
-      description: report.description, origin: options.origin, path: report.path, release: options.release }), 20000);
+      description: report.description, origin: options.toolsMounted ? 'https://tools.ailab.gc.cuny.edu' : options.origin,
+      path: report.path, release: options.release }), 20000);
     if (result?.ok === true && result.status === 'accepted' && result.reportId === report.reportId) {
       return response({ ok: true, status: 'accepted', reportId: report.reportId });
     }

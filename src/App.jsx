@@ -1,4 +1,5 @@
 import { classifyExcerptMatch } from '../shared/memo-quote-match.js';
+import { appPath, appPathname } from './appPath.js';
 import MemoWorkflowNotebook from './MemoWorkflowNotebook.jsx';
 import MemoWorkspace from './MemoWorkspace.jsx';
 import NodeColorControl from './NodeColorControl.jsx';
@@ -321,7 +322,7 @@ function describeLinkError(error, institutionalMode = false) {
 }
 
 function urlLinkToken() {
-  const match = LINK_PATH_PATTERN.exec(window.location.pathname);
+  const match = LINK_PATH_PATTERN.exec(appPathname());
   return match ? match[1] : null;
 }
 
@@ -8481,7 +8482,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
 
   return <div className="app-shell">
     <header className="app-header app-header--student">
-      <div className="brand"><LabLink /><a href="/" className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); openProjects(); }}><strong>Systems Mapping</strong></a></div>
+      <div className="brand"><LabLink /><a href={appPath('/')} className="brand__home" aria-label="Systems Mapping home" onClick={(event) => { event.preventDefault(); openProjects(); }}><strong>Systems Mapping</strong></a></div>
       <div className="header-actions"><ProjectMenu>
         <div className="project-menu-brand"><LabLink /></div>
         <button className="text-button" type="button" onClick={openProjects}>Projects</button>

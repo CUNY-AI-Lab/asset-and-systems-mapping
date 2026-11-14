@@ -34,6 +34,11 @@ test('private SSO reports preserve the verified name and create only one ticket'
   expect(posts[0].issue.description).toContain('SSO preferred name: Sam Student');
   expect(db.prepare('SELECT state,issue_id FROM bug_reports').get()).toEqual({ state: 'saved', issue_id: 123 });
 });
+test('mounted private reports record the Tools address with a redacted shared-map path', async () => {
+  const { reports, request, posts } = setup();
+  expect((await reports.request(request({ ...body, path: '/p/:shared-map' }), body.expectedActor, 'Sam Student', undefined, null, true)).status).toBe(200);
+  expect(posts[0].issue.description).toContain('Application: https://tools.ailab.gc.cuny.edu/systems-mapping/p/:shared-map');
+});
 test('guest validation is enforced by the server and contacts are labeled unverified', async () => {
   const { reports, request, posts } = setup();
   const { expectedActor: _, ...data } = body;

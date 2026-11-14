@@ -2,6 +2,7 @@ import { projectStorage, institutionalLoginUrl } from './accountStorage.js';
 import { courseRequestHeaders, initialApiCourseSelection } from './courseContext.js';
 import { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 import { durableGuidance } from './durableGuidance.js';
+import { appPath } from './appPath.js';
 export { GUIDANCE_REQUEST_TIMEOUT_MS } from './guidanceLimits.js';
 export class ApiError extends Error {
   constructor(message, status, payload = null) {
@@ -43,7 +44,7 @@ export async function apiRequest(path, options = {}) {
     if (['x-systems-account-cache', 'x-systems-course'].includes(name.toLowerCase())) delete headers[name];
   }
   Object.assign(headers, courseRequestHeaders(selection), workspace?.cacheKey ? { 'x-systems-account-cache': workspace.cacheKey } : {});
-  const response = await fetch(path, {
+  const response = await fetch(appPath(path), {
     credentials: 'same-origin',
     ...requestOptions,
     headers,

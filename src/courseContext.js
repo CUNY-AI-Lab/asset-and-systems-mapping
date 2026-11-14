@@ -1,3 +1,5 @@
+import { appPath } from './appPath.js';
+
 const GENERAL = Object.freeze({ kind: 'general', id: null });
 const INVALID = Object.freeze({ kind: 'invalid', id: null });
 const COURSE_ID = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -25,7 +27,8 @@ export function courseRequestHeaders(selection = GENERAL) {
 
 export function courseWorkspacePath(path = '/', selection = GENERAL) {
   if (selection?.kind === 'invalid') throw courseSelectionError();
-  return selection?.kind === 'course' ? `${path}?course=${encodeURIComponent(selection.id)}` : path;
+  const target = appPath(path);
+  return selection?.kind === 'course' ? `${target}?course=${encodeURIComponent(selection.id)}` : target;
 }
 
 export function parseWorkspaceView(search = '') {

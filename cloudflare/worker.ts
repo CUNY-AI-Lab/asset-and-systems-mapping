@@ -1,9 +1,10 @@
 import { CourseAccessError, resolveCourseAccess, courseFailure, courseRoster, allowedCourseIds, type CourseAccessEnv, type CourseAccess } from './course-access';
 import { currentCoursePrompt, coursePromptRequest } from './course-prompt';
-import { DurableObject } from 'cloudflare:workers';
+import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { createHash } from 'node:crypto';
 import { correlationFromHeaders, type CailCorrelation } from '@cuny-ai-lab/cail-log';
-import { authorize, verifierConfigs, type Principal, type IdentityEnv } from './identity';
+import { authorize, authorizeTools, verifierConfigs, type Principal, type IdentityEnv } from './identity';
+import { appDocument, toolsRequest } from './tools-mount';
 import { requestLog } from './log.js';
 import { boundedText, boundedRpc, withDeadline, withSignal } from './bounded.js';
 import { createSystemsMappingApp } from '../server/app.js';
@@ -132,9 +133,9 @@ export class MappingCourse extends DurableObject<Bindings> {
 
   submissions!: SubmittedRevisions;
 
-  async guestReport(request: Request, rateKey: string): Promise<Response> {
+  async guestReport(request: Request, rateKey: string, toolsMounted = false): Promise<Response> {
     if (new URL(request.url).pathname !== '/api/bug-reports/guest' || !/^[0-9a-f]{64}$/.test(rateKey)) return failure('Not found.', 404);
-    return this.reports.request(request, null, null, rateKey);
+    return this.reports.request(request, null, null, rateKey, null, toolsMounted);
   }
 
   async alarm(): Promise<void> {
@@ -153,7 +154,7 @@ export class MappingCourse extends DurableObject<Bindings> {
     const url = new URL(request.url);
     const owner = digest(principal.course?.memberId ?? principal.subject);
     const path = url.pathname;
-    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName, undefined, principal.email);
+    if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName, undefined, principal.email, principal.toolsMounted);
     const expectedCache = request.headers.get('x-systems-account-cache');
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
@@ -352,13 +353,17 @@ export class MappingCourse extends DurableObject<Bindings> {
   }
 }
 
-async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation, guidanceDeadline?: number): Promise<Response> {
+async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation, guidanceDeadline?: number, toolsIdentityRequest?: Request): Promise<Response> {
     let response: Response;
     try {
       const url = new URL(request.url);
       if (url.protocol !== 'https:' || url.origin !== env.PUBLIC_ORIGIN) return securedResponse(failure('Not found.', 404), correlation.request_id);
       if (!['GET','HEAD','OPTIONS'].includes(request.method) && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return securedResponse(failure('Request origin was not accepted.',403), correlation.request_id);
       if (url.pathname.includes('%') && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/'))) return securedResponse(failure('Invalid request path.', 400), correlation.request_id);
+      const mountedPrincipal = toolsIdentityRequest
+        ? await authorizeTools(new Request(toolsIdentityRequest.url, { headers: toolsIdentityRequest.headers, signal: request.signal }), env)
+        : undefined;
+      if (mountedPrincipal instanceof Response) return securedResponse(mountedPrincipal, correlation.request_id);
       const sanitized = new Headers(request.headers);
       for (const name of [...sanitized.keys()]) {
         if (name === 'authorization' || name === 'cookie' || name === 'cf-access-jwt-assertion' || name.startsWith('x-cail-')) sanitized.delete(name);
@@ -380,9 +385,9 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         response = failure('Reporting is unavailable.', 503);
       }
       else if (!contactReporting(env) && isBugReport(url.pathname)) {
-        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
+        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT, toolsMounted: mountedPrincipal?.toolsMounted });
       }
-      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: env.LOGIN_URL, bugReportEnabled: reportsEnabled(env) });
+      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: mountedPrincipal ? '/systems-mapping/' : env.LOGIN_URL, bugReportEnabled: reportsEnabled(env) });
       else if (url.pathname.startsWith('/auth/')) {
         // Limit new handoffs only. A busy shared IP must not prevent callback
         // completion or clearing/revoking this browser's existing session.
@@ -403,14 +408,14 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
             : digest(`guest-report-ip:v2\n${new Date().toISOString().slice(0, 10)}\n${ip}`);
           const limit = await boundedRpc(env.REQUEST_LIMIT.limit({ key: `guest-report:${rateKey}` }), request.signal);
           response = limit.success
-            ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey)
+            ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey, mountedPrincipal?.toolsMounted)
             : failure('Please wait a moment and try again.', 429, 60);
         }
       }
       else if (url.pathname.startsWith('/api/')) {
         if (!['GET','HEAD'].includes(request.method) && request.headers.get('origin') !== new URL(request.url).origin) response = failure('Request origin was not accepted.', 403);
         else {
-          let principal = await authorize(request, env);
+          let principal = mountedPrincipal ?? await authorize(request, env);
           const selectedCourse = request.headers.get('x-systems-course');
           if (!(principal instanceof Response) && request.headers.has('x-systems-course') && !isBugReport(url.pathname)) {
             try {
@@ -462,22 +467,36 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
 export function createMappingHandler({ testOnlyGuidanceTimeoutMs = GUIDANCE_DEADLINE_MS } = {}) {
   return {
     async fetch(request: Request, env: Bindings): Promise<Response> {
-      const correlation = requestCorrelation(request);
-      if (!isGuidanceRequest(request)) return handleRequest(request, env, correlation);
-      try {
-        const deadline = Date.now() + testOnlyGuidanceTimeoutMs;
-        return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation, deadline), testOnlyGuidanceTimeoutMs);
-      } catch (error) {
-        requestLog(env.RELEASE, correlation.request_id).failure();
-        const cancelled = request.signal.aborted;
-        const timedOut = error instanceof Error && error.name === 'TimeoutError';
-        return securedResponse(Response.json({
-          error: cancelled ? 'Guidance was cancelled' : 'Couldn’t generate guidance — Try again',
-          details: { code: cancelled ? 'guidance_cancelled' : timedOut ? 'guidance_timeout' : 'guidance_unavailable', shouldRetry: false },
-        }, { status: cancelled ? 499 : timedOut ? 504 : 503 }), correlation.request_id);
-      }
+      const response = await fetchMapping(request, env, testOnlyGuidanceTimeoutMs);
+      return new URL(request.url).pathname.startsWith('/auth/') ? response : appDocument(response);
     },
   } satisfies ExportedHandler<Bindings>;
+}
+
+async function fetchMapping(request: Request, env: Bindings, guidanceTimeoutMs = GUIDANCE_DEADLINE_MS, toolsIdentityRequest?: Request): Promise<Response> {
+  const correlation = requestCorrelation(request);
+  if (!isGuidanceRequest(request)) return handleRequest(request, env, correlation, undefined, toolsIdentityRequest);
+  try {
+    const deadline = Date.now() + guidanceTimeoutMs;
+    return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation, deadline, toolsIdentityRequest), guidanceTimeoutMs);
+  } catch (error) {
+    requestLog(env.RELEASE, correlation.request_id).failure();
+    const cancelled = request.signal.aborted;
+    const timedOut = error instanceof Error && error.name === 'TimeoutError';
+    return securedResponse(Response.json({
+      error: cancelled ? 'Guidance was cancelled' : 'Couldn’t generate guidance — Try again',
+      details: { code: cancelled ? 'guidance_cancelled' : timedOut ? 'guidance_timeout' : 'guidance_unavailable', shouldRetry: false },
+    }, { status: cancelled ? 499 : timedOut ? 504 : 503 }), correlation.request_id);
+  }
+}
+
+/** Only Doorway's private binding reaches this cookie-free mounted receiver. */
+export class ToolsApp extends WorkerEntrypoint<Bindings> {
+  async fetch(request: Request): Promise<Response> {
+    const translated = toolsRequest(request, this.env.PUBLIC_ORIGIN);
+    if (translated instanceof Response) return securedResponse(translated, requestCorrelation(request).request_id);
+    return appDocument(await fetchMapping(translated, this.env, GUIDANCE_DEADLINE_MS, request), true, this.env.PUBLIC_ORIGIN);
+  }
 }
 
 export default createMappingHandler();

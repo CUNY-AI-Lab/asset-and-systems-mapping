@@ -53,6 +53,32 @@ subsequent saves. Shared review retention follows the existing product rules.
 
 ## Identity and model contract
 
+- The private `ToolsApp` WorkerEntrypoint serves
+  `https://tools.ailab.gc.cuny.edu/systems-mapping` through Doorway's explicit
+  service binding. It accepts only that origin and path boundary, verifies the
+  separately signed `x-cail-identity-jwt` and `x-cail-gateway-identity-jwt` legs
+  for one subject, and rechecks current Admission for pages, assets and APIs.
+  Same-origin writes are checked before translating the mount to the existing
+  application handler. The original public Worker handler continues using its
+  opaque Worker session and never accepts those caller headers as identity.
+  Both entrypoints retain the same course namespace and canonical subject
+  lookup, so this mount requires no data or account migration.
+- Mounted login navigates to the exact application page, preserving course and
+  project-link selection through Doorway's existing CUNY callback. Sign out
+  posts to Doorway's `/auth/logout`. No Worker session cookie is issued through
+  `ToolsApp`. Relative frontend imports and explicit HTML asset URLs resolve at
+  both addresses, including direct shared-project links. No document base is
+  changed, preserving in-page navigation and SVG fragment references.
+- Doorway's trusted `x-forwarded-for` value supplies the reporting address only
+  inside `ToolsApp`; the public handler still uses Cloudflare's own client IP.
+  Mounted report metadata names the Tools origin and retains the shared
+  app-relative `/` or `/p/:shared-map` page categories. Redmine's displayed
+  application link adds the `/systems-mapping` prefix without a share token. The
+  report capability lists both the existing Worker origin and Tools origin.
+  Deploy Admission's reporting-origin allowance first, then this receiver,
+  then Doorway's route and `ToolsApp` binding. The mounted runtime test exercises
+  that private service-binding path with fixture identities, not production
+  CUNY sign-in.
 - `IDENTITY` binds to `cail-doorway#WorkerIdentity` with props
   `{id:"systems-mapping",worker:"systems-mapping",workspace:false}`. Login uses
   PKCE/state and an opaque Secure, HttpOnly, SameSite=Lax host cookie. Callback

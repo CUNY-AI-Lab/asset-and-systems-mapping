@@ -92,7 +92,7 @@ export class RedmineReports {
     )`);
   }
 
-  async request(request: Request, accountOwner: string | null, preferredName?: string | null, rateKey?: string, sessionEmail?: string | null): Promise<Response> {
+  async request(request: Request, accountOwner: string | null, preferredName?: string | null, rateKey?: string, sessionEmail?: string | null, toolsMounted = false): Promise<Response> {
     const url = new URL(request.url);
     const guest = url.pathname === '/api/bug-reports/guest';
     if (guest ? accountOwner !== null || !rateKey || !/^[0-9a-f]{64}$/.test(rateKey) : !accountOwner) return fail('forbidden', 403);
@@ -181,7 +181,7 @@ export class RedmineReports {
         let result;
         try {
           result = await withDeadline(signal => withSignal(this.env.BUG_REPORTS!.submitPublic({
-            reportId: serviceId, description, origin: this.env.PUBLIC_ORIGIN!,
+            reportId: serviceId, description, origin: toolsMounted ? 'https://tools.ailab.gc.cuny.edu' : this.env.PUBLIC_ORIGIN!,
             path: body.path === '/p/:shared-map' ? '/p/:shared-map' : '/', release: this.env.RELEASE,
             rateDay, rateKey: digest(`cail-public-report:systems-mapping:${rateDay}:${ip}`),
           }), signal), undefined, 18000);
@@ -232,6 +232,7 @@ export class RedmineReports {
           body: JSON.stringify({ cail_reporter: reporter, issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(id, owner), is_private: true,
             description: [...(contact ? [`Reporter (self-reported): ${contact.firstName} ${contact.lastName}`, `Contact email (unverified): ${contact.email}`]
               : [`CAIL account reference: ${owner.slice(0,16)}`, ...(preferredName ? [`SSO preferred name: ${preferredName}`] : []), ...(loginEmail ? [`SSO email: ${loginEmail}`] : [])]), `Page: ${page}`, `System Mapping release: ${this.env.RELEASE}`,
+              ...(toolsMounted ? [`Application: https://tools.ailab.gc.cuny.edu/systems-mapping${body.path === '/p/:shared-map' ? '/p/:shared-map' : '/'}`] : []),
               `Reported at: ${at}`, `Report reference: ${id}`, '', description].join('\n'),
           } }),
         });

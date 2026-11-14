@@ -5,7 +5,7 @@ import { readCookie, type IdentityClient } from './login';
 import { validSessionToken } from './session-contract/session.js';
 import publicJwks from './jwks.json';
 
-export type Principal = { subject: string; preferredName?: string | null; email?: string | null; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess };
+export type Principal = { subject: string; preferredName?: string | null; email?: string | null; admin: boolean; expiresAt: number; gatewayJwt: string; course?: CourseAccess; toolsMounted?: true };
 export type IdentityEnv = {
   IDENTITY: IdentityClient;
   ADMISSION_RESOLVER: { resolveMembership(input: { subject: string }): Promise<unknown>; resolveCourseAccessV2?(input: { subject: string; app: string; classId: string }): Promise<unknown> };
@@ -37,6 +37,24 @@ export async function authorize(request: Request, env: IdentityEnv): Promise<Pri
   if (!grants || typeof grants !== 'object') return authFailure(503, 'identity_unavailable');
   if (grants.ok !== true) return authFailure(grants.status === 403 ? 403 : grants.status === 401 ? 401 : 503,
     grants.status === 403 ? 'admission_required' : grants.status === 401 ? 'session_invalid' : 'identity_unavailable');
+  return principalFromGrants(request, env, grants, [appConfig, gatewayConfig], report);
+}
+
+/** Only the private ToolsApp entrypoint reads identity headers. */
+export async function authorizeTools(request: Request, env: IdentityEnv): Promise<Principal | Response> {
+  const configs = await verifierConfigs(env);
+  if (!configs.every(config => config.ok) || !env.ADMISSION_RESOLVER) return authFailure(503, 'identity_verification_misconfigured');
+  const appJwt = request.headers.get('x-cail-identity-jwt');
+  const gatewayJwt = request.headers.get('x-cail-gateway-identity-jwt');
+  if (!appJwt || !gatewayJwt) return authFailure(401, 'authentication_required');
+  const principal = await principalFromGrants(request, env, { appJwt, gatewayJwt }, configs, false);
+  return principal instanceof Response ? principal : { ...principal, toolsMounted: true };
+}
+
+async function principalFromGrants(request: Request, env: IdentityEnv,
+  grants: { appJwt: unknown; gatewayJwt: unknown; reporter?: { name: string | null; email: string } | null },
+  [appConfig, gatewayConfig]: Awaited<ReturnType<typeof verifierConfigs>>, report: boolean): Promise<Principal | Response> {
+  if (!appConfig.ok || !gatewayConfig.ok) return authFailure(503, 'identity_verification_misconfigured');
   if (typeof grants.appJwt !== 'string' || !grants.appJwt || grants.appJwt.length > 16384) return authFailure(503, 'identity_unavailable');
   if (typeof grants.gatewayJwt !== 'string' || !grants.gatewayJwt || grants.gatewayJwt.length > 16384) return authFailure(401, 'invalid_credential');
   const appIdentity = await verifyIdentityJwt(grants.appJwt, appConfig.config);
