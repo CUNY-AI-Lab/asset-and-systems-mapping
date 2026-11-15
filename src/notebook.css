@@ -270,7 +270,7 @@
 @media (max-width: 640px) {
   .map-stage--notebook .canvas-wrap > .map-connect-status { font-size: 12px; border-radius: 14px; }
 }
-/* Level picker in the add-node form: the same swatches the Map key uses. */
+/* Level picker in the add-node form: the same swatches the Legend uses. */
 .level-choice { display: grid; gap: 6px; }
 /* Equal buttons on one row; when the panel is too narrow for that, a button moves to the next row. */
 .level-choice__options { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }

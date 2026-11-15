@@ -198,7 +198,9 @@ browserTest('account workspace keeps compact actions and one Tools scroller at f
         return { background: style.backgroundColor, underlineWidth: style.borderBottomWidth, radius: style.borderRadius };
       })).toEqual({ background: 'rgba(0, 0, 0, 0)', underlineWidth: '2px', radius: '0px' });
       const tools = page.getByRole('region', { name: 'Map tools', exact: true });
-      for (const name of ['Add item', 'Map key']) await browserExpect(tools.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 });
+      await browserExpect(tools.getByRole('button', { name: 'Add item', exact: true })).toBeInViewport({ ratio: 1 });
+      await browserExpect(page.getByRole('button', { name: 'Legend', exact: true })).toBeInViewport({ ratio: 1 });
+      await browserExpect(tools.getByRole('button', { name: 'Legend', exact: true })).toHaveCount(0);
       await browserExpect(tools.getByRole('group', { name: 'Map zoom', exact: true }).getByRole('button')).toHaveText(['−', '+', 'Fit map']);
       expect(await tools.locator('.notebook-tools-body').evaluate(element => ({ maxHeight: getComputedStyle(element).maxHeight, overflowY: getComputedStyle(element).overflowY }))).toEqual({ maxHeight: 'none', overflowY: 'visible' });
       await tools.getByRole('button', { name: 'Full screen map', exact: true }).scrollIntoViewIfNeeded();

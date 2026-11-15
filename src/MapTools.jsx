@@ -31,7 +31,7 @@ export default function MapTools({ embedded = false, open, onOpenChange, scales,
       <div className="notebook-tools-body">
       {embedded && <><div className="map-tools-primary" role="group" aria-label="Create and understand the map">
         {onAdd && <button type="button" className="map-tools-add" onClick={() => run(onAdd)}>Add item</button>}
-        <button type="button" onClick={() => run(onLegend)}>Map key</button>
+        {onLegend && <button type="button" onClick={() => run(onLegend)}>Legend</button>}
       </div>{zoom}</>}
       <div className="map-tools-view" role="group" aria-label="Map presentation">
         <button type="button" aria-pressed={presentation === 'canvas'} onClick={() => run(() => onPresentation('canvas'))}>Canvas</button>
@@ -50,7 +50,7 @@ export default function MapTools({ embedded = false, open, onOpenChange, scales,
         <MapSearch nodes={nodes} onSelect={(kind, id) => run(() => onSelect(kind, id))} />
         {presentation === 'canvas' && (embedded ? <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button> : <div className="map-tools-layout-actions">
           <button type="button" disabled={!canArrange} onClick={() => run(onArrange)}>Arrange map</button>
-          <button type="button" onClick={() => run(onLegend)}>Map key</button>
+          {onLegend && <button type="button" onClick={() => run(onLegend)}>Legend</button>}
         </div>)}
         {onUndo && !editHistory && <div className="map-tools-layout-actions" role="group" aria-label="Layout history">
           <button type="button" disabled={!canUndo} onClick={()=>run(onUndo)}>Undo layout</button>

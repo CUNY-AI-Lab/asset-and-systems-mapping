@@ -6544,9 +6544,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       matrixTransform() { return { x: this.x, y: this.y }; },
     });
 
-    const keyButton = mapTool('Map key');
+    const keyButton = mapTool('Legend');
     fireEvent.click(keyButton);
-    expect(screen.getByLabelText('Map key')).toBeVisible();
+    expect(screen.getByLabelText('Legend')).toBeVisible();
     expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(inspector).not.toHaveAttribute('inert');
     fireEvent.pointerDown(nodeElement, { pointerId: 51, button: 0, clientX: position.x, clientY: position.y });
@@ -6554,7 +6554,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(inspector).not.toHaveAttribute('aria-hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     await waitFor(() => expect(inspector).toHaveClass('is-open'));
-    expect(screen.queryByLabelText('Map key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Legend')).not.toBeInTheDocument();
     expect(inspector).not.toHaveAttribute('aria-hidden');
     expect(inspector).not.toHaveAttribute('inert');
 

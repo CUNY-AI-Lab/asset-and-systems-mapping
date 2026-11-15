@@ -157,6 +157,80 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1').each([1440, 
   } finally { await browser.close(); }
 }, 60000);
 
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1').each([1440, 390])('Legend stays available and preserves draft and connection state (%i px)', async width => {
+  const fixture = groupProject(); fixture.id = `legend-${width}`; fixture.title = `Legend ${width}`;
+  expect((await request(`/api/cloud/projects/${fixture.id}`, 'alice', { method: 'PUT', body: JSON.stringify({ project: serializeProject(fixture), revision: 0 }) })).status).toBe(200);
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+    const page = await openFixturePage(context);
+    await page.goto(ORIGIN);
+    await page.getByRole('article', { name: fixture.title }).getByRole('button', { name: 'Open project' }).click();
+    const nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
+    const trigger = page.getByRole('button', { name: 'Legend', exact: true });
+    const panel = page.getByRole('dialog', { name: 'Legend', exact: true });
+    const canvas = page.locator('.graph-canvas');
+    const stored = async () => parseProject((await (await request(`/api/cloud/projects/${fixture.id}`)).json()).project);
+    const openLegend = async () => {
+      await browserExpect(trigger).toHaveCount(1); await browserExpect(trigger).toBeInViewport({ ratio: 1 });
+      expect((await trigger.boundingBox()).height).toBeGreaterThanOrEqual(44);
+      await trigger.click();
+      await browserExpect(panel).toBeVisible();
+      await browserExpect(panel.getByRole('button', { name: 'Close legend', exact: true })).toBeFocused();
+      expect(await panel.getByRole('heading').first().innerText()).toBe('Create and connect');
+      expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    };
+    const closeLegend = async () => {
+      await page.keyboard.press('Escape'); await browserExpect(panel).toHaveCount(0);
+      await browserExpect(trigger).toBeFocused(); await browserExpect(trigger).toHaveAttribute('aria-expanded', 'false');
+    };
+    for (const mode of ['Memo', 'Notebook', 'Tools']) {
+      await nav.getByRole('button', { name: mode, exact: true }).click();
+      await openLegend(); await closeLegend();
+      await browserExpect(nav.getByRole('button', { name: mode, exact: true })).toHaveAttribute('aria-pressed', 'true');
+    }
+    await browserExpect(page.getByRole('region', { name: 'Map tools', exact: true }).getByRole('button', { name: 'Legend', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Hide sidebar', exact: true }).click();
+    await openLegend(); await closeLegend();
+    await openTools(page); await page.getByRole('button', { name: 'List', exact: true }).click();
+    await browserExpect(page.locator('.map-list-view')).toBeVisible(); await openLegend(); await closeLegend();
+    await page.getByRole('button', { name: 'Canvas', exact: true }).click();
+    await page.getByRole('button', { name: 'Full screen map', exact: true }).click();
+    await openLegend();
+    expect(await panel.evaluate(el => Boolean(el.closest('.map-stage.is-fullscreen')))).toBe(true);
+    await closeLegend(); await browserExpect(page.locator('.map-stage')).toHaveClass(/is-fullscreen/);
+    await canvas.press('Escape'); await browserExpect(page.locator('.map-stage')).not.toHaveClass(/is-fullscreen/);
+    await nav.getByRole('button', { name: 'Notebook', exact: true }).click();
+    const locals = fixture.graph.nodes.filter(n => n.scale === 'micro').slice(0, 2);
+    const node = id => page.locator(`.graph-node[data-graph-id="${id}"]`);
+    await node(locals[0].id).dblclick();
+    const connecting = page.locator('.canvas-wrap > .map-connect-status');
+    await browserExpect(connecting).toContainText(locals[0].label);
+    await openLegend();
+    if (process.env.SYSTEMS_ENTRY_SCREENSHOTS) await page.screenshot({ path: `${process.env.SYSTEMS_ENTRY_SCREENSHOTS}/legend-${width}.png` });
+    await closeLegend(); await browserExpect(connecting).toContainText(locals[0].label);
+    await node(locals[1].id).click();
+    const relationship = page.getByRole('textbox', { name: 'Relationship', exact: true });
+    await browserExpect(relationship).toBeFocused(); await relationship.fill('works alongside');
+    await openLegend(); await closeLegend();
+    await browserExpect(relationship).toHaveValue('works alongside');
+    expect((await stored()).graph.edges).toHaveLength(fixture.graph.edges.length);
+    await relationship.press('Enter');
+    await browserExpect.poll(async () => (await stored()).graph.edges.filter(e => e.verb === 'works alongside').length).toBe(1);
+    await openTools(page); await page.getByRole('button', { name: 'Add item', exact: true }).click();
+    const label = page.getByRole('textbox', { name: 'Label', exact: true });
+    const evidence = page.getByRole('textbox', { name: 'Evidence or question (optional)', exact: true });
+    await label.fill('Preserved draft'); await evidence.fill('An optional thought');
+    await openLegend(); await closeLegend();
+    await browserExpect(label).toHaveValue('Preserved draft'); await browserExpect(evidence).toHaveValue('An optional thought');
+    expect((await stored()).graph.nodes).toHaveLength(fixture.graph.nodes.length);
+    await label.press('Escape'); await browserExpect(label).toHaveCount(0);
+    await canvas.press('?'); await browserExpect(panel.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeFocused();
+    await page.keyboard.press('Escape'); await browserExpect(canvas).toBeFocused();
+  } finally { await browser.close(); }
+}, 60000);
+
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('printed and scalable map downloads preserve the canvas drawing', async () => {
   const fixture = groupProject();
   fixture.id='drawing-browser'; fixture.title='Saved map drawing';
@@ -259,7 +333,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('map keyboar
     await canvas.press('?');
     await browserExpect(page.getByRole('heading',{name:'Keyboard shortcuts'})).toBeFocused();
     await page.keyboard.press('Escape');
-    await browserExpect(page.getByRole('dialog',{name:'Map key'})).toHaveCount(0);
+    await browserExpect(page.getByRole('dialog',{name:'Legend'})).toHaveCount(0);
   } finally {await browser.close();}
 },120000);
 

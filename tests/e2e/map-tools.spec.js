@@ -56,7 +56,7 @@ test('map tool action rows align and search remains usable at narrow panel width
     const body = page.locator('.notebook-tools-body');
     expect(await body.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     const arrange = await body.getByRole('button', { name: 'Arrange map', exact: true }).boundingBox();
-    const key = await body.getByRole('button', { name: 'Map key', exact: true }).boundingBox();
+    const key = await body.getByRole('button', { name: 'Legend', exact: true }).boundingBox();
     expect(arrange.height).toBeGreaterThanOrEqual(44);
     expect(arrange.height).toBeCloseTo(key.height, 1);
     expect(arrange.y).toBeCloseTo(key.y, 1);

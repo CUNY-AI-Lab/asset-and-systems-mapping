@@ -4209,33 +4209,35 @@ function MapDrawingPreview({project,presentation}) {
     : <figcaption>{failed?'Preview unavailable. You can still choose a download format.':'Preparing map preview…'}</figcaption>}</figure>;
 }
 
-function MapLegend({savedHistory=false,canConnect=false}) {
+function MapLegend({savedHistory=false,canCreate=false,canConnect=false,canGroup=false}) {
   return <div className="legend-grid">
-    <section><h3>Levels</h3><dl className="level-guide">
-      <div><dt><i className="legend-symbol legend-symbol--micro" />Micro-level</dt><dd>Person participates directly in this setting or interaction.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--meso" />Meso-level</dt><dd>Arrows connect the people, resources, and settings already on the Micro map.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo-level</dt><dd>Outside offices, policies and decision settings; dotted connections attach them to local relationships.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro-level</dt><dd>Cultural beliefs, economic structures and broader conditions; purple dashed lines mark their connections.</dd></div>
-    <div><dt><span aria-hidden="true">◇</span> Direction varies</dt><dd>No fixed arrow direction is asserted.</dd></div><div><dt><span aria-hidden="true">?</span> Direction unknown</dt><dd>Direction has not been established.</dd></div></dl></section>
-    <section><h3>Default node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><h3>How to read this map</h3><ul className="map-conventions">
-      <li><strong>Micro</strong><span>People, resources, and immediate settings</span></li>
-      <li><strong>Exo</strong><span>Policies and outside offices; teal dotted connections link to local relationships.</span></li>
-      <li><strong>Macro</strong><span>Cultural, historical and economic conditions; purple dashed connections.</span></li>
-      <li><strong>Relationships</strong><span>Arrowheads show established direction. The label contains the relationship wording. Selecting an item highlights its relationships; the others stay in view.</span></li>
-      <li><strong>Auto-fit</strong><span>Busy nodes sit near the center. Unconnected items are grouped by color away from the connection routes. Use Arrange map to reorganize a saved layout.</span></li>
-      <li><strong>Draft</strong><span>A dotted line previews an unfinished relationship.</span></li>
-      <li><strong>Stored scope</strong><span>A dash-dot line with hollow endpoints marks a recorded scope membership, not a directional relationship.</span></li>
-    </ul><p className="map-legend__note">Choose a node’s color in Notebook. Color does not change its system or type. Regions appear as the map grows: Micro, then Exo, then Macro. You create every relationship.</p></section>
-    <section><h3 id="map-key-shortcuts" tabIndex="-1">Keyboard shortcuts</h3><dl className="map-key-shortcuts">
-      <div><dt>Remove selected item</dt><dd>Delete or Backspace</dd></div>
+    {canCreate && <section><h3>Create and connect</h3><dl className="map-legend-actions">
+      <div><dt>Add a node</dt><dd>{canConnect ? 'Double-click empty canvas, or use Tools → Add item.' : 'Use Tools → Add item.'} Check Level, type Label, press Return.</dd></div>
+      {canConnect && <>
+        <div><dt>Connect nodes</dt><dd>Double-click the start, then click another node. Keyboard: Shift+Return on the starting node, Return on the target.</dd></div>
+        <div><dt>Connect a new node</dt><dd>While connecting, click empty canvas or press N on the canvas. Label and Relationship save together.</dd></div>
+        {canGroup && <div><dt>Connect to a line</dt><dd>From Exo or Macro, click a local relationship line, or focus it and press Return.</dd></div>}
+      </>}
+      <div><dt>Finish a draft</dt><dd>Return adds a valid draft. For a new connected node, Label goes to Relationship first if needed. Shift+Return inserts a line break. Evidence is optional.</dd></div>
+    </dl></section>}
+    <section><h3 id="map-legend-shortcuts" tabIndex="-1">Keyboard shortcuts</h3><dl className="map-legend-shortcuts">
+      <div><dt>Select · Remove</dt><dd>Return or Space on an item · Delete or Backspace on the selection</dd></div>
       <div><dt>{savedHistory?'Undo':'Undo layout'}</dt><dd>⌘/Ctrl + Z</dd></div>
       <div><dt>{savedHistory?'Redo':'Redo layout'}</dt><dd>⌘/Ctrl + Shift + Z · Ctrl + Y</dd></div>
-      <div><dt>Find a node</dt><dd>⌘/Ctrl + F or /</dd></div>
-      <div><dt>Fit map · Zoom</dt><dd>0 · + / −</dd></div>
-      <div><dt>Pan canvas · Move focused node</dt><dd>Arrow keys (Shift moves farther)</dd></div>
-      {canConnect && <><div><dt>Connect from focused node</dt><dd>Shift + Enter, or double-click it</dd></div><div><dt>Choose a target · Start a new target</dt><dd>Enter on a node or line · N on the canvas while connecting</dd></div><div><dt>Place a node in a level</dt><dd>Double-click empty space inside that region</dd></div></>}
-      <div><dt>Cancel · Show shortcuts</dt><dd>Esc · ?</dd></div>
+      <div><dt>Find</dt><dd>⌘/Ctrl + F, or / on the canvas</dd></div>
+      <div><dt>Fit · Zoom</dt><dd>0 · + / − with the canvas focused</dd></div>
+      <div><dt>Move</dt><dd>Arrow keys on the canvas or a node; Shift moves farther</dd></div>
+      <div><dt>Cancel · Help</dt><dd>Escape closes Legend, then cancels a draft or exits full screen · ? on the canvas opens shortcuts</dd></div>
+    </dl><p>Text fields keep their own typing and undo shortcuts.</p></section>
+    <section><h3>Levels and lines</h3><dl className="level-guide">
+      <div><dt><i className="legend-symbol legend-symbol--micro" />Micro</dt><dd>People, resources and settings with direct participation.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--meso" />Meso</dt><dd>Relationships among items in Micro space.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo</dt><dd>Outside offices and policies; teal dotted connections.</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro</dt><dd>Cultural, historical and economic conditions; purple dashed connections.</dd></div>
+      <div><dt>Direction</dt><dd>Arrowheads show direction. ◇ varies; ? is not yet known.</dd></div>
+      <div><dt>Other lines</dt><dd>Dotted preview: unfinished connection. Dash-dot with hollow ends: stored scope membership.</dd></div>
     </dl></section>
+    <section><h3>Default node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><p className="map-legend__note">Choose Automatic or a custom color in Notebook. Color never changes a node’s level or type.</p></section>
   </div>;
 }
 
@@ -4977,7 +4979,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
   }, [phoneLayout, drawerOpen]);
   useEffect(() => {
     if (!legendOpen) return undefined;
-    const frame = window.requestAnimationFrame(() => document.querySelector('#map-key-panel '+legendFocusTarget.current)?.focus());
+    const frame = window.requestAnimationFrame(() => document.querySelector('#map-legend-panel '+legendFocusTarget.current)?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [legendOpen]);
   const selectedNode = selection?.kind === 'node' ? project.graph.nodes.find((node) => node.id === selection.id) : null;
@@ -5837,7 +5839,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
   };
   const closeLegend = useCallback(() => {
     setLegendOpen(false);
-    setAnnouncement('Map key closed.');
+    setAnnouncement('Legend closed.');
     window.requestAnimationFrame(() => {
       const opener=legendOpener.current;
       (opener?.isConnected && opener!==document.body ? opener : legendTriggerRef.current || canvasWrapRef.current?.querySelector('.graph-canvas'))?.focus();
@@ -5848,13 +5850,13 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       closeLegend();
       return;
     }
-    setDrawerOpen(false);
+    if (!notebook?.simple) setDrawerOpen(false);
     setMoveMenuOpen(false);
     setCreateMenuOpen(false);
     legendOpener.current=focusTarget?.currentTarget || document.activeElement;
-    legendFocusTarget.current=focusTarget==='shortcuts'?'#map-key-shortcuts':'button';
+    legendFocusTarget.current=focusTarget==='shortcuts'?'#map-legend-shortcuts':'button';
     setLegendOpen(true);
-    setAnnouncement('Map key opened.');
+    setAnnouncement('Legend opened.');
   };
   const toggleFullscreen = () => {
     const next = !fullscreen;
@@ -5896,7 +5898,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
           onAdd={project.instructor.allowResearchLeads && SCALE_ORDER.includes(project.activeScale) ? () => { setConnecting(false); setConnectionSource(null); changePanel('inspector'); setNewNode(blankManualNode(project.activeScale, notebook?.simple)); setAddMode('node'); } : null}
           autoFit={project.layout?.autoFit !== false} onAutoFit={notebook ? toggleAutoFit : undefined} onFit={fitMap} onArrange={arrangeMap} canArrange={!focusedEcologyPositions && !phoneRelationshipPositions}
           editHistory={Boolean(notebook?.edits)} onUndo={notebook?.edits?.onUndo || (notebook ? ()=>restoreLayout('undo') : undefined)} onRedo={notebook?.edits?.onRedo || (()=>restoreLayout('redo'))} canUndo={notebook?.edits ? notebook.edits.canUndo : Boolean(layoutHistory.past.length)} canRedo={notebook?.edits ? notebook.edits.canRedo : Boolean(layoutHistory.future.length)}
-          onLegend={toggleLegend} onFullscreen={toggleFullscreen} fullscreen={fullscreen}
+          onLegend={notebook?.simple ? undefined : toggleLegend} onFullscreen={toggleFullscreen} fullscreen={fullscreen}
           hasRemoved={hasRemovedItems} showRemoved={showRemoved} onShowRemoved={setShowRemoved} />;
   useLayoutEffect(() => {
     if (!notebook) return;
@@ -5944,7 +5946,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     } else if(cmd==='fit')fitMap();
     else if(cmd==='keys') {
       if(!legendOpen)toggleLegend('shortcuts');
-      else document.getElementById('map-key-shortcuts')?.focus();
+      else document.getElementById('map-legend-shortcuts')?.focus();
     } else if(cmd==='find') {
       if(notebook?.simple) {setToolsOpen(true);notebook.onChange(true);setDrawerOpen(true);}
       else if(notebook)setToolsOpen(true);
@@ -5963,6 +5965,7 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
       ['undo','redo'].includes(mapShortcut(e)))idleShortcut.current?.(e);};
     document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);
   },[]);
+  const legendPanel = legendOpen && <aside id="map-legend-panel" className="map-legend" role="dialog" aria-labelledby="map-legend-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-legend-title">Legend</strong><button type="button" onClick={closeLegend} aria-label="Close legend"><Icon name="close" /></button></div><MapLegend savedHistory={Boolean(notebook?.edits)} canCreate={Boolean(notebook?.simple && project.instructor.allowResearchLeads)} canConnect={Boolean(notebook?.simple && drawingReady && project.instructor.allowResearchLeads)} canGroup={isPart2(project.activeScale)} /></aside>;
   return <div className={`map-stage ${notebook ? 'map-stage--notebook' : ''} map-stage--${mapMode} stage-enter ${focusActive || visibleScale === 'all' ? 'has-map-context' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
     onPointerDownCapture={() => { consumedCanvasTapRef.current = null; }}
     onKeyDownCapture={() => { consumedCanvasTapRef.current = null; }}
@@ -6003,16 +6006,17 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
         {notebook && !connecting && <div className="map-reading-guide" role={selection ? 'group' : undefined} aria-label={selection ? 'Selected map item' : undefined}><span>{selection ? (selectedNode?.label || (selectedEdge ? relationshipDescription(selectedEdge) : 'Selected item')) : notebook.simple ? workflowGuide(project, { addMode, pendingNode: Boolean(pendingNodePosition) }) : addMode === 'edge' ? 'New relationship' : project.activeScale === 'micro' ? 'Select a node to edit it.' : 'Select a node or relationship to edit it.'}</span>{notebook && !notebook.open && (selection || addMode === 'edge') && <button type="button" className="button button--secondary selected-item-edit" onClick={() => { onPanelMode?.('inspector'); notebook.onChange(true); focusInspector(); }}>Edit</button>}{selection && <button type="button" onClick={()=>{setSelection(null);setFocus(null);}}>{notebook.simple ? 'Cancel' : 'Clear highlight'}</button>}</div>}
         <MemoGraphCanvas onCancelConnection={() => { if (notebook?.simple && addMode === 'node' && pendingNodePosition && !connecting) { setPendingNodePosition(null); setAddMode(null); setNewNode(blankManualNode(project.activeScale, true)); closeInspector(); setAnnouncement('New node cancelled.'); return; } if (!connecting && !relationshipDraft.draft) return; if (relationshipDraft.draft) { relationshipDraft.discard(); setAddMode(null); } cancelConnection(); setSelection(null); setFocus(null); }} readingMode={Boolean(notebook)} overviewLabels={Boolean(notebook?.simple)} nodeStage={project.activeScale === 'micro' && !visibleEdges.length} onStartConnection={notebook?.simple && drawingReady ? id => startConnection(id, true) : undefined} onConnectBlank={notebook?.simple ? connectBlank : undefined} onAddBlank={notebook?.simple && drawingReady ? addBlank : undefined} previewConnection={relationshipDraft.draft && relationshipSource && relationshipTarget && relationshipSource.id !== relationshipTarget.id ? { source: relationshipSource.id, target: relationshipTarget.id, direction: newEdge.relationshipProcess?.direction || 'source to target' } : null} pendingNode={notebook?.simple && addMode === 'node' && pendingNodePosition ? { x: pendingNodePosition.x, y: pendingNodePosition.y, label: newNode.label, scale: newNode.scale } : null} microBoundary={microBoundary} connectionMode={connecting} nodes={displayedNodes} edges={visibleEdges} selection={selection} onSelect={selectItem} onMoveNode={moveNode} selectedScope={selectedScope} onScopeSelect={followScope} viewport={canvasViewport} phoneLayout={phoneLayout} phoneViewBox={phoneViewBox} mapLabel={mapLabel} mapMode={mapMode} ecologyLayers={ecologyLayers} ecologyBandGeometry={sharedEcologyBands} ecologyInteractionBandGeometry={interactionEcologyBands} fontRevision={fontRevision} visibleLayer={visibleScale === 'macrosphere' && !hasLegacyMacroNodes ? 'exosphere' : visibleScale} detailMode={Boolean(phoneRelationshipPositions || focusedEcologyPositions)} ringExpansion={ringExpansion} interactionMode={phoneLayout && sheetOpen ? 'phone-drawer' : 'durable'} minimumZoom={minimumInteractiveZoom} onViewportChange={changeViewport} onAnnounce={setAnnouncement} />
         {!notebook && <div className="canvas-chrome" aria-hidden={phoneLayout && drawerOpen ? 'true' : undefined} inert={phoneLayout && drawerOpen}>
-          <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-key-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Map key</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
+          <div className="canvas-chrome__top"><div className="canvas-control-group canvas-control-group--display" role="group" aria-label="Map display"><button ref={legendTriggerRef} type="button" aria-controls="map-legend-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Legend</button><button ref={fullscreenToggleRef} type="button" aria-controls="systems-map-canvas" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen map'} onClick={toggleFullscreen}>{fullscreen ? 'Exit full screen' : 'Full screen'}</button></div></div>
           <div className="canvas-chrome__bottom"><div className="canvas-control-group canvas-control-group--navigation" role="group" aria-label="Map navigation"><button type="button" aria-label="Zoom out" disabled={canvasViewport.zoom <= minimumInteractiveZoom} onClick={() => zoomBy(-0.15)}>−</button><button type="button" aria-label="Zoom in" disabled={canvasViewport.zoom >= VIEWPORT_LIMITS.maxZoom} onClick={() => zoomBy(0.15)}>+</button><button type="button" aria-label="Fit map" onClick={fitMap}><span className="desktop-label">Fit map</span><span className="phone-label">Fit</span></button><div className="map-move-control"><button ref={moveMenuTriggerRef} type="button" aria-controls="map-move-controls" aria-expanded={moveMenuOpen} onClick={() => { setLegendOpen(false); setMoveMenuOpen((current) => !current); }}>Move</button>{moveMenuOpen && <div id="map-move-controls" className="map-move-controls" role="group" aria-label="Move map without dragging" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMoveMenuOpen(false); window.requestAnimationFrame(() => moveMenuTriggerRef.current?.focus()); } }}><button type="button" aria-label="Move map up" onClick={() => moveMapBy(0, -40, 'up')}>↑</button><button type="button" aria-label="Move map left" onClick={() => moveMapBy(-40, 0, 'left')}>←</button><button type="button" aria-label="Move map right" onClick={() => moveMapBy(40, 0, 'right')}>→</button><button type="button" aria-label="Move map down" onClick={() => moveMapBy(0, 40, 'down')}>↓</button></div>}</div></div><div className="canvas-control-group canvas-control-group--actions" role="group" aria-label="Map actions">{!(focusedEcologyPositions || phoneRelationshipPositions) && <button type="button" aria-label="Arrange map" onClick={arrangeMap}><span className="desktop-label">Arrange map</span><span className="phone-label">Arrange</span></button>}<button className="phone-inspector-trigger map-details-trigger" type="button" aria-controls="map-inspector" aria-expanded={drawerOpen} onClick={() => { if (!selection) setInspectorTab('map'); setLegendOpen(false); setMoveMenuOpen(false); onPanelMode?.('inspector'); setDrawerOpen(true); focusInspector(); }}>Details</button></div></div>
         </div>}
-        {legendOpen && <aside id="map-key-panel" className="map-legend" role="dialog" aria-labelledby="map-key-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLegend(); } }}><div className="map-legend__head"><strong id="map-key-title">Map key</strong><button type="button" onClick={closeLegend} aria-label="Close map key"><Icon name="close" /></button></div><MapLegend savedHistory={Boolean(notebook?.edits)} canConnect={Boolean(notebook?.simple && drawingReady)} /></aside>}
+        {!notebook?.simple && legendPanel}
       </section> : <MapListView compact={Boolean(notebook?.simple)} nodes={project.graph.nodes} edges={project.graph.edges} visibleScale={visibleScale} showRemoved={showRemoved} onSelect={(kind,id) => {
         selectItem(kind,id);
         // The list action explicitly says Open details. Ordinary canvas
         // selection continues to preserve the user's Notebook choice.
         if (notebook) { onPanelMode?.('inspector'); notebook.onChange(true); setDrawerOpen(true); focusInspector(); }
       }} />}
+      {notebook?.simple && <><button ref={legendTriggerRef} type="button" className="map-legend-trigger" aria-controls="map-legend-panel" aria-expanded={legendOpen} onClick={toggleLegend}>Legend</button>{legendPanel}</>}
       <aside id="map-inspector" ref={inspectorRef} data-item-scale={selectedNode?.scale || selectedEdge?.scale || project.activeScale} className={`inspector ${sheetOpen ? 'is-open' : ''} work-panel--${panelMode}`} aria-label={notebook ? 'Notebook' : panelMode === 'suggestions' ? 'Suggestions panel' : panelMode === 'review' ? 'Review panel' : 'Map inspector'} aria-hidden={!sheetOpen ? 'true' : undefined} inert={!sheetOpen} onKeyDown={(event) => { if (event.key === 'Escape' && sheetOpen) { event.preventDefault(); event.stopPropagation(); closeInspector(); } }}>
         {sheetOpen && <SidebarResizeHandle {...sidebarSize} />}
         {notebook && <div ref={setNotebookNavigationHost} className="notebook-controls-host" />}

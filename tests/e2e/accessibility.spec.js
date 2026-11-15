@@ -359,10 +359,10 @@ test.describe('student accessibility', () => {
       }
     }
 
-    await mapCommand(page, 'Map key');
+    await mapCommand(page, 'Legend');
     await expect(page.locator('.map-legend')).toBeVisible();
-    violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Map key'));
-    await page.getByRole('button', { name: 'Close map key' }).click();
+    violations.push(...await scanAccessibility(page, makeAxeBuilder, testInfo, 'Legend'));
+    await page.getByRole('button', { name: 'Close legend' }).click();
 
     await mapCommand(page, 'List');
     await expect(page.getByRole('heading', { name: 'Map list' })).toBeVisible();

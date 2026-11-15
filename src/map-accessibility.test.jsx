@@ -312,24 +312,24 @@ describe('map accessibility', () => {
     expect(screen.getByText('Full screen map closed.')).toBeInTheDocument();
   });
 
-  it('moves focus into the map key and restores it to the trigger, including on Escape', async () => {
+  it('moves focus into the legend and restores it to the trigger, including on Escape', async () => {
     renderMapStage();
     fireEvent.click(screen.getByRole('button', { name: 'Full screen map' }));
     await waitFor(() => expect(document.querySelector('.map-stage')).toHaveClass('is-fullscreen'));
-    const trigger = screen.getByRole('button', { name: 'Map key' });
-    expect(trigger).toHaveAttribute('aria-controls', 'map-key-panel');
+    const trigger = screen.getByRole('button', { name: 'Legend' });
+    expect(trigger).toHaveAttribute('aria-controls', 'map-legend-panel');
     fireEvent.click(trigger);
 
-    expect(screen.getByText('Policies and outside offices; teal dotted connections link to local relationships.')).toBeVisible();
+    expect(screen.getByText('Outside offices and policies; teal dotted connections.')).toBeVisible();
     expect(screen.getByText('Cultural, historical and economic conditions; purple dashed connections.')).toBeVisible();
     expect(screen.queryByText(/Broader policies/)).not.toBeInTheDocument();
-    const close = screen.getByRole('button', { name: 'Close map key' });
+    const close = screen.getByRole('button', { name: 'Close legend' });
     await waitFor(() => expect(close).toHaveFocus());
-    fireEvent.keyDown(document.getElementById('map-key-panel'), { key: 'Escape' });
+    fireEvent.keyDown(document.getElementById('map-legend-panel'), { key: 'Escape' });
     await waitFor(() => expect(trigger).toHaveFocus());
-    expect(screen.queryByRole('button', { name: 'Close map key' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close legend' })).not.toBeInTheDocument();
     expect(document.querySelector('.map-stage')).toHaveClass('is-fullscreen');
-    expect(screen.getByText('Map key closed.')).toBeInTheDocument();
+    expect(screen.getByText('Legend closed.')).toBeInTheDocument();
   });
 
   it('connects the mobile Details control to an inert inspector and moves focus into it when opened', async () => {
