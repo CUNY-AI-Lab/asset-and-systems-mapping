@@ -4,7 +4,7 @@ import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { createHash } from 'node:crypto';
 import { correlationFromHeaders, type CailCorrelation } from '@cuny-ai-lab/cail-log';
 import { authorize, authorizeTools, verifierConfigs, type Principal, type IdentityEnv } from './identity';
-import { appDocument, toolsRequest } from './tools-mount';
+import { appDocument, toolsRequest, toolsPublicPath, toolsLoginRedirect } from './tools-mount';
 import { requestLog } from './log.js';
 import { boundedText, boundedRpc, withDeadline, withSignal } from './bounded.js';
 import { createSystemsMappingApp } from '../server/app.js';
@@ -387,7 +387,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
       else if (!contactReporting(env) && isBugReport(url.pathname)) {
         response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT, toolsMounted: mountedPrincipal?.toolsMounted });
       }
-      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: mountedPrincipal ? '/systems-mapping/' : env.LOGIN_URL, bugReportEnabled: reportsEnabled(env) });
+      else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: mountedPrincipal ? '/systems-mapping/auth/login' : env.LOGIN_URL, bugReportEnabled: reportsEnabled(env) });
       else if (url.pathname.startsWith('/auth/')) {
         // Limit new handoffs only. A busy shared IP must not prevent callback
         // completion or clearing/revoking this browser's existing session.
@@ -495,7 +495,20 @@ export class ToolsApp extends WorkerEntrypoint<Bindings> {
   async fetch(request: Request): Promise<Response> {
     const translated = toolsRequest(request, this.env.PUBLIC_ORIGIN);
     if (translated instanceof Response) return securedResponse(translated, requestCorrelation(request).request_id);
-    return appDocument(await fetchMapping(translated, this.env, GUIDANCE_DEADLINE_MS, request), true, this.env.PUBLIC_ORIGIN);
+    const path = new URL(translated.url).pathname;
+    if (path === '/auth/login') {
+      const principal = await authorizeTools(request, this.env);
+      return securedResponse(principal instanceof Response ? principal : toolsLoginRedirect(request), requestCorrelation(request).request_id, true);
+    }
+    const publicPath = toolsPublicPath(path);
+    const anonymousShell = publicPath && !request.headers.has('x-cail-identity-jwt') && !request.headers.has('x-cail-gateway-identity-jwt');
+    let response = await fetchMapping(translated, this.env, GUIDANCE_DEADLINE_MS, anonymousShell ? undefined : request);
+    // The asset binding's SPA fallback must not turn a missing file into a
+    // public document at an arbitrary asset URL.
+    if (publicPath === 'asset' && response.headers.get('content-type')?.toLowerCase().startsWith('text/html')) {
+      response = securedResponse(failure('Not found.', 404), requestCorrelation(request).request_id);
+    }
+    return appDocument(response, true, this.env.PUBLIC_ORIGIN);
   }
 }
 

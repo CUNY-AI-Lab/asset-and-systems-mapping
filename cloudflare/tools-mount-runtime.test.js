@@ -16,7 +16,7 @@ const headersFor = (who = 'alice') => ({
 });
 const request = (path, { who = 'alice', headers = {}, ...options } = {}) => ingress.fetch(TOOLS + MOUNT + path, {
   redirect: 'manual', ...options,
-  headers: { ...headersFor(who), origin: TOOLS, 'content-type': 'application/json', ...headers },
+  headers: { ...(who ? headersFor(who) : {}), origin: TOOLS, 'content-type': 'application/json', ...headers },
 });
 const control = body => fixture.fetch('https://fixtures.test/control', { method: 'POST', body: JSON.stringify(body) });
 
@@ -69,6 +69,58 @@ test('public Worker requests cannot select the private Tools identity boundary',
   expect(response.status).toBe(401);
 });
 
+test.each(['GET', 'HEAD'])('anonymous %s serves only the public frontend shell and files', async method => {
+  await control({ denied: true });
+  for (const path of ['/', '/p/abcdefghijklmnopqrst?course=seminar', '/theme.js', '/favicon.svg', '/favicon.png']) {
+    const response = await request(path, { who: null, method });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    if (method === 'HEAD') expect(await response.text()).toBe('');
+  }
+  const index = await request('/index.html', { who: null, method });
+  expect(index.status).toBe(307); expect(index.headers.get('location')).toBe(MOUNT + '/');
+  const html = await (await request('/', { who: null })).text();
+  const script = html.match(/<script type="module"[^>]+src="([^"]+)"/)[1];
+  expect(script).toMatch(/^\/systems-mapping\/assets\//);
+  const asset = await request(script.slice(MOUNT.length), { who: null, method });
+  expect(asset.status).toBe(200); expect(asset.headers.get('content-type')).toMatch(/javascript/);
+});
+
+test.each(['/api', '/api/health', '/api/cloud/account', '/api/cloud/runtime', '/api/cloud/projects', '/api/bug-reports/session', '/api/config/public'])('anonymous requests cannot reach %s through the public shell', async path => {
+  expect((await request(path, { who: null })).status).toBe(401);
+});
+
+test.each(['/auth/start', '/auth/logout', '/health', '/metrics', '/admin', '/p/short', '/assets/missing.js', '/assets/missing.html', '/assets/../../api/health'])('does not expose the non-frontend path %s', async path => {
+  expect((await request(path, { who: null })).status).toBe(404);
+});
+
+test.each([['/', 'POST'], ['/theme.js', 'PUT'], ['/auth/login', 'POST'], ['/', 'OPTIONS']])('rejects %s %s outside the API', async (path, method) => {
+  expect((await request(path, { who: null, method })).status).toBe(405);
+});
+
+test.each(['GET', 'HEAD'])('the explicit %s login callback verifies grants and preserves a safe page destination', async method => {
+  expect((await request('/auth/login', { who: null, method })).status).toBe(401);
+  for (const [target, expected] of [[null, MOUNT + '/'], [MOUNT, MOUNT + '/'], [MOUNT + '#details', MOUNT + '/#details'], [MOUNT + '/?course=seminar&view=instructor&context=teaching#details', MOUNT + '/?course=seminar&view=instructor&context=teaching#details'], [MOUNT + '/p/abcdefghijklmnopqrst?course=seminar', MOUNT + '/p/abcdefghijklmnopqrst?course=seminar']]) {
+    const response = await request('/auth/login' + (target === null ? '' : '?returnTo=' + encodeURIComponent(target)), { method });
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(expected);
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(response.headers.get('set-cookie')).toBeNull();
+  }
+  await control({ denied: true });
+  expect((await request('/auth/login', { method })).status).toBe(403);
+});
+
+test.each(['', 'https://foreign.example/', TOOLS + MOUNT + '/', '//foreign.example/', MOUNT + '/api/cloud/projects', MOUNT + '/auth/login', MOUNT + '/index.html', MOUNT + '/p/short', MOUNT + '/../stem-splitter/', MOUNT + '/%2e%2e/stem-splitter/', MOUNT + '/%2fapi/health', MOUNT + '/\\foreign.example/', MOUNT + '/\n'])('rejects unsafe login return page %j', async target => {
+  expect((await request('/auth/login?returnTo=' + encodeURIComponent(target))).status).toBe(400);
+});
+
+test('rejects duplicated login destinations and publishes the explicit runtime login route', async () => {
+  expect((await request('/auth/login?returnTo=' + encodeURIComponent(MOUNT + '/') + '&returnTo=' + encodeURIComponent(MOUNT + '/'))).status).toBe(400);
+  expect(await (await request('/api/cloud/runtime')).json()).toMatchObject({ loginUrl: MOUNT + '/auth/login' });
+});
+
 test.each([
   ['missing app leg', { 'x-cail-identity-jwt': '' }],
   ['missing Gateway leg', { 'x-cail-gateway-identity-jwt': '' }],
@@ -76,6 +128,8 @@ test.each([
   ['forged Gateway leg', { 'x-cail-gateway-identity-jwt': 'forged' }],
 ])('rejects %s on the private receiver', async (_name, headers) => {
   expect((await request('/api/cloud/account', { headers })).status).toBe(401);
+  expect((await request('/', { headers })).status).toBe(401);
+  expect((await request('/auth/login', { headers })).status).toBe(401);
 });
 
 test('rejects mismatched subjects on the two signed legs', async () => {
@@ -141,6 +195,41 @@ test('HTML at both hosts resolves its entry script, theme and styles under its o
   expect(originalHtml).not.toContain('<base');
   expect(originalHtml).toMatch(/<script type="module"[^>]+src="\/assets\//);
 });
+
+test('mounted landing loads anonymously and requests login only after the CUNY Login click', async () => {
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', offline: true });
+  let loginRequests = 0;
+  const outside = [], requests = [], errors = [];
+  try {
+    await context.route('**/*', async route => {
+      const source = route.request(), url = new URL(source.url());
+      if (url.origin !== TOOLS || !url.pathname.startsWith(MOUNT + '/')) { outside.push(source.url()); return route.abort(); }
+      requests.push(url.pathname);
+      // Stop at Doorway's login boundary. Its callback and the receiver's
+      // verified 303 are separate tests; no external SSO runs in this browser.
+      if (url.pathname === MOUNT + '/auth/login') { loginRequests++; return route.fulfill({ status: 204 }); }
+      const response = await ingress.fetch(source.url(), { method: source.method(), headers: await source.allHeaders(), body: source.postDataBuffer() ?? undefined, redirect: 'manual' });
+      await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
+    });
+    const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
+    const destination = MOUNT + '/?context=teaching#details';
+    await page.goto(TOOLS + destination);
+    await browserExpect(page.getByRole('heading', { name: 'Systems Mapping', exact: true })).toBeVisible();
+    const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    await browserExpect(login).toBeVisible();
+    await browserExpect(login).toHaveAttribute('href', MOUNT + '/auth/login?returnTo=' + encodeURIComponent(destination));
+    expect(page.url()).toBe(TOOLS + destination);
+    expect(loginRequests).toBe(0);
+    expect(requests).toContain(MOUNT + '/api/cloud/account');
+    expect(requests).not.toContain(MOUNT + '/api/cloud/projects');
+    if (process.env.SYSTEMS_LANDING_SCREENSHOTS) await page.screenshot({ path: `${process.env.SYSTEMS_LANDING_SCREENSHOTS}/systems-anonymous-landing.png` });
+    await login.click();
+    await browserExpect.poll(() => loginRequests).toBe(1);
+    expect(requests).toContain(MOUNT + '/auth/login');
+    expect(outside).toEqual([]); expect(errors).toEqual([]);
+  } finally { await browser.close(); }
+}, 60000);
 
 test('mounted browser opens a shared map and keeps assets, API and navigation inside the mount', async () => {
   const project = createDefaultProject(); project.id = 'mounted-browser'; project.title = 'Mounted browser map';

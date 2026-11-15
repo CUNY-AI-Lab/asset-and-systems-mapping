@@ -1,5 +1,28 @@
 const TOOLS_ORIGIN = 'https://tools.ailab.gc.cuny.edu';
 const TOOLS_MOUNT = '/systems-mapping';
+const clientPage = (path: string) => path === '/' || /^\/p\/[A-Za-z0-9_-]{20,64}\/?$/.test(path);
+
+/** Only public frontend documents and files can bypass account verification. */
+export function toolsPublicPath(path: string): 'page' | 'asset' | null {
+  if (clientPage(path) || path === '/index.html') return 'page';
+  if (['/theme.js', '/favicon.svg', '/favicon.png'].includes(path)
+    || /^\/assets\/[A-Za-z0-9_.-]+\.(?:js|mjs|css|woff2|png|svg)$/.test(path)) return 'asset';
+  return null;
+}
+
+/** Called only after the dedicated login route verifies both signed grants. */
+export function toolsLoginRedirect(request: Request): Response {
+  const values = new URL(request.url).searchParams.getAll('returnTo');
+  const target = values.length ? values[0] : `${TOOLS_MOUNT}/`;
+  const invalid = () => new Response('The return page was not accepted.', { status: 400 });
+  if (values.length > 1 || target.length > 2048 || /[\u0000-\u0020\u007f\\]/.test(target)
+    || !target.startsWith('/') || target.startsWith('//')) return invalid();
+  const url = new URL(target, TOOLS_ORIGIN);
+  const path = url.pathname.slice(TOOLS_MOUNT.length) || '/';
+  if (url.origin !== TOOLS_ORIGIN || !(url.pathname === TOOLS_MOUNT || url.pathname.startsWith(`${TOOLS_MOUNT}/`))
+    || !clientPage(path)) return invalid();
+  return new Response(null, { status: 303, headers: { location: `${TOOLS_MOUNT}${path}${url.search}${url.hash}` } });
+}
 
 /** Validate the browser boundary before translating to the app's root paths. */
 export function toolsRequest(request: Request, appOrigin: string): Request | Response {
@@ -13,8 +36,13 @@ export function toolsRequest(request: Request, appOrigin: string): Request | Res
     return new Response('Request origin was not accepted.', { status: 403 });
   }
   const path = url.pathname.slice(TOOLS_MOUNT.length) || '/';
-  if (path.startsWith('/auth/') || path.startsWith('//') || path.includes('%') || path.includes('\\')) {
+  const api = path === '/api' || path.startsWith('/api/');
+  if (path.startsWith('//') || path.includes('%') || path.includes('\\')
+    || !api && path !== '/auth/login' && !toolsPublicPath(path)) {
     return new Response('Not found.', { status: 404 });
+  }
+  if (!api && !['GET', 'HEAD'].includes(request.method)) {
+    return new Response('Method not allowed.', { status: 405, headers: { allow: 'GET, HEAD' } });
   }
   const target = new URL(path, appOrigin);
   target.search = url.search;

@@ -295,7 +295,7 @@ export default function AccountWorkspace() {
         <div className="account-landing__hero">
           <PageHeading title="Systems Mapping" description="Map how people, settings, and decisions connect" />
           <LevelTrail />
-          <Action as="a" className="account-login" href={institutionalLoginUrl(courseSelection)}>CUNY Login</Action>
+          <Action as="a" className="account-login" href={institutionalLoginUrl(courseSelection, { landing: true })}>CUNY Login</Action>
         </div>
         <NollSketch className="account-landing__noll" />
       </> : account ? <>

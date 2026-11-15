@@ -57,14 +57,27 @@ subsequent saves. Shared review retention follows the existing product rules.
   `https://tools.ailab.gc.cuny.edu/systems-mapping` through Doorway's explicit
   service binding. It accepts only that origin and path boundary, verifies the
   separately signed `x-cail-identity-jwt` and `x-cail-gateway-identity-jwt` legs
-  for one subject, and rechecks current Admission for pages, assets and APIs.
+  for one subject, and rechecks current Admission for every API and explicit
+  login callback. Known frontend pages and built assets accept anonymous
+  GET/HEAD requests when both identity headers are absent; their shell contains
+  no account data. Supplied identity headers still require full verification,
+  preserving compatibility with the earlier authenticated Doorway page route.
+  Missing assets cannot use the SPA fallback, and unknown operational/auth
+  aliases or writes to frontend paths are rejected.
   Same-origin writes are checked before translating the mount to the existing
   application handler. The original public Worker handler continues using its
   opaque Worker session and never accepts those caller headers as identity.
   Both entrypoints retain the same course namespace and canonical subject
   lookup, so this mount requires no data or account migration.
-- Mounted login navigates to the exact application page, preserving course and
-  project-link selection through Doorway's existing CUNY callback. Sign out
+- Mounted pages show the existing signed-out landing page after an anonymous
+  account API returns 401. Its CUNY Login button explicitly navigates to
+  `/systems-mapping/auth/login?returnTo=...`. Doorway protects that exact route
+  before its public page prefix. After the CUNY callback, the receiver verifies
+  both signed legs and Admission, then redirects with no-store to the validated
+  mounted root or shared-project page, preserving its query and fragment.
+  Foreign, duplicate, API and auth return destinations are rejected. Existing
+  expired-session recovery retains its established account/course selection.
+  The original Worker login route remains unchanged. Sign out
   posts to Doorway's `/auth/logout`. No Worker session cookie is issued through
   `ToolsApp`. Relative frontend imports and explicit HTML asset URLs resolve at
   both addresses, including direct shared-project links. No document base is
