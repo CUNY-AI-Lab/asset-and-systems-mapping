@@ -46,7 +46,7 @@ async function expectClear(page) {
   expect(result.overlaps).toBe(0);
 }
 
-test('manual moves share spacing, expand levels, and persist as one reversible change',async({page},testInfo)=>{
+test('manual moves honor the drop, make nearby room, and persist as one reversible change',async({page},testInfo)=>{
   const project=fixture(),[moving,neighbor,far,office]=project.graph.nodes;
   await page.addInitScript(({key,value})=>{if(!localStorage.getItem('balanced-seeded')){
     localStorage.setItem(key,value);localStorage.setItem('balanced-seeded','1');
@@ -62,7 +62,7 @@ test('manual moves share spacing, expand levels, and persist as one reversible c
   await expect.poll(async()=>(await positions(page))[neighbor.id].x).toBeGreaterThan(initial[neighbor.id].x);
   const balanced=await positions(page);
   expect(balanced[moving.id].x).toBeGreaterThan(initial[moving.id].x);
-  expect(Math.abs(requested.x-balanced[moving.id].x-(balanced[neighbor.id].x-initial[neighbor.id].x))).toBeLessThan(1);
+  expect(Math.hypot(requested.x-balanced[moving.id].x,requested.y-balanced[moving.id].y)).toBeLessThan(2);
   expect(balanced[far.id]).toEqual(initial[far.id]);await expectClear(page);
   const canvas=page.locator('.graph-canvas');
   await canvas.press('ControlOrMeta+z');await expect.poll(()=>positions(page)).toEqual(initial);

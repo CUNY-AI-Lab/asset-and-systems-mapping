@@ -143,8 +143,8 @@ export function constrainStudentNodeMove(node, requested, nodes, geometries, {au
   return {x:Math.round(node.x+(requested.x-node.x)*low),y:Math.round(node.y+(requested.y-node.y)*low)};
 }
 
-// Resolve the part of the map touched by a manual move. Sharing a small card
-// overlap equally avoids treating every neighbour as an immovable wall. The
+// Resolve the part of the map touched by a manual move. The drop is the anchor;
+// neighbours make room and share any further spacing corrections equally. The
 // content-fitted spheres then grow with those cards; newly covered outer cards
 // move just beyond the growing sphere, in their existing direction.
 export function balanceStudentNodeMove(node, requested, nodes, geometries, {autoFit=true}={}) {
@@ -189,13 +189,15 @@ export function balanceStudentNodeMove(node, requested, nodes, geometries, {auto
       const axis=xOverlap<yOverlap?'x':'y';
       const direction=Math.sign(pa[axis]-pb[axis]) || Math.sign(a[axis]-b[axis]) || -1;
       const correction=(axis==='x'?xOverlap:yOverlap)+.01;
-      const nextA={...pa,[axis]:bounded(pa[axis]+direction*correction/2)};
-      const nextB={...pb,[axis]:bounded(pb[axis]-direction*correction/2)};
+      const shareA=a.id===node.id?0:b.id===node.id?1:.5;
+      const requestedA=direction*correction*shareA,requestedB=-direction*correction*(1-shareA);
+      const nextA={...pa,[axis]:bounded(pa[axis]+requestedA)};
+      const nextB={...pb,[axis]:bounded(pb[axis]+requestedB)};
       // At the coordinate limit, give the remaining correction to the card
       // that still has room instead of saving an out-of-range coordinate.
       const remaining=correction-Math.abs(nextA[axis]-pa[axis])-Math.abs(nextB[axis]-pb[axis]);
       if (remaining>.001) {
-        if (nextA[axis]===pa[axis]+direction*correction/2) nextA[axis]=bounded(nextA[axis]+direction*remaining);
+        if (nextA[axis]===pa[axis]+requestedA) nextA[axis]=bounded(nextA[axis]+direction*remaining);
         else nextB[axis]=bounded(nextB[axis]-direction*remaining);
       }
       changed=place(a.id,nextA)||changed;

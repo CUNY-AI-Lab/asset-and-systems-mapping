@@ -30,12 +30,12 @@ function nestedFixture() {
   return {nodes:at(nodes,studentMapPositions(nodes,[],geometry,{manualNodeIds:nodes.map(n=>n.id),readingAspect:1.8,aspectRatio:1.8})),geometry};
 }
 
-it('shares a small overlap equally and leaves distant cards exactly where they were',()=>{
+it('honors the drop location and lets a nearby card make room without moving distant cards',()=>{
   const nodes=[{id:'a',scale:'micro',x:300,y:300},{id:'b',scale:'micro',x:500,y:300},{id:'far',scale:'micro',x:900,y:700}];
   const before=structuredClone(nodes),geometry=geometryFor(nodes);
   const positions=balanceStudentNodeMove(nodes[0],{x:350,y:300},nodes,geometry);
-  expect(positions.get('a').x).toBeCloseTo(338.995,3);
-  expect(positions.get('b').x).toBeCloseTo(511.005,3);
+  expect(positions.get('a')).toEqual({x:350,y:300});
+  expect(positions.get('b').x).toBeCloseTo(522.01,3);
   expect(positions.get('a').y).toBe(300);expect(positions.get('b').y).toBe(300);
   expect(positions.get('far')).toEqual({x:900,y:700});
   expectClear(at(nodes,positions),geometry);
@@ -76,7 +76,7 @@ it('propagates small spacing corrections through a local chain without moving a 
   const nodes=Array.from({length:8},(_,i)=>({id:`card-${i}`,scale:'micro',x:300+i*172,y:300}));
   nodes.push({id:'far',scale:'micro',x:300,y:1000});
   const geometry=geometryFor(nodes),positions=balanceStudentNodeMove(nodes[0],{x:330,y:300},nodes,geometry);
-  expect(positions.get(nodes[0].id).x).toBeGreaterThan(300);
+  expect(positions.get(nodes[0].id)).toEqual({x:330,y:300});
   expect(positions.get('card-1').x).toBeGreaterThan(472);
   expect(positions.get('far')).toEqual({x:300,y:1000});
   expectClear(at(nodes,positions),geometry);
