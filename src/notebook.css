@@ -281,6 +281,8 @@
 .level-choice__options button span { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
 .level-choice__options button i { width: 12px; height: 10px; flex: none; border: 2px solid var(--level); border-radius: 3px; background: var(--surface); }
 .level-choice__options button[aria-checked="true"] { background: color-mix(in srgb, var(--level) 12%, var(--surface)); color: var(--ink); box-shadow: inset 0 0 0 1px var(--level); }
+.level-choice__options button[aria-checked="true"] i { background: var(--level); }
+@media (forced-colors:active) { .level-choice__options button[aria-checked="true"] i { background:Highlight; border-color:Highlight; forced-color-adjust:none; } }
 .level-choice__options button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .relationship-target-mode { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
 .relationship-target-mode .check-row { align-items: center; }
@@ -313,7 +315,8 @@
 .map-stage--notebook #map-inspector .node-connect-action { display:block; justify-self:start; width:auto; max-width:100%; min-height:var(--control-height); padding:8px 12px; margin:0; text-align:left; }
 .map-stage--notebook #map-inspector .node-connect-action em { font-weight:400; }
 .map-stage--notebook #map-inspector :is(input:not([type=checkbox]),textarea,select) { font:400 16px/1.4 var(--body); padding:8px 10px; }
-.map-stage--notebook #map-inspector .map-label-input { min-height:var(--control-height); overflow:hidden; resize:none; field-sizing:content; }
+/* Balance a short label within the control height; wrapped lines still grow. */
+.map-stage--notebook #map-inspector textarea.map-label-input { min-height:var(--control-height); padding-block:max(8px,calc((var(--control-height) - 1lh - 2px) / 2)); overflow:hidden; resize:none; field-sizing:content; }
 .map-stage--notebook #map-inspector .map-connections { margin:0; }
 .map-stage--notebook #map-inspector .map-connections > summary { padding:8px 10px; min-height:var(--control-height); }
 .map-stage--notebook #map-inspector .annotation-field textarea { min-height:80px; }

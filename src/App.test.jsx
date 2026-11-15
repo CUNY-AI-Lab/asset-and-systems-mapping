@@ -1322,10 +1322,7 @@ describe('Systems Mapping workflow', () => {
     fireEvent.click(within(leftOut).getByRole('button', { name: 'Add Building superintendent', exact: true }));
     expect(await screen.findByRole('textbox', { name: 'Label', exact: true })).toHaveValue('Building superintendent');
     fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));
-    // The form still asks for the student's own evidence; nothing is added without it.
-    expect(storedProject().graph.nodes).toHaveLength(1);
-    fireEvent.change(screen.getByRole('textbox', { name: 'Evidence or question', exact: true }), { target: { value: 'Residents meet in the community room.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));
+    // Choosing to add a left-out name is a manual decision; evidence is optional.
     await waitFor(() => expect(storedProject().graph.nodes.map(node => node.label)).toContain('Building superintendent'));
     // The record of what the review left out is kept; the list shows only what is still off the map.
     expect(storedProject().preflight.evaluation.runtime.withheldNodes).toHaveLength(3);
@@ -7660,8 +7657,9 @@ Overall, the posting history documents a working student repeatedly turning to R
       await waitFor(() => expect(storedProject().graph.edges.find(edge => edge.source === source.id && edge.verb === 'shapes')?.relationshipIds).toEqual(group.relationshipIds));
     });
 
-    it('adds a node where the student double-clicks empty canvas, with the level chosen from a row of swatches', async () => {
+    it.each(['', 'Does reimbursement policy assume care is a family duty?'])('adds a manual node with optional evidence (%s)', async evidence => {
       const project = await openGroupProject();
+      expect(project.instructor.evidenceRequired).toBe(true);
       fireEvent.doubleClick(document.querySelector('.graph-canvas'), { clientX: 12, clientY: 12 });
       expect(await screen.findByRole('heading', { name: 'New node' })).toBeVisible();
       expect(document.querySelector('.graph-node.is-pending')).not.toBeNull();
@@ -7670,12 +7668,15 @@ Overall, the posting history documents a working student repeatedly turning to R
       fireEvent.click(within(levels).getByRole('radio', { name: /Macro/ }));
       expect(within(levels).getByRole('radio', { name: /Macro/ })).toHaveAttribute('aria-checked', 'true');
       fireEvent.change(screen.getByRole('textbox', { name: 'Label', exact: true }), { target: { value: 'Ableism in care funding' } });
-      fireEvent.change(screen.getByRole('textbox', { name: 'Evidence or question', exact: true }), { target: { value: 'Does reimbursement policy assume care is a family duty?' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Evidence or question (optional)', exact: true }), { target: { value: evidence } });
       fireEvent.click(screen.getByRole('button', { name: 'Add to map', exact: true }));
       await waitFor(() => expect(storedProject().graph.nodes.find(node => node.label === 'Ableism in care funding')).toMatchObject({ scale: 'macrosphere', origin: 'student entry' }));
       const added = storedProject().graph.nodes.find(node => node.label === 'Ableism in care funding');
       expect(storedProject().layout.manualNodeIds).toContain(added.id);
       expect(document.querySelectorAll('.graph-node')).toHaveLength(project.liveNodeCount + 1);
+      const restored = parseProject(serializeProject(storedProject())).graph.nodes.find(node => node.id === added.id);
+      expect(restored.evidence).toBe(evidence);
+      expect(restored.claimEvidence.map(record => record.sourcePassage)).toEqual(evidence ? [evidence] : []);
     });
   });
 

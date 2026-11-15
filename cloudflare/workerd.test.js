@@ -56,6 +56,107 @@ async function openFixturePage(context) {
     return context.newPage();
 }
 
+test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1').each([1440, 390])('manual entry focuses drafts, keeps optional evidence and saves keyboard creation atomically (%i px)', async width => {
+  const fixture = groupProject(); fixture.id = `manual-entry-${width}`; fixture.title = `Manual entry checks ${width}`;
+  expect(fixture.instructor.evidenceRequired).toBe(true);
+  expect((await request('/api/cloud/projects/' + fixture.id, 'alice', { method: 'PUT', body: JSON.stringify({ project: serializeProject(fixture), revision: 0 }) })).status).toBe(200);
+  const stored = async () => parseProject((await (await request('/api/cloud/projects/' + fixture.id)).json()).project);
+  const browser = await chromium.launch(), context = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    const page = await openFixturePage(context);
+    const open = async () => { await page.goto(ORIGIN); await page.getByRole('article', { name: fixture.title }).getByRole('button', { name: 'Open project' }).click(); };
+    const addItem = async () => {
+      const nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
+      await nav.getByRole('button', { name: 'Tools', exact: true }).focus(); await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Add item', exact: true }).focus(); await page.keyboard.press('Enter');
+    };
+    await open(); await addItem();
+    const label = page.getByRole('textbox', { name: 'Label', exact: true });
+    await browserExpect(label).toBeFocused(); await browserExpect(label).toBeInViewport();
+    await label.press('Enter');
+    expect((await stored()).graph.nodes).toHaveLength(fixture.graph.nodes.length);
+    await label.fill('Criticality');
+    for (const radio of await page.getByRole('radiogroup', { name: 'Level' }).getByRole('radio').all()) {
+      await radio.focus(); await radio.press('Space');
+      await browserExpect(radio).toHaveAttribute('aria-checked', 'true');
+      await browserExpect(radio).toBeFocused();
+      await browserExpect.poll(() => radio.locator('i').evaluate(el => getComputedStyle(el).backgroundColor === getComputedStyle(el).borderTopColor)).toBe(true);
+    }
+    await page.evaluate(() => document.fonts.ready);
+    const short = await label.evaluate(el => {
+      const s = getComputedStyle(el); return { height: el.getBoundingClientRect().height, line: parseFloat(s.lineHeight), top: parseFloat(s.paddingTop), bottom: parseFloat(s.paddingBottom), borders: parseFloat(s.borderTopWidth) + parseFloat(s.borderBottomWidth) };
+    });
+    expect(short.top).toBe(short.bottom);
+    expect(Math.abs(short.height - short.line - short.top - short.bottom - short.borders)).toBeLessThanOrEqual(1.5);
+    await label.press('End'); await label.press('Shift+Enter'); await label.pressSequentially('framework');
+    await browserExpect(label).toHaveValue('Criticality\nframework');
+    expect((await label.boundingBox()).height).toBeGreaterThan(short.height + 10);
+    await browserExpect.poll(() => label.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    await label.fill('Criticality');
+    for (const extra of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { repeat: true }]) {
+      await label.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', ...extra });
+      expect((await stored()).graph.nodes).toHaveLength(fixture.graph.nodes.length);
+    }
+    await browserExpect(page.getByRole('textbox', { name: 'Evidence or question (optional)', exact: true })).toHaveValue('');
+    if (process.env.SYSTEMS_ENTRY_SCREENSHOTS) await page.getByRole('complementary', { name: 'Notebook', exact: true }).screenshot({ path: `${process.env.SYSTEMS_ENTRY_SCREENSHOTS}/manual-entry-${width}.png` });
+    await label.press('Enter');
+    await browserExpect.poll(async () => (await stored()).graph.nodes.find(n => n.label === 'Criticality')?.evidence).toBe('');
+
+    await addItem(); await page.getByRole('radio', { name: /Micro/ }).press('Space');
+    await label.fill('Harbor\nlibrary');
+    const evidence = page.getByRole('textbox', { name: 'Evidence or question (optional)', exact: true });
+    await evidence.fill('Optional student note.'); await browserExpect(evidence).toBeFocused();
+    await label.press('Enter');
+    await browserExpect.poll(async () => (await stored()).graph.nodes.find(n => n.label === 'Harbor library')?.evidence).toBe('Optional student note.');
+    const locals = fixture.graph.nodes.filter(n => n.scale === 'micro').slice(0, 2);
+    const node = id => page.locator(`.graph-node[data-graph-id="${id}"]`);
+    const connect = async () => { await node(locals[0].id).focus(); await page.keyboard.press('Shift+Enter'); await node(locals[1].id).focus(); await page.keyboard.press('Enter'); };
+    await page.setViewportSize({ width, height: 600 });
+    const previousScroll = await page.locator('.inspector__scroll').evaluate(el => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+    expect(previousScroll).toBeGreaterThan(0);
+    await connect();
+    const relationship = page.getByRole('textbox', { name: 'Relationship', exact: true });
+    await browserExpect(relationship).toBeFocused();
+    await browserExpect.poll(() => relationship.evaluate(el => { const field = el.getBoundingClientRect(), scroll = el.closest('.inspector__scroll').getBoundingClientRect(); return field.top >= scroll.top && field.bottom <= scroll.bottom; })).toBe(true);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await page.setViewportSize({ width, height: 1000 });
+    await relationship.press('Enter');
+    expect((await stored()).graph.edges).toHaveLength(fixture.graph.edges.length);
+    await relationship.fill('coordinates'); await relationship.press('End'); await relationship.press('Shift+Enter'); await relationship.pressSequentially('weekly');
+    const direction = page.getByRole('combobox', { name: 'Direction' });
+    await direction.focus(); await direction.selectOption('both directions'); await browserExpect(direction).toBeFocused();
+    await relationship.press('Enter');
+    await browserExpect.poll(async () => (await stored()).graph.edges.filter(e => e.verb === 'coordinates\nweekly').length).toBe(1);
+    await connect(); await relationship.fill('coordinates\nweekly'); await relationship.press('Enter');
+    expect((await stored()).graph.edges).toHaveLength(fixture.graph.edges.length + 1);
+    await browserExpect(relationship).toBeVisible(); await relationship.press('Escape');
+    await browserExpect(relationship).toHaveCount(0);
+
+    await node(locals[0].id).focus(); await page.keyboard.press('Shift+Enter');
+    await page.locator('.graph-canvas').focus(); await page.keyboard.press('n');
+    await browserExpect(label).toBeFocused(); await label.fill('Learning mentor'); await label.press('Enter');
+    await browserExpect(relationship).toBeFocused();
+    expect((await stored()).graph.nodes).toHaveLength(fixture.graph.nodes.length + 2);
+    await relationship.fill('mentors'); await relationship.press('Enter');
+    await browserExpect.poll(async () => (await stored()).graph.nodes.length).toBe(fixture.graph.nodes.length + 3);
+    expect((await stored()).graph.edges).toHaveLength(fixture.graph.edges.length + 2);
+    await page.getByRole('button', { name: 'Undo', exact: true }).press('Enter');
+    await browserExpect.poll(async () => [(await stored()).graph.nodes.length, (await stored()).graph.edges.length]).toEqual([fixture.graph.nodes.length + 2, fixture.graph.edges.length + 1]);
+    await page.getByRole('button', { name: 'Redo', exact: true }).press('Enter');
+    await browserExpect.poll(async () => (await stored()).graph.nodes.length).toBe(fixture.graph.nodes.length + 3);
+    await open();
+    await browserExpect(page.locator('.graph-node[data-full-label="Criticality"]')).toBeVisible();
+    await projectMenu(page, 'Export & share');
+    await page.getByRole('combobox', { name: 'File format' }).selectOption('json');
+    const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Download', exact: true }).click();
+    const exported = parseProject(await readFile(await (await download).path(), 'utf8'));
+    expect(exported.graph.nodes.find(n => n.label === 'Criticality')).toMatchObject({ evidence: '', claimEvidence: [], origin: 'student entry' });
+    expect(exported.graph.nodes.find(n => n.label === 'Harbor library').claimEvidence[0].sourcePassage).toBe('Optional student note.');
+    expect(exported.graph.nodes.some(n => n.label === 'Learning mentor')).toBe(true);
+    expect(exported.graph.edges.some(e => e.verb === 'mentors')).toBe(true);
+  } finally { await browser.close(); }
+}, 60000);
+
 test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('printed and scalable map downloads preserve the canvas drawing', async () => {
   const fixture = groupProject();
   fixture.id='drawing-browser'; fixture.title='Saved map drawing';
