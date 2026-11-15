@@ -17,7 +17,7 @@ import { useRelationshipDraft } from './relationshipDraft.js';
 import { useWorkspaceViewHistory } from './workspaceViewHistory.js';
 import { editHistoryState, recordEdit, restoreEdit } from './editHistory.js';
 import { readableNodePositions, straightConnectionLayout } from './readableGraphLayout.js';
-import { studentMapPositions, studentMapBoundaries, constrainStudentNodeMove, readingConnectionLayout, relationshipAttachment, captionObstacles, REGION_CAPTION } from './studentMapLayout.js';
+import { studentMapPositions, studentMapBoundaries, balanceStudentNodeMove, readingConnectionLayout, relationshipAttachment, captionObstacles, REGION_CAPTION } from './studentMapLayout.js';
 import { readMemoFile } from './documentImport.js';
 import { relationshipDescription, relationshipArrowheads, relationshipDirection, relationshipMapLabel, relationshipLineWidth, relationshipProcessSummary } from './relationshipDirection.js';
 import { SidebarResizeHandle, useSidebarSize } from './MapSidebar.jsx';
@@ -5335,13 +5335,13 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
     const displayedNodeIds = new Set(displayedNodes.map((node) => node.id));
     const displayedNode = displayedNodes.find((node) => node.id === id);
     const movementMode = notebook ? 'network' : mapMode === 'ecology' && retainedEcologyBoundaries(displayedNodes, visibleEdges, phoneLayout, interactionEcologyBands) ? 'network' : mapMode;
-    const cardSafePosition = displayedNode
+    const balancedPositions = notebook && displayedNode
+      ? balanceStudentNodeMove(displayedNode, { x, y }, displayedNodes,
+        new Map(displayedNodes.map(node => [node.id, mapNodeGeometry(node.label, phoneLayout)])), { autoFit: project.layout?.autoFit !== false })
+      : null;
+    const safePosition = balancedPositions ? balancedPositions.get(id) : displayedNode
       ? relationshipSafeNodePosition(displayedNode, x, y, displayedNodes, visibleEdges, phoneLayout, movementMode, interactionEcologyBands, Boolean(notebook))
       : { x, y };
-    const safePosition = notebook && displayedNode
-      ? constrainStudentNodeMove(displayedNode, cardSafePosition, displayedNodes,
-        new Map(displayedNodes.map(node => [node.id, mapNodeGeometry(node.label, phoneLayout)])), { autoFit: project.layout?.autoFit !== false })
-      : cardSafePosition;
     rememberLayout();
     update((draft) => {
       if (phoneLayout && mapMode === 'network') draft.layout = { ...(draft.layout || {}), phoneOverview: 'preserve' };
@@ -5361,6 +5361,10 @@ function MapStage({ project, presentationRef, update, toast, captureImportScope,
         draft.graph.nodes.forEach(node => { if (displayedNodeIds.has(node.id) && readablePositions.has(node.id)) Object.assign(node, readablePositions.get(node.id)); });
         draft.layout = { ...(draft.layout || {}), readingAspect: canvasAspect, manualNodeIds: [...new Set([...(draft.layout?.manualNodeIds || []), ...displayedNodeIds])] };
       }
+      if (balancedPositions) draft.graph.nodes.forEach(node => {
+        const position = balancedPositions.get(node.id);
+        if (position) Object.assign(node, position);
+      });
       const node = draft.graph.nodes.find((item) => item.id === id);
       if (node) { node.x = safePosition.x; node.y = safePosition.y; }
       if (phoneOverviewPositions || phoneEcologyPositions) draft.viewport = mapViewport || fitViewport(displayedNodes, phoneFitHeight, true);

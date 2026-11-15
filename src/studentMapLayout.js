@@ -1,4 +1,5 @@
 import { connectedMicroPositions } from './connectedMicroLayout.js';
+import { PROJECT_LIMITS } from './domain.js';
 
 // A reading view of the saved map. These positions never mutate its records.
 const box = (p, g, gap = 0) => ({ left:p.x-g.cardWidth/2-gap, right:p.x+g.cardWidth/2+gap, top:p.y-g.cardHeight/2-gap, bottom:p.y+g.cardHeight/2+gap });
@@ -69,11 +70,11 @@ export function studentMapBoundaries(nodes, geometries) {
 
 // When an inner system grows, keep a pin's direction but move the whole card
 // beyond that system. This is a reading position, not a saved-record mutation.
-function clearCoveredPin(position, geometry, inner, obstacles) {
+function clearCoveredPin(position, geometry, inner, obstacles, clearsCaption = () => true) {
   const clears = p => {
     const b=box(p,geometry,12);
     const dx=Math.max(b.left-inner.cx,inner.cx-b.right,0),dy=Math.max(b.top-inner.cy,inner.cy-b.bottom,0);
-    return (dx/inner.rx)**2+(dy/inner.ry)**2>=1;
+    return (dx/inner.rx)**2+(dy/inner.ry)**2>=1&&clearsCaption(b);
   };
   if(clears(position))return position;
   const dx=position.x-inner.cx,dy=position.y-inner.cy,distance=Math.hypot(dx,dy);
@@ -140,6 +141,95 @@ export function constrainStudentNodeMove(node, requested, nodes, geometries, {au
     if(allowed(candidate))low=fraction;else high=fraction;
   }
   return {x:Math.round(node.x+(requested.x-node.x)*low),y:Math.round(node.y+(requested.y-node.y)*low)};
+}
+
+// Resolve the part of the map touched by a manual move. Sharing a small card
+// overlap equally avoids treating every neighbour as an immovable wall. The
+// content-fitted spheres then grow with those cards; newly covered outer cards
+// move just beyond the growing sphere, in their existing direction.
+export function balanceStudentNodeMove(node, requested, nodes, geometries, {autoFit=true}={}) {
+  const bounded = value => Math.max(PROJECT_LIMITS.coordinateMin, Math.min(PROJECT_LIMITS.coordinateMax, value));
+  const positions = new Map(nodes.map(n => [n.id, {x:n.x, y:n.y}]));
+  const target = {x:bounded(requested.x), y:bounded(requested.y)};
+  positions.set(node.id, target);
+  if (!autoFit || target.x===node.x && target.y===node.y) return positions;
+
+  const originalRegions = studentMapBoundaries(nodes, geometries);
+  const preceding = originalRegions[node.scale === 'exosphere' ? 'micro' : node.scale === 'macrosphere' ? 'exosphere' : ''];
+  // Moving an outer-level card into an inner level must not silently change
+  // its meaning or send it to the opposite side of the map. Only this inward
+  // crossing stops at the near boundary; outward growth is free to make room.
+  if (preceding && clearsRegion(box(node, geometries.get(node.id), 12), preceding)
+      && !clearsRegion(box(target, geometries.get(node.id), 12), preceding)) {
+    let low=0, high=1;
+    for (let step=0; step<24; step++) {
+      const fraction=(low+high)/2;
+      const p={x:node.x+(target.x-node.x)*fraction, y:node.y+(target.y-node.y)*fraction};
+      if (clearsRegion(box(p, geometries.get(node.id), 12), preceding)) low=fraction; else high=fraction;
+    }
+    positions.set(node.id, {x:node.x+(target.x-node.x)*low, y:node.y+(target.y-node.y)*low});
+  }
+  const active = new Set([node.id]);
+  const ordered = [...nodes].sort((a,b) => a.id.localeCompare(b.id));
+  const existing = crossings(nodes, geometries);
+  const place = (id, p) => {
+    const next={x:bounded(p.x), y:bounded(p.y)}, old=positions.get(id);
+    if (Math.abs(next.x-old.x)<.001 && Math.abs(next.y-old.y)<.001) return false;
+    positions.set(id,next); active.add(id); return true;
+  };
+  for (let pass=0; pass<64; pass++) {
+    let changed=false;
+    for (let i=0; i<ordered.length; i++) for (let j=i+1; j<ordered.length; j++) {
+      const a=ordered[i], b=ordered[j];
+      if (a.scale!==b.scale || !active.has(a.id) && !active.has(b.id)) continue;
+      const pa=positions.get(a.id), pb=positions.get(b.id), ga=geometries.get(a.id), gb=geometries.get(b.id);
+      const xOverlap=(ga.cardWidth+gb.cardWidth)/2+12-Math.abs(pa.x-pb.x);
+      const yOverlap=(ga.cardHeight+gb.cardHeight)/2+12-Math.abs(pa.y-pb.y);
+      if (xOverlap<=.001 || yOverlap<=.001) continue;
+      const axis=xOverlap<yOverlap?'x':'y';
+      const direction=Math.sign(pa[axis]-pb[axis]) || Math.sign(a[axis]-b[axis]) || -1;
+      const correction=(axis==='x'?xOverlap:yOverlap)+.01;
+      const nextA={...pa,[axis]:bounded(pa[axis]+direction*correction/2)};
+      const nextB={...pb,[axis]:bounded(pb[axis]-direction*correction/2)};
+      // At the coordinate limit, give the remaining correction to the card
+      // that still has room instead of saving an out-of-range coordinate.
+      const remaining=correction-Math.abs(nextA[axis]-pa[axis])-Math.abs(nextB[axis]-pb[axis]);
+      if (remaining>.001) {
+        if (nextA[axis]===pa[axis]+direction*correction/2) nextA[axis]=bounded(nextA[axis]+direction*remaining);
+        else nextB[axis]=bounded(nextB[axis]-direction*remaining);
+      }
+      changed=place(a.id,nextA)||changed;
+      changed=place(b.id,nextB)||changed;
+    }
+    // Resolve inner to outer: an Exo correction can in turn grow the region
+    // that Macro cards must clear. Do not rearrange existing unrelated issues.
+    for (const scale of ['exosphere','macrosphere']) {
+      const displayed=nodes.map(n=>({...n,...positions.get(n.id)}));
+      const innerScale=scale==='exosphere'?'micro':'exosphere';
+      const inner=studentMapBoundaries(displayed,geometries)[innerScale];
+      if (!inner) continue;
+      const caption={left:inner.cx-REGION_CAPTION.width/2-12,right:inner.cx+REGION_CAPTION.width/2+12,
+        top:inner.top+REGION_CAPTION.offsetY-REGION_CAPTION.height/2-12,bottom:inner.top+REGION_CAPTION.offsetY+REGION_CAPTION.height/2+12};
+      for (const outer of ordered.filter(n=>n.scale===scale)) {
+        if (clearsRegion(box(positions.get(outer.id),geometries.get(outer.id),2),inner)) continue;
+        if (!active.has(outer.id) && existing.has(`${innerScale}:${outer.id}`)) continue;
+        const obstacles=nodes.filter(n=>n.id!==outer.id && SPHERES.indexOf(n.scale)<=SPHERES.indexOf(scale))
+          .map(n=>box(positions.get(n.id),geometries.get(n.id),6));
+        changed=place(outer.id,clearCoveredPin(positions.get(outer.id),geometries.get(outer.id),inner,[caption,...obstacles],b=>!overlaps(b,caption)))||changed;
+      }
+    }
+    if (!changed) break;
+  }
+  // A dense corner at the finite coordinate limit may have no legal space.
+  // Keep the prior layout in that case instead of persisting a new collision.
+  const final=nodes.map(n=>({...n,...positions.get(n.id)}));
+  const newCrossing=[...crossings(final,geometries)].some(key=>!existing.has(key));
+  const newOverlap=final.some((a,i)=>final.slice(i+1).some(b=>{
+    if (!active.has(a.id) && !active.has(b.id)) return false;
+    return overlaps(box(a,geometries.get(a.id)),box(b,geometries.get(b.id)));
+  }));
+  if (newCrossing || newOverlap) return new Map(nodes.map(n=>[n.id,{x:n.x,y:n.y}]));
+  return positions;
 }
 
 export function studentMapPositions(nodes, edges, geometries, {manualNodeIds=[],phoneOverview,phone=false,aspectRatio=1.8,readingAspect,autoFit=true,arrange=false,labelGeometries}={}) {
