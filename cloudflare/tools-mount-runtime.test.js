@@ -359,7 +359,14 @@ test('mounted browser opens a shared map and keeps assets, API and navigation in
     await browserExpect(page.getByRole('link', { name: 'Systems Mapping home', exact: true })).toHaveAttribute('href', MOUNT + '/');
     await browserExpect(page.locator('.header-sign-out').first()).toHaveAttribute('action', '/auth/logout');
     await projectMenu(page, 'Project details');
-    await browserExpect(page.getByRole('textbox', { name: 'Project', exact: true })).toHaveValue('Mounted browser map');
+    const title = page.getByRole('textbox', { name: 'Project', exact: true });
+    await browserExpect(title).toHaveValue('Mounted browser map');
+    await title.click();
+    await title.press('ControlOrMeta+A');
+    // Real keystrokes catch focus effects that a single fill() conceals.
+    await title.pressSequentially('Mounted browser map', { delay: 20 });
+    await browserExpect(title).toHaveValue('Mounted browser map');
+    await browserExpect(title).toBeFocused();
     await page.reload();
     await projectMenu(page, 'Project details');
     await browserExpect(page.getByRole('textbox', { name: 'Project', exact: true })).toHaveValue('Mounted browser map');

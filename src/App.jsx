@@ -825,11 +825,13 @@ function ThemeToggle({ dark, onToggle }) {
 function Modal({ open, title, onClose, children, wide = false }) {
   const closeRef = useRef(null);
   const modalRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
       if (event.key === 'Escape' && !event.defaultPrevented) {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -843,7 +845,10 @@ function Modal({ open, title, onClose, children, wide = false }) {
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!modalRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -853,12 +858,15 @@ function Modal({ open, title, onClose, children, wide = false }) {
     };
     document.addEventListener('keydown', onKey);
     const previous = document.activeElement;
-    window.setTimeout(() => closeRef.current?.focus(), 0);
+    // Opening/closing owns focus. Editing a field creates new callback props,
+    // but must not move the caret back to Close on every render.
+    const initialFocus = window.setTimeout(() => closeRef.current?.focus(), 0);
     return () => {
+      window.clearTimeout(initialFocus);
       document.removeEventListener('keydown', onKey);
       (previous?.closest('details:not([open])')?.querySelector(':scope > summary') || previous)?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -6283,7 +6291,7 @@ function applyAnnotationDrafts(project, drafts, updatedAt = new Date().toISOStri
   return next;
 }
 
-function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, onOpenAccount, configurationRevision = 0, cloudSaveStatus, cloudError, onSubmitRevision } = {}) {
+function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeacher = false, onOpenProjects, onAccountDashboard, onOpenAccount, configurationRevision = 0, cloudSaveStatus, cloudError, cloudSaveCanRetry = false, onRetryCloudSave, onSubmitRevision } = {}) {
   const institutionalMode = Boolean(onAccountDashboard);
   const bugReportDock = useBugReportDock();
   const [mapToolbarHost, setMapToolbarHost] = useState(null);
@@ -8543,7 +8551,7 @@ function App({ memoFirstWorkflow = false, startInWorkspace = false, startInTeach
     <div className="sr-only" aria-live="polite">{mapPreviewOpen ? `Viewing map. Current stage remains ${STAGES[project.stage].label}.` : `Current section ${STAGES[project.stage].label}`}</div>
     <main ref={workspaceRef} tabIndex="-1" id="workspace" className={`workspace workspace--stage-${displayedStage}${intakeOpen ? '' : ' workspace--studio'}`}>
       {cloudSaveStatus && <span className="sr-only" role="status">{cloudSaveStatus}</span>}
-      {cloudError && <div className="account-error" role="alert"><p>{cloudError}</p><p>Private recovery includes your full memo, Field Notes, and evidence. Keep this file private.</p><button type="button" className="button button--secondary" onClick={downloadPrivateRecovery}>Download private recovery</button></div>}
+      {cloudError && <div className="account-error" role="alert"><p>{cloudError}</p>{cloudSaveCanRetry && <button type="button" className="button button--secondary" onClick={onRetryCloudSave}>Try saving again</button>}</div>}
       {['error', 'validation'].includes(saveState.status) && <div className="workspace-save-notice" role="alert"><span>{saveState.status === 'validation' ? 'Finish the map item to save' : 'Changes are not saved'}</span><button type="button" onClick={() => setModal(saveState.status === 'validation' ? 'validation' : 'storage')}>{saveState.status === 'validation' ? 'Review issue' : 'Recover project'}</button></div>}
       {screen}
     </main>

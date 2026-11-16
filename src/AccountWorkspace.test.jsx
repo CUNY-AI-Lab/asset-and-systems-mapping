@@ -1,12 +1,12 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AccountWorkspace from './AccountWorkspace.jsx';
 import { ProjectRow } from './ui/StudioPrimitives.jsx';
 import { createDefaultProject, parseProject, serializeProject } from './domain.js';
 import { projectStorage, releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 import { parseCourseSelection } from './courseContext.js';
-import { loadDurableProject, saveProjectToLibrary, STORAGE_KEY } from './projectLibrary.js';
+import { loadDurableProject, loadProjectLibrary, saveProjectToLibrary, STORAGE_KEY } from './projectLibrary.js';
 import { downloadBlob } from './mapExport.js';
 import { projectProgress } from './projectProgress.js';
 import { deletedProjects } from './projectRecovery.js';
@@ -15,9 +15,9 @@ vi.mock('./App.jsx', async importOriginal => {
   const original = await importOriginal();
   return {
     ...original,
-    default: function WorkspaceFixture({ onAccountDashboard, onOpenAccount, onSubmitRevision }) {
+    default: function WorkspaceFixture({ onAccountDashboard, onOpenAccount, onSubmitRevision, cloudError, cloudSaveCanRetry, onRetryCloudSave }) {
       const [draft,setDraft]=React.useState('');
-      return <><h1>Project workspace</h1><input aria-label="Map draft" value={draft} onChange={event=>setDraft(event.target.value)} /><button onClick={onOpenAccount}>Account</button><button onClick={onAccountDashboard}>Back to Projects</button>{onSubmitRevision && <button onClick={() => onSubmitRevision(projects[0])}>Submit test revision</button>}</>;
+      return <><h1>Project workspace</h1><input aria-label="Map draft" value={draft} onChange={event=>setDraft(event.target.value)} /><button onClick={onOpenAccount}>Account</button><button onClick={onAccountDashboard}>Back to Projects</button>{cloudError && <div role="alert">{cloudError}{cloudSaveCanRetry && <button onClick={onRetryCloudSave}>Try saving again</button>}</div>}{onSubmitRevision && <button onClick={() => onSubmitRevision(projects[0])}>Submit test revision</button>}</>;
     },
   };
 });
@@ -66,6 +66,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   releaseAccountStorage();
   vi.unstubAllGlobals();
@@ -171,6 +172,314 @@ describe('Account dashboard controls', () => {
     expect(options.headers['x-systems-account-cache']).toBe('dashboard-test-account');
     await waitFor(() => expect(originalStorage.getItem('systems-mapping.cloud-sync.dashboard-project-0')).not.toBeNull());
     expect(otherStorage.getItem('systems-mapping.cloud-sync.dashboard-project-0')).toBeNull();
+  });
+
+  it('retries a transient account outage and records the successful cloud revision', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let targetAttempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Transient outage draft')) {
+        targetAttempts += 1;
+        if (targetAttempts === 1) return new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Transient outage draft';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    await waitFor(() => expect(targetAttempts).toBe(2));
+    await waitFor(() => expect(storage.getItem('systems-mapping.cloud-sync.dashboard-project-0')).not.toBeNull());
+    expect(targetAttempts).toBe(2);
+    expect(loadDurableProject(storage, edited.id).submission.text).toBe('Transient outage draft');
+    expect(projects[0].submission.text).toBe('Transient outage draft');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('saves the newest local edit after an older edit retries', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let releaseFirst;
+    let firstAttemptStarted;
+    const firstStarted = new Promise(resolve => { firstAttemptStarted = resolve; });
+    const firstFailure = new Promise(resolve => { releaseFirst = resolve; });
+    let firstAttempt = true;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Older queued edit') && firstAttempt) {
+        firstAttempt = false;
+        firstAttemptStarted();
+        return firstFailure;
+      }
+      return normal(path, options);
+    });
+    const older = structuredClone(projects[0]);
+    older.updatedAt = new Date(Date.now() + 1000).toISOString();
+    older.submission.text = 'Older queued edit';
+    saveProjectToLibrary(storage, older, loadProjectLibrary(storage, older, false), { makeActive: true });
+    await firstStarted;
+    const newest = structuredClone(older);
+    newest.updatedAt = new Date(Date.now() + 2000).toISOString();
+    newest.submission.text = 'Newest queued edit';
+    saveProjectToLibrary(storage, newest, loadProjectLibrary(storage, newest, false), { makeActive: true });
+    releaseFirst(new Response(JSON.stringify({ error: 'Temporarily unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } }));
+    await waitFor(() => expect(projects[0].submission.text).toBe('Newest queued edit'));
+    expect(loadDurableProject(storage, newest.id).submission.text).toBe('Newest queued edit');
+  });
+
+  it('offers an explicit retry after bounded transient attempts are exhausted', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let fail = true;
+    let attempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Retry after outage')) {
+        attempts += 1;
+        if (fail) return new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Retry after outage';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    const retry = await screen.findByRole('button', { name: 'Try saving again' }, { timeout: 5000 });
+    expect(attempts).toBe(3);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('saved on this device');
+    expect(alert.textContent).not.toMatch(/recovery|browser copy|export|download/i);
+    fail = false;
+    fireEvent.click(retry);
+    await waitFor(() => expect(projects[0].submission.text).toBe('Retry after outage'));
+    expect(attempts).toBe(4);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('bounds a hung save request and exposes an explicit retry', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    let targetAttempts = 0;
+    const normal = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Hung save request')) {
+        targetAttempts += 1;
+        return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }));
+      }
+      return normal(path, options);
+    });
+    vi.useFakeTimers();
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Hung save request';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(47000); });
+    expect(targetAttempts).toBe(3);
+    expect(screen.getByRole('button', { name: 'Try saving again' })).toBeVisible();
+    vi.useRealTimers();
+  });
+
+  it('allows a corrected payload after a size validation rejection', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let rejectedAttempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Too large payload')) {
+        rejectedAttempts += 1;
+        return new Response(JSON.stringify({ error: 'Project is too large' }), { status: 413, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Too large payload';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    await screen.findByRole('alert');
+    const corrected = structuredClone(edited);
+    corrected.updatedAt = new Date(Date.now() + 2000).toISOString();
+    corrected.submission.text = 'Smaller corrected payload';
+    saveProjectToLibrary(storage, corrected, loadProjectLibrary(storage, corrected, false), { makeActive: true });
+    await waitFor(() => expect(projects[0].submission.text).toBe('Smaller corrected payload'));
+    expect(rejectedAttempts).toBe(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps retries fenced to their captured account and course adapter', async () => {
+    window.history.replaceState(null, '', '/?course=course-a');
+    workspaceAccount = { cacheKey: 'course-a-cache', role: 'student', course: { id: 'course-a' } };
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let releaseFirst;
+    let firstAttemptStarted;
+    const firstStarted = new Promise(resolve => { firstAttemptStarted = resolve; });
+    const firstFailure = new Promise(resolve => { releaseFirst = resolve; });
+    let firstAttempt = true;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Course A retry')) {
+        if (firstAttempt) {
+          firstAttempt = false;
+          firstAttemptStarted();
+          return firstFailure;
+        }
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Course A retry';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    await firstStarted;
+    const otherStorage = useAccountStorage('course-b-cache', null, parseCourseSelection('?course=course-b'));
+    releaseFirst(new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } }));
+    await waitFor(() => expect(projects[0].submission.text).toBe('Course A retry'));
+    const attempts = fetchMock.mock.calls.filter(([path, options]) => path === '/api/cloud/projects/dashboard-project-0'
+      && options?.method === 'PUT' && JSON.parse(options.body).project.includes('Course A retry'));
+    expect(attempts.length).toBe(2);
+    for (const [, options] of attempts) {
+      expect(options.headers['x-systems-account-cache']).toBe('course-a-cache');
+      expect(options.headers['x-systems-course']).toBe('course-a');
+    }
+    expect(loadDurableProject(storage, edited.id).submission.text).toBe('Course A retry');
+    expect(loadDurableProject(otherStorage, edited.id)).toBeNull();
+  });
+
+  it('keeps an explicit retry bound to the original course after the active adapter changes', async () => {
+    window.history.replaceState(null, '', '/?course=course-a');
+    workspaceAccount = { cacheKey: 'course-a-cache', role: 'student', course: { id: 'course-a' } };
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let targetAttempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Manual course A retry')) {
+        targetAttempts += 1;
+        if (targetAttempts <= 3) return new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Manual course A retry';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    const retry = await screen.findByRole('button', { name: 'Try saving again' }, { timeout: 5000 });
+    useAccountStorage('course-b-cache', null, parseCourseSelection('?course=course-b'));
+    fireEvent.click(retry);
+    await waitFor(() => expect(projects[0].submission.text).toBe('Manual course A retry'));
+    const attempts = fetchMock.mock.calls.filter(([path, options]) => path === '/api/cloud/projects/dashboard-project-0'
+      && options?.method === 'PUT' && JSON.parse(options.body).project.includes('Manual course A retry'));
+    expect(attempts).toHaveLength(4);
+    for (const [, options] of attempts) {
+      expect(options.headers['x-systems-account-cache']).toBe('course-a-cache');
+      expect(options.headers['x-systems-course']).toBe('course-a');
+    }
+  });
+
+  it('keeps a real revision conflict blocked without retrying or replacing account data', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let targetAttempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Divergent device version')) {
+        targetAttempts += 1;
+        return new Response(JSON.stringify({ error: 'This project changed in another tab.' }), { status: 409, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const originalRemoteMemo = projects[0].submission.text;
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Divergent device version';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    await screen.findByRole('alert');
+    expect(targetAttempts).toBe(1);
+    expect(projects[0].submission.text).toBe(originalRemoteMemo);
+    expect(loadDurableProject(storage, edited.id).submission.text).toBe('Divergent device version');
+    expect(screen.getByRole('alert')).toHaveTextContent('account version was kept');
+    expect(screen.getByRole('alert').textContent).not.toMatch(/recovery|export|download/i);
+    expect(screen.queryByRole('button', { name: 'Try saving again' })).not.toBeInTheDocument();
+  });
+
+  it('confirms an identical remote payload after a lost successful save acknowledgment', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let targetAttempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Committed acknowledgment lost')) {
+        targetAttempts += 1;
+        const body = JSON.parse(options.body);
+        projects[0] = parseProject(body.project);
+        return new Response(JSON.stringify({ error: 'Revision changed' }), { status: 409, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Committed acknowledgment lost';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    await waitFor(() => expect(storage.getItem('systems-mapping.cloud-sync.dashboard-project-0')).not.toBeNull());
+    expect(targetAttempts).toBe(1);
+    expect(projects[0].submission.text).toBe('Committed acknowledgment lost');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('invalidates an exhausted retry when its project is deleted', async () => {
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    const storage = projectStorage();
+    const normal = fetchMock.getMockImplementation();
+    let targetAttempts = 0;
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === '/api/cloud/projects/dashboard-project-0' && options?.method === 'PUT'
+        && JSON.parse(options.body).project.includes('Delete pending map')) {
+        targetAttempts += 1;
+        return new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+    const edited = { ...structuredClone(projects[0]), updatedAt: new Date(Date.now() + 1000).toISOString() };
+    edited.submission.text = 'Delete pending map';
+    saveProjectToLibrary(storage, edited, loadProjectLibrary(storage, edited, false), { makeActive: true });
+    const staleRetryButton = await screen.findByRole('button', { name: 'Try saving again' }, { timeout: 5000 });
+    expect(targetAttempts).toBe(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Projects' }));
+    const row = await screen.findByRole('article', { name: 'First saved map' });
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: 'First saved map' });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete', exact: true }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'First saved map' })).not.toBeInTheDocument());
+    fireEvent.click(staleRetryButton);
+    storage.onProjectSaved({ ...edited, submission: { ...edited.submission, text: 'Late retained callback' } });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(targetAttempts).toBe(3);
+    expect(projects.some(project => project.id === 'dashboard-project-0')).toBe(false);
+    expect(storage.getItem('systems-mapping.cloud-sync.dashboard-project-0')).toBeNull();
   });
 
   it('shows course guidance editing only to an instructor in that course', async () => {

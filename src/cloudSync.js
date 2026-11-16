@@ -19,6 +19,9 @@ export async function projectDigest(serialized) {
 export async function rememberCloudSave(storage, id, revision, serialized) {
   storage.setItem(syncKey(id), JSON.stringify({ revision, digest: await projectDigest(serialized) }));
 }
+export function forgetCloudSave(storage, id) {
+  storage.removeItem(syncKey(id));
+}
 
 /** Preserve unsynced work. Divergence requires an explicit recovery export. */
 export async function reconcileCloudProject(storage, id, remote) {

@@ -28,6 +28,8 @@ Each account in each workspace receives an independent random browser cache key.
 
 Project links retain their existing bearer-capability behavior within the selected workspace, with current course access required. A course link cannot resolve in another course or in the general workspace. An instructor's course permission does not grant access to another account's private cloud project by ID. Existing unsynced device copies remain in their original cache for recovery.
 
+Browser project persistence retries only transient network failures and HTTP 408, 425, 429, 500, 502, 503, and 504 responses: three total PUT attempts, each with a 15-second deadline, separated by 250 ms and 750 ms delays. After exhaustion, the map remains saved on the device and the user can explicitly retry the account save. Account, enrollment, and revision-conflict failures are not automatically retried. A 400, 413, or 422 rejection suppresses only that exact serialized payload; a corrected edit can be sent. After HTTP 409, the browser may perform one 15-second-deadline read to verify that the exact submitted payload was already committed; a different or unverifiable payload remains a conflict and is never overwritten. Delete invalidates queued saves and retained retry callbacks for that project. These bounded retries apply only to project PUT persistence; model and Gateway requests retain their existing retry contracts.
+
 ## Instructor appendices
 
 Course owners use the Course guidance editor on the account dashboard. The server exposes:
