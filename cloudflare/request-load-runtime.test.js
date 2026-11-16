@@ -17,7 +17,7 @@ const account = who => worker.fetch(ORIGIN + '/api/cloud/account', {
 beforeAll(async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = {};
-  for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333']]) {
+  for (const [name, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333'], ['instructor', 'cail-44444444444444444444444444444444']]) {
     tokens[name] = { subject, sessionToken: sessions[name],
       appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }),
       gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }),
@@ -29,7 +29,10 @@ beforeAll(async () => {
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] },
     exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-load-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-load-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-load-fixture' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876524', simple: { limit: 2, period: RATE_LIMIT_PERIOD_SECONDS } }],
+    ratelimits: [
+      { name: 'REQUEST_LIMIT', namespace_id: '9876524', simple: { limit: 2, period: RATE_LIMIT_PERIOD_SECONDS } },
+      { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '9876527', simple: { limit: 2, period: RATE_LIMIT_PERIOD_SECONDS } },
+    ],
   } }, { config: { name: 'systems-load-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } }] });
   await harness.listen();
   worker = harness.getWorker('systems-load-test');
@@ -69,6 +72,18 @@ test('anonymous traffic remains limited without spending a signed-in account all
   expect((await account()).status).toBe(401);
   expect((await account()).status).toBe(429);
   expect((await account('admin')).status).toBe(200);
+}, TEST_TIMEOUT_MS);
+
+test('private workspace edits use their own verified-account allowance', async () => {
+  const initial = await (await account('instructor')).json();
+  const state = () => worker.fetch(ORIGIN + '/api/cloud/workspace-state', {
+    headers: { cookie: `__Host-systems-mapping-session=${sessions.instructor}`, 'x-systems-account-cache': initial.account.cacheKey },
+  });
+  expect((await state()).status).toBe(200);
+  expect((await state()).status).toBe(200);
+  expect((await state()).status).toBe(429);
+  // The private-state bucket cannot exhaust the normal project/workspace API budget.
+  expect((await account('instructor')).status).toBe(200);
 }, TEST_TIMEOUT_MS);
 
 test('a full shared-IP login bucket cannot block callback recovery or same-origin logout', async () => {

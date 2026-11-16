@@ -16,7 +16,10 @@
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "systems-mapping", "worker": "systems-mapping", "workspace": false } },
     { "binding": "GATEWAY", "service": "cail-model-api" }
   ],
-  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350908", "simple": { "limit": 60, "period": 60 } }],
+  "ratelimits": [
+    { "name": "REQUEST_LIMIT", "namespace_id": "350908", "simple": { "limit": 60, "period": 60 } },
+    { "name": "WORKSPACE_STATE_LIMIT", "namespace_id": "350909", "simple": { "limit": 120, "period": 60 } }
+  ],
   "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
   "vars": {
     "BUG_REPORT_MODE": "redmine",

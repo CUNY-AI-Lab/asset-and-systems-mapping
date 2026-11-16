@@ -20,6 +20,7 @@ import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
 import { RedmineReports, contactReporting, reportDelivery, reportFallback, reportsEnabled } from './redmine-reports';
 import { handleBugReport, type BugReportService } from './bug-reports';
+import { validateWorkspaceStateWrite, workspaceStateConflictsGet, workspaceStateGet, workspaceStatePut } from './workspace-state';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
@@ -87,6 +88,24 @@ export class MappingCourse extends DurableObject<Bindings> {
       );
       CREATE INDEX IF NOT EXISTS cloud_activity_owner ON cloud_activity(owner, at);
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS cloud_workspace_state (
+        owner TEXT NOT NULL, kind TEXT NOT NULL, state_key TEXT NOT NULL, revision INTEGER NOT NULL,
+        value TEXT NOT NULL, deleted INTEGER NOT NULL CHECK(deleted IN (0,1)), updated_at TEXT NOT NULL,
+        PRIMARY KEY(owner,kind,state_key)
+      );
+      CREATE TABLE IF NOT EXISTS cloud_workspace_state_conflicts (
+        owner TEXT NOT NULL, kind TEXT NOT NULL, state_key TEXT NOT NULL, operation_id TEXT NOT NULL,
+        variant TEXT NOT NULL CHECK(variant IN ('server','local')), revision INTEGER NOT NULL,
+        value TEXT NOT NULL, value_hash TEXT NOT NULL, deleted INTEGER NOT NULL CHECK(deleted IN (0,1)), created_at TEXT NOT NULL,
+        PRIMARY KEY(owner,kind,state_key,operation_id,variant)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS cloud_workspace_state_conflict_versions ON cloud_workspace_state_conflicts(owner,kind,state_key,variant,value_hash);
+      CREATE TABLE IF NOT EXISTS cloud_workspace_state_operations (
+        owner TEXT NOT NULL, operation_id TEXT NOT NULL, kind TEXT NOT NULL, state_key TEXT NOT NULL,
+        value_hash TEXT NOT NULL, base_revision INTEGER NOT NULL, revision INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('applied','conflict')), created_at TEXT NOT NULL,
+        PRIMARY KEY(owner,operation_id)
+      );
       CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
       this.reports = new RedmineReports(this.db, ctx.storage, env);
       this.db.finishInitialization();
@@ -156,6 +175,28 @@ export class MappingCourse extends DurableObject<Bindings> {
     const path = url.pathname;
     if (isBugReport(path)) return this.reports.request(request, digest(principal.subject), principal.preferredName, undefined, principal.email, principal.toolsMounted);
     const expectedCache = request.headers.get('x-systems-account-cache');
+    if (path === '/api/cloud/workspace-state') {
+      if (!expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
+      const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
+      if (account?.cache_key !== expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
+      if (request.method === 'GET') return Response.json(workspaceStateGet(this.db, owner));
+      if (request.method !== 'PUT') return failure('Method not allowed.', 405);
+      let body;
+      try { body = await boundedJson(request); } catch { return failure('Workspace update is invalid.', 400); }
+      const write = validateWorkspaceStateWrite(body);
+      if (!write) return failure('Workspace update is invalid.', 400);
+      const result = this.ctx.storage.transactionSync(() => workspaceStatePut(this.db, owner, write));
+      return Response.json(result, { status: result.status });
+    }
+    if (path === '/api/cloud/workspace-state/conflicts') {
+      if (!expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
+      const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
+      if (account?.cache_key !== expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
+      if (request.method !== 'GET') return failure('Method not allowed.', 405);
+      const cursor = url.searchParams.get('cursor') ?? '0';
+      if (!/^(?:0|[1-9]\d{0,8})$/.test(cursor) || [...url.searchParams.keys()].some(key => key !== 'cursor')) return failure('Conflict page is invalid.', 400);
+      return Response.json(workspaceStateConflictsGet(this.db, owner, Number(cursor)));
+    }
     if (expectedCache && path !== '/api/cloud/account') {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
       if (account?.cache_key !== expectedCache) return failure('The signed-in account changed. Reload to open its workspace. Your device copy is preserved.', 409);
@@ -423,7 +464,12 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
               principal = { ...principal, admin: course.capabilities.instructorPanel, expiresAt: Math.min(principal.expiresAt, Date.parse(course.expiresAt)), course };
             } catch (error) { principal = courseFailure(error); }
           }
-          const limit = await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal instanceof Response ? null : principal.subject) });
+          const workspaceStateRoute = ['/api/cloud/workspace-state', '/api/cloud/workspace-state/conflicts'].includes(url.pathname);
+          const limit = principal instanceof Response
+            ? await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, null) })
+            : workspaceStateRoute
+              ? await env.WORKSPACE_STATE_LIMIT.limit({ key: 'workspace-state:' + digest(principal.subject) })
+              : await env.REQUEST_LIMIT.limit({ key: apiRateLimitKey(request, principal.subject) });
           if (!limit.success) response = failure('Please wait a moment and try again.', 429,60);
           else {
             if (principal instanceof Response) response = principal;

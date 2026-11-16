@@ -811,7 +811,7 @@ function LabLink() {
 
 function storedTheme() {
   try {
-    const saved = window.localStorage.getItem(THEME_STORAGE_KEY) ?? projectStorage()?.getItem(THEME_STORAGE_KEY);
+    const saved = projectStorage()?.getItem(THEME_STORAGE_KEY) ?? window.localStorage.getItem(THEME_STORAGE_KEY);
     return saved === 'dark' ? 'dark' : 'light';
   } catch {
     return 'light';

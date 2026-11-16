@@ -28,7 +28,7 @@ beforeAll(async () => {
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'email-identity-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'email-identity-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'email-identity-fixture' }, { binding: 'BUG_REPORTS', service: 'email-receiver-fixture', entrypoint: 'ReportEmail' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876599', simple: { limit: 1000, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876599', simple: { limit: 1000, period: 60 } }, { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '9876600', simple: { limit: 120, period: 60 } }],
   } }, { config: { name: 'email-identity-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } },
   { config: { name: 'email-receiver-fixture', main: 'cloudflare/test-report-email-service.ts', compatibility_date: '2026-09-08' } }] });
   await harness.listen(); worker = harness.getWorker('mapping-email-test'); email = harness.getWorker('email-receiver-fixture');
