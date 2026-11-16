@@ -6307,7 +6307,7 @@ Overall, the posting history documents a working student repeatedly turning to R
     expect(loadLibraryProject(window.localStorage, loadProjectLibrary(window.localStorage, storedProject(), true).find(record => record.id === imported.id)).submission.text).toBe('Older synthetic memo');
   });
 
-  it.each(['course', 'public'])('downloads the complete map and private recovery for a saved %s project', async audience => {
+  it.each(['course', 'public'])('shows an ordinary account save error without a recovery prompt for a saved %s project', async audience => {
     const project = makeMapProject();
     project.sharingTier = audience;
     project.instructor.maxSharingTier = 'public';
@@ -6324,20 +6324,16 @@ Overall, the posting history documents a working student repeatedly turning to R
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     try {
       seedProject(project);
-      render(<App startInWorkspace cloudError="Synthetic account save failure" />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Download private recovery' }));
-      const recovered = parseProject(blobs[0]);
-      expect(recovered.submission).toEqual(project.submission);
-      expect(recovered.reflection).toBe(project.reflection);
-      expect(recovered.levelProgress).toEqual(project.levelProgress);
-      expect(recovered.graph).toEqual(project.graph);
-      expect(recovered.candidates).toEqual(project.candidates);
-      expect(recovered.sharingTier).toBe(audience);
-      expect(Object.keys(recovered.levelProgress)).toHaveLength(4);
+      const retry = vi.fn();
+      render(<App startInWorkspace cloudError="This map is saved on this device. Its account save is still pending." cloudSaveCanRetry onRetryCloudSave={retry} />);
+      expect(await screen.findByRole('alert')).toHaveTextContent('account save is still pending');
+      expect(screen.queryByRole('button', { name: /recovery|download/i })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Try saving again' }));
+      expect(retry).toHaveBeenCalledOnce();
       openExports();
       expect(screen.queryByRole('combobox', { name: 'Export audience' })).not.toBeInTheDocument();
       fireEvent.change(screen.getByRole('combobox',{name:'File format'}),{target:{value:'json'}}); fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}));
-      const downloaded = parseProject(blobs[1]);
+      const downloaded = parseProject(blobs[0]);
       expect(downloaded.submission).toEqual(project.submission);
       expect(downloaded.reflection).toBe(project.reflection);
       expect(downloaded.levelProgress).toEqual(project.levelProgress);

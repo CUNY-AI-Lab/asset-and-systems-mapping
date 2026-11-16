@@ -812,7 +812,9 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     failCloudWrites = true;
     await page.getByRole('textbox', { name: 'Map note', exact: true }).fill('Unsynced work is recovered after a storage interruption.');
     await page.getByRole('textbox', { name: 'Map note', exact: true }).press('Tab');
-    await browserExpect(page.getByRole('alert')).toContainText('Your unsynced copy remains on this device');
+    await browserExpect(page.getByRole('alert')).toContainText('Its account save is still pending.');
+    await browserExpect(page.getByRole('button', { name: 'Try saving again', exact: true })).toBeVisible();
+    await browserExpect(page.getByRole('button', { name: 'Download private recovery', exact: true })).toHaveCount(0);
     for (const width of [1440, 1024, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       // The wrapped account notice updates the measured stage inset on resize.
@@ -828,6 +830,9 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
     failCloudWrites = false;
+    await page.getByRole('button', { name: 'Try saving again', exact: true }).click();
+    await browserExpect.poll(async () => JSON.parse((await (await request('/api/cloud/projects/browser-map')).json()).project).mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
+    await browserExpect(page.getByRole('alert')).toHaveCount(0);
     await page.reload();
     await page.getByRole('article', { name: 'East Harlem disability resources' }).getByRole('button', { name: 'Open project' }).click();
     await browserExpect.poll(async () => JSON.parse((await (await request('/api/cloud/projects/browser-map')).json()).project).mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
