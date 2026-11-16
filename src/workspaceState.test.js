@@ -44,6 +44,72 @@ test('source-origin browser preferences seed only after an exact server account 
   sync.close();
 });
 
+test('a current account sidebar preference replaces an older browser cache without writing the stale value back', async () => {
+  const storage = adapter('opaque-alice-key');
+  const key = 'systems-mapping.sidebar-width';
+  storage.setItem(key, '304');
+  const request = vi.fn(async () => ({ records: [{ kind: 'preference', key, revision: 7, value: '272', deleted: 0 }], conflicts: [] }));
+  const sync = testSync(storage, request, captured => captured === storage);
+  await expect(sync.hydrate()).resolves.toBe(true);
+  expect(storage.getItem(key)).toBe('272');
+  expect(request).toHaveBeenCalledTimes(1);
+  const archived = Array.from({ length: storage.length }, (_, index) => storage.key(index))
+    .filter(name => name.startsWith('local-conflict.v1.'));
+  expect(archived).toHaveLength(1);
+  expect(storage.getItem(archived[0])).toBe('304');
+  sync.close();
+});
+
+test('a current account preference does not overwrite an explicit pending local edit', async () => {
+  const storage = adapter('opaque-alice-key');
+  const key = 'systems-mapping.sidebar-width';
+  const operationId = '8e494716-8e88-4aab-b3fc-205f5beec17a';
+  storage.setItem(key, '304');
+  storage.setItem(`workspace-state-pending.v1.${encodeURIComponent(key)}`, JSON.stringify({
+    version: 1, key, operationId, baseRevision: 6, valueKind: 'current', status: 'pending',
+  }));
+  const request = vi.fn(async (_path, options) => {
+    if (!options.method) return { records: [{ kind: 'preference', key, revision: 7, value: '272', deleted: 0 }], conflicts: [] };
+    return { status: 409, current: { revision: 7, value: '272', deleted: 0 } };
+  });
+  const sync = testSync(storage, request, captured => captured === storage);
+  await sync.hydrate();
+  await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  expect(storage.getItem(key)).toBe('304');
+  expect(JSON.parse(request.mock.calls[1][1].body)).toMatchObject({ revision: 6, value: '304' });
+  expect(JSON.parse(storage.getItem(`workspace-state-pending.v1.${encodeURIComponent(key)}`))).toMatchObject({ status: 'conflict' });
+  expect(Array.from({ length: storage.length }, (_, index) => storage.key(index)).some(name => name.startsWith('local-conflict.v1.'))).toBe(false);
+  sync.close();
+});
+
+test('a remote preference tombstone preserves the cached value as a local conflict and clears it', async () => {
+  const storage = adapter('opaque-alice-key');
+  const key = 'systems-mapping.sidebar-width';
+  storage.setItem(key, '304');
+  const request = vi.fn(async () => ({ records: [{ kind: 'preference', key, revision: 8, value: '', deleted: 1 }], conflicts: [] }));
+  const sync = testSync(storage, request, captured => captured === storage);
+  await sync.hydrate();
+  expect(storage.getItem(key)).toBeNull();
+  const archived = Array.from({ length: storage.length }, (_, index) => storage.key(index))
+    .filter(name => name.startsWith('local-conflict.v1.'));
+  expect(archived).toHaveLength(1);
+  expect(storage.getItem(archived[0])).toBe('304');
+  expect(request).toHaveBeenCalledTimes(1);
+  sync.close();
+});
+
+test('an invalid remote preference value is ignored without replacing the local setting', async () => {
+  const storage = adapter('opaque-alice-key');
+  const key = 'systems-mapping.sidebar-width';
+  storage.setItem(key, '304');
+  const request = vi.fn(async () => ({ records: [{ kind: 'preference', key, revision: 9, value: 'wide', deleted: 0 }], conflicts: [] }));
+  const sync = testSync(storage, request, captured => captured === storage);
+  await sync.hydrate();
+  expect(storage.getItem(key)).toBe('304');
+  expect(request).toHaveBeenCalledTimes(1);
+  sync.close();
+});
+
 test('a divergent local draft seeds as a stale CAS, preserving both variants before an explicit edit can save', async () => {
   const storage = adapter('opaque-alice-key');
   const key = 'systems-mapping.relationship-draft.v1.shared-project.micro';

@@ -41,6 +41,22 @@ function legacyPreferences(storage, remote) {
   }
 }
 
+function validPreferenceValue(key, value) {
+  if (typeof value !== 'string') return false;
+  if (key === 'systems-mapping.theme') return value === 'light' || value === 'dark';
+  if (key === 'systems-mapping.sidebar-width') return /^(?:0|[1-9]\d{0,2})$/.test(value) && Number(value) >= 200 && Number(value) <= 520;
+  if (key === 'systems-mapping.map-tools-width') return /^(?:0|[1-9]\d{0,2})$/.test(value) && Number(value) >= 240 && Number(value) <= 480;
+  if (key === 'account-navigation') {
+    try {
+      const navigation = JSON.parse(value);
+      return navigation && typeof navigation === 'object' && !Array.isArray(navigation)
+        && Object.keys(navigation).sort().join(',') === 'open,tab'
+        && typeof navigation.open === 'boolean' && ['overview', 'instructor'].includes(navigation.tab);
+    } catch { return false; }
+  }
+  return false;
+}
+
 export function createWorkspaceStateSync(storage, request, isCurrent, {
   requestTimeoutMs = 5000, idleDelayMs = 750, maxWaitMs = 2000, minIntervalMs = 1000,
 } = {}) {
@@ -181,6 +197,7 @@ export function createWorkspaceStateSync(storage, request, isCurrent, {
       if (!kind) continue;
       const localValue = storage.getItem(key);
       const saved = remote.get(key);
+      if (kind === 'preference' && saved && !saved.deleted && !validPreferenceValue(key, saved.value)) continue;
       if (saved && Number.isSafeInteger(saved.revision) && saved.revision >= 1) revisions.set(key, saved.revision);
       const journal = readJournal(storage, key);
       if (journal) {
@@ -203,9 +220,20 @@ export function createWorkspaceStateSync(storage, request, isCurrent, {
       } else if (typeof saved.value === 'string' && localValue === null) {
         try { storage.setItem(key, saved.value); } catch { /* Server copy remains available on the next load. */ }
       } else if (typeof saved.value === 'string' && localValue !== saved.value) {
-        // An unscoped or older local version is preserved on both sides, never
-        // used to replace a current server revision during initial seeding.
-        startWrite(key, localValue, 0, generations.get(key) || 0);
+        if (kind === 'preference') {
+          // A stale browser cache has no write journal and cannot supersede a
+          // current account preference. Keep its old value privately before
+          // applying the server revision. Explicit pending edits took the
+          // journal path above and still retain their conflict semantics.
+          try {
+            storage.setItem(LOCAL_CONFLICT_PREFIX + encodeURIComponent(key) + '.' + Date.now(), localValue);
+            storage.setItem(key, saved.value);
+          } catch { /* Preserve the local value if the conflict copy cannot be stored. */ }
+        } else {
+          // Preserve divergent drafts on both sides; only an explicit edit can
+          // advance the server revision after a conflict.
+          startWrite(key, localValue, 0, generations.get(key) || 0);
+        }
       }
     }
     return current(captured);
