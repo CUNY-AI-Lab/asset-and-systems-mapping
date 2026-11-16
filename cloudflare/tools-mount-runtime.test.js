@@ -28,14 +28,15 @@ beforeAll(async () => {
     issuer: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject: TEST_SUBJECTS.alice, issuer: 'https://foreign.example' }),
   };
   tokens = {};
-  for (const [who, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333']]) {
+  for (const [who, subject] of [['alice', TEST_SUBJECTS.alice], ['bob', TEST_SUBJECTS.bob], ['admin', 'cail-33333333333333333333333333333333'], ['instructor', 'cail-44444444444444444444444444444444']]) {
     tokens[who] = { subject, sessionToken: crypto.randomUUID() + '.' + 's'.repeat(43),
       appJwt: await issuer.mintIdentityJwt({ audience: 'cail:systems-mapping', subject }),
       gatewayJwt: await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject }) };
   }
   harness = createTestHarness({ workers: [{ config: {
     name: 'systems-mount-test', main: 'cloudflare/worker.ts', compatibility_date: '2026-09-08', compatibility_flags: ['nodejs_compat'],
-    vars: { PUBLIC_ORIGIN: WORKER, LOGIN_URL: '/auth/start', COURSE_ID: 'mount-test', RELEASE: 'mount-test', GATEWAY_MODEL: 'gpt-oss-120b', GUIDANCE_CONCURRENCY: '8', CAIL_IDENTITY_JWKS: issuer.jwksJson },
+    // Email is a local receiver fixture; production remains Redmine-only.
+    vars: { PUBLIC_ORIGIN: WORKER, LOGIN_URL: '/auth/start', COURSE_ID: 'mount-test', COURSE_ACCESS_ENABLED: 'true', COURSE_IDS: 'synthetic-course-a,synthetic-course-b', BUG_REPORT_MODE: 'email', RELEASE: 'mount-test', GATEWAY_MODEL: 'gpt-oss-120b', GUIDANCE_CONCURRENCY: '8', CAIL_IDENTITY_JWKS: issuer.jwksJson },
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-mount-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-mount-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-mount-fixture' }, { binding: 'BUG_REPORTS', service: 'systems-mount-reports', entrypoint: 'ReportEmail' }],
@@ -49,7 +50,10 @@ beforeAll(async () => {
   ingress = harness.getWorker('systems-mount-ingress');
   reports = harness.getWorker('systems-mount-reports');
 }, 30000);
-afterEach(async () => { await control({ denied: false }); });
+afterEach(async () => {
+  await control({ denied: false, courseDenied: false });
+  await reports.fetch('https://fixtures.test/control', { method: 'POST', body: '{}' });
+});
 afterAll(async () => { await harness?.close(); });
 
 test('Tools and Worker sessions address the same saved account maps', async () => {
@@ -164,13 +168,113 @@ test('rejects cross-site writes even with a matching Origin', async () => {
 });
 
 test('mounted report metadata identifies Tools without exposing the share token or client address', async () => {
+  const { expectedActor } = await (await request('/api/bug-reports/session')).json();
   const response = await request('/api/bug-reports', { method: 'POST', headers: { 'x-forwarded-for': '192.0.2.5' },
-    body: JSON.stringify({ reportId: crypto.randomUUID(), description: 'Synthetic local reporting boundary check.', path: '/p/abcdefghijklmnopqrst' }) });
+    body: JSON.stringify({ reportId: crypto.randomUUID(), expectedActor, description: 'Synthetic local reporting boundary check.', path: '/p/:shared-map' }) });
   expect(response.status).toBe(200);
   const { calls } = await (await reports.fetch('https://fixtures.test/control')).json();
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ origin: TOOLS, path: '/p/:shared-map' });
   expect(JSON.stringify(calls)).not.toMatch(/abcdefghijklmnopqrst|192\.0\.2\.5/);
+});
+
+const guestReport = (changes = {}) => ({ reportId: crypto.randomUUID(), firstName: 'Sample', lastName: 'Student',
+  email: 'mounted-guest@college.edu', description: 'Synthetic local mounted guest report.', path: '/p/:shared-map', ...changes });
+const sendGuestReport = (body, headers = {}) => request('/api/bug-reports/guest', { who: null, method: 'POST',
+  headers: { 'x-forwarded-for': '192.0.2.10', ...headers }, body: JSON.stringify(body) });
+
+test('anonymous reporting preserves availability, trusted mount metadata and duplicate receipts', async () => {
+  const legacy = await worker.fetch(WORKER + '/api/bug-reports/availability');
+  const mounted = await request('/api/bug-reports/availability', { who: null });
+  expect(legacy.status).toBe(200); expect(mounted.status).toBe(200);
+  expect(await mounted.json()).toEqual(await legacy.json());
+  const data = guestReport();
+  const sent = await sendGuestReport(data);
+  expect(sent.status).toBe(200);
+  const receipt = await sent.json();
+  expect(await (await sendGuestReport(data)).json()).toEqual(receipt);
+  expect((await sendGuestReport({ ...data, description: 'Different content under the same receipt.' })).status).toBe(409);
+  const { calls } = await (await reports.fetch('https://fixtures.test/control')).json();
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ origin: TOOLS, path: '/p/:shared-map' });
+  expect(JSON.stringify(calls)).not.toMatch(/mounted-guest@college\.edu|192\.0\.2\.10/);
+  expect(sent.headers.get('cache-control')).toContain('no-store');
+  expect(sent.headers.get('set-cookie')).toBeNull();
+});
+
+test('public reporting preserves origin, trusted-address, body and contact validation', async () => {
+  for (const origin of ['', 'null', 'https://foreign.example']) expect((await sendGuestReport(guestReport(), { origin })).status).toBe(403);
+  expect((await sendGuestReport(guestReport(), { 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+  expect((await sendGuestReport(guestReport(), { 'x-forwarded-for': '', 'cf-connecting-ip': '192.0.2.77' })).status).toBe(503);
+  for (const body of [guestReport({ email: 'sample@example.com' }), guestReport({ path: '/p/private-capability' }),
+    guestReport({ description: 'x'.repeat(4001) }), guestReport({ description: 'x'.repeat(33000) }), guestReport({ extra: true })]) {
+    expect((await sendGuestReport(body)).status).toBe(400);
+  }
+  const { calls } = await (await reports.fetch('https://fixtures.test/control')).json();
+  expect(calls).toEqual([]);
+});
+
+test('anonymous report allowance is exact and never downgrades supplied identity headers', async () => {
+  for (const [path, method] of [['/api/bug-reports/availability', 'POST'], ['/api/bug-reports/availability', 'HEAD'],
+    ['/api/bug-reports/guest', 'GET'], ['/api/bug-reports/guest', 'OPTIONS'], ['/api/bug-reports/session', 'GET'], ['/api/bug-reports', 'POST']]) {
+    expect((await request(path, { who: null, method })).status).toBe(401);
+  }
+  for (const headers of [
+    // Workerd drops empty headers at transport. Keep the other leg present so
+    // these exercise a partial credential instead of an anonymous request.
+    { ...headersFor(), 'x-cail-identity-jwt': '' }, { ...headersFor(), 'x-cail-gateway-identity-jwt': '' },
+    { 'x-cail-identity-jwt': tokens.alice.appJwt }, { 'x-cail-gateway-identity-jwt': tokens.alice.gatewayJwt },
+    { ...headersFor(), 'x-cail-identity-jwt': 'forged' },
+    { ...headersFor(), 'x-cail-gateway-identity-jwt': tokens.bob.gatewayJwt },
+    { ...headersFor(), 'x-cail-identity-jwt': invalidLegs.expired },
+  ]) {
+    expect((await request('/api/bug-reports/availability', { who: null, headers })).status,
+      Object.entries(headers).map(([key, value]) => `${key}:${value ? 'supplied' : 'empty'}`).join(', ')).toBe(401);
+    expect((await sendGuestReport(guestReport(), headers)).status).toBe(401);
+  }
+  await control({ denied: true });
+  expect((await request('/api/bug-reports/availability')).status).toBe(403);
+  expect((await request('/api/bug-reports/availability', { who: null })).status).toBe(200);
+});
+
+test('mounted guest reports retain per-contact and network limits', async () => {
+  const headers = { 'x-forwarded-for': '192.0.2.20' };
+  for (let i = 0; i < 10; i++) expect((await sendGuestReport(guestReport({ email: 'limit-one@college.edu' }), headers)).status).toBe(200);
+  const contactLimit = await sendGuestReport(guestReport({ email: 'limit-one@college.edu' }), headers);
+  expect(contactLimit.status).toBe(429); expect(Number(contactLimit.headers.get('retry-after'))).toBeGreaterThan(0);
+  for (let i = 0; i < 10; i++) expect((await sendGuestReport(guestReport({ email: 'limit-two@college.edu' }), headers)).status).toBe(200);
+  const networkLimit = await sendGuestReport(guestReport({ email: 'limit-three@college.edu' }), headers);
+  expect(networkLimit.status).toBe(429);
+  expect((await (await reports.fetch('https://fixtures.test/control')).json()).calls).toHaveLength(20);
+});
+
+test('course maps and caches match both origins while current ownership and enrollment remain required', async () => {
+  const course = 'synthetic-course-a', courseHeader = { 'x-systems-course': course };
+  const legacy = (path, options = {}) => worker.fetch(WORKER + path, { ...options, headers: {
+    origin: WORKER, cookie: `__Host-systems-mapping-session=${tokens.alice.sessionToken}`,
+    'content-type': 'application/json', ...courseHeader,
+  } });
+  const oldAccount = await (await legacy('/api/cloud/account')).json();
+  expect((await (await request('/api/cloud/account', { headers: courseHeader })).json()).account.cacheKey).toBe(oldAccount.account.cacheKey);
+  const project = createDefaultProject(); project.id = 'mounted-course-map'; project.title = 'Private course map';
+  const path = '/api/cloud/projects/' + project.id;
+  expect((await legacy(path, { method: 'PUT', body: JSON.stringify({ project: serializeProject(project), revision: 0 }) })).status).toBe(200);
+  const original = await (await request(path, { headers: courseHeader })).json();
+  expect(JSON.parse(original.project).title).toBe(project.title);
+  project.title = 'Updated through Tools';
+  expect((await request(path, { method: 'PUT', headers: { ...courseHeader, 'x-systems-account-cache': oldAccount.account.cacheKey },
+    body: JSON.stringify({ project: serializeProject(project), revision: original.revision }) })).status).toBe(200);
+  expect(JSON.parse((await (await legacy(path)).json()).project).title).toBe(project.title);
+  for (const options of [{}, { headers: { 'x-systems-course': 'synthetic-course-b' } },
+    { who: 'instructor', headers: courseHeader }, { who: 'admin', headers: courseHeader }]) expect((await request(path, options)).status).toBe(404);
+  expect((await request(path, { headers: { ...courseHeader, 'x-systems-account-cache': crypto.randomUUID() } })).status).toBe(409);
+  for (const who of ['alice', 'admin']) expect((await request('/api/cloud/course-students', { who, headers: courseHeader })).status).toBe(403);
+  const roster = await request('/api/cloud/course-students', { who: 'instructor', headers: courseHeader });
+  expect(roster.status).toBe(200); expect((await roster.json()).students[0].projects[0].title).toBe(project.title);
+  await control({ courseDenied: true });
+  expect((await request('/api/cloud/course-students', { who: 'instructor', headers: courseHeader })).status).toBe(403);
+  expect((await request(path, { headers: courseHeader })).status).toBe(403);
+  expect((await legacy(path)).status).toBe(403);
 });
 
 test('asset canonical redirects remain under the Tools mount', async () => {
@@ -218,6 +322,7 @@ test('mounted landing loads anonymously and requests login only after the CUNY L
     await browserExpect(page.getByRole('heading', { name: 'Systems Mapping', exact: true })).toBeVisible();
     const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
     await browserExpect(login).toBeVisible();
+    await browserExpect(page.getByRole('button', { name: 'Report a bug', exact: true })).toBeVisible();
     await browserExpect(login).toHaveAttribute('href', MOUNT + '/auth/login?returnTo=' + encodeURIComponent(destination));
     expect(page.url()).toBe(TOOLS + destination);
     expect(loginRequests).toBe(0);

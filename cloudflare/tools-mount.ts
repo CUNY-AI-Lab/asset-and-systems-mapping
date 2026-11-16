@@ -10,6 +10,12 @@ export function toolsPublicPath(path: string): 'page' | 'asset' | null {
   return null;
 }
 
+/** These existing public report operations contain no account data. */
+export function toolsPublicReport(path: string, method: string): boolean {
+  return path === '/api/bug-reports/availability' && method === 'GET'
+    || path === '/api/bug-reports/guest' && method === 'POST';
+}
+
 /** Called only after the dedicated login route verifies both signed grants. */
 export function toolsLoginRedirect(request: Request): Response {
   const values = new URL(request.url).searchParams.getAll('returnTo');

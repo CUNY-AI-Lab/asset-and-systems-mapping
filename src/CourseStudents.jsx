@@ -39,11 +39,11 @@ export default function CourseStudents({ active = true }) {
     </div>
     {error && <p className="teacher-message teacher-message--error" role="alert">{error}</p>}
     {busy && <p className="console-empty" role="status">Loading progress…</p>}
-    {!busy && !error && !students.length && !demonstrations.length && <p className="console-empty">Students appear after their first sign-in.</p>}
+    {!busy && !error && !students.length && !demonstrations.length && <p className="console-empty">Currently enrolled students appear after a recorded visit to Systems Mapping.</p>}
     {[...demonstrations, ...students].map(student => <article key={student.memberId} className="course-student">
       <header className="course-student__heading">
         <h3>{student.displayName || 'Name unavailable'}</h3>
-        <p>{student.demonstration ? 'Example progress' : `First sign-in ${new Date(student.firstSeen).toLocaleString()}`}</p>
+        <p>{student.demonstration ? 'Example progress' : `First recorded visit ${new Date(student.firstSeen).toLocaleString()}`}</p>
       </header>
       {student.projects.length ? <ul className="course-student__projects">{student.projects.map(project => <li key={project.id}>
         <div className="course-student__map-heading">

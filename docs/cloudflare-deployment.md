@@ -57,11 +57,17 @@ subsequent saves. Shared review retention follows the existing product rules.
   `https://tools.ailab.gc.cuny.edu/systems-mapping` through Doorway's explicit
   service binding. It accepts only that origin and path boundary, verifies the
   separately signed `x-cail-identity-jwt` and `x-cail-gateway-identity-jwt` legs
-  for one subject, and rechecks current Admission for every API and explicit
+  for one subject, and rechecks current Admission for every protected API and explicit
   login callback. Known frontend pages and built assets accept anonymous
   GET/HEAD requests when both identity headers are absent; their shell contains
   no account data. Supplied identity headers still require full verification,
   preserving compatibility with the earlier authenticated Doorway page route.
+  Anonymous reporting retains exactly `GET /api/bug-reports/availability` and
+  `POST /api/bug-reports/guest`. These exceptions apply only when both signed
+  identity headers are absent; partial or invalid supplied grants fail closed.
+  Guest reports retain same-origin, trusted-address, bounded-body, contact,
+  receipt and rate-limit checks. Mount metadata comes from the private entrypoint,
+  including for anonymous reports, rather than an identity or caller header.
   Missing assets cannot use the SPA fallback, and unknown operational/auth
   aliases or writes to frontend paths are rejected.
   Same-origin writes are checked before translating the mount to the existing
@@ -92,6 +98,12 @@ subsequent saves. Shared review retention follows the existing product rules.
   then Doorway's route and `ToolsApp` binding. The mounted runtime test exercises
   that private service-binding path with fixture identities, not production
   CUNY sign-in.
+
+  Doorway follow-up: forward anonymous `GET /systems-mapping/api/bug-reports/availability`
+  and `POST /systems-mapping/api/bug-reports/guest` to `ToolsApp`, before the
+  protected API catch-all, with the existing trusted client-address forwarding.
+  Keep all other methods and report/account APIs protected. The receiver's local
+  tests do not establish that this public Doorway contract is deployed.
 - `IDENTITY` binds to `cail-doorway#WorkerIdentity` with props
   `{id:"systems-mapping",worker:"systems-mapping",workspace:false}`. Login uses
   PKCE/state and an opaque Secure, HttpOnly, SameSite=Lax host cookie. Callback

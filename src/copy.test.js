@@ -109,6 +109,6 @@ describe('student-facing copy', () => {
       'Start a new map from this memo?',
       'Delete the server copy?',
       'Set up a teacher account',
-    ].forEach((heading) => expect(visibleSource).not.toContain(heading));
+    ].forEach((heading) => expect(literalHeadings).not.toContain(heading));
   });
 });

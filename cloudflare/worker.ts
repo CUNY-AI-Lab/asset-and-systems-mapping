@@ -4,7 +4,7 @@ import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { createHash } from 'node:crypto';
 import { correlationFromHeaders, type CailCorrelation } from '@cuny-ai-lab/cail-log';
 import { authorize, authorizeTools, verifierConfigs, type Principal, type IdentityEnv } from './identity';
-import { appDocument, toolsRequest, toolsPublicPath, toolsLoginRedirect } from './tools-mount';
+import { appDocument, toolsRequest, toolsPublicPath, toolsPublicReport, toolsLoginRedirect } from './tools-mount';
 import { requestLog } from './log.js';
 import { boundedText, boundedRpc, withDeadline, withSignal } from './bounded.js';
 import { createSystemsMappingApp } from '../server/app.js';
@@ -353,7 +353,7 @@ export class MappingCourse extends DurableObject<Bindings> {
   }
 }
 
-async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation, guidanceDeadline?: number, toolsIdentityRequest?: Request): Promise<Response> {
+async function handleRequest(request: Request, env: Bindings, correlation: CailCorrelation, guidanceDeadline?: number, toolsIdentityRequest?: Request, toolsMounted = false): Promise<Response> {
     let response: Response;
     try {
       const url = new URL(request.url);
@@ -385,7 +385,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
         response = failure('Reporting is unavailable.', 503);
       }
       else if (!contactReporting(env) && isBugReport(url.pathname)) {
-        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT, toolsMounted: mountedPrincipal?.toolsMounted });
+        response = await handleBugReport(internal, { origin: env.PUBLIC_ORIGIN, release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT, toolsMounted });
       }
       else if (url.pathname === '/api/cloud/runtime') response = Response.json({ loginUrl: mountedPrincipal ? '/systems-mapping/auth/login' : env.LOGIN_URL, bugReportEnabled: reportsEnabled(env) });
       else if (url.pathname.startsWith('/auth/')) {
@@ -408,7 +408,7 @@ async function handleRequest(request: Request, env: Bindings, correlation: CailC
             : digest(`guest-report-ip:v2\n${new Date().toISOString().slice(0, 10)}\n${ip}`);
           const limit = await boundedRpc(env.REQUEST_LIMIT.limit({ key: `guest-report:${rateKey}` }), request.signal);
           response = limit.success
-            ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey, mountedPrincipal?.toolsMounted)
+            ? await env.COURSES.getByName(env.COURSE_ID).guestReport(internal, rateKey, toolsMounted)
             : failure('Please wait a moment and try again.', 429, 60);
         }
       }
@@ -473,12 +473,12 @@ export function createMappingHandler({ testOnlyGuidanceTimeoutMs = GUIDANCE_DEAD
   } satisfies ExportedHandler<Bindings>;
 }
 
-async function fetchMapping(request: Request, env: Bindings, guidanceTimeoutMs = GUIDANCE_DEADLINE_MS, toolsIdentityRequest?: Request): Promise<Response> {
+async function fetchMapping(request: Request, env: Bindings, guidanceTimeoutMs = GUIDANCE_DEADLINE_MS, toolsIdentityRequest?: Request, toolsMounted = false): Promise<Response> {
   const correlation = requestCorrelation(request);
-  if (!isGuidanceRequest(request)) return handleRequest(request, env, correlation, undefined, toolsIdentityRequest);
+  if (!isGuidanceRequest(request)) return handleRequest(request, env, correlation, undefined, toolsIdentityRequest, toolsMounted);
   try {
     const deadline = Date.now() + guidanceTimeoutMs;
-    return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation, deadline, toolsIdentityRequest), guidanceTimeoutMs);
+    return await boundedGuidanceRequest(request, (timed: Request) => handleRequest(timed, env, correlation, deadline, toolsIdentityRequest, toolsMounted), guidanceTimeoutMs);
   } catch (error) {
     requestLog(env.RELEASE, correlation.request_id).failure();
     const cancelled = request.signal.aborted;
@@ -501,8 +501,11 @@ export class ToolsApp extends WorkerEntrypoint<Bindings> {
       return securedResponse(principal instanceof Response ? principal : toolsLoginRedirect(request), requestCorrelation(request).request_id, true);
     }
     const publicPath = toolsPublicPath(path);
-    const anonymousShell = publicPath && !request.headers.has('x-cail-identity-jwt') && !request.headers.has('x-cail-gateway-identity-jwt');
-    let response = await fetchMapping(translated, this.env, GUIDANCE_DEADLINE_MS, anonymousShell ? undefined : request);
+    const anonymousPublic = (publicPath || toolsPublicReport(path, request.method))
+      && !request.headers.has('x-cail-identity-jwt') && !request.headers.has('x-cail-gateway-identity-jwt');
+    // The mount is private-entrypoint context, even when public reporting has
+    // no principal. Never infer it from a caller-supplied forwarding header.
+    let response = await fetchMapping(translated, this.env, GUIDANCE_DEADLINE_MS, anonymousPublic ? undefined : request, true);
     // The asset binding's SPA fallback must not turn a missing file into a
     // public document at an arbitrary asset URL.
     if (publicPath === 'asset' && response.headers.get('content-type')?.toLowerCase().startsWith('text/html')) {

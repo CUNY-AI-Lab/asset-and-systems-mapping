@@ -12,6 +12,8 @@ test('shows a verified student before a map and saved stage progress after refre
   apiRequest.mockResolvedValueOnce({ students: [student], nextCursor: null });
   render(<CourseStudents />);
   await screen.findByRole('heading', { name: 'Alice Student' });
+  expect(screen.getByText(/^First recorded visit /)).toBeInTheDocument();
+  expect(screen.queryByText(/First sign-in/)).toBeNull();
   expect(screen.getByText('No saved maps yet.')).toBeInTheDocument();
   apiRequest.mockResolvedValueOnce({ students: [{ ...student, projectCount: 1, projects: [{ id: 'map', title: 'Classroom connections', updatedAt: '2026-10-13T20:30:00Z', revision: 2, levels: [
     { scale: 'micro', completed: true, started: true, stage: 4 },
@@ -37,11 +39,17 @@ test('clears previously displayed student data when fresh owner authorization fa
 });
 
 
-test('labels illustrative demo progress without claiming a student sign-in', async () => {
+test('labels illustrative demo progress without claiming a recorded student visit', async () => {
   apiRequest.mockResolvedValueOnce({ students: [{ ...student, demonstration: true, displayName: 'Example student', firstSeen: null }], nextCursor: null });
   render(<CourseStudents />);
   await screen.findByText('Example progress');
-  expect(screen.queryByText(/First sign-in/)).toBeNull();
+  expect(screen.queryByText(/First recorded visit/)).toBeNull();
+});
+
+test('an empty roster describes recorded visits without claiming complete sign-in history', async () => {
+  apiRequest.mockResolvedValueOnce({ students: [], nextCursor: null });
+  render(<CourseStudents />);
+  expect(await screen.findByText('Currently enrolled students appear after a recorded visit to Systems Mapping.')).toBeInTheDocument();
 });
 
 test('refreshes only the visible open roster and clears a revoked roster on return', async () => {

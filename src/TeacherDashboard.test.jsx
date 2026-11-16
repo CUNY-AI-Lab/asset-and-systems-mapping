@@ -274,14 +274,14 @@ describe('TeacherDashboard', () => {
     expect(request.mock.calls.some(([path]) => path === '/api/cloud/course-students')).toBe(false);
     fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
     fireEvent.click(roster);
-    expect(await screen.findByText('Students appear after their first sign-in.')).toBeVisible();
+    expect(await screen.findByText('Currently enrolled students appear after a recorded visit to Systems Mapping.')).toBeVisible();
     expect(screen.getAllByText('Saved progress')).toHaveLength(1);
     expect(screen.getByRole('region', { name: 'Saved progress' })).toBeVisible();
     const rosterReads = () => request.mock.calls.filter(([path]) => path === '/api/cloud/course-students');
     expect(rosterReads()).toHaveLength(1);
     expect(rosterReads()[0][1].headers['x-systems-course']).toBe('seminar-one');
     fireEvent.click(screen.getByRole('tab', { name: 'Course settings' }));
-    expect(screen.getByText('Students appear after their first sign-in.')).not.toBeVisible();
+    expect(screen.getByText('Currently enrolled students appear after a recorded visit to Systems Mapping.')).not.toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: 'Submissions' }));
     await waitFor(() => expect(rosterReads()).toHaveLength(2));
   });
