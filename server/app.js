@@ -3452,8 +3452,8 @@ export function createSystemsMappingApp(options = {}) {
               feedbackOnly = true;
             }
           }
-          // A second memo should leave at least one broader condition on the
-          // map. When the accepted response has none, first restore a Macro
+          // Check for independently evidenced broader conditions without requiring
+          // both levels. When the accepted response has none, first restore a Macro
           // node that an earlier attempt proposed and the retry dropped, then
           // read the memo once more for Macro alone. Every node still has to
           // pass the same submission rules; a pass that finds none changes nothing.

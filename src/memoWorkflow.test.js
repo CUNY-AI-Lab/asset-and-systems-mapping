@@ -125,11 +125,13 @@ it('keeps local roles eligible for Micro and asks Part 2 to omit them without ge
   expect(nodeSubmissionSchema('exosphere').properties.nodes.items.oneOf.map(node => node.properties.scale.enum)).toEqual([['exosphere'], ['macrosphere']]);
 });
 
-it('asks a second memo for both levels across every kind of node, with at least one Macro node', () => {
+it('examines both levels without requiring unsupported Macro nodes', () => {
   const instruction = nodeSubmissionInstruction('exosphere');
-  expect(instruction).toContain('return BOTH');
-  expect(instruction).toContain('MUST include at least one Macro node');
-  expect(instruction).not.toContain('in any mix of levels');
+  expect(instruction).toContain('Consider BOTH distinct levels');
+  expect(instruction).toContain('An Exo-only or Macro-only response is complete');
+  expect(instruction).toContain('A local consequence of one office decision or concrete rule does not by itself establish a Macro condition');
+  expect(instruction).toContain('an existing Macro node does not require a new Macro entry');
+  expect(instruction).not.toContain('MUST include at least one Macro node');
   // The kinds come from the level type lists, not from any one memo.
   expect(instruction).toContain(`Exo covers every kind of outside setting, resource or rule the memo evidences: ${EXO_NODE_TYPES.join(', ')}.`);
   expect(instruction).toContain(`Macro covers every kind of broader condition the memo evidences: ${MACRO_CONDITION_TYPES.join(', ')}.`);
