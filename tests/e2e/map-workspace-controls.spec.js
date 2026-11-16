@@ -182,10 +182,15 @@ test('trusted selected-node drags follow movement, save, and reload while connec
       await expect.poll(async () => nodePosition(await savedProject(page)), { timeout: 6000 }).not.toEqual(nodePosition(before));
       const saved = await savedProject(page);
       const afterDisplayed = await displayedPositions(page);
-      // The first phone move makes its compact overview the saved coordinate
-      // frame. Compare the displayed graph so that conversion is allowed while
-      // every other visible node keeps its actual position in the arrangement.
-      expect(Object.fromEntries(Object.entries(afterDisplayed).filter(([id]) => id !== residentId))).toEqual(Object.fromEntries(Object.entries(beforeDisplayed).filter(([id]) => id !== residentId)));
+      // The first phone move saves its compact coordinate frame. Auto-fit may
+      // move a nearby card to make room, but keeps all visible nodes and prevents
+      // overlaps; hidden nodes and relationships remain unchanged below.
+      expect(Object.keys(afterDisplayed).sort()).toEqual(Object.keys(beforeDisplayed).sort());
+      const overlaps = await page.locator('.graph-node').evaluateAll(nodes => {
+        const cards = nodes.map(node => ({ id: node.dataset.graphId, box: node.querySelector('.node-card').getBoundingClientRect() }));
+        return cards.flatMap((a, i) => cards.slice(i + 1).filter(b => a.box.left < b.box.right && a.box.right > b.box.left && a.box.top < b.box.bottom && a.box.bottom > b.box.top).map(b => [a.id, b.id]));
+      });
+      expect(overlaps).toEqual([]);
       const hiddenPositions = project => project.graph.nodes.filter(node => !Object.hasOwn(beforeDisplayed, node.id)).map(({ id, x, y }) => ({ id, x, y }));
       expect(hiddenPositions(saved)).toEqual(hiddenPositions(before));
       expect(saved.graph.edges).toEqual(before.graph.edges);
