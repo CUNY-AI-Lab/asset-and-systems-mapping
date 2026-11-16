@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AccountWorkspace from './AccountWorkspace.jsx';
 import { ProjectRow } from './ui/StudioPrimitives.jsx';
 import { createDefaultProject, parseProject, serializeProject } from './domain.js';
-import { projectStorage, releaseAccountStorage, useAccountStorage } from './accountStorage.js';
+import { projectStorage, releaseAccountStorage, setProjectSavedHandler, useAccountStorage } from './accountStorage.js';
 import { parseCourseSelection } from './courseContext.js';
 import { loadDurableProject, loadProjectLibrary, saveProjectToLibrary, STORAGE_KEY } from './projectLibrary.js';
 import { downloadBlob } from './mapExport.js';
@@ -45,7 +45,10 @@ beforeEach(() => {
   fetchMock = vi.fn(async (path, options) => {
     let payload;
     if (path === '/api/cloud/account') payload = { account: workspaceAccount };
-    else if (path === '/api/cloud/workspace-state') payload = { records: [] };
+    else if (path === '/api/cloud/workspace-state') {
+      if (options?.method === 'PUT') payload = { status: 200, revision: JSON.parse(options.body).revision + 1 };
+      else payload = { records: [] };
+    }
     else if (path === '/api/cloud/projects') payload = { projects: projects.map(project => ({ id:project.id, title:project.title, participantName:project.participantName, updatedAt:project.updatedAt, progress:projectProgress(project) })) };
     else if (path === '/api/cloud/quota') payload = { quota: { remaining_percent: 90 } };
     else if (path === '/api/cloud/courses') payload = { courses: workspaceCourses };
@@ -78,6 +81,29 @@ afterEach(() => {
 });
 
 describe('Account dashboard controls', () => {
+  it('keeps project-save handlers inside the exact account and course storage scope', () => {
+    const firstStateChange = vi.fn();
+    const firstSaved = vi.fn();
+    const secondStateChange = vi.fn();
+    const secondSaved = vi.fn();
+    const first = useAccountStorage('scope-a', null, { kind: 'course', id: 'course-a' }, firstStateChange);
+    expect(setProjectSavedHandler(first, firstSaved)).toBe(true);
+    const second = useAccountStorage('scope-a', null, { kind: 'course', id: 'course-b' }, secondStateChange);
+    expect(second).not.toBe(first);
+    expect(setProjectSavedHandler(first, vi.fn())).toBe(false);
+    expect(setProjectSavedHandler(second, secondSaved)).toBe(true);
+    first.onProjectSaved({ id: 'first' });
+    second.onProjectSaved({ id: 'second' });
+    first.setItem('systems-mapping.sidebar-width', '304');
+    second.setItem('systems-mapping.sidebar-width', '272');
+    expect(firstSaved).toHaveBeenCalledWith({ id: 'first' });
+    expect(secondSaved).toHaveBeenCalledWith({ id: 'second' });
+    expect(firstStateChange).toHaveBeenCalledWith('systems-mapping.sidebar-width', '304');
+    expect(secondStateChange).toHaveBeenCalledWith('systems-mapping.sidebar-width', '272');
+    expect(firstSaved).not.toHaveBeenCalledWith({ id: 'second' });
+    expect(secondSaved).not.toHaveBeenCalledWith({ id: 'first' });
+  });
+
   it('shows two creation fields, saves title and creator separately and preserves existing projects', async () => {
     workspaceAccount.preferredName = 'Sam Student';
     render(<AccountWorkspace />);
@@ -126,6 +152,22 @@ describe('Account dashboard controls', () => {
     fireEvent.click(open);
     await screen.findByRole('heading', { name: 'Project workspace' });
     expect(fetchMock).toHaveBeenCalledWith('/api/cloud/projects/dashboard-project-1', expect.any(Object));
+  });
+
+  it('keeps account preference writes synced through the same storage adapter after project open', async () => {
+    render(<AccountWorkspace />);
+    const row = await screen.findByRole('article', { name: 'First saved map' });
+    const storageBeforeOpen = projectStorage();
+    fireEvent.click(within(row).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    expect(projectStorage()).toBe(storageBeforeOpen);
+    act(() => storageBeforeOpen.setItem('systems-mapping.sidebar-width', '272'));
+    await waitFor(() => {
+      const write = fetchMock.mock.calls.find(([path, options]) => path === '/api/cloud/workspace-state'
+        && options?.method === 'PUT' && JSON.parse(options.body).key === 'systems-mapping.sidebar-width');
+      expect(write).toBeDefined();
+      expect(JSON.parse(write[1].body)).toMatchObject({ kind: 'preference', key: 'systems-mapping.sidebar-width', revision: 0, value: '272' });
+    }, { timeout: 3000 });
   });
 
   it('keeps the icon theme control and embedded Account tabs functional', async () => {

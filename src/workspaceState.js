@@ -41,6 +41,45 @@ function legacyPreferences(storage, remote) {
   }
 }
 
+function validPreferenceValue(key, value) {
+  if (typeof value !== 'string') return false;
+  if (key === 'systems-mapping.theme') return value === 'light' || value === 'dark';
+  if (key === 'systems-mapping.sidebar-width') return /^(?:0|[1-9]\d{0,2})$/.test(value) && Number(value) >= 200 && Number(value) <= 520;
+  if (key === 'systems-mapping.map-tools-width') return /^(?:0|[1-9]\d{0,2})$/.test(value) && Number(value) >= 240 && Number(value) <= 480;
+  if (key === 'account-navigation') {
+    try {
+      const navigation = JSON.parse(value);
+      return navigation && typeof navigation === 'object' && !Array.isArray(navigation)
+        && Object.keys(navigation).sort().join(',') === 'open,tab'
+        && typeof navigation.open === 'boolean' && ['overview', 'instructor'].includes(navigation.tab);
+    } catch { return false; }
+  }
+  return false;
+}
+
+function archiveLocalPreference(storage, key, value) {
+  try {
+    storage.setItem(LOCAL_CONFLICT_PREFIX + encodeURIComponent(key) + '.' + Date.now(), value);
+    return true;
+  } catch { return false; }
+}
+
+function applySavedPreference(storage, key, localValue, saved) {
+  if (saved.deleted) {
+    if (localValue !== null) {
+      if (!archiveLocalPreference(storage, key, localValue)) return false;
+      try { storage.removeItem(key); } catch { return false; }
+    }
+    return true;
+  }
+  if (!validPreferenceValue(key, saved.value)) return false;
+  if (localValue !== saved.value) {
+    if (localValue !== null && !archiveLocalPreference(storage, key, localValue)) return false;
+    try { storage.setItem(key, saved.value); } catch { return false; }
+  }
+  return true;
+}
+
 export function createWorkspaceStateSync(storage, request, isCurrent, {
   requestTimeoutMs = 5000, idleDelayMs = 750, maxWaitMs = 2000, minIntervalMs = 1000,
 } = {}) {
@@ -181,11 +220,24 @@ export function createWorkspaceStateSync(storage, request, isCurrent, {
       if (!kind) continue;
       const localValue = storage.getItem(key);
       const saved = remote.get(key);
+      if (kind === 'preference' && saved && !saved.deleted && !validPreferenceValue(key, saved.value)) continue;
       if (saved && Number.isSafeInteger(saved.revision) && saved.revision >= 1) revisions.set(key, saved.revision);
       const journal = readJournal(storage, key);
       if (journal) {
         if (journal.status === 'pending') scheduleSend(key, journal, generations.get(key) || 0);
-        else conflicted.add(key);
+        else if (journal.status === 'conflict' && kind === 'preference' && saved
+          && Number.isSafeInteger(saved.revision) && saved.revision >= 1
+          && (saved.deleted || validPreferenceValue(key, saved.value))) {
+          // Older clients could settle a stale cache seed as a conflict before
+          // discovering the remote preference. Preserve the local choice, then
+          // adopt the current account value and retire only that settled journal.
+          if (applySavedPreference(storage, key, localValue, saved)) {
+            try {
+              storage.removeItem(journalKey(key));
+              conflicted.delete(key);
+            } catch { conflicted.add(key); /* Keep the settled journal if storage cannot clear it. */ }
+          } else conflicted.add(key);
+        } else conflicted.add(key);
         continue;
       }
       if (!saved) {
@@ -195,17 +247,23 @@ export function createWorkspaceStateSync(storage, request, isCurrent, {
       if (!Number.isSafeInteger(saved.revision) || saved.revision < 1) continue;
       if (saved.deleted) {
         if (localValue !== null) {
-          try {
-            storage.setItem(LOCAL_CONFLICT_PREFIX + encodeURIComponent(key) + '.' + Date.now(), localValue);
-            storage.removeItem(key);
-          } catch { /* Keep the original local bytes when local conflict storage is unavailable. */ }
+          if (archiveLocalPreference(storage, key, localValue)) {
+            try { storage.removeItem(key); } catch { /* Keep the original local value if clearing fails. */ }
+          }
         }
       } else if (typeof saved.value === 'string' && localValue === null) {
         try { storage.setItem(key, saved.value); } catch { /* Server copy remains available on the next load. */ }
       } else if (typeof saved.value === 'string' && localValue !== saved.value) {
-        // An unscoped or older local version is preserved on both sides, never
-        // used to replace a current server revision during initial seeding.
-        startWrite(key, localValue, 0, generations.get(key) || 0);
+        if (kind === 'preference') {
+          // A stale browser cache has no write journal and cannot supersede a
+          // current account preference. Explicit pending edits took the
+          // journal path above and still retain their conflict semantics.
+          applySavedPreference(storage, key, localValue, saved);
+        } else {
+          // Preserve divergent drafts on both sides; only an explicit edit can
+          // advance the server revision after a conflict.
+          startWrite(key, localValue, 0, generations.get(key) || 0);
+        }
       }
     }
     return current(captured);

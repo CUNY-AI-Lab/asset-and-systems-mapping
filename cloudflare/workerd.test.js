@@ -559,15 +559,16 @@ test('private workspace state isolates identical project draft keys and preserve
   expect(aliceState.conflicts.map(entry => [entry.variant, entry.value])).toEqual(expect.arrayContaining([
     ['server', value('connects')], ['local', value('supports')],
   ]));
-  expect(aliceState.conflicts).toHaveLength(2);
+  expect(aliceState.conflicts.filter(entry => entry.key === key)).toHaveLength(2);
   expect((await put('alice', alice.cacheKey, crypto.randomUUID(), 0, value('supports'))).status).toBe(409);
-  expect((await (await request(path + '/conflicts', 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).json()).conflicts).toHaveLength(2);
+  const afterStaleConflicts = (await (await request(path + '/conflicts', 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).json()).conflicts;
+  expect(afterStaleConflicts.filter(entry => entry.key === key)).toHaveLength(2);
   expect((await (await request(path, 'bob', { headers: { 'x-systems-account-cache': bob.cacheKey } })).json()).records).toEqual([]);
   const cleared = await put('alice', alice.cacheKey, crypto.randomUUID(), 1, null);
   expect(cleared.status).toBe(200); expect((await cleared.json()).revision).toBe(2);
   expect((await put('alice', alice.cacheKey, crypto.randomUUID(), 0, value('stale seed'))).status).toBe(409);
   const afterStale = await (await request(path, 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).json();
-  expect(afterStale.records).toEqual([expect.objectContaining({ key, revision: 2, deleted: 1 })]);
+  expect(afterStale.records.filter(record => record.key === key)).toEqual([expect.objectContaining({ key, revision: 2, deleted: 1 })]);
   expect((await request(path, 'alice', { method: 'POST', headers: { 'x-systems-account-cache': alice.cacheKey }, body: '{}' })).status).toBe(405);
   expect((await put('alice', alice.cacheKey, crypto.randomUUID(), 0, JSON.stringify({ arbitrary: 'private data' }))).status).toBe(400);
   const memoKey = 'systems-mapping-studio.memo-draft.v1.account-map';

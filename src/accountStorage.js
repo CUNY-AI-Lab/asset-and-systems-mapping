@@ -2,6 +2,7 @@ import { courseWorkspacePath, initialApiCourseSelection, instructorWorkspacePath
 import { appMount, appPathname } from './appPath.js';
 
 let accountStorage = null;
+const projectSavedCallbacks = new WeakMap();
 
 export function projectStorage() {
   return accountStorage || window.localStorage;
@@ -25,7 +26,8 @@ export function institutionalLoginUrl(selection = accountStorage?.courseSelectio
 export function useAccountStorage(cacheKey, onProjectSaved, courseSelection = parseCourseSelection(), onStateChange = null) {
   const prefix = `systems-mapping.account.${cacheKey}.`;
   const keys = () => Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index)).filter(key => key?.startsWith(prefix));
-  accountStorage = Object.freeze({
+  const savedCallback = { current: onProjectSaved };
+  const storage = Object.freeze({
     prefix,
     cacheKey,
     courseSelection: Object.freeze({ ...courseSelection }),
@@ -34,9 +36,19 @@ export function useAccountStorage(cacheKey, onProjectSaved, courseSelection = pa
     getItem: (key) => window.localStorage.getItem(prefix + key),
     setItem: (key, value) => { window.localStorage.setItem(prefix + key, value); onStateChange?.(key, String(value)); },
     removeItem: (key) => { window.localStorage.removeItem(prefix + key); onStateChange?.(key, null); },
-    onProjectSaved,
+    onProjectSaved: project => savedCallback.current?.(project),
   });
+  projectSavedCallbacks.set(storage, savedCallback);
+  accountStorage = storage;
   return accountStorage;
+}
+
+export function setProjectSavedHandler(storage, callback) {
+  if (storage !== accountStorage || typeof callback !== 'function') return false;
+  const savedCallback = projectSavedCallbacks.get(storage);
+  if (!savedCallback) return false;
+  savedCallback.current = callback;
+  return true;
 }
 
 export function releaseAccountStorage() { accountStorage = null; }
