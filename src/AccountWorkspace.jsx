@@ -7,7 +7,7 @@ import { deletedProjects, forgetDeletedProject, preserveDeletedProject } from '.
 import { downloadBlob } from './mapExport.js';
 import SavedProjects from './SavedProjects.jsx';
 import ProjectLibraryDialog from './ProjectLibraryDialog.jsx';
-import { releaseAccountStorage, useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
+import { projectStorage, releaseAccountStorage, setProjectSavedHandler, useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
 import { forgetCloudSave, reconcileCloudProject, rememberCloudSave, serializeCloudProject } from './cloudSync.js';
 import { apiRequest, ApiError } from './api.js';
 import { courseWorkspacePath, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
@@ -113,11 +113,13 @@ export default function AccountWorkspace() {
           throw new ApiError('Workspace scope unavailable', 503, { details: { code: 'course_access_unavailable' } });
         }
         let suppressStateWrites = true;
-        const storage = useAccountStorage(result.account.cacheKey, null, courseSelection, (key, value) => {
-          if (!suppressStateWrites) workspaceStateSync.current?.write(key, value);
+        let storage;
+        let sync;
+        storage = useAccountStorage(result.account.cacheKey, null, courseSelection, (key, value) => {
+          if (!suppressStateWrites && storageRef.current === storage) sync?.write(key, value);
         });
         storageRef.current = storage;
-        const sync = createWorkspaceStateSync(storage, request, captured => !cancelled
+        sync = createWorkspaceStateSync(storage, request, captured => !cancelled
           && storageRef.current === captured
           && JSON.stringify(captured.courseSelection) === JSON.stringify(courseSelection));
         workspaceStateSync.current?.close();
@@ -267,8 +269,16 @@ export default function AccountWorkspace() {
     setBusy(true); setError('');
     try {
       const result = record && !record.localOnly ? await request(`/api/cloud/projects/${encodeURIComponent(record.id)}`) : null;
-      const storage = useAccountStorage(workspaceAccount.cacheKey, null, courseSelection);
+      const storage = storageRef.current;
+      if (!storage || projectStorage() !== storage || storage.cacheKey !== workspaceAccount.cacheKey
+        || JSON.stringify(storage.courseSelection) !== JSON.stringify(courseSelection)) {
+        throw new Error('Your workspace changed. Reload before opening this map.');
+      }
+      const ownsStorageScope = () => storageRef.current === storage && projectStorage() === storage
+        && storage.cacheKey === workspaceAccount.cacheKey
+        && JSON.stringify(storage.courseSelection) === JSON.stringify(courseSelection);
       const reconciled = record ? await reconcileCloudProject(storage, record.id, result) : { project: createBlankProject(), conflict: false };
+      if (!ownsStorageScope()) throw new Error('Your workspace changed. Reload before opening this map.');
       const project = reconciled.project || linkedProject;
       if (!project) throw new Error('The saved device copy is unavailable.');
       // Creation details are separate: a person's name is not the project title.
@@ -281,6 +291,7 @@ export default function AccountWorkspace() {
         const remote = serializeCloudProject(parseProject(result.project));
         saved.current.set(project.id,remote);
         if (!reconciled.conflict) await rememberCloudSave(storage, project.id, result.revision, remote);
+        if (!ownsStorageScope()) throw new Error('Your workspace changed. Reload before opening this map.');
       }
       if (reconciled.conflict) {
         blocked.current.add(project.id);
@@ -294,9 +305,10 @@ export default function AccountWorkspace() {
       deletedProjectsRef.current.delete(project.id);
       setRetryProjectId(retryable.current.has(project.id) ? project.id : null);
       if (!reconciled.conflict && !retryable.current.has(project.id)) setCloudSaveError('');
-      let scopedStorage;
-      scopedStorage = useAccountStorage(workspaceAccount.cacheKey, latest => persist(latest, scopedStorage), courseSelection);
-      storageRef.current = scopedStorage;
+      const scopedStorage = storage;
+      if (!setProjectSavedHandler(scopedStorage, latest => persist(latest, scopedStorage))) {
+        throw new Error('Your workspace changed. Reload before opening this map.');
+      }
       if (!reconciled.conflict) persist(project, scopedStorage);
       setActive(project.id);
       if (!record && !linkedProject) setNewTitle('');
