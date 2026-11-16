@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { projectStorage } from './accountStorage.js';
 
 export const MAP_TOOLS_WIDTH_KEY = 'systems-mapping.map-tools-width';
 export const DEFAULT_MAP_TOOLS_WIDTH = 280;
@@ -15,7 +16,7 @@ export function mapToolsBounds(available) {
 export function useMapToolsSize() {
   const [preferred, setPreferred] = useState(() => {
     try {
-      const saved = Number(localStorage.getItem(MAP_TOOLS_WIDTH_KEY));
+      const saved = Number(projectStorage().getItem(MAP_TOOLS_WIDTH_KEY));
       return saved >= 240 && saved <= 480 ? saved : DEFAULT_MAP_TOOLS_WIDTH;
     } catch { return DEFAULT_MAP_TOOLS_WIDTH; }
   });
@@ -32,7 +33,7 @@ export function useMapToolsSize() {
     const value = clamp(next);
     setPreferred(value);
     if (persist) {
-      try { localStorage.setItem(MAP_TOOLS_WIDTH_KEY, String(value)); } catch { /* Resizing remains available without storage. */ }
+      try { projectStorage().setItem(MAP_TOOLS_WIDTH_KEY, String(value)); } catch { /* Resizing remains available without storage. */ }
     }
   };
   return { width, min, max, resize };

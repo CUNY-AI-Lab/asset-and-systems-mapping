@@ -40,7 +40,7 @@ beforeAll(async () => {
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-fixture' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876523', simple: { limit: 10000, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876523', simple: { limit: 10000, period: 60 } }, { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '9876530', simple: { limit: 120, period: 60 } }],
   } }, { config: { name: 'systems-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } }] });
   await harness.listen(); worker = harness.getWorker('systems-mapping-test'); services = harness.getWorker('systems-fixture');
 }, 30000);
@@ -535,6 +535,50 @@ test('account projects isolate users, reject stale writes, and survive a real Du
   expect(reopened.title).toBe(project.title);
   expect(reopened.layout).toEqual({ phoneOverview: 'preserve' });
   const raced = await Promise.all([put(1), put(1)]); expect(raced.map(value => value.status).sort()).toEqual([200, 409]);
+});
+test('private workspace state isolates identical project draft keys and preserves CAS losses and tombstones', async () => {
+  const alice = (await (await request('/api/cloud/account', 'alice')).json()).account;
+  const bob = (await (await request('/api/cloud/account', 'bob')).json()).account;
+  const path = '/api/cloud/workspace-state';
+  expect((await request(path, '')).status).toBe(401);
+  expect((await request(path, 'alice')).status).toBe(409);
+  expect((await request(path, 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).status).toBe(200);
+  const key = 'systems-mapping.relationship-draft.v1.account-map.micro';
+  const value = draft => JSON.stringify({ version: 1, projectId: 'account-map', createdAt: '2026-11-16T00:00:00.000Z', scale: 'micro', draft: { id: 'edge-local', source: 'a', target: 'b', verb: draft } });
+  const put = (who, cacheKey, operationId, revision, raw) => request(path, who, { method: 'PUT', headers: { 'x-systems-account-cache': cacheKey }, body: JSON.stringify({ kind: 'relationship-draft', key, revision, operationId, value: raw }) });
+  const firstOperation = crypto.randomUUID();
+  const first = await put('alice', alice.cacheKey, firstOperation, 0, value('connects'));
+  expect(first.status).toBe(200); expect((await first.json()).revision).toBe(1);
+  expect((await (await put('alice', alice.cacheKey, firstOperation, 0, value('connects'))).json()).idempotent).toBe(true);
+  expect((await put('alice', alice.cacheKey, firstOperation, 1, value('connects'))).status).toBe(409);
+  const conflict = await put('alice', alice.cacheKey, crypto.randomUUID(), 0, value('supports'));
+  expect(conflict.status).toBe(409);
+  const conflictPage = await request(path + '/conflicts', 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } });
+  expect(conflictPage.status, await conflictPage.clone().text()).toBe(200);
+  const aliceState = await conflictPage.json();
+  expect(aliceState.conflicts.map(entry => [entry.variant, entry.value])).toEqual(expect.arrayContaining([
+    ['server', value('connects')], ['local', value('supports')],
+  ]));
+  expect(aliceState.conflicts).toHaveLength(2);
+  expect((await put('alice', alice.cacheKey, crypto.randomUUID(), 0, value('supports'))).status).toBe(409);
+  expect((await (await request(path + '/conflicts', 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).json()).conflicts).toHaveLength(2);
+  expect((await (await request(path, 'bob', { headers: { 'x-systems-account-cache': bob.cacheKey } })).json()).records).toEqual([]);
+  const cleared = await put('alice', alice.cacheKey, crypto.randomUUID(), 1, null);
+  expect(cleared.status).toBe(200); expect((await cleared.json()).revision).toBe(2);
+  expect((await put('alice', alice.cacheKey, crypto.randomUUID(), 0, value('stale seed'))).status).toBe(409);
+  const afterStale = await (await request(path, 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).json();
+  expect(afterStale.records).toEqual([expect.objectContaining({ key, revision: 2, deleted: 1 })]);
+  expect((await request(path, 'alice', { method: 'POST', headers: { 'x-systems-account-cache': alice.cacheKey }, body: '{}' })).status).toBe(405);
+  expect((await put('alice', alice.cacheKey, crypto.randomUUID(), 0, JSON.stringify({ arbitrary: 'private data' }))).status).toBe(400);
+  const memoKey = 'systems-mapping-studio.memo-draft.v1.account-map';
+  const memo = { version: 1, projectId: 'account-map', submissionId: 'submission-1', createdAt: '2026-11-16T00:00:00.000Z', baseFingerprint: 'fingerprint', draft: { submission: { id: 'submission-1', text: 'private memo draft' } } };
+  const memoWrite = await request(path, 'alice', { method: 'PUT', headers: { 'x-systems-account-cache': alice.cacheKey }, body: JSON.stringify({ kind: 'memo-draft', key: memoKey, revision: 0, operationId: crypto.randomUUID(), value: JSON.stringify(memo) }) });
+  expect(memoWrite.status).toBe(200);
+  const memoRead = await (await request(path, 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).text();
+  expect(memoRead).toContain('private memo draft');
+  await worker.evictDurableObject('COURSES', { name: 'test-course' });
+  const afterEviction = await (await request(path, 'alice', { headers: { 'x-systems-account-cache': alice.cacheKey } })).text();
+  expect(afterEviction).toContain('private memo draft');
 });
 test('both memos and manual group membership survive account persistence and Durable Object eviction', async () => {
   const project = groupProject(); project.id = 'two-memo-account-map'; project.title = 'Two-memo persistence example';

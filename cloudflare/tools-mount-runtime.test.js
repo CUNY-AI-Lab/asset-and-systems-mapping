@@ -40,7 +40,7 @@ beforeAll(async () => {
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-mount-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-mount-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-mount-fixture' }, { binding: 'BUG_REPORTS', service: 'systems-mount-reports', entrypoint: 'ReportEmail' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876534', simple: { limit: 10000, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876534', simple: { limit: 10000, period: 60 } }, { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '9876535', simple: { limit: 120, period: 60 } }],
   } }, { config: { name: 'systems-mount-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } },
   { config: { name: 'systems-mount-ingress', main: 'cloudflare/test-tools-ingress.ts', compatibility_date: '2026-09-08', services: [{ binding: 'APP', service: 'systems-mount-test', entrypoint: 'ToolsApp' }] } },
   { config: { name: 'systems-mount-reports', main: 'cloudflare/test-report-email-service.ts', compatibility_date: '2026-09-08' } }] });
@@ -65,6 +65,16 @@ test('Tools and Worker sessions address the same saved account maps', async () =
   const reopened = await request('/api/cloud/projects/' + project.id);
   expect(reopened.status).toBe(200);
   expect(JSON.parse((await reopened.json()).project).title).toBe('One saved map');
+  const workerAccount = await (await worker.fetch(WORKER + '/api/cloud/account', { headers: { cookie: `__Host-systems-mapping-session=${tokens.alice.sessionToken}`, origin: WORKER } })).json();
+  const state = '/api/cloud/workspace-state';
+  const savedPreference = await worker.fetch(WORKER + state, { method: 'PUT', headers: {
+    cookie: `__Host-systems-mapping-session=${tokens.alice.sessionToken}`, origin: WORKER,
+    'x-systems-account-cache': workerAccount.account.cacheKey, 'content-type': 'application/json',
+  }, body: JSON.stringify({ kind: 'preference', key: 'systems-mapping.theme', revision: 0, operationId: crypto.randomUUID(), value: 'dark' }) });
+  expect(savedPreference.status).toBe(200);
+  const mountedState = await request(state, { headers: { 'x-systems-account-cache': workerAccount.account.cacheKey } });
+  expect(mountedState.status).toBe(200);
+  expect((await mountedState.json()).records).toContainEqual(expect.objectContaining({ key: 'systems-mapping.theme', value: 'dark' }));
   expect((await request('/api/cloud/projects/' + project.id, { who: 'bob' })).status).toBe(404);
 });
 

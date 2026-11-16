@@ -22,7 +22,7 @@ export function institutionalLoginUrl(selection = accountStorage?.courseSelectio
   return returnTo === '/' ? '/auth/start' : `/auth/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
-export function useAccountStorage(cacheKey, onProjectSaved, courseSelection = parseCourseSelection()) {
+export function useAccountStorage(cacheKey, onProjectSaved, courseSelection = parseCourseSelection(), onStateChange = null) {
   const prefix = `systems-mapping.account.${cacheKey}.`;
   const keys = () => Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index)).filter(key => key?.startsWith(prefix));
   accountStorage = Object.freeze({
@@ -32,8 +32,8 @@ export function useAccountStorage(cacheKey, onProjectSaved, courseSelection = pa
     get length() { return keys().length; },
     key: (index) => keys()[index]?.slice(prefix.length) ?? null,
     getItem: (key) => window.localStorage.getItem(prefix + key),
-    setItem: (key, value) => window.localStorage.setItem(prefix + key, value),
-    removeItem: (key) => window.localStorage.removeItem(prefix + key),
+    setItem: (key, value) => { window.localStorage.setItem(prefix + key, value); onStateChange?.(key, String(value)); },
+    removeItem: (key) => { window.localStorage.removeItem(prefix + key); onStateChange?.(key, null); },
     onProjectSaved,
   });
   return accountStorage;

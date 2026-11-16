@@ -2,13 +2,14 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MapToolsResizeHandle, MAP_TOOLS_WIDTH_KEY, mapToolsBounds, useMapToolsSize } from './MapToolsResize.jsx';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
 function Tools() {
   const size = useMapToolsSize();
   return <div id="test-map-tools"><MapToolsResizeHandle panelId="test-map-tools" {...size} /></div>;
 }
 beforeEach(() => { vi.stubGlobal('innerWidth', 1440); localStorage.removeItem(MAP_TOOLS_WIDTH_KEY); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.removeItem(MAP_TOOLS_WIDTH_KEY); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.removeItem(MAP_TOOLS_WIDTH_KEY); localStorage.clear(); releaseAccountStorage(); });
 
 it('bounds the whole panel and leaves room for the map at desktop and intermediate widths', () => {
   expect(mapToolsBounds(1440)).toEqual({ min: 240, max: 480 });
@@ -63,4 +64,13 @@ it('continues resizing when preference storage is unavailable', () => {
   render(<Tools />);
   fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowRight' });
   expect(screen.getByRole('separator')).toHaveAttribute('aria-valuenow', '264');
+});
+
+it('reads and saves map tools width inside the verified account namespace', () => {
+  vi.stubGlobal('innerWidth', 1440);
+  const storage = useAccountStorage('opaque-account-key', null, { kind: 'general' });
+  render(<Tools />);
+  fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowLeft' });
+  expect(storage.getItem(MAP_TOOLS_WIDTH_KEY)).toBe('296');
+  expect(localStorage.getItem(MAP_TOOLS_WIDTH_KEY)).toBeNull();
 });

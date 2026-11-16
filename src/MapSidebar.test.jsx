@@ -2,8 +2,9 @@ import React, { useRef } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { SidebarResizeHandle, sidebarBounds, useSidebarSize } from './MapSidebar.jsx';
+import { releaseAccountStorage, useAccountStorage } from './accountStorage.js';
 
-afterEach(() => { cleanup(); localStorage.removeItem('systems-mapping.sidebar-width'); });
+afterEach(() => { cleanup(); localStorage.removeItem('systems-mapping.sidebar-width'); localStorage.clear(); releaseAccountStorage(); });
 function Sidebar() {
   const ref = useRef(null);
   const size = useSidebarSize(ref);
@@ -33,5 +34,12 @@ it('cancels a drag without saving an accidental width', () => {
   expect(handle).toHaveAttribute('aria-valuenow', '354');
   fireEvent.pointerCancel(handle, { pointerId: 1, clientX: 650 });
   expect(handle).toHaveAttribute('aria-valuenow', '304');
+  expect(localStorage.getItem('systems-mapping.sidebar-width')).toBeNull();
+});
+it('reads and saves the sidebar width inside the verified account namespace', () => {
+  const storage = useAccountStorage('opaque-account-key', null, { kind: 'general' });
+  render(<Sidebar />);
+  fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowLeft' });
+  expect(storage.getItem('systems-mapping.sidebar-width')).toBe('320');
   expect(localStorage.getItem('systems-mapping.sidebar-width')).toBeNull();
 });

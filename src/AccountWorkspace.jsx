@@ -7,7 +7,7 @@ import { deletedProjects, forgetDeletedProject, preserveDeletedProject } from '.
 import { downloadBlob } from './mapExport.js';
 import SavedProjects from './SavedProjects.jsx';
 import ProjectLibraryDialog from './ProjectLibraryDialog.jsx';
-import { useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
+import { releaseAccountStorage, useAccountStorage, institutionalLoginUrl } from './accountStorage.js';
 import { forgetCloudSave, reconcileCloudProject, rememberCloudSave, serializeCloudProject } from './cloudSync.js';
 import { apiRequest, ApiError } from './api.js';
 import { courseWorkspacePath, instructorWorkspacePath, parseCourseSelection, parseWorkspaceView } from './courseContext.js';
@@ -16,6 +16,7 @@ import AccountDashboard from './AccountDashboard.jsx';
 import NollSketch from './NollSketch.jsx';
 import './account-workspace.css';
 import { appPathname } from './appPath.js';
+import { createWorkspaceStateSync } from './workspaceState.js';
 
 const CLOUD_SAVE_ATTEMPTS = 3;
 const CLOUD_SAVE_RETRY_DELAYS = [250, 750];
@@ -77,6 +78,7 @@ export default function AccountWorkspace() {
   const saveGeneration = useRef(new Map());
   const activeProjectId = useRef(null);
   const storageRef = useRef(null);
+  const workspaceStateSync = useRef(null);
   const request = useCallback((path, options, storage = storageRef.current) => apiRequest(path, {
     ...options,
     workspace: storage || { courseSelection },
@@ -96,6 +98,8 @@ export default function AccountWorkspace() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#171717' : '#f8fafc');
     try { window.localStorage.setItem('systems-mapping.theme', theme); }
     catch { /* Theme remains usable when browser storage is unavailable. */ }
+    try { storageRef.current?.setItem('systems-mapping.theme', theme); }
+    catch { /* Private preference sync is best-effort; local rendering remains available. */ }
   }, [dark]);
 
   useEffect(() => {
@@ -108,7 +112,28 @@ export default function AccountWorkspace() {
           || (courseSelection.kind === 'general' && result.account.course)) {
           throw new ApiError('Workspace scope unavailable', 503, { details: { code: 'course_access_unavailable' } });
         }
-        storageRef.current = useAccountStorage(result.account.cacheKey, null, courseSelection);
+        let suppressStateWrites = true;
+        const storage = useAccountStorage(result.account.cacheKey, null, courseSelection, (key, value) => {
+          if (!suppressStateWrites) workspaceStateSync.current?.write(key, value);
+        });
+        storageRef.current = storage;
+        const sync = createWorkspaceStateSync(storage, request, captured => !cancelled
+          && storageRef.current === captured
+          && JSON.stringify(captured.courseSelection) === JSON.stringify(courseSelection));
+        workspaceStateSync.current?.close();
+        workspaceStateSync.current = sync;
+        try { await sync.hydrate(); } catch (failure) {
+          if (cancelled || storageRef.current !== storage) return;
+          if ([401, 403, 409].includes(failure?.status)) {
+            sync.close(); workspaceStateSync.current = null; storageRef.current = null; releaseAccountStorage();
+            throw failure;
+          }
+          /* Local drafts and preferences remain available if private sync is offline. */
+        }
+        suppressStateWrites = false;
+        if (cancelled || storageRef.current !== storage) return;
+        const savedTheme = storage.getItem('systems-mapping.theme');
+        if (savedTheme === 'dark' || savedTheme === 'light') setDark(savedTheme === 'dark');
         setRecoveries(deletedProjects(storageRef.current));
         setAccount(result.account);
         setCreatorName(result.account.preferredName?.trim() || '');
@@ -141,7 +166,7 @@ export default function AccountWorkspace() {
       }
     })();
     // Keep the adapter alive while child cleanup flushes pending edits.
-    return () => { cancelled = true; };
+    return () => { cancelled = true; workspaceStateSync.current?.close(); workspaceStateSync.current = null; };
   }, []);
 
   const persist = (project, capturedStorage = storageRef.current) => {

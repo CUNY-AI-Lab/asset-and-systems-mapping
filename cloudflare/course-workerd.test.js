@@ -23,7 +23,7 @@ beforeAll(async () => {
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'MappingCourse' }] }, exports: { MappingCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-fixture' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876523', simple: { limit: 10000, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876523', simple: { limit: 10000, period: 60 } }, { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '9876531', simple: { limit: 120, period: 60 } }],
   } }, { config: { name: 'systems-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } }] });
   await harness.listen(); worker = harness.getWorker('systems-mapping-test'); services = harness.getWorker('systems-fixture');
 }, 30000);
@@ -145,6 +145,20 @@ test('the same account has separate projects, browser caches and bearer links in
   expect((await scoped(`/api/projects/${token}`, 'bob')).status).toBe(403);
   expect((await scoped(`/api/projects/${token}`, 'alice', 'synthetic-course-b')).status).toBe(404);
   expect((await request(`/api/projects/${token}`)).status).toBe(404);
+});
+test('private workspace state requires the current exact course cache and active course grant', async () => {
+  const path = '/api/cloud/workspace-state';
+  const courseA = (await (await scoped('/api/cloud/account', 'alice', 'synthetic-course-a')).json()).account;
+  const courseB = (await (await scoped('/api/cloud/account', 'alice', 'synthetic-course-b')).json()).account;
+  expect(courseA.cacheKey).not.toBe(courseB.cacheKey);
+  const body = { kind: 'preference', key: 'systems-mapping.theme', revision: 0, operationId: crypto.randomUUID(), value: 'dark' };
+  expect((await scoped(path, 'alice', 'synthetic-course-a', { headers: { 'x-systems-account-cache': courseA.cacheKey } })).status).toBe(200);
+  expect((await scoped(path, 'alice', 'synthetic-course-a', { method: 'PUT', headers: { 'x-systems-account-cache': courseA.cacheKey }, body: JSON.stringify(body) })).status).toBe(200);
+  const otherCourse = await (await scoped(path, 'alice', 'synthetic-course-b', { headers: { 'x-systems-account-cache': courseB.cacheKey } })).json();
+  expect(otherCourse.records).toEqual([]);
+  expect((await scoped(path, 'alice', 'synthetic-course-a', { headers: { 'x-systems-account-cache': courseB.cacheKey } })).status).toBe(409);
+  await control({ courseDenied: true });
+  expect((await scoped(path, 'alice', 'synthetic-course-a', { headers: { 'x-systems-account-cache': courseA.cacheKey } })).status).toBe(403);
 });
 
 test('prompt revisions use atomic compare-and-swap and persist immutable course-only history', async () => {

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { projectStorage } from './accountStorage.js';
 
 const WIDTH_KEY = 'systems-mapping.sidebar-width';
 export const DEFAULT_SIDEBAR_WIDTH = 304;
@@ -11,7 +12,7 @@ export function sidebarBounds(available) {
 export function useSidebarSize(layoutRef) {
   const [preferred, setPreferred] = useState(() => {
     try {
-      const saved = Number(localStorage.getItem(WIDTH_KEY));
+      const saved = Number(projectStorage().getItem(WIDTH_KEY));
       return saved >= 200 && saved <= 520 ? saved : DEFAULT_SIDEBAR_WIDTH;
     } catch { return DEFAULT_SIDEBAR_WIDTH; }
   });
@@ -31,7 +32,7 @@ export function useSidebarSize(layoutRef) {
     const value = Math.round(Math.max(min, Math.min(max, next)));
     setPreferred(value);
     if (persist) {
-      try { localStorage.setItem(WIDTH_KEY, String(value)); } catch { /* Layout remains usable without storage. */ }
+      try { projectStorage().setItem(WIDTH_KEY, String(value)); } catch { /* Layout remains usable without storage. */ }
     }
   };
   return { width, min, max, resize };

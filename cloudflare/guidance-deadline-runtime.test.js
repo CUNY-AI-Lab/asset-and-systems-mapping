@@ -25,7 +25,7 @@ beforeAll(async () => {
     durable_objects: { bindings: [{ name: 'COURSES', class_name: 'StalledCourse' }] },
     exports: { StalledCourse: { type: 'durable-object', storage: 'sqlite' } },
     services: [{ binding: 'IDENTITY', service: 'systems-deadline-fixture', entrypoint: 'Identity' }, { binding: 'ADMISSION_RESOLVER', service: 'systems-deadline-fixture', entrypoint: 'Admission' }, { binding: 'GATEWAY', service: 'systems-deadline-fixture' }],
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876525', simple: { limit: 60, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '9876525', simple: { limit: 60, period: 60 } }, { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '9876529', simple: { limit: 120, period: 60 } }],
   } }, { config: { name: 'systems-deadline-fixture', main: 'cloudflare/test-services.ts', compatibility_date: '2026-09-08', vars: { TEST_TOKENS: JSON.stringify(tokens) } } }] });
   await harness.listen();
   worker = harness.getWorker('systems-guidance-deadline-test');

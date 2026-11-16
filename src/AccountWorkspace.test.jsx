@@ -45,6 +45,7 @@ beforeEach(() => {
   fetchMock = vi.fn(async (path, options) => {
     let payload;
     if (path === '/api/cloud/account') payload = { account: workspaceAccount };
+    else if (path === '/api/cloud/workspace-state') payload = { records: [] };
     else if (path === '/api/cloud/projects') payload = { projects: projects.map(project => ({ id:project.id, title:project.title, participantName:project.participantName, updatedAt:project.updatedAt, progress:projectProgress(project) })) };
     else if (path === '/api/cloud/quota') payload = { quota: { remaining_percent: 90 } };
     else if (path === '/api/cloud/courses') payload = { courses: workspaceCourses };
@@ -813,4 +814,29 @@ it('does not install a different account or expose its cached projects during Ac
   expect(screen.queryByText('Different profile')).not.toBeInTheDocument();
   expect(originalStorage.cacheKey).toBe('dashboard-test-account');
   expect(loadDurableProject(originalStorage,'dashboard-project-0').title).toBe('First saved map');
+});
+
+it('a late private-state denial from an unmounted account cannot release the current account adapter', async () => {
+  let rejectOldRead;
+  let privateReads = 0;
+  const normal = fetchMock.getMockImplementation();
+  fetchMock.mockImplementation((path, options) => {
+    if (path === '/api/cloud/workspace-state') {
+      privateReads += 1;
+      if (privateReads === 1) return new Promise((_resolve, reject) => { rejectOldRead = reject; });
+    }
+    return normal(path, options);
+  });
+  render(<AccountWorkspace />);
+  await waitFor(() => expect(rejectOldRead).toBeTypeOf('function'));
+  cleanup();
+  workspaceAccount = { cacheKey: 'replacement-synthetic-account', role: 'student', preferredName: 'Replacement' };
+  render(<AccountWorkspace />);
+  await screen.findByRole('heading', { name: 'Projects' });
+  expect(projectStorage().cacheKey).toBe('replacement-synthetic-account');
+  await act(async () => {
+    rejectOldRead(Object.assign(new Error('course access revoked'), { status: 403 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(projectStorage().cacheKey).toBe('replacement-synthetic-account');
 });
