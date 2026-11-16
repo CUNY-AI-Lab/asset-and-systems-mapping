@@ -177,7 +177,7 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1').each([1440, 
       await trigger.click();
       await browserExpect(panel).toBeVisible();
       await browserExpect(panel.getByRole('button', { name: 'Close legend', exact: true })).toBeFocused();
-      expect(await panel.getByRole('heading').first().innerText()).toBe('Create and connect');
+      expect(await panel.getByRole('heading').first().innerText()).toBe('Levels and lines');
       expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     };

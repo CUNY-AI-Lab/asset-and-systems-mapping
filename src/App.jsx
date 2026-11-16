@@ -4211,33 +4211,36 @@ function MapDrawingPreview({project,presentation}) {
 
 function MapLegend({savedHistory=false,canCreate=false,canConnect=false,canGroup=false}) {
   return <div className="legend-grid">
+    <section><h3>Levels and lines</h3><dl className="level-guide">
+      <div><dt><i className="legend-symbol legend-symbol--micro" />Micro</dt><dd>Direct participation in local settings</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--meso" />Meso</dt><dd>Relationships within Micro</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo</dt><dd>Outside offices and policies</dd></div>
+      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro</dt><dd>Culture, history and economic conditions</dd></div>
+      <div><dt>Direction</dt><dd>Arrow = direction · ◇ = varies · ? = unknown</dd></div>
+      <div><dt>Draft line</dt><dd>Dotted = unfinished connection</dd></div>
+      <div><dt>Scope line</dt><dd>Dash-dot = scope membership</dd></div>
+    </dl></section>
     {canCreate && <section><h3>Create and connect</h3><dl className="map-legend-actions">
-      <div><dt>Add a node</dt><dd>{canConnect ? 'Double-click empty canvas, or use Tools → Add item.' : 'Use Tools → Add item.'} Check Level, type Label, press Return.</dd></div>
+      <div><dt>Add a node</dt><dd>{canConnect ? 'Double-click blank canvas / Tools → Add item' : 'Tools → Add item'}</dd></div>
       {canConnect && <>
-        <div><dt>Connect nodes</dt><dd>Double-click the start, then click another node. Keyboard: Shift+Return on the starting node, Return on the target.</dd></div>
-        <div><dt>Connect a new node</dt><dd>While connecting, click empty canvas or press N on the canvas. Label and Relationship save together.</dd></div>
-        {canGroup && <div><dt>Connect to a line</dt><dd>From Exo or Macro, click a local relationship line, or focus it and press Return.</dd></div>}
+        <div><dt>Connect nodes</dt><dd>Double-click start → click target</dd></div>
+        <div><dt>New target</dt><dd>While connecting: click canvas or press N</dd></div>
+        {canGroup && <div><dt>Line target</dt><dd>From Exo or Macro: click a Meso line</dd></div>}
       </>}
-      <div><dt>Finish a draft</dt><dd>Return adds a valid draft. For a new connected node, Label goes to Relationship first if needed. Shift+Return inserts a line break. Evidence is optional.</dd></div>
+      <div><dt>Save draft</dt><dd>Return · Shift+Return for a new text line</dd></div>
     </dl></section>}
     <section><h3 id="map-legend-shortcuts" tabIndex="-1">Keyboard shortcuts</h3><dl className="map-legend-shortcuts">
-      <div><dt>Select · Remove</dt><dd>Return or Space on an item · Delete or Backspace on the selection</dd></div>
+      <div><dt>Select</dt><dd>Return / Space</dd></div>
+      {canConnect && <div><dt>Connect</dt><dd>Shift+Return → Return on target</dd></div>}
+      <div><dt>Remove</dt><dd>Delete / Backspace</dd></div>
       <div><dt>{savedHistory?'Undo':'Undo layout'}</dt><dd>⌘/Ctrl + Z</dd></div>
       <div><dt>{savedHistory?'Redo':'Redo layout'}</dt><dd>⌘/Ctrl + Shift + Z · Ctrl + Y</dd></div>
-      <div><dt>Find</dt><dd>⌘/Ctrl + F, or / on the canvas</dd></div>
-      <div><dt>Fit · Zoom</dt><dd>0 · + / − with the canvas focused</dd></div>
-      <div><dt>Move</dt><dd>Arrow keys on the canvas or a node; Shift moves farther</dd></div>
-      <div><dt>Cancel · Help</dt><dd>Escape closes Legend, then cancels a draft or exits full screen · ? on the canvas opens shortcuts</dd></div>
-    </dl><p>Text fields keep their own typing and undo shortcuts.</p></section>
-    <section><h3>Levels and lines</h3><dl className="level-guide">
-      <div><dt><i className="legend-symbol legend-symbol--micro" />Micro</dt><dd>People, resources and settings with direct participation.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--meso" />Meso</dt><dd>Relationships among items in Micro space.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--exosphere" />Exo</dt><dd>Outside offices and policies; teal dotted connections.</dd></div>
-      <div><dt><i className="legend-symbol legend-symbol--macrosphere" />Macro</dt><dd>Cultural, historical and economic conditions; purple dashed connections.</dd></div>
-      <div><dt>Direction</dt><dd>Arrowheads show direction. ◇ varies; ? is not yet known.</dd></div>
-      <div><dt>Other lines</dt><dd>Dotted preview: unfinished connection. Dash-dot with hollow ends: stored scope membership.</dd></div>
+      <div><dt>Find</dt><dd>⌘/Ctrl + F or /</dd></div>
+      <div><dt>Fit · Zoom</dt><dd>0 · + / −</dd></div>
+      <div><dt>Move</dt><dd>Arrow keys · Shift for larger steps</dd></div>
+      <div><dt>Cancel · Help</dt><dd>Escape · ?</dd></div>
     </dl></section>
-    <section><h3>Default node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><p className="map-legend__note">Choose Automatic or a custom color in Notebook. Color never changes a node’s level or type.</p></section>
+    <section><h3>Default node colors</h3><ul className="node-color-key"><li data-node-color="people">People and groups</li><li data-node-color="settings">Places and organizations</li><li data-node-color="resources">Activities and resources</li><li data-node-color="macro">Broader conditions</li></ul><p className="map-legend__note">Custom colors change appearance, not level or type.</p></section>
   </div>;
 }
 

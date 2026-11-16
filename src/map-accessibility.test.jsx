@@ -320,8 +320,8 @@ describe('map accessibility', () => {
     expect(trigger).toHaveAttribute('aria-controls', 'map-legend-panel');
     fireEvent.click(trigger);
 
-    expect(screen.getByText('Outside offices and policies; teal dotted connections.')).toBeVisible();
-    expect(screen.getByText('Cultural, historical and economic conditions; purple dashed connections.')).toBeVisible();
+    expect(screen.getByText('Outside offices and policies')).toBeVisible();
+    expect(screen.getByText('Culture, history and economic conditions')).toBeVisible();
     expect(screen.queryByText(/Broader policies/)).not.toBeInTheDocument();
     const close = screen.getByRole('button', { name: 'Close legend' });
     await waitFor(() => expect(close).toHaveFocus());
