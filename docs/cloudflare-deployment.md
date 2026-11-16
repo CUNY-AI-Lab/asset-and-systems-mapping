@@ -47,6 +47,22 @@ current. Divergent copies stay separate for recovery export. Export timestamps
 do not constitute project edits. Browser caches remain accessible to someone
 using the same browser profile; CUNY Login does not encrypt browser storage.
 
+The original Worker may silently seed a bounded batch of parseable maps from
+the currently authenticated account/course local cache. It does not adopt
+unscoped legacy project bytes or copy project-link tokens, deleted-project
+recoveries, or model-request receipts. Seeding uses a create-only route and
+never replaces an existing project; the source copy remains local. A per-owner,
+per-project deletion tombstone is written atomically with account-map deletion.
+Both ordinary revision-zero creation and silent seeding refuse tombstoned IDs.
+The existing explicit recovery action uses the scoped restore route, which
+advances beyond the last deleted revision and retains the tombstone. Project
+link tokens live in a separate capability store; restore does not reissue or
+unrevoke them. Before this tombstone table ships, earlier deletions cannot be
+reconstructed from the database. Do not roll back to a Worker that ignores
+these tombstones after this schema has begun recording them; older browsers
+that attempt revision-zero restoration receive a conflict and keep their local
+recovery copy intact.
+
 Account activity records contain project IDs, event kinds, revisions and times;
 they do not duplicate memo text. Old activity for an account is purged during
 subsequent saves. Shared review retention follows the existing product rules.

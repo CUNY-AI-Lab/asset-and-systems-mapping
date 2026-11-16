@@ -82,6 +82,10 @@ export class MappingCourse extends DurableObject<Bindings> {
         owner TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, project TEXT NOT NULL,
         revision INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(owner,id)
       );
+      CREATE TABLE IF NOT EXISTS cloud_project_deletions (
+        owner TEXT NOT NULL, project_id TEXT NOT NULL, deleted_revision INTEGER NOT NULL, deleted_at TEXT NOT NULL,
+        PRIMARY KEY(owner,project_id)
+      );
       CREATE TABLE IF NOT EXISTS cloud_activity (
         id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, project_id TEXT NOT NULL,
         event TEXT NOT NULL CHECK(event IN ('created','saved','opened')), revision INTEGER NOT NULL, at TEXT NOT NULL
@@ -315,6 +319,50 @@ export class MappingCourse extends DurableObject<Bindings> {
       const projects = rows.map(({activeScale,stage,completedLevels,hasMemo,nodes,relationships,notes,...record}: any) => ({...record,progress:{activeScale,stage,completedLevels:completedLevels ?? 0,hasMemo:Boolean(hasMemo),nodes,relationships,notes}}));
       return Response.json({ projects });
     }
+    const seedPath = /^\/api\/cloud\/projects\/([A-Za-z0-9_-]{1,200})\/seed$/.exec(path);
+    if (seedPath) {
+      if (!expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
+      if (request.method !== 'PUT') return failure('Method not allowed.', 405);
+      let project, serialized;
+      try {
+        const body = await boundedJson(request);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'project' || typeof body.project !== 'string') throw new Error('shape');
+        project = parseProject(body.project);
+        if (project.id !== seedPath[1]) throw new Error('id');
+        serialized = body.project;
+      } catch { return failure('This project could not be seeded.', 400); }
+      return this.ctx.storage.transactionSync(() => {
+        if (this.db.prepare('SELECT 1 AS found FROM cloud_project_deletions WHERE owner=? AND project_id=?').get(owner, seedPath[1])) return failure('This project was deleted and cannot be silently restored.', 409);
+        if (this.db.prepare('SELECT 1 AS found FROM cloud_projects WHERE owner=? AND id=?').get(owner, seedPath[1])) return failure('This project already exists in the account.', 409);
+        if (this.db.prepare('SELECT count(*) AS n FROM cloud_projects WHERE owner=?').get(owner).n >= 200) return failure('Your workspace has reached its project limit.', 409);
+        const revision = 1, at = new Date().toISOString();
+        this.db.prepare('INSERT INTO cloud_projects VALUES (?,?,?,?,?,?)').run(owner, project.id, project.title, serialized, revision, at);
+        this.db.prepare('INSERT INTO cloud_activity(owner,project_id,event,revision,at) VALUES (?,?,?,?,?)').run(owner, project.id, 'created', revision, at);
+        return Response.json({ revision, updatedAt: at });
+      });
+    }
+    const restorePath = /^\/api\/cloud\/projects\/([A-Za-z0-9_-]{1,200})\/restore$/.exec(path);
+    if (restorePath) {
+      if (!expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
+      if (request.method !== 'PUT') return failure('Method not allowed.', 405);
+      let project, serialized;
+      try {
+        const body = await boundedJson(request);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'project' || typeof body.project !== 'string') throw new Error('shape');
+        project = parseProject(body.project);
+        if (project.id !== restorePath[1]) throw new Error('id');
+        serialized = body.project;
+      } catch { return failure('This recovery could not be restored.', 400); }
+      return this.ctx.storage.transactionSync(() => {
+        if (this.db.prepare('SELECT 1 AS found FROM cloud_projects WHERE owner=? AND id=?').get(owner, restorePath[1])) return failure('This project already exists in the account.', 409);
+        if (this.db.prepare('SELECT count(*) AS n FROM cloud_projects WHERE owner=?').get(owner).n >= 200) return failure('Your workspace has reached its project limit.', 409);
+        const deleted = this.db.prepare('SELECT deleted_revision AS revision FROM cloud_project_deletions WHERE owner=? AND project_id=?').get(owner, restorePath[1]);
+        const revision = (deleted?.revision ?? 0) + 1, at = new Date().toISOString();
+        this.db.prepare('INSERT INTO cloud_projects VALUES (?,?,?,?,?,?)').run(owner, project.id, project.title, serialized, revision, at);
+        this.db.prepare('INSERT INTO cloud_activity(owner,project_id,event,revision,at) VALUES (?,?,?,?,?)').run(owner, project.id, 'created', revision, at);
+        return Response.json({ revision, updatedAt: at });
+      });
+    }
     const projectId = /^\/api\/cloud\/projects\/([^/]+)$/.exec(path)?.[1];
     if (projectId) {
       if (!/^[a-zA-Z0-9_-]{1,200}$/.test(projectId)) return failure('Invalid project ID.', 400);
@@ -335,6 +383,7 @@ export class MappingCourse extends DurableObject<Bindings> {
         return this.ctx.storage.transactionSync(() => {
           const existing = this.db.prepare('SELECT revision FROM cloud_projects WHERE owner=? AND id=?').get(owner, projectId);
           if ((existing?.revision ?? 0) !== body.revision) return failure('This project changed in another tab. Reload it before saving more changes.', 409);
+          if (!existing && this.db.prepare('SELECT 1 AS found FROM cloud_project_deletions WHERE owner=? AND project_id=?').get(owner, projectId)) return failure('This project was deleted. Use its saved recovery copy to restore it.', 409);
           if (!existing && this.db.prepare('SELECT count(*) AS n FROM cloud_projects WHERE owner=?').get(owner).n >= 200) return failure('Your workspace has reached its project limit.', 409);
           const revision = body.revision + 1;
           const at = new Date().toISOString();
@@ -351,12 +400,24 @@ export class MappingCourse extends DurableObject<Bindings> {
         let body;
         try {
           body = await boundedJson(request);
-          if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'revision' || !Number.isSafeInteger(body.revision) || body.revision < 1) throw new Error('shape');
+          if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'revision' || !Number.isSafeInteger(body.revision) || body.revision < 0) throw new Error('shape');
         } catch { return failure('Choose the saved revision to delete.', 400); }
+        if (body.revision === 0 && !expectedCache) return failure('The signed-in workspace changed. Reload to continue.', 409);
         return this.ctx.storage.transactionSync(() => {
           const row = this.db.prepare('SELECT revision FROM cloud_projects WHERE owner=? AND id=?').get(owner, projectId);
-          if (!row) return failure('Project not found.', 404);
+          if (!row && body.revision !== 0) return failure('Project not found.', 404);
+          if (row && body.revision === 0) return failure('This project changed. Review the current copy before deleting it.', 409);
+          if (!row) {
+            const previous = this.db.prepare('SELECT deleted_revision FROM cloud_project_deletions WHERE owner=? AND project_id=?').get(owner, projectId);
+            const deletedRevision = Math.max(previous?.deleted_revision ?? 0, 0);
+            this.db.prepare(`INSERT INTO cloud_project_deletions(owner,project_id,deleted_revision,deleted_at) VALUES (?,?,?,?)
+              ON CONFLICT(owner,project_id) DO UPDATE SET deleted_revision=MAX(cloud_project_deletions.deleted_revision,excluded.deleted_revision), deleted_at=excluded.deleted_at`)
+              .run(owner, projectId, deletedRevision, new Date().toISOString());
+            return Response.json({ deleted: true });
+          }
           if (row.revision !== body.revision) return failure('This project changed. Review the current copy before deleting it.', 409);
+          this.db.prepare(`INSERT INTO cloud_project_deletions(owner,project_id,deleted_revision,deleted_at) VALUES (?,?,?,?)
+            ON CONFLICT(owner,project_id) DO UPDATE SET deleted_revision=excluded.deleted_revision, deleted_at=excluded.deleted_at`).run(owner, projectId, body.revision, new Date().toISOString());
           this.db.prepare('DELETE FROM cloud_projects WHERE owner=? AND id=? AND revision=?').run(owner, projectId, body.revision);
           return Response.json({ deleted: true });
         });

@@ -47,7 +47,7 @@ function projectBodyKey(projectId) {
 
 export function loadDurableProject(storage, projectId, { restoreDraft = true } = {}) {
   const candidates = [];
-  [projectBodyKey(projectId), STORAGE_KEY].forEach((key) => {
+  [projectBodyKey(projectId), STORAGE_KEY, ...LEGACY_STORAGE_KEYS].forEach((key) => {
     try {
       const raw = storage.getItem(key);
       if (!raw) return;

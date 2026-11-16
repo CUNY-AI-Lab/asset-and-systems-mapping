@@ -6,10 +6,11 @@ import { ProjectRow } from './ui/StudioPrimitives.jsx';
 import { createDefaultProject, parseProject, serializeProject } from './domain.js';
 import { projectStorage, releaseAccountStorage, setProjectSavedHandler, useAccountStorage } from './accountStorage.js';
 import { parseCourseSelection } from './courseContext.js';
-import { loadDurableProject, loadProjectLibrary, saveProjectToLibrary, STORAGE_KEY } from './projectLibrary.js';
+import { loadDurableProject, loadProjectLibrary, saveProjectToLibrary, STORAGE_KEY, LEGACY_STORAGE_KEYS } from './projectLibrary.js';
 import { downloadBlob } from './mapExport.js';
 import { projectProgress } from './projectProgress.js';
-import { deletedProjects } from './projectRecovery.js';
+import { deletedProjects, preserveDeletedProject } from './projectRecovery.js';
+import { cacheMemoDraft } from './memoDraft.js';
 
 vi.mock('./App.jsx', async importOriginal => {
   const original = await importOriginal();
@@ -55,13 +56,15 @@ beforeEach(() => {
     else if (path === '/api/cloud/course-prompt') payload = { prompt: { amendment: 'Course instructions', revision: 1, changeNote: 'Initial', updatedAt: null } };
     else if (path.endsWith('/submitted-revisions')) payload = { recorded: true };
     else if (path.startsWith('/api/cloud/projects/')) {
-      const index = projects.findIndex(project => path.endsWith(project.id));
+      const segments = path.split('/');
+      const projectId = ['seed','restore'].includes(segments.at(-1)) ? segments.at(-2) : segments.at(-1);
+      const index = projects.findIndex(project => project.id === projectId);
       const project = projects[index];
       if(options?.method==='PUT'){
         const body=JSON.parse(options.body),next=parseProject(body.project);
         if(index<0)projects.push(next);else projects[index]=next;
-        payload={revision:body.revision+1};
-      } else if(options?.method==='DELETE') {projects.splice(index,1);payload={deleted:true};}
+        payload={revision:Number.isSafeInteger(body.revision) ? body.revision+1 : 1};
+      } else if(options?.method==='DELETE') {if(index>=0)projects.splice(index,1);payload={deleted:true};}
       else payload={project:serializeProject(project),revision:1};
     } else throw new Error(`Unexpected request: ${path}`);
     return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } });
@@ -133,6 +136,9 @@ describe('Account dashboard controls', () => {
 
   it('opens a shared map while course discovery is still pending', async () => {
     window.history.replaceState(null, '', '/p/' + 'a'.repeat(24));
+    const scoped = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject(); local.id = 'local-next-to-shared-link';
+    saveProjectToLibrary(scoped, local, [], { makeActive: true });
     const normal = fetchMock.getMockImplementation();
     fetchMock.mockImplementation((path, options) => {
       if (path === '/api/cloud/courses') return new Promise(() => {});
@@ -141,6 +147,281 @@ describe('Account dashboard controls', () => {
     });
     render(<AccountWorkspace />);
     await screen.findByRole('heading', { name: 'Project workspace' });
+    expect(fetchMock.mock.calls.some(([path]) => path.endsWith('/seed'))).toBe(false);
+  });
+
+  it('silently seeds a verified account-scoped local project and preserves its local bytes', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject();
+    local.id = 'source-local-project';
+    local.title = 'Source-only project';
+    local.submission.text = 'A private draft stays in the account workspace.';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const memoDraft = structuredClone(local);
+    memoDraft.submission.text = 'An unfinished memo journal remains attached to this map.';
+    memoDraft.updatedAt = new Date(Date.now() + 1000).toISOString();
+    cacheMemoDraft(storage, memoDraft, local);
+    storage.setItem('systems-mapping-studio.links.v2', JSON.stringify({ version: 2, links: [{ token: 'private-link-secret', projectId: local.id }] }));
+    storage.setItem(`systems-mapping.pending-guidance.${local.id}`, JSON.stringify({ requestKey: 'private-request-secret' }));
+    const originalBytes = storage.getItem(STORAGE_KEY);
+    expect(storage.getItem(STORAGE_KEY)).not.toBeNull();
+
+    render(<AccountWorkspace />);
+    await waitFor(() => expect(projects.some(project => project.id === local.id)).toBe(true));
+    const put = fetchMock.mock.calls.find(([path, options]) => path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT');
+    expect(put).toBeDefined();
+    expect(put[1].headers['x-systems-account-cache']).toBe(workspaceAccount.cacheKey);
+    expect(JSON.parse(JSON.parse(put[1].body).project)).toMatchObject({ id: local.id, submission: { text: memoDraft.submission.text } });
+    expect(put[1].body).not.toContain('private-link-secret');
+    expect(put[1].body).not.toContain('private-request-secret');
+    expect(projectStorage().getItem(STORAGE_KEY)).toBe(originalBytes);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('seeds a parseable account-scoped legacy active project without rewriting its source key', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const legacy = createDefaultProject();
+    legacy.id = 'legacy-scoped-project';
+    legacy.title = 'Legacy scoped map';
+    const sourceKey = LEGACY_STORAGE_KEYS[0];
+    const bytes = serializeProject(legacy);
+    storage.setItem(sourceKey, bytes);
+
+    render(<AccountWorkspace />);
+    await waitFor(() => expect(projects.some(project => project.id === legacy.id)).toBe(true));
+    const seed = fetchMock.mock.calls.find(([path, options]) => path === `/api/cloud/projects/${legacy.id}/seed` && options?.method === 'PUT');
+    expect(seed).toBeDefined();
+    expect(JSON.parse(JSON.parse(seed[1].body).project)).toMatchObject({ id: legacy.id, title: legacy.title });
+    expect(storage.getItem(sourceKey)).toBe(bytes);
+    expect(window.localStorage.getItem(`${storage.prefix}${sourceKey}`)).toBe(bytes);
+  });
+
+  it('does not silently adopt unscoped projects, prior-cloud saves, or deleted recovery copies', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const unscoped = createDefaultProject();
+    unscoped.id = 'unscoped-project';
+    saveProjectToLibrary(window.localStorage, unscoped, [], { makeActive: true });
+
+    const stale = createDefaultProject();
+    stale.id = 'previously-cloud-saved';
+    saveProjectToLibrary(storage, stale, [], { makeActive: true });
+    storage.setItem(`systems-mapping.cloud-sync.${stale.id}`, JSON.stringify({ revision: 2, digest: 'prior-save' }));
+
+    const importedRecovery = createDefaultProject();
+    importedRecovery.id = 'recovery_imported-backup';
+    saveProjectToLibrary(storage, importedRecovery, loadProjectLibrary(storage, null, false), { makeActive: true });
+
+    const deleted = createDefaultProject();
+    deleted.id = 'deleted-project';
+    saveProjectToLibrary(storage, deleted, loadProjectLibrary(storage, null, false), { makeActive: true });
+    preserveDeletedProject(storage, deleted);
+
+    render(<AccountWorkspace />);
+    await screen.findByRole('heading', { name: 'Projects' });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    expect(fetchMock.mock.calls.filter(([path, options]) => path.startsWith('/api/cloud/projects/') && options?.method === 'PUT')).toHaveLength(0);
+    expect(projectStorage().getItem(`systems-mapping-studio.project-body.v1.${[...stale.id].map(char => char.charCodeAt(0).toString(16).padStart(4,'0')).join('')}`)).not.toBeNull();
+    expect(deletedProjects(projectStorage()).some(entry => entry.projectId === deleted.id)).toBe(true);
+  });
+
+  it('keeps local bytes and does not overwrite a divergent project that appears after the list snapshot', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject();
+    local.id = 'raced-cloud-project';
+    local.title = 'Local version';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const localBytes = storage.getItem(STORAGE_KEY);
+    const remote = structuredClone(local);
+    remote.title = 'Newer account version';
+    const normal = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation(async (path, options) => {
+      if (path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT') {
+        return new Response(JSON.stringify({ error: 'Revision conflict' }), { status: 409, headers: { 'content-type': 'application/json' } });
+      }
+      if (path === `/api/cloud/projects/${local.id}` && !options?.method) {
+        return new Response(JSON.stringify({ project: serializeProject(remote), revision: 1 }), { headers: { 'content-type': 'application/json' } });
+      }
+      return normal(path, options);
+    });
+
+    render(<AccountWorkspace />);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT')).toBe(true));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}` && !options?.method)).toBe(true));
+    expect(projectStorage().getItem(STORAGE_KEY)).toBe(localBytes);
+    expect(projects.some(project => project.id === local.id)).toBe(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('abandons a pending seed when the active browser storage adapter changes', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject();
+    local.id = 'scope-change-project';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const normal = fetchMock.getMockImplementation();
+    let releaseVerification;
+    let verificationStarted;
+    const started = new Promise(resolve => { verificationStarted = resolve; });
+    const verification = new Promise(resolve => { releaseVerification = resolve; });
+    let accountCalls = 0;
+    fetchMock.mockImplementation((path, options) => {
+      if (path === '/api/cloud/account' && ++accountCalls === 2) {
+        verificationStarted();
+        return verification;
+      }
+      return normal(path, options);
+    });
+
+    render(<AccountWorkspace />);
+    await started;
+    useAccountStorage('new-account', null, parseCourseSelection(''));
+    releaseVerification(new Response(JSON.stringify({ account: workspaceAccount }), { headers: { 'content-type': 'application/json' } }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT')).toBe(false);
+    expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}` && options?.method === 'PUT')).toBe(false);
+    expect(window.localStorage.getItem(`${storage.prefix}${STORAGE_KEY}`)).not.toBeNull();
+  });
+
+  it('confirms an in-flight seed after a lost acknowledgement before deleting that local-only project', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject();
+    local.id = 'delete-during-seed';
+    local.title = 'Delete while seeding';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const normal = fetchMock.getMockImplementation();
+    let releaseSeed;
+    let seedStarted;
+    const started = new Promise(resolve => { seedStarted = resolve; });
+    const seedResponse = new Promise(resolve => { releaseSeed = resolve; });
+    fetchMock.mockImplementation((path, options) => {
+      if (path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT') {
+        seedStarted();
+        return seedResponse;
+      }
+      if (path === `/api/cloud/projects/${local.id}` && !options?.method && !projects.some(project => project.id === local.id)) {
+        return Promise.resolve(new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: { 'content-type': 'application/json' } }));
+      }
+      return normal(path, options);
+    });
+
+    render(<AccountWorkspace />);
+    await started;
+    fireEvent.click(within(await screen.findByRole('article', { name: local.title })).getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: local.title });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete', exact: true }));
+    projects.push(local);
+    releaseSeed(new Response(JSON.stringify({ error: 'Lost acknowledgement' }), { status: 503, headers: { 'content-type': 'application/json' } }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}` && !options?.method)).toBe(true));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}` && options?.method === 'DELETE')).toBe(true));
+    const deletion = fetchMock.mock.calls.find(([path, options]) => path === `/api/cloud/projects/${local.id}` && options?.method === 'DELETE');
+    expect(JSON.parse(deletion[1].body)).toEqual({ revision: 1 });
+    await waitFor(() => expect(projects.some(project => project.id === local.id)).toBe(false));
+    expect(projects).toHaveLength(2);
+    expect(deletedProjects(projectStorage()).some(entry => entry.projectId === local.id)).toBe(true);
+  });
+
+  it('tombstones an uncommitted local-only delete so a delayed seed cannot recreate it', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject();
+    local.id = 'delete-before-seed-ack';
+    local.title = 'Delete before seed acknowledgement';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const normal = fetchMock.getMockImplementation();
+    let releaseSeed;
+    let seedStarted;
+    const started = new Promise(resolve => { seedStarted = resolve; });
+    const seedResponse = new Promise(resolve => { releaseSeed = resolve; });
+    fetchMock.mockImplementation((path, options) => {
+      if (path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT') {
+        seedStarted();
+        return seedResponse;
+      }
+      if (path === `/api/cloud/projects/${local.id}` && !options?.method && !projects.some(project => project.id === local.id)) {
+        return Promise.resolve(new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: { 'content-type': 'application/json' } }));
+      }
+      return normal(path, options);
+    });
+
+    render(<AccountWorkspace />);
+    await started;
+    fireEvent.click(within(await screen.findByRole('article', { name: local.title })).getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: local.title });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete', exact: true }));
+    releaseSeed(new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}` && options?.method === 'DELETE')).toBe(true));
+    const deletion = fetchMock.mock.calls.find(([path, options]) => path === `/api/cloud/projects/${local.id}` && options?.method === 'DELETE');
+    expect(JSON.parse(deletion[1].body)).toEqual({ revision: 0 });
+    expect(projects).toHaveLength(2);
+    expect(projectStorage().getItem(STORAGE_KEY)).toBeNull();
+    expect(deletedProjects(projectStorage()).some(entry => entry.projectId === local.id)).toBe(true);
+  });
+
+  it('keeps an uncommitted local project and its recovery copy when the delete tombstone cannot be saved', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject(); local.id = 'delete-tombstone-offline';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const normal = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((path, options) => {
+      if (path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT') return Promise.resolve(new Response(JSON.stringify({ error: 'Conflict' }), { status: 409, headers: { 'content-type': 'application/json' } }));
+      if (path === `/api/cloud/projects/${local.id}` && options?.method === 'DELETE') return Promise.resolve(new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } }));
+      return normal(path, options);
+    });
+
+    render(<AccountWorkspace />);
+    fireEvent.click(within(await screen.findByRole('article', { name: local.title })).getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: local.title });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete', exact: true }));
+    expect(await within(dialog).findByRole('alert')).toBeVisible();
+    expect(storage.getItem(STORAGE_KEY)).not.toBeNull();
+    expect(deletedProjects(storage).some(entry => entry.projectId === local.id)).toBe(true);
+  });
+
+  it('seeds bounded batches and resumes with the remaining scoped projects on a later load', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const localProjects = Array.from({ length: 10 }, (_, index) => {
+      const project = createDefaultProject();
+      project.id = `bounded-local-${index}`;
+      project.title = `Bounded local ${index}`;
+      saveProjectToLibrary(storage, project, loadProjectLibrary(storage, null, false), { makeActive: true });
+      return project;
+    });
+
+    render(<AccountWorkspace />);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([path, options]) => path.endsWith('/seed') && options?.method === 'PUT')).toHaveLength(8));
+    expect(projects.filter(project => localProjects.some(local => local.id === project.id))).toHaveLength(8);
+    cleanup();
+    render(<AccountWorkspace />);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([path, options]) => path.endsWith('/seed') && options?.method === 'PUT')).toHaveLength(10));
+    expect(projects.filter(project => localProjects.some(local => local.id === project.id))).toHaveLength(10);
+  });
+
+  it('keeps a silent seed conflict from blocking an unrelated open map or showing recovery copy', async () => {
+    const storage = useAccountStorage(workspaceAccount.cacheKey, null, parseCourseSelection(''));
+    const local = createDefaultProject(); local.id = 'silent-deleted-local';
+    saveProjectToLibrary(storage, local, [], { makeActive: true });
+    const normal = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((path, options) => {
+      if (path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ error: 'Deleted' }), { status: 409, headers: { 'content-type': 'application/json' } }));
+      }
+      if (path === `/api/cloud/projects/${local.id}` && !options?.method) {
+        return Promise.resolve(new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'content-type': 'application/json' } }));
+      }
+      return normal(path, options);
+    });
+
+    render(<AccountWorkspace />);
+    await screen.findByRole('heading', { name: 'Projects' });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path, options]) => path === `/api/cloud/projects/${local.id}/seed` && options?.method === 'PUT')).toBe(true));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(within(await screen.findByRole('article', { name: 'First saved map' })).getByRole('button', { name: 'Open project' }));
+    await screen.findByRole('heading', { name: 'Project workspace' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Projects' }));
+    await screen.findByRole('heading', { name: 'Projects' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('uses concise visible project actions and opens the chosen map', async () => {
@@ -806,7 +1087,7 @@ it('requires deletion confirmation and keeps recovery available across reload an
   fireEvent.click(screen.getByRole('button',{name:'Restore',exact:true}));
   expect(await screen.findByRole('article',{name:original.title})).toBeVisible();
   expect(projects.find(project=>project.id===original.id).reflection).toBe(original.reflection);
-  expect(fetchMock.mock.calls.filter(([,options])=>options.method==='PUT').at(-1)[1].body).toContain('"revision":0');
+  expect(fetchMock.mock.calls.filter(([path,options])=>path.endsWith('/restore')&&options.method==='PUT').at(-1)[1].body).not.toContain('"revision"');
 });
 
 it('sends no delete when a verified recovery cannot be written',async()=>{

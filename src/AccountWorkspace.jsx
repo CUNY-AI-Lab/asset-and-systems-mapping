@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import App, { AccessFrame, createBlankProject } from './App.jsx';
 import { Action, EmptyState, LevelTrail, PageHeading } from './ui/StudioPrimitives.jsx';
 import { exportFileName, parseProject, serializePortableProject } from './domain.js';
-import { saveProjectToLibrary, loadProjectLibrary, removeLibraryProject } from './projectLibrary.js';
+import { saveProjectToLibrary, loadProjectLibrary, loadDurableProject, removeLibraryProject, summarizeProject, STORAGE_KEY, LEGACY_STORAGE_KEYS } from './projectLibrary.js';
 import { deletedProjects, forgetDeletedProject, preserveDeletedProject } from './projectRecovery.js';
 import { downloadBlob } from './mapExport.js';
 import SavedProjects from './SavedProjects.jsx';
@@ -15,15 +15,38 @@ import { userFacingError } from './userFacingError.js';
 import AccountDashboard from './AccountDashboard.jsx';
 import NollSketch from './NollSketch.jsx';
 import './account-workspace.css';
-import { appPathname } from './appPath.js';
+import { appMount, appPathname } from './appPath.js';
 import { createWorkspaceStateSync } from './workspaceState.js';
 
 const CLOUD_SAVE_ATTEMPTS = 3;
 const CLOUD_SAVE_RETRY_DELAYS = [250, 750];
 const CLOUD_SAVE_REQUEST_TIMEOUT_MS = 15000;
+const MAX_SILENT_SEEDS_PER_BOOT = 8;
+const MAX_CLOUD_PROJECT_BYTES = 2 * 1024 * 1024;
+const SILENT_SEED_CURSOR_KEY = 'systems-mapping.seed-cursor.v1';
 const TRANSIENT_SAVE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const transientSaveFailure = failure => failure?.status == null || TRANSIENT_SAVE_STATUSES.has(failure.status);
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+function loadScopedProjectLibrary(storage) {
+  let active = null;
+  try {
+    const raw = storage?.getItem(STORAGE_KEY);
+    if (raw) active = parseProject(raw);
+  } catch { /* A damaged active byte must not prevent other local projects from loading. */ }
+  const records = loadProjectLibrary(storage, active, Boolean(active));
+  if (!active) {
+    for (const key of LEGACY_STORAGE_KEYS) {
+      try {
+        const raw = storage?.getItem(key);
+        if (!raw) continue;
+        const legacy = parseProject(raw);
+        if (!records.some(record => record.id === legacy.id)) records.push(summarizeProject(legacy));
+        break;
+      } catch { /* Preserve corrupt legacy bytes and continue to another valid schema. */ }
+    }
+  }
+  return records;
+}
 async function saveRequestWithDeadline(request, path, options, storage) {
   const controller = new AbortController();
   let timer;
@@ -71,6 +94,8 @@ export default function AccountWorkspace() {
   const saved = useRef(new Map());
   const blocked = useRef(new Set());
   const retryable = useRef(new Set());
+  const seedOnly = useRef(new Set());
+  const seedCreated = useRef(new Set());
   const rejectedPayloads = useRef(new Map());
   const latestProjects = useRef(new Map());
   const deletingProjects = useRef(new Set());
@@ -85,7 +110,7 @@ export default function AccountWorkspace() {
   }), [courseSelection]);
   const refresh = async () => {
     const remote = (await request('/api/cloud/projects')).projects;
-    const local = loadProjectLibrary(storageRef.current, null, false);
+    const local = loadScopedProjectLibrary(storageRef.current);
     const records = [...remote, ...local.filter(record => !remote.some(saved => saved.id === record.id)).map(record => ({ ...record, localOnly: true }))];
     setRecords(records);
     return records;
@@ -159,7 +184,7 @@ export default function AccountWorkspace() {
           const project = parseProject(linked.project);
           if (linked.projectId && linked.projectId !== project.id) throw new Error('The project link does not match its saved map.');
           await open(records.find(record => record.id === project.id) || { id: project.id, localOnly: true }, result.account, project);
-        }
+        } else if (!appMount()) void seedScopedLocalProjects(records, storage, result.account, () => cancelled).catch(() => {});
       } catch (failure) {
         if (cancelled) return;
         setSignedOut(failure.status === 401);
@@ -171,89 +196,174 @@ export default function AccountWorkspace() {
     return () => { cancelled = true; workspaceStateSync.current?.close(); workspaceStateSync.current = null; };
   }, []);
 
-  const persist = (project, capturedStorage = storageRef.current) => {
+  const persist = (project, capturedStorage = storageRef.current, { seed = false } = {}) => {
     if (deletingProjects.current.has(project.id) || deletedProjectsRef.current.has(project.id)) return;
     const storage = capturedStorage;
+    if (seed) seedOnly.current.add(project.id);
     const serialized = serializeCloudProject(project);
     const generation = saveGeneration.current.get(project.id) || 0;
     latestProjects.current.set(project.id, { project, storage });
     if (blocked.current.has(project.id) || rejectedPayloads.current.get(project.id) === serialized || saved.current.get(project.id) === serialized) return;
-    retryable.current.delete(project.id);
-    setRetryProjectId(current => current === project.id ? null : current);
-    if (activeProjectId.current === project.id) {
-      setCloudSaveError('');
-      setStatus('Saving to your account…');
+    if (!seed) {
+      retryable.current.delete(project.id);
+      setRetryProjectId(current => current === project.id ? null : current);
+      if (activeProjectId.current === project.id) {
+        setCloudSaveError('');
+        setStatus('Saving to your account…');
+      }
     }
     queue.current = queue.current.then(async () => {
-      if ((saveGeneration.current.get(project.id) || 0) !== generation || blocked.current.has(project.id) || rejectedPayloads.current.get(project.id) === serialized || saved.current.get(project.id) === serialized) return;
+      if (storageRef.current !== storage || (saveGeneration.current.get(project.id) || 0) !== generation || blocked.current.has(project.id) || rejectedPayloads.current.get(project.id) === serialized || saved.current.get(project.id) === serialized) return;
       let failure;
       for (let attempt = 0; attempt < CLOUD_SAVE_ATTEMPTS; attempt += 1) {
-        if ((saveGeneration.current.get(project.id) || 0) !== generation || blocked.current.has(project.id)) return;
+        if (storageRef.current !== storage || (saveGeneration.current.get(project.id) || 0) !== generation || blocked.current.has(project.id)) return;
         try {
-          const result = await saveRequestWithDeadline(request, `/api/cloud/projects/${encodeURIComponent(project.id)}`, {
+          const path = `/api/cloud/projects/${encodeURIComponent(project.id)}${seed ? '/seed' : ''}`;
+          const result = await saveRequestWithDeadline(request, path, {
             method:'PUT', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({project:serialized,revision:revisions.current.get(project.id) || 0}),
+            body:JSON.stringify(seed ? { project: serialized } : {project:serialized,revision:revisions.current.get(project.id) || 0}),
           }, storage);
-          if ((saveGeneration.current.get(project.id) || 0) !== generation) return;
+          if (storageRef.current !== storage) return;
+          const deletingSeed = seed && deletingProjects.current.has(project.id);
+          if ((saveGeneration.current.get(project.id) || 0) !== generation && !deletingSeed) return;
+          if (seed) seedCreated.current.add(project.id);
           revisions.current.set(project.id,result.revision);
           saved.current.set(project.id,serialized);
           rejectedPayloads.current.delete(project.id);
+          seedOnly.current.delete(project.id);
+          if (deletingSeed) return;
           try { await rememberCloudSave(storage, project.id, result.revision, serialized); } catch { /* The account accepted the project; local sync metadata is only a cache. */ }
-          retryable.current.delete(project.id);
-          setRetryProjectId(current => current === project.id ? null : current);
-          if (activeProjectId.current === project.id) {
-            setCloudSaveError('');
-            setStatus('Saved to your account');
+          if (storageRef.current !== storage) return;
+          if (!seed) {
+            retryable.current.delete(project.id);
+            setRetryProjectId(current => current === project.id ? null : current);
+            if (activeProjectId.current === project.id) {
+              setCloudSaveError('');
+              setStatus('Saved to your account');
+            }
           }
           return;
         } catch (error) {
-          if ((saveGeneration.current.get(project.id) || 0) !== generation) return;
+          if (storageRef.current !== storage || (saveGeneration.current.get(project.id) || 0) !== generation) return;
           failure = error;
           if (failure.status === 409) {
             // A response can be lost after the server commits. Confirm that
             // exact payload with a read; never retry a divergent revision.
             try {
               const remote = await saveRequestWithDeadline(request, `/api/cloud/projects/${encodeURIComponent(project.id)}`, {}, storage);
-              if ((saveGeneration.current.get(project.id) || 0) !== generation) return;
+              if (storageRef.current !== storage || (saveGeneration.current.get(project.id) || 0) !== generation) return;
               if (remote.revision >= (revisions.current.get(project.id) || 0)
                 && serializeCloudProject(parseProject(remote.project)) === serialized) {
                 revisions.current.set(project.id, remote.revision);
                 saved.current.set(project.id, serialized);
                 rejectedPayloads.current.delete(project.id);
+                seedOnly.current.delete(project.id);
                 try { await rememberCloudSave(storage, project.id, remote.revision, serialized); } catch { /* The read confirms the account already has this exact project. */ }
-                retryable.current.delete(project.id);
-                setRetryProjectId(current => current === project.id ? null : current);
-                if (activeProjectId.current === project.id) {
-                  setCloudSaveError('');
-                  setStatus('Saved to your account');
+                if (storageRef.current !== storage) return;
+                if (!seed) {
+                  retryable.current.delete(project.id);
+                  setRetryProjectId(current => current === project.id ? null : current);
+                  if (activeProjectId.current === project.id) {
+                    setCloudSaveError('');
+                    setStatus('Saved to your account');
+                  }
                 }
                 return;
               }
             } catch { /* Keep the local version and treat an unverified 409 as a conflict. */ }
           }
           if (!transientSaveFailure(failure)) {
-            if ([400, 413, 422].includes(failure.status)) rejectedPayloads.current.set(project.id, serialized);
-            else blocked.current.add(project.id);
-            retryable.current.delete(project.id);
-            setRetryProjectId(current => current === project.id ? null : current);
-            if (activeProjectId.current === project.id) {
-              setCloudSaveError(failure.status === 409
-                ? 'This map changed separately in your account. The account version was kept; this device version did not replace it.'
-                : userFacingError(failure, 'This map could not be saved to your account.'));
-              setStatus('Account save needs attention');
+            if (seed) seedOnly.current.delete(project.id);
+            else {
+              if ([400, 413, 422].includes(failure.status)) rejectedPayloads.current.set(project.id, serialized);
+              else blocked.current.add(project.id);
+              retryable.current.delete(project.id);
+              setRetryProjectId(current => current === project.id ? null : current);
+              if (activeProjectId.current === project.id) {
+                setCloudSaveError(failure.status === 409
+                  ? 'This map changed separately in your account. The account version was kept; this device version did not replace it.'
+                  : userFacingError(failure, 'This map could not be saved to your account.'));
+                setStatus('Account save needs attention');
+              }
             }
             return;
           }
           if (attempt < CLOUD_SAVE_ATTEMPTS - 1) await wait(CLOUD_SAVE_RETRY_DELAYS[attempt]);
         }
       }
-      retryable.current.add(project.id);
-      if (activeProjectId.current === project.id) {
+      if (!seed) retryable.current.add(project.id);
+      if (!seed && activeProjectId.current === project.id) {
         setRetryProjectId(project.id);
         setCloudSaveError('This map is saved on this device. Its account save is still pending.');
         setStatus('Account save pending');
       }
     });
+  };
+
+  const seedScopedLocalProjects = async (initialRecords, storage, initialAccount, isCancelled) => {
+    const matchesAccount = result => result?.account?.cacheKey === initialAccount.cacheKey
+      && (result.account.course?.id || null) === (initialAccount.course?.id || null);
+    const isCurrent = () => !isCancelled() && storageRef.current === storage
+      && projectStorage() === storage
+      && storage.cacheKey === initialAccount.cacheKey
+      && JSON.stringify(storage.courseSelection) === JSON.stringify(courseSelection);
+    if (appMount() || !isCurrent()) return;
+
+    // If reused while a map is open, flush its existing lifecycle before the
+    // snapshot. Normal workspace bootstrap has no active App yet.
+    if (activeProjectId.current && projectStorage() === storage) {
+      window.dispatchEvent(new Event('pagehide'));
+      await queue.current.catch(() => {});
+      if (!isCurrent()) return;
+    }
+
+    const remoteIds = new Set(initialRecords.filter(record => !record.localOnly).map(record => record.id));
+    let deletedIds;
+    try { deletedIds = new Set(deletedProjects(storage).map(record => record.projectId)); }
+    catch { return; }
+    const remoteCount = initialRecords.filter(record => !record.localOnly).length;
+    const availableSlots = Math.max(0, 200 - remoteCount);
+    let candidates = loadScopedProjectLibrary(storage)
+      .filter(record => {
+        if (remoteIds.has(record.id) || record.id.startsWith('recovery_') || deletedIds.has(record.id) || deletedProjectsRef.current.has(record.id)) return false;
+        // A stale cache from another origin may still hold a project that was
+        // already deleted in the account. Any prior-save marker is a tombstone
+        // for silent creation; only an explicit restore may recreate it.
+        try { return storage.getItem(`systems-mapping.cloud-sync.${record.id}`) === null; }
+        catch { return false; }
+      })
+      .map(record => ({ record, project: loadDurableProject(storage, record.id) }))
+      .filter(entry => entry.project?.id === entry.record.id
+        && new Blob([serializeCloudProject(entry.project)]).size <= MAX_CLOUD_PROJECT_BYTES);
+    try {
+      const cursor = storage.getItem(SILENT_SEED_CURSOR_KEY);
+      const cursorIndex = candidates.findIndex(entry => entry.record.id === cursor);
+      if (cursorIndex >= 0) candidates = [...candidates.slice(cursorIndex + 1), ...candidates.slice(0, cursorIndex + 1)];
+    } catch { /* A missing cursor only changes which bounded batch runs first. */ }
+    candidates = candidates.slice(0, Math.min(MAX_SILENT_SEEDS_PER_BOOT, availableSlots));
+    const seededIds = [];
+
+    for (const { record, project } of candidates) {
+      if (!isCurrent()) return;
+      if (deletingProjects.current.has(record.id)) continue;
+      try { storage.setItem(SILENT_SEED_CURSOR_KEY, record.id); } catch { /* The per-boot batch remains bounded without a cursor. */ }
+      let verified;
+      try { verified = await request('/api/cloud/account', {}, storage); }
+      catch { return; }
+      if (!isCurrent() || !matchesAccount(verified)) return;
+      if (deletingProjects.current.has(record.id)) continue;
+      const serialized = serializeCloudProject(project);
+      if (!isCurrent()) return;
+      persist(project, storage, { seed: true });
+      await queue.current.catch(() => {});
+      if (!isCurrent()) return;
+      if (saved.current.get(project.id) === serialized) seededIds.push(project.id);
+    }
+
+    if (seededIds.length && isCurrent()) {
+      const completed = new Set(seededIds);
+      setRecords(current => current.map(record => completed.has(record.id) ? { ...record, localOnly: false } : record));
+    }
   };
 
   const retryCloudSave = () => {
@@ -262,7 +372,7 @@ export default function AccountWorkspace() {
     if (!latest || !retryable.current.has(id)) return;
     retryable.current.delete(id);
     setRetryProjectId(null);
-    persist(latest.project, latest.storage);
+    persist(latest.project, latest.storage, { seed: seedOnly.current.has(id) });
   };
 
   const open = async (record, workspaceAccount = account, linkedProject = null) => {
@@ -333,13 +443,23 @@ export default function AccountWorkspace() {
     // Force the app's ordinary pending-edit flush before leaving its view.
     window.dispatchEvent(new Event('pagehide'));
     await queue.current;
-    if (blocked.current.size === 0) {
+    const activeId = activeProjectId.current;
+    if (!activeId || !blocked.current.has(activeId)) {
       window.history.replaceState(null, '', courseWorkspacePath('/', courseSelection));
       setActive(null);
+      activeProjectId.current = null;
       navigateAccount({open:false});
       try { setDark(document.documentElement.dataset.theme === 'dark'); }
       catch { /* Preserve the current theme when browser storage is unavailable. */ }
-      try { await refresh(); } catch (failure) { setError(userFacingError(failure, 'Your project list could not be loaded. Reload to try again.')); }
+      if (storageRef.current && account) {
+        const storage = storageRef.current;
+        let currentRecords = null;
+        try { currentRecords = await refresh(); }
+        catch (failure) { setError(userFacingError(failure, 'Your project list could not be loaded. Reload to try again.')); }
+        if (currentRecords && storageRef.current === storage) {
+          void seedScopedLocalProjects(currentRecords, storage, account, () => storageRef.current !== storage).catch(() => {});
+        }
+      }
     }
     setBusy(false);
   };
@@ -410,7 +530,29 @@ export default function AccountWorkspace() {
     blocked.current.add(projectId);
     try {
       await queue.current;
-      if (!selected.record.localOnly) await request(`/api/cloud/projects/${encodeURIComponent(projectId)}`,{method:'DELETE',body:{revision:selected.revision}},storage);
+      let seededDuringDelete = seedCreated.current.has(projectId);
+      let revision = selected.record.localOnly ? revisions.current.get(projectId) : selected.revision;
+      let tombstoneOnly = selected.record.localOnly && !seededDuringDelete && !seedOnly.current.has(projectId);
+      if (selected.record.localOnly && !seededDuringDelete && seedOnly.current.has(projectId)) {
+        // A timed-out create may have committed even when its acknowledgement
+        // lost the generation race with this delete. Confirm only an exact map;
+        // when no row exists, revision zero atomically blocks a later seed.
+        try {
+          const remote = await request(`/api/cloud/projects/${encodeURIComponent(projectId)}`, {}, storage);
+          if (serializeCloudProject(parseProject(remote.project)) === serializeCloudProject(selected.project)) {
+            seededDuringDelete = true;
+            revision = remote.revision;
+          }
+        } catch (failure) {
+          if (failure.status === 404) tombstoneOnly = true;
+          else throw failure;
+        }
+      }
+      if (!selected.record.localOnly || seededDuringDelete || tombstoneOnly) {
+        if (tombstoneOnly) revision = 0;
+        if (!Number.isSafeInteger(revision) || (tombstoneOnly ? revision !== 0 : revision < 1)) throw new Error('The account copy changed before deletion. Review it and try again.');
+        await request(`/api/cloud/projects/${encodeURIComponent(projectId)}`,{method:'DELETE',body:{revision:tombstoneOnly ? 0 : revision}},storage);
+      }
     } catch (failure) {
       blocked.current.delete(projectId);
       deletingProjects.current.delete(projectId);
@@ -421,6 +563,7 @@ export default function AccountWorkspace() {
     removeLibraryProject(storage,projectId);
     forgetCloudSave(storage,projectId);
     revisions.current.delete(projectId); saved.current.delete(projectId); blocked.current.delete(projectId);
+    seedCreated.current.delete(projectId); seedOnly.current.delete(projectId);
     rejectedPayloads.current.delete(projectId);
     retryable.current.delete(projectId); latestProjects.current.delete(projectId);
     setRetryProjectId(current => current === projectId ? null : current);
@@ -432,7 +575,7 @@ export default function AccountWorkspace() {
     try {
       const storage = storageRef.current;
       const project = parseProject(entry.project);
-      const result = await request(`/api/cloud/projects/${encodeURIComponent(project.id)}`,{method:'PUT',body:{project:serializeCloudProject(project),revision:0}},storage);
+      const result = await request(`/api/cloud/projects/${encodeURIComponent(project.id)}/restore`,{method:'PUT',body:{project:serializeCloudProject(project)}},storage);
       deletedProjectsRef.current.delete(project.id);
       revisions.current.set(project.id,result.revision);
       saved.current.set(project.id,serializeCloudProject(project));

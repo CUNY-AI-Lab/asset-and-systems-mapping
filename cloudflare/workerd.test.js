@@ -613,14 +613,18 @@ test('project progress is private metadata and revision-checked deletion never a
   expect(row.progress).toMatchObject({activeScale:'micro',stage:0,nodes:0,relationships:0,hasMemo:true,notes:2});
   expect(JSON.stringify(list)).not.toContain(project.submission.text);expect(JSON.stringify(list)).not.toContain(project.reflection);
   expect((await request(path,'bob',{method:'DELETE',body:JSON.stringify({revision:1})})).status).toBe(404);
-  for(const body of [{},{revision:0},{revision:1,owner:'other'}])expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify(body)})).status).toBe(400);
+  for(const body of [{},{revision:1,owner:'other'}])expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify(body)})).status).toBe(400);
+  expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:0})})).status).toBe(409);
   expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:2})})).status).toBe(409);
   expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:1}),headers:{origin:'https://other.example'}})).status).toBe(403);
   expect((await request(path,'alice')).status).toBe(200);
   expect((await request(path,'alice',{method:'DELETE',body:JSON.stringify({revision:1})})).status).toBe(200);
   await worker.evictDurableObject('COURSES',{name:'test-course'});
   expect((await request(path)).status).toBe(404);
-  expect((await request(path,'alice',{method:'PUT',body:JSON.stringify({project:serializeProject(project),revision:0})})).status).toBe(200);
+  const account = await (await request('/api/cloud/account','alice')).json();
+  const restored = await request(`${path}/restore`,'alice',{method:'PUT',headers:{'x-systems-account-cache':account.account.cacheKey},body:JSON.stringify({project:serializeProject(project)})});
+  expect(restored.status,await restored.clone().text()).toBe(200);
+  expect(await restored.json()).toMatchObject({revision:2});
   expect(JSON.parse((await (await request(path)).json()).project).reflection).toBe(project.reflection);
 });
 test('current membership and instructor authority are checked on the next request', async () => {
@@ -653,6 +657,7 @@ test('populated legacy course profiles and account maps survive constructor upgr
 });
 test('explicit capability links preserve class sharing and optimistic revision semantics', async () => {
   const project = newProject();
+  project.id = 'link-delete-restore-map';
   const created = await request('/api/projects', 'alice', { method: 'POST', body: JSON.stringify({ project: serializeProject(project) }) });
   expect(created.status).toBe(201);
   const link = await created.json();
@@ -660,6 +665,81 @@ test('explicit capability links preserve class sharing and optimistic revision s
   expect((await request(`/api/projects/${link.token}`, '')).status).toBe(401);
   const revoked = await request(`/api/projects/${link.token}/revoke`, 'alice', { method: 'POST', body: JSON.stringify({ expectedRevision: 1 }) });
   expect(revoked.status).toBe(200); expect((await request(`/api/projects/${link.token}`, 'bob')).status).toBe(410);
+
+  const account = await (await request('/api/cloud/account', 'alice')).json();
+  const cacheHeader = { 'x-systems-account-cache': account.account.cacheKey };
+  const serialized = serializeProject(project);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'PUT', body: JSON.stringify({ project: serialized, revision: 0 }) })).status).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'DELETE', body: JSON.stringify({ revision: 1 }) })).status).toBe(200);
+  const restored = await request(`/api/cloud/projects/${project.id}/restore`, 'alice', { method: 'PUT', headers: cacheHeader, body: JSON.stringify({ project: serialized }) });
+  expect(restored.status, await restored.clone().text()).toBe(200);
+  expect((await request(`/api/projects/${link.token}`, 'bob')).status).toBe(410);
+});
+test('silent seeding is create-only, deletion tombstones block stale tabs, and explicit restore advances revision per owner', async () => {
+  const project = newProject();
+  project.id = 'seed-delete-restore-map';
+  const serialized = serializeProject(project);
+  const account = await (await request('/api/cloud/account', 'alice')).json();
+  const scopedOptions = options => ({ ...options, headers: { ...options.headers, 'x-systems-account-cache': account.account.cacheKey } });
+  const seed = () => request(`/api/cloud/projects/${project.id}/seed`, 'alice', scopedOptions({ method: 'PUT', body: JSON.stringify({ project: serialized }) }));
+  expect((await request(`/api/cloud/projects/${project.id}/seed`, 'alice', { method: 'PUT', body: JSON.stringify({ project: serialized }) })).status).toBe(409);
+  expect((await request(`/api/cloud/projects/${project.id}/seed`, 'alice', { method: 'PUT', headers: { 'x-systems-account-cache': 'another-cache', origin: 'https://foreign.example' }, body: JSON.stringify({ project: serialized }) })).status).toBe(403);
+  expect((await request(`/api/cloud/projects/${project.id}/seed`, 'alice', { method: 'PUT', headers: { 'x-systems-account-cache': 'another-cache' }, body: JSON.stringify({ project: serialized }) })).status).toBe(409);
+
+  const created = await seed();
+  expect(created.status, await created.clone().text()).toBe(200);
+  expect(await created.json()).toMatchObject({ revision: 1 });
+
+  const different = structuredClone(project); different.title = 'Must not replace the existing map';
+  const duplicate = await request(`/api/cloud/projects/${project.id}/seed`, 'alice', scopedOptions({ method: 'PUT', body: JSON.stringify({ project: serializeProject(different) }) }));
+  expect(duplicate.status).toBe(409);
+  expect(JSON.parse((await (await request(`/api/cloud/projects/${project.id}`, 'alice')).json()).project).title).toBe(project.title);
+
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'DELETE', body: JSON.stringify({ revision: 1 }) })).status).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice')).status).toBe(404);
+  expect((await seed()).status).toBe(409);
+  const stalePut = await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'PUT', body: JSON.stringify({ project: serialized, revision: 0 }) });
+  expect(stalePut.status).toBe(409);
+
+  expect((await request(`/api/cloud/projects/${project.id}/restore`, 'alice', { method: 'PUT', body: JSON.stringify({ project: serialized }) })).status).toBe(409);
+  const restored = await request(`/api/cloud/projects/${project.id}/restore`, 'alice', scopedOptions({ method: 'PUT', body: JSON.stringify({ project: serialized }) }));
+  expect(restored.status, await restored.clone().text()).toBe(200);
+  expect(await restored.json()).toMatchObject({ revision: 2 });
+  const staleTab = structuredClone(project); staleTab.title = 'Old revision must lose';
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'PUT', body: JSON.stringify({ project: serializeProject(staleTab), revision: 1 }) })).status).toBe(409);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'DELETE', body: JSON.stringify({ revision: 2 }) })).status).toBe(200);
+  expect((await seed()).status).toBe(409);
+
+  const otherOwner = await (await request('/api/cloud/account', 'admin')).json();
+  const otherOwnerSeed = await request(`/api/cloud/projects/${project.id}/seed`, 'admin', { method: 'PUT', headers: { 'x-systems-account-cache': otherOwner.account.cacheKey }, body: JSON.stringify({ project: serialized }) });
+  expect(otherOwnerSeed.status, await otherOwnerSeed.clone().text()).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'admin')).status).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'admin', { method: 'DELETE', body: JSON.stringify({ revision: 1 }) })).status).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice')).status).toBe(404);
+});
+
+test('revision-zero deletion tombstones a missing map before a late seed can commit', async () => {
+  const project = newProject(); project.id = 'delete-before-seed-map';
+  const serialized = serializeProject(project);
+  const account = await (await request('/api/cloud/account', 'alice')).json();
+  const cacheHeader = { 'x-systems-account-cache': account.account.cacheKey };
+  const missingCache = await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'DELETE', body: JSON.stringify({ revision: 0 }) });
+  expect(missingCache.status).toBe(409);
+  const wrongCache = await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'DELETE', headers: { 'x-systems-account-cache': 'wrong-cache' }, body: JSON.stringify({ revision: 0 }) });
+  expect(wrongCache.status).toBe(409);
+  const tombstone = await request(`/api/cloud/projects/${project.id}`, 'alice', { method: 'DELETE', headers: cacheHeader, body: JSON.stringify({ revision: 0 }) });
+  expect(tombstone.status, await tombstone.clone().text()).toBe(200);
+  expect(await tombstone.json()).toEqual({ deleted: true });
+
+  const lateSeed = await request(`/api/cloud/projects/${project.id}/seed`, 'alice', { method: 'PUT', headers: cacheHeader, body: JSON.stringify({ project: serialized }) });
+  expect(lateSeed.status).toBe(409);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice')).status).toBe(404);
+  const otherOwner = await (await request('/api/cloud/account', 'admin')).json();
+  const otherOwnerSeed = await request(`/api/cloud/projects/${project.id}/seed`, 'admin', { method: 'PUT', headers: { 'x-systems-account-cache': otherOwner.account.cacheKey }, body: JSON.stringify({ project: serialized }) });
+  expect(otherOwnerSeed.status, await otherOwnerSeed.clone().text()).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'admin')).status).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'admin', { method: 'DELETE', body: JSON.stringify({ revision: 1 }) })).status).toBe(200);
+  expect((await request(`/api/cloud/projects/${project.id}`, 'alice')).status).toBe(404);
 });
 test('invalid structured output gets one corrective retry, quota refusals make exactly one attempt, and safe metadata is preserved', async () => {
   const project = newProject();

@@ -372,3 +372,24 @@ test.each([
   expect(response.status).toBe(503);
   expect((await response.json()).details.code).toBe('course_access_unavailable');
 });
+
+test('deletion tombstones stay inside their exact course workspace', async () => {
+  const project = newProject(); project.id = 'course-scoped-tombstone';
+  const serialized = serializeProject(project);
+  const accountA = await (await scoped('/api/cloud/account', 'alice', 'synthetic-course-a')).json();
+  const accountB = await (await scoped('/api/cloud/account', 'alice', 'synthetic-course-b')).json();
+  expect(accountA.account.cacheKey).not.toBe(accountB.account.cacheKey);
+  const emptyDelete = await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-a', { method: 'DELETE', headers: { 'x-systems-account-cache': accountA.account.cacheKey }, body: JSON.stringify({ revision: 0 }) });
+  expect(emptyDelete.status, await emptyDelete.clone().text()).toBe(200);
+
+  const deletedScopeSeed = await scoped(`/api/cloud/projects/${project.id}/seed`, 'alice', 'synthetic-course-a', {
+    method: 'PUT', headers: { 'x-systems-account-cache': accountA.account.cacheKey }, body: JSON.stringify({ project: serialized }),
+  });
+  expect(deletedScopeSeed.status).toBe(409);
+  const otherCourseSeed = await scoped(`/api/cloud/projects/${project.id}/seed`, 'alice', 'synthetic-course-b', {
+    method: 'PUT', headers: { 'x-systems-account-cache': accountB.account.cacheKey }, body: JSON.stringify({ project: serialized }),
+  });
+  expect(otherCourseSeed.status, await otherCourseSeed.clone().text()).toBe(200);
+  expect((await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-b')).status).toBe(200);
+  expect((await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-a')).status).toBe(404);
+});
