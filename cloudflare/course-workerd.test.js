@@ -32,7 +32,7 @@ afterAll(async () => { await harness?.close(); });
 const scoped = (path, who = 'alice', course = 'synthetic-course-a', options = {}) => request(path, who, { ...options, headers: { 'x-systems-course': course, ...options.headers } });
 const promptPath = '/api/cloud/course-prompt';
 const savePrompt = (amendment, expectedRevision, who = 'instructor', course = 'synthetic-course-a') => scoped(promptPath, who, course, { method: 'PUT', body: JSON.stringify({ amendment, expectedRevision, changeNote: 'Synthetic test change' }) });
-beforeEach(async () => { await control({ courseDenied: false, courseOutage: false, denyOnCourseLookup: 0, courseProfile: null, mode: 'success', resetSessions: true }); });
+beforeEach(async () => { await control({ courseDenied: false, administratorRevoked: false, courseOutage: false, denyOnCourseLookup: 0, courseProfile: null, mode: 'success', resetSessions: true }); });
 
 test('an unpublished course appendix can be saved and reopened in a student map', async () => {
   const project = newProject();
@@ -104,19 +104,19 @@ test('first application access records a current student before any saved map an
   expect(saved.projects[0].levels).toContainEqual({ scale: 'micro', stage: 0, completed: true, started: true });
   expect(JSON.stringify(saved)).not.toContain(project.submission.text);
   expect((await scoped(path, 'alice')).status).toBe(403);
-  expect((await scoped(path, 'admin')).status).toBe(403);
+  expect((await scoped(path, 'admin')).status).toBe(200);
   expect((await request(path, 'admin')).status).toBe(403);
   expect((await scoped(path, 'instructor', 'synthetic-course-b')).status).toBe(403);
   await control({ courseDenied: true });
   expect((await scoped(path, 'instructor')).status).toBe(403);
 });
 
-test('current exact-course ownership governs instructor access, independently of global role', async () => {
+test('current course owners and verified administrators receive instructor capabilities', async () => {
   const first = await scoped('/api/teacher/profiles', 'instructor');
   expect(first.status, JSON.stringify({ response: await first.clone().text(), fixture: await (await services.fetch('https://fixtures.test/control')).json() })).toBe(200);
   expect((await request('/api/teacher/profiles', 'instructor')).status).toBe(403);
   expect((await request('/api/teacher/profiles', 'admin')).status).toBe(200);
-  for (const who of ['alice', 'admin']) {
+  for (const who of ['alice']) {
     expect((await scoped('/api/teacher/profiles', who)).status).toBe(403);
     expect((await scoped(promptPath, who)).status).toBe(403);
     expect((await scoped(promptPath + '/history', who)).status).toBe(403);
@@ -182,7 +182,7 @@ test('fresh enrollment is required after revocation, during an outage, and just 
   expect((await scoped('/api/cloud/projects')).status).toBe(403);
   expect((await scoped(promptPath, 'instructor')).status).toBe(403);
   expect((await request('/api/cloud/projects')).status).toBe(200);
-  await control({ courseDenied: false, courseOutage: true });
+  await control({ courseDenied: false, administratorRevoked: false, courseOutage: true });
   const unavailable = await scoped('/api/cloud/projects');
   expect(unavailable.status).toBe(503);
   expect(await unavailable.text()).not.toContain('private fixture outage');
@@ -313,7 +313,8 @@ test('all instructor customizations survive save, restart and publication, and p
   }
   const publicPath = '/api/config/public?configKind=preflight&scale=micro';
   expect((await (await scoped(publicPath)).json()).fieldNotesQuestions).not.toEqual(profile.fieldNotesQuestions);
-  for (const who of ['alice', 'admin']) expect((await scoped('/api/teacher/profiles/' + draft.id, who)).status).toBe(403);
+  expect((await scoped('/api/teacher/profiles/' + draft.id, 'alice')).status).toBe(403);
+  expect((await scoped('/api/teacher/profiles/' + draft.id, 'admin')).status).toBe(200);
   expect((await scoped('/api/teacher/profiles/' + draft.id, 'instructor', 'synthetic-course-b')).status).toBe(403);
   expect((await write(`/api/teacher/profiles/${draft.id}/publish`, 'POST', { note: 'Publish the complete synthetic matrix', expectedRevision: revision })).status).toBe(200);
   await worker.evictDurableObject('COURSES', { name: 'systems-mapping:course:synthetic-course-a' });
@@ -345,7 +346,7 @@ test('a sanitized verified sign-in name takes precedence over the course profile
   await control({ courseProfile: { displayName: 'Course Profile Name', displayNameSource: 'verified_profile' } });
   const response = await scoped('/api/cloud/account', 'admin');
   expect(response.status).toBe(200);
-  expect((await response.json()).account).toMatchObject({ preferredName: 'Sam Student', role: 'student' });
+  expect((await response.json()).account).toMatchObject({ preferredName: 'Sam Student', role: 'instructor' });
 });
 
 test.each([
@@ -392,4 +393,55 @@ test('deletion tombstones stay inside their exact course workspace', async () =>
   expect(otherCourseSeed.status, await otherCourseSeed.clone().text()).toBe(200);
   expect((await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-b')).status).toBe(200);
   expect((await scoped(`/api/cloud/projects/${project.id}`, 'alice', 'synthetic-course-a')).status).toBe(404);
+});
+
+
+test('administrator course consoles, rosters and publication retain personal ownership and revoke immediately', async () => {
+  const discovery = await request('/api/cloud/courses', 'admin');
+  expect(discovery.status).toBe(200);
+  expect((await discovery.json()).courses.map(({ id, role }) => ({ id, role }))).toEqual([
+    { id: 'synthetic-course-a', role: 'instructor' },
+    { id: 'synthetic-course-b', role: 'instructor' },
+    { id: 'cail-teaching-tools-demo', role: 'instructor' },
+  ]);
+  const courseId = 'synthetic-course-b';
+  const admin = (path, options) => scoped(path, 'admin', courseId, options);
+  const account = (await (await admin('/api/cloud/account')).json()).account;
+  expect(account).toMatchObject({ role: 'instructor', course: { id: courseId, guestInstructor: false,
+    capabilities: { instructorPanel: true, rosterRead: true, promptRead: true, promptWrite: true } } });
+  const catalog = await admin('/api/teacher/profiles');
+  expect(catalog.status).toBe(200);
+  const originalProfileId = (await catalog.json()).activeProfileId;
+  const created = await admin('/api/teacher/profiles', { method: 'POST', body: JSON.stringify({ name: 'Administrator settings', note: 'Synthetic admin settings', sourceProfileId: originalProfileId }) });
+  expect(created.status).toBe(201);
+  const profile = (await created.json()).profile;
+  expect((await admin(`/api/teacher/profiles/${profile.id}/publish`, { method: 'POST', body: JSON.stringify({ note: 'Publish administrator settings', expectedRevision: profile.revision }) })).status).toBe(200);
+  expect((await (await admin('/api/teacher/profiles')).json()).activeProfileId).toBe(profile.id);
+  expect((await admin('/api/cloud/course-students')).status).toBe(200);
+  const before = (await (await admin(promptPath)).json()).prompt;
+  const published = await admin(promptPath, { method: 'PUT', body: JSON.stringify({ amendment: 'Administrator course guidance', expectedRevision: before.revision, changeNote: 'Synthetic administrator publication' }) });
+  expect(published.status).toBe(200);
+  const prompt = (await published.json()).prompt;
+  expect(prompt).toMatchObject({ amendment: 'Administrator course guidance', updatedBy: 'systems-mapping-member-v1-' + 'd'.repeat(64), courseId });
+  expect((await admin(promptPath + '/history')).status).toBe(200);
+  const project = newProject(); project.id = 'admin-isolation-map';
+  const path = '/api/cloud/projects/' + project.id;
+  expect((await scoped(path, 'alice', courseId, { method: 'PUT', body: JSON.stringify({ project: serializeProject(project), revision: 0 }) })).status).toBe(200);
+  expect((await admin(path)).status).toBe(404);
+  expect((await admin(path, { method: 'PUT', body: JSON.stringify({ project: serializeProject(project), revision: 0 }) })).status).toBe(200);
+  expect((await (await admin('/api/cloud/account')).json()).account.cacheKey).toBe(account.cacheKey);
+  const studentCache = (await (await scoped('/api/cloud/account', 'alice', courseId)).json()).account.cacheKey;
+  expect(studentCache).not.toBe(account.cacheKey);
+  expect((await admin('/api/cloud/projects', { headers: { 'x-systems-account-cache': studentCache } })).status).toBe(409);
+  expect((await admin(path, { method: 'DELETE', body: JSON.stringify({ revision: 1 }) })).status).toBe(200);
+  expect((await scoped(path, 'alice', courseId)).status).toBe(200);
+  expect((await scoped('/api/cloud/projects/' + project.id, 'alice', 'synthetic-course-a')).status).toBe(404);
+  for (const path of ['/api/teacher/profiles', '/api/cloud/course-students', promptPath])
+    expect((await scoped(path, 'alice', courseId)).status).toBe(403);
+  await control({ administratorRevoked: true });
+  for (const path of ['/api/cloud/account', '/api/teacher/profiles', '/api/cloud/course-students', promptPath])
+    expect((await admin(path)).status).toBe(403);
+  expect((await admin(promptPath, { method: 'PUT', body: JSON.stringify({ amendment: 'Denied after revocation', expectedRevision: prompt.revision, changeNote: 'Must not publish' }) })).status).toBe(403);
+  expect((await (await request('/api/cloud/courses', 'admin')).json()).courses).toEqual([]);
+  expect((await request('/api/teacher/profiles', 'admin')).status).toBe(403);
 });

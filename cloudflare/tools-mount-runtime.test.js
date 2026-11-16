@@ -278,11 +278,15 @@ test('course maps and caches match both origins while current ownership and enro
   for (const options of [{}, { headers: { 'x-systems-course': 'synthetic-course-b' } },
     { who: 'instructor', headers: courseHeader }, { who: 'admin', headers: courseHeader }]) expect((await request(path, options)).status).toBe(404);
   expect((await request(path, { headers: { ...courseHeader, 'x-systems-account-cache': crypto.randomUUID() } })).status).toBe(409);
-  for (const who of ['alice', 'admin']) expect((await request('/api/cloud/course-students', { who, headers: courseHeader })).status).toBe(403);
+  expect((await request('/api/cloud/course-students', { headers: courseHeader })).status).toBe(403);
+  expect((await (await request('/api/cloud/account', { who: 'admin', headers: courseHeader })).json()).account.role).toBe('instructor');
+  expect((await request('/api/teacher/profiles', { who: 'admin', headers: courseHeader })).status).toBe(200);
+  expect((await request('/api/cloud/course-students', { who: 'admin', headers: courseHeader })).status).toBe(200);
   const roster = await request('/api/cloud/course-students', { who: 'instructor', headers: courseHeader });
   expect(roster.status).toBe(200); expect((await roster.json()).students[0].projects[0].title).toBe(project.title);
   await control({ courseDenied: true });
   expect((await request('/api/cloud/course-students', { who: 'instructor', headers: courseHeader })).status).toBe(403);
+  expect((await request('/api/cloud/course-students', { who: 'admin', headers: courseHeader })).status).toBe(403);
   expect((await request(path, { headers: courseHeader })).status).toBe(403);
   expect((await legacy(path)).status).toBe(403);
 });

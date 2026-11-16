@@ -140,6 +140,17 @@ parameters open the ordinary app and do not modify local browser data.
   checked on every protected request. Current Admission administrators may
   use the shared Instructor Console; members cannot. No legacy teacher account
   is automatically linked by name or email.
+  Course access and roster RPCs opt into Admission's administrator extension
+  with `includeAdministrator: true`. Only a fresh scoped receipt containing
+  `administrator: true` grants the same instructor capabilities as an owner;
+  the local global-role flag alone cannot grant them. The receipt retains any
+  genuine participant/owner flags and the administrator's own application
+  member ID. Course lists and consoles use those capabilities, while personal
+  maps, browser state, and model-job receipts retain their existing owner keys.
+  Admission must deploy the opted-in contract before this consumer. Older
+  receipt shapes remain valid; missing/denied or malformed authority fails
+  closed. Source fixtures establish these boundaries, not live administrator
+  acceptance or authority deployment.
 - `GATEWAY` binds to `cail-model-api`. Exact installed artifacts are CAIL Client
   6.2.2, Identity 5.2.6, and Log 0.6.4. The configured public model is `gpt-oss-120b`,
   observed active in the public Gateway catalog on October 3. Provider
