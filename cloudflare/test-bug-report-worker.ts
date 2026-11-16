@@ -47,13 +47,16 @@ export default {
     // The harness serves HTTP. Restate only the harness's own origin as HTTPS;
     // the production handler still sees foreign Origin/Referer values unchanged.
     const appOrigin = 'https://systems.test', appHeaders = new Headers(request.headers);
+    const requestReportMode = appHeaders.get('x-fixture-report-mode') ?? reportMode;
+    appHeaders.delete('x-fixture-report-mode');
     if (appHeaders.get('origin') === url.origin) appHeaders.set('origin', appOrigin);
     const referer = appHeaders.get('referer');
     if (referer?.startsWith(url.origin + '/')) appHeaders.set('referer', appOrigin + referer.slice(url.origin.length));
     appHeaders.set('cf-connecting-ip', '192.0.2.5');
     if (who) appHeaders.set('cookie', `__Host-systems-mapping-session=${tokens[who].sessionToken}`);
     request = new Request(appOrigin + url.pathname + url.search, { method: request.method, headers: appHeaders, body: request.body, redirect: 'manual' });
-    return app.fetch(request, { ...env, PUBLIC_ORIGIN: appOrigin, BUG_REPORTS: binding ? service : undefined, BUG_REPORT_MODE: reportMode,
+    return app.fetch(request, { ...env, PUBLIC_ORIGIN: appOrigin, BUG_REPORTS: binding ? service : undefined,
+      BUG_REPORT_MODE: requestReportMode, REDMINE_API_KEY: undefined,
       REQUEST_LIMIT: limited ? { limit: async () => ({ success: false }) } : env.REQUEST_LIMIT,
       IDENTITY: { identities: async (token: string) => {
         identityCalls++;

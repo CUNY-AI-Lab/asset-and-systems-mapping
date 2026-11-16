@@ -469,12 +469,13 @@ browserTest('compact pop-out preserves keyboard focus, draft and map navigation 
 
 test('explicit Redmine mode never substitutes email when its key is missing', async () => {
  await control({resetReports:true,reportMode:'redmine'});
- const response=await request('/api/bug-reports/availability','');
+ const redmineMode={ 'x-fixture-report-mode':'redmine' };
+ const response=await request('/api/bug-reports/availability','',{headers:redmineMode});
  expect(await response.json()).toEqual({enabled:false,mode:'contact',delivery:'redmine',fallback:null});
- expect((await submit(sample,'')).status).toBe(503);
+ expect((await submit(sample,'',redmineMode)).status).toBe(503);
  await control({reportMode:'redmine',binding:false});
- expect(await (await request('/api/bug-reports/availability','')).json()).toEqual({enabled:false,mode:'contact',delivery:'redmine',fallback:null});
- expect((await submit(sample,'')).status).toBe(503);
+ expect(await (await request('/api/bug-reports/availability','',{headers:redmineMode})).json()).toEqual({enabled:false,mode:'contact',delivery:'redmine',fallback:null});
+ expect((await submit(sample,'',redmineMode)).status).toBe(503);
  expect((await stats()).calls).toHaveLength(0);
  await control({resetReports:true});
 });
