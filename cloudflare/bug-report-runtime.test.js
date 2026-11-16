@@ -27,7 +27,7 @@ beforeAll(async () => {
     assets: { directory: './dist-cloudflare', binding: 'ASSETS', run_worker_first: true, not_found_handling: 'single-page-application' },
     vars: { PUBLIC_ORIGIN: 'https://systems.test', LOGIN_URL: '/auth/start', RELEASE: 'bug-report-fixture',
       CAIL_IDENTITY_JWKS: issuer.jwksJson, TEST_TOKENS: JSON.stringify(tokens), COURSE_ACCESS_ENABLED: 'true', COURSE_IDS: 'synthetic-course' },
-    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '884477', simple: { limit: 1000, period: 60 } }],
+    ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '884477', simple: { limit: 1000, period: 60 } }, { name: 'WORKSPACE_STATE_LIMIT', namespace_id: '884479', simple: { limit: 120, period: 60 } }],
   } }] });
   ({ url } = await harness.listen()); worker = harness.getWorker('mapping-bug-report-test');
 }, 30000);
