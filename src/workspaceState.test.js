@@ -82,6 +82,45 @@ test('a current account preference does not overwrite an explicit pending local 
   sync.close();
 });
 
+test('a settled stale-preference conflict from an older client is archived and reconciled on reload', async () => {
+  const storage = adapter('opaque-alice-key');
+  const key = 'systems-mapping.sidebar-width';
+  const operationId = '4f2fafb6-0250-47d5-a32c-92f320d97f08';
+  const journalKey = `workspace-state-pending.v1.${encodeURIComponent(key)}`;
+  storage.setItem(key, '304');
+  storage.setItem(journalKey, JSON.stringify({
+    version: 1, key, operationId, baseRevision: 7, valueKind: 'current', status: 'conflict',
+  }));
+  const request = vi.fn(async () => ({ records: [{ kind: 'preference', key, revision: 7, value: '272', deleted: 0 }], conflicts: [] }));
+  const sync = testSync(storage, request, captured => captured === storage);
+  await expect(sync.hydrate()).resolves.toBe(true);
+  expect(storage.getItem(key)).toBe('272');
+  expect(storage.getItem(journalKey)).toBeNull();
+  const archived = Array.from({ length: storage.length }, (_, index) => storage.key(index))
+    .filter(name => name.startsWith('local-conflict.v1.'));
+  expect(archived).toHaveLength(1);
+  expect(storage.getItem(archived[0])).toBe('304');
+  expect(request).toHaveBeenCalledTimes(1);
+  sync.close();
+});
+
+test('a malformed server revision cannot clear a settled preference conflict journal', async () => {
+  const storage = adapter('opaque-alice-key');
+  const key = 'systems-mapping.sidebar-width';
+  const operationId = '61d44ae0-13fa-4c61-a564-4b3a411f0a40';
+  const journalKey = `workspace-state-pending.v1.${encodeURIComponent(key)}`;
+  const journal = { version: 1, key, operationId, baseRevision: 7, valueKind: 'current', status: 'conflict' };
+  storage.setItem(key, '304');
+  storage.setItem(journalKey, JSON.stringify(journal));
+  const request = vi.fn(async () => ({ records: [{ kind: 'preference', key, revision: 0, value: '272', deleted: 0 }], conflicts: [] }));
+  const sync = testSync(storage, request, captured => captured === storage);
+  await sync.hydrate();
+  expect(storage.getItem(key)).toBe('304');
+  expect(JSON.parse(storage.getItem(journalKey))).toEqual(journal);
+  expect(Array.from({ length: storage.length }, (_, index) => storage.key(index)).some(name => name.startsWith('local-conflict.v1.'))).toBe(false);
+  sync.close();
+});
+
 test('a remote preference tombstone preserves the cached value as a local conflict and clears it', async () => {
   const storage = adapter('opaque-alice-key');
   const key = 'systems-mapping.sidebar-width';
