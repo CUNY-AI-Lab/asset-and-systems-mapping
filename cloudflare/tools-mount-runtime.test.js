@@ -5,7 +5,6 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { createDefaultProject, serializeProject } from '../src/domain.js';
 import { projectMenu } from '../tests/e2e/support/notebook.js';
-import { STORAGE_KEY } from '../src/projectLibrary.js';
 
 const WORKER = 'https://systems-mapping.ailab-452.workers.dev';
 const TOOLS = 'https://tools.ailab.gc.cuny.edu';
@@ -56,71 +55,6 @@ afterEach(async () => {
   await reports.fetch('https://fixtures.test/control', { method: 'POST', body: '{}' });
 });
 afterAll(async () => { await harness?.close(); }, 30000);
-
-const recoveryRequest = (action, body, cacheKey, options = {}) => request(`/api/cloud/browser-recovery/${action}`, {
-  method: 'POST', body: JSON.stringify(body), ...options, headers: { 'x-systems-account-cache': cacheKey, ...options.headers },
-});
-const originalRecovery = (action, body, cacheKey, { who = 'alice', course } = {}) => worker.fetch(`${WORKER}/api/cloud/browser-recovery/${action}`, {
-  method: 'POST', body: JSON.stringify(body), headers: { origin: WORKER, 'content-type': 'application/json',
-    cookie: `__Host-systems-mapping-session=${tokens[who].sessionToken}`, 'x-systems-account-cache': cacheKey,
-    ...(course ? { 'x-systems-course': course } : {}) },
-});
-test('browser recovery proves the same account across origins and consumes both opaque receipts once', async () => {
-  const { account } = await (await request('/api/cloud/account')).json();
-  expect(account.browserRecovery).toEqual({ peerOrigin: WORKER, peerPath: '/' });
-  const nonce = 'a'.repeat(64), fingerprint = 'b'.repeat(64);
-  const issued = await recoveryRequest('issue', { nonce }, account.cacheKey);
-  expect(issued.status).toBe(200);
-  expect(issued.headers.get('cache-control')).toContain('no-store');
-  const proof = await issued.json();
-  expect(Object.keys(proof).sort()).toEqual(['expiresAt', 'token']);
-  expect(proof.token).toMatch(/^[0-9a-f]{64}$/);
-  expect((await recoveryRequest('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey)).status).toBe(409);
-  expect((await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey, { who: 'bob' })).status).toBe(409);
-  const verified = await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey);
-  expect(verified.status).toBe(200);
-  const receipt = await verified.json();
-  expect((await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey)).status).toBe(409);
-  expect((await recoveryRequest('consume', { nonce, token: receipt.token, fingerprint: 'c'.repeat(64) }, account.cacheKey)).status).toBe(409);
-  expect((await recoveryRequest('consume', { nonce, token: receipt.token, fingerprint }, account.cacheKey)).status).toBe(200);
-  expect((await recoveryRequest('consume', { nonce, token: receipt.token, fingerprint }, account.cacheKey)).status).toBe(409);
-});
-test('browser recovery retains course isolation, current Admission and cache fences', async () => {
-  const headers = { 'x-systems-course': 'synthetic-course-a' };
-  const { account } = await (await request('/api/cloud/account', { headers })).json();
-  const nonce = 'd'.repeat(64), fingerprint = 'e'.repeat(64);
-  const proof = await (await recoveryRequest('issue', { nonce }, account.cacheKey, { headers })).json();
-  expect((await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey)).status).toBe(409);
-  expect((await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey, { course: 'synthetic-course-b' })).status).toBe(409);
-  await control({ courseDenied: true });
-  expect((await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey, { course: 'synthetic-course-a' })).status).toBe(403);
-  await control({ courseDenied: false });
-  const verified = await originalRecovery('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey, { course: 'synthetic-course-a' });
-  expect(verified.status).toBe(200);
-  const receipt = await verified.json();
-  await control({ denied: true });
-  expect((await recoveryRequest('consume', { nonce, token: receipt.token, fingerprint }, account.cacheKey, { headers })).status).toBe(403);
-});
-test('browser recovery rejects anonymous, partial, foreign-origin and oversized requests', async () => {
-  const { account } = await (await request('/api/cloud/account')).json();
-  const body = { nonce: 'f'.repeat(64) };
-  expect((await recoveryRequest('issue', body, account.cacheKey, { who: null })).status).toBe(401);
-  expect((await recoveryRequest('issue', body, account.cacheKey, { headers: { 'x-cail-identity-jwt': 'forged' } })).status).toBe(401);
-  expect((await recoveryRequest('issue', body, account.cacheKey, { headers: { origin: 'https://foreign.example' } })).status).toBe(403);
-  expect((await recoveryRequest('issue', body, '')).status).toBe(409);
-  expect((await recoveryRequest('issue', { ...body, data: 'private map'.repeat(1000) }, account.cacheKey)).status).toBe(400);
-  expect((await recoveryRequest('issue', { ...body, owner: 'alice' }, account.cacheKey)).status).toBe(400);
-});
-test('twenty racing source redemptions produce one receipt, including reverse recovery', async () => {
-  const { account } = await (await request('/api/cloud/account')).json();
-  const nonce = '1'.repeat(64), fingerprint = '2'.repeat(64);
-  const proof = await (await originalRecovery('issue', { nonce }, account.cacheKey)).json();
-  const results = await Promise.all(Array.from({ length: 20 }, () => recoveryRequest('verify', { nonce, token: proof.token, fingerprint }, account.cacheKey)));
-  expect(results.filter(response => response.status === 200)).toHaveLength(1);
-  expect(results.filter(response => response.status === 409)).toHaveLength(19);
-  const receipt = await results.find(response => response.status === 200).json();
-  expect((await originalRecovery('consume', { nonce, token: receipt.token, fingerprint }, account.cacheKey)).status).toBe(200);
-});
 
 test('Tools and Worker sessions address the same saved account maps', async () => {
   const project = createDefaultProject(); project.id = 'mounted-map'; project.title = 'One saved map';
@@ -435,73 +369,32 @@ test('mounted browser opens a shared map and keeps assets, API and navigation in
   } finally { await browser.close(); }
 }, 60000);
 
-test('browser recovery uses a real popup/port, preserves the original open draft and stages conflicts without model calls', async () => {
-  const course = 'synthetic-course-a', headers = { 'x-systems-course': course };
-  const { account } = await (await request('/api/cloud/account', { headers })).json();
-  const prefix = `systems-mapping.account.${account.cacheKey}.`;
-  const project = createDefaultProject(); project.id = 'browser-recovery-fixture'; project.title = 'Original browser map';
-  const originalBytes = serializeProject(project), destinationBytes = serializeProject({ ...project, title: 'Destination conflicting map' });
-  const sourceEntries = [
-    { name: prefix + STORAGE_KEY, value: originalBytes },
-    { name: prefix + 'systems-mapping.pending-guidance.' + project.id, value: JSON.stringify({ requestToken: 'retained-fixture', jobId: 'never-resume', createdAt: Date.now() }) },
-    { name: prefix + 'systems-mapping.relationship-draft.v1.' + project.id + '.micro', value: JSON.stringify({ version: 1, projectId: project.id, createdAt: project.createdAt, scale: 'micro', draft: { id: 'edge_pending_fixture', source: '', target: '', verb: 'Unfinished relationship fixture', evidence: '', claimState: 'research lead' } }) },
-    { name: 'systems-mapping.theme', value: 'dark' },
-    { name: 'systems-mapping.account.other.' + STORAGE_KEY, value: 'Other account private fixture' },
-  ];
+test('anonymous legacy recovery URLs open the ordinary app without touching browser data', async () => {
+  const course = 'synthetic-course-a';
   const browser = await chromium.launch();
-  const context = await browser.newContext({ offline: true, storageState: { cookies: [], origins: [
-    { origin: WORKER, localStorage: sourceEntries },
-    { origin: TOOLS, localStorage: [{ name: prefix + STORAGE_KEY, value: destinationBytes }, { name: 'systems-mapping.theme', value: 'light' }] },
-  ] } });
-  const outside = [], errors = [], requests = [];
+  const preserved = [
+    { name: 'systems-mapping.theme', value: 'light' },
+    { name: 'systems-mapping.account.local.fixture', value: JSON.stringify({ draft: 'unsaved map draft' }) },
+    { name: 'systems-mapping.browser-recovery.v1.local', value: JSON.stringify({ archived: 'local copy' }) },
+  ];
+  const context = await browser.newContext({ offline: true, storageState: { cookies: [], origins: [{ origin: TOOLS, localStorage: preserved }] } });
+  const requests = [], failures = [];
   try {
     await context.route('**/*', async route => {
       const source = route.request(), url = new URL(source.url());
-      if (![TOOLS, WORKER].includes(url.origin)) { outside.push(url.origin); return route.abort(); }
-      if (url.origin === WORKER && url.pathname === '/fixture-original') return route.fulfill({ contentType: 'text/html', body: '<label>Unsaved node<textarea aria-label="Unsaved node"></textarea></label>' });
-      requests.push([url.origin, url.pathname, source.method()]);
-      const response = url.origin === TOOLS
-        ? await ingress.fetch(source.url(), { method: source.method(), headers: { ...await source.allHeaders(), ...headersFor() }, body: source.postDataBuffer() ?? undefined, redirect: 'manual' })
-        : await worker.fetch(source.url(), { method: source.method(), headers: { ...await source.allHeaders(), cookie: `__Host-systems-mapping-session=${tokens.alice.sessionToken}` }, body: source.postDataBuffer() ?? undefined, redirect: 'manual' });
+      if (url.origin !== TOOLS) { failures.push(url.origin); return route.abort(); }
+      requests.push([url.pathname, source.method()]);
+      const response = await ingress.fetch(source.url(), { method: source.method(), headers: { ...await source.allHeaders() }, body: source.postDataBuffer() ?? undefined, redirect: 'manual' });
       await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
     });
-    context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
-    const original = await context.newPage(); await original.goto(WORKER + '/fixture-original');
-    await original.getByRole('textbox', { name: 'Unsaved node' }).fill('Unsaved Criticality fixture draft');
-    const page = await context.newPage(); await page.goto(TOOLS + MOUNT + '/?course=' + course + '&browserRecovery=destination');
-    await browserExpect(page.getByRole('button', { name: 'Read copies from the other address' })).toBeEnabled();
-    const popupPromise = page.waitForEvent('popup');
-    await page.getByRole('button', { name: 'Read copies from the other address' }).click();
-    const popup = await popupPromise;
-    await browserExpect(popup.getByRole('button', { name: 'Read browser copies', exact: true })).toBeEnabled();
-    await popup.getByRole('button', { name: 'Read browser copies', exact: true }).click();
-    await browserExpect(page.getByRole('heading', { name: 'Review browser backup' })).toBeVisible();
-    await browserExpect(page.getByRole('heading', { name: 'Original browser map' })).toBeVisible();
-    await browserExpect(page.getByRole('status')).toContainText('Backup saved separately');
-    expect(requests.filter(([, path, method]) => method !== 'GET' && !path.includes('/browser-recovery/'))).toEqual([]);
-    expect(requests.some(([, path]) => /guidance|evaluations|connections|map\/check/.test(path))).toBe(false);
-    expect(await page.evaluate(key => localStorage.getItem(key), prefix + STORAGE_KEY)).toBe(destinationBytes);
-    expect(await page.evaluate(key => localStorage.getItem(key), prefix + 'systems-mapping.pending-guidance.' + project.id)).toBeNull();
-    expect(await original.evaluate(() => Object.entries(localStorage).sort())).toEqual(sourceEntries.map(entry => [entry.name, entry.value]).sort());
-    await browserExpect(original.getByRole('textbox', { name: 'Unsaved node' })).toHaveValue('Unsaved Criticality fixture draft');
-    await page.reload();
-    await page.getByText('Saved browser backups (1)', { exact: true }).click();
-    await page.getByRole('button', { name: /Review backup from/ }).click();
-    await browserExpect(page.getByRole('heading', { name: 'Original browser map' })).toBeVisible();
-    await page.getByRole('button', { name: 'Save as a separate account map' }).click();
-    await browserExpect(page.getByRole('button', { name: 'Separate map saved' })).toBeDisabled();
-    expect(requests.filter(([, path, method]) => method === 'PUT' && path.includes('/api/cloud/projects/recovered_'))).toHaveLength(1);
-    const records = await (await request('/api/cloud/projects', { headers })).json();
-    const saved = records.projects.find(item => item.title === 'Original browser map (recovered copy)');
-    expect(saved.id).not.toBe(project.id);
-    await page.getByRole('button', { name: 'Restore relationship drafts to the new map' }).click();
-    await browserExpect(page.getByRole('status')).toContainText('1 relationship drafts restored');
-    const relationship = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), prefix + 'systems-mapping.relationship-draft.v1.' + saved.id + '.micro');
-    expect(relationship).toMatchObject({ projectId: saved.id, draft: { verb: 'Unfinished relationship fixture' } });
-    expect(await page.evaluate(key => localStorage.getItem(key), prefix + 'systems-mapping.pending-guidance.' + project.id)).toBeNull();
-    expect((await request('/api/cloud/projects/' + saved.id, { who: 'bob', headers })).status).toBe(403);
-    expect(await original.evaluate(() => Object.entries(localStorage).sort())).toEqual(sourceEntries.map(entry => [entry.name, entry.value]).sort());
-    await browserExpect(original.getByRole('textbox', { name: 'Unsaved node' })).toHaveValue('Unsaved Criticality fixture draft');
-    expect(outside).toEqual([]); expect(errors).toEqual([]);
+    const page = await context.newPage();
+    await page.goto(TOOLS + MOUNT + '/?course=' + course + '&browserRecovery=destination');
+    await browserExpect(page.getByRole('link', { name: 'CUNY Login' })).toBeVisible();
+    await browserExpect(page.getByText(/recover browser|browser copies|backup from the other address/i)).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has('browserRecovery')).toBe(false);
+    expect(new URL(page.url()).searchParams.get('course')).toBe(course);
+    expect(await page.evaluate(() => Object.entries(localStorage).sort())).toEqual(preserved.map(item => [item.name, item.value]).sort());
+    expect(requests.some(([path, method]) => method !== 'GET' && /api\/cloud\/(projects|browser-recovery)/.test(path))).toBe(false);
+    expect(failures).toEqual([]);
   } finally { await browser.close(); }
-}, 60000);
+});

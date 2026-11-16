@@ -51,10 +51,8 @@ Account activity records contain project IDs, event kinds, revisions and times;
 they do not duplicate memo text. Old activity for an account is purged during
 subsequent saves. Shared review retention follows the existing product rules.
 
-[Browser-copy recovery](browser-recovery.md) provides an explicit popup flow
-between the original Worker and Tools mount, with fresh same-account/course
-proofs, private conflict staging and deliberate restoration. It never migrates
-another tab's unsaved form state or automatically resumes paid requests.
+The former cross-address browser-copy interface is retired. Old recovery query
+parameters open the ordinary app and do not modify local browser data.
 
 ## Identity and model contract
 

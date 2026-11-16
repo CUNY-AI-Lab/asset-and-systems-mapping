@@ -5,7 +5,6 @@ import '@fontsource-variable/source-sans-3/wght-italic.css';
 import '@fontsource-variable/source-serif-4';
 import App from './App.jsx';
 import AccountWorkspace from './AccountWorkspace.jsx';
-import BrowserRecovery, { recoveryView } from './BrowserRecovery.jsx';
 import BugReport from './support/BugReport.jsx';
 import { BugReportDockProvider } from './support/BugReportDock.jsx';
 import ProjectFooter from './ProjectFooter.jsx';
@@ -18,9 +17,12 @@ import './notebook.css';
 import './ui/control-system.css';
 import './project-footer.css';
 import './memo-workflow.css';
+import { cleanLegacyBrowserRecoveryQuery } from './legacyBrowserRecoveryQuery.js';
+
+cleanLegacyBrowserRecoveryQuery();
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {import.meta.env.VITE_ACCOUNT_WORKSPACE === 'true' ? recoveryView() ? <BrowserRecovery /> : <BugReportDockProvider><AccountWorkspace /><BugReport /></BugReportDockProvider> : <><App /><ProjectFooter /></>}
+    {import.meta.env.VITE_ACCOUNT_WORKSPACE === 'true' ? <BugReportDockProvider><AccountWorkspace /><BugReport /></BugReportDockProvider> : <><App /><ProjectFooter /></>}
   </React.StrictMode>,
 );
