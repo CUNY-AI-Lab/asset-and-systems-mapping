@@ -20,6 +20,7 @@ import { DEMO_COURSE_ID, demonstrationProgress } from './demo-course';
 import { SubmittedRevisions } from './submitted-revisions.js';
 import { RedmineReports, contactReporting, reportDelivery, reportFallback, reportsEnabled } from './redmine-reports';
 import { handleBugReport, type BugReportService } from './bug-reports';
+import { BrowserRecoveryProofs, browserRecoveryPeer } from './browser-recovery';
 
 const HEADERS = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
@@ -71,6 +72,7 @@ export class MappingCourse extends DurableObject<Bindings> {
   db;
   jobs!: GuidanceJobs;
   reports!: RedmineReports;
+  browserRecovery!: BrowserRecoveryProofs;
   system!: ReturnType<typeof createSystemsMappingApp>;
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -89,6 +91,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       CREATE TABLE IF NOT EXISTS cloud_accounts (owner TEXT PRIMARY KEY, cache_key TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cloud_course_visits (owner TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`);
       this.reports = new RedmineReports(this.db, ctx.storage, env);
+      this.browserRecovery = new BrowserRecoveryProofs(this.db, ctx.storage, env.PUBLIC_ORIGIN);
       this.db.finishInitialization();
       this.submissions = new SubmittedRevisions(this.db);
       this.jobs = new GuidanceJobs(this.db, (pending: Promise<unknown>) => ctx.waitUntil(pending));
@@ -160,6 +163,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       const account = this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner);
       if (account?.cache_key !== expectedCache) return failure('The signed-in account changed. Reload to open its workspace. Your device copy is preserved.', 409);
     }
+    if (path.startsWith('/api/cloud/browser-recovery/')) return this.browserRecovery.request(request, principal, owner);
     if (path === '/api/cloud/guidance-jobs' || path.startsWith('/api/cloud/guidance-jobs/')) {
       const match = /^\/api\/cloud\/guidance-jobs\/([0-9a-f]{64})(\/resume)?$/.exec(path);
       const creating = path === '/api/cloud/guidance-jobs' && request.method === 'POST';
@@ -214,6 +218,7 @@ export class MappingCourse extends DurableObject<Bindings> {
       if (principal.course) await this.visit(principal.course);
       this.db.prepare('INSERT OR IGNORE INTO cloud_accounts VALUES (?,?)').run(owner, crypto.randomUUID());
       return Response.json({ account: { cacheKey: this.db.prepare('SELECT cache_key FROM cloud_accounts WHERE owner=?').get(owner).cache_key,
+        browserRecovery: browserRecoveryPeer(this.env.PUBLIC_ORIGIN, principal.toolsMounted),
         role: principal.admin ? 'instructor' : 'student',
         preferredName: accountPreferredName(principal),
         email: principal.email ?? null,

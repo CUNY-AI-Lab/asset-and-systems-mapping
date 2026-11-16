@@ -16,6 +16,7 @@ import AccountDashboard from './AccountDashboard.jsx';
 import NollSketch from './NollSketch.jsx';
 import './account-workspace.css';
 import { appPathname } from './appPath.js';
+import { recoveryPagePath } from './BrowserRecovery.jsx';
 
 export default function AccountWorkspace() {
   const [courseSelection] = useState(() => parseCourseSelection(window.location.search));
@@ -301,6 +302,7 @@ export default function AccountWorkspace() {
       </> : account ? <>
         <div hidden={accountView.open}>
         <PageHeading title="Projects" description={account.course ? `${account.course.name} · ${account.course.term} · ${account.course.section}` : undefined} />
+        {account.browserRecovery && <p><a href={recoveryPagePath(courseSelection)} target="_blank" rel="noopener noreferrer">Recover browser copies from the other address</a></p>}
         <form className="project-create" aria-label="New project" onSubmit={event => {event.preventDefault(); void open(null);}}>
           <label className="field"><span>Project</span><input aria-label="Project" value={newTitle} onChange={event=>setNewTitle(event.target.value)} maxLength={160} placeholder="Name your map" /></label>
           <label className="field"><span>Name</span><input aria-label="Name" value={creatorName} onChange={event=>setCreatorName(event.target.value)} maxLength={160} autoComplete="name" placeholder="Name or group" /></label>
