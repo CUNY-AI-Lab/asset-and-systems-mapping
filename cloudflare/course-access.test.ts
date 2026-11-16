@@ -11,7 +11,7 @@ const receipt = (overrides: Record<string, unknown> = {}) => ({
   ok: true, classId, className: 'Synthetic course A', term: 'Fall 2026', section: '01',
   memberId: `systems-mapping-member-v1-${'a'.repeat(64)}`,
   displayName: null, displayNameSource: 'unavailable', participant: true, owner: false,
-  startsAt: iso(-60000), checkedAt: iso(0), expiresAt: iso(60000), revision: 1, guestInstructor: false, capabilities: { instructorPanel: Boolean(overrides.owner || overrides.guestInstructor), rosterRead: Boolean(overrides.owner || overrides.guestInstructor), promptRead: Boolean(overrides.owner || overrides.guestInstructor), promptWrite: Boolean(overrides.owner || overrides.guestInstructor) }, ...overrides,
+  startsAt: iso(-60000), checkedAt: iso(0), expiresAt: iso(60000), revision: 1, guestInstructor: false, capabilities: { instructorPanel: Boolean(overrides.owner || overrides.guestInstructor || overrides.administrator), rosterRead: Boolean(overrides.owner || overrides.guestInstructor || overrides.administrator), promptRead: Boolean(overrides.owner || overrides.guestInstructor || overrides.administrator), promptWrite: Boolean(overrides.owner || overrides.guestInstructor || overrides.administrator) }, ...overrides,
 });
 
 function environment(...values: [unknown?]) {
@@ -32,7 +32,7 @@ test('fresh exact owner roster accepts verified names and rejects stale or forei
   const roster = vi.fn(async () => page);
   env.ADMISSION_RESOLVER!.listCourseRosterV2 = roster;
   await expect(courseRoster(env, subject, course, undefined)).resolves.toEqual({ participants: [member], nextCursor: null });
-  expect(roster).toHaveBeenCalledWith({ subject, app: COURSE_APP, classId, limit: 40 });
+  expect(roster).toHaveBeenCalledWith({ subject, app: COURSE_APP, classId, includeAdministrator: true, limit: 40 });
   for (const invalid of [
     { ...page, classId: 'other-course' }, { ...page, checkedAt: iso(-30000) },
     { ...page, participants: [member, member] },
@@ -70,7 +70,7 @@ test.each([
   const result = await resolveCourseAccess(env, subject, classId);
   expect(result).toEqual(expected);
   expect(result).not.toBe(expected);
-  expect(resolve).toHaveBeenCalledExactlyOnceWith({ subject, app: COURSE_APP, classId });
+  expect(resolve).toHaveBeenCalledExactlyOnceWith({ subject, app: COURSE_APP, classId, includeAdministrator: true });
   expect(COURSE_APP).toBe('systems-mapping');
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -118,7 +118,7 @@ test('trusted allowlist can contain several courses, but a receipt must match th
   const { env, resolve } = environment(); env.COURSE_IDS = ` ${classId}, synthetic-course-b,${classId} `;
   await expect(resolveCourseAccess(env, subject, classId)).resolves.toMatchObject({ classId });
   await expect(resolveCourseAccess(env, subject, 'synthetic-course-b')).rejects.toMatchObject({ status: 503 });
-  expect(resolve).toHaveBeenLastCalledWith({ subject, app: 'systems-mapping', classId: 'synthetic-course-b' });
+  expect(resolve).toHaveBeenLastCalledWith({ subject, app: 'systems-mapping', classId: 'synthetic-course-b', includeAdministrator: true });
   resolve.mockResolvedValue(receipt({ classId: 'synthetic-course-b', memberId: `systems-mapping-member-v1-${'b'.repeat(64)}` }));
   await expect(resolveCourseAccess(env, subject, 'synthetic-course-b')).resolves.toMatchObject({ classId: 'synthetic-course-b' });
 });
@@ -310,4 +310,29 @@ test('guest instructors receive explicit capabilities without ownership or stude
     receipt({ guestInstructor: true, participant: true }),
     { ...value, capabilities: { ...value.capabilities, promptWrite: 'true' } },
   ]) await expect(resolveCourseAccess(environment(invalid).env, subject, classId)).rejects.toMatchObject({ status: 503 });
+});
+
+
+test('opted-in administrator capabilities preserve the real scoped member and recheck revocation', async () => {
+  const value = receipt({ participant: false, owner: false, administrator: true });
+  const { env, resolve } = environment(value);
+  const access = await resolveCourseAccess(env, subject, classId);
+  expect(access).toEqual(value);
+  expect(access.memberId).toBe(value.memberId);
+  expect(resolve).toHaveBeenCalledWith({ subject, app: COURSE_APP, classId, includeAdministrator: true });
+  const roster = vi.fn(async () => ({ ok: true, classId, checkedAt: iso(0), expiresAt: iso(60000), revision: 1, participants: [], nextCursor: null }));
+  env.ADMISSION_RESOLVER!.listCourseRosterV2 = roster;
+  await expect(courseRoster(env, subject, access, undefined)).resolves.toEqual({ participants: [], nextCursor: null });
+  expect(roster).toHaveBeenCalledWith({ subject, app: COURSE_APP, classId, includeAdministrator: true, limit: 40 });
+  resolve.mockResolvedValueOnce({ ok: false, code: 'not_enrolled', retryable: false });
+  await expect(resolveCourseAccess(env, subject, classId)).rejects.toMatchObject({ status: 403 });
+});
+
+test('administrator extension must be explicit true with exact capabilities and fresh scope', async () => {
+  for (const changes of [
+    { administrator: false }, { administrator: 'true' }, { administrator: null },
+    { administrator: true, capabilities: { instructorPanel: true, rosterRead: false, promptRead: true, promptWrite: true } },
+    { administrator: true, expiresAt: iso(0) }, { administrator: true, classId: 'foreign-course' },
+    { administrator: true, injected: true },
+  ]) await expect(resolveCourseAccess(environment(receipt(changes)).env, subject, classId)).rejects.toMatchObject({ status: 503 });
 });

@@ -17,6 +17,8 @@ export interface CourseAccess {
   participant: boolean;
   owner: boolean;
   guestInstructor: boolean;
+  /** Present only in an opted-in, freshly verified Admission receipt. */
+  administrator?: true;
   capabilities: { instructorPanel: boolean; rosterRead: boolean; promptRead: boolean; promptWrite: boolean };
   startsAt: string;
   checkedAt: string;
@@ -25,8 +27,8 @@ export interface CourseAccess {
 }
 
 export interface AdmissionCourseResolver {
-  resolveCourseAccessV2?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
-  listCourseRosterV2?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit: number; cursor?: string }): Promise<unknown>;
+  resolveCourseAccessV2?(input: { subject: string; app: typeof COURSE_APP; classId: string; includeAdministrator?: boolean }): Promise<unknown>;
+  listCourseRosterV2?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit: number; cursor?: string; includeAdministrator?: boolean }): Promise<unknown>;
 }
 
 export interface CourseAccessEnv {
@@ -60,6 +62,10 @@ function exactFields(value: unknown, fields: string[]): value is Record<string, 
   return keys.length === fields.length && keys.every(key => typeof key === 'string' && fields.includes(key));
 }
 
+function accessReceiptFields(value: unknown): value is Record<string, unknown> {
+  return exactFields(value, accessFields) || exactFields(value, [...accessFields, 'administrator']);
+}
+
 function boundedText(value: unknown, limit: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= limit && !/[\u0000-\u001f\u007f]/.test(value);
 }
@@ -70,15 +76,16 @@ function canonicalDate(value: unknown): value is string {
 }
 
 function validReceipt(value: unknown, classId: string, now: number): value is CourseAccess {
-  if (!exactFields(value, accessFields)) return false;
+  if (!accessReceiptFields(value)) return false;
   return value.ok === true && validCourseId(value.classId) && value.classId === classId
     && boundedText(value.className, 200) && boundedText(value.term, 120) && boundedText(value.section, 120)
     && typeof value.memberId === 'string' && value.memberId === value.memberId.trim() && memberIdPattern.test(value.memberId)
     && ((value.displayName === null && value.displayNameSource === 'unavailable')
       || (boundedText(value.displayName, 160) && value.displayNameSource === 'verified_profile'))
-    && typeof value.participant === 'boolean' && typeof value.owner === 'boolean' && typeof value.guestInstructor === 'boolean' && (value.participant || value.owner || value.guestInstructor)
+    && typeof value.participant === 'boolean' && typeof value.owner === 'boolean' && typeof value.guestInstructor === 'boolean' && (value.participant || value.owner || value.guestInstructor || value.administrator === true)
     && exactFields(value.capabilities, ['instructorPanel', 'rosterRead', 'promptRead', 'promptWrite'])
-    && Object.values(value.capabilities).every(flag => flag === (value.owner || value.guestInstructor))
+    && Object.values(value.capabilities).every(flag => flag === (value.owner || value.guestInstructor || value.administrator === true))
+    && (!Object.hasOwn(value, 'administrator') || value.administrator === true)
     && (!value.guestInstructor || (!value.owner && !value.participant && value.classId === DEMO_COURSE_ID))
     && canonicalDate(value.startsAt) && canonicalDate(value.checkedAt) && canonicalDate(value.expiresAt)
     && Date.parse(value.checkedAt) <= now + 5000 && now - Date.parse(value.checkedAt) < 30000
@@ -118,7 +125,7 @@ export async function courseRoster(env: CourseAccessEnv, subject: string, course
   try {
     value = await withDeadline(timed => withSignal(Promise.resolve().then(() => {
       if (timed.aborted) throw timed.reason;
-      return env.ADMISSION_RESOLVER!.listCourseRosterV2!({ subject, app: COURSE_APP, classId: course.classId, limit: 40, ...(cursor === undefined ? {} : { cursor }) });
+      return env.ADMISSION_RESOLVER!.listCourseRosterV2!({ subject, app: COURSE_APP, classId: course.classId, includeAdministrator: true, limit: 40, ...(cursor === undefined ? {} : { cursor }) });
     }), timed), signal, 5000);
   } catch { throw new CourseAccessError(503, 'course_access_unavailable'); }
   const denial = denialCode(value);
@@ -167,7 +174,7 @@ export async function resolveCourseAccess(env: CourseAccessEnv, subject: string,
       // the same bounded failure path as an asynchronous authority outage.
       return withSignal(Promise.resolve().then(() => {
         if (timed.aborted) throw timed.reason;
-        return resolver.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId });
+        return resolver.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId, includeAdministrator: true });
       }), timed);
     }, signal, 5000);
   } catch {
@@ -177,8 +184,9 @@ export async function resolveCourseAccess(env: CourseAccessEnv, subject: string,
   let denied: string | null = null;
   try {
     denied = denialCode(value);
-    if (!denied && exactFields(value, accessFields)) {
-      const snapshot = Object.fromEntries(accessFields.map(field => [field, value[field]]));
+    if (!denied && accessReceiptFields(value)) {
+      const fields = Object.hasOwn(value, 'administrator') ? [...accessFields, 'administrator'] : accessFields;
+      const snapshot = Object.fromEntries(fields.map(field => [field, value[field]]));
       if (validReceipt(snapshot, classId, Date.now())) return snapshot;
     }
   } catch {

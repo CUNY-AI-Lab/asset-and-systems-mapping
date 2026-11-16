@@ -6,6 +6,7 @@ let calls = 0;
 let captured: Record<string, unknown> | null = null;
 let denied = false;
 let courseDenied = false;
+let administratorRevoked = false;
 let courseOutage = false;
 let courseLookups = 0;
 let denyOnCourseLookup = 0;
@@ -24,32 +25,33 @@ export class Identity extends WorkerEntrypoint<FixtureEnv> {
   async revoke(token: string) { revoked.add(token); return { revoked: true }; }
 }
 export class Admission extends WorkerEntrypoint<FixtureEnv> {
-  async listCourseRosterV2({ subject, app, classId }: { subject: string; app: string; classId: string }) {
-    const access = await this.resolveCourseAccessV2({ subject, app, classId });
+  async listCourseRosterV2({ subject, app, classId, includeAdministrator }: { subject: string; app: string; classId: string; includeAdministrator?: boolean }) {
+    const access = await this.resolveCourseAccessV2({ subject, app, classId, includeAdministrator });
     if (!access.ok) return access;
     if (!access.capabilities.rosterRead) return { ok: false, code: 'not_owner', retryable: false };
     return { ok: true, classId, checkedAt: access.checkedAt, expiresAt: access.expiresAt, revision: 1, nextCursor: null,
       participants: [{ memberId: 'systems-mapping-member-v1-' + 'a'.repeat(64), displayName: 'Alice Student', displayNameSource: 'verified_profile', startsAt: access.startsAt, expiresAt: access.expiresAt }] };
   }
-  async resolveCourseAccessV2({ subject, app, classId }: { subject: string; app: string; classId: string }) {
+  async resolveCourseAccessV2({ subject, app, classId, includeAdministrator }: { subject: string; app: string; classId: string; includeAdministrator?: boolean }) {
     courseLookups++;
     if (courseOutage) throw new Error('private fixture outage');
     const tokens = JSON.parse(this.env.TEST_TOKENS);
     const who = Object.keys(tokens).find(name => tokens[name].subject === subject);
+    const administrator = who === 'admin' && !administratorRevoked && includeAdministrator === true;
     const owner = who === 'instructor' && classId === 'synthetic-course-a';
     const guestInstructor = who === 'guest' && classId === 'cail-teaching-tools-demo';
     const participant = who === 'alice' && ['synthetic-course-a', 'synthetic-course-b'].includes(classId)
-      || who === 'bob' && classId === 'synthetic-course-b' || who === 'admin' && classId === 'synthetic-course-a';
-    if (app !== 'systems-mapping' || courseDenied || (denyOnCourseLookup > 0 && courseLookups >= denyOnCourseLookup) || (!owner && !participant && !guestInstructor)) return { ok: false, code: 'not_enrolled', retryable: false };
+      || who === 'bob' && classId === 'synthetic-course-b';
+    if (app !== 'systems-mapping' || courseDenied || (denyOnCourseLookup > 0 && courseLookups >= denyOnCourseLookup) || (!owner && !participant && !guestInstructor && !administrator)) return { ok: false, code: 'not_enrolled', retryable: false };
     return { ok: true, classId, className: 'Synthetic ' + classId, term: 'Test term', section: 'Test section',
       memberId: 'systems-mapping-member-v1-' + (who === 'alice' ? 'a' : who === 'bob' ? 'b' : who === 'instructor' ? 'c' : 'd').repeat(64),
-      ...courseProfile, participant, owner, guestInstructor,
-      capabilities: { instructorPanel: owner || guestInstructor, rosterRead: owner || guestInstructor, promptRead: owner || guestInstructor, promptWrite: owner || guestInstructor },
+      ...courseProfile, participant, owner, guestInstructor, ...(administrator ? { administrator: true } : {}),
+      capabilities: { instructorPanel: owner || guestInstructor || administrator, rosterRead: owner || guestInstructor || administrator, promptRead: owner || guestInstructor || administrator, promptWrite: owner || guestInstructor || administrator },
       startsAt: new Date(Date.now() - 60000).toISOString(), checkedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1 };
   }
   async resolveMembership({ subject }: { subject: string }) {
     if (denied) return { ok: false, code: 'not_admitted' };
-    const admin = subject === JSON.parse(this.env.TEST_TOKENS).admin.subject;
+    const admin = !administratorRevoked && subject === JSON.parse(this.env.TEST_TOKENS).admin.subject;
     return { ok: true, accessRole: admin ? 'admin' : 'member', budgetScope: admin ? 'admin' : 'person', revision: 1, expiresAt: new Date(Date.now() + 60000).toISOString() };
   }
 }
@@ -58,7 +60,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/header-probe') return Response.json({ present: request.headers.has('x-systems-course'), value: request.headers.get('x-systems-course') });
     if (url.pathname === '/control') {
-      if (request.method === 'POST') { const value = await request.json<{ mode?: string; denied?: boolean; resetSessions?: boolean; courseDenied?: boolean; courseOutage?: boolean; denyOnCourseLookup?: number; courseProfile?: typeof courseProfile | null }>(); mode = value.mode ?? mode; courseDenied = value.courseDenied ?? courseDenied; courseOutage = value.courseOutage ?? courseOutage; denyOnCourseLookup = value.denyOnCourseLookup ?? denyOnCourseLookup; if (Object.hasOwn(value, 'courseProfile')) courseProfile = value.courseProfile ?? { displayName: null, displayNameSource: 'unavailable' }; courseLookups = 0; denied = value.denied ?? denied; if (value.resetSessions) revoked.clear(); calls = 0; captured = null; }
+      if (request.method === 'POST') { const value = await request.json<{ mode?: string; denied?: boolean; resetSessions?: boolean; courseDenied?: boolean; administratorRevoked?: boolean; courseOutage?: boolean; denyOnCourseLookup?: number; courseProfile?: typeof courseProfile | null }>(); mode = value.mode ?? mode; administratorRevoked = value.administratorRevoked ?? administratorRevoked; courseDenied = value.courseDenied ?? courseDenied; courseOutage = value.courseOutage ?? courseOutage; denyOnCourseLookup = value.denyOnCourseLookup ?? denyOnCourseLookup; if (Object.hasOwn(value, 'courseProfile')) courseProfile = value.courseProfile ?? { displayName: null, displayNameSource: 'unavailable' }; courseLookups = 0; denied = value.denied ?? denied; if (value.resetSessions) revoked.clear(); calls = 0; captured = null; }
       return Response.json({ calls, captured, courseLookups });
     }
     if (url.pathname === '/v1/quota') return Response.json({ object: 'quota', managed_by: 'cloudflare', state: 'estimated', unit: 'microdollar', currency: 'USD', limit: 1000, estimated_used: 100, estimated_remaining: 900, used_percent: 10, remaining_percent: 90, window_seconds: 86400, window_technique: 'fixed', calculated_at: Date.now() });

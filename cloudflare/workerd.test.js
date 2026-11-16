@@ -954,8 +954,10 @@ test.skipIf(process.env.SYSTEMS_MAPPING_BROWSER_ACCEPTANCE !== '1')('Chrome acco
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
-    failCloudWrites = false;
+    // Resizing can enqueue a layout save. Keep the interruption in place until
+    // the explicit retry click, so that queued save cannot remove its button.
     await page.getByRole('button', { name: 'Try saving again', exact: true }).click();
+    failCloudWrites = false;
     await browserExpect.poll(async () => JSON.parse((await (await request('/api/cloud/projects/browser-map')).json()).project).mapAnnotation.text).toBe('Unsynced work is recovered after a storage interruption.');
     await browserExpect(page.getByRole('alert')).toHaveCount(0);
     await page.reload();
