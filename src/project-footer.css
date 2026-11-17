@@ -12,6 +12,7 @@
 }
 .project-credit { flex: 1; min-width: 0; margin: 0; color: var(--muted); font: 400 12px/1.55 var(--body); overflow-wrap: anywhere; }
 .project-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.project-guide { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 24px; color: var(--muted); font: 600 12px/1.55 var(--body); text-decoration: underline; text-underline-offset: 2px; }
 .project-footer > .bug-report-footer { flex: 0 0 auto; }
 .has-project-footer .app-footer { bottom: var(--project-footer-height); height: var(--footer); padding-bottom: 0; }
 .has-project-footer .workspace { padding-bottom: calc(var(--footer) + var(--project-footer-height) + 32px); }
