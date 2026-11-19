@@ -42,7 +42,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm check:cloudflare
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Install the locked Playwright browser
+        # The GitHub runner already has the Playwright OS libraries; avoid the
+        # runner's unavailable Ubuntu mirror during apt dependency setup.
+        run: pnpm exec playwright install chromium
       - run: pnpm test
         env:
           TEST_POSTGRES_URL: postgresql://cail_test:cail_test@127.0.0.1:5432/cail_systems_test
